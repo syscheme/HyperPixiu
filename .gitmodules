@@ -1,0 +1,3 @@
+[submodule "kits/vnpy"]
+	path = kits/vnpy
+	url = git@github.com:syscheme/vnpy.git

@@ -7,7 +7,7 @@
 from __future__ import division
 
 from vnpy.trader.vtConstant import EMPTY_STRING, EMPTY_FLOAT
-from ahsApp.AShare.Strategy.Template import (AShTemplate, 
+from vnApp.Strategy.Template import (AShTemplate, 
                                                      BarGenerator,
                                                      ArrayManager)
 

@@ -1,0 +1,12 @@
+{
+    "terminal.integrated.env.linux": {
+        "PYTHONPATH" : "${workspaceFolder}:${workspaceFolder}/kits/vnpy",
+        "LD_LIBRARY_PATH":"/usr/local/lib"
+    },
+    
+    "python.pythonPath": "/usr/bin/python2.7",
+
+    "files.exclude": {
+        "*.pyc": true
+    }
+}

@@ -1,3 +1,6 @@
 [submodule "kits/vnpy"]
 	path = kits/vnpy
 	url = git@github.com:syscheme/vnpy.git
+[submodule "kits/puppetrader"]
+	path = kits/puppetrader
+	url = git@github.com:syscheme/puppetrader.git

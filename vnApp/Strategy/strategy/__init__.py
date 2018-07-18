@@ -37,7 +37,7 @@ for root, subdirs, files in os.walk(path):
         # 只有文件名strategy preffix且以.py结尾的文件，才是策略文件
         if STRATEGY_PREFFIX == name[:STRATEGY_PREFFIX_LEN] and name[-3:] == '.py':
             # 模块名称需要模块路径前缀
-            moduleName = 'ahsApp.AShare.Strategy.strategy.' + name.replace('.py', '')
+            moduleName = 'vnApp.Strategy.strategy.' + name.replace('.py', '')
             loadStrategyModule(moduleName)
 
 

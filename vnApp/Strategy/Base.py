@@ -22,23 +22,23 @@ STOPORDER_CANCELLED = u'CANCELLED' #u'已撤销'
 STOPORDER_TRIGGERED = u'TRIGGERED' #u'已触发'
 
 # 本地停止单前缀
-STOPORDERPREFIX = 'AshStopOrder.'
+STOPORDERPREFIX = 'vnStopOrder.'
 
 # 数据库名称
-SETTING_DB_NAME = 'Ash_Setting_Db'
-POSITION_DB_NAME = 'Ash_Position_Db'
+SETTING_DB_NAME = 'vnDB_Setting'
+POSITION_DB_NAME = 'vnDB_Position'
 
-TICK_DB_NAME   = 'Ash_Tick_Db'
-DAILY_DB_NAME  = 'Ash_Daily_Db'
-MINUTE_DB_NAME = 'Ash_1Min_Db'
+TICK_DB_NAME   = 'vnDB_Tick'
+DAILY_DB_NAME  = 'vnDB_Daily'
+MINUTE_DB_NAME = 'vnDB_1Min'
 
 # 引擎类型，用于区分当前策略的运行环境
 ENGINETYPE_BACKTESTING = 'backtesting'  # 回测
 ENGINETYPE_TRADING = 'trading'          # 实盘
 
 # CTA模块事件
-EVENT_CTA_LOG      = 'eAShLog'          # CTA相关的日志事件
-EVENT_CTA_STRATEGY = 'eAShStrategy.'    # CTA策略状态变化事件
+EVENT_CTA_LOG      = 'eVNLog'          # CTA相关的日志事件
+EVENT_CTA_STRATEGY = 'eVNStrategy.'    # CTA策略状态变化事件
 
 
 ########################################################################

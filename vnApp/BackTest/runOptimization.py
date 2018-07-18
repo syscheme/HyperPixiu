@@ -8,14 +8,14 @@ from __future__ import division
 from __future__ import print_function
 
 
-from ahsApp.AShare.Strategy.Backtesting import BacktestingEngine, MINUTE_DB_NAME, OptimizationSetting
+from vnApp.Strategy.BacktestAccount import BacktestAccount, MINUTE_DB_NAME, OptimizationSetting
 
 
 if __name__ == '__main__':
-    from ahsApp.AShare.Strategy.strategy.strategyAtrRsi import AtrRsiStrategy
+    from vnApp.Strategy.strategy.strategyAtrRsi import AtrRsiStrategy
     
     # 创建回测引擎
-    engine = BacktestingEngine()
+    engine = BacktestAccount()
     
     # 设置引擎的回测模式为K线
     engine.setBacktestingMode(engine.BAR_MODE)

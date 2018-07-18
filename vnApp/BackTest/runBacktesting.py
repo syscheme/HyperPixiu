@@ -4,8 +4,8 @@
 展示如何执行策略回测。
 """
 from __future__ import division
-from ahsApp.AShare.Strategy.Backtesting import BacktestingEngine, MINUTE_DB_NAME
-import ahsApp.AShare.Strategy.strategy as tg
+from vnApp.Strategy.BacktestAccount import BacktestAccount, MINUTE_DB_NAME
+import vnApp.Strategy.strategy as tg
 import os
 import gc
 from time import sleep
@@ -17,11 +17,11 @@ symbols= ["601000"]
 #----------------------------------------------------------------------
 def backTestSymbol(symbol, startDate, endDate=''):
     """将Multicharts导出的csv格式的历史数据插入到Mongo数据库中"""
-    from ahsApp.AShare.Strategy.strategy.strategyKingKeltner import KkStrategy
-    from ahsApp.AShare.Strategy.strategy.strategyBollChannel import BollChannelStrategy
+    from vnApp.Strategy.strategy.strategyKingKeltner import KkStrategy
+    from vnApp.Strategy.strategy.strategyBollChannel import BollChannelStrategy
 
     # 创建回测引擎
-    engine = BacktestingEngine()
+    engine = BacktestAccount()
     
     # 设置引擎的回测模式为K线
     engine.setBacktestingMode(engine.BAR_MODE)

@@ -8,7 +8,7 @@ from datetime import time
 
 from vnpy.trader.vtObject import VtBarData
 from vnpy.trader.vtConstant import EMPTY_STRING
-from ahsApp.AShare.Strategy.Template import AShTemplate, BarGenerator
+from vnApp.Strategy.Template import AShTemplate, BarGenerator
 
 
 ########################################################################

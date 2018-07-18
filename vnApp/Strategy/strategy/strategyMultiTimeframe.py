@@ -6,7 +6,7 @@
 
 from vnpy.trader.vtObject import VtBarData
 from vnpy.trader.vtConstant import EMPTY_STRING
-from ahsApp.AShare.Strategy.Template import (AShTemplate, 
+from vnApp.Strategy.Template import (AShTemplate, 
                                                      BarGenerator, 
                                                      ArrayManager)
 

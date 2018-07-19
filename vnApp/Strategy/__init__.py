@@ -3,7 +3,7 @@
 from .Engine import Engine
 from .uiWidget import EngineManager
 
-appName = 'AshStrategy'
+appName = 'vnApp'
 appDisplayName = u'A股策略'
 appEngine = Engine
 appWidget = EngineManager

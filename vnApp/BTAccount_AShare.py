@@ -46,7 +46,7 @@ class BTAccount_AShare(Account_AShare):
     def __init__(self):
         """Constructor"""
 
-        Account_AShare.__init__(self)
+        super(BTAccount_AShare, self).__init__()
 
         self.capital = 100000       # 回测时的起始本金（默认10万）
         self._casheAvail = 0        # 起始cache = capital
@@ -269,9 +269,7 @@ class BTAccount_AShare(Account_AShare):
         
     #----------------------------------------------------------------------
     def onDayOpen(self, newDate):
-        # super(Account_AShare, self).onDayOpen(newDate)
-        self._lastTradeDate =self._thisTradeDate
-        self._thisTradeDate =newDate
+        super(BTAccount_AShare, self).onDayOpen(newDate)
 
         self.strategy._posAvail = self.strategy.pos
         self.strategy.onDayOpen(newDate)

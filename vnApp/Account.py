@@ -406,7 +406,7 @@ class Account_AShare(Account):
     #----------------------------------------------------------------------
     def __init__(self):
         """Constructor"""
-        Account.__init__(self)
+        super(Account_AShare, self).__init__()
 
     #----------------------------------------------------------------------
     def cashAmount(self): # returns (avail, total)

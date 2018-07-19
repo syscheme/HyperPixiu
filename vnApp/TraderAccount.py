@@ -21,9 +21,10 @@ from vnpy.trader.vtGateway import VtSubscribeReq, VtOrderReq, VtCancelOrderReq, 
 from vnpy.trader.vtFunction import todayDate, getJsonPath
 
 from .Strategy import STRATEGY_CLASS
+from .Account import *
 
 ########################################################################
-class TraderAccount(object):
+class TraderAccount(Account):
     """CTA策略引擎"""
     settingFileName = 'CTA_setting.json'
     settingfilePath = getJsonPath(settingFileName, __file__)
@@ -34,7 +35,7 @@ class TraderAccount(object):
     def __init__(self, mainEngine, eventEngine):
         """Constructor"""
 
-        Account.__init__(self)
+        super(TraderAccount, self).__init__()
 
         self.mainEngine  = mainEngine
         self.eventEngine = eventEngine

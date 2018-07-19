@@ -20,12 +20,11 @@ from vnpy.trader.vtObject import VtTickData, VtBarData
 from vnpy.trader.vtGateway import VtSubscribeReq, VtOrderReq, VtCancelOrderReq, VtLogData
 from vnpy.trader.vtFunction import todayDate, getJsonPath
 
-from .Base import *
-from .strategy import STRATEGY_CLASS
+from .Strategy import STRATEGY_CLASS
 
 
 ########################################################################
-class Engine(object):
+class TraderAccount(object):
     """CTA策略引擎"""
     settingFileName = 'CTA_setting.json'
     settingfilePath = getJsonPath(settingFileName, __file__)
@@ -35,7 +34,10 @@ class Engine(object):
     #----------------------------------------------------------------------
     def __init__(self, mainEngine, eventEngine):
         """Constructor"""
-        self.mainEngine = mainEngine
+
+        Account.__init__(self)
+
+        self.mainEngine  = mainEngine
         self.eventEngine = eventEngine
         
         # 当前日期
@@ -54,15 +56,6 @@ class Engine(object):
         # key为vtOrderID，value为strategy对象
         self.orderStrategyDict = {}     
         
-        # 本地停止单编号计数
-        self.stopOrderCount = 0
-        # stopOrderID = STOPORDERPREFIX + str(stopOrderCount)
-        
-        # 本地停止单字典
-        # key为stopOrderID，value为stopOrder对象
-        self.stopOrderDict = {}             # 停止单撤销后不会从本字典中删除
-        self.workingStopOrderDict = {}      # 停止单撤销后会从本字典中删除
-        
         # 保存策略名称和委托号列表的字典
         # key为name，value为保存orderID（限价+本地停止）的集合
         self.strategyOrderDict = {}
@@ -74,7 +67,7 @@ class Engine(object):
         self.engineType = ENGINETYPE_TRADING
         
         # 注册日式事件类型
-        self.mainEngine.registerLogEvent(EVENT_CTA_LOG)
+        self.mainEngine.registerLogEvent(EVENT_LOG)
         
         # 注册事件监听
         self.registerEvent()
@@ -365,7 +358,7 @@ class Engine(object):
         log = VtLogData()
         log.logContent = content
         log.gatewayName = 'CTA_STRATEGY'
-        event = Event(type_=EVENT_CTA_LOG)
+        event = Event(type_=EVENT_LOG)
         event.dict_['data'] = log
         self.eventEngine.put(event)   
     
@@ -426,18 +419,19 @@ class Engine(object):
     #----------------------------------------------------------------------
     def initStrategy(self, name):
         """初始化策略"""
-        if name in self.strategyDict:
+        if not name in self.strategyDict:
             strategy = self.strategyDict[name]
+            self.logBT(u'策略实例不存在：%s' %name)
+            return
             
-            if not strategy.inited:
-                strategy.inited = True
-                self.callStrategyFunc(strategy, strategy.onInit)
-                self.loadSyncData(strategy)                             # 初始化完成后加载同步数据
-                self.subscribeMarketData(strategy)                      # 加载同步数据后再订阅行情
-            else:
-                self.logBT(u'请勿重复初始化策略实例：%s' %name)
-        else:
-            self.logBT(u'策略实例不存在：%s' %name)        
+        if strategy and strategy.inited:
+            self.logBT(u'请勿重复初始化策略实例：%s' %name)
+            return
+
+        strategy.inited = True
+        self.callStrategyFunc(strategy, strategy.onInit)
+        self.loadSyncData(strategy)                             # 初始化完成后加载同步数据
+        self.subscribeMarketData(strategy)                      # 加载同步数据后再订阅行情
 
     #---------------------------------------------------------------------
     def startStrategy(self, name):
@@ -556,13 +550,13 @@ class Engine(object):
         strategy = self.strategyDict[name]
         d = {k:strategy.__getattribute__(k) for k in strategy.varList}
         
-        event = Event(EVENT_CTA_STRATEGY+name)
+        event = Event(EVENT_STRATEGY+name)
         event.dict_['data'] = d
         self.eventEngine.put(event)
         
         d2 = {k:str(v) for k,v in d.items()}
         d2['name'] = name
-        event2 = Event(EVENT_CTA_STRATEGY)
+        event2 = Event(EVENT_STRATEGY)
         event2.dict_['data'] = d2
         self.eventEngine.put(event2)        
         

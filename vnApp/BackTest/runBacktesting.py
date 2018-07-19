@@ -5,8 +5,8 @@
 cd ${workspaceFolder} ; env "PYTHONPATH=${workspaceFolder}:${workspaceFolder}/kits/vnpy" "PYTHONIOENCODING=UTF-8" "PYTHONUNBUFFERED=1" /usr/bin/python2.7 vnApp/BackTest/runBacktesting.py
 """
 from __future__ import division
-from vnApp.Strategy.BacktestAccount import BacktestAccount, MINUTE_DB_NAME
-import vnApp.Strategy.strategy as tg
+from   vnApp.BacktestAccount import BacktestAccount, MINUTE_DB_NAME
+import vnApp.Strategy as tg
 import os
 import gc
 from time import sleep
@@ -15,59 +15,59 @@ from time import sleep
 # symbols= ["601188", "601199", "601208", "601216", "601218", "601222", "601231", "601233", "601238", "601258", "601268", "601288", "601299", "601311", "601313", "601318", "601328", "601333", "601336", "601339", "601369", "601377", "601388", "601390", "601398", "601515", "601518", "601555", "601558", "601566", "601567", "601588", "601599", "601600", "601601", "601607", "601608", "601616", "601618", "601628", "601633", "601636", "601666", "601668", "601669", "601677", "601678", "601688", "601699", "601700", "601717", "601718", "601727", "601766", "601777", "601788", "601789", "601798", "601799", "601800", "601801", "601808", "601818", "601857", "601866", "601872", "601877", "601880", "601886", "601888", "601890", "601898", "601899", "601901", "601908", "601918", "601919", "601928", "601929", "601933", "601939", "601958", "601965", "601988", "601989", "601991", "601992", "601996", "601998", "601999"]
 symbols= ["601000"]
 
-#----------------------------------------------------------------------
+#---------------------------------------------------------------------
 def backTestSymbol(symbol, startDate, endDate=''):
     """将Multicharts导出的csv格式的历史数据插入到Mongo数据库中"""
-    from vnApp.Strategy.strategy.strategyKingKeltner import KkStrategy
-    from vnApp.Strategy.strategy.strategyBollChannel import BollChannelStrategy
+    from vnApp.Strategy.strategyKingKeltner import KkStrategy
+    from vnApp.Strategy.strategyBollChannel import BollChannelStrategy
 
     # 创建回测引擎
-    engine = BacktestAccount()
+    account = BacktestAccount()
     
     # 设置引擎的回测模式为K线
-    engine.setBacktestingMode(engine.BAR_MODE)
+    account.setBacktestingMode(account.BAR_MODE)
 
     # 设置产品相关参数
-    # engine.setSlippage(0.2)     # 股指1跳
-    engine.setRate(30/10000)   # 万30
-    engine.setSize(100)         # 股指合约大小 
-    engine.setPriceTick(0.2)    # 股指最小价格变动
+    # account.setSlippage(0.2)     # 股指1跳
+    account.setRate(30/10000)   # 万30
+    account.setSize(100)         # 股指合约大小 
+    account.setPriceTick(0.2)    # 股指最小价格变动
     
     # 设置回测用的数据起始日期
-    engine.setStartDate(startDate)
-    engine.setEndDate(endDate)
-    engine.setDatabase('VnTrader_1Min_Db', symbol)
+    account.setStartDate(startDate)
+    account.setEndDate(endDate)
+    account.setDatabase('VnTrader_1Min_Db', symbol)
     
     # 在引擎中创建策略对象
     d = {}
     strategyList = [BollChannelStrategy] # , KkStrategy]
-    engine.batchBacktesting(strategyList, d)
-    # engine.initStrategy(KkStrategy, d)
+    account.batchBacktesting(strategyList, d)
+    # account.initStrategy(KkStrategy, d)
     
     # # 开始跑回测
-    # engine.runBacktesting()
+    # account.runBacktesting()
     
     # # 显示回测结果
-    # engine.showBacktestingResult()
+    # account.showBacktestingResult()
 
 #----------------------------------------------------------------------
 def backTestSymbolByAllStategy(symbol, startDate):
 
     # 创建回测引擎
-    engine = BacktestingEngine()
+    account = BacktestingEngine()
     
     # 设置引擎的回测模式为K线
-    engine.setBacktestingMode(engine.BAR_MODE)
+    account.setBacktestingMode(account.BAR_MODE)
 
     # 设置产品相关参数
-    engine.setSlippage(0.2)     # 股指1跳
-    engine.setRate(0.3/10000)   # 万0.3
-    engine.setSize(100)         # 股指合约大小 
-    engine.setPriceTick(0.2)    # 股指最小价格变动
+    account.setSlippage(0.2)     # 股指1跳
+    account.setRate(0.3/10000)   # 万0.3
+    account.setSize(100)         # 股指合约大小 
+    account.setPriceTick(0.2)    # 股指最小价格变动
     
     # 设置回测用的数据起始日期
-    engine.setStartDate(startDate)
-    engine.setDatabase(MINUTE_DB_NAME, symbol)
+    account.setStartDate(startDate)
+    account.setDatabase(MINUTE_DB_NAME, symbol)
     
     # 在引擎中创建策略对象
     strategyList = []
@@ -75,7 +75,7 @@ def backTestSymbolByAllStategy(symbol, startDate):
         strategyList.append(tg.STRATEGY_CLASS[k])
 
     d = {}
-    engine.batchBacktesting(strategyList, d)
+    account.batchBacktesting(strategyList, d)
 
 #----------------------------------------------------------------------
 

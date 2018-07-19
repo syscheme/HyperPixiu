@@ -9,7 +9,7 @@ from vnpy.event import Event
 from vnpy.trader.vtEvent import *
 from vnpy.trader.uiBasicWidget import QtGui, QtCore, QtWidgets, BasicCell
 
-from .Base import EVENT_CTA_LOG, EVENT_CTA_STRATEGY
+from .Account import EVENT_LOG, EVENT_STRATEGY
 from .language import text
 
 
@@ -135,7 +135,7 @@ class StrategyManager(QtWidgets.QGroupBox):
     def registerEvent(self):
         """注册事件监听"""
         self.signal.connect(self.updateVar)
-        self.eventEngine.register(EVENT_CTA_STRATEGY+self.name, self.signal.emit)
+        self.eventEngine.register(EVENT_STRATEGY+self.name, self.signal.emit)
     
     #----------------------------------------------------------------------
     def init(self):
@@ -264,7 +264,7 @@ class EngineManager(QtWidgets.QWidget):
     def registerEvent(self):
         """注册事件监听"""
         self.signal.connect(self.updateAShLog)
-        self.eventEngine.register(EVENT_CTA_LOG, self.signal.emit)
+        self.eventEngine.register(EVENT_LOG, self.signal.emit)
 
     
     

@@ -29,13 +29,12 @@ from vnpy.trader.vtObject import VtTickData, VtBarData
 from vnpy.trader.vtConstant import *
 from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 
-from .Base import *
-from .Account import *
+from vnApp.Account import *
 
 ########################################################################
-class BacktestAccount(object):
+class BacktestAccount(Account):
     """
-    CTA回测引擎
+    回测Account
     函数接口和策略引擎保持一样，
     从而实现同一套代码从回测到实盘。
     """
@@ -46,15 +45,20 @@ class BacktestAccount(object):
     #----------------------------------------------------------------------
     def __init__(self):
         """Constructor"""
-        # 本地停止单
-        self.stopOrderCount = 0     # 编号计数：stopOrderID = STOPORDERPREFIX + str(stopOrderCount)
+
+        Account.__init__(self)
+
+        self.capital = 100000       # 回测时的起始本金（默认10万）
+        self._casheAvail = 0        # 起始cache = capital
+        self.slippage = 0           # 回测时假设的滑点
+        self.rate = 20/10000        # 回测时假设的佣金比例（适用于百分比佣金）
+        self.size = 100             # 合约大小，默认为1    
+        self.priceTick = 0          # 价格最小变动 
 
         self.clearResult()
 
-        # 本地停止单字典, key为stopOrderID，value为stopOrder对象
-        self.stopOrderDict = {}             # 停止单撤销后不会从本字典中删除
-        self.workingStopOrderDict = {}      # 停止单撤销后会从本字典中删除
-        
+        # 回测相关属性
+        # -----------------------------------------
         self.engineType = ENGINETYPE_BACKTESTING    # 引擎类型为回测
         
         self.strategy = None        # 回测策略
@@ -72,13 +76,6 @@ class BacktestAccount(object):
         self._thisTradeDate = None
         self._lastTradeDate = None
 
-        self.capital = 100000       # 回测时的起始本金（默认10万）
-        self._casheAvail = 0       # 起始cache = capital
-        self.slippage = 0           # 回测时假设的滑点
-        self.rate = 0               # 回测时假设的佣金比例（适用于百分比佣金）
-        self.size = 100             # 合约大小，默认为1    
-        self.priceTick = 0          # 价格最小变动 
-        
         self.dbClient = None        # 数据库客户端
         self.dbCursor = None        # 数据库指针
         
@@ -90,24 +87,13 @@ class BacktestAccount(object):
         self.dataEndDate = None         # 回测数据结束日期，datetime对象
         self.strategyStartDate = None   # 策略启动日期（即前面的数据用于初始化），datetime对象
         
-        self.limitOrderCount = 0                    # 限价单编号
-        self.limitOrderDict = OrderedDict()         # 限价单字典
-        self.workingLimitOrderDict = OrderedDict()  # 活动限价单字典，用于进行撮合用
-        
-        self.tradeCount = 0             # 成交编号
-        self.tradeDict = OrderedDict()  # 成交字典
-        
-        self.logList = []               # 日志记录
-        
         # 当前最新数据，用于模拟成交用
         self.tick = None
-        self.bar = None
-        self.dt = None      # 最新的时间
-        self._BTestId = ""
+        self.bar  = None
+        self.dt   = None      # 最新的时间
         
         # 日线回测结果计算用
         self.dailyResultDict = OrderedDict()
-
     
     #------------------------------------------------
     # 通用功能
@@ -128,11 +114,6 @@ class BacktestAccount(object):
         newPrice = round(price/self.priceTick, 0) * self.priceTick
         return newPrice
 
-    #----------------------------------------------------------------------
-    def output(self, content):
-        """输出内容"""
-        print str(datetime.now()) + " BT[" + self._BTestId + "] " + content     
-    
     #------------------------------------------------
     # 参数设置相关
     #------------------------------------------------
@@ -160,6 +141,12 @@ class BacktestAccount(object):
             self.dataEndDate = self.dataEndDate.replace(hour=23, minute=59)    
         
     #----------------------------------------------------------------------
+    def cashAmount(self): # returns (avail, total)
+        return (self._cashAvail, 0)
+
+    def positionOf(self, vtSymbol): # returns (availVol, totalVol)
+        return (0, 0)
+
     def getCashAvailable(self):
         return self._cashAvail
 
@@ -209,7 +196,7 @@ class BacktestAccount(object):
         self.dbClient = pymongo.MongoClient(globalSetting['mongoHost'], globalSetting['mongoPort'])
         collection = self.dbClient[self.dbName][self.symbol]          
 
-        self.output(u'开始载入数据')
+        self.stdout(u'开始载入数据')
       
         # 首先根据回测模式，确认要使用的数据类
         if self.mode == self.BAR_MODE:
@@ -240,18 +227,18 @@ class BacktestAccount(object):
         self.dbCursor = collection.find(flt).sort('datetime')
         
         cRows = initCursor.count() + self.dbCursor.count()
-        self.output(u'载入完成，数据量：%s' %cRows)
+        self.stdout(u'载入完成，数据量：%s' %cRows)
         return cRows
         
     #----------------------------------------------------------------------
     def runBacktesting(self):
         """运行回测"""
 
-        self._BTestId = "%s.%s" % (self.symbol, self.strategy.name)
+        self._accountId = "%s.%s" % (self.symbol, self.strategy.name)
 
         # 载入历史数据
         if self.loadHistoryData() <=0 :
-            self.output(u'Quit testing due to empty data')
+            self.stdout(u'Quit testing due to empty data')
             return
         
         # 首先根据回测模式，确认要使用的数据类
@@ -264,17 +251,17 @@ class BacktestAccount(object):
 
         self._cashAvail = self.capital
 
-        self.output(u'开始回测')
+        self.stdout(u'开始回测')
         
         self.strategy.inited = True
         self.strategy.onInit()
-        self.output(u'策略初始化完成')
+        self.stdout(u'策略初始化完成')
         
         self.strategy.trading = True
         self.strategy.onStart()
-        self.output(u'策略启动完成')
+        self.stdout(u'策略启动完成')
         
-        self.output(u'开始回放数据')
+        self.stdout(u'开始回放数据')
 
         for d in self.dbCursor:
             data = dataClass()
@@ -288,7 +275,7 @@ class BacktestAccount(object):
             self._execEndClose = self.tick.priceTick
             self._execEnd      = self.tick.date
 
-        self.output(u'数据回放结束')
+        self.stdout(u'数据回放结束')
         
     #----------------------------------------------------------------------
     def OnNewBar(self, bar):
@@ -300,7 +287,6 @@ class BacktestAccount(object):
             self._account._thisTradeDate =bar.date
             self.strategy._posAvail = self.strategy.pos
             self.strategy.onDayOpen(bar.date)
-
 
         if self.bar ==None:
             self._execStartClose = bar.close
@@ -444,7 +430,7 @@ class BacktestAccount(object):
                 self.strategy.onTrade(trade)
             
                 self.tradeDict[tradeID] = trade
-                self.logBT('limCrossed:pos(%s) %s[%s,%s,%sx%s] by order: %s[%sx%s]' %
+                self.log('limCrossed:pos(%s) %s[%s,%s,%sx%s] by order: %s[%sx%s]' %
                     (self.strategy.pos, tradeID, trade.direction, trade.vtSymbol, trade.price, trade.volume, orderID, order.price,order.totalVolume))
             
                 # 推送委托数据
@@ -572,17 +558,17 @@ class BacktestAccount(object):
         order.vtOrderID = orderID
         order.orderTime = self.dt.strftime('%H:%M:%S')
         
-        # CTA委托类型映射
-        if orderType == CTAORDER_BUY:
+        # 委托类型映射
+        if orderType == ORDER_BUY:
             order.direction = DIRECTION_LONG
             order.offset = OFFSET_OPEN
-        elif orderType == CTAORDER_SELL:
+        elif orderType == ORDER_SELL:
             order.direction = DIRECTION_SHORT
             order.offset = OFFSET_CLOSE
-        elif orderType == CTAORDER_SHORT:
+        elif orderType == ORDER_SHORT:
             order.direction = DIRECTION_SHORT
             order.offset = OFFSET_OPEN
-        elif orderType == CTAORDER_COVER:
+        elif orderType == ORDER_COVER:
             order.direction = DIRECTION_LONG
             order.offset = OFFSET_CLOSE     
         
@@ -681,13 +667,6 @@ class BacktestAccount(object):
         return self.initData
     
     #----------------------------------------------------------------------
-    def logBT(self, content):
-        """记录日志"""
-        log = str(self.dt) + ' ' + content 
-        self.logList.append(log)
-        self.output(log)
-    
-    #----------------------------------------------------------------------
     def cancelAll(self, name):
         """全部撤单"""
         # 撤销限价单
@@ -717,7 +696,7 @@ class BacktestAccount(object):
         """
         计算回测结果
         """
-        self.output(u'计算回测结果')
+        self.stdout(u'计算回测结果')
         
         # 首先基于回测后的成交记录，计算每笔交易的盈亏
         self.clearResult()
@@ -856,7 +835,7 @@ class BacktestAccount(object):
     def settleResult(self):
         # 检查是否有交易
         if not self.resultList:
-            self.output(u'无交易结果')
+            self.stdout(u'无交易结果')
             return {}
         
         # 然后基于每笔交易的结果，我们可以计算具体的盈亏曲线和最大回撤等        
@@ -969,7 +948,7 @@ class BacktestAccount(object):
         plt.tight_layout()
         plt.xticks(xindex, tradeTimeIndex, rotation=30)  # 旋转15
         
-        plt.savefig('BT-%s.png' % self._BTestId, dpi=400, bbox_inches='tight')
+        plt.savefig('BT-%s.png' % self._accountId, dpi=400, bbox_inches='tight')
         # plt.show()
         plt.close()
 
@@ -983,22 +962,22 @@ class BacktestAccount(object):
             originGain = (self._execEndClose - self._execStartClose)*100/self._execStartClose
 
         # 输出
-        self.output('-' * 30)
-        self.output(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execStart, self._execStartClose, self._execEnd, self._execEndClose, formatNumber(originGain)))
-        self.output(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (d['timeList'][0], self._execStartClose, d['timeList'][-1], self._execEndClose))
+        self.stdout('-' * 30)
+        self.stdout(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execStart, self._execStartClose, self._execEnd, self._execEndClose, formatNumber(originGain)))
+        self.stdout(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (d['timeList'][0], self._execStartClose, d['timeList'][-1], self._execEndClose))
         
-        self.output(u'总交易次数：\t%s' % formatNumber(d['totalResult'],0))        
-        self.output(u'总盈亏：\t%s' % formatNumber(d['capital']))
-        self.output(u'最大回撤: \t%s' % formatNumber(min(d['drawdownList'])))                
+        self.stdout(u'总交易次数：\t%s' % formatNumber(d['totalResult'],0))        
+        self.stdout(u'总盈亏：\t%s' % formatNumber(d['capital']))
+        self.stdout(u'最大回撤: \t%s' % formatNumber(min(d['drawdownList'])))                
         
-        self.output(u'平均每笔盈利：\t%s' %formatNumber(d['capital']/d['totalResult']))
-        self.output(u'平均每笔滑点：\t%s' %formatNumber(d['totalSlippage']/d['totalResult']))
-        self.output(u'平均每笔佣金：\t%s' %formatNumber(d['totalCommission']/d['totalResult']))
+        self.stdout(u'平均每笔盈利：\t%s' %formatNumber(d['capital']/d['totalResult']))
+        self.stdout(u'平均每笔滑点：\t%s' %formatNumber(d['totalSlippage']/d['totalResult']))
+        self.stdout(u'平均每笔佣金：\t%s' %formatNumber(d['totalCommission']/d['totalResult']))
         
-        self.output(u'胜率\t\t%s%%' %formatNumber(d['winningRate']))
-        self.output(u'盈利交易平均值\t%s' %formatNumber(d['averageWinning']))
-        self.output(u'亏损交易平均值\t%s' %formatNumber(d['averageLosing']))
-        self.output(u'盈亏比：\t%s' %formatNumber(d['profitLossRatio']))
+        self.stdout(u'胜率\t\t%s%%' %formatNumber(d['winningRate']))
+        self.stdout(u'盈利交易平均值\t%s' %formatNumber(d['averageWinning']))
+        self.stdout(u'亏损交易平均值\t%s' %formatNumber(d['averageLosing']))
+        self.stdout(u'盈亏比：\t%s' %formatNumber(d['profitLossRatio']))
 
         # self.plotBacktestingResult(d)
     
@@ -1022,7 +1001,7 @@ class BacktestAccount(object):
         self.tradeDict.clear()
 
         self.clearResult()
-        self._BTestId = ""
+        self._accountId = ""
 
     #----------------------------------------------------------------------
     def batchBacktesting(self, strategyList, d):
@@ -1049,14 +1028,14 @@ class BacktestAccount(object):
         
         # 检查参数设置问题
         if not settingList or not targetName:
-            self.output(u'优化设置有问题，请检查')
+            self.stdout(u'优化设置有问题，请检查')
         
         # 遍历优化
         self.resultList =[]
         for setting in settingList:
             self.clearBackTesting()
-            self.output('-' * 30)
-            self.output('setting: %s' %str(setting))
+            self.stdout('-' * 30)
+            self.stdout('setting: %s' %str(setting))
             self.initStrategy(strategyClass, setting)
             self.runBacktesting()
             df = self.calculateDailyResult()
@@ -1069,10 +1048,10 @@ class BacktestAccount(object):
         
         # 显示结果
         self.resultList.sort(reverse=True, key=lambda result:result[1])
-        self.output('-' * 30)
-        self.output(u'优化结果：')
+        self.stdout('-' * 30)
+        self.stdout(u'优化结果：')
         for result in self.resultList:
-            self.output(u'参数：%s，目标：%s' %(result[0], result[1]))    
+            self.stdout(u'参数：%s，目标：%s' %(result[0], result[1]))    
         return self.resultList
             
     #----------------------------------------------------------------------
@@ -1084,7 +1063,7 @@ class BacktestAccount(object):
         
         # 检查参数设置问题
         if not settingList or not targetName:
-            self.output(u'优化设置有问题，请检查')
+            self.stdout(u'优化设置有问题，请检查')
         
         # 多进程优化，启动一个对应CPU核心数量的进程池
         pool = multiprocessing.Pool(multiprocessing.cpu_count())
@@ -1102,10 +1081,10 @@ class BacktestAccount(object):
         # 显示结果
         resultList = [res.get() for res in l]
         resultList.sort(reverse=True, key=lambda result:result[1])
-        self.output('-' * 30)
-        self.output(u'优化结果：')
+        self.stdout('-' * 30)
+        self.stdout(u'优化结果：')
         for result in resultList:
-            self.output(u'参数：%s，目标：%s' %(result[0], result[1]))    
+            self.stdout(u'参数：%s，目标：%s' %(result[0], result[1]))    
             
         return resultList
 
@@ -1122,7 +1101,7 @@ class BacktestAccount(object):
     #----------------------------------------------------------------------
     def calculateDailyResult(self):
         """计算按日统计的交易结果"""
-        self.output(u'计算按日统计结果')
+        self.stdout(u'计算按日统计结果')
 
         if self.tradeDict ==None or len(self.tradeDict) <=0:
             return None
@@ -1238,42 +1217,42 @@ class BacktestAccount(object):
             df = self.calculateDailyResult()
             df, result = self.calculateDailyStatistics(df)
 
-        df.to_csv(self._BTestId+'.csv')
+        df.to_csv(self._accountId+'.csv')
             
         originGain = 0.0
         if self._execStartClose >0 :
             originGain = (self._execEndClose - self._execStartClose)*100/self._execStartClose
 
         # 输出统计结果
-        self.output('-' * 30)
-        self.output(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execStart, self._execStartClose, self._execEnd, self._execEndClose, formatNumber(originGain)))
-        self.output(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (result['startDate'], self._execStartClose, result['endDate'], self._execEndClose))
+        self.stdout('-' * 30)
+        self.stdout(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execStart, self._execStartClose, self._execEnd, self._execEndClose, formatNumber(originGain)))
+        self.stdout(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (result['startDate'], self._execStartClose, result['endDate'], self._execEndClose))
         
-        self.output(u'交易日数：\t%s (盈利%s,亏损%s)' % (result['totalDays'], result['profitDays'], result['lossDays']))
+        self.stdout(u'交易日数：\t%s (盈利%s,亏损%s)' % (result['totalDays'], result['profitDays'], result['lossDays']))
         
-        self.output(u'起始资金：\t%s' % formatNumber(self.capital))
-        self.output(u'结束资金：\t%s' % formatNumber(result['endBalance']))
+        self.stdout(u'起始资金：\t%s' % formatNumber(self.capital))
+        self.stdout(u'结束资金：\t%s' % formatNumber(result['endBalance']))
     
-        self.output(u'总收益率：\t%s%%' % formatNumber(result['totalReturn']))
-        self.output(u'年化收益：\t%s%%' % formatNumber(result['annualizedReturn']))
-        self.output(u'总盈亏：\t%s' % formatNumber(result['totalNetPnl']))
-        self.output(u'最大回撤: \t%s' % formatNumber(result['maxDrawdown']))   
-        self.output(u'百分比最大回撤: %s%%' % formatNumber(result['maxDdPercent']))   
+        self.stdout(u'总收益率：\t%s%%' % formatNumber(result['totalReturn']))
+        self.stdout(u'年化收益：\t%s%%' % formatNumber(result['annualizedReturn']))
+        self.stdout(u'总盈亏：\t%s' % formatNumber(result['totalNetPnl']))
+        self.stdout(u'最大回撤: \t%s' % formatNumber(result['maxDrawdown']))   
+        self.stdout(u'百分比最大回撤: %s%%' % formatNumber(result['maxDdPercent']))   
         
-        self.output(u'总手续费：\t%s' % formatNumber(result['totalCommission']))
-        self.output(u'总滑点：\t%s' % formatNumber(result['totalSlippage']))
-        self.output(u'总成交金额：\t%s' % formatNumber(result['totalTurnover']))
-        self.output(u'总成交笔数：\t%s' % formatNumber(result['totalTradeCount'],0))
+        self.stdout(u'总手续费：\t%s' % formatNumber(result['totalCommission']))
+        self.stdout(u'总滑点：\t%s' % formatNumber(result['totalSlippage']))
+        self.stdout(u'总成交金额：\t%s' % formatNumber(result['totalTurnover']))
+        self.stdout(u'总成交笔数：\t%s' % formatNumber(result['totalTradeCount'],0))
         
-        self.output(u'日均盈亏：\t%s' % formatNumber(result['dailyNetPnl']))
-        self.output(u'日均手续费：\t%s' % formatNumber(result['dailyCommission']))
-        self.output(u'日均滑点：\t%s' % formatNumber(result['dailySlippage']))
-        self.output(u'日均成交金额：\t%s' % formatNumber(result['dailyTurnover']))
-        self.output(u'日均成交笔数：\t%s' % formatNumber(result['dailyTradeCount']))
+        self.stdout(u'日均盈亏：\t%s' % formatNumber(result['dailyNetPnl']))
+        self.stdout(u'日均手续费：\t%s' % formatNumber(result['dailyCommission']))
+        self.stdout(u'日均滑点：\t%s' % formatNumber(result['dailySlippage']))
+        self.stdout(u'日均成交金额：\t%s' % formatNumber(result['dailyTurnover']))
+        self.stdout(u'日均成交笔数：\t%s' % formatNumber(result['dailyTradeCount']))
         
-        self.output(u'日均收益率：\t%s%%' % formatNumber(result['dailyReturn']))
-        self.output(u'收益标准差：\t%s%%' % formatNumber(result['returnStd']))
-        self.output(u'Sharpe Ratio：\t%s' % formatNumber(result['sharpeRatio']))
+        self.stdout(u'日均收益率：\t%s%%' % formatNumber(result['dailyReturn']))
+        self.stdout(u'收益标准差：\t%s%%' % formatNumber(result['returnStd']))
+        self.stdout(u'Sharpe Ratio：\t%s' % formatNumber(result['sharpeRatio']))
         
         # self.plotDailyResult(df)
 
@@ -1285,7 +1264,7 @@ class BacktestAccount(object):
         fig = plt.figure(figsize=(10, 16))
         
         pBalance = plt.subplot(4, 1, 1)
-        pBalance.set_title(self._BTestId + ' Balance')
+        pBalance.set_title(self._accountId + ' Balance')
         df['balance'].plot(legend=True)
         
         pDrawdown = plt.subplot(4, 1, 2)
@@ -1300,7 +1279,7 @@ class BacktestAccount(object):
         pKDE.set_title('Daily Pnl Distribution')
         df['netPnl'].hist(bins=50)
         
-        # plt.savefig('DR-%s.png' % self._BTestId, dpi=400, bbox_inches='tight')
+        # plt.savefig('DR-%s.png' % self._accountId, dpi=400, bbox_inches='tight')
         plt.show()
         plt.close()
        
@@ -1497,21 +1476,21 @@ def optimize(strategyClass, setting, targetName,
              dbName, symbol):
 
     """多进程优化时跑在每个进程中运行的函数"""
-    engine = BacktestAccount()
-    engine.setBacktestingMode(mode)
-    engine.setStartDate(startDate, initDays)
-    engine.setEndDate(endDate)
-    engine.setSlippage(slippage)
-    engine.setRate(rate)
-    engine.setSize(size)
-    engine.setPriceTick(priceTick)
-    engine.setDatabase(dbName, symbol)
+    account = BacktestAccount()
+    account.setBacktestingMode(mode)
+    account.setStartDate(startDate, initDays)
+    account.setEndDate(endDate)
+    account.setSlippage(slippage)
+    account.setRate(rate)
+    account.setSize(size)
+    account.setPriceTick(priceTick)
+    account.setDatabase(dbName, symbol)
     
-    engine.initStrategy(strategyClass, setting)
-    engine.runBacktesting()
+    account.initStrategy(strategyClass, setting)
+    account.runBacktesting()
     
-    df = engine.calculateDailyResult()
-    df, d = engine.calculateDailyStatistics(df)
+    df = account.calculateDailyResult()
+    df, d = account.calculateDailyStatistics(df)
     try:
         targetValue = d[targetName]
     except KeyError:

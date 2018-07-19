@@ -9,11 +9,11 @@ from __future__ import division
 from __future__ import print_function
 
 
-from vnApp.Strategy.BacktestAccount import BacktestAccount, MINUTE_DB_NAME, OptimizationSetting
+from vnApp.BacktestAccount import BacktestAccount, MINUTE_DB_NAME, OptimizationSetting
 
 
 if __name__ == '__main__':
-    from vnApp.Strategy.strategy.strategyAtrRsi import AtrRsiStrategy
+    from vnApp.Strategy.strategyAtrRsi import AtrRsiStrategy
     
     # 创建回测引擎
     engine = BacktestAccount()

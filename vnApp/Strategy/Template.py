@@ -10,7 +10,7 @@ import talib
 from vnpy.trader.vtConstant import *
 from vnpy.trader.vtObject import VtBarData
 
-from .Base import *
+from ..Account import *
 
 
 ########################################################################

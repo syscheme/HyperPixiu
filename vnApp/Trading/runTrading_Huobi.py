@@ -15,7 +15,7 @@ from datetime import datetime, time
 from vnpy.event import EventEngine2
 from vnpy.trader.vtEvent  import EVENT_LOG, EVENT_ERROR
 from vnpy.trader.vtEngine import MainEngine, LogEngine
-from vnpy.trader.gateway  import ctpGateway
+from vnpy.trader.gateway  import huobiGateway
 import vnApp.Strategy         as vnStategy
 from vnApp.Strategy.Base  import EVENT_LOG
 
@@ -39,13 +39,13 @@ def runChildProcess():
     le.addConsoleHandler()
     le.addFileHandler()
     
-    le.info(u'启动CTA策略运行子进程')
+    le.info(u'启动vnApp策略运行子进程')
     
     ee = EventEngine2()
     le.info(u'事件引擎创建成功')
     
     me = MainEngine(ee)
-    me.addGateway(ctpGateway)
+    me.addGateway(huobiGateway)
     me.addApp(vnStategy)
     le.info(u'主引擎创建成功')
     
@@ -54,8 +54,8 @@ def runChildProcess():
     ee.register(EVENT_ERROR, processErrorEvent)
     le.info(u'注册日志事件监听')
     
-    me.connect('CTP')
-    le.info(u'连接CTP接口')
+    me.connect('HuoBI')
+    le.info(u'连接HuoBi接口')
     
     sleep(10)                       # 等待CTP接口初始化
     me.dataEngine.saveContracts()   # 保存合约信息到文件
@@ -63,13 +63,13 @@ def runChildProcess():
     app = me.getApp(vnStategy.appName)
     
     app.loadSetting()
-    le.info(u'CTA策略载入成功')
+    le.info(u'vnApp策略载入成功')
     
     app.initAll()
-    le.info(u'CTA策略初始化成功')
+    le.info(u'vnApp策略初始化成功')
     
     app.startAll()
-    le.info(u'CTA策略启动成功')
+    le.info(u'vnApp策略启动成功')
     
     while True:
         sleep(1)
@@ -82,7 +82,7 @@ def runParentProcess():
     le.setLogLevel(le.LEVEL_INFO)
     le.addConsoleHandler()
     
-    le.info(u'启动CTA策略守护父进程')
+    le.info(u'启动vnApp策略守护父进程')
     
     DAY_START = time(8, 45)         # 日盘启动和停止时间
     DAY_END = time(15, 30)

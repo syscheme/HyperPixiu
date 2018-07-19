@@ -2,6 +2,7 @@
 
 """
 展示如何执行策略回测。
+cd ${workspaceFolder} ; env "PYTHONPATH=${workspaceFolder}:${workspaceFolder}/kits/vnpy" "PYTHONIOENCODING=UTF-8" "PYTHONUNBUFFERED=1" /usr/bin/python2.7 vnApp/BackTest/runBacktesting.py
 """
 from __future__ import division
 from vnApp.Strategy.BacktestAccount import BacktestAccount, MINUTE_DB_NAME

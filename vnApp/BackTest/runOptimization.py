@@ -2,6 +2,7 @@
 
 """
 展示如何执行参数优化。
+cd ${workspaceFolder} ; env "PYTHONPATH=${workspaceFolder}:${workspaceFolder}/kits/vnpy" "PYTHONIOENCODING=UTF-8" "PYTHONUNBUFFERED=1" /usr/bin/python2.7 vnApp/BackTest/runOptimization.py
 """
 
 from __future__ import division

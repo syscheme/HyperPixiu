@@ -1,7 +1,7 @@
 # encoding: UTF-8
 
 '''
-本文件中包含的是CTA模块的回测引擎，回测引擎的API和CTA引擎一致，
+本文件中包含的是vnApp模块的回测引擎，回测引擎的API和CTA引擎一致，
 可以使用和实盘相同的代码进行回测。
 '''
 from __future__ import division
@@ -32,7 +32,7 @@ from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 from vnApp.Account import *
 
 ########################################################################
-class BacktestAccount(Account):
+class BTAccount_AShare(Account_AShare):
     """
     回测Account
     函数接口和策略引擎保持一样，
@@ -46,7 +46,7 @@ class BacktestAccount(Account):
     def __init__(self):
         """Constructor"""
 
-        Account.__init__(self)
+        Account_AShare.__init__(self)
 
         self.capital = 100000       # 回测时的起始本金（默认10万）
         self._casheAvail = 0        # 起始cache = capital
@@ -60,9 +60,9 @@ class BacktestAccount(Account):
         # 回测相关属性
         # -----------------------------------------
         self.engineType = ENGINETYPE_BACKTESTING    # 引擎类型为回测
-        
-        self.strategy = None        # 回测策略
         self.mode = self.BAR_MODE   # 回测模式，默认为K线
+        
+        self.strategyBT = ""       # name of 回测策略
         
         self.startDate = ''
         self.initDays = 0        
@@ -72,9 +72,6 @@ class BacktestAccount(Account):
         self._execEnd = ''
         self._execStartClose = 0.0
         self._execEndClose = 0.0
-        self._account =self # TODO: we are going to separate Account info from this BacktestAccount
-        self._thisTradeDate = None
-        self._lastTradeDate = None
 
         self.dbClient = None        # 数据库客户端
         self.dbCursor = None        # 数据库指针
@@ -91,13 +88,16 @@ class BacktestAccount(Account):
         self.tick = None
         self.bar  = None
         self.dt   = None      # 最新的时间
-        
+
         # 日线回测结果计算用
         self.dailyResultDict = OrderedDict()
     
     #------------------------------------------------
     # 通用功能
     #------------------------------------------------    
+    @property
+    def strategy(self):
+        return self.strategyDict[self.strategyName]
 
     #----------------------------------------------------------------------
     def clearResult(self):
@@ -140,16 +140,6 @@ class BacktestAccount(Account):
             # 若不修改时间则会导致不包含dataEndDate当天数据
             self.dataEndDate = self.dataEndDate.replace(hour=23, minute=59)    
         
-    #----------------------------------------------------------------------
-    def cashAmount(self): # returns (avail, total)
-        return (self._cashAvail, 0)
-
-    def positionOf(self, vtSymbol): # returns (availVol, totalVol)
-        return (0, 0)
-
-    def getCashAvailable(self):
-        return self._cashAvail
-
     #----------------------------------------------------------------------
     def setBacktestingMode(self, mode):
         """设置回测模式"""
@@ -234,7 +224,7 @@ class BacktestAccount(Account):
     def runBacktesting(self):
         """运行回测"""
 
-        self._accountId = "%s.%s" % (self.symbol, self.strategy.name)
+        self._accountId = "BT_%s.%s" % (self.symbol, self.strategy.name)
 
         # 载入历史数据
         if self.loadHistoryData() <=0 :
@@ -278,15 +268,21 @@ class BacktestAccount(Account):
         self.stdout(u'数据回放结束')
         
     #----------------------------------------------------------------------
+    def onDayOpen(self, newDate):
+        # super(Account_AShare, self).onDayOpen(newDate)
+        self._lastTradeDate =self._thisTradeDate
+        self._thisTradeDate =newDate
+
+        self.strategy._posAvail = self.strategy.pos
+        self.strategy.onDayOpen(newDate)
+
+    #----------------------------------------------------------------------
     def OnNewBar(self, bar):
         """新的K线"""
 
         # shift the trade date and notify dayOpen if date changes
-        if self._account._thisTradeDate != bar.date :
-            self._account._lastTradeDate =self._account._thisTradeDate
-            self._account._thisTradeDate =bar.date
-            self.strategy._posAvail = self.strategy.pos
-            self.strategy.onDayOpen(bar.date)
+        if self._thisTradeDate != bar.date :
+            self.onDayOpen(bar.date)
 
         if self.bar ==None:
             self._execStartClose = bar.close
@@ -330,8 +326,9 @@ class BacktestAccount(Account):
         初始化策略
         setting是策略的参数设置，如果使用类中写好的默认设置则可以不传该参数
         """
-        self.strategy = strategyClass(self, setting)
-        self.strategy.name = self.strategy.className
+        strategy = strategyClass(self, setting)  
+        self.strategyName = strategy.className
+        self.strategyDict[self.strategyName] = strategy
     
     #----------------------------------------------------------------------
     def bestBarCrossPrice(self, bar): 
@@ -614,16 +611,16 @@ class BacktestAccount(Account):
         so.status = STOPORDER_WAITING
         so.stopOrderID = stopOrderID
         
-        if orderType == CTAORDER_BUY:
+        if orderType == ORDER_BUY:
             so.direction = DIRECTION_LONG
             so.offset = OFFSET_OPEN
-        elif orderType == CTAORDER_SELL:
+        elif orderType == ORDER_SELL:
             so.direction = DIRECTION_SHORT
             so.offset = OFFSET_CLOSE
-        elif orderType == CTAORDER_SHORT:
+        elif orderType == ORDER_SHORT:
             so.direction = DIRECTION_SHORT
             so.offset = OFFSET_OPEN
-        elif orderType == CTAORDER_COVER:
+        elif orderType == ORDER_COVER:
             so.direction = DIRECTION_LONG
             so.offset = OFFSET_CLOSE           
         
@@ -676,6 +673,28 @@ class BacktestAccount(Account):
         # 撤销停止单
         for stopOrderID in self.workingStopOrderDict.keys():
             self.cancelStopOrder(stopOrderID)
+
+    #----------------------------------------------------------------------
+    def calcAmountOfTrade(vtSymbol, price, volume):
+    # def amountOfTrade(symbol, price, volume, size, slippage=0, rate=3/1000) :
+        # 交易手续费=印花税+过户费+券商交易佣金
+        volumeX1 = abs(volume) * self.size
+        turnOver = price * volumeX1
+
+        # 印花税: 成交金额的1‰ 。目前向卖方单边征收
+        tax = 0
+        if volumeX1 <0:
+            tax = turnOver /1000
+            
+        #过户费（仅上海收取，也就是买卖上海股票时才有）：每1000股收取1元，不足1000股按1元收取
+        transfer =0
+        if len(symbol)>2 and (symbol[1]=='6' or symbol[1]=='7'):
+            transfer = int((volumeX1+999)/1000)
+            
+        #3.券商交易佣金 最高为成交金额的3‰，最低5元起，单笔交易佣金不满5元按5元收取。
+        commission = max(turnOver * self.rate, 5)
+
+        return turnOver, tax + transfer + commission, volumeX1 * self.slippage
 
     #----------------------------------------------------------------------
     def saveSyncData(self, strategy):
@@ -1315,29 +1334,6 @@ class TradingResult(object):
                             - self.commission - self.slippage)                   # 净盈亏
 
 
-#----------------------------------------------------------------------
-# def amountOfTrade(trade, size, slippage=0, rate=3/1000) :
-def amountOfTrade(symbol, price, volume, size, slippage=0, rate=3/1000) :
-    # 交易手续费=印花税+过户费+券商交易佣金
-    volumeX1 = abs(volume) * size
-    turnOver = price * volumeX1
-
-    # 印花税: 成交金额的1‰ 。目前向卖方单边征收
-    tax = 0
-    if volumeX1 <0:
-        tax = turnOver /1000
-        
-    #过户费（仅上海收取，也就是买卖上海股票时才有）：每1000股收取1元，不足1000股按1元收取
-    transfer =0
-    if len(symbol)>2 and (symbol[1]=='6' or symbol[1]=='7'):
-        transfer = int((volumeX1+999)/1000)
-        
-    #3.券商交易佣金 最高为成交金额的3‰，最低5元起，单笔交易佣金不满5元按5元收取。
-    commission = max(turnOver * rate, 5)
-
-    return turnOver, tax + transfer + commission, volumeX1 * slippage
-
-
 ########################################################################
 class DailyResult(object):
     """每日交易的结果"""
@@ -1476,7 +1472,7 @@ def optimize(strategyClass, setting, targetName,
              dbName, symbol):
 
     """多进程优化时跑在每个进程中运行的函数"""
-    account = BacktestAccount()
+    account = BTAccount_AShare()
     account.setBacktestingMode(mode)
     account.setStartDate(startDate, initDays)
     account.setEndDate(endDate)

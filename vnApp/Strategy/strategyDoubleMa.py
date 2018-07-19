@@ -66,7 +66,7 @@ class DoubleMaStrategy(AShTemplate):
     #----------------------------------------------------------------------
     def onInit(self):
         """初始化策略（必须由用户继承实现）"""
-        self.logBT(u'双EMA演示策略初始化')
+        self.log(u'双EMA演示策略初始化')
         
         initData = self.loadBar(self.initDays)
         for bar in initData:
@@ -77,13 +77,13 @@ class DoubleMaStrategy(AShTemplate):
     #----------------------------------------------------------------------
     def onStart(self):
         """启动策略（必须由用户继承实现）"""
-        self.logBT(u'双EMA演示策略启动')
+        self.log(u'双EMA演示策略启动')
         self.putEvent()
     
     #----------------------------------------------------------------------
     def onStop(self):
         """停止策略（必须由用户继承实现）"""
-        self.logBT(u'双EMA演示策略停止')
+        self.log(u'双EMA演示策略停止')
         self.putEvent()
         
     #----------------------------------------------------------------------

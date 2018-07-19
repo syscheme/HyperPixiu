@@ -111,7 +111,7 @@ class BollChannelStrategy(AShTemplate):
     #----------------------------------------------------------------------
     def onInit(self):
         """初始化策略（必须由用户继承实现）"""
-        self.logBT(u'%s策略初始化' %self.name)
+        self.log(u'%s策略初始化' %self.name)
         
         # 载入历史数据，并采用回放计算的方式初始化策略数值
         initData = self.loadBar(self.initDays)
@@ -123,13 +123,13 @@ class BollChannelStrategy(AShTemplate):
     #----------------------------------------------------------------------
     def onStart(self):
         """启动策略（必须由用户继承实现）"""
-        self.logBT(u'%s策略启动' %self.name)
+        self.log(u'%s策略启动' %self.name)
         self.putEvent()
 
     #----------------------------------------------------------------------
     def onStop(self):
         """停止策略（必须由用户继承实现）"""
-        self.logBT(u'%s策略停止' %self.name)
+        self.log(u'%s策略停止' %self.name)
         self.putEvent()
 
     #----------------------------------------------------------------------
@@ -217,7 +217,7 @@ class BollChannelStrategy(AShTemplate):
         
 
         # 判断是否要进行交易
-        cash = self.account.getCashAvailable()
+        cash, _ = self.account.cashAmount()
     
         posDesc ='%s/%s,ca%.2f' % (self._posAvail, self.pos, cash)
         barDesc = '%.2f,%.2f,%.2f,%.2f' % (bar.open, bar.close, bar.high, bar.low)
@@ -233,13 +233,13 @@ class BollChannelStrategy(AShTemplate):
         if (toBuy - toSell) >0 and maxBuy >1 :
             vol = self.fixedSize*int(min(toBuy, maxBuy))
             
-            self.logBT(u'onXminBar() pos[%s] bar[%s] %s => BUY(%d)' %(posDesc, barDesc, measureDesc, vol))
+            self.log(u'onXminBar() pos[%s] bar[%s] %s => BUY(%d)' %(posDesc, barDesc, measureDesc, vol))
             self.buy(bar.close+0.01, vol, False)
 
         elif self._posAvail >0 and (toSell - toBuy) >0 :
             vol = min(self._posAvail, self.fixedSize*toSell*10)
             
-            self.logBT(u'onXminBar() pos[%s] bar[%s] %s => SELL(%d)' %(posDesc, barDesc, measureDesc, vol))
+            self.log(u'onXminBar() pos[%s] bar[%s] %s => SELL(%d)' %(posDesc, barDesc, measureDesc, vol))
             self.sell(bar.close-0.01, vol, False) # abs(self.pos), False)
 
 
@@ -249,7 +249,7 @@ class BollChannelStrategy(AShTemplate):
         #     # self.intraTradeLow  = bar.low            
             
         #     if dATR >0 and self.cciValue > 100:
-        #         self.logBT(u'onXminBar() pos[%s] bar[%s] %s => issuing buy' %(self.pos, barDesc, measureDesc))
+        #         self.log(u'onXminBar() pos[%s] bar[%s] %s => issuing buy' %(self.pos, barDesc, measureDesc))
         #         # self.buy(self.bollUp, self.fixedSize, False)
         #         self.buy(bar.close+0.01, self.fixedSize, False)
             
@@ -259,7 +259,7 @@ class BollChannelStrategy(AShTemplate):
         #     self.longStop       = self.intraTradeHigh - self.atrValue * self.slMultiplier
                 
         #     if dATR <0 and self.cciValue < 100 and self._lastCCI >100:
-        #         self.logBT(u'onXminBar() pos[%s] bar[%s] %s => issuing sell' %(self.pos, barDesc, measureDesc))
+        #         self.log(u'onXminBar() pos[%s] bar[%s] %s => issuing sell' %(self.pos, barDesc, measureDesc))
         #         # self.sell(self.longStop, abs(self.pos), False)
         #         self.sell(bar.close-0.01, abs(self.pos), False)
     

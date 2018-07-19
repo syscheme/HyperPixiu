@@ -17,7 +17,7 @@ import pymongo
 from vnpy.trader.vtGlobal import globalSetting
 from vnpy.trader.vtConstant import *
 from vnpy.trader.vtObject import VtBarData
-from .Base import SETTING_DB_NAME, TICK_DB_NAME, MINUTE_DB_NAME, DAILY_DB_NAME
+from .Account import SETTING_DB_NAME, TICK_DB_NAME, MINUTE_DB_NAME, DAILY_DB_NAME
 
 
 #----------------------------------------------------------------------
@@ -285,7 +285,7 @@ def loadTdxCsv(fileName, dbName, symbol):
 """   
 def loadTdxLc1(fileName, dbName, symbol):
     """将通达信导出的lc1格式的历史分钟数据插入到Mongo数据库中"""
-    from struct import *
+    # from struct import *
 
     start = time()
 

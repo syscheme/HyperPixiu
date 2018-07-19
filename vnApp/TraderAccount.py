@@ -22,7 +22,6 @@ from vnpy.trader.vtFunction import todayDate, getJsonPath
 
 from .Strategy import STRATEGY_CLASS
 
-
 ########################################################################
 class TraderAccount(object):
     """CTA策略引擎"""
@@ -42,23 +41,6 @@ class TraderAccount(object):
         
         # 当前日期
         self.today = todayDate()
-        
-        # 保存策略实例的字典
-        # key为策略名称，value为策略实例，注意策略名称不允许重复
-        self.strategyDict = {}
-        
-        # 保存vtSymbol和策略实例映射的字典（用于推送tick数据）
-        # 由于可能多个strategy交易同一个vtSymbol，因此key为vtSymbol
-        # value为包含所有相关strategy对象的list
-        self.tickStrategyDict = {}
-        
-        # 保存vtOrderID和strategy对象映射的字典（用于推送order和trade数据）
-        # key为vtOrderID，value为strategy对象
-        self.orderStrategyDict = {}     
-        
-        # 保存策略名称和委托号列表的字典
-        # key为name，value为保存orderID（限价+本地停止）的集合
-        self.strategyOrderDict = {}
         
         # 成交号集合，用来过滤已经收到过的成交推送
         self.tradeSet = set()
@@ -120,7 +102,7 @@ class TraderAccount(object):
             self.strategyOrderDict[strategy.name].add(vtOrderID)                         # 添加到策略委托号集合中
             vtOrderIDList.append(vtOrderID)
             
-        self.logBT(u'策略%s发送委托，%s，%s，%s@%s' 
+        self.log(u'策略%s发送委托，%s，%s，%s@%s' 
                          %(strategy.name, vtSymbol, req.direction, volume, price))
         
         return vtOrderIDList
@@ -259,7 +241,7 @@ class TraderAccount(object):
                 if not tick.datetime:
                     tick.datetime = datetime.strptime(' '.join([tick.date, tick.time]), '%Y%m%d %H:%M:%S.%f')
             except ValueError:
-                self.logBT(traceback.format_exc())
+                self.log(traceback.format_exc())
                 return
                 
             # 逐个推送到策略实例中
@@ -353,7 +335,7 @@ class TraderAccount(object):
         return l    
     
     #----------------------------------------------------------------------
-    def logBT(self, content):
+    def log(self, content):
         """快速发出CTA模块日志事件"""
         log = VtLogData()
         log.logContent = content
@@ -362,42 +344,6 @@ class TraderAccount(object):
         event.dict_['data'] = log
         self.eventEngine.put(event)   
     
-    #----------------------------------------------------------------------
-    def loadStrategy(self, setting):
-        """载入策略"""
-        try:
-            name = setting['name']
-            className = setting['className']
-        except Exception:
-            msg = traceback.format_exc()
-            self.logBT(u'载入策略出错：%s' %msg)
-            return
-        
-        # 获取策略类
-        strategyClass = STRATEGY_CLASS.get(className, None)
-        if not strategyClass:
-            self.logBT(u'找不到策略类：%s' %className)
-            return
-        
-        # 防止策略重名
-        if name in self.strategyDict:
-            self.logBT(u'策略实例重名：%s' %name)
-        else:
-            # 创建策略实例
-            strategy = strategyClass(self, setting)  
-            self.strategyDict[name] = strategy
-            
-            # 创建委托号列表
-            self.strategyOrderDict[name] = set()
-            
-            # 保存Tick映射关系
-            if strategy.vtSymbol in self.tickStrategyDict:
-                l = self.tickStrategyDict[strategy.vtSymbol]
-            else:
-                l = []
-                self.tickStrategyDict[strategy.vtSymbol] = l
-            l.append(strategy)
-            
     #----------------------------------------------------------------------
     def subscribeMarketData(self, strategy):
         """订阅行情"""
@@ -414,136 +360,8 @@ class TraderAccount(object):
             
             self.mainEngine.subscribe(req, contract.gatewayName)
         else:
-            self.logBT(u'%s的交易合约%s无法找到' %(strategy.name, strategy.vtSymbol))
+            self.log(u'%s的交易合约%s无法找到' %(strategy.name, strategy.vtSymbol))
 
-    #----------------------------------------------------------------------
-    def initStrategy(self, name):
-        """初始化策略"""
-        if not name in self.strategyDict:
-            strategy = self.strategyDict[name]
-            self.logBT(u'策略实例不存在：%s' %name)
-            return
-            
-        if strategy and strategy.inited:
-            self.logBT(u'请勿重复初始化策略实例：%s' %name)
-            return
-
-        strategy.inited = True
-        self.callStrategyFunc(strategy, strategy.onInit)
-        self.loadSyncData(strategy)                             # 初始化完成后加载同步数据
-        self.subscribeMarketData(strategy)                      # 加载同步数据后再订阅行情
-
-    #---------------------------------------------------------------------
-    def startStrategy(self, name):
-        """启动策略"""
-        if name in self.strategyDict:
-            strategy = self.strategyDict[name]
-            
-            if strategy.inited and not strategy.trading:
-                strategy.trading = True
-                self.callStrategyFunc(strategy, strategy.onStart)
-        else:
-            self.logBT(u'策略实例不存在：%s' %name)
-    
-    #----------------------------------------------------------------------
-    def stopStrategy(self, name):
-        """停止策略"""
-        if name in self.strategyDict:
-            strategy = self.strategyDict[name]
-            
-            if strategy.trading:
-                strategy.trading = False
-                self.callStrategyFunc(strategy, strategy.onStop)
-                
-                # 对该策略发出的所有限价单进行撤单
-                for vtOrderID, s in self.orderStrategyDict.items():
-                    if s is strategy:
-                        self.cancelOrder(vtOrderID)
-                
-                # 对该策略发出的所有本地停止单撤单
-                for stopOrderID, so in self.workingStopOrderDict.items():
-                    if so.strategy is strategy:
-                        self.cancelStopOrder(stopOrderID)   
-        else:
-            self.logBT(u'策略实例不存在：%s' %name)    
-            
-    #----------------------------------------------------------------------
-    def initAll(self):
-        """全部初始化"""
-        for name in self.strategyDict.keys():
-            self.initStrategy(name)    
-            
-    #----------------------------------------------------------------------
-    def startAll(self):
-        """全部启动"""
-        for name in self.strategyDict.keys():
-            self.startStrategy(name)
-            
-    #----------------------------------------------------------------------
-    def stopAll(self):
-        """全部停止"""
-        for name in self.strategyDict.keys():
-            self.stopStrategy(name)    
-    
-    #----------------------------------------------------------------------
-    def saveSetting(self):
-        """保存策略配置"""
-        with open(self.settingfilePath, 'w') as f:
-            l = []
-            
-            for strategy in self.strategyDict.values():
-                setting = {}
-                for param in strategy.paramList:
-                    setting[param] = strategy.__getattribute__(param)
-                l.append(setting)
-            
-            jsonL = json.dumps(l, indent=4)
-            f.write(jsonL)
-    
-    #----------------------------------------------------------------------
-    def loadSetting(self):
-        """读取策略配置"""
-        with open(self.settingfilePath) as f:
-            l = json.load(f)
-            
-            for setting in l:
-                self.loadStrategy(setting)
-    
-    #----------------------------------------------------------------------
-    def getStrategyVar(self, name):
-        """获取策略当前的变量字典"""
-        if name in self.strategyDict:
-            strategy = self.strategyDict[name]
-            varDict = OrderedDict()
-            
-            for key in strategy.varList:
-                varDict[key] = strategy.__getattribute__(key)
-            
-            return varDict
-        else:
-            self.logBT(u'策略实例不存在：' + name)    
-            return None
-    
-    #----------------------------------------------------------------------
-    def getStrategyParam(self, name):
-        """获取策略的参数字典"""
-        if name in self.strategyDict:
-            strategy = self.strategyDict[name]
-            paramDict = OrderedDict()
-            
-            for key in strategy.paramList:  
-                paramDict[key] = strategy.__getattribute__(key)
-            
-            return paramDict
-        else:
-            self.logBT(u'策略实例不存在：' + name)    
-            return None
-    
-    #----------------------------------------------------------------------
-    def getStrategyNames(self):
-        """查询所有策略名称"""
-        return self.strategyDict.keys()        
-        
     #----------------------------------------------------------------------
     def putStrategyEvent(self, name):
         """触发策略状态变化事件（通常用于通知GUI更新）"""
@@ -561,24 +379,6 @@ class TraderAccount(object):
         self.eventEngine.put(event2)        
         
     #----------------------------------------------------------------------
-    def callStrategyFunc(self, strategy, func, params=None):
-        """调用策略的函数，若触发异常则捕捉"""
-        try:
-            if params:
-                func(params)
-            else:
-                func()
-        except Exception:
-            # 停止策略，修改状态为未初始化
-            strategy.trading = False
-            strategy.inited = False
-            
-            # 发出日志
-            content = '\n'.join([u'策略%s触发异常已停止' %strategy.name,
-                                traceback.format_exc()])
-            self.logBT(content)
-            
-    #----------------------------------------------------------------------
     def saveSyncData(self, strategy):
         """保存策略的持仓情况到数据库"""
         flt = {'name': strategy.name,
@@ -592,7 +392,7 @@ class TraderAccount(object):
                                  d, flt, True)
         
         content = u'策略%s同步数据保存成功，当前持仓%s' %(strategy.name, strategy.pos)
-        self.logBT(content)
+        self.log(content)
     
     #----------------------------------------------------------------------
     def loadSyncData(self, strategy):
@@ -618,11 +418,6 @@ class TraderAccount(object):
         
         newPrice = round(price/priceTick, 0) * priceTick
         return newPrice    
-    
-    #----------------------------------------------------------------------
-    def stop(self):
-        """停止"""
-        pass
     
     #----------------------------------------------------------------------
     def cancelAll(self, name):

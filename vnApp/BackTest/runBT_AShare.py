@@ -5,7 +5,7 @@
 cd ${workspaceFolder} ; env "PYTHONPATH=${workspaceFolder}:${workspaceFolder}/kits/vnpy" "PYTHONIOENCODING=UTF-8" "PYTHONUNBUFFERED=1" /usr/bin/python2.7 vnApp/BackTest/runBacktesting.py
 """
 from __future__ import division
-from   vnApp.BacktestAccount import BacktestAccount, MINUTE_DB_NAME
+from   vnApp.BTAccount_AShare import BTAccount_AShare, MINUTE_DB_NAME
 import vnApp.Strategy as tg
 import os
 import gc
@@ -22,7 +22,7 @@ def backTestSymbol(symbol, startDate, endDate=''):
     from vnApp.Strategy.strategyBollChannel import BollChannelStrategy
 
     # 创建回测引擎
-    account = BacktestAccount()
+    account = BTAccount_AShare()
     
     # 设置引擎的回测模式为K线
     account.setBacktestingMode(account.BAR_MODE)
@@ -36,7 +36,7 @@ def backTestSymbol(symbol, startDate, endDate=''):
     # 设置回测用的数据起始日期
     account.setStartDate(startDate)
     account.setEndDate(endDate)
-    account.setDatabase('VnTrader_1Min_Db', symbol)
+    account.setDatabase(MINUTE_DB_NAME, symbol)
     
     # 在引擎中创建策略对象
     d = {}
@@ -54,7 +54,7 @@ def backTestSymbol(symbol, startDate, endDate=''):
 def backTestSymbolByAllStategy(symbol, startDate):
 
     # 创建回测引擎
-    account = BacktestingEngine()
+    account = BTAccount_AShare()
     
     # 设置引擎的回测模式为K线
     account.setBacktestingMode(account.BAR_MODE)

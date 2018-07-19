@@ -111,22 +111,22 @@ class AShTemplate(object):
     #----------------------------------------------------------------------
     def buy(self, price, volume, stop=False):
         """买开"""
-        return self.sendOrder(CTAORDER_BUY, price, volume, stop)
+        return self.sendOrder(ORDER_BUY, price, volume, stop)
     
     #----------------------------------------------------------------------
     def sell(self, price, volume, stop=False):
         """卖平"""
-        return self.sendOrder(CTAORDER_SELL, price, volume, stop)       
+        return self.sendOrder(ORDER_SELL, price, volume, stop)       
 
     #----------------------------------------------------------------------
     def short(self, price, volume, stop=False):
         """卖开"""
-        return self.sendOrder(CTAORDER_SHORT, price, volume, stop)          
+        return self.sendOrder(ORDER_SHORT, price, volume, stop)          
  
     #----------------------------------------------------------------------
     def cover(self, price, volume, stop=False):
         """买平"""
-        return self.sendOrder(CTAORDER_COVER, price, volume, stop)
+        return self.sendOrder(ORDER_COVER, price, volume, stop)
         
     #----------------------------------------------------------------------
     def sendOrder(self, orderType, price, volume, stop=False):
@@ -136,7 +136,7 @@ class AShTemplate(object):
             return []
         
         # 如果stop为True，则意味着发本地停止单
-        # self.logBT(u'sendOrder:%s %.2fx%d>%s' %(orderType, price, volume, stop))
+        # self.log(u'sendOrder:%s %.2fx%d>%s' %(orderType, price, volume, stop))
         if stop:
             vtOrderIDList = self.account.sendStopOrder(self.vtSymbol, orderType, price, volume, self)
         else:
@@ -182,9 +182,9 @@ class AShTemplate(object):
         return self.account.loadBar(self.barDbName, self.vtSymbol, days)
     
     #----------------------------------------------------------------------
-    def logBT(self, content):
+    def log(self, content):
         """记录CTA日志"""
-        self.account.logBT(content)
+        self.account.log(content)
         
     #----------------------------------------------------------------------
     def putEvent(self):

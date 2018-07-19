@@ -74,6 +74,10 @@ class Account(object):
     def __init__(self):
         """Constructor"""
 
+        self._accountId = ""
+        self._thisTradeDate = None
+        self._lastTradeDate = None
+
         self.capital = 0        # 起始本金（默认10万）
         self.slippage = 0       # 假设的滑点
         self.rate = 30/10000    # 假设的佣金比例（适用于百分比佣金）
@@ -94,13 +98,24 @@ class Account(object):
         self.tradeCount = 0             # 成交编号
         self.tradeDict = OrderedDict()  # 成交字典
         
-        self.logList = []               # 日志记录
+        # 保存策略实例的字典
+        # key为策略名称，value为策略实例，注意策略名称不允许重复
+        self.strategyDict = {}
         
-        # 当前最新数据，用于模拟成交用
-        self.tick = None
-        self.bar  = None
-        self.dt   = None      # 最新的时间
-        self._accountId = ""
+        # 保存vtSymbol和策略实例映射的字典（用于推送tick数据）
+        # 由于可能多个strategy交易同一个vtSymbol，因此key为vtSymbol
+        # value为包含所有相关strategy对象的list
+        self.tickStrategyDict = {}
+        
+        # 保存vtOrderID和strategy对象映射的字典（用于推送order和trade数据）
+        # key为vtOrderID，value为strategy对象
+        self.orderStrategyDict = {}     
+        
+        # 保存策略名称和委托号列表的字典
+        # key为name，value为保存orderID（限价+本地停止）的集合
+        self.strategyOrderDict = {}
+
+        self.logList = []               # 日志记录
 
     @abstractmethod
     def cashAmount(self): raise NotImplementedError # returns (avail, total)
@@ -136,6 +151,12 @@ class Account(object):
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): raise NotImplementedError
 
     @abstractmethod
+    def amountOfTrade(symbol, price, volume): raise NotImplementedError
+
+    @abstractmethod
+    def onDayOpen(self, newDate): raise NotImplementedError
+
+    @abstractmethod
     def log(self, message):
         """记录日志"""
         log = str(self.dt) + ' ' + message 
@@ -146,6 +167,214 @@ class Account(object):
     def stdout(self, message):
         """输出内容"""
         print str(datetime.now()) + " ACC[" + self._accountId + "] " + message
+
+    #----------------------------------------------------------------------
+    def loadStrategy(self, setting):
+        """载入策略"""
+        try:
+            name = setting['name']
+            className = setting['className']
+        except Exception:
+            msg = traceback.format_exc()
+            self.log(u'错误策略配置：%s' %msg)
+            return
+        
+        # 获取策略类
+        strategyClass = STRATEGY_CLASS.get(className, None)
+        if not strategyClass:
+            self.log(u'找不到策略类：%s' %className)
+            return
+        
+        # 防止策略重名
+        if name in self.strategyDict:
+            self.log(u'策略实例重名：%s' %name)
+        else:
+            # 创建策略实例
+            strategy = strategyClass(self, setting)  
+            self.strategyDict[name] = strategy
+            
+            # 创建委托号列表
+            self.strategyOrderDict[name] = set()
+            
+            # 保存Tick映射关系
+            if strategy.vtSymbol in self.tickStrategyDict:
+                l = self.tickStrategyDict[strategy.vtSymbol]
+            else:
+                l = []
+                self.tickStrategyDict[strategy.vtSymbol] = l
+            l.append(strategy)
+            
+    #----------------------------------------------------------------------
+    def getStrategyNames(self):
+        """查询所有策略名称"""
+        return self.strategyDict.keys()        
+        
+    #----------------------------------------------------------------------
+    def getStrategyVar(self, name):
+        """获取策略当前的变量字典"""
+        if name in self.strategyDict:
+            strategy = self.strategyDict[name]
+            varDict = OrderedDict()
+            
+            for key in strategy.varList:
+                varDict[key] = strategy.__getattribute__(key)
+            
+            return varDict
+        else:
+            self.log(u'策略实例不存在：' + name)    
+            return None
+    
+    #----------------------------------------------------------------------
+    def getStrategyParam(self, name):
+        """获取策略的参数字典"""
+        if name in self.strategyDict:
+            strategy = self.strategyDict[name]
+            paramDict = OrderedDict()
+            
+            for key in strategy.paramList:  
+                paramDict[key] = strategy.__getattribute__(key)
+            
+            return paramDict
+        else:
+            self.log(u'策略实例不存在：' + name)    
+            return None
+    
+    #----------------------------------------------------------------------
+    def initStrategy(self, name):
+        """初始化策略"""
+        if not name in self.strategyDict:
+            strategy = self.strategyDict[name]
+            self.log(u'策略实例不存在：%s' %name)
+            return
+            
+        if strategy and strategy.inited:
+            self.log(u'请勿重复初始化策略实例：%s' %name)
+            return
+
+        strategy.inited = True
+        self.callStrategyFunc(strategy, strategy.onInit)
+        self.loadSyncData(strategy)                             # 初始化完成后加载同步数据
+        self.subscribeMarketData(strategy)                      # 加载同步数据后再订阅行情
+
+    #---------------------------------------------------------------------
+    def startStrategy(self, name):
+        """启动策略"""
+        if name in self.strategyDict:
+            strategy = self.strategyDict[name]
+            
+            if strategy.inited and not strategy.trading:
+                strategy.trading = True
+                self.callStrategyFunc(strategy, strategy.onStart)
+        else:
+            self.log(u'策略实例不存在：%s' %name)
+    
+    #----------------------------------------------------------------------
+    def stopStrategy(self, name):
+        """停止策略"""
+        if name in self.strategyDict:
+            strategy = self.strategyDict[name]
+            
+            if strategy.trading:
+                strategy.trading = False
+                self.callStrategyFunc(strategy, strategy.onStop)
+                
+                # 对该策略发出的所有限价单进行撤单
+                for vtOrderID, s in self.orderStrategyDict.items():
+                    if s is strategy:
+                        self.cancelOrder(vtOrderID)
+                
+                # 对该策略发出的所有本地停止单撤单
+                for stopOrderID, so in self.workingStopOrderDict.items():
+                    if so.strategy is strategy:
+                        self.cancelStopOrder(stopOrderID)   
+        else:
+            self.log(u'策略实例不存在：%s' %name)    
+            
+    #----------------------------------------------------------------------
+    def callStrategyFunc(self, strategy, func, params=None):
+        """调用策略的函数，若触发异常则捕捉"""
+        try:
+            if params:
+                func(params)
+            else:
+                func()
+        except Exception:
+            # 停止策略，修改状态为未初始化
+            strategy.trading = False
+            strategy.inited = False
+            
+            # 发出日志
+            content = '\n'.join([u'策略%s触发异常已停止' %strategy.name,
+                                traceback.format_exc()])
+            self.log(content)
+            
+    #----------------------------------------------------------------------
+    def initAll(self):
+        """全部初始化"""
+        for name in self.strategyDict.keys():
+            self.initStrategy(name)    
+            
+    #----------------------------------------------------------------------
+    def startAll(self):
+        """全部启动"""
+        for name in self.strategyDict.keys():
+            self.startStrategy(name)
+            
+    #----------------------------------------------------------------------
+    def stop(self):
+        """停止"""
+        pass
+
+    #----------------------------------------------------------------------
+    def stopAll(self):
+        """全部停止"""
+        for name in self.strategyDict.keys():
+            self.stopStrategy(name)    
+    
+    #----------------------------------------------------------------------
+    def saveSetting(self):
+        """保存策略配置"""
+        with open(self.settingfilePath, 'w') as f:
+            l = []
+            
+            for strategy in self.strategyDict.values():
+                setting = {}
+                for param in strategy.paramList:
+                    setting[param] = strategy.__getattribute__(param)
+                l.append(setting)
+            
+            jsonL = json.dumps(l, indent=4)
+            f.write(jsonL)
+    
+    #----------------------------------------------------------------------
+    def loadSetting(self):
+        """读取策略配置"""
+        with open(self.settingfilePath) as f:
+            l = json.load(f)
+            
+            for setting in l:
+                self.loadStrategy(setting)
+    
+#----------------------------------------------------------------------
+def amountOfTrade(symbol, price, volume, size, slippage=0, rate=3/1000) :
+    # 交易手续费=印花税+过户费+券商交易佣金
+    volumeX1 = abs(volume) * size
+    turnOver = price * volumeX1
+
+    # 印花税: 成交金额的1‰ 。目前向卖方单边征收
+    tax = 0
+    if volumeX1 <0:
+        tax = turnOver /1000
+        
+    #过户费（仅上海收取，也就是买卖上海股票时才有）：每1000股收取1元，不足1000股按1元收取
+    transfer =0
+    if len(symbol)>2 and (symbol[1]=='6' or symbol[1]=='7'):
+        transfer = int((volumeX1+999)/1000)
+        
+    #3.券商交易佣金 最高为成交金额的3‰，最低5元起，单笔交易佣金不满5元按5元收取。
+    commission = max(turnOver * rate, 5)
+
+    return turnOver, tax + transfer + commission, volumeX1 * slippage
 
 
 ########################################################################
@@ -165,3 +394,51 @@ class StopOrder(object):
         self.strategy = None             # 下停止单的策略对象
         self.stopOrderID = EMPTY_STRING  # 停止单的本地编号 
         self.status = EMPTY_STRING       # 停止单状态
+
+########################################################################
+class Account_AShare(Account):
+    """
+    回测Account
+    函数接口和策略引擎保持一样，
+    从而实现同一套代码从回测到实盘。
+    """
+
+    #----------------------------------------------------------------------
+    def __init__(self):
+        """Constructor"""
+        Account.__init__(self)
+
+    #----------------------------------------------------------------------
+    def cashAmount(self): # returns (avail, total)
+        return (self._cashAvail, 0)
+
+    def positionOf(self, vtSymbol): # returns (availVol, totalVol)
+        return (0, 0)
+
+    #----------------------------------------------------------------------
+    def calcAmountOfTrade(vtSymbol, price, volume):
+    # def amountOfTrade(symbol, price, volume, size, slippage=0, rate=3/1000) :
+        # 交易手续费=印花税+过户费+券商交易佣金
+        volumeX1 = abs(volume) * self.size
+        turnOver = price * volumeX1
+
+        # 印花税: 成交金额的1‰ 。目前向卖方单边征收
+        tax = 0
+        if volumeX1 <0:
+            tax = turnOver /1000
+            
+        #过户费（仅上海收取，也就是买卖上海股票时才有）：每1000股收取1元，不足1000股按1元收取
+        transfer =0
+        if len(symbol)>2 and (symbol[1]=='6' or symbol[1]=='7'):
+            transfer = int((volumeX1+999)/1000)
+            
+        #3.券商交易佣金 最高为成交金额的3‰，最低5元起，单笔交易佣金不满5元按5元收取。
+        commission = max(turnOver * self.rate, 5)
+
+        return turnOver, tax + transfer + commission, volumeX1 * self.slippage
+
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def onDayOpen(self, newDate):
+        self._lastTradeDate =self._thisTradeDate
+        self._thisTradeDate =newDate

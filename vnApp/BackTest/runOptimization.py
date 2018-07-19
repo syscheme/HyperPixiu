@@ -16,22 +16,22 @@ if __name__ == '__main__':
     from vnApp.Strategy.strategyAtrRsi import AtrRsiStrategy
     
     # 创建回测引擎
-    engine = BacktestAccount()
+    account = BacktestAccount()
     
     # 设置引擎的回测模式为K线
-    engine.setBacktestingMode(engine.BAR_MODE)
+    account.setBacktestingMode(account.BAR_MODE)
 
     # 设置回测用的数据起始日期
-    engine.setStartDate('20120101')
+    account.setStartDate('20120101')
     
     # 设置产品相关参数
-    engine.setSlippage(0.2)     # 股指1跳
-    engine.setRate(0.3/10000)   # 万0.3
-    engine.setSize(100)         # 股指合约大小 
-    engine.setPriceTick(0.2)    # 股指最小价格变动
+    account.setSlippage(0.2)     # 股指1跳
+    account.setRate(30/10000)   # 万30
+    account.setSize(100)         # 股指合约大小 
+    account.setPriceTick(0.2)    # 股指最小价格变动
     
     # 设置回测用的数据起始日期
-    engine.setDatabase(MINUTE_DB_NAME, 'A601000')
+    account.setDatabase(MINUTE_DB_NAME, 'A601000')
     
     # 跑优化
     setting = OptimizationSetting()                 # 新建一个优化任务设置对象
@@ -46,9 +46,9 @@ if __name__ == '__main__':
     start = time.time()
     
     # 运行单进程优化函数，自动输出结果，耗时：359秒
-    # engine.runOptimization(AtrRsiStrategy, setting)            
+    # account.runOptimization(AtrRsiStrategy, setting)            
 
     # 多进程优化，耗时：89秒
-    engine.runParallelOptimization(AtrRsiStrategy, setting)
+    account.runParallelOptimization(AtrRsiStrategy, setting)
     
     print(u'耗时：%s' %(time.time()-start))

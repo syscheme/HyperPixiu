@@ -172,7 +172,7 @@ class EngineManager(QtWidgets.QWidget):
         self.registerEvent()
         
         # 记录日志
-        self.account.logBT(text.CTA_ENGINE_STARTED)        
+        self.account.log(text.CTA_ENGINE_STARTED)        
         
     #----------------------------------------------------------------------
     def initUi(self):
@@ -251,7 +251,7 @@ class EngineManager(QtWidgets.QWidget):
             self.account.loadSetting()
             self.initStrategyManager()
             self.strategyLoaded = True
-            self.account.logBT(text.STRATEGY_LOADED)
+            self.account.log(text.STRATEGY_LOADED)
         
     #----------------------------------------------------------------------
     def updateAShLog(self, event):

@@ -4,8 +4,8 @@
 导入MC导出的CSV历史数据到MongoDB中
 """
 
-from   vnApp.Strategy.Base import MINUTE_DB_NAME
-import vnApp.Strategy.HistoryData as hd
+from   vnApp.Account import MINUTE_DB_NAME
+import vnApp.HistoryData as hd
 
 
 if __name__ == '__main__':

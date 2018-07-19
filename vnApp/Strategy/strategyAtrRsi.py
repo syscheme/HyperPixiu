@@ -83,7 +83,7 @@ class AtrRsiStrategy(AShTemplate):
     #----------------------------------------------------------------------
     def onInit(self):
         """初始化策略（必须由用户继承实现）"""
-        self.logBT(u'%s策略初始化' %self.name)
+        self.log(u'%s策略初始化' %self.name)
     
         # 初始化RSI入场阈值
         self.rsiBuy = 50 + self.rsiEntry
@@ -99,13 +99,13 @@ class AtrRsiStrategy(AShTemplate):
     #----------------------------------------------------------------------
     def onStart(self):
         """启动策略（必须由用户继承实现）"""
-        self.logBT(u'%s策略启动' %self.name)
+        self.log(u'%s策略启动' %self.name)
         self.putEvent()
 
     #----------------------------------------------------------------------
     def onStop(self):
         """停止策略（必须由用户继承实现）"""
-        self.logBT(u'%s策略停止' %self.name)
+        self.log(u'%s策略停止' %self.name)
         self.putEvent()
 
     #----------------------------------------------------------------------

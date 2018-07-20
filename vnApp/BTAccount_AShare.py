@@ -224,7 +224,7 @@ class BTAccount_AShare(Account_AShare):
     def runBacktesting(self):
         """运行回测"""
 
-        self._accountId = "BT_%s.%s" % (self.symbol, self.strategy.name)
+        self._accountId = "BT_%s.%s" % (self.symbol, self.strategyName)
 
         # 载入历史数据
         if self.loadHistoryData() <=0 :
@@ -402,12 +402,12 @@ class BTAccount_AShare(Account_AShare):
             (turnoverO, commissionO, slippageO) =(0,0,0)
             (turnoverT, commissionT, slippageT) =(0,0,0)
             if buyCross:
-                turnoverO, commissionO, slippageO = amountOfTrade(order.symbol, order.price, order.totalVolume, self.size, self.slippage, self.rate)
+                turnoverO, commissionO, slippageO = self.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
                 trade.volume = order.totalVolume # TODO: the volume should depends on available cache
                 trade.price = min(order.price, buyBestCrossPrice)
                 self.strategy.pos += trade.volume
             elif self.strategy.pos >0:
-                turnoverO, commissionO, slippageO = amountOfTrade(order.symbol, order.price, -order.totalVolume, self.size, self.slippage, self.rate)
+                turnoverO, commissionO, slippageO = self.calcAmountOfTrade(order.symbol, order.price, -order.totalVolume)
                 orderVolume = -order.totalVolume
                 trade.volume = min(self.strategy.pos, order.totalVolume)
                 trade.price = max(order.price, sellBestCrossPrice)
@@ -418,7 +418,7 @@ class BTAccount_AShare(Account_AShare):
                 if not buyCross:
                     tvolume = -trade.volume
                 
-                turnoverT, commissionT, slippageT = amountOfTrade(trade.symbol, trade.price, tvolume, self.size, self.slippage, self.rate)
+                turnoverT, commissionT, slippageT = self.calcAmountOfTrade(trade.symbol, trade.price, tvolume)
 
                 trade.tradeTime = self.dt.strftime('%H:%M:%S')
                 trade.dt = self.dt
@@ -573,7 +573,7 @@ class BTAccount_AShare(Account_AShare):
 
         # reduce available cash
         if order.direction == DIRECTION_LONG :
-            turnoverO, commissionO, slippageO = amountOfTrade(order.symbol, order.price, order.totalVolume, self.size, self.slippage, self.rate)
+            turnoverO, commissionO, slippageO = self.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
             self._cashAvail -= turnoverO + commissionO + slippageO
         
         return [orderID]
@@ -671,28 +671,6 @@ class BTAccount_AShare(Account_AShare):
         # 撤销停止单
         for stopOrderID in self.workingStopOrderDict.keys():
             self.cancelStopOrder(stopOrderID)
-
-    #----------------------------------------------------------------------
-    def calcAmountOfTrade(vtSymbol, price, volume):
-    # def amountOfTrade(symbol, price, volume, size, slippage=0, rate=3/1000) :
-        # 交易手续费=印花税+过户费+券商交易佣金
-        volumeX1 = abs(volume) * self.size
-        turnOver = price * volumeX1
-
-        # 印花税: 成交金额的1‰ 。目前向卖方单边征收
-        tax = 0
-        if volumeX1 <0:
-            tax = turnOver /1000
-            
-        #过户费（仅上海收取，也就是买卖上海股票时才有）：每1000股收取1元，不足1000股按1元收取
-        transfer =0
-        if len(symbol)>2 and (symbol[1]=='6' or symbol[1]=='7'):
-            transfer = int((volumeX1+999)/1000)
-            
-        #3.券商交易佣金 最高为成交金额的3‰，最低5元起，单笔交易佣金不满5元按5元收取。
-        commission = max(turnOver * self.rate, 5)
-
-        return turnOver, tax + transfer + commission, volumeX1 * self.slippage
 
     #----------------------------------------------------------------------
     def saveSyncData(self, strategy):
@@ -1136,14 +1114,20 @@ class BTAccount_AShare(Account_AShare):
             dailyResult.previousClose = previousClose
             previousClose = dailyResult.closePrice
             
-            dailyResult.calculatePnl(openPosition, self.size, self.rate, self.slippage )
+            dailyResult.calculatePnl(self, openPosition)
             openPosition = dailyResult.closePosition
             
         # 生成DataFrame
-        resultDict = {k:[] for k in dailyResult.__dict__.keys()}
+        resultDict ={}
+        for k in dailyResult.__dict__.keys() :
+            if k == 'tradeList' : # to exclude some columns
+                continue
+            resultDict[k] =[]
+
         for dailyResult in self.dailyResultDict.values():
-            for k, v in dailyResult.__dict__.items():
-                resultDict[k].append(v)
+            for k, v in dailyResult.__dict__.items() :
+                if k in resultDict :
+                    resultDict[k].append(v)
                 
         resultDf = pd.DataFrame.from_dict(resultDict)
         
@@ -1234,8 +1218,8 @@ class BTAccount_AShare(Account_AShare):
             df = self.calculateDailyResult()
             df, result = self.calculateDailyStatistics(df)
 
+        # df.to_csv(self._accountId+'.csv',columns=""+DailyResult.EXPORT_COLUMNS)
         df.to_csv(self._accountId+'.csv')
-            
         originGain = 0.0
         if self._execStartClose >0 :
             originGain = (self._execEndClose - self._execStartClose)*100/self._execStartClose
@@ -1271,7 +1255,7 @@ class BTAccount_AShare(Account_AShare):
         self.stdout(u'收益标准差：\t%s%%' % formatNumber(result['returnStd']))
         self.stdout(u'Sharpe Ratio：\t%s' % formatNumber(result['sharpeRatio']))
         
-        self.plotDailyResult(df)
+        # self.plotDailyResult(df)
 
     #----------------------------------------------------------------------
     def plotDailyResult(self, df):
@@ -1336,6 +1320,8 @@ class TradingResult(object):
 class DailyResult(object):
     """每日交易的结果"""
 
+    EXPORT_COLUMNS = "date,openPosition,closePosition,previousClose,closePrice,tradeCountBuy,tradeCountSell,turnover,commission,tradingPnl,positionPnl,totalPnl,netPnl,txnHist"
+
     #----------------------------------------------------------------------
     def __init__(self, date, closePrice):
         """Constructor"""
@@ -1358,6 +1344,7 @@ class DailyResult(object):
         self.commission = 0             # 手续费
         self.slippage = 0               # 滑点
         self.netPnl = 0                 # 净盈亏
+        self.txnHist = ""
         
     #----------------------------------------------------------------------
     def addTrade(self, trade):
@@ -1365,7 +1352,7 @@ class DailyResult(object):
         self.tradeList.append(trade)
 
     #----------------------------------------------------------------------
-    def calculatePnl(self, openPosition=0, size=1, rate=0, slippage=0):
+    def calculatePnl(self, account, openPosition=0):
         """
         计算盈亏
         size: 合约乘数
@@ -1374,7 +1361,7 @@ class DailyResult(object):
         """
         # 持仓部分
         self.openPosition = openPosition
-        self.positionPnl = self.openPosition * (self.closePrice - self.previousClose) * size
+        self.positionPnl = self.openPosition * (self.closePrice - self.previousClose) * account.size
         self.closePosition = self.openPosition
         
         # 交易部分
@@ -1389,9 +1376,10 @@ class DailyResult(object):
                 posChange = -trade.volume
                 self.tradeCountSell += 1
                 
-            self.tradingPnl += posChange * (self.closePrice - trade.price) * size
+            self.tradingPnl += posChange * (self.closePrice - trade.price) * account.size
+            self.txnHist += "%+dx%s" % (posChange, trade.price)
             self.closePosition += posChange
-            turnover, commission, slippagefee = amountOfTrade(trade.symbol, trade.price, trade.volume, size, slippage, rate)
+            turnover, commission, slippagefee = account.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
             self.turnover += turnover
             self.commission += commission
             self.slippage += slippagefee

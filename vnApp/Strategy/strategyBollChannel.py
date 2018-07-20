@@ -223,12 +223,13 @@ class BollChannelStrategy(AShTemplate):
         barDesc = '%.2f,%.2f,%.2f,%.2f' % (bar.open, bar.close, bar.high, bar.low)
         measureDesc = 'boll[%.2f~%.2f] cci[%d->%d] atr:%.2f' % (self.bollDown, self.bollUp, self._lastCCI, self.cciValue, self.atrValue)
 
+        maxBuy, _, _ = self.account.maxBuyVolume(bar.vtSymbol, bar.close)
         # determine buy ability according to the available cash
-        maxBuy = (bar.close*1.01) * self.fixedSize * self.account.size
-        if maxBuy >0:
-            maxBuy = cash /maxBuy
-        else:
-            maxBuy =0
+        # maxBuy = (bar.close*1.01) * self.fixedSize * self.account.size
+        # if maxBuy >0:
+        #     maxBuy = cash /maxBuy
+        # else:
+        #     maxBuy =0
 
         if (toBuy - toSell) >0 and maxBuy >1 :
             vol = self.fixedSize*int(min(toBuy, maxBuy))

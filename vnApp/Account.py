@@ -153,6 +153,10 @@ class Account(object):
     @abstractmethod
     def calcAmountOfTrade(self, symbol, price, volume): raise NotImplementedError
 
+    # return volume, commission, slippage
+    @abstractmethod
+    def maxBuyVolume(self, vtSymbol, price): raise NotImplementedError
+
     @abstractmethod
     def onDayOpen(self, newDate): raise NotImplementedError
 

@@ -958,8 +958,8 @@ class BTAccount_AShare(Account_AShare):
 
         # 输出
         self.stdout('-' * 30)
-        self.stdout(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execStart, self._execStartClose, self._execEnd, self._execEndClose, formatNumber(originGain)))
-        self.stdout(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (d['timeList'][0], self._execStartClose, d['timeList'][-1], self._execEndClose))
+        self.stdout(u'回放日期：\t%s(C:%.2f)~%s(C:%.2f): %s%%'  %(self._execStart, self._execStartClose, self._execEnd, self._execEndClose, formatNumber(originGain)))
+        self.stdout(u'交易日期：\t%s(C:%.2f)~%s(C:%.2f)' % (d['timeList'][0], self._execStartClose, d['timeList'][-1], self._execEndClose))
         
         self.stdout(u'总交易次数：\t%s' % formatNumber(d['totalResult'],0))        
         self.stdout(u'总盈亏：\t%s' % formatNumber(d['capital']))

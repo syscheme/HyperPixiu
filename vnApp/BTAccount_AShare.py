@@ -1185,7 +1185,7 @@ class BTAccount_AShare(Account_AShare):
         totalTurnover = df['turnover'].sum()
         dailyTurnover = totalTurnover / totalDays
         
-        totalTradeCount = df['tradeCount'].sum()
+        totalTradeCount = df['tradeCountBuy'].sum() + df['tradeCountSell'].sum()
         dailyTradeCount = totalTradeCount / totalDays
         
         totalReturn = (endBalance/self.capital - 1) * 100
@@ -1271,7 +1271,7 @@ class BTAccount_AShare(Account_AShare):
         self.stdout(u'收益标准差：\t%s%%' % formatNumber(result['returnStd']))
         self.stdout(u'Sharpe Ratio：\t%s' % formatNumber(result['sharpeRatio']))
         
-        # self.plotDailyResult(df)
+        self.plotDailyResult(df)
 
     #----------------------------------------------------------------------
     def plotDailyResult(self, df):
@@ -1296,7 +1296,7 @@ class BTAccount_AShare(Account_AShare):
         pKDE.set_title('Daily Pnl Distribution')
         df['netPnl'].hist(bins=50)
         
-        # plt.savefig('DR-%s.png' % self._accountId, dpi=400, bbox_inches='tight')
+        plt.savefig('DR-%s.png' % self._accountId, dpi=400, bbox_inches='tight')
         plt.show()
         plt.close()
        
@@ -1344,7 +1344,8 @@ class DailyResult(object):
         self.previousClose = 0          # 昨日收盘价
         
         self.tradeList = []             # 成交列表
-        self.tradeCount = 0             # 成交数量
+        self.tradeCountBuy = 0             # 成交数量
+        self.tradeCountSell = 0             # 成交数量
         
         self.openPosition = 0           # 开盘时的持仓
         self.closePosition = 0          # 收盘时的持仓
@@ -1377,13 +1378,16 @@ class DailyResult(object):
         self.closePosition = self.openPosition
         
         # 交易部分
-        self.tradeCount = len(self.tradeList)
+        self.tradeCountBuy = 0
+        self.tradeCountSell = 0
         
         for trade in self.tradeList:
             if trade.direction == DIRECTION_LONG:
                 posChange = trade.volume
+                self.tradeCountBuy += 1
             else:
                 posChange = -trade.volume
+                self.tradeCountSell += 1
                 
             self.tradingPnl += posChange * (self.closePrice - trade.price) * size
             self.closePosition += posChange

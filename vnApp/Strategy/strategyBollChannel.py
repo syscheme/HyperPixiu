@@ -214,7 +214,6 @@ class BollChannelStrategy(AShTemplate):
             toSell +=1
         if dCCI <0 and self.cciValue < 0:
             toBuy  =0
-        
 
         # 判断是否要进行交易
         cash, _ = self.account.cashAmount()
@@ -234,13 +233,13 @@ class BollChannelStrategy(AShTemplate):
         if (toBuy - toSell) >0 and maxBuy >1 :
             vol = self.fixedSize*int(min(toBuy, maxBuy))
             
-            self.log(u'onXminBar() pos[%s] bar[%s] %s => BUY(%d)' %(posDesc, barDesc, measureDesc, vol))
+            self.log(u'onXminBar() pos[%s] bar[%s] %s =>BUY(%d)' %(posDesc, barDesc, measureDesc, vol))
             self.buy(bar.close+0.01, vol, False)
 
         elif self._posAvail >0 and (toSell - toBuy) >0 :
             vol = min(self._posAvail, self.fixedSize*toSell*10)
             
-            self.log(u'onXminBar() pos[%s] bar[%s] %s => SELL(%d)' %(posDesc, barDesc, measureDesc, vol))
+            self.log(u'onXminBar() pos[%s] bar[%s] %s =>SELL(%d)' %(posDesc, barDesc, measureDesc, vol))
             self.sell(bar.close-0.01, vol, False) # abs(self.pos), False)
 
 

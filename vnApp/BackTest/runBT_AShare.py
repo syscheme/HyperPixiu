@@ -36,7 +36,7 @@ def backTestSymbol(symbol, startDate, endDate=''):
     # 设置回测用的数据起始日期
     account.setStartDate(startDate)
     account.setEndDate(endDate)
-    account.setDatabase(MINUTE_DB_NAME, symbol)
+    account.setDatabase('VnTrader_1Min_Db', symbol)
     
     # 在引擎中创建策略对象
     d = {}

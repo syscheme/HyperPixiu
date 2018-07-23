@@ -101,7 +101,7 @@ class AShTemplate(object):
     #----------------------------------------------------------------------
     def onDayOpen(self, date):
         """收到交易日开始推送"""
-        raise NotImplementedError
+        pass
 
     #----------------------------------------------------------------------
     def onStopOrder(self, so):

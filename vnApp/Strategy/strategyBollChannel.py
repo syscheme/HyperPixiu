@@ -270,10 +270,6 @@ class BollChannelStrategy(AShTemplate):
         self.putEvent()        
 
     #----------------------------------------------------------------------
-    def onDayOpen(self, date):
-        """收到交易日开始推送"""
-
-    #----------------------------------------------------------------------
     def onOrder(self, order):
         """收到委托变化推送（必须由用户继承实现）"""
         if order.status == STATUS_ALLTRADED :

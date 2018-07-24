@@ -184,7 +184,11 @@ class Account(object):
         self._tradeDriver.placeStopOrder(volume, vtSymbol, orderType, price, source)
 
     @abstractmethod
-    def amountOfTrade(symbol, price, volume): raise NotImplementedError
+    def calcAmountOfTrade(self, symbol, price, volume): raise NotImplementedError
+
+    # return volume, commission, slippage
+    @abstractmethod
+    def maxBuyVolume(self, vtSymbol, price): raise NotImplementedError
 
     @abstractmethod
     def onDayOpen(self, newDate): raise NotImplementedError
@@ -440,27 +444,6 @@ class Account(object):
             for setting in l:
                 self.loadStrategy(setting)
     
-#----------------------------------------------------------------------
-def amountOfTrade(symbol, price, volume, size, slippage=0, rate=3/1000) :
-    # 交易手续费=印花税+过户费+券商交易佣金
-    volumeX1 = abs(volume) * size
-    turnOver = price * volumeX1
-
-    # 印花税: 成交金额的1‰ 。目前向卖方单边征收
-    tax = 0
-    if volumeX1 <0:
-        tax = turnOver /1000
-        
-    #过户费（仅上海收取，也就是买卖上海股票时才有）：每1000股收取1元，不足1000股按1元收取
-    transfer =0
-    if len(symbol)>2 and (symbol[1]=='6' or symbol[1]=='7'):
-        transfer = int((volumeX1+999)/1000)
-        
-    #3.券商交易佣金 最高为成交金额的3‰，最低5元起，单笔交易佣金不满5元按5元收取。
-    commission = max(turnOver * rate, 5)
-
-    return turnOver, tax + transfer + commission, volumeX1 * slippage
-
 
 ########################################################################
 class StopOrder(object):
@@ -501,8 +484,7 @@ class Account_AShare(Account):
         return (0, 0)
 
     #----------------------------------------------------------------------
-    def calcAmountOfTrade(vtSymbol, price, volume):
-    # def amountOfTrade(symbol, price, volume, size, slippage=0, rate=3/1000) :
+    def calcAmountOfTrade(self, symbol, price, volume):
         # 交易手续费=印花税+过户费+券商交易佣金
         volumeX1 = abs(volume) * self.size
         turnOver = price * volumeX1
@@ -522,6 +504,27 @@ class Account_AShare(Account):
 
         return turnOver, tax + transfer + commission, volumeX1 * self.slippage
 
+    #----------------------------------------------------------------------
+    # determine buy ability according to the available cash
+    # return volume, commission, slippage
+    def maxBuyVolume(self, vtSymbol, price):
+        if price <=0 :
+            return 0, 0, 0
+
+        cash, _  = self.cashAmount()
+        volume   = cash / price / self.size
+        turnOver, commission, slippage = self.calcAmountOfTrade(vtSymbol, price, volume)
+        if cash >= (turnOver + commission + slippage) :
+            return volume, commission, slippage
+
+        volume -= round((commission + slippage) / price / self.size +1)
+        if volume <=0:
+            return 0, 0, 0
+
+        turnOver, commission, slippage = self.calcAmountOfTrade(vtSymbol, price, volume)
+        return volume, commission, slippage
+
+    #----------------------------------------------------------------------
     @abstractmethod
     def onDayOpen(self, newDate):
         self._lastTradeDate =self._thisTradeDate

@@ -17,6 +17,7 @@ Release/
 # WingIDE文件
 *.wpr
 *.wpu
+Huobi.json
 
 # 压缩文件
 *.zip
@@ -56,3 +57,4 @@ vn.trader/dist/*
 *.bak
 
 A601000.BollChannel.csv
+vnApp/conf/Huobi.json

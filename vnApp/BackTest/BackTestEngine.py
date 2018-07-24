@@ -32,7 +32,7 @@ from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 from vnApp.Account import *
 
 ########################################################################
-class BTAccount_AShare(Account_AShare):
+class BackTestEngine(object):
     """
     回测Account
     函数接口和策略引擎保持一样，
@@ -43,7 +43,7 @@ class BTAccount_AShare(Account_AShare):
     BAR_MODE = 'bar'
 
     #----------------------------------------------------------------------
-    def __init__(self):
+    def __init__(self, Account_AShare):
         """Constructor"""
 
         super(BTAccount_AShare, self).__init__()

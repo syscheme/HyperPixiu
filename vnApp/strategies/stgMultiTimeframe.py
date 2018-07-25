@@ -61,7 +61,7 @@ class stgMultiTimeframe(Strategy):
     #----------------------------------------------------------------------
     def __init__(self, account, setting):
         """Constructor"""
-        super(MultiTimeframeStrategy, self).__init__(account, setting)
+        super(stgMultiTimeframe, self).__init__(account, setting)
         
         self.rsiLong = 50 + self.rsiSignal
         self.rsiShort = 50 - self.rsiSignal

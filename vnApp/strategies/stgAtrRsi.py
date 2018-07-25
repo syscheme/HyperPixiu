@@ -68,7 +68,7 @@ class stgAtrRsi(Strategy):
     #----------------------------------------------------------------------
     def __init__(self, account, setting):
         """Constructor"""
-        super(AtrRsiStrategy, self).__init__(account, setting)
+        super(stgAtrRsi, self).__init__(account, setting)
         
         # 创建K线合成器对象
         self.bg = BarGenerator(self.onBar)

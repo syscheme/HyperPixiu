@@ -171,7 +171,7 @@ class stgMultiSignal(TargetPosTemplate):
     #----------------------------------------------------------------------
     def __init__(self, account, setting):
         """Constructor"""
-        super(MultiSignalStrategy, self).__init__(account, setting)
+        super(stgMultiSignal, self).__init__(account, setting)
 
         self.rsiSignal = RsiSignal()
         self.cciSignal = CciSignal()

@@ -21,8 +21,8 @@ symbols= ["601000"]
 #---------------------------------------------------------------------
 def backTestSymbol(symbol, startDate, endDate=''):
     """将Multicharts导出的csv格式的历史数据插入到Mongo数据库中"""
-    from vnApp.strategies.strategyKingKeltner import KkStrategy
-    from vnApp.strategies.strategyBollChannel import BollChannelStrategy
+    from vnApp.strategies.stgKingKeltner import stgKingKeltner
+    from vnApp.strategies.stgBBand import stgBBand
 
     settings = acnt.loadSettings('vnApp/conf/BT_AShare.json')
     # 创建回测引擎
@@ -44,7 +44,7 @@ def backTestSymbol(symbol, startDate, endDate=''):
     
     # 在引擎中创建策略对象
     d = {}
-    strategyList = [BollChannelStrategy] # , KkStrategy]
+    strategyList = [stgBBand] # , stgKingKeltner]
     engine.batchBacktesting(strategyList, d)
     # engine.initStrategy(KkStrategy, d)
     

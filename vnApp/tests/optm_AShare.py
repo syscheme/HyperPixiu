@@ -38,7 +38,7 @@ if __name__ == '__main__':
 
     # 跑优化
     runStrategy = BollChannelStrategy
-    optSetting.addParameter('initDays', 10, 12, 1)
+    optSetting.addParameter('initDays', 10, 15, 1)
     
     # runStrategy = AtrRsiStrategy
     # setting.addParameter('atrLength', 12, 13, 1)    # 增加第一个优化参数atrLength，起始12，结束20，步进2
@@ -54,6 +54,6 @@ if __name__ == '__main__':
     engine.runOptimization(runStrategy, optSetting)            
 
     # 多进程优化，耗时：89秒
-    # engine.runParallelOptimization(AtrRsiStrategy, setting)
+    # engine.runParallelOptimization(runStrategy, optSetting)
     
     print(u'耗时：%s' %(time.time()-start))

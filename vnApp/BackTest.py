@@ -89,7 +89,7 @@ class BackTest(object):
         self._account._tradeDriver._backtest= self
 #        self._account._accountId = "BT.%s:%s" % (self.strategyBT, self.symbol)
         
-        self.capital  = self._settings.capital(10000) # 回测时的起始本金（默认10万）
+        self.capital  = self._settings.capital(100000) # 回测时的起始本金（默认10万）
 
         self._execStart = ''
         self._execEnd = ''
@@ -236,7 +236,7 @@ class BackTest(object):
     def runBacktesting(self):
         """运行回测"""
 
-        self._accountId = "BT_%s.%s" % (self.symbol, self.strategy.name)
+        self._account._accountId = "BT.%s.%s" % (self.symbol, self.strategy.className)
 
         # 载入历史数据
         if self.loadHistoryData() <=0 :
@@ -942,7 +942,6 @@ class BackTest(object):
             l.append(pool.apply_async(optimize, (strategyClass, setting,
                                                  targetName, self.mode, 
                                                  self.startDate, self.initDays, self.endDate,
-                                                 self.slippage, self.rate, self._account.size, self.priceTick,
                                                  self.dbName, self.symbol)))
         pool.close()
         pool.join()
@@ -1093,7 +1092,7 @@ class BackTest(object):
             df = self.calculateDailyResult()
             df, result = self.calculateDailyStatistics(df)
 
-        df.to_csv(self._accountId+'.csv')
+        df.to_csv(self._account._accountId+'.csv')
             
         originGain = 0.0
         if self._execStartClose >0 :
@@ -1155,7 +1154,7 @@ class BackTest(object):
         pKDE.set_title('Daily Pnl Distribution')
         df['netPnl'].hist(bins=50)
         
-        plt.savefig('DR-%s.png' % self._accountId, dpi=400, bbox_inches='tight')
+        plt.savefig('DR-%s.png' % self._account._accountId, dpi=400, bbox_inches='tight')
         plt.show()
         plt.close()
        
@@ -1333,7 +1332,6 @@ def formatNumber(n, dec=2):
 #----------------------------------------------------------------------
 def optimize(strategyClass, setting, targetName,
              mode, startDate, initDays, endDate,
-             slippage, rate, size, priceTick,
              dbName, symbol):
 
     """多进程优化时跑在每个进程中运行的函数"""

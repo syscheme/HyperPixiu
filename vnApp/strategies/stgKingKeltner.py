@@ -60,7 +60,7 @@ class stgKingKeltner(Strategy):
     #----------------------------------------------------------------------
     def __init__(self, account, setting):
         """Constructor"""
-        super(KkStrategy, self).__init__(account, setting)
+        super(stgKingKeltner, self).__init__(account, setting)
         
         self.bg = BarGenerator(self.onBar, 5, self.onFiveBar)     # 创建K线合成器对象
         self.am = ArrayManager()

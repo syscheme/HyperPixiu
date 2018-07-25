@@ -62,7 +62,7 @@ class stgDualTrust(Strategy):
     #----------------------------------------------------------------------
     def __init__(self, account, setting):
         """Constructor"""
-        super(DualThrustStrategy, self).__init__(account, setting) 
+        super(stgDualTrust, self).__init__(account, setting) 
         
         self.bg = BarGenerator(self.onBar)
         self.barList = []

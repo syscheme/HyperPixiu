@@ -37,10 +37,10 @@ from ..Strategy import (Strategy,
 
 
 ########################################################################
-class stgBollChannel(Strategy):
+class stgBBand(Strategy):
     """基于布林通道的交易策略"""
 
-    className = 'BollChannel'
+    className = 'BBand'
     author = u'用Python的交易员'
 
     # 策略参数
@@ -97,7 +97,7 @@ class stgBollChannel(Strategy):
     #----------------------------------------------------------------------
     def __init__(self, account, setting):
         """Constructor"""
-        super(BollChannelStrategy, self).__init__(account, setting)
+        super(stgBBand, self).__init__(account, setting)
         
         self.bg    = BarGenerator(self.onBar, 15, self.onXminBar)        # 创建K线合成器对象
         self.bg_L2 = BarGenerator(self.onBar, 60, self.onBar_L2)
@@ -106,7 +106,6 @@ class stgBollChannel(Strategy):
     #----------------------------------------------------------------------
     def onBar_L2(self, bar):
         """"""
-        
         
     #----------------------------------------------------------------------
     def onInit(self):
@@ -161,51 +160,61 @@ class stgBollChannel(Strategy):
             return
 
         # 计算指标数值
-        self._lastCCI = self.cciValue
-        self._lastATR = self.atrValue
+        self._lastCCI, self._lastATR = self.cciValue, self.atrValue
 
         if self.pos ==0:
            self.intraTradeLow = self.intraTradeHigh =0
+        else :
+            self.intraTradeHigh = max(bar.high, self.intraTradeHigh)
+            if self.intraTradeLow ==0 :
+                self.intraTradeLow = bar.low
+            else:
+                self.intraTradeLow = min(bar.low, self.intraTradeLow)
 
-        self.intraTradeHigh = max(bar.high, self.intraTradeHigh)
-        if self.intraTradeLow ==0 :
-            self.intraTradeLow = bar.low
-        else:
-            self.intraTradeLow = min(bar.low, self.intraTradeLow)
-
-        toBuy=0
-        toSell=0
-
-        bollUp, bollDown = am.boll(self.bollWindow, self.bollDev)
-        bollMean = (self.bollUp + self.bollDown) /2
-        
-        # https://baike.baidu.com/item/%E5%B8%83%E6%9E%97%E7%BA%BF%E6%8C%87%E6%A0%87
-        if bollUp >self.bollUp and bollDown > self.bollDown : 
-            # 当布林线的上、中、下轨线同时向上运行时，表明股价强势特征非常明显，股价短期内将继续上涨，投资者应坚决持股待涨或逢低买入
-            toBuy +=1
-        elif bollUp <self.bollUp and bollDown < self.bollDown :
-            # 当布林线的上、中、下轨线同时向下运行时，表明股价的弱势特征非常明显，股价短期内将继续下跌，投资者应坚决持币观望或逢高卖出。
-            toSell +=1
-
-        # 开口型喇叭口形态的形成必须具备两个条件。其一，是股价要经过长时间的中低位横盘整理，整理时间越长、上下轨之间的距离越小则未来涨升的幅度越大；其二，是布林线开始开口时要有明显的大的成交量出现。
-        if (bollUp -bollDown) >(self.bollUp-self.bollDown)*1.1 :
-            toBuy +=1 
-
-        # 收口型喇叭口形态的形成虽然对成交量没有要求，但它也必须具备一个条件，即股价经过前期大幅的短线拉升，拉升的幅度越大、上下轨之间的距离越大则未来下跌幅度越大。
-        if (bollUp -bollDown) <(self.bollUp-self.bollDown)*0.9 :
-            toBuy =0
-            toSell +=1
-
-        if bar.close <self.intraTradeHigh *0.95:
-            toSell = self.pos
-
+        (bollUp, bollDown) = am.boll(self.bollWindow, self.bollDev)
+        bollMean = (bollUp + bollDown) /2
+        dBBandUp   = bollUp - self.bollUp
+        dBBandDown = bollDown - self.bollDown
+        BBwidth = bollUp -bollDown
         (self.bollUp, self.bollDown) = (bollUp, bollDown)
-
+        
         self.cciValue = am.cci(self.cciWindow)
         self.atrValue = am.atr(self.atrWindow)
 
         dCCI = self.cciValue - self._lastCCI
         dATR = self.atrValue - self._lastATR
+
+        # 判断是否要进行交易
+        cash, _ = self.account.cashAmount()
+
+        posDesc ='%s/%s,ca%.2f' % (self._posAvail, self.pos, cash)
+        barDesc = '%.2f,%.2f,%.2f,%.2f' % (bar.open, bar.close, bar.high, bar.low)
+        measureDesc = 'bband[%.2f~%.2f] cci[%d->%d] atr:%.2f' % (self.bollDown, self.bollUp, self._lastCCI, self.cciValue, self.atrValue)
+        maxBuy, _, _ = self.account.maxBuyVolume(bar.vtSymbol, bar.close)
+
+        # determining
+        toBuy=0
+        toSell=0
+
+        if bar.close <self.intraTradeHigh *0.95:
+            toSell = self.pos
+
+        # https://baike.baidu.com/item/%E5%B8%83%E6%9E%97%E7%BA%BF%E6%8C%87%E6%A0%87
+        if dBBandUp>0 and dBBandDown>0 : 
+            # 当布林线的上、中、下轨线同时向上运行时，表明股价强势特征非常明显，股价短期内将继续上涨，投资者应坚决持股待涨或逢低买入
+            toBuy +=1
+        elif dBBandUp<0 and dBBandDown<0 :
+            # 当布林线的上、中、下轨线同时向下运行时，表明股价的弱势特征非常明显，股价短期内将继续下跌，投资者应坚决持币观望或逢高卖出。
+            toSell +=1
+        # elif dBBandUp > dBBandDown and BBwidth:
+        #     # 开口型喇叭口形态的形成必须具备两个条件。其一，是股价要经过长时间的中低位横盘整理，整理时间越长、上下轨之间的距离越小则未来涨升的幅度越大；
+        #     # 其二，是布林线开始开口时要有明显的大的成交量出现。
+        #     toBuy +=1 
+
+        # 收口型喇叭口形态的形成虽然对成交量没有要求，但它也必须具备一个条件，即股价经过前期大幅的短线拉升，拉升的幅度越大、上下轨之间的距离越大则未来下跌幅度越大。
+        if (bollUp -bollDown) <(self.bollUp-self.bollDown)*0.7 :
+            toBuy =0
+            toSell +=1
 
         if dCCI >0 and self.cciValue > 100:
             toBuy +=1
@@ -215,14 +224,6 @@ class stgBollChannel(Strategy):
         if dCCI <0 and self.cciValue < 0:
             toBuy  =0
 
-        # 判断是否要进行交易
-        cash, _ = self.account.cashAmount()
-    
-        posDesc ='%s/%s,ca%.2f' % (self._posAvail, self.pos, cash)
-        barDesc = '%.2f,%.2f,%.2f,%.2f' % (bar.open, bar.close, bar.high, bar.low)
-        measureDesc = 'boll[%.2f~%.2f] cci[%d->%d] atr:%.2f' % (self.bollDown, self.bollUp, self._lastCCI, self.cciValue, self.atrValue)
-
-        maxBuy, _, _ = self.account.maxBuyVolume(bar.vtSymbol, bar.close)
         # determine buy ability according to the available cash
         # maxBuy = (bar.close*1.01) * self.fixedSize * self.account.size
         # if maxBuy >0:

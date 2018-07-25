@@ -53,7 +53,7 @@ class stgDoubleMa(Strategy):
     #----------------------------------------------------------------------
     def __init__(self, account, setting):
         """Constructor"""
-        super(DoubleMaStrategy, self).__init__(account, setting)
+        super(stgDoubleMa, self).__init__(account, setting)
         
         self.bg = BarGenerator(self.onBar)
         self.am = ArrayManager()

@@ -12,6 +12,8 @@ from itertools import product
 import multiprocessing
 import copy
 
+import jsoncfg # pip install json-cfg
+
 import pymongo
 import pandas as pd
 import numpy as np
@@ -32,7 +34,7 @@ from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 from vnApp.Account import *
 
 ########################################################################
-class BackTestEngine(object):
+class BackTest(object):
     """
     回测Account
     函数接口和策略引擎保持一样，

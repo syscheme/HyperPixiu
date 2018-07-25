@@ -74,7 +74,6 @@ class Account_Huobi(Account):
         # 当前最新数据，用于模拟成交用
         self.tick = None
         self.bar  = None
-        self.dt   = None      # 最新的时间
 
         # 日线回测结果计算用
         self.dailyResultDict = OrderedDict()

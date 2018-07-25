@@ -11,7 +11,7 @@ from itertools import product
 import multiprocessing
 import copy
 
-import jsoncfg
+import jsoncfg # pip install json-cfg
 
 import pymongo
 import pandas as pd
@@ -68,13 +68,18 @@ EVENT_STRATEGY = 'eVNStrategy.'    # 策略状态变化事件
 ########################################################################
 def loadSettings(filepath):
     """读取配置"""
-    with open(filepath) as f:
-        l = json.load(f)
+    try :
+        return jsoncfg.load_config(filepath)
+    except Exception as e :
+        print('failed to load configure[%s] :%s' % (filepath, e))
+        return None
+
+    # with open(filepath) as f:
+    #     l = json.load(f)
             
-        for setting in l:
-            self.loadStrategy(setting)
-        
-    return settings
+    #     for setting in l:
+    #         self.loadStrategy(setting)
+    # return settings
 
 ########################################################################
 from abc import ABCMeta, abstractmethod
@@ -84,41 +89,30 @@ class Account(object):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self, tradeDriver, filename=None):
+    def __init__(self, tradeDriver, settings):
         """Constructor"""
 
         self._accountId = ""
         self._thisTradeDate = None
         self._lastTradeDate = None
 
-        self._settings = None
+        self.capital = 0        # 起始本金（默认10万）
+        self._cashAvail =0
+        self._settings = settings
         
         # 保存策略实例的字典
         # key为策略名称，value为策略实例，注意策略名称不允许重复
         self._strategyDict = {}
         
         # trader executer
-        self._tradeDriver = tradeDriver
+        self._tradeDriver = tradeDriver(self, self._settings)
 
-        self.capital = 0        # 起始本金（默认10万）
-        self.slippage = 0       # 假设的滑点
-        self.rate = 30/10000    # 假设的佣金比例（适用于百分比佣金）
-        self.size = 1           # 合约大小，默认为1    
-        self.priceTick = 0      # 价格最小变动 
+        self.slippage  = self._settings.slippage(0)           # 假设的滑点
+        self.rate      = self._settings.ratePer10K(30)/10000  # 假设的佣金比例（适用于百分比佣金）
+        self.size      = self._settings.size(1)               # 合约大小，默认为1    
+        self.priceTick = self._settings.priceTick(0)      # 价格最小变动 
         
-        self.limitOrderCount = 0                    # 限价单编号
-        self.limitOrderDict = OrderedDict()         # 限价单字典
-        self.workingLimitOrderDict = OrderedDict()  # 活动限价单字典，用于进行撮合用
-        
-        # 本地停止单字典, key为stopOrderID，value为stopOrder对象
-        self.stopOrderDict = {}             # 停止单撤销后不会从本字典中删除
-        self.workingStopOrderDict = {}      # 停止单撤销后会从本字典中删除
-        # 本地停止单编号计数
-        self.stopOrderCount = 0
-        # stopOrderID = STOPORDERPREFIX + str(stopOrderCount)
-
-        self.tradeCount = 0             # 成交编号
-        self.tradeDict = OrderedDict()  # 成交字典
+        self.initData = []          # 初始化用的数据
         
         # 保存vtSymbol和策略实例映射的字典（用于推送tick数据）
         # 由于可能多个strategy交易同一个vtSymbol，因此key为vtSymbol
@@ -135,9 +129,6 @@ class Account(object):
 
         self.logList = []               # 日志记录
 
-        if filename !=None :
-            loadSettings(filename)
-
     @abstractmethod
     def loadSettings(filename) :
         self._settings = jsoncfg.load_config(filename)
@@ -149,10 +140,16 @@ class Account(object):
     def positionOf(self, vtSymbol): raise NotImplementedError # returns (availVol, totalVol)
 
     @abstractmethod
-    def cancelAll(self, name): raise NotImplementedError
+    def cancelAll(self, name):
+        if self._tradeDriver == None:
+            raise NotImplementedError
+        self._tradeDriver.cancelAll(name)
         
     @abstractmethod
-    def cancelOrder(self, vtOrderID): raise NotImplementedError
+    def cancelOrder(self, vtOrderID):
+        if self._tradeDriver == None:
+            raise NotImplementedError
+        self._tradeDriver.cancelOrder(vtOrderID)
 
     @abstractmethod
     def cancelStopOrder(self, stopOrderID): raise NotImplementedError
@@ -164,10 +161,14 @@ class Account(object):
     def insertData(self, dbName, collectionName, data): raise NotImplementedError
 
     @abstractmethod
-    def putStrategyEvent(self, name): raise NotImplementedError
+    def putStrategyEvent(self, name):
+        """发送策略更新事件，回测中忽略"""
+        pass
 
     @abstractmethod
-    def saveSyncData(self, strategy): raise NotImplementedError
+    def saveSyncData(self, strategy):
+        """保存同步数据"""
+        pass
 
     #----------------------------------------------------------------------
     @abstractmethod
@@ -184,7 +185,7 @@ class Account(object):
 
     #----------------------------------------------------------------------
     @abstractmethod
-    def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): raise NotImplementedError
+    def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy):
         if self._tradeDriver == None:
             raise NotImplementedError
 
@@ -235,35 +236,51 @@ class Account(object):
         """查询委托回调"""
         pass
         
+    @abstractmethod
     def onGetMatchResults(self, data, reqid):
         """查询成交回调"""
         pass
         
+    @abstractmethod
     def onGetMatchResult(self, data, reqid):
         """查询单一成交回调"""
         pass
 
+    @abstractmethod
     def onPlaceOrder(self, data, reqid):
         """委托回调"""
         pass
 
+    @abstractmethod
     def onStopOrder(self, data, reqid):
         """委托回调"""
         pass
 
+    @abstractmethod
     def onGetTimestamp(self, data, reqid):
         """查询时间回调"""
         pass
-    #----------------------------------------------------------------------
 
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def loadBar(self, dbName, collectionName, startDate):
+        """直接返回初始化数据列表中的Bar"""
+        return self.initData
+    
+    @abstractmethod
+    def loadTick(self, dbName, collectionName, startDate):
+        """直接返回初始化数据列表中的Tick"""
+        return self.initData
+    
+
+    #----------------------------------------------------------------------
     @abstractmethod
     def log(self, message):
         """记录日志"""
-        log = str(self.dt) + ' ' + message 
-        self.logList.append(log)
-        print str(datetime.now()) + " ACC[" + self._accountId + "] " + message
+        self.logList.append(message)
+        self.stdout(message)
 
-    #----------------------------------------------------------------------
+    @abstractmethod
     def stdout(self, message):
         """输出内容"""
         print str(datetime.now()) + " ACC[" + self._accountId + "] " + message
@@ -482,9 +499,9 @@ class Account_AShare(Account):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self, tradeDriver, filename=None):
+    def __init__(self, tradeDriver, settings=None):
         """Constructor"""
-        super(Account_AShare, self).__init__(tradeDriver, filename)
+        super(Account_AShare, self).__init__(tradeDriver, settings)
 
     #----------------------------------------------------------------------
     def cashAmount(self): # returns (avail, total)

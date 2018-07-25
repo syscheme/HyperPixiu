@@ -5,6 +5,15 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Python: bt",
+            "env": {
+                "PYTHONPATH":"${workspaceFolder}:${PYTHONPATH}"
+            },
+            "type": "python",
+            "request": "launch",
+            "program": "vnApp/tests/runBT_AShare.py"
+        },
+        {
             "name": "Python: Current File",
             "env": {
                 "PYTHONPATH":"${workspaceFolder}:${PYTHONPATH}"

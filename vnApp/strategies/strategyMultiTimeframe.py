@@ -6,13 +6,13 @@
 
 from vnpy.trader.vtObject import VtBarData
 from vnpy.trader.vtConstant import EMPTY_STRING
-from vnApp.Strategy.Template import (AShTemplate, 
+from ..Strategy import (Strategy, 
                                                      BarGenerator, 
                                                      ArrayManager)
 
 
 ########################################################################
-class MultiTimeframeStrategy(AShTemplate):
+class MultiTimeframeStrategy(Strategy):
     """跨时间周期交易策略"""
     className = 'MultiTimeframe'
     author = u'用Python的交易员'

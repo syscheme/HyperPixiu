@@ -5,10 +5,11 @@
 cd ${workspaceFolder} ; env "PYTHONPATH=${workspaceFolder}:${workspaceFolder}/kits/vnpy" "PYTHONIOENCODING=UTF-8" "PYTHONUNBUFFERED=1" /usr/bin/python2.7 vnApp/BackTest/runBacktesting.py
 """
 from __future__ import division
-from   vnApp.Account import Account_AShare, MINUTE_DB_NAME
-from   vnApp.TradeDriver import tdBackTest
-import BackTestEngine
-import vnApp.Strategy as tg
+
+import vnApp.BackTest as bt
+import vnApp.strategies as tg
+import vnApp.Account as acnt
+
 import os
 import gc
 from time import sleep
@@ -20,14 +21,15 @@ symbols= ["601000"]
 #---------------------------------------------------------------------
 def backTestSymbol(symbol, startDate, endDate=''):
     """将Multicharts导出的csv格式的历史数据插入到Mongo数据库中"""
-    from vnApp.Strategy.strategyKingKeltner import KkStrategy
-    from vnApp.Strategy.strategyBollChannel import BollChannelStrategy
+    from vnApp.strategies.strategyKingKeltner import KkStrategy
+    from vnApp.strategies.strategyBollChannel import BollChannelStrategy
 
+    settings = acnt.loadSettings('vnApp/conf/BT_AShare.json')
     # 创建回测引擎
-    engine = BackTestEngine(tdBackTest， settings)
+    engine = bt.BackTest(acnt.Account_AShare, settings)
     
     # 设置引擎的回测模式为K线
-    engine.setBacktestingMode(account.BAR_MODE)
+    engine.setBacktestingMode(engine.BAR_MODE)
 
     # 设置产品相关参数
     # account.setSlippage(0.2)     # 股指1跳

@@ -1,7 +1,7 @@
-from .tdBase import *
+from .TradeDriver import *
 
 ########################################################################
-class tdHuobi(tdBase):
+class tdHuobi(TradeDriver):
     """交易API"""
     HUOBI = 'huobi'
     HADAX = 'hadax'

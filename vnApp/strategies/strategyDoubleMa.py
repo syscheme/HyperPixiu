@@ -7,13 +7,13 @@
 from __future__ import division
 
 from vnpy.trader.vtConstant import EMPTY_STRING, EMPTY_FLOAT
-from vnApp.Strategy.Template import (AShTemplate, 
+from ..Strategy import (Strategy, 
                                                      BarGenerator,
                                                      ArrayManager)
 
 
 ########################################################################
-class DoubleMaStrategy(AShTemplate):
+class DoubleMaStrategy(Strategy):
     """双指数均线策略Demo"""
     className = 'DoubleMa'
     author = u'用Python的交易员'

@@ -12,8 +12,6 @@ from itertools import product
 import multiprocessing
 import copy
 
-import jsoncfg # pip install json-cfg
-
 import pymongo
 import pandas as pd
 import numpy as np
@@ -31,7 +29,8 @@ from vnpy.trader.vtObject import VtTickData, VtBarData
 from vnpy.trader.vtConstant import *
 from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 
-from vnApp.Account import *
+from .Account import *
+from .tradedrivers.tdBackTest import tdBackTest
 
 ########################################################################
 class BackTest(object):
@@ -48,19 +47,12 @@ class BackTest(object):
     def __init__(self, AccountClass, settings):
         """Constructor"""
 
-        super(BackTestEngine, self).__init__()
+        super(BackTest, self).__init__()
 
-        self._account = AccountClass（btBackTest, settings)
-
-        # default account settings should go by settings
-        # self._account.capital = 100000       # 回测时的起始本金（默认10万）
-        # self._account._casheAvail = 0        # 起始cache = capital
-        # self._account.slippage = 0           # 回测时假设的滑点
-        # self._account.rate = 20/10000        # 回测时假设的佣金比例（适用于百分比佣金）
-        # self._account.size = 100             # 合约大小，默认为1    
-        # self._account.priceTick = 0          # 价格最小变动 
-
-        self.clearResult()
+        self._settings     = settings
+        self._accountClass = AccountClass
+        self._account = None
+        self.resetTest()
 
         # 回测相关属性
         # -----------------------------------------
@@ -72,11 +64,6 @@ class BackTest(object):
         self.startDate = ''
         self.initDays = 0        
         self.endDate = ''
-
-        self._execStart = ''
-        self._execEnd = ''
-        self._execStartClose = 0.0
-        self._execEndClose = 0.0
 
         self.dbClient = None        # 数据库客户端
         self.dbCursor = None        # 数据库指针
@@ -96,6 +83,18 @@ class BackTest(object):
 
         # 日线回测结果计算用
         self.dailyResultDict = OrderedDict()
+
+    #----------------------------------------------------------------------
+    def resetTest(self) :
+        self._account = self._accountClass(tdBackTest, self._settings.account)
+        self.capital  = self._settings.capital(10000) # 回测时的起始本金（默认10万）
+
+        self._execStart = ''
+        self._execEnd = ''
+        self._execStartClose = 0.0
+        self._execEndClose = 0.0
+
+        self.clearResult()
     
     #------------------------------------------------
     # 通用功能
@@ -103,6 +102,10 @@ class BackTest(object):
     @property
     def strategy(self):
         return self._account._strategyDict[self.strategyName]
+
+    @property
+    def tdDriver(self):
+        return self._account._tradeDriver
 
     #----------------------------------------------------------------------
     def clearResult(self):
@@ -176,6 +179,11 @@ class BackTest(object):
     #------------------------------------------------
     # 数据回放相关
     #------------------------------------------------    
+    #----------------------------------------------------------------------
+    def stdout(self, message):
+        """输出内容"""
+        message = str(self.dt) + ' ' + message
+        self._account.stdout(message)
     
     #----------------------------------------------------------------------
     def loadHistoryData(self):
@@ -236,7 +244,7 @@ class BackTest(object):
             dataClass = VtTickData
             func = self.OnNewTick
 
-        self._cashAvail = self.capital
+        self._account._cashAvail = self.capital
 
         self.stdout(u'开始回测')
         
@@ -269,10 +277,10 @@ class BackTest(object):
         """新的K线"""
 
         # shift the trade date and notify dayOpen if date changes
-        if self._thisTradeDate != bar.date :
+        if self._account._thisTradeDate != bar.date :
             self._account.onDayOpen(bar.date)
             self.strategy._posAvail = self.strategy.pos
-            self.strategy.onDayOpen(newDate)
+            self.strategy.onDayOpen(bar.date)
 
         if self.bar ==None:
             self._execStartClose = bar.close
@@ -318,9 +326,9 @@ class BackTest(object):
         初始化策略
         setting是策略的参数设置，如果使用类中写好的默认设置则可以不传该参数
         """
-        strategy = strategyClass(self, setting)  
+        strategy = strategyClass(self._account, setting)  
         self.strategyName = strategy.className
-        self._strategyDict[self.strategyName] = strategy
+        self._account._strategyDict[self.strategyName] = strategy
     
     #----------------------------------------------------------------------
     def bestBarCrossPrice(self, bar): 
@@ -356,7 +364,7 @@ class BackTest(object):
             sellBestCrossPrice = self.tick.bidPrice1
         
         # 遍历限价单字典中的所有限价单
-        for orderID, order in self.workingLimitOrderDict.items():
+        for orderID, order in self.tdDriver.workingLimitOrderDict.items():
             # 推送委托进入队列（未成交）的状态更新
             if not order.status:
                 order.status = STATUS_NOTTRADED
@@ -376,8 +384,8 @@ class BackTest(object):
                 continue
 
             # 推送成交数据
-            self.tradeCount += 1            # 成交编号自增1
-            tradeID = str(self.tradeCount)
+            self.tdDriver.tradeCount += 1            # 成交编号自增1
+            tradeID = str(self.tdDriver.tradeCount)
             trade = VtTradeData()
             trade.vtSymbol = order.vtSymbol
             trade.tradeID = tradeID
@@ -418,7 +426,7 @@ class BackTest(object):
                 trade.dt = self.dt
                 self.strategy.onTrade(trade)
             
-                self.tradeDict[tradeID] = trade
+                self.tdDriver.tradeDict[tradeID] = trade
                 self.log('limCrossed:pos(%s) %s[%s,%s,%sx%s] by order: %s[%sx%s]' %
                     (self.strategy.pos, tradeID, trade.direction, trade.vtSymbol, trade.price, trade.volume, orderID, order.price,order.totalVolume))
             
@@ -442,8 +450,8 @@ class BackTest(object):
                 self._cashAvail += turnoverT - commissionT - slippageT
             
             # 从字典中删除该限价单
-            if orderID in self.workingLimitOrderDict:
-                del self.workingLimitOrderDict[orderID]
+            if orderID in self.tdDriver.workingLimitOrderDict:
+                del self.tdDriver.workingLimitOrderDict[orderID]
                 
     #----------------------------------------------------------------------
     def crossStopOrder(self): 
@@ -467,7 +475,7 @@ class BackTest(object):
             topVolumeCross = self.tick.volume
         
         # 遍历停止单字典中的所有停止单
-        for stopOrderID, so in self.workingStopOrderDict.items():
+        for stopOrderID, so in self.tdDriver.workingStopOrderDict.items():
             # 判断是否会成交
             buyCross  = (so.direction==DIRECTION_LONG)  and so.price<=buyCrossPrice
             sellCross = (so.direction==DIRECTION_SHORT) and so.price>=sellCrossPrice
@@ -478,12 +486,12 @@ class BackTest(object):
 
             # 更新停止单状态，并从字典中删除该停止单
             so.status = STOPORDER_TRIGGERED
-            if stopOrderID in self.workingStopOrderDict:
-                del self.workingStopOrderDict[stopOrderID]                        
+            if stopOrderID in self.tdDriver.workingStopOrderDict:
+                del self.tdDriver.workingStopOrderDict[stopOrderID]                        
 
             # 推送成交数据
-            self.tradeCount += 1            # 成交编号自增1
-            tradeID = str(self.tradeCount)
+            self.tdDriver.tradeCount += 1            # 成交编号自增1
+            tradeID = str(self.tdDriver.tradeCount)
             trade = VtTradeData()
             trade.vtSymbol = so.vtSymbol
             trade.tradeID = tradeID
@@ -496,8 +504,8 @@ class BackTest(object):
                 self.strategy.pos -= so.volume
                 trade.price = min(bestCrossPrice, so.price)                
                 
-            self.limitOrderCount += 1
-            orderID = str(self.limitOrderCount)
+            self.tdDriver.limitOrderCount += 1
+            orderID = str(self.tdDriver.limitOrderCount)
             trade.orderID = orderID
             trade.vtOrderID = orderID
             trade.direction = so.direction
@@ -506,7 +514,7 @@ class BackTest(object):
             trade.tradeTime = self.dt.strftime('%H:%M:%S')
             trade.dt = self.dt
                 
-            self.tradeDict[tradeID] = trade
+            self.tdDriver.tradeDict[tradeID] = trade
                 
             # 推送委托数据
             order = VtOrderData()
@@ -522,22 +530,12 @@ class BackTest(object):
             order.status = STATUS_ALLTRADED
             order.orderTime = trade.tradeTime
                 
-            self.limitOrderDict[orderID] = order
+            self.tdDriver.limitOrderDict[orderID] = order
                 
             # 按照顺序推送数据
             self.strategy.onStopOrder(so)
             self.strategy.onOrder(order)
             self.strategy.onTrade(trade)
-    
-    #----------------------------------------------------------------------
-    def loadBar(self, dbName, collectionName, startDate):
-        """直接返回初始化数据列表中的Bar"""
-        return self.initData
-    
-    #----------------------------------------------------------------------
-    def loadTick(self, dbName, collectionName, startDate):
-        """直接返回初始化数据列表中的Tick"""
-        return self.initData
     
     #------------------------------------------------
     # 结果计算相关
@@ -560,7 +558,7 @@ class BackTest(object):
         # scan all 交易
         # ---------------------------
         # convert the trade records into result records then put them into resultList
-        for trade in self.tradeDict.values():
+        for trade in self.tdDriver.tradeDict.values():
             # 复制成交对象，因为下面的开平仓交易配对涉及到对成交数量的修改
             # 若不进行复制直接操作，则计算完后所有成交的数量会变成0
             trade = copy.copy(trade)
@@ -839,18 +837,18 @@ class BackTest(object):
         """清空之前回测的结果"""
 
         # 清空限价单相关
-        self.limitOrderCount = 0
-        self.limitOrderDict.clear()
-        self.workingLimitOrderDict.clear()        
+        self.tdDriver.limitOrderCount = 0
+        self.tdDriver.limitOrderDict.clear()
+        self.tdDriver.workingLimitOrderDict.clear()        
         
         # 清空停止单相关
-        self.stopOrderCount = 0
-        self.stopOrderDict.clear()
-        self.workingStopOrderDict.clear()
+        self.tdDriver.stopOrderCount = 0
+        self.tdDriver.stopOrderDict.clear()
+        self.tdDriver.workingStopOrderDict.clear()
         
         # 清空成交相关
-        self.tradeCount = 0
-        self.tradeDict.clear()
+        self.tdDriver.tradeCount = 0
+        self.tdDriver.tradeDict.clear()
 
         self.clearResult()
         self._accountId = ""
@@ -955,11 +953,11 @@ class BackTest(object):
         """计算按日统计的交易结果"""
         self.stdout(u'计算按日统计结果')
 
-        if self.tradeDict ==None or len(self.tradeDict) <=0:
+        if self.tdDriver.tradeDict ==None or len(self.tdDriver.tradeDict) <=0:
             return None
         
         # 将成交添加到每日交易结果中
-        for trade in self.tradeDict.values():
+        for trade in self.tdDriver.tradeDict.values():
             date = trade.dt.date()
             dailyResult = self.dailyResultDict[date]
             dailyResult.addTrade(trade)

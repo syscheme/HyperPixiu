@@ -1,8 +1,10 @@
-from ..Account import *
+# encoding: UTF-8
+
+from .Account import *
 
 ########################################################################
 from abc import ABCMeta, abstractmethod
-class tdBase(object):
+class TradeDriver(object):
     """交易API"""
     SYNC_MODE = 'sync'
     ASYNC_MODE = 'async'
@@ -20,8 +22,6 @@ class tdBase(object):
 
         self._active = False         # API工作状态   
         self._reqid = 0              # 请求编号
-        self.queue = Queue()        # 请求队列
-        self.pool = None            # 线程池
         
     #----------------------------------------------------------------------
     @abstractmethod
@@ -129,7 +129,7 @@ class tdBase(object):
 
     #----------------------------------------------------------------------
     @abstractmethod
-    def placeStopOrder(self, volume, vtSymbol, orderType, price, source)
+    def placeStopOrder(self, volume, vtSymbol, orderType, price, source) :
         """下单"""
         raise NotImplementedError
     

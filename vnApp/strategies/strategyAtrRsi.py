@@ -11,13 +11,13 @@
 
 from vnpy.trader.vtObject import VtBarData
 from vnpy.trader.vtConstant import EMPTY_STRING
-from vnApp.Strategy.Template import (AShTemplate, 
+from ..Strategy import (Strategy, 
                                                      BarGenerator, 
                                                      ArrayManager)
 
 
 ########################################################################
-class AtrRsiStrategy(AShTemplate):
+class AtrRsiStrategy(Strategy):
     """结合ATR和RSI指标的一个分钟线交易策略"""
     className = 'AtrRsi'
     author = u'用Python的交易员'

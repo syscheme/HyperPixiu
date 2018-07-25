@@ -9,13 +9,6 @@ from __future__ import division
 from datetime import datetime, timedelta
 from collections import OrderedDict
 from itertools import product
-import multiprocessing
-import copy
-
-import pymongo
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
 
 # 如果安装了seaborn则设置为白色风格
 try:
@@ -30,10 +23,10 @@ from vnpy.trader.vtConstant import *
 from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 
 from ..Account import *
-from .tdBase import *
+from ..TradeDriver import *
 
 ########################################################################
-class tdBackTest(tdBase):
+class tdBackTest(TradeDriver):
     """
     回测TradeDriver
     函数接口和TradeDriver保持一样，
@@ -47,19 +40,33 @@ class tdBackTest(tdBase):
     def __init__(self, account, settings, mode=None):
         """Constructor"""
 
-        super(tdBase, self).__init__(account, settings, mode)
+        super(tdBackTest, self).__init__(account, settings, mode)
+
+        self.limitOrderCount = 0                    # 限价单编号
+        self.limitOrderDict = OrderedDict()         # 限价单字典
+        self.workingLimitOrderDict = OrderedDict()  # 活动限价单字典，用于进行撮合用
+        
+        # 本地停止单字典, key为stopOrderID，value为stopOrder对象
+        self.stopOrderDict = {}             # 停止单撤销后不会从本字典中删除
+        self.workingStopOrderDict = {}      # 停止单撤销后会从本字典中删除
+        # 本地停止单编号计数
+        self.stopOrderCount = 0
+        # stopOrderID = STOPORDERPREFIX + str(stopOrderCount)
+
+        self.tradeCount = 0             # 成交编号
+        self.tradeDict = OrderedDict()  # 成交字典
 
     #------------------------------------------------
     # Impl of TraderDriver
     #------------------------------------------------    
-    def placeOrder(self, amount, symbol, type_, price=None, source=None):
+    def placeOrder(self, volume, symbol, type_, price=None, source=None):
         """发单"""
         self.limitOrderCount += 1
         orderID = str(self.limitOrderCount)
         
         order = VtOrderData()
-        order.vtSymbol = vtSymbol
-        order.price = self.roundToPriceTick(price)
+        order.vtSymbol = symbol
+        order.price = self._account.roundToPriceTick(price)
         order.totalVolume = volume
         order.orderID = orderID
         order.vtOrderID = orderID
@@ -86,7 +93,7 @@ class tdBackTest(tdBase):
         # reduce available cash
         if order.direction == DIRECTION_LONG :
             turnoverO, commissionO, slippageO = amountOfTrade(order.symbol, order.price, order.totalVolume, self.size, self.slippage, self.rate)
-            self._cashAvail -= turnoverO + commissionO + slippageO
+            self._account._cashAvail -= turnoverO + commissionO + slippageO
         
         return [orderID]
     
@@ -101,7 +108,7 @@ class tdBackTest(tdBase):
             
             # restore available cash
             if order.direction == DIRECTION_LONG :
-                self._cashAvail += order.price * order.totalVolume * self.size # TODO: I have ignored the commission here
+                self._account._cashAvail += order.price * order.totalVolume * self.size # TODO: I have ignored the commission here
 
             self.strategy.onOrder(order)
             
@@ -115,7 +122,7 @@ class tdBackTest(tdBase):
         
         so = StopOrder()
         so.vtSymbol = vtSymbol
-        so.price = self.roundToPriceTick(price)
+        so.price = self._account.roundToPriceTick(price)
         so.volume = volume
         so.strategy = strategy
         so.status = STOPORDER_WAITING

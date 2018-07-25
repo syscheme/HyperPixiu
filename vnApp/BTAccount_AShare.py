@@ -168,6 +168,10 @@ class BTAccount_AShare(Account_AShare):
     #------------------------------------------------
     # 数据回放相关
     #------------------------------------------------    
+    #----------------------------------------------------------------------
+    def stdout(self, message):
+        """输出内容"""
+        self._account.stdout(message)
     
     #----------------------------------------------------------------------
     def loadHistoryData(self):
@@ -245,6 +249,7 @@ class BTAccount_AShare(Account_AShare):
         for d in self.dbCursor:
             data = dataClass()
             data.__dict__ = d
+            self.bar = 
             func(data)     
             
         if self.mode == self.BAR_MODE:

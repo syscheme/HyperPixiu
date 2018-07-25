@@ -31,13 +31,13 @@ from __future__ import division
 
 from vnpy.trader.vtObject import VtBarData
 from vnpy.trader.vtConstant import *
-from vnApp.Strategy.Template import (AShTemplate, 
+from ..Strategy import (Strategy, 
                                                      BarGenerator, 
                                                      ArrayManager)
 
 
 ########################################################################
-class BollChannelStrategy(AShTemplate):
+class BollChannelStrategy(Strategy):
     """基于布林通道的交易策略"""
 
     className = 'BollChannel'

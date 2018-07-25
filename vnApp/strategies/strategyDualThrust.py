@@ -8,11 +8,11 @@ from datetime import time
 
 from vnpy.trader.vtObject import VtBarData
 from vnpy.trader.vtConstant import EMPTY_STRING
-from vnApp.Strategy.Template import AShTemplate, BarGenerator
+from ..Strategy import Strategy, BarGenerator
 
 
 ########################################################################
-class DualThrustStrategy(AShTemplate):
+class DualThrustStrategy(Strategy):
     """DualThrust交易策略"""
     className = 'DualThrust'
     author = u'用Python的交易员'

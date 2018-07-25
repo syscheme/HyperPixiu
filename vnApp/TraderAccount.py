@@ -20,8 +20,8 @@ from vnpy.trader.vtObject import VtTickData, VtBarData
 from vnpy.trader.vtGateway import VtSubscribeReq, VtOrderReq, VtCancelOrderReq, VtLogData
 from vnpy.trader.vtFunction import todayDate, getJsonPath
 
-from .Strategy import STRATEGY_CLASS
-from .Account import *
+from vnApp.strategies import STRATEGY_CLASS
+from vnApp.Account import *
 
 ########################################################################
 class TraderAccount(Account):

@@ -9,7 +9,7 @@ MA（5分钟）：快速大于慢速为多头、低于慢速为空头
 
 from vnpy.trader.vtObject import VtBarData
 from vnpy.trader.vtConstant import EMPTY_STRING
-from vnApp.Strategy.Template import (TargetPosTemplate, 
+from ..Strategy import (TargetPosTemplate, 
                                                      AShSignal,
                                                      BarGenerator, 
                                                      ArrayManager)

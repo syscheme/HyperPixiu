@@ -9,15 +9,13 @@
 
 from __future__ import division
 
-from vnpy.trader.vtObject import VtBarData
+from vnpy.trader.vtObject   import VtBarData
 from vnpy.trader.vtConstant import EMPTY_STRING
-from vnApp.Strategy.Template import (AShTemplate, 
-                                                     BarGenerator, 
-                                                     ArrayManager)
+from ..Strategy             import (Strategy, BarGenerator, ArrayManager)
 
 
 ########################################################################
-class KkStrategy(AShTemplate):
+class KkStrategy(Strategy):
     """基于King Keltner通道的交易策略"""
     className = 'KingKeltner'
     author = u'用Python的交易员'

@@ -1,7 +1,7 @@
 # encoding: UTF-8
 
 '''
-本文件包含了CTA引擎中的策略开发用模板，开发策略时需要继承AShTemplate类。
+本文件包含了CTA引擎中的策略开发用模板，开发策略时需要继承Strategy类。
 '''
 
 import numpy as np
@@ -10,15 +10,15 @@ import talib
 from vnpy.trader.vtConstant import *
 from vnpy.trader.vtObject import VtBarData
 
-from ..Account import *
+from Account import *
 
 
 ########################################################################
-class AShTemplate(object):
+class Strategy(object):
     """CTA策略模板"""
     
     # 策略类的名称和作者
-    className = 'AShTemplate'
+    className = 'Strategy'
     author = EMPTY_UNICODE
     
     # MongoDB数据库的名称，K线数据库默认为1分钟
@@ -210,7 +210,7 @@ class AShTemplate(object):
 
 
 ########################################################################
-class TargetPosTemplate(AShTemplate):
+class TargetPosTemplate(Strategy):
     """
     允许直接通过修改目标持仓来实现交易的策略模板
     

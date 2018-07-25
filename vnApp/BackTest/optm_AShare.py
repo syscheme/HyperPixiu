@@ -45,7 +45,7 @@ if __name__ == '__main__':
     runStrategy = AtrRsiStrategy
     # setting.addParameter('atrLength', 12, 13, 1)    # 增加第一个优化参数atrLength，起始12，结束20，步进2
     # setting.addParameter('atrMa', 20, 24, 2)        # 增加第二个优化参数atrMa，起始20，结束30，步进5
-    setting.addParameter('rsiLength', 4, 10, 1)            # 增加一个固定数值的参数
+    setting.addParameter('rsiLength', 9, 16, 1)            # 增加一个固定数值的参数
     
     # 性能测试环境：I7-3770，主频3.4G, 8核心，内存16G，Windows 7 专业版
     # 测试时还跑着一堆其他的程序，性能仅供参考
@@ -53,9 +53,9 @@ if __name__ == '__main__':
     start = time.time()
     
     # 运行单进程优化函数，自动输出结果，耗时：359秒
-    account.runOptimization(runStrategy, setting)            
+    # account.runOptimization(runStrategy, setting)            
 
     # 多进程优化，耗时：89秒
-    # account.runParallelOptimization(AtrRsiStrategy, setting)
+    account.runParallelOptimization(AtrRsiStrategy, setting)
     
     print(u'耗时：%s' %(time.time()-start))

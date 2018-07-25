@@ -40,7 +40,7 @@ def backTestSymbol(symbol, startDate, endDate=''):
     
     # 在引擎中创建策略对象
     d = {}
-    strategyList = [BollChannelStrategy] # , KkStrategy]
+    strategyList = [BollChannelStrategy, KkStrategy] # , KkStrategy]
     account.batchBacktesting(strategyList, d)
     # account.initStrategy(KkStrategy, d)
     
@@ -86,8 +86,8 @@ if __name__ == '__main__':
     for s in symbols :
         try:
             gc.collect()
-            backTestSymbol('A'+s, '20121001') #, '20120906')
-            #backTestSymbolByAllStategy('A'+s, '20110101')
+            backTestSymbol('A'+s, '20120101','20120906')
+#            backTestSymbolByAllStategy('A'+s, '20110101')
         except OSError, e:
             pass
 

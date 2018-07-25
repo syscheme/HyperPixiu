@@ -37,7 +37,7 @@ from ..Strategy import (Strategy,
 
 
 ########################################################################
-class BollChannelStrategy(Strategy):
+class stgBollChannel(Strategy):
     """基于布林通道的交易策略"""
 
     className = 'BollChannel'

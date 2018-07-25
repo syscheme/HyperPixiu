@@ -12,7 +12,7 @@ from ..Strategy import (Strategy,
 
 
 ########################################################################
-class MultiTimeframeStrategy(Strategy):
+class stgMultiTimeframe(Strategy):
     """跨时间周期交易策略"""
     className = 'MultiTimeframe'
     author = u'用Python的交易员'

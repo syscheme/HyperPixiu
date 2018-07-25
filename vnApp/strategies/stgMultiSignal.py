@@ -140,7 +140,7 @@ class MaSignal(AShSignal):
     
 
 ########################################################################
-class MultiSignalStrategy(TargetPosTemplate):
+class stgMultiSignal(TargetPosTemplate):
     """跨时间周期交易策略"""
     className = 'MultiSignal'
     author = u'用Python的交易员'

@@ -10,7 +10,7 @@ import traceback
 
 # 用来保存策略类的字典
 STRATEGY_CLASS = {}
-STRATEGY_PREFFIX = 'strategy'
+STRATEGY_PREFFIX = 'stg'
 STRATEGY_PREFFIX_LEN = len(STRATEGY_PREFFIX)
 
 #----------------------------------------------------------------------
@@ -21,9 +21,9 @@ def loadStrategyModule(moduleName):
         
         # 遍历模块下的对象，只有名称中包含'Strategy'的才是策略类
         for k in dir(module):
-            if 'Strategy' in k:
+            if len(k)> STRATEGY_PREFFIX_LEN and STRATEGY_PREFFIX == k[:STRATEGY_PREFFIX_LEN]:
                 v = module.__getattribute__(k)
-                STRATEGY_CLASS[k] = v
+                STRATEGY_CLASS[k[STRATEGY_PREFFIX_LEN:]] = v
     except:
         print ('-' * 20)
         print ('Failed to import strategy file %s:' %moduleName)
@@ -37,7 +37,7 @@ for root, subdirs, files in os.walk(path):
         # 只有文件名strategy preffix且以.py结尾的文件，才是策略文件
         if STRATEGY_PREFFIX == name[:STRATEGY_PREFFIX_LEN] and name[-3:] == '.py':
             # 模块名称需要模块路径前缀
-            moduleName = 'vnApp.Strategy.' + name.replace('.py', '')
+            moduleName = 'vnApp.strategies.' + name.replace('.py', '')
             loadStrategyModule(moduleName)
 
 

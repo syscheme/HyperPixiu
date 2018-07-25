@@ -15,7 +15,7 @@ from ..Strategy             import (Strategy, BarGenerator, ArrayManager)
 
 
 ########################################################################
-class KkStrategy(Strategy):
+class stgKingKeltner(Strategy):
     """基于King Keltner通道的交易策略"""
     className = 'KingKeltner'
     author = u'用Python的交易员'

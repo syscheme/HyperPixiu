@@ -13,7 +13,7 @@ from ..Strategy import (Strategy,
 
 
 ########################################################################
-class DoubleMaStrategy(Strategy):
+class stgDoubleMa(Strategy):
     """双指数均线策略Demo"""
     className = 'DoubleMa'
     author = u'用Python的交易员'

@@ -12,9 +12,9 @@ from ..Strategy import Strategy, BarGenerator
 
 
 ########################################################################
-class DualThrustStrategy(Strategy):
+class stgDualTrust(Strategy):
     """DualThrust交易策略"""
-    className = 'DualThrust'
+    className = 'DualTrust'
     author = u'用Python的交易员'
 
     # 策略参数

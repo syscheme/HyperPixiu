@@ -1017,7 +1017,7 @@ class BackTest(object):
         df['balance'] = df['netPnl'].cumsum() + self._account.capital
         df['return'] = (np.log(df['balance']) - np.log(df['balance'].shift(1))).fillna(0)
         df['highlevel'] = df['balance'].rolling(min_periods=1,window=len(df),center=False).max()
-        df['drawdown'] = df['balance'] - df['highlevel']        
+        df['drawdown'] = df['balance'] - df['highlevel']
         df['ddPercent'] = df['drawdown'] / df['highlevel'] * 100
         
         # 计算统计结果
@@ -1028,9 +1028,9 @@ class BackTest(object):
         profitDays = len(df[df['netPnl']>0])
         lossDays = len(df[df['netPnl']<0])
         
-        endBalance = df['balance'].iloc[-1]
-        maxDrawdown = df['drawdown'].min()
-        maxDdPercent = df['ddPercent'].min()
+        endBalance   = round(df['balance'].iloc[-1],2)
+        maxDrawdown  = round(df['drawdown'].min(),2)
+        maxDdPercent = round(df['ddPercent'].min(),2)
         
         totalNetPnl = df['netPnl'].sum()
         dailyNetPnl = totalNetPnl / totalDays
@@ -1236,7 +1236,7 @@ class DailyResult(object):
         """
         # 持仓部分
         self.openPosition = openPosition
-        self.positionPnl = self.openPosition * (self.closePrice - self.previousClose) * account.size
+        self.positionPnl = round(self.openPosition * (self.closePrice - self.previousClose) * account.size, 3)
         self.closePosition = self.openPosition
         
         # 交易部分
@@ -1447,7 +1447,7 @@ class tdBackTest(TradeDriver):
         elif type_ == ORDER_SELL:
             order.direction = DIRECTION_SHORT
             order.offset = OFFSET_CLOSE
-        elif ortype_derType == ORDER_SHORT:
+        elif type_ == ORDER_SHORT:
             order.direction = DIRECTION_SHORT
             order.offset = OFFSET_OPEN
         elif type_ == ORDER_COVER:

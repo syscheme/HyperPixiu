@@ -249,7 +249,6 @@ class BTAccount_AShare(Account_AShare):
         for d in self.dbCursor:
             data = dataClass()
             data.__dict__ = d
-            self.bar = 
             func(data)     
             
         if self.mode == self.BAR_MODE:

@@ -23,6 +23,15 @@ class TradeDriver(object):
         self._active = False         # API工作状态   
         self._reqid = 0              # 请求编号
         
+    @property
+    def size(self) : return self._account.size
+
+    @property
+    def slippage(self) : return self._account.slippage
+
+    @property
+    def rate(self) : return self._account.rate
+
     #----------------------------------------------------------------------
     @abstractmethod
     def cancelOrder(self, orderid):

@@ -40,11 +40,11 @@ def backTestSymbol(symbol, startDate, endDate=''):
     # 设置回测用的数据起始日期
     engine.setStartDate(startDate)
     engine.setEndDate(endDate)
-    engine.setDatabase('VnTrader_1Min_Db', symbol)
+    engine.setDatabase('vnDB_1Min', symbol)
     
     # 在引擎中创建策略对象
     d = {}
-    strategyList = [BollChannelStrategy, KkStrategy] # , KkStrategy]
+    strategyList = [BollChannelStrategy] # , KkStrategy]
     engine.batchBacktesting(strategyList, d)
     # engine.initStrategy(KkStrategy, d)
     

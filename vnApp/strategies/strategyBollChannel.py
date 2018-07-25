@@ -231,7 +231,7 @@ class BollChannelStrategy(Strategy):
         #     maxBuy =0
 
         if (toBuy - toSell) >0 and maxBuy >1 :
-            vol = self.fixedSize*int(min(toBuy, maxBuy))
+            vol = min(self.fixedSize*int(toBuy), maxBuy)
             
             self.log(u'onXminBar() pos[%s] bar[%s] %s =>BUY(%d)' %(posDesc, barDesc, measureDesc, vol))
             self.buy(bar.close+0.01, vol, False)

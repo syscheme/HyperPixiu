@@ -539,12 +539,12 @@ class Account_AShare(Account):
             return 0, 0, 0
 
         cash, _  = self.cashAmount()
-        volume   = cash / price / self.size
+        volume   = int(cash / price / self.size)
         turnOver, commission, slippage = self.calcAmountOfTrade(vtSymbol, price, volume)
         if cash >= (turnOver + commission + slippage) :
             return volume, commission, slippage
 
-        volume -= round((commission + slippage) / price / self.size +1)
+        volume -= int((commission + slippage) / price / self.size) +1
         if volume <=0:
             return 0, 0, 0
 

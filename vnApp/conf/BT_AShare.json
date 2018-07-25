@@ -16,15 +16,12 @@
         }
     },
 
-	"gateways": {
-		"HUOBI": {
-			"exchange": "hadax",
-			"accountId": "",
-			"accessKey": "dasdf",
-			"secretKey": "sadfasdf",
-			"symbols": ["EOS"],
-			"proxyHost": "127.0.0.1",
-			"proxyPort": 8118
+	"backtest": {
+        "symbols": ["A601000"],
+		"DB": {
+			"datadb":  "vnDB_1Min",
+			"dataset": "${SYMBOL}",
+			"url": "localhost",
 		}
 	},
 

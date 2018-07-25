@@ -24,60 +24,60 @@ def backTestSymbol(symbol, startDate, endDate=''):
     from vnApp.Strategy.strategyBollChannel import BollChannelStrategy
 
     # 创建回测引擎
-    account = Account_AShare(tdBackTest)
+    engine = BackTestEngine(tdBackTest， settings)
     
     # 设置引擎的回测模式为K线
-    account.setBacktestingMode(account.BAR_MODE)
+    engine.setBacktestingMode(account.BAR_MODE)
 
     # 设置产品相关参数
     # account.setSlippage(0.2)     # 股指1跳
-    account.setRate(30/10000)   # 万30
-    account.setSize(100)         # 股指合约大小 
-    account.setPriceTick(0.2)    # 股指最小价格变动
+    engine.setRate(30/10000)   # 万30
+    engine.setSize(100)         # 股指合约大小 
+    engine.setPriceTick(0.2)    # 股指最小价格变动
     
     # 设置回测用的数据起始日期
-    account.setStartDate(startDate)
-    account.setEndDate(endDate)
-    account.setDatabase('VnTrader_1Min_Db', symbol)
+    engine.setStartDate(startDate)
+    engine.setEndDate(endDate)
+    engine.setDatabase('VnTrader_1Min_Db', symbol)
     
     # 在引擎中创建策略对象
     d = {}
     strategyList = [BollChannelStrategy] # , KkStrategy]
-    account.batchBacktesting(strategyList, d)
-    # account.initStrategy(KkStrategy, d)
+    engine.batchBacktesting(strategyList, d)
+    # engine.initStrategy(KkStrategy, d)
     
     # # 开始跑回测
-    # account.runBacktesting()
+    # engine.runBacktesting()
     
     # # 显示回测结果
-    # account.showBacktestingResult()
+    # engine.showBacktestingResult()
 
-#----------------------------------------------------------------------
-def backTestSymbolByAllStategy(symbol, startDate):
+# #----------------------------------------------------------------------
+# def backTestSymbolByAllStategy(symbol, startDate):
 
-    # 创建回测引擎
-    account = BTAccount_AShare()
+#     # 创建回测引擎
+#     account = BTAccount_AShare()
     
-    # 设置引擎的回测模式为K线
-    account.setBacktestingMode(account.BAR_MODE)
+#     # 设置引擎的回测模式为K线
+#     account.setBacktestingMode(account.BAR_MODE)
 
-    # 设置产品相关参数
-    account.setSlippage(0.2)     # 股指1跳
-    account.setRate(0.3/10000)   # 万0.3
-    account.setSize(100)         # 股指合约大小 
-    account.setPriceTick(0.2)    # 股指最小价格变动
+#     # 设置产品相关参数
+#     account.setSlippage(0.2)     # 股指1跳
+#     account.setRate(0.3/10000)   # 万0.3
+#     account.setSize(100)         # 股指合约大小 
+#     account.setPriceTick(0.2)    # 股指最小价格变动
     
-    # 设置回测用的数据起始日期
-    account.setStartDate(startDate)
-    account.setDatabase(MINUTE_DB_NAME, symbol)
+#     # 设置回测用的数据起始日期
+#     account.setStartDate(startDate)
+#     account.setDatabase(MINUTE_DB_NAME, symbol)
     
-    # 在引擎中创建策略对象
-    strategyList = []
-    for k in tg.STRATEGY_CLASS :
-        strategyList.append(tg.STRATEGY_CLASS[k])
+#     # 在引擎中创建策略对象
+#     strategyList = []
+#     for k in tg.STRATEGY_CLASS :
+#         strategyList.append(tg.STRATEGY_CLASS[k])
 
-    d = {}
-    account.batchBacktesting(strategyList, d)
+#     d = {}
+#     account.batchBacktesting(strategyList, d)
 
 #----------------------------------------------------------------------
 

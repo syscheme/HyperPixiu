@@ -66,6 +66,17 @@ EVENT_LOG      = 'eVNLog'          # 相关的日志事件
 EVENT_STRATEGY = 'eVNStrategy.'    # 策略状态变化事件
 
 ########################################################################
+def loadSettings(filepath):
+    """读取配置"""
+    with open(filepath) as f:
+        l = json.load(f)
+            
+        for setting in l:
+            self.loadStrategy(setting)
+        
+    return settings
+
+########################################################################
 from abc import ABCMeta, abstractmethod
 class Account(object):
     """
@@ -436,14 +447,13 @@ class Account(object):
             f.write(jsonL)
     
     #----------------------------------------------------------------------
-    def loadSetting(self):
-        """读取策略配置"""
-        with open(self.settingfilePath) as f:
-            l = json.load(f)
-            
-            for setting in l:
-                self.loadStrategy(setting)
-    
+    def roundToPriceTick(self, price):
+        """取整价格到合约最小价格变动"""
+        if not self.priceTick:
+            return price
+        
+        newPrice = round(price/self.priceTick, 0) * self.priceTick
+        return newPrice
 
 ########################################################################
 class StopOrder(object):

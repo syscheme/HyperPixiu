@@ -366,7 +366,7 @@ class TraderAccount(Account):
     #----------------------------------------------------------------------
     def putStrategyEvent(self, name):
         """触发策略状态变化事件（通常用于通知GUI更新）"""
-        strategy = self.strategyDict[name]
+        strategy = self._strategyDict[name]
         d = {k:strategy.__getattribute__(k) for k in strategy.varList}
         
         event = Event(EVENT_STRATEGY+name)

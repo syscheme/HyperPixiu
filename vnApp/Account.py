@@ -11,6 +11,8 @@ from itertools import product
 import multiprocessing
 import copy
 
+import jsoncfg
+
 import pymongo
 import pandas as pd
 import numpy as np
@@ -64,6 +66,17 @@ EVENT_LOG      = 'eVNLog'          # 相关的日志事件
 EVENT_STRATEGY = 'eVNStrategy.'    # 策略状态变化事件
 
 ########################################################################
+def loadSettings(filepath):
+    """读取配置"""
+    with open(filepath) as f:
+        l = json.load(f)
+            
+        for setting in l:
+            self.loadStrategy(setting)
+        
+    return settings
+
+########################################################################
 from abc import ABCMeta, abstractmethod
 class Account(object):
     """
@@ -71,12 +84,21 @@ class Account(object):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self):
+    def __init__(self, tradeDriver, filename=None):
         """Constructor"""
 
         self._accountId = ""
         self._thisTradeDate = None
         self._lastTradeDate = None
+
+        self._settings = None
+        
+        # 保存策略实例的字典
+        # key为策略名称，value为策略实例，注意策略名称不允许重复
+        self._strategyDict = {}
+        
+        # trader executer
+        self._tradeDriver = tradeDriver
 
         self.capital = 0        # 起始本金（默认10万）
         self.slippage = 0       # 假设的滑点
@@ -98,10 +120,6 @@ class Account(object):
         self.tradeCount = 0             # 成交编号
         self.tradeDict = OrderedDict()  # 成交字典
         
-        # 保存策略实例的字典
-        # key为策略名称，value为策略实例，注意策略名称不允许重复
-        self.strategyDict = {}
-        
         # 保存vtSymbol和策略实例映射的字典（用于推送tick数据）
         # 由于可能多个strategy交易同一个vtSymbol，因此key为vtSymbol
         # value为包含所有相关strategy对象的list
@@ -116,6 +134,13 @@ class Account(object):
         self.strategyOrderDict = {}
 
         self.logList = []               # 日志记录
+
+        if filename !=None :
+            loadSettings(filename)
+
+    @abstractmethod
+    def loadSettings(filename) :
+        self._settings = jsoncfg.load_config(filename)
 
     @abstractmethod
     def cashAmount(self): raise NotImplementedError # returns (avail, total)
@@ -144,11 +169,30 @@ class Account(object):
     @abstractmethod
     def saveSyncData(self, strategy): raise NotImplementedError
 
+    #----------------------------------------------------------------------
     @abstractmethod
-    def sendOrder(self, vtSymbol, orderType, price, volume, strategy): raise NotImplementedError
+    def sendOrder(self, vtSymbol, orderType, price, volume, strategy):
+        """发单"""
+        if self._tradeDriver == None:
+            raise NotImplementedError
 
+        source = 'ACCOUNT'
+        if strategy:
+            source = strategy.name
+
+        self._tradeDriver.placeOrder(volume, vtSymbol, orderType, price, source)
+
+    #----------------------------------------------------------------------
     @abstractmethod
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): raise NotImplementedError
+        if self._tradeDriver == None:
+            raise NotImplementedError
+
+        source = 'ACCOUNT'
+        if strategy:
+            source = strategy.name
+
+        self._tradeDriver.placeStopOrder(volume, vtSymbol, orderType, price, source)
 
     @abstractmethod
     def calcAmountOfTrade(self, symbol, price, volume): raise NotImplementedError
@@ -159,6 +203,58 @@ class Account(object):
 
     @abstractmethod
     def onDayOpen(self, newDate): raise NotImplementedError
+    
+    # callbacks from TraderDriver
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def onCancelOrder(self, data, reqid):
+        """撤单回调"""
+        pass
+
+    @abstractmethod
+    def onBatchCancel(self, data, reqid):
+        """批量撤单回调"""
+        pass
+
+    @abstractmethod
+    def onTradeError(self, msg, reqid):
+        """错误回调"""
+        pass
+
+    @abstractmethod
+    def onGetAccountBalance(self, data, reqid):
+        """查询余额回调"""
+        pass
+        
+    @abstractmethod
+    def onGetOrder(self, data, reqid):
+        """查询单一委托回调"""
+        pass
+
+    def onGetOrders(self, data, reqid):
+        """查询委托回调"""
+        pass
+        
+    def onGetMatchResults(self, data, reqid):
+        """查询成交回调"""
+        pass
+        
+    def onGetMatchResult(self, data, reqid):
+        """查询单一成交回调"""
+        pass
+
+    def onPlaceOrder(self, data, reqid):
+        """委托回调"""
+        pass
+
+    def onStopOrder(self, data, reqid):
+        """委托回调"""
+        pass
+
+    def onGetTimestamp(self, data, reqid):
+        """查询时间回调"""
+        pass
+    #----------------------------------------------------------------------
 
     @abstractmethod
     def log(self, message):
@@ -190,12 +286,12 @@ class Account(object):
             return
         
         # 防止策略重名
-        if name in self.strategyDict:
+        if name in self._strategyDict:
             self.log(u'策略实例重名：%s' %name)
         else:
             # 创建策略实例
             strategy = strategyClass(self, setting)  
-            self.strategyDict[name] = strategy
+            self._strategyDict[name] = strategy
             
             # 创建委托号列表
             self.strategyOrderDict[name] = set()
@@ -211,13 +307,13 @@ class Account(object):
     #----------------------------------------------------------------------
     def getStrategyNames(self):
         """查询所有策略名称"""
-        return self.strategyDict.keys()        
+        return self._strategyDict.keys()        
         
     #----------------------------------------------------------------------
     def getStrategyVar(self, name):
         """获取策略当前的变量字典"""
-        if name in self.strategyDict:
-            strategy = self.strategyDict[name]
+        if name in self._strategyDict:
+            strategy = self._strategyDict[name]
             varDict = OrderedDict()
             
             for key in strategy.varList:
@@ -231,8 +327,8 @@ class Account(object):
     #----------------------------------------------------------------------
     def getStrategyParam(self, name):
         """获取策略的参数字典"""
-        if name in self.strategyDict:
-            strategy = self.strategyDict[name]
+        if name in self._strategyDict:
+            strategy = self._strategyDict[name]
             paramDict = OrderedDict()
             
             for key in strategy.paramList:  
@@ -246,8 +342,8 @@ class Account(object):
     #----------------------------------------------------------------------
     def initStrategy(self, name):
         """初始化策略"""
-        if not name in self.strategyDict:
-            strategy = self.strategyDict[name]
+        if not name in self._strategyDict:
+            strategy = self._strategyDict[name]
             self.log(u'策略实例不存在：%s' %name)
             return
             
@@ -263,8 +359,8 @@ class Account(object):
     #---------------------------------------------------------------------
     def startStrategy(self, name):
         """启动策略"""
-        if name in self.strategyDict:
-            strategy = self.strategyDict[name]
+        if name in self._strategyDict:
+            strategy = self._strategyDict[name]
             
             if strategy.inited and not strategy.trading:
                 strategy.trading = True
@@ -275,8 +371,8 @@ class Account(object):
     #----------------------------------------------------------------------
     def stopStrategy(self, name):
         """停止策略"""
-        if name in self.strategyDict:
-            strategy = self.strategyDict[name]
+        if name in self._strategyDict:
+            strategy = self._strategyDict[name]
             
             if strategy.trading:
                 strategy.trading = False
@@ -315,13 +411,13 @@ class Account(object):
     #----------------------------------------------------------------------
     def initAll(self):
         """全部初始化"""
-        for name in self.strategyDict.keys():
+        for name in self._strategyDict.keys():
             self.initStrategy(name)    
             
     #----------------------------------------------------------------------
     def startAll(self):
         """全部启动"""
-        for name in self.strategyDict.keys():
+        for name in self._strategyDict.keys():
             self.startStrategy(name)
             
     #----------------------------------------------------------------------
@@ -332,7 +428,7 @@ class Account(object):
     #----------------------------------------------------------------------
     def stopAll(self):
         """全部停止"""
-        for name in self.strategyDict.keys():
+        for name in self._strategyDict.keys():
             self.stopStrategy(name)    
     
     #----------------------------------------------------------------------
@@ -341,7 +437,7 @@ class Account(object):
         with open(self.settingfilePath, 'w') as f:
             l = []
             
-            for strategy in self.strategyDict.values():
+            for strategy in self._strategyDict.values():
                 setting = {}
                 for param in strategy.paramList:
                     setting[param] = strategy.__getattribute__(param)
@@ -351,14 +447,13 @@ class Account(object):
             f.write(jsonL)
     
     #----------------------------------------------------------------------
-    def loadSetting(self):
-        """读取策略配置"""
-        with open(self.settingfilePath) as f:
-            l = json.load(f)
-            
-            for setting in l:
-                self.loadStrategy(setting)
-    
+    def roundToPriceTick(self, price):
+        """取整价格到合约最小价格变动"""
+        if not self.priceTick:
+            return price
+        
+        newPrice = round(price/self.priceTick, 0) * self.priceTick
+        return newPrice
 
 ########################################################################
 class StopOrder(object):
@@ -387,9 +482,9 @@ class Account_AShare(Account):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self):
+    def __init__(self, tradeDriver, filename=None):
         """Constructor"""
-        super(Account_AShare, self).__init__()
+        super(Account_AShare, self).__init__(tradeDriver, filename)
 
     #----------------------------------------------------------------------
     def cashAmount(self): # returns (avail, total)

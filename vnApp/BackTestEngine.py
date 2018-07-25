@@ -32,7 +32,7 @@ from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 from vnApp.Account import *
 
 ########################################################################
-class BTAccount_AShare(Account_AShare):
+class BackTestEngine(object):
     """
     回测Account
     函数接口和策略引擎保持一样，
@@ -43,12 +43,21 @@ class BTAccount_AShare(Account_AShare):
     BAR_MODE = 'bar'
 
     #----------------------------------------------------------------------
-    def __init__(self):
+    def __init__(self, AccountClass, settings):
         """Constructor"""
 
-        super(BTAccount_AShare, self).__init__()
+        super(BackTestEngine, self).__init__()
 
-        self.clearBackTesting()
+        self._account = AccountClass（btBackTest, settings)
+
+        # default account settings should go by settings
+        # self._account.capital = 100000       # 回测时的起始本金（默认10万）
+        # self._account._casheAvail = 0        # 起始cache = capital
+        # self._account.slippage = 0           # 回测时假设的滑点
+        # self._account.rate = 20/10000        # 回测时假设的佣金比例（适用于百分比佣金）
+        # self._account.size = 100             # 合约大小，默认为1    
+        # self._account.priceTick = 0          # 价格最小变动 
+
         self.clearResult()
 
         # 回测相关属性
@@ -61,6 +70,11 @@ class BTAccount_AShare(Account_AShare):
         self.startDate = ''
         self.initDays = 0        
         self.endDate = ''
+
+        self._execStart = ''
+        self._execEnd = ''
+        self._execStartClose = 0.0
+        self._execEndClose = 0.0
 
         self.dbClient = None        # 数据库客户端
         self.dbCursor = None        # 数据库指针
@@ -86,7 +100,7 @@ class BTAccount_AShare(Account_AShare):
     #------------------------------------------------    
     @property
     def strategy(self):
-        return self._strategyDict[self.strategyName]
+        return self._account._strategyDict[self.strategyName]
 
     #----------------------------------------------------------------------
     def clearResult(self):
@@ -94,15 +108,6 @@ class BTAccount_AShare(Account_AShare):
         self.posList = [0]               # 每笔成交后的持仓情况        
         self.tradeTimeList = []          # 每笔成交时间戳
     
-    #----------------------------------------------------------------------
-    def roundToPriceTick(self, price):
-        """取整价格到合约最小价格变动"""
-        if not self.priceTick:
-            return price
-        
-        newPrice = round(price/self.priceTick, 0) * self.priceTick
-        return newPrice
-
     #------------------------------------------------
     # 参数设置相关
     #------------------------------------------------
@@ -140,30 +145,31 @@ class BTAccount_AShare(Account_AShare):
         self.dbName = dbName
         self.symbol = symbol
     
+    # account 参数设置相关
     #----------------------------------------------------------------------
     def setCapital(self, capital):
         """设置资本金"""
-        self.capital = capital
+        self._account.capital = capital
     
     #----------------------------------------------------------------------
     def setSlippage(self, slippage):
         """设置滑点点数"""
-        self.slippage = slippage
+        self._account.slippage = slippage
         
     #----------------------------------------------------------------------
     def setSize(self, size):
         """设置合约大小"""
-        self.size = size
+        self._account.size = size
         
     #----------------------------------------------------------------------
     def setRate(self, rate):
         """设置佣金比例"""
-        self.rate = rate
+        self._account.rate = rate
         
     #----------------------------------------------------------------------
     def setPriceTick(self, priceTick):
         """设置价格最小变动"""
-        self.priceTick = priceTick
+        self._account.priceTick = priceTick
     
     #------------------------------------------------
     # 数据回放相关
@@ -213,7 +219,7 @@ class BTAccount_AShare(Account_AShare):
     def runBacktesting(self):
         """运行回测"""
 
-        self._accountId = "BT_%s.%s" % (self.symbol, self.strategyName)
+        self._accountId = "BT_%s.%s" % (self.symbol, self.strategy.name)
 
         # 载入历史数据
         if self.loadHistoryData() <=0 :
@@ -257,21 +263,14 @@ class BTAccount_AShare(Account_AShare):
         self.stdout(u'数据回放结束')
         
     #----------------------------------------------------------------------
-    def onDayOpen(self, newDate):
-        super(BTAccount_AShare, self).onDayOpen(newDate)
-
-        self.strategy._posAvail = self.strategy.pos
-        if self.strategy._posAvail > 400:
-            exit
-        self.strategy.onDayOpen(newDate)
-
-    #----------------------------------------------------------------------
     def OnNewBar(self, bar):
         """新的K线"""
 
         # shift the trade date and notify dayOpen if date changes
         if self._thisTradeDate != bar.date :
-            self.onDayOpen(bar.date)
+            self._account.onDayOpen(bar.date)
+            self.strategy._posAvail = self.strategy.pos
+            self.strategy.onDayOpen(newDate)
 
         if self.bar ==None:
             self._execStartClose = bar.close
@@ -294,7 +293,9 @@ class BTAccount_AShare(Account_AShare):
         if self._account._thisTradeDate != tick.date :
             self._account._lastTradeDate =self._account._thisTradeDate
             self._account._thisTradeDate =tick.date
-            self.strategy.onDayOpen(tick.date)
+            self._account.onDayOpen(tick.date)
+            self.strategy._posAvail = self.strategy.pos
+            self.strategy.onDayOpen(newDate)
 
         if self.tick ==None:
             self._execStartClose = tick.priceTick
@@ -390,19 +391,15 @@ class BTAccount_AShare(Account_AShare):
             # 2. 假设在上一根K线结束(也是当前K线开始)的时刻，策略发出的委托为限价105
             # 3. 则在实际中的成交价会是100而不是105，因为委托发出时市场的最优价格是100
             trade.volume = 0
-            tradeAmount =0
             (turnoverO, commissionO, slippageO) =(0,0,0)
             (turnoverT, commissionT, slippageT) =(0,0,0)
             if buyCross:
-                turnoverO, commissionO, slippageO = self.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
-                trade.volume = order.totalVolume
-                if (turnoverO + commissionO + slippageO) > self._cashAvail : # the volume should depends on available cache
-                    trade.volume =0
-
+                turnoverO, commissionO, slippageO = amountOfTrade(order.symbol, order.price, order.totalVolume, self.size, self.slippage, self.rate)
+                trade.volume = order.totalVolume # TODO: the volume should depends on available cache
                 trade.price = min(order.price, buyBestCrossPrice)
                 self.strategy.pos += trade.volume
             elif self.strategy.pos >0:
-                turnoverO, commissionO, slippageO = self.calcAmountOfTrade(order.symbol, order.price, -order.totalVolume)
+                turnoverO, commissionO, slippageO = amountOfTrade(order.symbol, order.price, -order.totalVolume, self.size, self.slippage, self.rate)
                 orderVolume = -order.totalVolume
                 trade.volume = min(self.strategy.pos, order.totalVolume)
                 trade.price = max(order.price, sellBestCrossPrice)
@@ -413,19 +410,15 @@ class BTAccount_AShare(Account_AShare):
                 if not buyCross:
                     tvolume = -trade.volume
                 
-                turnoverT, commissionT, slippageT = self.calcAmountOfTrade(trade.symbol, trade.price, tvolume)
-                if buyCross:
-                    tradeAmount = turnoverT + commissionT + slippageT
-                else :
-                    tradeAmount = turnoverT - commissionT - slippageT
+                turnoverT, commissionT, slippageT = amountOfTrade(trade.symbol, trade.price, tvolume, self.size, self.slippage, self.rate)
 
                 trade.tradeTime = self.dt.strftime('%H:%M:%S')
                 trade.dt = self.dt
                 self.strategy.onTrade(trade)
             
                 self.tradeDict[tradeID] = trade
-                self.log('limCrossed:pos(%s) %s[%s,%s,%s=%dx%s] per order:%s[%sx%s], cash[%s/%s]' %
-                    (self.strategy.pos, tradeID, trade.direction, trade.vtSymbol, tradeAmount, trade.volume, trade.price, orderID, order.totalVolume, order.price, self._cashAvail, 'na'))
+                self.log('limCrossed:pos(%s) %s[%s,%s,%sx%s] by order: %s[%sx%s]' %
+                    (self.strategy.pos, tradeID, trade.direction, trade.vtSymbol, trade.price, trade.volume, orderID, order.price,order.totalVolume))
             
                 # 推送委托数据
                 order.tradedVolume = trade.tradeTime
@@ -442,9 +435,9 @@ class BTAccount_AShare(Account_AShare):
             # update avail cache
             if buyCross: #this was a buy
                 self._cashAvail += turnoverO + commissionO + slippageO
-                self._cashAvail -= tradeAmount
+                self._cashAvail -= turnoverT + commissionT + slippageT
             else :
-                self._cashAvail += tradeAmount
+                self._cashAvail += turnoverT - commissionT - slippageT
             
             # 从字典中删除该限价单
             if orderID in self.workingLimitOrderDict:
@@ -534,122 +527,6 @@ class BTAccount_AShare(Account_AShare):
             self.strategy.onOrder(order)
             self.strategy.onTrade(trade)
     
-    #------------------------------------------------
-    # 策略接口相关
-    #------------------------------------------------      
-
-    #----------------------------------------------------------------------
-    def sendOrder(self, vtSymbol, orderType, price, volume, strategy):
-        """发单"""
-        self.limitOrderCount += 1
-        orderID = str(self.limitOrderCount)
-        
-        order = VtOrderData()
-        order.vtSymbol = vtSymbol
-        order.price = self.roundToPriceTick(price)
-        order.totalVolume = volume
-        order.orderID = orderID
-        order.vtOrderID = orderID
-        order.orderTime = self.dt.strftime('%H:%M:%S')
-        
-        # 委托类型映射
-        if orderType == ORDER_BUY:
-            order.direction = DIRECTION_LONG
-            order.offset = OFFSET_OPEN
-        elif orderType == ORDER_SELL:
-            order.direction = DIRECTION_SHORT
-            order.offset = OFFSET_CLOSE
-        elif orderType == ORDER_SHORT:
-            order.direction = DIRECTION_SHORT
-            order.offset = OFFSET_OPEN
-        elif orderType == ORDER_COVER:
-            order.direction = DIRECTION_LONG
-            order.offset = OFFSET_CLOSE     
-        
-        # 保存到限价单字典中
-        self.workingLimitOrderDict[orderID] = order
-        self.limitOrderDict[orderID] = order
-
-        # reduce available cash
-        if order.direction == DIRECTION_LONG :
-            turnoverO, commissionO, slippageO = self.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
-            self._cashAvail -= turnoverO + commissionO + slippageO
-        
-        return [orderID]
-    
-    #----------------------------------------------------------------------
-    def cancelOrder(self, vtOrderID):
-        """撤单"""
-        if vtOrderID in self.workingLimitOrderDict:
-            order = self.workingLimitOrderDict[vtOrderID]
-            
-            order.status = STATUS_CANCELLED
-            order.cancelTime = self.dt.strftime('%H:%M:%S')
-            
-            # restore available cash
-            if order.direction == DIRECTION_LONG :
-                self._cashAvail += order.price * order.totalVolume * self.size # TODO: I have ignored the commission here
-
-            self.strategy.onOrder(order)
-            
-            del self.workingLimitOrderDict[vtOrderID]
-        
-    #----------------------------------------------------------------------
-    def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy):
-        """发停止单（本地实现）"""
-        self.stopOrderCount += 1
-        stopOrderID = STOPORDERPREFIX + str(self.stopOrderCount)
-        
-        so = StopOrder()
-        so.vtSymbol = vtSymbol
-        so.price = self.roundToPriceTick(price)
-        so.volume = volume
-        so.strategy = strategy
-        so.status = STOPORDER_WAITING
-        so.stopOrderID = stopOrderID
-        
-        if orderType == ORDER_BUY:
-            so.direction = DIRECTION_LONG
-            so.offset = OFFSET_OPEN
-        elif orderType == ORDER_SELL:
-            so.direction = DIRECTION_SHORT
-            so.offset = OFFSET_CLOSE
-        elif orderType == ORDER_SHORT:
-            so.direction = DIRECTION_SHORT
-            so.offset = OFFSET_OPEN
-        elif orderType == ORDER_COVER:
-            so.direction = DIRECTION_LONG
-            so.offset = OFFSET_CLOSE           
-        
-        # 保存stopOrder对象到字典中
-        self.stopOrderDict[stopOrderID] = so
-        self.workingStopOrderDict[stopOrderID] = so
-        
-        # 推送停止单初始更新
-        self.strategy.onStopOrder(so)        
-        
-        return [stopOrderID]
-    
-    #----------------------------------------------------------------------
-    def cancelStopOrder(self, stopOrderID):
-        """撤销停止单"""
-        # 检查停止单是否存在
-        if stopOrderID in self.workingStopOrderDict:
-            so = self.workingStopOrderDict[stopOrderID]
-            so.status = STOPORDER_CANCELLED
-            del self.workingStopOrderDict[stopOrderID]
-            self.strategy.onStopOrder(so)
-    
-    #----------------------------------------------------------------------
-    def putStrategyEvent(self, name):
-        """发送策略更新事件，回测中忽略"""
-        pass
-     
-    #----------------------------------------------------------------------
-    def insertData(self, dbName, collectionName, data):
-        """考虑到回测中不允许向数据库插入数据，防止实盘交易中的一些代码出错"""
-        pass
-    
     #----------------------------------------------------------------------
     def loadBar(self, dbName, collectionName, startDate):
         """直接返回初始化数据列表中的Bar"""
@@ -659,27 +536,6 @@ class BTAccount_AShare(Account_AShare):
     def loadTick(self, dbName, collectionName, startDate):
         """直接返回初始化数据列表中的Tick"""
         return self.initData
-    
-    #----------------------------------------------------------------------
-    def cancelAll(self, name):
-        """全部撤单"""
-        # 撤销限价单
-        for orderID in self.workingLimitOrderDict.keys():
-            self.cancelOrder(orderID)
-        
-        # 撤销停止单
-        for stopOrderID in self.workingStopOrderDict.keys():
-            self.cancelStopOrder(stopOrderID)
-
-    #----------------------------------------------------------------------
-    def saveSyncData(self, strategy):
-        """保存同步数据（无效）"""
-        pass
-    
-    #----------------------------------------------------------------------
-    def getPriceTick(self, strategy):
-        """获取最小价格变动"""
-        return self.priceTick
     
     #------------------------------------------------
     # 结果计算相关
@@ -957,8 +813,8 @@ class BTAccount_AShare(Account_AShare):
 
         # 输出
         self.stdout('-' * 30)
-        self.stdout(u'回放日期：\t%s(C:%.2f)~%s(C:%.2f): %s%%'  %(self._execStart, self._execStartClose, self._execEnd, self._execEndClose, formatNumber(originGain)))
-        self.stdout(u'交易日期：\t%s(C:%.2f)~%s(C:%.2f)' % (d['timeList'][0], self._execStartClose, d['timeList'][-1], self._execEndClose))
+        self.stdout(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execStart, self._execStartClose, self._execEnd, self._execEndClose, formatNumber(originGain)))
+        self.stdout(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (d['timeList'][0], self._execStartClose, d['timeList'][-1], self._execEndClose))
         
         self.stdout(u'总交易次数：\t%s' % formatNumber(d['totalResult'],0))        
         self.stdout(u'总盈亏：\t%s' % formatNumber(d['capital']))
@@ -993,19 +849,9 @@ class BTAccount_AShare(Account_AShare):
         # 清空成交相关
         self.tradeCount = 0
         self.tradeDict.clear()
-        self.dailyResultDict ={}
 
-        self.capital = 100000       # 回测时的起始本金（默认10万）
-        self._casheAvail = 0        # 起始cache = capital
-        self.slippage = 0           # 回测时假设的滑点
-        self.rate = 20/10000        # 回测时假设的佣金比例（适用于百分比佣金）
-        self.size = 100             # 合约大小，默认为1    
-        self.priceTick = 0          # 价格最小变动 
-
-        self._execStart = ''
-        self._execEnd = ''
-        self._execStartClose = 0.0
-        self._execEndClose = 0.0
+        self.clearResult()
+        self._accountId = ""
 
     #----------------------------------------------------------------------
     def batchBacktesting(self, strategyList, d):
@@ -1037,16 +883,13 @@ class BTAccount_AShare(Account_AShare):
         # 遍历优化
         self.resultList =[]
         for setting in settingList:
-            self.clearBackTesting() # must not clear resultList
+            self.clearBackTesting()
             self.stdout('-' * 30)
             self.stdout('setting: %s' %str(setting))
             self.initStrategy(strategyClass, setting)
             self.runBacktesting()
             df = self.calculateDailyResult()
             df, d = self.calculateDailyStatistics(df)            
-
-            df.to_csv(self._accountId+'.OPT' + datetime.now().strftime('%H%M%S') +'.csv')
-
             try:
                 targetValue = d[targetName]
             except KeyError:
@@ -1058,7 +901,7 @@ class BTAccount_AShare(Account_AShare):
         self.stdout('-' * 30)
         self.stdout(u'优化结果：')
         for result in self.resultList:
-            self.stdout(u'参数：%s，目标[%s]：%s' %(result[0], targetName, result[1]))    
+            self.stdout(u'参数：%s，目标：%s' %(result[0], result[1]))    
         return self.resultList
             
     #----------------------------------------------------------------------
@@ -1126,20 +969,14 @@ class BTAccount_AShare(Account_AShare):
             dailyResult.previousClose = previousClose
             previousClose = dailyResult.closePrice
             
-            dailyResult.calculatePnl(self, openPosition)
+            dailyResult.calculatePnl(openPosition, self.size, self.rate, self.slippage )
             openPosition = dailyResult.closePosition
             
         # 生成DataFrame
-        resultDict ={}
-        for k in dailyResult.__dict__.keys() :
-            if k == 'tradeList' : # to exclude some columns
-                continue
-            resultDict[k] =[]
-
+        resultDict = {k:[] for k in dailyResult.__dict__.keys()}
         for dailyResult in self.dailyResultDict.values():
-            for k, v in dailyResult.__dict__.items() :
-                if k in resultDict :
-                    resultDict[k].append(v)
+            for k, v in dailyResult.__dict__.items():
+                resultDict[k].append(v)
                 
         resultDf = pd.DataFrame.from_dict(resultDict)
         
@@ -1230,8 +1067,8 @@ class BTAccount_AShare(Account_AShare):
             df = self.calculateDailyResult()
             df, result = self.calculateDailyStatistics(df)
 
-        # df.to_csv(self._accountId+'.csv',columns=""+DailyResult.EXPORT_COLUMNS)
         df.to_csv(self._accountId+'.csv')
+            
         originGain = 0.0
         if self._execStartClose >0 :
             originGain = (self._execEndClose - self._execStartClose)*100/self._execStartClose
@@ -1267,7 +1104,7 @@ class BTAccount_AShare(Account_AShare):
         self.stdout(u'收益标准差：\t%s%%' % formatNumber(result['returnStd']))
         self.stdout(u'Sharpe Ratio：\t%s' % formatNumber(result['sharpeRatio']))
         
-        # self.plotDailyResult(df)
+        self.plotDailyResult(df)
 
     #----------------------------------------------------------------------
     def plotDailyResult(self, df):
@@ -1332,8 +1169,6 @@ class TradingResult(object):
 class DailyResult(object):
     """每日交易的结果"""
 
-    EXPORT_COLUMNS = "date,openPosition,closePosition,previousClose,closePrice,tradeCountBuy,tradeCountSell,turnover,commission,tradingPnl,positionPnl,totalPnl,netPnl,txnHist"
-
     #----------------------------------------------------------------------
     def __init__(self, date, closePrice):
         """Constructor"""
@@ -1356,7 +1191,6 @@ class DailyResult(object):
         self.commission = 0             # 手续费
         self.slippage = 0               # 滑点
         self.netPnl = 0                 # 净盈亏
-        self.txnHist = ""
         
     #----------------------------------------------------------------------
     def addTrade(self, trade):
@@ -1364,7 +1198,7 @@ class DailyResult(object):
         self.tradeList.append(trade)
 
     #----------------------------------------------------------------------
-    def calculatePnl(self, account, openPosition=0):
+    def calculatePnl(self, openPosition=0, size=1, rate=0, slippage=0):
         """
         计算盈亏
         size: 合约乘数
@@ -1373,7 +1207,7 @@ class DailyResult(object):
         """
         # 持仓部分
         self.openPosition = openPosition
-        self.positionPnl = self.openPosition * (self.closePrice - self.previousClose) * account.size
+        self.positionPnl = self.openPosition * (self.closePrice - self.previousClose) * size
         self.closePosition = self.openPosition
         
         # 交易部分
@@ -1388,10 +1222,9 @@ class DailyResult(object):
                 posChange = -trade.volume
                 self.tradeCountSell += 1
                 
-            self.tradingPnl += posChange * (self.closePrice - trade.price) * account.size
-            self.txnHist += "%+dx%s" % (posChange, trade.price)
+            self.tradingPnl += posChange * (self.closePrice - trade.price) * size
             self.closePosition += posChange
-            turnover, commission, slippagefee = account.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
+            turnover, commission, slippagefee = amountOfTrade(trade.symbol, trade.price, trade.volume, size, slippage, rate)
             self.turnover += turnover
             self.commission += commission
             self.slippage += slippagefee

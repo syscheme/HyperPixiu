@@ -1,0 +1,31 @@
+{
+    "account" : {
+        "accountId" : "12345556",
+        "type" : "12345556",
+        "slippage" : 0,       // 假设的滑点
+        "ratePer10K" : 30,    // 佣金比例（per 10K）
+        "size" : 100,         // 合约大小，默认为1
+        "priceTick" : 0,      // 价格最小变动 
+
+        "strategies" : {
+            "BBand": {
+
+            },
+            "KK": {
+            }
+        }
+    },
+
+	"gateways": {
+		"HUOBI": {
+			"exchange": "hadax",
+			"accountId": "",
+			"accessKey": "dasdf",
+			"secretKey": "sadfasdf",
+			"symbols": ["EOS"],
+			"proxyHost": "127.0.0.1",
+			"proxyPort": 8118
+		}
+	},
+
+}

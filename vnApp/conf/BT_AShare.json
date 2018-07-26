@@ -1,4 +1,16 @@
+// configuration of a BackTest
 {
+    "mode": "bar",
+    "symbols": ["A601005"],
+    "database": {
+        "datadb":  "VnTrader_1Min_Db",
+        "dataset": "${SYMBOL}",
+        "url": "mongo-vnpy",
+    },
+
+    "startDate": "2012-01-01", // %Y-%m-%d
+    "endDate": "2012-09-06",   // %Y-%m-%d
+
     "account" : {
         "accountId" : "12345556",
         "type" : "12345556",
@@ -15,14 +27,4 @@
             }
         }
     },
-
-	"backtest": {
-        "symbols": ["A601000"],
-		"DB": {
-			"datadb":  "vnDB_1Min",
-			"dataset": "${SYMBOL}",
-			"url": "localhost",
-		}
-	},
-
 }

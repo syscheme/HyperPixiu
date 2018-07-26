@@ -28,19 +28,19 @@ def backTestSymbol(symbol, startDate, endDate=''):
     # 创建回测引擎
     engine = bt.BackTest(acnt.Account_AShare, settings)
     
-    # 设置引擎的回测模式为K线
-    engine.setBacktestingMode(engine.BAR_MODE)
+    # # 设置引擎的回测模式为K线
+    # engine.setBacktestingMode(engine.BAR_MODE)
 
-    # 设置产品相关参数
-    # account.setSlippage(0.2)     # 股指1跳
-    engine.setRate(30/10000)   # 万30
-    engine.setSize(100)         # 股指合约大小 
-    engine.setPriceTick(0.2)    # 股指最小价格变动
+    # # 设置产品相关参数
+    # # account.setSlippage(0.2)     # 股指1跳
+    # engine.setRate(30/10000)   # 万30
+    # engine.setSize(100)         # 股指合约大小 
+    # engine.setPriceTick(0.2)    # 股指最小价格变动
     
-    # 设置回测用的数据起始日期
-    engine.setStartDate(startDate)
-    engine.setEndDate(endDate)
-    engine.setDatabase('vnDB_1Min', symbol)
+    # # 设置回测用的数据起始日期
+    # engine.setStartDate(startDate)
+    # engine.setEndDate(endDate)
+    # engine.setDatabase('VnTrader_1Min_Db', symbol)
     
     # 在引擎中创建策略对象
     d = {}
@@ -90,8 +90,8 @@ if __name__ == '__main__':
     for s in symbols :
         try:
             gc.collect()
-            backTestSymbol('A'+s, '20120101','20120906')
-#            backTestSymbolByAllStategy('A'+s, '20110101')
+            backTestSymbol('A'+s, '2012-01-01','2012-09-06')
+#            backTestSymbolByAllStategy('A'+s, '2011-01-01')
         except OSError, e:
             pass
 

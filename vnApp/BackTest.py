@@ -48,32 +48,34 @@ class BackTest(object):
 
         super(BackTest, self).__init__()
 
+        self.engineType = ENGINETYPE_BACKTESTING    # 引擎类型为回测
+
         self._settings     = settings
         self._accountClass = AccountClass
         self._account = None
+
         self.resetTest()
 
         # 回测相关属性
         # -----------------------------------------
-        self.engineType = ENGINETYPE_BACKTESTING    # 引擎类型为回测
-        self.mode = self.BAR_MODE   # 回测模式，默认为K线
-        
-        self.strategyBT = ""       # name of 回测策略
-        
-        self.startDate = ''
-        self.initDays = 0        
-        self.endDate = ''
+        self.mode   = settings.mode(self.BAR_MODE)    # 引擎类型为回测
+        self.dbName = settings.database.datadb(MINUTE_DB_NAME) # 回测数据库名
+        self.dbHost = settings.database.url('localhost')    # 回测数据库server
+        self.dbDataSet = settings.database.dataset('${SYMBOL}')    # 回测数据库collection
+
+        self.symbol = settings.symbols[0]("")            # 回测集合名
+
+        self.dataStartDate = None       # 回测数据开始日期，datetime对象
+        self.dataEndDate = None         # 回测数据结束日期，datetime对象
+        self.strategyStartDate = None   # 策略启动日期（即前面的数据用于初始化），datetime对象
+
+        self.setStartDate(settings.startDate("2010-01-01"), settings.initDays(10)) 
+        self.setEndDate(settings.endDate("")) 
 
         self.dbClient = None        # 数据库客户端
         self.dbCursor = None        # 数据库指针
         
         self.initData = []          # 初始化用的数据
-        self.dbName = ''            # 回测数据库名
-        self.symbol = ''            # 回测集合名
-        
-        self.dataStartDate = None       # 回测数据开始日期，datetime对象
-        self.dataEndDate = None         # 回测数据结束日期，datetime对象
-        self.strategyStartDate = None   # 策略启动日期（即前面的数据用于初始化），datetime对象
         
         # 当前最新数据，用于模拟成交用
         self.tick = None
@@ -125,7 +127,7 @@ class BackTest(object):
         self.startDate = startDate
         self.initDays = initDays
         
-        self.dataStartDate = datetime.strptime(startDate, '%Y%m%d')
+        self.dataStartDate = datetime.strptime(startDate, '%Y-%m-%d')
         
         initTimeDelta = timedelta(initDays)
         self.strategyStartDate = self.dataStartDate + initTimeDelta
@@ -136,7 +138,7 @@ class BackTest(object):
         self.endDate = endDate
         
         if endDate:
-            self.dataEndDate = datetime.strptime(endDate, '%Y%m%d')
+            self.dataEndDate = datetime.strptime(endDate, '%Y-%m-%d')
             
             # 若不修改时间则会导致不包含dataEndDate当天数据
             self.dataEndDate = self.dataEndDate.replace(hour=23, minute=59)    
@@ -195,10 +197,10 @@ class BackTest(object):
     #----------------------------------------------------------------------
     def loadHistoryData(self):
         """载入历史数据"""
-        self.dbClient = pymongo.MongoClient(globalSetting['mongoHost'], globalSetting['mongoPort'])
+        self.dbClient = pymongo.MongoClient(self.dbHost, globalSetting['mongoPort'])
         collection = self.dbClient[self.dbName][self.symbol]          
 
-        self.stdout(u'开始载入数据')
+        self.stdout(u'开始载入数据 %s on %s/%s' % (self.symbol, self.dbHost, self.dbName))
       
         # 首先根据回测模式，确认要使用的数据类
         if self.mode == self.BAR_MODE:
@@ -1012,6 +1014,10 @@ class BackTest(object):
     #----------------------------------------------------------------------
     def calculateDailyStatistics(self, df):
         """计算按日统计的结果"""
+
+        if df ==None:
+            self.stdout(u'计算按日统计结果')
+            return None, None
 
         df['balance'] = df['netPnl'].cumsum() + self._account.capital
         df['return'] = (np.log(df['balance']) - np.log(df['balance'].shift(1))).fillna(0)

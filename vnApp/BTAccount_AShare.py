@@ -1297,7 +1297,7 @@ class BTAccount_AShare(Account_AShare):
         df['netPnl'].hist(bins=50)
         
         plt.savefig('DR-%s.png' % self._accountId, dpi=400, bbox_inches='tight')
-        plt.show()
+        # plt.show()
         plt.close()
        
         

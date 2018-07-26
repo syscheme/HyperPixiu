@@ -1015,9 +1015,9 @@ class BackTest(object):
     def calculateDailyStatistics(self, df):
         """计算按日统计的结果"""
 
-        if df ==None:
-            self.stdout(u'计算按日统计结果')
-            return None, None
+        # if df ==None:
+        #     self.stdout(u'计算按日统计结果')
+        #     return None, None
 
         df['balance'] = df['netPnl'].cumsum() + self._account.capital
         df['return'] = (np.log(df['balance']) - np.log(df['balance'].shift(1))).fillna(0)

@@ -24,7 +24,7 @@ def backTestSymbol(symbol, startDate, endDate=''):
     from vnApp.strategies.stgKingKeltner import stgKingKeltner
     from vnApp.strategies.stgBBand import stgBBand
 
-    settings = acnt.loadSettings('vnApp/conf/BT_AShare.json')
+    settings = acnt.loadSettings('vnApp/conf/btAShare.json')
     # 创建回测引擎
     engine = bt.BackTest(acnt.Account_AShare, settings)
     

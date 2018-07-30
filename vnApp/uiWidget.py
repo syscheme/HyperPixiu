@@ -64,12 +64,12 @@ class StrategyManager(QtWidgets.QGroupBox):
     signal = QtCore.Signal(type(Event()))
 
     #----------------------------------------------------------------------
-    def __init__(self, account, eventEngine, name, parent=None):
+    def __init__(self, account, eventChannel, name, parent=None):
         """Constructor"""
         super(AShStrategyManager, self).__init__(parent)
         
         self.account = account
-        self.eventEngine = eventEngine
+        self._eventChannel = eventChannel
         self.name = name
         
         self.initUi()
@@ -135,7 +135,7 @@ class StrategyManager(QtWidgets.QGroupBox):
     def registerEvent(self):
         """注册事件监听"""
         self.signal.connect(self.updateVar)
-        self.eventEngine.register(EVENT_STRATEGY+self.name, self.signal.emit)
+        self._eventChannel.register(EVENT_STRATEGY+self.name, self.signal.emit)
     
     #----------------------------------------------------------------------
     def init(self):
@@ -159,12 +159,12 @@ class EngineManager(QtWidgets.QWidget):
     signal = QtCore.Signal(type(Event()))
 
     #----------------------------------------------------------------------
-    def __init__(self, account, eventEngine, parent=None):
+    def __init__(self, account, eventChannel, parent=None):
         """Constructor"""
         super(AShEngineManager, self).__init__(parent)
         
         self.account = account
-        self.eventEngine = eventEngine
+        self._eventChannel = eventChannel
         
         self.strategyLoaded = False
         
@@ -221,7 +221,7 @@ class EngineManager(QtWidgets.QWidget):
         
         l = self.account.getStrategyNames()
         for name in l:
-            strategyManager = AShStrategyManager(self.account, self.eventEngine, name)
+            strategyManager = AShStrategyManager(self.account, self._eventChannel, name)
             vbox.addWidget(strategyManager)
         
         vbox.addStretch()
@@ -264,7 +264,7 @@ class EngineManager(QtWidgets.QWidget):
     def registerEvent(self):
         """注册事件监听"""
         self.signal.connect(self.updateAShLog)
-        self.eventEngine.register(EVENT_LOG, self.signal.emit)
+        self._eventChannel.register(EVENT_LOG, self.signal.emit)
 
     
     

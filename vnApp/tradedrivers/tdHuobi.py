@@ -1,4 +1,4 @@
-from .TradeDriver import *
+from ..TradeDriver import *
 
 ########################################################################
 class tdHuobi(TradeDriver):

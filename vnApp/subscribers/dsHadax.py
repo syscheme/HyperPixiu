@@ -4,24 +4,72 @@ from __future__ import division
 
 from vnpy.trader.vtObject import VtBarData
 from vnpy.trader.vtConstant import *
-from ..DataSubscriber import *
+from vnApp.DataSubscriber import *
+
+import urllib
+import hmac
+import base64
+import hashlib
+import requests 
+import traceback
+from copy import copy
+from datetime import datetime
+from threading import Thread
+from Queue import Queue, Empty
+from multiprocessing.dummy import Pool
+from time import sleep
+
+import json
+import zlib
+
+# retrieve package: sudo pip install websocket websocket-client pathlib
+from websocket import create_connection, _exceptions
+
+# 常量定义
+TIMEOUT = 5
+HUOBI_API_HOST = "api.huobi.pro"
+HADAX_API_HOST = "api.hadax.com"
+LANG = 'zh-CN'
+
+#----------------------------------------------------------------------
+def createSign(params, method, host, path, secretKey):
+    """创建签名"""
+    sortedParams = sorted(params.items(), key=lambda d: d[0], reverse=False)
+    encodeParams = urllib.urlencode(sortedParams)
+    
+    payload = [method, host, path, encodeParams]
+    payload = '\n'.join(payload)
+    payload = payload.encode(encoding='UTF8')
+
+    secretKey = secretKey.encode(encoding='UTF8')
+
+    digest = hmac.new(secretKey, payload, digestmod=hashlib.sha256).digest()
+
+    signature = base64.b64encode(digest)
+    signature = signature.decode()
+    return signature    
+
+
 
 ########################################################################
 class dsHadax(DataSubscriber):
-    
     """行情接口
     https://github.com/huobiapi/API_Docs/wiki/WS_request
     """
+    className = 'Hadax'
+    displayName = 'Market data subscriber from HADAX'
+    typeName = 'Market data subscriber from HADAX'
+
     HUOBI = 'huobi'
     HADAX = 'hadax'
 
     #----------------------------------------------------------------------
     # setting schema
     # {'exchange':HADAX, 'proxies':{'host': 'url' }} } 
-    def __init__(self, settings):
+    def __init__(self, eventChannel, settings):
         """Constructor"""
 
-        super(dsHadax, self).__init__(settings)
+        super(dsHadax, self).__init__(eventChannel, settings)
 
         self.ws = None
         self.url = ''
@@ -29,7 +77,7 @@ class dsHadax(DataSubscriber):
         self._reqid = 0
         self.thread = Thread(target=self._run)
 
-        if exchHost == self.HUOBI:
+        if settings.exchange('') == self.HUOBI:
             hostname = HUOBI_API_HOST
         else:
             hostname = HADAX_API_HOST
@@ -74,6 +122,11 @@ class dsHadax(DataSubscriber):
             self.thread.join()
             self.ws.close()
         
+    #----------------------------------------------------------------------
+    def subscribe(self, symbol, eventType):
+        """订阅成交细节"""
+        self._subTopic(symbol, eventType)
+
     #----------------------------------------------------------------------
     def subscribeMarketDepth(self, symbol,step=0):
         """订阅行情深度"""
@@ -178,27 +231,27 @@ class dsHadax(DataSubscriber):
         """订阅主题"""
 
         key = self.subscribeKey(symbol, eventType)
-        if key in self.subscriptions():
+        if key in self.subDict:
             return
 
         topic = 'market.%s.trade.detail' %symbol
-        if   eventType == EVENT_TICK:
+        if   eventType == DataSubscriber.EVENT_TICK:
             topic = 'market.%s.trade.detail' %symbol
-        elif eventType == EVENT_MARKET_DEPTH0:
+        elif eventType == DataSubscriber.EVENT_MARKET_DEPTH0:
             topic = 'market.%s.depth.step0' % symbol
-        elif eventType == EVENT_KLINE_1min:
+        elif eventType == DataSubscriber.EVENT_KLINE_1min:
             topic = 'market.%s.kline.1min' % symbol
-        elif eventType == EVENT_KLINE_5min:
+        elif eventType == DataSubscriber.EVENT_KLINE_5min:
             topic = 'market.%s.kline.5min' % symbol
-        elif eventType == EVENT_KLINE_15min:
+        elif eventType == DataSubscriber.EVENT_KLINE_15min:
             topic = 'market.%s.kline.15min' % symbol
-        elif eventType == EVENT_KLINE_30min:
+        elif eventType == DataSubscriber.EVENT_KLINE_30min:
             topic = 'market.%s.kline.30min' % symbol
-        elif eventType == EVENT_KLINE_60min:
+        elif eventType == DataSubscriber.EVENT_KLINE_60min:
             topic = 'market.%s.kline.60min' % symbol
-        elif eventType == EVENT_KLINE_4hour:
+        elif eventType == DataSubscriber.EVENT_KLINE_4hour:
             topic = 'market.%s.kline.4hour' % symbol
-        elif eventType == EVENT_KLINE_1day:
+        elif eventType == DataSubscriber.EVENT_KLINE_1day:
             topic = 'market.%s.kline.1day' % symbol
 
         self._reqid += 1
@@ -206,8 +259,9 @@ class dsHadax(DataSubscriber):
             'sub': topic,
             'id': str(self._reqid)
         }
-        self._sendReq(req)
-        
+
+        if self.ws :
+            self._sendReq(req)
         self.subDict[key] = str(self._reqid)+'>' + topic
     
     #----------------------------------------------------------------------

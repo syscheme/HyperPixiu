@@ -1,23 +1,19 @@
 # encoding: UTF-8
 
 from __future__ import print_function
-import sys
-try:
-    reload(sys)  # Python 2
-    sys.setdefaultencoding('utf8')
-except NameError:
-    pass         # Python 3
-
 import multiprocessing
 from time import sleep
 from datetime import datetime, time
 
+from vnApp.Engine import MainEngine, LogEngine
+from vnApp.subscribers.dsHadax import dsHadax
+from vnApp.DataRecorder import *
+
 from vnpy.event import EventEngine2
-from vnpy.trader.vtEvent  import EVENT_LOG, EVENT_ERROR
-from vnpy.trader.vtEngine import MainEngine, LogEngine
-from vnpy.trader.gateway  import huobiGateway
-import vnApp.Strategy         as vnStategy
-from vnApp.Strategy.Base  import EVENT_LOG
+from vnpy.trader.vtEvent import EVENT_LOG, EVENT_ERROR
+
+import os
+import jsoncfg # pip install json-cfg
 
 #----------------------------------------------------------------------
 def processErrorEvent(event):
@@ -27,50 +23,43 @@ def processErrorEvent(event):
     """
     error = event.dict_['data']
     print(u'错误代码：%s，错误信息：%s' %(error.errorID, error.errorMsg))
-    
+
 #----------------------------------------------------------------------
 def runChildProcess():
     """子进程运行函数"""
     print('-'*20)
-    
+
+    # dirname(dirname(abspath(file)))
+    settings= None
+    try :
+        conf_fn = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/DR_HADAX.json'
+        settings= jsoncfg.load_config(conf_fn)
+    except Exception as e :
+        print('failed to load configure[%s]: %s' % (conf_fn, e))
+        return
+
     # 创建日志引擎
     le = LogEngine()
     le.setLogLevel(le.LEVEL_INFO)
     le.addConsoleHandler()
-    le.addFileHandler()
-    
-    le.info(u'启动vnApp策略运行子进程')
+    le.info(u'启动行情记录运行子进程')
     
     ee = EventEngine2()
     le.info(u'事件引擎创建成功')
     
-    me = MainEngine(ee)
-    me.addSubscriber(huobiGateway)
-    me.addApp(vnStategy)
+    me = MainEngine(ee, settings)
+
+    me.addSubscriber(dsHadax, settings['datasource'][0])
+    me.addApp(DataRecorder, settings['datarecorder'])
     le.info(u'主引擎创建成功')
-    
-    ee.register(EVENT_LOG, le.processLogEvent)
+
     ee.register(EVENT_LOG, le.processLogEvent)
     ee.register(EVENT_ERROR, processErrorEvent)
     le.info(u'注册日志事件监听')
-    
-    me.connect('HuoBI')
-    le.info(u'连接HuoBi接口')
-    
-    sleep(10)                       # 等待CTP接口初始化
-    me.dataEngine.saveContracts()   # 保存合约信息到文件
-    
-    app = me.getApp(vnStategy.appName)
-    
-    app.loadSetting()
-    le.info(u'vnApp策略载入成功')
-    
-    app.initAll()
-    le.info(u'vnApp策略初始化成功')
-    
-    app.startAll()
-    le.info(u'vnApp策略启动成功')
-    
+
+    me.start()
+    le.info(u'MainEngine starts')
+
     while True:
         sleep(1)
 
@@ -81,34 +70,38 @@ def runParentProcess():
     le = LogEngine()
     le.setLogLevel(le.LEVEL_INFO)
     le.addConsoleHandler()
+    le.info(u'启动行情记录守护父进程')
     
-    le.info(u'启动vnApp策略守护父进程')
-    
-    DAY_START = time(8, 45)         # 日盘启动和停止时间
-    DAY_END = time(15, 30)
-    
-    NIGHT_START = time(20, 45)      # 夜盘启动和停止时间
-    NIGHT_END = time(2, 45)
+    DAY_START = time(8, 57)         # 日盘启动和停止时间
+    DAY_END = time(15, 18)
+    NIGHT_START = time(20, 57)      # 夜盘启动和停止时间
+    NIGHT_END = time(2, 33)
     
     p = None        # 子进程句柄
-    
+
     while True:
         currentTime = datetime.now().time()
         recording = False
-        
+
         # 判断当前处于的时间段
         if ((currentTime >= DAY_START and currentTime <= DAY_END) or
             (currentTime >= NIGHT_START) or
             (currentTime <= NIGHT_END)):
             recording = True
-        
+            
+        # 过滤周末时间段：周六全天，周五夜盘，周日日盘
+        if ((datetime.today().weekday() == 6) or 
+            (datetime.today().weekday() == 5 and currentTime > NIGHT_END) or 
+            (datetime.today().weekday() == 0 and currentTime < DAY_START)):
+            recording = False
+
         # 记录时间则需要启动子进程
         if recording and p is None:
             le.info(u'启动子进程')
             p = multiprocessing.Process(target=runChildProcess)
             p.start()
             le.info(u'子进程启动成功')
-            
+
         # 非记录时间则退出子进程
         if not recording and p is not None:
             le.info(u'关闭子进程')
@@ -116,12 +109,10 @@ def runParentProcess():
             p.join()
             p = None
             le.info(u'子进程关闭成功')
-            
+
         sleep(5)
 
 
 if __name__ == '__main__':
     runChildProcess()
-    
-    # 尽管同样实现了无人值守，但强烈建议每天启动时人工检查，为自己的PNL负责
-    #runParentProcess()
+    # runParentProcess()

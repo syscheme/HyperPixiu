@@ -45,7 +45,7 @@ def runChildProcess():
     le.info(u'事件引擎创建成功')
     
     me = MainEngine(ee)
-    me.addGateway(ctpGateway)
+    me.addSubscriber(ctpGateway)
     me.addApp(vnStategy)
     le.info(u'主引擎创建成功')
     

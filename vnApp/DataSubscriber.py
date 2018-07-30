@@ -1,5 +1,25 @@
+# encoding: UTF-8
+
+from __future__ import division
+
+from vnpy.trader.vtObject import VtBarData
+from vnpy.trader.vtConstant import *
+
 ########################################################################
 class DataSubscriber(object):
+    # Market相关events
+    EVENT_TICK = 'eTick.'                   # TICK行情事件，可后接具体的vtSymbol
+    EVENT_MARKET_DEPTH0 = 'eMD0.'           # Market depth0
+    EVENT_MARKET_DEPTH2 = 'eMD2.'           # Market depth2
+    EVENT_KLINE_1MIN    = 'eKL1m.'
+    EVENT_KLINE_5MIN    = 'eKL5m.'
+    EVENT_KLINE_15MIN   = 'eKL15m.'
+    EVENT_KLINE_30MIN   = 'eKL30m.'
+    EVENT_KLINE_1HOUR   = 'eKL1h.'
+    EVENT_KLINE_4HOUR   = 'eKL4h.'
+    EVENT_KLINE_1DAY    = 'eKL1d.'
+
+    from abc import ABCMeta, abstractmethod
 
     #----------------------------------------------------------------------
     def __init__(self, eventChannel, settings):
@@ -19,7 +39,7 @@ class DataSubscriber(object):
 
     @property
     def subscriptions(self):
-        return self.subDict.keys()
+        return self.subDict
         
     #----------------------------------------------------------------------
     @abstractmethod
@@ -61,53 +81,21 @@ class DataSubscriber(object):
         if key not in self.subDict:
             return
 
-        self._doUnsubscribe(self, key)
-        del self.subDict[topic]
+        self.doUnsubscribe(key)
+        del self.subDict[key]
 
     #----------------------------------------------------------------------
     @abstractmethod
-    def subscribeTick(self, symbol):
-        """订阅成交细节"""
-        topic = 'market.%s.trade.detail' %symbol
-        self.subTopic(topic)
+    def doUnsubscribe(self, key):
+        """取消订阅主题"""
+        raise NotImplementedError
 
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def subscribeMarketDepth(self, symbol,step=0):
-        """订阅行情深度"""
-        raise NotImplementedError
-        
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def subscribeKline(self, symbol, minutes=1):
-        """订阅K线数据"""
-        raise NotImplementedError
-        
     #----------------------------------------------------------------------
     @abstractmethod
     def onError(self, msg):
         """错误推送"""
         print (msg)
         
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def onMarketDepth(self, data):
-        """行情深度推送 
-        sample:
-        {u'ch': u'market.ethusdt.depth.step0', u'ts': 1531119204038, u'tick': {	u'version': 11837097362, u'bids': [
-            [481.2, 6.9387], [481.18, 1.901], [481.17, 5.0], [481.02, 0.96], [481.0, 4.9474], [480.94, 9.537], [480.93, 3.5159], [480.89, 1.0], [480.81, 2.06], [480.8, 30.2504], [480.72, 0.109], [480.64, 0.06], 		[480.63, 1.0], [480.61, 0.109], [480.6, 0.4899], [480.58, 1.9059], [480.56, 0.06], [480.5, 21.241], [480.49, 1.1444], [480.46, 1.0], [480.44, 2.4982], [480.43, 1.0], [480.41, 0.1875], [480.35, 1.0637], 		...		
-            [494.01, 0.05], [494.05, 0.231], [494.26, 50.3659], [494.45, 0.2889]
-        ]}}
-        """
-        if self._eventCh ==None:
-            return
-
-        event = Event(type_=EVENT_MARKET_DEPTH)
-
-        # TODO: covert the event format
-        event.dict_['data'] = data
-        self._eventCh.put(event)
-    
     #----------------------------------------------------------------------
     @abstractmethod
     def postMarketEvent(self, event):

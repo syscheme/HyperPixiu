@@ -32,13 +32,13 @@ class TraderAccount(Account):
     STATUS_FINISHED = set([STATUS_REJECTED, STATUS_CANCELLED, STATUS_ALLTRADED])
 
     #----------------------------------------------------------------------
-    def __init__(self, mainEngine, eventEngine):
+    def __init__(self, mainEngine, eventChannel):
         """Constructor"""
 
         super(TraderAccount, self).__init__()
 
         self.mainEngine  = mainEngine
-        self.eventEngine = eventEngine
+        self._eventChannel = eventChannel
         
         # 当前日期
         self.today = todayDate()
@@ -296,9 +296,9 @@ class TraderAccount(Account):
     #----------------------------------------------------------------------
     def registerEvent(self):
         """注册事件监听"""
-        self.eventEngine.register(EVENT_TICK, self.processTickEvent)
-        self.eventEngine.register(EVENT_ORDER, self.processOrderEvent)
-        self.eventEngine.register(EVENT_TRADE, self.processTradeEvent)
+        self._eventChannel.register(EVENT_TICK, self.processTickEvent)
+        self._eventChannel.register(EVENT_ORDER, self.processOrderEvent)
+        self._eventChannel.register(EVENT_TRADE, self.processTradeEvent)
  
     #----------------------------------------------------------------------
     def insertData(self, dbName, collectionName, data):
@@ -343,7 +343,7 @@ class TraderAccount(Account):
         log.gatewayName = 'CTA_STRATEGY'
         event = Event(type_=EVENT_LOG)
         event.dict_['data'] = log
-        self.eventEngine.put(event)   
+        self._eventChannel.put(event)   
     
     #----------------------------------------------------------------------
     def subscribeMarketData(self, strategy):
@@ -371,13 +371,13 @@ class TraderAccount(Account):
         
         event = Event(EVENT_STRATEGY+name)
         event.dict_['data'] = d
-        self.eventEngine.put(event)
+        self._eventChannel.put(event)
         
         d2 = {k:str(v) for k,v in d.items()}
         d2['name'] = name
         event2 = Event(EVENT_STRATEGY)
         event2.dict_['data'] = d2
-        self.eventEngine.put(event2)        
+        self._eventChannel.put(event2)        
         
     #----------------------------------------------------------------------
     def saveSyncData(self, strategy):

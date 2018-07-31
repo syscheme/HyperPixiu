@@ -60,8 +60,7 @@ def runChildProcess():
     me.start()
     le.info(u'MainEngine starts')
 
-    while True:
-        sleep(1)
+    input()
 
 #----------------------------------------------------------------------
 def runParentProcess():

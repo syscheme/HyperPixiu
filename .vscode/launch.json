@@ -14,6 +14,15 @@
             "program": "vnApp/tests/runBT_AShare.py"
         },
         {
+            "name": "Python: dr",
+            "env": {
+                "PYTHONPATH":"${workspaceFolder}:${PYTHONPATH}"
+            },
+            "type": "python",
+            "request": "launch",
+            "program": "vnApp/tests/runDR_HADAX.py"
+        },
+        {
             "name": "Python: Current File",
             "env": {
                 "PYTHONPATH":"${workspaceFolder}:${PYTHONPATH}"

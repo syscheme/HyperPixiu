@@ -8,6 +8,6 @@ __author__ = 'Andy Shao'
 
 appName = 'vnApp'
 displayName = u'A股策略'
-# appEngine = TraderAccount
-# appWidget = EngineManager
+#appEngine = TraderAccount
+#appWidget = EngineManager
 appIco = 'ash.ico'

@@ -2,28 +2,27 @@
     "datasource": [
         {
             "id": "hadax",
-            "type": "hadax",
+            // "exchange": "hadax",
+            "proxy": "localhost:8118",
         },
     ],
 
     "working": true,
 
     "datarecorder": {
-        "ticks":
-    [
-        {"symbol":"eosusdt", "ds": "hadax"}, 
-        {"symbol":"btcusdt", "ds": "hadax"}, 
-    ],
+        "ticks": [
+            {"symbol":"ethusdt", "ds": "hadax"}, 
+            {"symbol":"btcusdt", "ds": "hadax"}, 
+        ],
 
-    "bar":
-    [
-        ["rb1801", "CTP"],
-        ["m1801", "CTP"],
-        ["SR801", "CTP"],
-        ["IF1712", "CTP"],
-        ["IH1712", "CTP"],
-        ["IC1712", "CTP"]
-    ],
+        "bar": [
+            ["rb1801", "CTP"],
+            ["m1801", "CTP"],
+            ["SR801", "CTP"],
+            ["IF1712", "CTP"],
+            ["IH1712", "CTP"],
+            ["IC1712", "CTP"]
+        ],
 
     "active":
     {

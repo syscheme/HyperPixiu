@@ -143,6 +143,25 @@ class MainEngine(object):
             return None
         
     #----------------------------------------------------------------------
+    def start(self):
+        # if self._eventChannel:
+        #     self._eventChannel.start()
+
+        self.dbConnect()
+        
+        for (k, ds) in self._dictDataSubscribers.items():
+            if ds == None:
+                continue
+            
+            ds.connect()
+
+        for (k, app) in self._dictApps.items() :
+            if app == None:
+                continue
+            
+            app.start()
+
+    #----------------------------------------------------------------------
     def connect(self, dsName):
         """连接特定名称的接口"""
         ds = self.getDataSubscriber(dsName)

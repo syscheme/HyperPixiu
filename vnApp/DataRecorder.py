@@ -43,6 +43,7 @@ class DataRecorder(object):
     className = 'DataRecorder'
     displayName = 'DataRecorder'
     typeName = 'DataRecorder'
+    appIco  = 'aaa.ico'
 
     settingFileName = 'DR_setting.json'
     settingFilePath = getJsonPath(settingFileName, __file__)  
@@ -57,9 +58,6 @@ class DataRecorder(object):
         
         # 当前日期
         self._today = todayDate()
-        
-        # 主力合约代码映射字典，key为具体的合约代码（如IF1604），value为主力合约代码（如IF0000）
-        self._dictActiveSymbols = {}
         
         # K线合成器字典
         self._dictKLineMerge = {}
@@ -77,10 +75,10 @@ class DataRecorder(object):
         self.subscriber()
         
         # 启动数据插入线程
-        self.start()
+        # self.start()
     
         # 注册事件监听
-        self.registerEvent()  
+        # self.registerEvent()  
     
     #----------------------------------------------------------------------
     def subscriber(self):
@@ -113,8 +111,9 @@ class DataRecorder(object):
                 print(e)
                 continue
 
+        return
         # 分钟线记录配置
-        for i in self._settings.kline1min:
+        for i in self._settings.kline1min :
             try:
                 symbol = i.symbol
                 ds = i.ds
@@ -124,7 +123,6 @@ class DataRecorder(object):
                 self._engine.getDataSubscriber(ds).subscribe(symbol, EVENT_KLINE_1MIN)
                 if len(self._dict1mins) <=0:
                     self._engine._eventChannel.register(EVENT_KLINE_1MIN, self.procecssKLineEvent)
-                    self._engine._eventChannel.subscribe(EVENT_KLINE_1MIN)
                 
                 # 保存到配置字典中
                 if symbol not in self._dict1mins:
@@ -133,35 +131,30 @@ class DataRecorder(object):
                         'ds': ds,
                     }
 
-                    self._dict1mins[vtSymbol] = d
+                    self._dict1mins[symbol] = d
                 else:
-                    d = self._dict1mins[vtSymbol]
+                    d = self._dict1mins[symbol]
                     d['bar'] = True
                         
                 # 创建BarManager对象
-                self._dictKLineMerge[vtSymbol] = BarGenerator(self.onBar)
+                self._dictKLineMerge[symbol] = BarGenerator(self.onBar)
             except Exception :
                 pass
 
-        # 主力合约记录配置
-        if 'active' in drSetting:
-            d = drSetting['active']
-            self._dictActiveSymbols = {vtSymbol:activeSymbol for activeSymbol, vtSymbol in d.items()}
-    
     #----------------------------------------------------------------------
     def getSetting(self):
         """获取配置"""
-        return self._dictSettings, self._dictActiveSymbols
+        return self._dictSettings
 
     #----------------------------------------------------------------------
     def procecssTickEvent(self, event):
         """处理行情事件"""
-        tick = event.dict_['data']
-        vtSymbol = tick.vtSymbol
+        tick = event.dict_['data'] # this is a vtTickData
+        symbol = tick.vtSymbol
         
         # 生成datetime对象
-        if not tick.datetime:
-            tick.datetime = datetime.strptime(' '.join([tick.date, tick.time]), '%Y%m%d %H:%M:%S.%f')            
+        #if not tick.datetime:
+        #    tick.datetime = datetime.strptime(' '.join([tick.date, tick.time]), '%Y%m%d %H:%M:%S.%f')            
 
         self.onTick(tick)
         
@@ -169,18 +162,14 @@ class DataRecorder(object):
     def onTick(self, tick):
         """Tick更新"""
         vtSymbol = tick.vtSymbol
-        ds = tick.source
-        if len(ds) >0:
-            ds = '_'+ds
-
-        if not vtSymbol in self._dictActiveSymbols:
+        if not vtSymbol in self._dictTicks :
             return
 
-        confSymbol = self._dictActiveSymbols[vtSymbol]
-        if not 'tick' in confSymbol or not confSymbol['tick']:
-            return
+        tblName = vtSymbol
+        if len(tick.exchange) >0:
+            tblName += '_'+tick.exchange
 
-        self.insertData(self._dbNameTick, vtSymbol+ds, tick)
+        self.insertData(self._dbNameTick, tblName, tick)
         if not 'bar' in confSymbol or not confSymbol['bar']:
             return
             
@@ -194,15 +183,14 @@ class DataRecorder(object):
     def onBar(self, bar):
         """分钟线更新"""
         vtSymbol = bar.vtSymbol
-        ds = tick.source
-        if len(ds) >0:
-            ds = '_'+ds
+        if not vtSymbol in self._dict1mins:
+            return
+
+        tblName = vtSymbol
+        if len(bar.exchange) >0:
+            tblName += '_'+bar.exchange
         
-        self.insertData(MINUTE_DB_NAME, vtSymbol, bar)
-        
-        if vtSymbol in self._dictActiveSymbols:
-            activeSymbol = self._dictActiveSymbols[vtSymbol]
-            self.insertData(self._dbName1Min, vtSymbol+ds, bar)                    
+        self.insertData(MINUTE_DB_NAME, tblName, bar)
         
         self.writeDrLog(text.BAR_LOGGING_MESSAGE.format(symbol=bar.vtSymbol, 
                                                         time=bar.time, 

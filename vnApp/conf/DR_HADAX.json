@@ -1,5 +1,5 @@
 {
-    "datasource": [
+    "marketdata": [
         {
             "id": "hadax",
             // "exchange": "hadax",
@@ -10,28 +10,14 @@
     "working": true,
 
     "datarecorder": {
-        "ticks": [
+        // "ticks": [
+        //     {"symbol":"ethusdt", "ds": "hadax"}, 
+        //     {"symbol":"btcusdt", "ds": "hadax"}, 
+        // ],
+
+        "kline1min": [
             {"symbol":"ethusdt", "ds": "hadax"}, 
             {"symbol":"btcusdt", "ds": "hadax"}, 
         ],
-
-        "bar": [
-            ["rb1801", "CTP"],
-            ["m1801", "CTP"],
-            ["SR801", "CTP"],
-            ["IF1712", "CTP"],
-            ["IH1712", "CTP"],
-            ["IC1712", "CTP"]
-        ],
-
-    "active":
-    {
-        "rb.HOT": "rb1801",
-        "m.HOT": "m1801",
-        "SR.HOT": "SR801",
-        "IF.HOT": "IF1712",
-        "IH.HOT": "IH1712",
-        "IC.HOT": "IC1712"   
-    }
     }
 }

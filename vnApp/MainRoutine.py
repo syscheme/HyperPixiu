@@ -24,7 +24,7 @@ from vnpy.trader.vtFunction import getTempPath
 
 
 ########################################################################
-class MainEngine(object):
+class MainRoutine(object):
     """主引擎"""
 
     FINISHED_STATUS = [STATUS_ALLTRADED, STATUS_REJECTED, STATUS_CANCELLED]
@@ -92,7 +92,7 @@ class MainEngine(object):
         
         # 日志引擎实例
         self.logEngine = None
-        self.initLogEngine()
+        self.initLogger()
 
     #----------------------------------------------------------------------
     def addSubscriber(self, dsModule, settings):
@@ -396,23 +396,23 @@ class MainEngine(object):
         return self._dictApps[appName]
     
     #----------------------------------------------------------------------
-    def initLogEngine(self):
+    def initLogger(self):
         """初始化日志引擎"""
         if not globalSetting["logActive"]:
             return
         
         # 创建引擎
-        self.logEngine = LogEngine()
+        self.logEngine = Logger()
         
         # 设置日志级别
         levelDict = {
-            "debug": LogEngine.LEVEL_DEBUG,
-            "info": LogEngine.LEVEL_INFO,
-            "warn": LogEngine.LEVEL_WARN,
-            "error": LogEngine.LEVEL_ERROR,
-            "critical": LogEngine.LEVEL_CRITICAL,
+            "debug": Logger.LEVEL_DEBUG,
+            "info": Logger.LEVEL_INFO,
+            "warn": Logger.LEVEL_WARN,
+            "error": Logger.LEVEL_ERROR,
+            "critical": Logger.LEVEL_CRITICAL,
         }
-        level = levelDict.get(globalSetting["logLevel"], LogEngine.LEVEL_CRITICAL)
+        level = levelDict.get(globalSetting["logLevel"], Logger.LEVEL_CRITICAL)
         self.logEngine.setLogLevel(level)
         
         # 设置输出
@@ -519,7 +519,7 @@ class MainEngine(object):
         
 
 ########################################################################
-class DataEngine(object):
+class DataCache(object):
     """数据引擎"""
     contractFileName = 'ContractData.vt'
     contractFilePath = getTempPath(contractFileName)
@@ -658,7 +658,7 @@ class DataEngine(object):
     
 
 ########################################################################    
-class LogEngine(object):
+class Logger(object):
     """日志引擎"""
     
     # 单例模式
@@ -1113,3 +1113,5 @@ class PositionDetail(object):
         
         # 其他情况则直接返回空
         return []
+
+

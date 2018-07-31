@@ -11,6 +11,7 @@ import vnApp.strategies as tg
 import vnApp.Account as acnt
 
 import os
+import jsoncfg # pip install json-cfg
 import gc
 from time import sleep
 
@@ -24,7 +25,14 @@ def backTestSymbol(symbol, startDate, endDate=''):
     from vnApp.strategies.stgKingKeltner import stgKingKeltner
     from vnApp.strategies.stgBBand import stgBBand
 
-    settings = acnt.loadSettings('vnApp/conf/btAShare.json')
+    settings= None
+    try :
+        conf_fn = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/BT_AShare.json'
+        settings= jsoncfg.load_config(conf_fn)
+    except Exception as e :
+        print('failed to load configure[%s]: %s' % (conf_fn, e))
+        return
+
     # 创建回测引擎
     engine = bt.BackTest(acnt.Account_AShare, settings)
     

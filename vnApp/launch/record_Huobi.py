@@ -7,9 +7,9 @@ import multiprocessing
 from time import sleep
 from datetime import datetime, time
 
-from vnpy.event import EventEngine2
+from vnpy.event import EventChannel
 from vnpy.trader.vtEvent import EVENT_LOG, EVENT_ERROR
-from vnpy.trader.vtEngine import MainEngine, LogEngine
+from vnpy.trader.vtEngine import MainRoutine, Logger
 from vnpy.trader.gateway import huobiGateway as gwHuobi
 from vnpy.trader.app import dataRecorder
 
@@ -29,7 +29,7 @@ def runChildProcess(filePath):
     print('-'*20)
 
     # 创建日志引擎
-    le = LogEngine()
+    le = Logger()
     le.setLogLevel(le.LEVEL_INFO)
     le.addConsoleHandler()
     le.info(u'启动行情记录运行子进程')
@@ -44,10 +44,10 @@ def runChildProcess(filePath):
         le.error(u'读取配置[%s]出错: %s' %(filePath, ex))
         return
     
-    ee = EventEngine2()
+    ee = EventChannel()
     le.info(u'事件引擎创建成功')
     
-    me = MainEngine(ee)
+    me = MainRoutine(ee)
     me.addSubscriber(gwHuobi, setting)
     me.addApp(dataRecorder)
     le.info(u'主引擎创建成功')
@@ -66,7 +66,7 @@ def runChildProcess(filePath):
 def runParentProcess():
     """父进程运行函数"""
     # 创建日志引擎
-    le = LogEngine()
+    le = Logger()
     le.setLogLevel(le.LEVEL_INFO)
     le.addConsoleHandler()
     le.info(u'启动行情记录守护父进程')

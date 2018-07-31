@@ -12,9 +12,9 @@ import multiprocessing
 from time import sleep
 from datetime import datetime, time
 
-from vnpy.event import EventEngine2
+from vnpy.event import EventChannel
 from vnpy.trader.vtEvent  import EVENT_LOG, EVENT_ERROR
-from vnpy.trader.vtEngine import MainEngine, LogEngine
+from vnpy.trader.vtEngine import MainRoutine, Logger
 from vnpy.trader.gateway  import ctpGateway
 import vnApp.Strategy         as vnStategy
 from vnApp.Strategy.Base  import EVENT_LOG
@@ -34,17 +34,17 @@ def runChildProcess():
     print('-'*20)
     
     # 创建日志引擎
-    le = LogEngine()
+    le = Logger()
     le.setLogLevel(le.LEVEL_INFO)
     le.addConsoleHandler()
     le.addFileHandler()
     
     le.info(u'启动CTA策略运行子进程')
     
-    ee = EventEngine2()
+    ee = EventChannel()
     le.info(u'事件引擎创建成功')
     
-    me = MainEngine(ee)
+    me = MainRoutine(ee)
     me.addSubscriber(ctpGateway)
     me.addApp(vnStategy)
     le.info(u'主引擎创建成功')
@@ -78,7 +78,7 @@ def runChildProcess():
 def runParentProcess():
     """父进程运行函数"""
     # 创建日志引擎
-    le = LogEngine()
+    le = Logger()
     le.setLogLevel(le.LEVEL_INFO)
     le.addConsoleHandler()
     

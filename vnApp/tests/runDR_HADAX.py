@@ -1,15 +1,17 @@
 # encoding: UTF-8
 
 from __future__ import print_function
+
+
 import multiprocessing
 from time import sleep
 from datetime import datetime, time
 
-from vnApp.Engine import MainEngine, LogEngine
+from vnApp.MainRoutine import MainRoutine, Logger
 from vnApp.marketdata.mdHuobi import mdHuobi
 from vnApp.DataRecorder import *
+from vnApp.EventChannel import EventChannel
 
-from vnpy.event import EventEngine2
 from vnpy.trader.vtEvent import EVENT_LOG, EVENT_ERROR
 
 import os
@@ -39,15 +41,15 @@ def runChildProcess():
         return
 
     # 创建日志引擎
-    le = LogEngine()
+    le = Logger()
     le.setLogLevel(le.LEVEL_INFO)
     le.addConsoleHandler()
     le.info(u'启动行情记录运行子进程')
     
-    ee = EventEngine2()
+    ee = EventChannel()
     le.info(u'事件引擎创建成功')
     
-    me = MainEngine(ee, settings)
+    me = MainRoutine(ee, settings)
 
     me.addSubscriber(mdHuobi, settings['marketdata'][0])
     me.addApp(DataRecorder, settings['datarecorder'])
@@ -58,7 +60,7 @@ def runChildProcess():
     le.info(u'注册日志事件监听')
 
     me.start()
-    le.info(u'MainEngine starts')
+    le.info(u'MainRoutine starts')
 
     input()
 
@@ -66,7 +68,7 @@ def runChildProcess():
 def runParentProcess():
     """父进程运行函数"""
     # 创建日志引擎
-    le = LogEngine()
+    le = Logger()
     le.setLogLevel(le.LEVEL_INFO)
     le.addConsoleHandler()
     le.info(u'启动行情记录守护父进程')

@@ -12,7 +12,7 @@ from copy import copy
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
 
-from .MarketData import *
+from .MainRoutine import *
 
 from vnpy.event import Event
 from vnpy.trader.vtGlobal import globalSetting
@@ -22,25 +22,17 @@ from vnpy.trader.language import text
 from vnpy.trader.vtFunction import getTempPath
 
 
-
 ########################################################################
-class MainRoutine(object):
+class Trader(BaseApplication):
     """主引擎"""
 
     FINISHED_STATUS = [STATUS_ALLTRADED, STATUS_REJECTED, STATUS_CANCELLED]
 
     #----------------------------------------------------------------------
-    def __init__(self, eventChannel, settings):
+    def __init__(self, mainRoutine, settings):
         """Constructor"""
-        
-        self._settings = settings
 
-        # 记录今日日期
-        self.todayDate = datetime.now().strftime('%Y%m%d')
-        
-        # 绑定事件引擎
-        self._eventChannel = eventChannel
-        self._eventChannel.start()
+        super(Trader, self).__init__(mainRoutine, settings)
         
         #----------------------------------------------------------------------
         # from old 数据引擎
@@ -50,9 +42,8 @@ class MainRoutine(object):
         self._dictLatestOrder = {}
         self._dictWorkingOrder = {}  # 可撤销委托
         self._dictTrade = {}
-        self._dictAccount = {}
-        self.positionDict= {}
-        self._lstLogs = []
+        self._dictAccounts = {}
+        self._dictPositions= {}
         self._lstErrors = []
         
         # 持仓细节相关
@@ -62,205 +53,31 @@ class MainRoutine(object):
         # 读取保存在硬盘的合约数据
         # TODO self.loadContracts()
         
-        # MongoDB数据库相关
-        self._dbConn = None    # MongoDB客户端对象
-        
-        # 接口实例
-        self._dictMarketDatas = OrderedDict()
-        self._dlistSubscribers = []
-        
-        # 应用模块实例
-        self._dictApps = OrderedDict()
-        self.appDetailList = []
-        
         # 风控引擎实例（特殊独立对象）
         self._riskMgm = None
         
-        # 日志引擎实例
-        self.logEngine = None
-        self.initLogger()
-
     #----------------------------------------------------------------------
-    def addMarketData(self, dsModule, settings):
-        """添加底层接口"""
-        clsName = dsModule.className
-        id = settings.id(clsName)
-
-        # 创建接口实例
-        self._dictMarketDatas[id] = dsModule(self._eventChannel, settings)
+    def adoptAccount(self, account, default=False):
+        if not account:
+            return
         
-        # 保存接口详细信息
-        d = {
-            'id': id,
-            'dsDisplayName': settings.displayName(id),
-            'dsType': clsName
-        }
+        if len(account._accountId) <=0 and account._dvrBroker：
+            account._accountId = account._dvrBroker.__class__
         
-        self._dlistSubscribers.append(d)
-        
-    #----------------------------------------------------------------------
-    def addApp(self, appModule, settings):
-        """添加上层应用"""
-        clsName = appModule.className
-        id = settings.id(clsName)
-        
-        # 创建应用实例
-        self._dictApps[id] = appModule(self, settings)
-        
-        # 将应用引擎实例添加到主引擎的属性中
-        self.__dict__[id] = self._dictApps[id]
-        
-        # 保存应用信息
-        d = {
-            'appName': id,
-            'displayName': settings.displayName(id),
-            'appWidget': settings.widget(id),
-            'appIco': appModule.appIco
-        }
-        self.appDetailList.append(d)
-        
-    #----------------------------------------------------------------------
-    def getMarketData(self, dsName):
-        """获取接口"""
-        if dsName in self._dictMarketDatas:
-            return self._dictMarketDatas[dsName]
-        else:
-            self.writeLog(text.GATEWAY_NOT_EXIST.format(ds=dsName))
-            return None
+        self._dictAccounts[account._accountId] = account
+        if default:
+            self._defaultAccId = account._accountId
         
     #----------------------------------------------------------------------
     def start(self):
-        # if self._eventChannel:
-        #     self._eventChannel.start()
-
-        self.dbConnect()
-        
-        for (k, ds) in self._dictMarketDatas.items():
-            if ds == None:
-                continue
-            
-            ds.connect()
-
-        for (k, app) in self._dictApps.items() :
-            if app == None:
-                continue
-            
-            app.start()
+        # TODO: subscribe all interested market data
+        pass
 
     #----------------------------------------------------------------------
-    def connect(self, dsName):
-        """连接特定名称的接口"""
-        ds = self.getMarketData(dsName)
-        
-        if ds:
-            ds.connect()
-            
-            # 接口连接后自动执行数据库连接的任务
-            self.dbConnect()        
-   
-    #----------------------------------------------------------------------
-    def subscribe(self, subscribeReq, dsName):
-        """订阅特定接口的行情"""
-        ds = self.getMarketData(dsName)
-        
-        if ds:
-            ds.subscribe(subscribeReq)
-
-    #----------------------------------------------------------------------
-    def exit(self):
+    def stop(self):
         """退出程序前调用，保证正常退出"""        
-        # 安全关闭所有接口
-        for ds in self._dictMarketDatas.values():        
-            ds.close()
-        
-        # 停止事件引擎
-        self._eventChannel.stop()
-        
-        # 停止上层应用引擎
-        for app in self._dictApps.values():
-            app.stop()
-        
-    #----------------------------------------------------------------------
-    def writeLog(self, content):
-        """快速发出日志事件"""
-        log = VtLogData()
-        log.logContent = content
-        log.dsName = 'MAIN_ENGINE'
-        event = Event(type_=EVENT_LOG)
-        event.dict_['data'] = log
-        self._eventChannel.put(event)        
-    
-    #----------------------------------------------------------------------
-    def dbConnect(self):
-        """连接MongoDB数据库"""
-        if not self._dbConn:
-            # 读取MongoDB的设置
-            try:
-                # 设置MongoDB操作的超时时间为0.5秒
-                self._dbConn = MongoClient(globalSetting['mongoHost'], globalSetting['mongoPort'], connectTimeoutMS=500)
-                
-                # 调用server_info查询服务器状态，防止服务器异常并未连接成功
-                self._dbConn.server_info()
-
-                self.writeLog(text.DATABASE_CONNECTING_COMPLETED)
-                
-                # 如果启动日志记录，则注册日志事件监听函数
-                if globalSetting['mongoLogging']:
-                    self._eventChannel.register(EVENT_LOG, self.dbLogging)
-                    
-            except ConnectionFailure:
-                self.writeLog(text.DATABASE_CONNECTING_FAILED)
-    
-    #----------------------------------------------------------------------
-    def dbInsert(self, dbName, collectionName, d):
-        """向MongoDB中插入数据，d是具体数据"""
-        if self._dbConn:
-            db = self._dbConn[dbName]
-            collection = db[collectionName]
-            collection.insert_one(d)
-        else:
-            self.writeLog(text.DATA_INSERT_FAILED)
-    
-    #----------------------------------------------------------------------
-    def dbQuery(self, dbName, collectionName, d, sortKey='', sortDirection=ASCENDING):
-        """从MongoDB中读取数据，d是查询要求，返回的是数据库查询的指针"""
-        if self._dbConn:
-            db = self._dbConn[dbName]
-            collection = db[collectionName]
-            
-            if sortKey:
-                cursor = collection.find(d).sort(sortKey, sortDirection)    # 对查询出来的数据进行排序
-            else:
-                cursor = collection.find(d)
-
-            if cursor:
-                return list(cursor)
-            else:
-                return []
-        else:
-            self.writeLog(text.DATA_QUERY_FAILED)   
-            return []
-        
-    #----------------------------------------------------------------------
-    def dbUpdate(self, dbName, collectionName, d, flt, upsert=False):
-        """向MongoDB中更新数据，d是具体数据，flt是过滤条件，upsert代表若无是否要插入"""
-        if self._dbConn:
-            db = self._dbConn[dbName]
-            collection = db[collectionName]
-            collection.replace_one(flt, d, upsert)
-        else:
-            self.writeLog(text.DATA_UPDATE_FAILED)        
-            
-    #----------------------------------------------------------------------
-    def dbLogging(self, event):
-        """向MongoDB中插入日志"""
-        log = event.dict_['data']
-        d = {
-            'content': log.logContent,
-            'time': log.logTime,
-            'ds': log.dsName
-        }
-        self.dbInsert(LOG_DB_NAME, self.todayDate, d)
+        # TODO: subscribe all interested market data
+        pass
     
     #----------------------------------------------------------------------
     def getTick(self, vtSymbol):
@@ -322,73 +139,12 @@ class MainRoutine(object):
     def getAllPositionDetails(self):
         """查询本地持仓缓存细节"""
         return self.dataEngine.getAllPositionDetails()
-    
-    #----------------------------------------------------------------------
-    def getAllGatewayDetails(self):
-        """查询引擎中所有底层接口的信息"""
-        return self._dlistSubscribers
-    
-    #----------------------------------------------------------------------
-    def getAllAppDetails(self):
-        """查询引擎中所有上层应用的信息"""
-        return self.appDetailList
-    
-    #----------------------------------------------------------------------
-    def getApp(self, appName):
-        """获取APP引擎对象"""
-        return self._dictApps[appName]
-    
-    #----------------------------------------------------------------------
-    def initLogger(self):
-        """初始化日志引擎"""
-        if not globalSetting["logActive"]:
-            return
-        
-        # 创建引擎
-        self.logEngine = Logger()
-        
-        # 设置日志级别
-        levelDict = {
-            "debug": Logger.LEVEL_DEBUG,
-            "info": Logger.LEVEL_INFO,
-            "warn": Logger.LEVEL_WARN,
-            "error": Logger.LEVEL_ERROR,
-            "critical": Logger.LEVEL_CRITICAL,
-        }
-        level = levelDict.get(globalSetting["logLevel"], Logger.LEVEL_CRITICAL)
-        self.logEngine.setLogLevel(level)
-        
-        # 设置输出
-        if globalSetting['logConsole']:
-            self.logEngine.addConsoleHandler()
-            
-        if globalSetting['logFile']:
-            self.logEngine.addFileHandler()
-            
-        # 注册事件监听
-        self.registerLogEvent(EVENT_LOG)
-    
-    #----------------------------------------------------------------------
-    def registerLogEvent(self, eventType):
-        """注册日志事件监听"""
-        if self.logEngine:
-            self._eventChannel.register(eventType, self.logEngine.processLogEvent)
-    
+
     #----------------------------------------------------------------------
     def convertOrderReq(self, req):
         """转换委托请求"""
         return self.dataEngine.convertOrderReq(req)
 
-    #----------------------------------------------------------------------
-    def getLog(self):
-        """查询日志"""
-        return self.dataEngine.getLog()
-    
-    #----------------------------------------------------------------------
-    def getError(self):
-        """查询错误"""
-        return self.dataEngine.getError()
-    
     #----------------------------------------------------------------------
     def processTickEvent(self, event):
         """处理成交事件"""
@@ -436,7 +192,7 @@ class MainRoutine(object):
         """处理持仓事件"""
         pos = event.dict_['data']
         
-        self.positionDict[pos.vtPositionName] = pos
+        self._dictPositions[pos.vtPositionName] = pos
     
         # 更新到持仓细节中
         detail = self.getPositionDetail(pos.vtSymbol)
@@ -446,7 +202,7 @@ class MainRoutine(object):
     def processAccountEvent(self, event):
         """处理账户事件"""
         account = event.dict_['data']
-        self._dictAccount[account.vtAccountID] = account
+        self._dictAccounts[account.vtAccountID] = account
     
     #----------------------------------------------------------------------
     def processLogEvent(self, event):
@@ -533,12 +289,12 @@ class DataCache(object):
     #----------------------------------------------------------------------
     def getAllPositions(self):
         """获取所有持仓"""
-        return self.positionDict.values()
+        return self._dictPositions.values()
     
     #----------------------------------------------------------------------
     def getAllAccounts(self):
         """获取所有资金"""
-        return self._dictAccount.values()
+        return self._dictAccounts.values()
     
     #----------------------------------------------------------------------
     def getPositionDetail(self, vtSymbol):
@@ -598,110 +354,6 @@ class DataCache(object):
     def getError(self):
         """获取错误"""
         return self._lstErrors
-    
-
-########################################################################    
-class Logger(object):
-    """日志引擎"""
-    
-    # 单例模式
-    __metaclass__ = VtSingleton
-    
-    # 日志级别
-    LEVEL_DEBUG = logging.DEBUG
-    LEVEL_INFO = logging.INFO
-    LEVEL_WARN = logging.WARN
-    LEVEL_ERROR = logging.ERROR
-    LEVEL_CRITICAL = logging.CRITICAL
-
-    #----------------------------------------------------------------------
-    def __init__(self):
-        """Constructor"""
-        self.logger = logging.getLogger()        
-        self.formatter = logging.Formatter('%(asctime)s  %(levelname)s: %(message)s')
-        self.level = self.LEVEL_CRITICAL
-        
-        self.consoleHandler = None
-        self.fileHandler = None
-        
-        # 添加NullHandler防止无handler的错误输出
-        nullHandler = logging.NullHandler()
-        self.logger.addHandler(nullHandler)    
-        
-        # 日志级别函数映射
-        self.levelFunctionDict = {
-            self.LEVEL_DEBUG: self.debug,
-            self.LEVEL_INFO: self.info,
-            self.LEVEL_WARN: self.warn,
-            self.LEVEL_ERROR: self.error,
-            self.LEVEL_CRITICAL: self.critical,
-        }
-        
-    #----------------------------------------------------------------------
-    def setLogLevel(self, level):
-        """设置日志级别"""
-        self.logger.setLevel(level)
-        self.level = level
-    
-    #----------------------------------------------------------------------
-    def addConsoleHandler(self):
-        """添加终端输出"""
-        if not self.consoleHandler:
-            self.consoleHandler = logging.StreamHandler()
-            self.consoleHandler.setLevel(self.level)
-            self.consoleHandler.setFormatter(self.formatter)
-            self.logger.addHandler(self.consoleHandler)
-            
-    #----------------------------------------------------------------------
-    def addFileHandler(self, filename=''):
-        """添加文件输出"""
-        if not self.fileHandler:
-            if not filename:
-                filename = 'vt_' + datetime.now().strftime('%Y%m%d') + '.log'
-            filepath = getTempPath(filename)
-            self.fileHandler = logging.FileHandler(filepath)
-            self.fileHandler.setLevel(self.level)
-            self.fileHandler.setFormatter(self.formatter)
-            self.logger.addHandler(self.fileHandler)
-    
-    #----------------------------------------------------------------------
-    def debug(self, msg):
-        """开发时用"""
-        self.logger.debug(msg)
-        
-    #----------------------------------------------------------------------
-    def info(self, msg):
-        """正常输出"""
-        self.logger.info(msg)
-        
-    #----------------------------------------------------------------------
-    def warn(self, msg):
-        """警告信息"""
-        self.logger.warn(msg)
-        
-    #----------------------------------------------------------------------
-    def error(self, msg):
-        """报错输出"""
-        self.logger.error(msg)
-        
-    #----------------------------------------------------------------------
-    def exception(self, msg):
-        """报错输出+记录异常信息"""
-        self.logger.exception(msg)
-
-    #----------------------------------------------------------------------
-    def critical(self, msg):
-        """影响程序运行的严重错误"""
-        self.logger.critical(msg)
-
-    #----------------------------------------------------------------------
-    def processLogEvent(self, event):
-        """处理日志事件"""
-        log = event.dict_['data']
-        function = self.levelFunctionDict[log.logLevel]     # 获取日志级别对应的处理函数
-        msg = '\t'.join([log.dsName, log.logContent])
-        function(msg)
-        
     
 ########################################################################
 class PositionDetail(object):

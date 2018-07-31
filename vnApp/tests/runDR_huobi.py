@@ -34,7 +34,7 @@ def runChildProcess():
     # dirname(dirname(abspath(file)))
     settings= None
     try :
-        conf_fn = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/DR_HADAX.json'
+        conf_fn = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/DR_huobi.json'
         settings= jsoncfg.load_config(conf_fn)
     except Exception as e :
         print('failed to load configure[%s]: %s' % (conf_fn, e))

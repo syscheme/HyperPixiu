@@ -18,7 +18,7 @@ from Queue import Queue, Empty
 from threading import Thread
 from pymongo.errors import DuplicateKeyError
 
-from vnApp.MainRoutine import *
+from .MainRoutine import *
 
 from .MarketData import *
 from vnpy.trader.vtEvent import *
@@ -55,15 +55,11 @@ class DataRecorder(BaseApplication):
         self._dbNameTick = settings.dbNameTick(TICK_DB_NAME)
         self._dbName1Min = settings.dbName1Min(MINUTE_DB_NAME)
         
-        # 当前日期
-        self._today = todayDate()
-        
-        # K线合成器字典
-        self._dictKLineMerge = {}
-        
         # 配置字典
         self._dictTicks = OrderedDict()
         self._dict1mins = OrderedDict()
+        # K线合成器字典
+        self._dictKLineMerge = {}
         
         # 负责执行数据库插入的单独线程相关
         self.queue = Queue()                    # 队列
@@ -72,12 +68,6 @@ class DataRecorder(BaseApplication):
         # 载入设置，订阅行情
         self.subscriber()
         
-        # 启动数据插入线程
-        # self.start()
-    
-        # 注册事件监听
-        # self.registerEvent()  
-    
     #----------------------------------------------------------------------
     def _subscribeMarketData(self, settingnode, event, dict, cbFunc) :
         if len(settingnode({})) <=0:
@@ -141,7 +131,7 @@ class DataRecorder(BaseApplication):
     #----------------------------------------------------------------------
     def onTick(self, tick):
         """Tick更新"""
-        if tick.sourceType != MarketData.DATA_SRCTYPE_MARKET:
+        if tick.sourceType != MarketData.DATA_SRCTYPE_REALTIME:
             return
 
         vtSymbol = tick.vtSymbol
@@ -167,7 +157,7 @@ class DataRecorder(BaseApplication):
     #----------------------------------------------------------------------
     def onBar(self, bar):
         """分钟线更新"""
-        if bar.sourceType != MarketData.DATA_SRCTYPE_MARKET:
+        if bar.sourceType != MarketData.DATA_SRCTYPE_REALTIME:
             return
 
         vtSymbol = bar.vtSymbol

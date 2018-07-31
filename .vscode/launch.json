@@ -20,7 +20,7 @@
             },
             "type": "python",
             "request": "launch",
-            "program": "vnApp/tests/runDR_HADAX.py"
+            "program": "vnApp/tests/runDR_huobi.py"
         },
         {
             "name": "Python: Current File",

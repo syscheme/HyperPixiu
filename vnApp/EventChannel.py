@@ -145,6 +145,11 @@ class EventChannel(object):
         self.__queue.put(event)
 
     #----------------------------------------------------------------------
+    @property
+    def pendingSize(self):
+        return len(self.__queue)
+
+    #----------------------------------------------------------------------
     def registerGeneralHandler(self, handler):
         """注册通用事件处理函数监听"""
         if handler not in self.__generalHandlers:

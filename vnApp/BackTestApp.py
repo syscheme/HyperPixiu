@@ -29,24 +29,24 @@ from vnpy.trader.vtObject import VtTickData, VtBarData
 from vnpy.trader.vtConstant import *
 from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 
+from .MainRoutine import *
 from .Account import *
 
 ########################################################################
-class BackTest(object):
+class BackTestApp(BaseApplication):
     """
     回测Account
-    函数接口和策略引擎保持一样，
-    从而实现同一套代码从回测到实盘。
+    函数接口和Application保持一样，
     """
-    
+
     TICK_MODE = 'tick'
-    BAR_MODE = 'bar'
+    BAR_MODE  = 'bar'
 
     #----------------------------------------------------------------------
-    def __init__(self, AccountClass, settings):
+    def __init__(self, mainRoutine, AccountClass, settings):
         """Constructor"""
 
-        super(BackTest, self).__init__()
+        super(BackTestApp, self).__init__(mainRoutine, settings)
 
         self.engineType = ENGINETYPE_BACKTESTING    # 引擎类型为回测
 
@@ -56,14 +56,16 @@ class BackTest(object):
 
         self.resetTest()
 
+        # 保存策略实例的字典
+        # key为策略名称，value为策略实例，注意策略名称不允许重复
+        self._strategyDict = {}
+
         # 回测相关属性
         # -----------------------------------------
         self.mode   = settings.mode(self.BAR_MODE)    # 引擎类型为回测
-        self.dbName = settings.database.datadb(MINUTE_DB_NAME) # 回测数据库名
-        self.dbHost = settings.database.url('localhost')    # 回测数据库server
-        self.dbDataSet = settings.database.dataset('${SYMBOL}')    # 回测数据库collection
+        self.dataSource = settings.dataSource('')     # 回测数据库collection
 
-        self.symbol = settings.symbols[0]("")            # 回测集合名
+        self.symbol = settings.symbols[0]("")          # 回测集合名
 
         self.dataStartDate = None       # 回测数据开始日期，datetime对象
         self.dataEndDate = None         # 回测数据结束日期，datetime对象
@@ -72,9 +74,6 @@ class BackTest(object):
         self.setStartDate(settings.startDate("2010-01-01"), settings.initDays(10)) 
         self.setEndDate(settings.endDate("")) 
 
-        self._dbConn = None        # 数据库客户端
-        self.dbCursor = None        # 数据库指针
-        
         self.initData = []          # 初始化用的数据
         
         # 当前最新数据，用于模拟成交用
@@ -84,6 +83,20 @@ class BackTest(object):
 
         # 日线回测结果计算用
         self.dailyResultDict = OrderedDict()
+
+    #----- impl of BaseApplication ----------------------------------------
+    @abstractmethod
+    def start(self):
+        # TODO:
+        # self._active = True
+
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def stop(self):
+        # TODO:
+        # self._active = False
+
+    #----- end  of BaseApplication ----------------------------------------
 
     #----------------------------------------------------------------------
     def resetTest(self) :
@@ -146,13 +159,10 @@ class BackTest(object):
     #----------------------------------------------------------------------
     def setBacktestingMode(self, mode):
         """设置回测模式"""
-        self.mode = mode
-    
-    #----------------------------------------------------------------------
-    def setDatabase(self, dbName, symbol):
-        """设置历史数据所用的数据库"""
-        self.dbName = dbName
-        self.symbol = symbol
+        if mode == TICK_MODE:
+            self.mode = TICK_MODE
+        else :
+            self.mode = BAR_MODE
     
     # account 参数设置相关
     #----------------------------------------------------------------------

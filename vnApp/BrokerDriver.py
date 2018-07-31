@@ -4,7 +4,7 @@ from .Account import *
 
 ########################################################################
 from abc import ABCMeta, abstractmethod
-class TradeDriver(object):
+class BrokerDriver(object):
     """交易API"""
     SYNC_MODE = 'sync'
     ASYNC_MODE = 'async'

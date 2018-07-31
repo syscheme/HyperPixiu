@@ -89,7 +89,7 @@ class Account(object):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self, tradeDriver, settings):
+    def __init__(self, dvrBroker, settings):
         """Constructor"""
 
         self._accountId = ""
@@ -105,7 +105,7 @@ class Account(object):
         self._strategyDict = {}
         
         # trader executer
-        self._tradeDriver = tradeDriver(self, self._settings)
+        self._dvrBroker = dvrBroker(self, self._settings)
 
         self.slippage  = self._settings.slippage(0)           # 假设的滑点
         self.rate      = self._settings.ratePer10K(30)/10000  # 假设的佣金比例（适用于百分比佣金）
@@ -141,15 +141,15 @@ class Account(object):
 
     @abstractmethod
     def cancelAll(self, name):
-        if self._tradeDriver == None:
+        if self._dvrBroker == None:
             raise NotImplementedError
-        self._tradeDriver.cancelAll(name)
+        self._dvrBroker.cancelAll(name)
         
     @abstractmethod
     def cancelOrder(self, vtOrderID):
-        if self._tradeDriver == None:
+        if self._dvrBroker == None:
             raise NotImplementedError
-        self._tradeDriver.cancelOrder(vtOrderID)
+        self._dvrBroker.cancelOrder(vtOrderID)
 
     @abstractmethod
     def cancelStopOrder(self, stopOrderID): raise NotImplementedError
@@ -174,26 +174,26 @@ class Account(object):
     @abstractmethod
     def sendOrder(self, vtSymbol, orderType, price, volume, strategy):
         """发单"""
-        if self._tradeDriver == None:
+        if self._dvrBroker == None:
             raise NotImplementedError
 
         source = 'ACCOUNT'
         if strategy:
             source = strategy.name
 
-        self._tradeDriver.placeOrder(volume, vtSymbol, orderType, price, source)
+        self._dvrBroker.placeOrder(volume, vtSymbol, orderType, price, source)
 
     #----------------------------------------------------------------------
     @abstractmethod
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy):
-        if self._tradeDriver == None:
+        if self._dvrBroker == None:
             raise NotImplementedError
 
         source = 'ACCOUNT'
         if strategy:
             source = strategy.name
 
-        self._tradeDriver.placeStopOrder(volume, vtSymbol, orderType, price, source)
+        self._dvrBroker.placeStopOrder(volume, vtSymbol, orderType, price, source)
 
     @abstractmethod
     def calcAmountOfTrade(self, symbol, price, volume): raise NotImplementedError
@@ -205,7 +205,7 @@ class Account(object):
     @abstractmethod
     def onDayOpen(self, newDate): raise NotImplementedError
     
-    # callbacks from TraderDriver
+    # callbacks from BrokerDriver
     #----------------------------------------------------------------------
     @abstractmethod
     def onCancelOrder(self, data, reqid):
@@ -499,9 +499,9 @@ class Account_AShare(Account):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self, tradeDriver, settings=None):
+    def __init__(self, dvrBroker, settings=None):
         """Constructor"""
-        super(Account_AShare, self).__init__(tradeDriver, settings)
+        super(Account_AShare, self).__init__(dvrBroker, settings)
 
     #----------------------------------------------------------------------
     def cashAmount(self): # returns (avail, total)

@@ -145,8 +145,8 @@ class MainRoutine(object):
         self._dictLatestOrder = {}
         self._dictWorkingOrder = {}  # 可撤销委托
         self._dictTrade = {}
-        self._dictAccount = {}
-        self.positionDict= {}
+        self._dictAccounts = {}
+        self._dictPositions= {}
         self._lstLogs = []
         self._lstErrors = []
         
@@ -176,11 +176,11 @@ class MainRoutine(object):
         
         # 接口实例
         self._dictMarketDatas = OrderedDict()
-        self._dlistSubscribers = []
+        self._dlstMarketDatas = []
         
         # 应用模块实例
         self._dictApps = OrderedDict()
-        self.appDetailList = []
+        self._dlstApps = []
         
         # 风控引擎实例（特殊独立对象）
         self._riskMgm = None
@@ -205,7 +205,7 @@ class MainRoutine(object):
             'dsType': clsName
         }
         
-        self._dlistSubscribers.append(d)
+        self._dlstMarketDatas.append(d)
         
     #----------------------------------------------------------------------
     def addApp(self, appModule, settings):
@@ -226,7 +226,7 @@ class MainRoutine(object):
             'appWidget': settings.widget(id),
             'appIco': appModule.appIco
         }
-        self.appDetailList.append(d)
+        self._dlstApps.append(d)
         
     #----------------------------------------------------------------------
     def getMarketData(self, dsName):
@@ -439,12 +439,12 @@ class MainRoutine(object):
     #----------------------------------------------------------------------
     def getAllGatewayDetails(self):
         """查询引擎中所有底层接口的信息"""
-        return self._dlistSubscribers
+        return self._dlstMarketDatas
     
     #----------------------------------------------------------------------
     def getAllAppDetails(self):
         """查询引擎中所有上层应用的信息"""
-        return self.appDetailList
+        return self._dlstApps
     
     #----------------------------------------------------------------------
     def getApp(self, appName):
@@ -544,7 +544,7 @@ class MainRoutine(object):
     #     """处理持仓事件"""
     #     pos = event.dict_['data']
         
-    #     self.positionDict[pos.vtPositionName] = pos
+    #     self._dictPositions[pos.vtPositionName] = pos
     
     #     # 更新到持仓细节中
     #     detail = self.getPositionDetail(pos.vtSymbol)
@@ -554,7 +554,7 @@ class MainRoutine(object):
     # def processAccountEvent(self, event):
     #     """处理账户事件"""
     #     account = event.dict_['data']
-    #     self._dictAccount[account.vtAccountID] = account
+    #     self._dictAccounts[account.vtAccountID] = account
     
     # #----------------------------------------------------------------------
     # def processLogEvent(self, event):
@@ -641,12 +641,12 @@ class DataCache(object):
     #----------------------------------------------------------------------
     def getAllPositions(self):
         """获取所有持仓"""
-        return self.positionDict.values()
+        return self._dictPositions.values()
     
     #----------------------------------------------------------------------
     def getAllAccounts(self):
         """获取所有资金"""
-        return self._dictAccount.values()
+        return self._dictAccounts.values()
     
     #----------------------------------------------------------------------
     def getPositionDetail(self, vtSymbol):

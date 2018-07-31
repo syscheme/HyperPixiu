@@ -72,7 +72,7 @@ class MainEngine(object):
         self.dbClient = None    # MongoDB客户端对象
         
         # 接口实例
-        self._dictDataSubscribers = OrderedDict()
+        self._dictMarketDatas = OrderedDict()
         self._dlistSubscribers = []
         
         # 应用模块实例
@@ -92,12 +92,12 @@ class MainEngine(object):
         gatewayName = dsModule.className
         
         # 创建接口实例
-        self._dictDataSubscribers[gatewayName] = dsModule.gatewayClass(self._eventChannel, 
+        self._dictMarketDatas[gatewayName] = dsModule.gatewayClass(self._eventChannel, 
                                                                    gatewayName)
         
         # 设置接口轮询
         if dsModule.gatewayQryEnabled:
-            self._dictDataSubscribers[gatewayName].setQryEnabled(dsModule.gatewayQryEnabled)
+            self._dictMarketDatas[gatewayName].setQryEnabled(dsModule.gatewayQryEnabled)
                 
         # 保存接口详细信息
         d = {
@@ -130,8 +130,8 @@ class MainEngine(object):
     #----------------------------------------------------------------------
     def getGateway(self, gatewayName):
         """获取接口"""
-        if gatewayName in self._dictDataSubscribers:
-            return self._dictDataSubscribers[gatewayName]
+        if gatewayName in self._dictMarketDatas:
+            return self._dictMarketDatas[gatewayName]
         else:
             self.writeLog(text.GATEWAY_NOT_EXIST.format(gateway=gatewayName))
             return None
@@ -199,7 +199,7 @@ class MainEngine(object):
     def exit(self):
         """退出程序前调用，保证正常退出"""        
         # 安全关闭所有接口
-        for gateway in self._dictDataSubscribers.values():        
+        for gateway in self._dictMarketDatas.values():        
             gateway.close()
         
         # 停止事件引擎

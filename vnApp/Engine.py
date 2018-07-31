@@ -12,7 +12,7 @@ from copy import copy
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
 
-from .DataSubscriber import *
+from .MarketData import *
 
 from vnpy.event import Event
 from vnpy.trader.vtGlobal import globalSetting
@@ -63,9 +63,9 @@ class MainEngine(object):
         # TODO self.loadContracts()
         
         # 注册事件监听
-        #   1. about the DataSubscriber
-        # self._eventChannel.register(DataSubscriber.EVENT_TICK,       self.processTickEvent)
-        # self._eventChannel.register(DataSubscriber.EVENT_KLINE_1MIN, self.processContractEvent)
+        #   1. about the MarketData
+        # self._eventChannel.register(MarketData.EVENT_TICK,       self.processTickEvent)
+        # self._eventChannel.register(MarketData.EVENT_KLINE_1MIN, self.processContractEvent)
 
         # self._eventChannel.register(EVENT_CONTRACT, self.processContractEvent)
         # self._eventChannel.register(EVENT_ORDER, self.processOrderEvent)
@@ -80,7 +80,7 @@ class MainEngine(object):
         self.dbClient = None    # MongoDB客户端对象
         
         # 接口实例
-        self._dictDataSubscribers = OrderedDict()
+        self._dictMarketDatas = OrderedDict()
         self._dlistSubscribers = []
         
         # 应用模块实例
@@ -101,7 +101,7 @@ class MainEngine(object):
         id = settings.id(clsName)
 
         # 创建接口实例
-        self._dictDataSubscribers[id] = dsModule(self._eventChannel, settings)
+        self._dictMarketDatas[id] = dsModule(self._eventChannel, settings)
         
         # 保存接口详细信息
         d = {
@@ -134,10 +134,10 @@ class MainEngine(object):
         self.appDetailList.append(d)
         
     #----------------------------------------------------------------------
-    def getDataSubscriber(self, dsName):
+    def getMarketData(self, dsName):
         """获取接口"""
-        if dsName in self._dictDataSubscribers:
-            return self._dictDataSubscribers[dsName]
+        if dsName in self._dictMarketDatas:
+            return self._dictMarketDatas[dsName]
         else:
             self.writeLog(text.GATEWAY_NOT_EXIST.format(ds=dsName))
             return None
@@ -149,7 +149,7 @@ class MainEngine(object):
 
         self.dbConnect()
         
-        for (k, ds) in self._dictDataSubscribers.items():
+        for (k, ds) in self._dictMarketDatas.items():
             if ds == None:
                 continue
             
@@ -164,7 +164,7 @@ class MainEngine(object):
     #----------------------------------------------------------------------
     def connect(self, dsName):
         """连接特定名称的接口"""
-        ds = self.getDataSubscriber(dsName)
+        ds = self.getMarketData(dsName)
         
         if ds:
             ds.connect()
@@ -175,7 +175,7 @@ class MainEngine(object):
     #----------------------------------------------------------------------
     def subscribe(self, subscribeReq, dsName):
         """订阅特定接口的行情"""
-        ds = self.getDataSubscriber(dsName)
+        ds = self.getMarketData(dsName)
         
         if ds:
             ds.subscribe(subscribeReq)
@@ -187,7 +187,7 @@ class MainEngine(object):
         if self._riskMgm and not self._riskMgm.checkRisk(orderReq, dsName):
             return ''
 
-        ds = self.getDataSubscriber(dsName)
+        ds = self.getMarketData(dsName)
         
         if ds:
             vtOrderID = ds.sendOrder(orderReq)
@@ -199,7 +199,7 @@ class MainEngine(object):
     #----------------------------------------------------------------------
     def cancelOrder(self, cancelOrderReq, dsName):
         """对特定接口撤单"""
-        ds = self.getDataSubscriber(dsName)
+        ds = self.getMarketData(dsName)
         
         if ds:
             ds.cancelOrder(cancelOrderReq)   
@@ -207,7 +207,7 @@ class MainEngine(object):
     #----------------------------------------------------------------------
     def qryAccount(self, dsName):
         """查询特定接口的账户"""
-        ds = self.getDataSubscriber(dsName)
+        ds = self.getMarketData(dsName)
         
         if ds:
             ds.qryAccount()      
@@ -215,7 +215,7 @@ class MainEngine(object):
     #----------------------------------------------------------------------
     def qryPosition(self, dsName):
         """查询特定接口的持仓"""
-        ds = self.getDataSubscriber(dsName)
+        ds = self.getMarketData(dsName)
         
         if ds:
             ds.qryPosition()
@@ -224,7 +224,7 @@ class MainEngine(object):
     def exit(self):
         """退出程序前调用，保证正常退出"""        
         # 安全关闭所有接口
-        for ds in self._dictDataSubscribers.values():        
+        for ds in self._dictMarketDatas.values():        
             ds.close()
         
         # 停止事件引擎

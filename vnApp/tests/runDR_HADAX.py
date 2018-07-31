@@ -6,7 +6,7 @@ from time import sleep
 from datetime import datetime, time
 
 from vnApp.Engine import MainEngine, LogEngine
-from vnApp.subscribers.dsHadax import dsHadax
+from vnApp.marketdata.mdHuobi import mdHuobi
 from vnApp.DataRecorder import *
 
 from vnpy.event import EventEngine2
@@ -49,7 +49,7 @@ def runChildProcess():
     
     me = MainEngine(ee, settings)
 
-    me.addSubscriber(dsHadax, settings['datasource'][0])
+    me.addSubscriber(mdHuobi, settings['marketdata'][0])
     me.addApp(DataRecorder, settings['datarecorder'])
     le.info(u'主引擎创建成功')
 

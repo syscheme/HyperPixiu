@@ -18,7 +18,7 @@ from Queue import Queue, Empty
 from threading import Thread
 from pymongo.errors import DuplicateKeyError
 
-from .DataSubscriber import *
+from .MarketData import *
 from vnpy.trader.vtEvent import *
 from vnpy.trader.vtFunction import todayDate, getJsonPath
 from vnpy.trader.vtObject import VtSubscribeReq, VtLogData, VtBarData, VtTickData
@@ -92,7 +92,7 @@ class DataRecorder(object):
                 if len(symbol) <=3 or len(ds)<=0:
                     continue
 
-                self._engine.getDataSubscriber(ds).subscribe(symbol, EVENT_TICK)
+                self._engine.getMarketData(ds).subscribe(symbol, EVENT_TICK)
                 if len(self._dictTicks) <=0:
                     self._engine._eventChannel.register(EVENT_TICK, self.procecssTickEvent)
 
@@ -120,7 +120,7 @@ class DataRecorder(object):
                 if len(symbol) <=3:
                     continue
 
-                self._engine.getDataSubscriber(ds).subscribe(symbol, EVENT_KLINE_1MIN)
+                self._engine.getMarketData(ds).subscribe(symbol, EVENT_KLINE_1MIN)
                 if len(self._dict1mins) <=0:
                     self._engine._eventChannel.register(EVENT_KLINE_1MIN, self.procecssKLineEvent)
                 

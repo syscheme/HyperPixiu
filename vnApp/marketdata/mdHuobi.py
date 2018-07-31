@@ -2,7 +2,7 @@
 
 from __future__ import division
 
-from vnApp.DataSubscriber import *
+from vnApp.MarketData import *
 
 from vnpy.trader.vtObject import VtBarData, VtTickData
 from vnpy.trader.vtConstant import *
@@ -54,7 +54,7 @@ def createSign(params, method, host, path, secretKey):
 
 
 ########################################################################
-class dsHadax(DataSubscriber):
+class mdHuobi(MarketData):
     """行情接口
     https://github.com/huobiapi/API_Docs/wiki/WS_request
     """
@@ -71,7 +71,7 @@ class dsHadax(DataSubscriber):
     def __init__(self, eventChannel, settings):
         """Constructor"""
 
-        super(dsHadax, self).__init__(eventChannel, settings)
+        super(mdHuobi, self).__init__(eventChannel, settings)
 
         self.ws = None
         self.url = ''
@@ -164,43 +164,43 @@ class dsHadax(DataSubscriber):
     def subscribeKline(self, symbol,minutes=1):
         """订阅K线数据"""
 
-        eventType = DataSubscriber.EVENT_KLINE_1MIN
+        eventType = MarketData.EVENT_KLINE_1MIN
 
         minutes /=5
         if minutes >0:
-            eventType = DataSubscriber.EVENT_KLINE_5MIN
+            eventType = MarketData.EVENT_KLINE_5MIN
 
         minutes /=3
         if minutes >0:
-            eventType = DataSubscriber.EVENT_KLINE_15MIN
+            eventType = MarketData.EVENT_KLINE_15MIN
 
         minutes /=2
         if minutes >0:
-            eventType = DataSubscriber.EVENT_KLINE_30MIN
+            eventType = MarketData.EVENT_KLINE_30MIN
 
         minutes /=2
         if minutes >0:
-            eventType = DataSubscriber.EVENT_KLINE_1HOUR
+            eventType = MarketData.EVENT_KLINE_1HOUR
 
         minutes /=4
         if minutes >0:
-            eventType = DataSubscriber.EVENT_KLINE_4HOUR
+            eventType = MarketData.EVENT_KLINE_4HOUR
 
         minutes /=6
         if minutes >0:
-            eventType = DataSubscriber.EVENT_KLINE_1DAY
+            eventType = MarketData.EVENT_KLINE_1DAY
 
         # minutes /=7
         # if minutes >0:
-        #     eventType = DataSubscriber.EVENT_KLINE_1Week
+        #     eventType = MarketData.EVENT_KLINE_1Week
 
         # minutes /=4
         # if minutes >0:
-        #     eventType = DataSubscriber.EVENT_KLINE_1Mon
+        #     eventType = MarketData.EVENT_KLINE_1Mon
 
         # minutes /=12
         # if minutes >0:
-        #     eventType = DataSubscriber.EVENT_KLINE_1Year
+        #     eventType = MarketData.EVENT_KLINE_1Year
 
         self._subTopic(symbol, eventType)
 
@@ -264,23 +264,23 @@ class dsHadax(DataSubscriber):
             return
 
         topic = 'market.%s.trade.detail' %symbol
-        if   eventType == DataSubscriber.EVENT_TICK:
+        if   eventType == MarketData.EVENT_TICK:
             topic = 'market.%s.detail' %symbol
-        elif eventType == DataSubscriber.EVENT_MARKET_DEPTH0:
+        elif eventType == MarketData.EVENT_MARKET_DEPTH0:
             topic = 'market.%s.depth.step0' % symbol
-        elif eventType == DataSubscriber.EVENT_KLINE_1MIN:
+        elif eventType == MarketData.EVENT_KLINE_1MIN:
             topic = 'market.%s.kline.1min' % symbol
-        elif eventType == DataSubscriber.EVENT_KLINE_5MIN:
+        elif eventType == MarketData.EVENT_KLINE_5MIN:
             topic = 'market.%s.kline.5min' % symbol
-        elif eventType == DataSubscriber.EVENT_KLINE_15MIN:
+        elif eventType == MarketData.EVENT_KLINE_15MIN:
             topic = 'market.%s.kline.15min' % symbol
-        elif eventType == DataSubscriber.EVENT_KLINE_30MIN:
+        elif eventType == MarketData.EVENT_KLINE_30MIN:
             topic = 'market.%s.kline.30min' % symbol
-        elif eventType == DataSubscriber.EVENT_KLINE_1HOUR:
+        elif eventType == MarketData.EVENT_KLINE_1HOUR:
             topic = 'market.%s.kline.60min' % symbol
-        elif eventType == DataSubscriber.EVENT_KLINE_4HOUR:
+        elif eventType == MarketData.EVENT_KLINE_4HOUR:
             topic = 'market.%s.kline.4hour' % symbol
-        elif eventType == DataSubscriber.EVENT_KLINE_1DAY:
+        elif eventType == MarketData.EVENT_KLINE_1DAY:
             topic = 'market.%s.kline.1day' % symbol
         
         topic = 'market.%s.detail' % symbol
@@ -339,7 +339,7 @@ class dsHadax(DataSubscriber):
         event = None
         ch = data['ch']
         if 'depth.step' in ch:
-            event = Event(type_=DataSubscriber.EVENT_MARKET_DEPTH)
+            event = Event(type_=MarketData.EVENT_MARKET_DEPTH)
             event.dict_['data'] = data # TODO: covert the event format
         elif '.kline.' in ch:
             """K线数据
@@ -348,21 +348,21 @@ class dsHadax(DataSubscriber):
             symbol =ch[len('market.'): pos]
             ch = ch[pos+7:]
 
-            eventType = DataSubscriber.EVENT_KLINE_1MIN
+            eventType = MarketData.EVENT_KLINE_1MIN
             if   '1min' == ch:
-                eventType = DataSubscriber.EVENT_KLINE_1MIN
+                eventType = MarketData.EVENT_KLINE_1MIN
             elif '5min' == ch:
-                eventType = DataSubscriber.EVENT_KLINE_5MIN
+                eventType = MarketData.EVENT_KLINE_5MIN
             elif '15min' == ch:
-                eventType = DataSubscriber.EVENT_KLINE_15MIN
+                eventType = MarketData.EVENT_KLINE_15MIN
             elif '30min' == ch:
-                eventType = DataSubscriber.EVENT_KLINE_30MIN
+                eventType = MarketData.EVENT_KLINE_30MIN
             elif '60min' == ch:
-                eventType = DataSubscriber.EVENT_KLINE_1HOUR
+                eventType = MarketData.EVENT_KLINE_1HOUR
             elif '4hour' == ch:
-                eventType = DataSubscriber.EVENT_KLINE_4HOUR
+                eventType = MarketData.EVENT_KLINE_4HOUR
             elif '1day' == ch:
-                eventType = DataSubscriber.EVENT_KLINE_1DAY
+                eventType = MarketData.EVENT_KLINE_1DAY
 
             tick = data['tick']
             asof = datetime.fromtimestamp(tick['id'])
@@ -405,7 +405,7 @@ class dsHadax(DataSubscriber):
             {u'tick': {u'data': [{u'price': 481.93, u'amount': 0.1499, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405480484L}, {u'price': 481.94, u'amount': 0.2475, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405466973L}, {u'price': 481.97, u'amount': 6.3635, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405475106L}, {u'price': 481.98, u'amount': 0.109, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405468495L}, {u'price': 481.98, u'amount': 0.109, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405468818L}, {u'price': 481.99, u'amount': 6.3844, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405471868L}, {u'price': 482.0, u'amount': 0.6367, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405439802L}], u'id': 11837877646, u'ts': 1531119914439}, u'ch': u'market.ethusdt.trade.detail', u'ts': 1531119914494}
             {u'tick': {u'data': [{u'price': 481.96, u'amount': 0.109, u'direction': u'sell', u'ts': 1531119918505, u'id': 118378822907405482834L}], u'id': 11837882290, u'ts': 1531119918505}, u'ch': u'market.ethusdt.trade.detail', u'ts': 1531119918651}
             """
-            event = Event(type_=DataSubscriber.EVENT_TICK)
+            event = Event(type_=MarketData.EVENT_TICK)
             event.dict_['data'] = data # TODO: covert the event format
         elif '.detail' in ch:
             """市场细节推送, 最近24小时成交量、成交额、开盘价、收盘价、最高价、最低价、成交笔数等
@@ -428,7 +428,7 @@ class dsHadax(DataSubscriber):
             edata.date = ts.date().strftime('%Y%m%d')
             edata.time = ts.time().strftime('%H:%M:%S.%3f')[:-3]
 
-            event = Event(type_=DataSubscriber.EVENT_TICK)
+            event = Event(type_=MarketData.EVENT_TICK)
             event.dict_['data'] = edata
 
         # post the event if valid

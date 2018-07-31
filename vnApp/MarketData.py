@@ -6,7 +6,7 @@ from vnpy.trader.vtObject import VtBarData
 from vnpy.trader.vtConstant import *
 
 ########################################################################
-class DataSubscriber(object):
+class MarketData(object):
     # Market相关events
     EVENT_TICK = 'eTick.'                   # TICK行情事件，可后接具体的vtSymbol
     EVENT_MARKET_DEPTH0 = 'eMD0.'           # Market depth0

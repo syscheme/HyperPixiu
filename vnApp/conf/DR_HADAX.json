@@ -11,7 +11,7 @@
     "datarecorder": {
         "ticks":
     [
-        {"symbol":"eosusdt", "ds": "hadax"}, 
+        {"symbol":"ethusdt", "ds": "hadax"}, 
         {"symbol":"btcusdt", "ds": "hadax"}, 
     ],
 

@@ -43,6 +43,7 @@ class DataRecorder(object):
     className = 'DataRecorder'
     displayName = 'DataRecorder'
     typeName = 'DataRecorder'
+    appIco  = 'aaa.ico'
 
     settingFileName = 'DR_setting.json'
     settingFilePath = getJsonPath(settingFileName, __file__)  
@@ -77,10 +78,10 @@ class DataRecorder(object):
         self.subscriber()
         
         # 启动数据插入线程
-        self.start()
+        # self.start()
     
         # 注册事件监听
-        self.registerEvent()  
+        # self.registerEvent()  
     
     #----------------------------------------------------------------------
     def subscriber(self):
@@ -113,8 +114,9 @@ class DataRecorder(object):
                 print(e)
                 continue
 
+        return
         # 分钟线记录配置
-        for i in self._settings.kline1min:
+        for i in self._settings.kline1min :
             try:
                 symbol = i.symbol
                 ds = i.ds
@@ -124,7 +126,6 @@ class DataRecorder(object):
                 self._engine.getDataSubscriber(ds).subscribe(symbol, EVENT_KLINE_1MIN)
                 if len(self._dict1mins) <=0:
                     self._engine._eventChannel.register(EVENT_KLINE_1MIN, self.procecssKLineEvent)
-                    self._engine._eventChannel.subscribe(EVENT_KLINE_1MIN)
                 
                 # 保存到配置字典中
                 if symbol not in self._dict1mins:
@@ -133,13 +134,13 @@ class DataRecorder(object):
                         'ds': ds,
                     }
 
-                    self._dict1mins[vtSymbol] = d
+                    self._dict1mins[symbol] = d
                 else:
-                    d = self._dict1mins[vtSymbol]
+                    d = self._dict1mins[symbol]
                     d['bar'] = True
                         
                 # 创建BarManager对象
-                self._dictKLineMerge[vtSymbol] = BarGenerator(self.onBar)
+                self._dictKLineMerge[symbol] = BarGenerator(self.onBar)
             except Exception :
                 pass
 

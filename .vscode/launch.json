@@ -20,7 +20,7 @@
             },
             "type": "python",
             "request": "launch",
-            "program": "kits/vnpy/examples/DataRecording/runDataRecording.py"
+            "program": "vnApp/tests/runDR_HADAX.py"
         },
         {
             "name": "Python: Current File",

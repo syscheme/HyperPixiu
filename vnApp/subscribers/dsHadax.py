@@ -81,6 +81,7 @@ class dsHadax(DataSubscriber):
             hostname = HUOBI_API_HOST
         else:
             hostname = HADAX_API_HOST
+        
         self.url = 'wss://%s/ws' % hostname
 
     #----------------------------------------------------------------------
@@ -108,7 +109,8 @@ class dsHadax(DataSubscriber):
         """连接"""
         if not self._doConnect() :
             return False
-            
+
+        self._resubscribe()
         self._active = True
         self.thread.start()
             
@@ -148,45 +150,46 @@ class dsHadax(DataSubscriber):
     #----------------------------------------------------------------------
     def subscribeKline(self, symbol,minutes=1):
         """订阅K线数据"""
-        period ="1min"
+
+        eventType = DataSubscriber.EVENT_KLINE_1min
+
         minutes /=5
         if minutes >0:
-            period ="5min"
+            eventType = DataSubscriber.EVENT_KLINE_5min
 
         minutes /=3
         if minutes >0:
-            period ="15min"
+            eventType = DataSubscriber.EVENT_KLINE_15min
 
         minutes /=2
         if minutes >0:
-            period ="30min"
+            eventType = DataSubscriber.EVENT_KLINE_30min
 
         minutes /=2
         if minutes >0:
-            period ="60min"
+            eventType = DataSubscriber.EVENT_KLINE_60min
 
         minutes /=4
         if minutes >0:
-            period ="4hour"
+            eventType = DataSubscriber.EVENT_KLINE_4hour
 
         minutes /=6
         if minutes >0:
-            period ="1day"
+            eventType = DataSubscriber.EVENT_KLINE_1day
 
-        minutes /=7
-        if minutes >0:
-            period ="1week"
+        # minutes /=7
+        # if minutes >0:
+        #     eventType = DataSubscriber.EVENT_KLINE_1Week
 
-        minutes /=4
-        if minutes >0:
-            period ="1mon"
+        # minutes /=4
+        # if minutes >0:
+        #     eventType = DataSubscriber.EVENT_KLINE_1Mon
 
-        minutes /=12
-        if minutes >0:
-            period ="1year"
+        # minutes /=12
+        # if minutes >0:
+        #     eventType = DataSubscriber.EVENT_KLINE_1Year
 
-        topic = 'market.%s.kline.%s' %(symbol, period) # allowed { 1min, 5min, 15min, 30min, 60min, 4hour,1day, 1mon, 1week, 1year }
-        self._subTopic(topic)
+        self._subTopic(symbol, eventType)
 
     #----------------------------------------------------------------------
     def pong(self, data):
@@ -198,23 +201,24 @@ class dsHadax(DataSubscriber):
     def _sendReq(self, req):
         """发送请求"""
         stream = json.dumps(req)
-        self.ws.send(stream)            
+        self.ws.send(stream)
+        self.debug('SENT:%s' % stream)
         
     #----------------------------------------------------------------------
     def _doConnect(self):
         """重连"""
         self.ws = None
         try:
-            if self.proxyHost :
-                self.ws = create_connection(self.url, http_proxy_host=self.proxyHost, http_proxy_port=self.proxyPort)
-            else :
-                self.ws = create_connection(self.url)
+#            if self.proxyHost :
+#                self.ws = create_connection(self.url, http_proxy_host =self.proxyHost, http_proxy_port=self.proxyPort)
+#            else :
+            self.ws = create_connection(self.url)
 
             return True
 
-        except:
+        except Exception as ex:
             msg = traceback.format_exc()
-            self.onError(u'行情服务器重连失败：%s' %msg)            
+            self.onError(u'行情服务器重连失败：%s,%s' %(ex, msg))            
             return False
         
     #----------------------------------------------------------------------
@@ -253,11 +257,13 @@ class dsHadax(DataSubscriber):
             topic = 'market.%s.kline.4hour' % symbol
         elif eventType == DataSubscriber.EVENT_KLINE_1day:
             topic = 'market.%s.kline.1day' % symbol
+        
+        topic = 'market.%s.kline.1min' %symbol
 
         self._reqid += 1
         req = {
             'sub': topic,
-            'id': str(self._reqid)
+            'id': 'seq-' + str(self._reqid)
         }
 
         if self.ws :
@@ -280,13 +286,19 @@ class dsHadax(DataSubscriber):
         self._sendReq(req)
     
     #----------------------------------------------------------------------
-    def onError(self, msg):
+    def debug(self, msg):
         """错误推送"""
         print (msg)
+
+    #----------------------------------------------------------------------
+    def onError(self, msg):
+        """错误推送"""
+        self.debug('ERR:%s' % msg)
         
     #----------------------------------------------------------------------
     def _onData(self, data):
         """数据推送"""
+        self.debug('RECV:%s' % data)
         if 'ping' in data:
             self.pong(data)
             return

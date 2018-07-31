@@ -45,7 +45,7 @@ def runChildProcess():
     le.info(u'事件引擎创建成功')
     
     me = MainRoutine(ee)
-    me.addSubscriber(huobiGateway)
+    me.addMarketData(huobiGateway)
     me.addApp(vnStategy)
     le.info(u'主引擎创建成功')
     

@@ -18,6 +18,8 @@ from Queue import Queue, Empty
 from threading import Thread
 from pymongo.errors import DuplicateKeyError
 
+from vnApp.MainRoutine import *
+
 from .MarketData import *
 from vnpy.trader.vtEvent import *
 from vnpy.trader.vtFunction import todayDate, getJsonPath
@@ -37,7 +39,7 @@ from vnpy.trader.vtConstant import EMPTY_UNICODE, EMPTY_STRING, EMPTY_FLOAT, EMP
 from .language import text
 
 ########################################################################
-class DataRecorder(object):
+class DataRecorder(BaseApplication):
     """数据记录引擎"""
      
     className = 'DataRecorder'
@@ -45,14 +47,11 @@ class DataRecorder(object):
     typeName = 'DataRecorder'
     appIco  = 'aaa.ico'
 
-    settingFileName = 'DR_setting.json'
-    settingFilePath = getJsonPath(settingFileName, __file__)  
-
     #----------------------------------------------------------------------
     def __init__(self, mainEngine, settings):
         """Constructor"""
-        self._engine = mainEngine
-        self._settings = settings
+        super(DataRecorder, self).__init__(mainEngine, settings)
+
         self._dbNameTick = settings.dbNameTick(TICK_DB_NAME)
         self._dbName1Min = settings.dbName1Min(MINUTE_DB_NAME)
         
@@ -67,7 +66,6 @@ class DataRecorder(object):
         self._dict1mins = OrderedDict()
         
         # 负责执行数据库插入的单独线程相关
-        self.active = False                     # 工作状态
         self.queue = Queue()                    # 队列
         self.thread = Thread(target=self.run)   # 线程
         
@@ -81,7 +79,7 @@ class DataRecorder(object):
         # self.registerEvent()  
     
     #----------------------------------------------------------------------
-    def _subscriberMD(self, settingnode, event, dict, cbFunc) :
+    def _subscribeMarketData(self, settingnode, event, dict, cbFunc) :
         if len(settingnode({})) <=0:
             return
 
@@ -94,7 +92,7 @@ class DataRecorder(object):
 
                 self._engine.getMarketData(ds).subscribe(symbol, event)
                 if len(dict) <=0:
-                    self._engine._eventChannel.register(event, cbFunc)
+                    self.subscribeEvent(event, cbFunc)
 
                 # 保存到配置字典中
                 if symbol not in dict:
@@ -111,15 +109,10 @@ class DataRecorder(object):
         """加载配置"""
 
         # Tick记录配置
-        self._subscriberMD(self._settings.ticks, MarketData.EVENT_TICK, self._dictTicks, self.procecssTickEvent)
+        self._subscribeMarketData(self._settings.ticks, MarketData.EVENT_TICK, self._dictTicks, self.procecssTickEvent)
 
         # 分钟线记录配置
-        self._subscriberMD(self._settings.kline1min, MarketData.EVENT_KLINE_1MIN, self._dict1mins, self.procecssKLineEvent)
-
-    #----------------------------------------------------------------------
-    def getSetting(self):
-        """获取配置"""
-        return self._dictSettings
+        self._subscribeMarketData(self._settings.kline1min, MarketData.EVENT_KLINE_1MIN, self._dict1mins, self.procecssKLineEvent)
 
     #----------------------------------------------------------------------
     def procecssTickEvent(self, event):
@@ -159,13 +152,13 @@ class DataRecorder(object):
         if len(tick.exchange) >0:
             tblName += '_'+tick.exchange
 
-        self.insertData(self._dbNameTick, tblName, tick)
+        self.enqueue(self._dbNameTick, tblName, tick)
         return #TODO: merge the Kline data by Tick if KLine data is not available 
 
         if not 'bar' in confSymbol or not confSymbol['bar']:
             return
             
-        # self.writeDrLog(text.TICK_LOGGING_MESSAGE.format(symbol=libIceUtil.so.3.2.1tick.vtSymbol,
+        # self.logEvent(EVENT_DATARECORDER_LOG, text.TICK_LOGGING_MESSAGE.format(symbol=libIceUtil.so.3.2.1tick.vtSymbol,
         #                                                      time=tick.time, 
         #                                                      last=tick.lastPrice, 
         #                                                      bid=tick.bidPrice1, 
@@ -185,9 +178,9 @@ class DataRecorder(object):
         if len(bar.exchange) >0:
             tblName += '.'+bar.exchange
         
-        self.insertData(MINUTE_DB_NAME, tblName, bar)
+        self.enqueue(MINUTE_DB_NAME, tblName, bar)
         
-        # self.writeDrLog(text.BAR_LOGGING_MESSAGE.format(symbol=bar.vtSymbol, 
+        # self.logEvent(EVENT_DATARECORDER_LOG, text.BAR_LOGGING_MESSAGE.format(symbol=bar.vtSymbol, 
         #                                                 time=bar.time, 
         #                                                 open=bar.open, 
         #                                                 high=bar.high, 
@@ -195,7 +188,7 @@ class DataRecorder(object):
         #                                                 close=bar.close))        
 
     #----------------------------------------------------------------------
-    def insertData(self, dbName, collectionName, data):
+    def enqueue(self, dbName, collectionName, data):
         """插入数据到数据库（这里的data可以是VtTickData或者VtBarData）"""
         self.queue.put((dbName, collectionName, data.__dict__))
         
@@ -213,9 +206,9 @@ class DataRecorder(object):
                 
                 # 使用insert模式更新数据，可能存在时间戳重复的情况，需要用户自行清洗
                 try:
-                    self._engine.dbInsert(dbName, collectionName, d)
+                    self.dbInsert(dbName, collectionName, d)
                 except DuplicateKeyError:
-                    self.writeDrLog(u'键值重复插入失败，报错信息：%s' %traceback.format_exc())
+                    self.logEvent(EVENT_DATARECORDER_LOG, u'键值重复插入失败，报错信息：%s' %traceback.format_exc())
             except Empty:
                 pass
             
@@ -232,12 +225,3 @@ class DataRecorder(object):
             self.active = False
             self.thread.join()
         
-    #----------------------------------------------------------------------
-    def writeDrLog(self, content):
-        """快速发出日志事件"""
-        log = VtLogData()
-        log.logContent = content
-        event = Event(type_=EVENT_DATARECORDER_LOG)
-        event.dict_['data'] = log
-        self._engine.mainEngine._eventChannel.put(event)   
-    

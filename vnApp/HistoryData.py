@@ -28,7 +28,7 @@ def downloadEquityDailyBarts(self, symbol):
     print u'开始下载%s日行情' %symbol
     
     # 查询数据库中已有数据的最后日期
-    cl = self.dbClient[DAILY_DB_NAME][symbol]
+    cl = self._dbConn[DAILY_DB_NAME][symbol]
     cx = cl.find(sort=[('datetime', pymongo.DESCENDING)])
     if cx.count():
         last = cx[0]
@@ -44,7 +44,7 @@ def downloadEquityDailyBarts(self, symbol):
     
     if not data.empty:
         # 创建datetime索引
-        self.dbClient[DAILY_DB_NAME][symbol].ensure_index([('datetime', pymongo.ASCENDING)], unique=True)
+        self._dbConn[DAILY_DB_NAME][symbol].ensure_index([('datetime', pymongo.ASCENDING)], unique=True)
         
         for index, d in data.iterrows():
             bar = VtBarData()
@@ -63,7 +63,7 @@ def downloadEquityDailyBarts(self, symbol):
                 print d
             
             flt = {'datetime': bar.datetime}
-            self.dbClient[DAILY_DB_NAME][symbol].update_one(flt, {'$set':bar.__dict__}, upsert=True)            
+            self._dbConn[DAILY_DB_NAME][symbol].update_one(flt, {'$set':bar.__dict__}, upsert=True)            
         
         print u'%s下载完成' %symbol
     else:

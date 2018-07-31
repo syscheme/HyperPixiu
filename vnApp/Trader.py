@@ -63,7 +63,7 @@ class MainRoutine(object):
         # TODO self.loadContracts()
         
         # MongoDB数据库相关
-        self.dbClient = None    # MongoDB客户端对象
+        self._dbConn = None    # MongoDB客户端对象
         
         # 接口实例
         self._dictMarketDatas = OrderedDict()
@@ -81,7 +81,7 @@ class MainRoutine(object):
         self.initLogger()
 
     #----------------------------------------------------------------------
-    def addSubscriber(self, dsModule, settings):
+    def addMarketData(self, dsModule, settings):
         """添加底层接口"""
         clsName = dsModule.className
         id = settings.id(clsName)
@@ -193,14 +193,14 @@ class MainRoutine(object):
     #----------------------------------------------------------------------
     def dbConnect(self):
         """连接MongoDB数据库"""
-        if not self.dbClient:
+        if not self._dbConn:
             # 读取MongoDB的设置
             try:
                 # 设置MongoDB操作的超时时间为0.5秒
-                self.dbClient = MongoClient(globalSetting['mongoHost'], globalSetting['mongoPort'], connectTimeoutMS=500)
+                self._dbConn = MongoClient(globalSetting['mongoHost'], globalSetting['mongoPort'], connectTimeoutMS=500)
                 
                 # 调用server_info查询服务器状态，防止服务器异常并未连接成功
-                self.dbClient.server_info()
+                self._dbConn.server_info()
 
                 self.writeLog(text.DATABASE_CONNECTING_COMPLETED)
                 
@@ -214,8 +214,8 @@ class MainRoutine(object):
     #----------------------------------------------------------------------
     def dbInsert(self, dbName, collectionName, d):
         """向MongoDB中插入数据，d是具体数据"""
-        if self.dbClient:
-            db = self.dbClient[dbName]
+        if self._dbConn:
+            db = self._dbConn[dbName]
             collection = db[collectionName]
             collection.insert_one(d)
         else:
@@ -224,8 +224,8 @@ class MainRoutine(object):
     #----------------------------------------------------------------------
     def dbQuery(self, dbName, collectionName, d, sortKey='', sortDirection=ASCENDING):
         """从MongoDB中读取数据，d是查询要求，返回的是数据库查询的指针"""
-        if self.dbClient:
-            db = self.dbClient[dbName]
+        if self._dbConn:
+            db = self._dbConn[dbName]
             collection = db[collectionName]
             
             if sortKey:
@@ -244,8 +244,8 @@ class MainRoutine(object):
     #----------------------------------------------------------------------
     def dbUpdate(self, dbName, collectionName, d, flt, upsert=False):
         """向MongoDB中更新数据，d是具体数据，flt是过滤条件，upsert代表若无是否要插入"""
-        if self.dbClient:
-            db = self.dbClient[dbName]
+        if self._dbConn:
+            db = self._dbConn[dbName]
             collection = db[collectionName]
             collection.replace_one(flt, d, upsert)
         else:

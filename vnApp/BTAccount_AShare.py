@@ -62,7 +62,7 @@ class BTAccount_AShare(Account_AShare):
         self.initDays = 0        
         self.endDate = ''
 
-        self.dbClient = None        # 数据库客户端
+        self._dbConn = None        # 数据库客户端
         self.dbCursor = None        # 数据库指针
         
         self.initData = []          # 初始化用的数据
@@ -176,8 +176,8 @@ class BTAccount_AShare(Account_AShare):
     #----------------------------------------------------------------------
     def loadHistoryData(self):
         """载入历史数据"""
-        self.dbClient = pymongo.MongoClient(globalSetting['mongoHost'], globalSetting['mongoPort'])
-        collection = self.dbClient[self.dbName][self.symbol]          
+        self._dbConn = pymongo.MongoClient(globalSetting['mongoHost'], globalSetting['mongoPort'])
+        collection = self._dbConn[self.dbName][self.symbol]          
 
         self.stdout(u'开始载入数据')
       

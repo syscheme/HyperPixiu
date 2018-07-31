@@ -60,7 +60,7 @@ class Account_Huobi(Account):
         self.initDays = 0        
         self.endDate = ''
 
-        self.dbClient = None        # 数据库客户端
+        self._dbConn = None        # 数据库客户端
         self.dbCursor = None        # 数据库指针
         
         self.initData = []          # 初始化用的数据

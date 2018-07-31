@@ -51,7 +51,7 @@ def runChildProcess():
     
     me = MainRoutine(ee, settings)
 
-    me.addSubscriber(mdHuobi, settings['marketdata'][0])
+    me.addMarketData(mdHuobi, settings['marketdata'][0])
     me.addApp(DataRecorder, settings['datarecorder'])
     le.info(u'主引擎创建成功')
 

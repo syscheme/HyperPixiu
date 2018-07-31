@@ -72,7 +72,7 @@ class BackTest(object):
         self.setStartDate(settings.startDate("2010-01-01"), settings.initDays(10)) 
         self.setEndDate(settings.endDate("")) 
 
-        self.dbClient = None        # 数据库客户端
+        self._dbConn = None        # 数据库客户端
         self.dbCursor = None        # 数据库指针
         
         self.initData = []          # 初始化用的数据
@@ -197,8 +197,8 @@ class BackTest(object):
     #----------------------------------------------------------------------
     def loadHistoryData(self):
         """载入历史数据"""
-        self.dbClient = pymongo.MongoClient(self.dbHost, globalSetting['mongoPort'])
-        collection = self.dbClient[self.dbName][self.symbol]          
+        self._dbConn = pymongo.MongoClient(self.dbHost, globalSetting['mongoPort'])
+        collection = self._dbConn[self.dbName][self.symbol]          
 
         self.stdout(u'开始载入数据 %s on %s/%s' % (self.symbol, self.dbHost, self.dbName))
       

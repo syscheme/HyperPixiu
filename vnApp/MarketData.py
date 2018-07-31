@@ -2,8 +2,8 @@
 
 from __future__ import division
 
-from vnpy.trader.vtObject import VtBarData
 from vnpy.trader.vtConstant import *
+from vnpy.trader.vtObject import VtBarData, VtTickData
 
 ########################################################################
 class MarketData(object):
@@ -19,13 +19,18 @@ class MarketData(object):
     EVENT_KLINE_4HOUR   = 'eKL4h.'
     EVENT_KLINE_1DAY    = 'eKL1d.'
 
+    DATA_SRCTYPE_MARKET     = 'market'
+    DATA_SRCTYPE_IMPORT     = 'import'
+    DATA_SRCTYPE_BACKTEST   = 'backtest'
+
     from abc import ABCMeta, abstractmethod
 
     #----------------------------------------------------------------------
-    def __init__(self, eventChannel, settings):
+    def __init__(self, eventChannel, settings, srcType=DATA_SRCTYPE_MARKET):
         """Constructor"""
 
         self._eventCh = eventChannel
+        self._sourceType = srcType
 
         self._active = False
         self.subDict = {}
@@ -104,3 +109,27 @@ class MarketData(object):
 
         self._eventCh.put(event)
     
+ 
+########################################################################
+class mdTickData(VtTickData):
+    """Tick行情数据类"""
+
+    #----------------------------------------------------------------------
+    def __init__(self, md):
+        """Constructor"""
+        super(mdTickData, self).__init__()
+        
+        self.exchange   = md._exchange
+        self.sourceType = md._sourceType          # 数据来源类型
+    
+########################################################################
+class mdKLineData(VtBarData):
+    """K线数据"""
+
+    #----------------------------------------------------------------------
+    def __init__(self, md):
+        """Constructor"""
+        super(mdKLineData, self).__init__()
+        
+        self.exchange   = md._exchange
+        self.sourceType = md._sourceType          # 数据来源类型

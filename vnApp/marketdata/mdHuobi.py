@@ -4,7 +4,6 @@ from __future__ import division
 
 from vnApp.MarketData import *
 
-from vnpy.trader.vtObject import VtBarData, VtTickData
 from vnpy.trader.vtConstant import *
 from vnpy.event import Event
 
@@ -283,7 +282,6 @@ class mdHuobi(MarketData):
         elif eventType == MarketData.EVENT_KLINE_1DAY:
             topic = 'market.%s.kline.1day' % symbol
         
-        topic = 'market.%s.detail' % symbol
         self._reqid += 1
         req = {
             'sub': topic,
@@ -380,16 +378,16 @@ class mdHuobi(MarketData):
             if k in self._dictCh:
                 latest = self._dictCh[k]
                 if d['stamp']['id'] > latest['stamp']['id'] :
-                    d = latest['tick']
+                    t = latest['tick']
 
-                    edata = VtBarData()
-                    edata.vtSymbol = edata.symbol = symbol
-                    edata.exchange = self._exchange
-                    edata.open = d['open']
-                    edata.close = d['close']
-                    edata.high = d['high']
-                    edata.low = d['low']
-                    edata.volume = d['vol']
+                    edata = mdKLineData(self)
+                    edata.vtSymbol   = edata.symbol = symbol
+                    edata.open = t['open']
+                    edata.close = t['close']
+                    edata.high = t['high']
+                    edata.low = t['low']
+                    edata.volume = t['vol']
+
 
                     ts = latest['stamp']['id']
                     edata.date = ts.date().strftime('%Y%m%d')
@@ -416,9 +414,8 @@ class mdHuobi(MarketData):
             tick = data['tick']
             ts = datetime.fromtimestamp(float(data['ts'])/1000)
             
-            edata = VtTickData()
+            edata = mdTickData(self)
             edata.vtSymbol = edata.symbol = symbol
-            edata.exchange = self._exchange
             edata.lastPrice = tick['close']
             edata.lastVolume = tick['vol']
             edata.openPrice = tick['open']

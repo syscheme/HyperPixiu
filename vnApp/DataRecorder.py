@@ -25,9 +25,9 @@ from vnpy.trader.vtObject import VtSubscribeReq, VtLogData, VtBarData, VtTickDat
 
 # DB names for recording
 SETTING_DB_NAME = 'vnRec_Db'
-TICK_DB_NAME   = 'recDB_Tick'
-DAILY_DB_NAME  = 'recDB_Daily'
-MINUTE_DB_NAME = 'recDB_1Min'
+TICK_DB_NAME   = 'drTick'
+DAILY_DB_NAME  = 'drDaily'
+MINUTE_DB_NAME = 'dr1Min'
 
 # 行情记录模块事件
 EVENT_DATARECORDER_LOG = 'eRec_LOG'     # 行情记录日志更新事件
@@ -81,65 +81,40 @@ class DataRecorder(object):
         # self.registerEvent()  
     
     #----------------------------------------------------------------------
-    def subscriber(self):
-        """加载配置"""
+    def _subscriberMD(self, settingnode, event, dict, cbFunc) :
+        if len(settingnode({})) <=0:
+            return
 
-        # Tick记录配置
-        for i in self._settings.ticks :
+        for i in settingnode :
             try:
                 symbol = i.symbol('')
                 ds = i.ds('')
                 if len(symbol) <=3 or len(ds)<=0:
                     continue
 
-                self._engine.getMarketData(ds).subscribe(symbol, EVENT_TICK)
-                if len(self._dictTicks) <=0:
-                    self._engine._eventChannel.register(EVENT_TICK, self.procecssTickEvent)
+                self._engine.getMarketData(ds).subscribe(symbol, event)
+                if len(dict) <=0:
+                    self._engine._eventChannel.register(event, cbFunc)
 
                 # 保存到配置字典中
-                if symbol not in self._dictTicks:
+                if symbol not in dict:
                     d = {
                         'symbol': symbol,
                         'ds': ds,
                     }
 
-                    self._dictTicks[symbol] = d
-                else:
-                    d = self._dictTicks[symbol]
-                    d['tick'] = True
+                    dict[symbol] = d
             except Exception as e:
                 print(e)
-                continue
 
-        return
+    def subscriber(self):
+        """加载配置"""
+
+        # Tick记录配置
+        self._subscriberMD(self._settings.ticks, MarketData.EVENT_TICK, self._dictTicks, self.procecssTickEvent)
+
         # 分钟线记录配置
-        for i in self._settings.kline1min :
-            try:
-                symbol = i.symbol
-                ds = i.ds
-                if len(symbol) <=3:
-                    continue
-
-                self._engine.getMarketData(ds).subscribe(symbol, EVENT_KLINE_1MIN)
-                if len(self._dict1mins) <=0:
-                    self._engine._eventChannel.register(EVENT_KLINE_1MIN, self.procecssKLineEvent)
-                
-                # 保存到配置字典中
-                if symbol not in self._dict1mins:
-                    d = {
-                        'symbol': symbol,
-                        'ds': ds,
-                    }
-
-                    self._dict1mins[symbol] = d
-                else:
-                    d = self._dict1mins[symbol]
-                    d['bar'] = True
-                        
-                # 创建BarManager对象
-                self._dictKLineMerge[symbol] = BarGenerator(self.onBar)
-            except Exception :
-                pass
+        self._subscriberMD(self._settings.kline1min, MarketData.EVENT_KLINE_1MIN, self._dict1mins, self.procecssKLineEvent)
 
     #----------------------------------------------------------------------
     def getSetting(self):
@@ -159,8 +134,23 @@ class DataRecorder(object):
         self.onTick(tick)
         
     #----------------------------------------------------------------------
+    def procecssKLineEvent(self, event):
+        """处理行情事件"""
+        bar = event.dict_['data'] # this is a vtBarData
+        symbol = bar.vtSymbol
+        
+        # 生成datetime对象
+        #if not tick.datetime:
+        #    tick.datetime = datetime.strptime(' '.join([tick.date, tick.time]), '%Y%m%d %H:%M:%S.%f')            
+
+        self.onBar(bar)
+
+    #----------------------------------------------------------------------
     def onTick(self, tick):
         """Tick更新"""
+        if tick.sourceType != MarketData.DATA_SRCTYPE_MARKET:
+            return
+
         vtSymbol = tick.vtSymbol
         if not vtSymbol in self._dictTicks :
             return
@@ -170,34 +160,39 @@ class DataRecorder(object):
             tblName += '_'+tick.exchange
 
         self.insertData(self._dbNameTick, tblName, tick)
+        return #TODO: merge the Kline data by Tick if KLine data is not available 
+
         if not 'bar' in confSymbol or not confSymbol['bar']:
             return
             
-        self.writeDrLog(text.TICK_LOGGING_MESSAGE.format(symbol=tick.vtSymbol,
-                                                             time=tick.time, 
-                                                             last=tick.lastPrice, 
-                                                             bid=tick.bidPrice1, 
-                                                             ask=tick.askPrice1))
+        # self.writeDrLog(text.TICK_LOGGING_MESSAGE.format(symbol=libIceUtil.so.3.2.1tick.vtSymbol,
+        #                                                      time=tick.time, 
+        #                                                      last=tick.lastPrice, 
+        #                                                      bid=tick.bidPrice1, 
+        #                                                      ask=tick.askPrice1))
     
     #----------------------------------------------------------------------
     def onBar(self, bar):
         """分钟线更新"""
+        if bar.sourceType != MarketData.DATA_SRCTYPE_MARKET:
+            return
+
         vtSymbol = bar.vtSymbol
         if not vtSymbol in self._dict1mins:
             return
 
         tblName = vtSymbol
         if len(bar.exchange) >0:
-            tblName += '_'+bar.exchange
+            tblName += '.'+bar.exchange
         
         self.insertData(MINUTE_DB_NAME, tblName, bar)
         
-        self.writeDrLog(text.BAR_LOGGING_MESSAGE.format(symbol=bar.vtSymbol, 
-                                                        time=bar.time, 
-                                                        open=bar.open, 
-                                                        high=bar.high, 
-                                                        low=bar.low, 
-                                                        close=bar.close))        
+        # self.writeDrLog(text.BAR_LOGGING_MESSAGE.format(symbol=bar.vtSymbol, 
+        #                                                 time=bar.time, 
+        #                                                 open=bar.open, 
+        #                                                 high=bar.high, 
+        #                                                 low=bar.low, 
+        #                                                 close=bar.close))        
 
     #----------------------------------------------------------------------
     def insertData(self, dbName, collectionName, data):

@@ -48,9 +48,9 @@ class DataRecorder(BaseApplication):
     appIco  = 'aaa.ico'
 
     #----------------------------------------------------------------------
-    def __init__(self, mainEngine, settings):
+    def __init__(self, mainRoutine, settings):
         """Constructor"""
-        super(DataRecorder, self).__init__(mainEngine, settings)
+        super(DataRecorder, self).__init__(mainRoutine, settings)
 
         self._dbNameTick = settings.dbNameTick(TICK_DB_NAME)
         self._dbName1Min = settings.dbName1Min(MINUTE_DB_NAME)

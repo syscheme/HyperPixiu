@@ -217,7 +217,7 @@ class BTAccount_AShare(Account_AShare):
     def runBacktesting(self):
         """运行回测"""
 
-        self._accountId = "BT_%s.%s" % (self.symbol, self.strategyName)
+        self._id = "BT_%s.%s" % (self.symbol, self.strategyName)
 
         # 载入历史数据
         if self.loadHistoryData() <=0 :
@@ -946,7 +946,7 @@ class BTAccount_AShare(Account_AShare):
         plt.tight_layout()
         plt.xticks(xindex, tradeTimeIndex, rotation=30)  # 旋转15
         
-        plt.savefig('BT-%s.png' % self._accountId, dpi=400, bbox_inches='tight')
+        plt.savefig('BT-%s.png' % self._id, dpi=400, bbox_inches='tight')
         # plt.show()
         plt.close()
 
@@ -1049,7 +1049,7 @@ class BTAccount_AShare(Account_AShare):
             df = self.calculateDailyResult()
             df, d = self.calculateDailyStatistics(df)            
 
-            df.to_csv(self._accountId+'.OPT' + datetime.now().strftime('%H%M%S') +'.csv')
+            df.to_csv(self._id+'.OPT' + datetime.now().strftime('%H%M%S') +'.csv')
 
             try:
                 targetValue = d[targetName]
@@ -1234,8 +1234,8 @@ class BTAccount_AShare(Account_AShare):
             df = self.calculateDailyResult()
             df, result = self.calculateDailyStatistics(df)
 
-        # df.to_csv(self._accountId+'.csv',columns=""+DailyResult.EXPORT_COLUMNS)
-        df.to_csv(self._accountId+'.csv')
+        # df.to_csv(self._id+'.csv',columns=""+DailyResult.EXPORT_COLUMNS)
+        df.to_csv(self._id+'.csv')
         originGain = 0.0
         if self._execStartClose >0 :
             originGain = (self._execEndClose - self._execStartClose)*100/self._execStartClose
@@ -1281,7 +1281,7 @@ class BTAccount_AShare(Account_AShare):
         fig = plt.figure(figsize=(10, 16))
         
         pBalance = plt.subplot(4, 1, 1)
-        pBalance.set_title(self._accountId + ' Balance')
+        pBalance.set_title(self._id + ' Balance')
         df['balance'].plot(legend=True)
         
         pDrawdown = plt.subplot(4, 1, 2)
@@ -1296,7 +1296,7 @@ class BTAccount_AShare(Account_AShare):
         pKDE.set_title('Daily Pnl Distribution')
         df['netPnl'].hist(bins=50)
         
-        plt.savefig('DR-%s.png' % self._accountId, dpi=400, bbox_inches='tight')
+        plt.savefig('DR-%s.png' % self._id, dpi=400, bbox_inches='tight')
         # plt.show()
         plt.close()
        

@@ -87,12 +87,18 @@ class Account(object):
     """
     Basic Account
     """
+    __lastId__ =10000
 
     #----------------------------------------------------------------------
     def __init__(self, dvrBroker, settings):
         """Constructor"""
 
-        self._accountId = ""
+        # the app instance Id
+        self._id = settings.id("")
+        if len(self._id)<=0 :
+            Account.__lastId__ +=1
+            self._id = 'A%d' % Account.__lastId__
+
         self._thisTradeDate = None
         self._lastTradeDate = None
 
@@ -132,6 +138,12 @@ class Account(object):
     @abstractmethod
     def loadSettings(filename) :
         self._settings = jsoncfg.load_config(filename)
+
+    @property
+    def ident(self) :
+        if not self._dvrBroker:
+            return self.__class__.__name__ +"." + self._id
+        return self._dvrBroker.__class__.__name__ +"." + self._id
 
     @abstractmethod
     def cashAmount(self): raise NotImplementedError # returns (avail, total)
@@ -283,7 +295,7 @@ class Account(object):
     @abstractmethod
     def stdout(self, message):
         """输出内容"""
-        print str(datetime.now()) + " ACC[" + self._accountId + "] " + message
+        print str(datetime.now()) + " ACC[" + self.ident + "] " + message
 
     #----------------------------------------------------------------------
     def loadStrategy(self, setting):

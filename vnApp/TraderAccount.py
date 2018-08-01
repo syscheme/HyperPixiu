@@ -32,12 +32,12 @@ class TraderAccount(Account):
     STATUS_FINISHED = set([STATUS_REJECTED, STATUS_CANCELLED, STATUS_ALLTRADED])
 
     #----------------------------------------------------------------------
-    def __init__(self, mainEngine, eventChannel):
+    def __init__(self, mainRoutine, eventChannel):
         """Constructor"""
 
         super(TraderAccount, self).__init__()
 
-        self.mainEngine  = mainEngine
+        self._mainRoutine  = mainRoutine
         self._eventChannel = eventChannel
         
         # 当前日期
@@ -50,7 +50,7 @@ class TraderAccount(Account):
         self.engineType = ENGINETYPE_TRADING
         
         # 注册日式事件类型
-        self.mainEngine.registerLogEvent(EVENT_LOG)
+        self._mainRoutine.registerLogEvent(EVENT_LOG)
         
         # 注册事件监听
         self.registerEvent()
@@ -58,7 +58,7 @@ class TraderAccount(Account):
     #----------------------------------------------------------------------
     def sendOrder(self, vtSymbol, orderType, price, volume, strategy):
         """发单"""
-        contract = self.mainEngine.getContract(vtSymbol)
+        contract = self._mainRoutine.getContract(vtSymbol)
         
         req = VtOrderReq()
         req.symbol = contract.symbol
@@ -91,14 +91,14 @@ class TraderAccount(Account):
             req.offset = OFFSET_CLOSE
             
         # 委托转换
-        reqList = self.mainEngine.convertOrderReq(req)
+        reqList = self._mainRoutine.convertOrderReq(req)
         vtOrderIDList = []
         
         if not reqList:
             return vtOrderIDList
         
         for convertedReq in reqList:
-            vtOrderID = self.mainEngine.sendOrder(convertedReq, contract.gatewayName)    # 发单
+            vtOrderID = self._mainRoutine.sendOrder(convertedReq, contract.gatewayName)    # 发单
             self.orderStrategyDict[vtOrderID] = strategy                                 # 保存vtOrderID和策略的映射关系
             self.strategyOrderDict[strategy.name].add(vtOrderID)                         # 添加到策略委托号集合中
             vtOrderIDList.append(vtOrderID)
@@ -112,7 +112,7 @@ class TraderAccount(Account):
     def cancelOrder(self, vtOrderID):
         """撤单"""
         # 查询报单对象
-        order = self.mainEngine.getOrder(vtOrderID)
+        order = self._mainRoutine.getOrder(vtOrderID)
         
         # 如果查询成功
         if order:
@@ -125,7 +125,7 @@ class TraderAccount(Account):
                 req.frontID = order.frontID
                 req.sessionID = order.sessionID
                 req.orderID = order.orderID
-                self.mainEngine.cancelOrder(req, order.gatewayName)    
+                self._mainRoutine.cancelOrder(req, order.gatewayName)    
 
     #----------------------------------------------------------------------
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy):
@@ -303,7 +303,7 @@ class TraderAccount(Account):
     #----------------------------------------------------------------------
     def insertData(self, dbName, collectionName, data):
         """插入数据到数据库（这里的data可以是VtTickData或者VtBarData）"""
-        self.mainEngine.dbInsert(dbName, collectionName, data.__dict__)
+        self._mainRoutine.dbInsert(dbName, collectionName, data.__dict__)
     
     #----------------------------------------------------------------------
     def loadBar(self, dbName, collectionName, days):
@@ -311,7 +311,7 @@ class TraderAccount(Account):
         startDate = self.today - timedelta(days)
         
         d = {'datetime':{'$gte':startDate}}
-        barData = self.mainEngine.dbQuery(dbName, collectionName, d, 'datetime')
+        barData = self._mainRoutine.dbQuery(dbName, collectionName, d, 'datetime')
         
         l = []
         for d in barData:
@@ -326,7 +326,7 @@ class TraderAccount(Account):
         startDate = self.today - timedelta(days)
         
         d = {'datetime':{'$gte':startDate}}
-        tickData = self.mainEngine.dbQuery(dbName, collectionName, d, 'datetime')
+        tickData = self._mainRoutine.dbQuery(dbName, collectionName, d, 'datetime')
         
         l = []
         for d in tickData:
@@ -349,7 +349,7 @@ class TraderAccount(Account):
     def subscribeMarketData(self, strategy):
         """订阅行情"""
         # 订阅合约
-        contract = self.mainEngine.getContract(strategy.vtSymbol)
+        contract = self._mainRoutine.getContract(strategy.vtSymbol)
         if contract:
             req = VtSubscribeReq()
             req.symbol = contract.symbol
@@ -359,7 +359,7 @@ class TraderAccount(Account):
             req.currency = strategy.currency
             req.productClass = strategy.productClass
             
-            self.mainEngine.subscribe(req, contract.gatewayName)
+            self._mainRoutine.subscribe(req, contract.gatewayName)
         else:
             self.log(u'%s的交易合约%s无法找到' %(strategy.name, strategy.vtSymbol))
 
@@ -389,7 +389,7 @@ class TraderAccount(Account):
         for key in strategy.syncList:
             d[key] = strategy.__getattribute__(key)
         
-        self.mainEngine.dbUpdate(POSITION_DB_NAME, strategy.className,
+        self._mainRoutine.dbUpdate(POSITION_DB_NAME, strategy.className,
                                  d, flt, True)
         
         content = u'策略%s同步数据保存成功，当前持仓%s' %(strategy.name, strategy.pos)
@@ -400,7 +400,7 @@ class TraderAccount(Account):
         """从数据库载入策略的持仓情况"""
         flt = {'name': strategy.name,
                'vtSymbol': strategy.vtSymbol}
-        syncData = self.mainEngine.dbQuery(POSITION_DB_NAME, strategy.className, flt)
+        syncData = self._mainRoutine.dbQuery(POSITION_DB_NAME, strategy.className, flt)
         
         if not syncData:
             return
@@ -436,7 +436,7 @@ class TraderAccount(Account):
     #----------------------------------------------------------------------
     def getPriceTick(self, strategy):
         """获取最小价格变动"""
-        contract = self.mainEngine.getContract(strategy.vtSymbol)
+        contract = self._mainRoutine.getContract(strategy.vtSymbol)
         if contract:
             return contract.priceTick
         return 0

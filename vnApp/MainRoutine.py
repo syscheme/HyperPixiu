@@ -25,15 +25,27 @@ from vnpy.trader.vtFunction import getTempPath
 ########################################################################
 class BaseApplication(object):
 
+    __lastId__ =100
+
     #----------------------------------------------------------------------
-    def __init__(self, mainEngine, settings):
+    def __init__(self, mainRoutine, settings):
         """Constructor"""
-        self._engine = mainEngine
+        self._engine = mainRoutine
         self._settings = settings
 
         self._active = False                     # 工作状态
 
+        # the app instance Id
+        self._id = settings.id("")
+        if len(self._id)<=0 :
+            BaseApplication.__lastId__ +=1
+            self._id = 'P%d' % BaseApplication.__lastId__
+
     #----------------------------------------------------------------------
+    @property
+    def ident(self) :
+        return self.__class__.__name__ +":" + self._id
+
     @property
     def mainRoutine(self) :
         return self._engine
@@ -113,10 +125,12 @@ class BaseApplication(object):
     def logEvent(self, eventType, content):
         """快速发出日志事件"""
         log = VtLogData()
+        log.dsName = self.ident
         log.logContent = content
         event = Event(type_= eventType)
         event.dict_['data'] = log
         self._engine._eventChannel.put(event)
+
 
 ########################################################################
 class MainRoutine(object):
@@ -150,9 +164,6 @@ class MainRoutine(object):
         self._lstLogs = []
         self._lstErrors = []
         
-        # 持仓细节相关
-        self.detailDict = {}                                # vtSymbol:PositionDetail
-        self.tdPenaltyList = globalSetting['tdPenalty']     # 平今手续费惩罚的产品代码列表
 
         # 读取保存在硬盘的合约数据
         # TODO self.loadContracts()
@@ -210,11 +221,14 @@ class MainRoutine(object):
     #----------------------------------------------------------------------
     def addApp(self, appModule, settings):
         """添加上层应用"""
-        clsName = appModule.className
-        id = settings.id(clsName)
+
+        app = appModule(self, settings)
+
+        clsName = app.__class__.__name__
+        id = app.ident
         
         # 创建应用实例
-        self._dictApps[id] = appModule(self, settings)
+        self._dictApps[id] = app
         
         # 将应用引擎实例添加到主引擎的属性中
         self.__dict__[id] = self._dictApps[id]
@@ -651,12 +665,12 @@ class DataCache(object):
     #----------------------------------------------------------------------
     def getPositionDetail(self, vtSymbol):
         """查询持仓细节"""
-        if vtSymbol in self.detailDict:
-            detail = self.detailDict[vtSymbol]
+        if vtSymbol in self._dictDetails:
+            detail = self._dictDetails[vtSymbol]
         else:
             contract = self.getContract(vtSymbol)
             detail = PositionDetail(vtSymbol, contract)
-            self.detailDict[vtSymbol] = detail
+            self._dictDetails[vtSymbol] = detail
             
             # 设置持仓细节的委托转换模式
             contract = self.getContract(vtSymbol)
@@ -669,7 +683,7 @@ class DataCache(object):
                     detail.mode = detail.MODE_SHFE
                 
                 # 检查是否有平今惩罚
-                for productID in self.tdPenaltyList:
+                for productID in self._lstTdPenalty:
                     if str(productID) in contract.symbol:
                         detail.mode = detail.MODE_TDPENALTY
                 
@@ -678,7 +692,7 @@ class DataCache(object):
     #----------------------------------------------------------------------
     def getAllPositionDetails(self):
         """查询所有本地持仓缓存细节"""
-        return self.detailDict.values()
+        return self._dictDetails.values()
     
     #----------------------------------------------------------------------
     def updateOrderReq(self, req, vtOrderID):
@@ -691,7 +705,7 @@ class DataCache(object):
     #----------------------------------------------------------------------
     def convertOrderReq(self, req):
         """根据规则转换委托请求"""
-        detail = self.detailDict.get(req.vtSymbol, None)
+        detail = self._dictDetails.get(req.vtSymbol, None)
         if not detail:
             return [req]
         else:

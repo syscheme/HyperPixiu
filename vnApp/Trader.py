@@ -24,7 +24,7 @@ from vnpy.trader.vtFunction import getTempPath
 
 ########################################################################
 class Trader(BaseApplication):
-    """主引擎"""
+    """Trader Application"""
 
     FINISHED_STATUS = [STATUS_ALLTRADED, STATUS_REJECTED, STATUS_CANCELLED]
 
@@ -47,8 +47,8 @@ class Trader(BaseApplication):
         self._lstErrors = []
         
         # 持仓细节相关
-        self.detailDict = {}                                # vtSymbol:PositionDetail
-        self.tdPenaltyList = globalSetting['tdPenalty']     # 平今手续费惩罚的产品代码列表
+        self._dictDetails = {}                        # vtSymbol:PositionDetail
+        self._lstTdPenalty = settings.tdPenalty       # 平今手续费惩罚的产品代码列表
 
         # 读取保存在硬盘的合约数据
         # TODO self.loadContracts()
@@ -61,14 +61,14 @@ class Trader(BaseApplication):
         if not account:
             return
         
-        if len(account._accountId) <=0 and account._dvrBroker：
-            account._accountId = account._dvrBroker.__class__
+        if len(account._id) <=0 and account._dvrBroker：
+            account._id = account._dvrBroker.__class__
         
-        self._dictAccounts[account._accountId] = account
+        self._dictAccounts[account._id] = account
         if default:
-            self._defaultAccId = account._accountId
+            self._defaultAccId = account._id
         
-    #----------------------------------------------------------------------
+    #----impl of BaseApplication ------------------------------------------
     def start(self):
         # TODO: subscribe all interested market data
         pass
@@ -79,6 +79,7 @@ class Trader(BaseApplication):
         # TODO: subscribe all interested market data
         pass
     
+    #----end of BaseApplication ------------------------------------------
     #----------------------------------------------------------------------
     def getTick(self, vtSymbol):
         """查询行情对象"""
@@ -299,12 +300,12 @@ class DataCache(object):
     #----------------------------------------------------------------------
     def getPositionDetail(self, vtSymbol):
         """查询持仓细节"""
-        if vtSymbol in self.detailDict:
-            detail = self.detailDict[vtSymbol]
+        if vtSymbol in self._dictDetails:
+            detail = self._dictDetails[vtSymbol]
         else:
             contract = self.getContract(vtSymbol)
             detail = PositionDetail(vtSymbol, contract)
-            self.detailDict[vtSymbol] = detail
+            self._dictDetails[vtSymbol] = detail
             
             # 设置持仓细节的委托转换模式
             contract = self.getContract(vtSymbol)
@@ -317,7 +318,7 @@ class DataCache(object):
                     detail.mode = detail.MODE_SHFE
                 
                 # 检查是否有平今惩罚
-                for productID in self.tdPenaltyList:
+                for productID in self._lstTdPenalty:
                     if str(productID) in contract.symbol:
                         detail.mode = detail.MODE_TDPENALTY
                 
@@ -326,7 +327,7 @@ class DataCache(object):
     #----------------------------------------------------------------------
     def getAllPositionDetails(self):
         """查询所有本地持仓缓存细节"""
-        return self.detailDict.values()
+        return self._dictDetails.values()
     
     #----------------------------------------------------------------------
     def updateOrderReq(self, req, vtOrderID):
@@ -339,7 +340,7 @@ class DataCache(object):
     #----------------------------------------------------------------------
     def convertOrderReq(self, req):
         """根据规则转换委托请求"""
-        detail = self.detailDict.get(req.vtSymbol, None)
+        detail = self._dictDetails.get(req.vtSymbol, None)
         if not detail:
             return [req]
         else:

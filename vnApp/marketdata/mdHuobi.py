@@ -70,7 +70,7 @@ class mdHuobi(MarketData):
     def __init__(self, eventChannel, settings):
         """Constructor"""
 
-        super(mdHuobi, self).__init__(eventChannel, settings, DATA_SRCTYPE_REALTIME)
+        super(mdHuobi, self).__init__(eventChannel, settings, MarketData.DATA_SRCTYPE_REALTIME)
 
         self.ws = None
         self.url = ''

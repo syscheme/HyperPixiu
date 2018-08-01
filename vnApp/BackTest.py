@@ -89,7 +89,7 @@ class BackTest(object):
     def resetTest(self) :
         self._account = self._accountClass(tdBackTest, self._settings.account)
         self._account._dvrBroker._backtest= self
-#        self._account._accountId = "BT.%s:%s" % (self.strategyBT, self.symbol)
+#        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
         
         self.capital  = self._settings.capital(100000) # 回测时的起始本金（默认10万）
 
@@ -238,7 +238,7 @@ class BackTest(object):
     def runBacktesting(self):
         """运行回测"""
 
-        self._account._accountId = "BT.%s.%s" % (self.symbol, self.strategy.className)
+        self._account._id = "BT.%s.%s" % (self.symbol, self.strategy.className)
 
         # 载入历史数据
         if self.loadHistoryData() <=0 :
@@ -819,7 +819,7 @@ class BackTest(object):
         plt.tight_layout()
         plt.xticks(xindex, tradeTimeIndex, rotation=30)  # 旋转15
         
-        plt.savefig('BT-%s.png' % self._accountId, dpi=400, bbox_inches='tight')
+        plt.savefig('BT-%s.png' % self._id, dpi=400, bbox_inches='tight')
         # plt.show()
         plt.close()
 
@@ -872,7 +872,7 @@ class BackTest(object):
         self.tdDriver.tradeDict.clear()
 
         self.clearResult()
-        self._accountId = ""
+        self._id = ""
 
     #----------------------------------------------------------------------
     def batchBacktesting(self, strategyList, d):
@@ -1098,7 +1098,7 @@ class BackTest(object):
             df = self.calculateDailyResult()
             df, result = self.calculateDailyStatistics(df)
 
-        df.to_csv(self._account._accountId+'.csv')
+        df.to_csv(self._account._id+'.csv')
             
         originGain = 0.0
         if self._execStartClose >0 :
@@ -1145,7 +1145,7 @@ class BackTest(object):
         fig = plt.figure(figsize=(10, 16))
         
         pBalance = plt.subplot(4, 1, 1)
-        pBalance.set_title(self._accountId + ' Balance')
+        pBalance.set_title(self._id + ' Balance')
         df['balance'].plot(legend=True)
         
         pDrawdown = plt.subplot(4, 1, 2)
@@ -1160,7 +1160,7 @@ class BackTest(object):
         pKDE.set_title('Daily Pnl Distribution')
         df['netPnl'].hist(bins=50)
         
-        plt.savefig('DR-%s.png' % self._account._accountId, dpi=400, bbox_inches='tight')
+        plt.savefig('DR-%s.png' % self._account._id, dpi=400, bbox_inches='tight')
         plt.show()
         plt.close()
        

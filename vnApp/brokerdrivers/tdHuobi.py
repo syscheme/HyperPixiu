@@ -39,7 +39,7 @@ class tdHuobi(BrokerDriver):
 
     @property
     def accountId(self) :
-        return self._account._accountId
+        return self._account._id
 
     #----------------------------------------------------------------------
     def start(self, n=10):

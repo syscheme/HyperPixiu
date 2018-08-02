@@ -15,8 +15,6 @@ from Account import *
 
 ########################################################################
 class Strategy(object):
-    """CTA策略模板"""
-    
     # 策略类的名称和作者
     className = 'Strategy'
     author = EMPTY_UNICODE
@@ -27,7 +25,6 @@ class Strategy(object):
     
     # 策略的基本参数
     name = EMPTY_UNICODE           # 策略实例名称
-    vtSymbol = EMPTY_STRING        # 交易的合约vt系统代码    
     productClass = EMPTY_STRING    # 产品类型（只有IB接口需要）
     currency = EMPTY_STRING        # 货币（只有IB接口需要）
     
@@ -40,8 +37,7 @@ class Strategy(object):
     # 参数列表，保存了参数的名称
     paramList = ['name',
                  'className',
-                 'author',
-                 'vtSymbol']
+                 'author']
     
     # 变量列表，保存了变量的名称
     varList = ['inited',
@@ -110,27 +106,27 @@ class Strategy(object):
         raise NotImplementedError
     
     #----------------------------------------------------------------------
-    def buy(self, price, volume, stop=False):
+    def _buy(self, symbol, price, volume, stop=False):
         """买开"""
-        return self.sendOrder(ORDER_BUY, price, volume, stop)
+        return self.sendOrder(ORDER_BUY, symbol, price, volume, stop)
     
     #----------------------------------------------------------------------
-    def sell(self, price, volume, stop=False):
+    def _sell(self, symbol, price, volume, stop=False):
         """卖平"""
-        return self.sendOrder(ORDER_SELL, price, volume, stop)       
+        return self.sendOrder(ORDER_SELL, symbol, price, volume, stop)       
 
     #----------------------------------------------------------------------
-    def short(self, price, volume, stop=False):
+    def _short(self, symbol, price, volume, stop=False):
         """卖开"""
-        return self.sendOrder(ORDER_SHORT, price, volume, stop)          
+        return self.sendOrder(ORDER_SHORT, symbol, price, volume, stop)          
  
     #----------------------------------------------------------------------
-    def cover(self, price, volume, stop=False):
+    def _cover(self, symbol, price, volume, stop=False):
         """买平"""
-        return self.sendOrder(ORDER_COVER, price, volume, stop)
+        return self.sendOrder(ORDER_COVER, symbol, price, volume, stop)
         
     #----------------------------------------------------------------------
-    def sendOrder(self, orderType, price, volume, stop=False):
+    def sendOrder(self, orderType, symbol, price, volume, stop=False):
         """发送委托"""
         if not self.trading:
             # 交易停止时发单返回空字符串
@@ -139,9 +135,9 @@ class Strategy(object):
         # 如果stop为True，则意味着发本地停止单
         # self.log(u'sendOrder:%s %.2fx%d>%s' %(orderType, price, volume, stop))
         if stop:
-            vtOrderIDList = self.account.sendStopOrder(self.vtSymbol, orderType, price, volume, self)
+            vtOrderIDList = self.account.sendStopOrder(symbol, orderType, price, volume, self)
         else:
-            vtOrderIDList = self.account.sendOrder(self.vtSymbol, orderType, price, volume, self) 
+            vtOrderIDList = self.account.sendOrder(symbol, orderType, price, volume, self) 
 
         return vtOrderIDList
         
@@ -161,26 +157,6 @@ class Strategy(object):
     def cancelAll(self):
         """全部撤单"""
         self.account.cancelAll(self.name)
-    
-    #----------------------------------------------------------------------
-    def insertTick(self, tick):
-        """向数据库中插入tick数据"""
-        self.account.insertData(self.tickDbName, self.vtSymbol, tick)
-    
-    #----------------------------------------------------------------------
-    def insertBar(self, bar):
-        """向数据库中插入bar数据"""
-        self.account.insertData(self.barDbName, self.vtSymbol, bar)
-        
-    #----------------------------------------------------------------------
-    def loadTick(self, days):
-        """读取tick数据"""
-        return self.account.loadTick(self.tickDbName, self.vtSymbol, days)
-    
-    #----------------------------------------------------------------------
-    def loadBar(self, days):
-        """读取bar数据"""
-        return self.account.loadBar(self.barDbName, self.vtSymbol, days)
     
     #----------------------------------------------------------------------
     def log(self, content):
@@ -238,6 +214,56 @@ class Strategy(object):
         """查询最小价格变动"""
         return self.account.getPriceTick(self)
         
+########################################################################
+class StrategyOfSymbol(Strategy):
+    ''' per symbol+account 策略类 '''
+
+    #----------------------------------------------------------------------
+    def __init__(self, trader, symbol, account, setting):
+        """Constructor"""
+        super(StrategyOfSymbol, self).__init__(trader, account, setting)
+        self._symbol = symbol
+
+        # 设置策略的参数
+        if setting:
+            d = self.__dict__
+            for key in self.paramList:
+                if key in setting:
+                    d[key] = setting[key]
+
+    #----------------------------------------------------------------------
+    def buy(self, price, volume, stop=False):
+        """买开"""
+        return super(StrategyOfSymbol, self)._buy(self._symbol, price, volume, stop)
+
+    def sell(self, price, volume, stop=False):
+        """卖平"""
+        return super(StrategyOfSymbol, self)._sell(self._symbol, price, volume, stop)
+
+    def short(self, symbol, price, volume, stop=False):
+        """卖开"""
+        return super(StrategyOfSymbol, self)._short(self._symbol, price, volume, stop)
+
+    def cover(self, symbol, price, volume, stop=False):
+        """买平"""
+        return super(StrategyOfSymbol, self)._cover(self._symbol, price, volume, stop)
+        
+    #----------------------------------------------------------------------
+    def insertTick(self, tick):
+        """向数据库中插入tick数据"""
+        self.account.insertData(self.tickDbName, self._symbol, tick)
+    
+    def insertBar(self, bar):
+        """向数据库中插入bar数据"""
+        self.account.insertData(self.barDbName, self._symbol, bar)
+        
+    def loadTick(self, days):
+        """读取tick数据"""
+        return self.account.loadTick(self.tickDbName, self._symbol, days)
+    
+    def loadBar(self, days):
+        """读取bar数据"""
+        return self.account.loadBar(self.barDbName, self._symbol, days)
 
 
 ########################################################################
@@ -303,17 +329,17 @@ class TargetPosTemplate(Strategy):
                 self.orderList.remove(order.vtOrderID)
     
     #----------------------------------------------------------------------
-    def setTargetPos(self, targetPos):
+    def setTargetPos(self, symbol, targetPos):
         """设置目标仓位"""
         self.targetPos = targetPos
         
         self.trade()
         
     #----------------------------------------------------------------------
-    def trade(self):
+    def trade(self, symbol):
         """执行交易"""
         # 先撤销之前的委托
-        self.cancelAll()
+        self.cancelAll(symbol)
         
         # 如果目标仓位和实际仓位一致，则不进行任何操作
         posChange = self.targetPos - self.pos
@@ -342,7 +368,7 @@ class TargetPosTemplate(Strategy):
         # 回测模式下，采用合并平仓和反向开仓委托的方式
         if self.getEngineType() == ENGINETYPE_BACKTESTING:
             if posChange > 0:
-                l = self.buy(longPrice, abs(posChange))
+                l = self.buy(symbol, longPrice, abs(posChange))
             else:
                 l = self.short(shortPrice, abs(posChange))
             self.orderList.extend(l)
@@ -366,7 +392,7 @@ class TargetPosTemplate(Strategy):
                         l = self.cover(longPrice, abs(self.pos))
                 # 若没有空头持仓，则执行开仓操作
                 else:
-                    l = self.buy(longPrice, abs(posChange))
+                    l = self.buy(symbol, ongPrice, abs(posChange))
             # 卖出和以上相反
             else:
                 if self.pos > 0:

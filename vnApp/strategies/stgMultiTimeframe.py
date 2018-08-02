@@ -134,7 +134,7 @@ class stgMultiTimeframe(Strategy):
         # 当前无仓位
         if self.pos == 0:
             if self.maTrend > 0 and self.rsiValue >= self.rsiLong:
-                self.buy(bar.close+5, self.fixedSize)
+                self.buy(bar.symbol, bar.close+5, self.fixedSize)
                 
             elif self.maTrend < 0 and self.rsiValue <= self.rsiShort:
                 self.short(bar.close-5, self.fixedSize)

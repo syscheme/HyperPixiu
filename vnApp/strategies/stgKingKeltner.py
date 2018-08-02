@@ -178,7 +178,7 @@ class stgKingKeltner(Strategy):
         self.putEvent()
         
     #----------------------------------------------------------------------
-    def sendOcoOrder(self, buyPrice, shortPrice, volume):
+    def sendOcoOrder(self, symbol, buyPrice, shortPrice, volume):
         """
         发送OCO委托
         
@@ -188,7 +188,7 @@ class stgKingKeltner(Strategy):
         3. 一个方向的停止单成交后会立即撤消另一个方向的
         """
         # 发送双边的停止单委托，并记录委托号
-        self.buyOrderIDList = self.buy(buyPrice, volume, True)
+        self.buyOrderIDList = self.buy(symbol, buyPrice, volume, True)
         self.shortOrderIDList = self.short(shortPrice, volume, True)
         
         # 将委托号记录到列表中

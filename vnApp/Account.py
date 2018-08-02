@@ -13,7 +13,6 @@ import copy
 
 import jsoncfg # pip install json-cfg
 
-import pymongo
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -24,6 +23,9 @@ try:
     sns.set_style('whitegrid')  
 except ImportError:
     pass
+
+from pymongo import MongoClient, ASCENDING
+from pymongo.errors import ConnectionFailure
 
 from vnpy.trader.vtGlobal import globalSetting
 from vnpy.trader.vtObject import VtTickData, VtBarData
@@ -89,8 +91,12 @@ class Account(object):
     """
     __lastId__ =10000
 
+    # state of Account
+    STATE_OPEN  = 'open'   # during trading hours
+    STATE_CLOSE = 'close'  # during market close
+
     #----------------------------------------------------------------------
-    def __init__(self, dvrBroker, settings):
+    def __init__(self, trader, dvrBrokerClass, settings):
         """Constructor"""
 
         # the app instance Id
@@ -99,42 +105,63 @@ class Account(object):
             Account.__lastId__ +=1
             self._id = 'A%d' % Account.__lastId__
 
-        self._thisTradeDate = None
-        self._lastTradeDate = None
+        self._settings     = settings
+        self._trader       = trader
+        self._dbConn       = None # TO CLEAN
+        self._state        = Account.STATE_CLOSE
+
+        # trader executer
+        self._dvrBroker = dvrBrokerClass(self, self._settings.broker)
+
+        self._dateToday      = None # date of previous close
+        self._datePrevClose  = None # date of previous close
+        self._prevPositions = {} # dict from symbol to previous VtPositionData
+        self._dictPositions = {} # dict from symbol to latest VtPositionData
+        self._dictTrades = {} # dict from tradeId to trade confirmed during today
 
         self.capital = 0        # 起始本金（默认10万）
         self._cashAvail =0
-        self._settings = settings
         
         # 保存策略实例的字典
         # key为策略名称，value为策略实例，注意策略名称不允许重复
         self._strategyDict = {}
-        
-        # trader executer
-        self._dvrBroker = dvrBroker(self, self._settings)
 
         self.slippage  = self._settings.slippage(0)           # 假设的滑点
         self.rate      = self._settings.ratePer10K(30)/10000  # 假设的佣金比例（适用于百分比佣金）
         self.size      = self._settings.size(1)               # 合约大小，默认为1    
-        self.priceTick = self._settings.priceTick(0)      # 价格最小变动 
+        self._priceTick = self._settings.priceTick(0)      # 价格最小变动 
         
         self.initData = []          # 初始化用的数据
         
-        # 保存vtSymbol和策略实例映射的字典（用于推送tick数据）
-        # 由于可能多个strategy交易同一个vtSymbol，因此key为vtSymbol
-        # value为包含所有相关strategy对象的list
-        self.tickStrategyDict = {}
+        # # 保存vtSymbol和策略实例映射的字典（用于推送tick数据）
+        # # 由于可能多个strategy交易同一个vtSymbol，因此key为vtSymbol
+        # # value为包含所有相关strategy对象的list
+        # self.tickStrategyDict = {}
         
-        # 保存vtOrderID和strategy对象映射的字典（用于推送order和trade数据）
-        # key为vtOrderID，value为strategy对象
-        self.orderStrategyDict = {}     
+        # # 保存vtOrderID和strategy对象映射的字典（用于推送order和trade数据）
+        # # key为vtOrderID，value为strategy对象
+        # self.orderStrategyDict = {}     
         
-        # 保存策略名称和委托号列表的字典
-        # key为name，value为保存orderID（限价+本地停止）的集合
-        self.strategyOrderDict = {}
+        # # 保存策略名称和委托号列表的字典
+        # # key为name，value为保存orderID（限价+本地停止）的集合
+        # self.strategyOrderDict = {}
 
-        self.logList = []               # 日志记录
+        self._lstLogs = []               # 日志记录
 
+    #----------------------------------------------------------------------
+    #  properties
+    #----------------------------------------------------------------------
+    @property
+    def priceTick(self):
+        return self._priceTick
+
+    @property
+    def dbName(self):
+        if not self._trader:
+            return 'dbAccount'
+        return self._trader.dbName
+
+    #----------------------------------------------------------------------
     @abstractmethod
     def loadSettings(filename) :
         self._settings = jsoncfg.load_config(filename)
@@ -165,9 +192,6 @@ class Account(object):
 
     @abstractmethod
     def cancelStopOrder(self, stopOrderID): raise NotImplementedError
-
-    @abstractmethod
-    def getPriceTick(self, strategy): raise NotImplementedError
 
     @abstractmethod
     def insertData(self, dbName, collectionName, data): raise NotImplementedError
@@ -216,15 +240,180 @@ class Account(object):
 
     def roundToPriceTick(self, price):
         """取整价格到合约最小价格变动"""
-        if not self.priceTick:
+        if not self._priceTick:
             return price
         
-        newPrice = round(price/self.priceTick, 0) * self.priceTick
+        newPrice = round(price/self._priceTick, 0) * self._priceTick
         return newPrice    
 
+    #----------------------------------------------------------------------
+    # callbacks about timing
+    #----------------------------------------------------------------------
     @abstractmethod
-    def onDayOpen(self, newDate): raise NotImplementedError
+    def onDayClose(self):
+        self.saveDB() # save the account data into DB
+        
+        self._datePrevClose = self._dateToday
+        self._dateToday = None
+        
+        self._state = Account.STATE_CLOSE
+
+    @abstractmethod
+    def onDayOpen(self, newDate):
+        if Account.STATE_OPEN == self._state:
+            if newDate == self._dateToday :
+                return
+            self.onDayClose()
+
+        self._dateToday = newDate
+        self._dictTrades.clear() # clean the trade list
+        self._prevPositions = self._dictPositions
+        self._state = Account.STATE_OPEN
     
+    @abstractmethod
+    def onTimer(self):
+        # TODO refresh from BrokerDriver
+        pass
+
+    #----------------------------------------------------------------------
+    # method to access Account DB
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def saveDB(self):
+        ''' save the account data into DB 
+        1) trades that confirmed
+        2) 
+        '''
+
+        # TO CLEARN _dbConn
+        if not self._trader and not self._dbConn:
+            # 设置MongoDB操作的超时时间为0.5秒
+            self._dbConn = MongoClient('mongo-vnpy', 27017, connectTimeoutMS=500)
+                
+            # 调用server_info查询服务器状态，防止服务器异常并未连接成功
+            self._dbConn.server_info()
+
+        # part 1. the confirmed trades
+        tblName = "trades." + self.ident
+        for t in self._dictTrades.values():
+            if self._trader:
+                self._trader.insertData(self._trader.dbName, tblName, t)
+            elif self._dbConn :
+                db = self._dbConn['Account']
+                collection = db[tblName]
+                collection.ensure_index([('vtTradeID', ASCENDING)], unique=True) #TODO this should init ONCE
+                collection = db[tblName]
+                collection.update({'vtTradeID':t.vtTradeID}, t.__dict__, True)
+
+        # part 2. the daily stat
+        dstat, _ = self.calculateStat()
+        d = {
+            'date' : self._dateToday,
+            'dstat': dstat,
+        }
+
+        tblName = "dstat." + self.ident
+        if self._trader:
+            self._trader.insertData(self._trader.dbName, tblName, d)
+        elif self._dbConn :
+            db = self._dbConn['Account']
+            collection = db[tblName]
+            collection.ensure_index([('date', ASCENDING)], unique=True) #TODO this should init ONCE
+            collection.update({'date':d['date']}, d, True)
+
+    @abstractmethod
+    def loadDB(self, since =None):
+        ''' load the account data from DB ''' 
+        if not since :
+            since = self._datePrevClose
+        pass
+
+    @abstractmethod
+    def calculateStat(self):
+        """今日交易的结果"""
+
+        tradesOfSymbol = {}        # 成交列表
+        for t in self._dictTrades.values():
+            if len(t.vtSymbol) <=0:
+                t.vtSymbol='$' #default symbol
+
+            if not t.vtSymbol in tradesOfSymbol:
+                tradesOfSymbol[t.vtSymbol] = []
+            tradesOfSymbol[t.vtSymbol].append(t)
+
+        result = {}
+
+        for s in tradesOfSymbol.keys():
+            latestPos = self._dictPositions[s]
+            prevPos   = self._prevPositions[s]
+            tcBuy      = 0
+            tcSell     = 0
+            tradingPnl = 0             # 交易盈亏
+            totalPnl   = 0               # 总盈亏
+            
+            turnover   = 0               # 成交量
+            commission = 0             # 手续费
+            slippage   = 0               # 滑点
+            netPnl     = 0                 # 净盈亏
+            txnHist    = ""
+
+            # 持仓部分
+            # TODO get from latestPos:  openPosition = openPosition
+            positionPnl = round(openPosition * (closePrice - previousClose) * self.size, 3)
+            """
+            计算盈亏
+            size: 合约乘数
+            rate：手续费率
+            slippage：滑点点数
+            """
+            posChange = 0
+            for trade in tradesOfSymbol[s]:
+                if t.direction == DIRECTION_LONG:
+                    posChange = trade.volume
+                    self.tcBuy += 1
+                else:
+                    posChange = -trade.volume
+                    self.tcSell += 1
+
+                txnHist += "%+dx%s" % (posChange, trade.price)
+
+                tradingPnl += round(posChange * (self.closePrice - trade.price) * account.size, 2)
+                closePosition += posChange
+                tover, comis, slpfee = self.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
+                turnover += tover
+                commission += comis
+                slippage += slpfee
+
+            # 汇总
+            totalPnl = round(self.tradingPnl + self.positionPnl, 2)
+            netPnl = round(self.totalPnl - self.commission - self.slippage, 2)
+            
+            dstat = {
+                'date'       : self._dateToday,         # 日期
+                'close'      : latestPos,  # 当日收盘
+                'prevClose'  : prevPos,    # 昨日收盘
+                
+                'calcPosition' : closePosition,
+                'tcBuy': tcBuy,            # 成交数量
+                'tcSell': tcSell,            # 成交数量
+                
+                'tradingPnl': tradingPnl,             # 交易盈亏
+                'positionPnl': positionPnl,            # 持仓盈亏
+                'totalPnl' : round(self.tradingPnl + self.positionPnl, 2), # 总盈亏
+                
+                'turnover' : turnover,               # 成交量
+                'commission': commission,           # 手续费
+                'slippage' : slippage,               # 滑点
+                'netPnl' : netPnl,             # 净盈亏
+                
+                'txnHist' : txnHist
+                }
+
+            result[s] =dstat
+
+        return result, tradesOfSymbol
+
+    #----------------------------------------------------------------------
     # callbacks from BrokerDriver
     #----------------------------------------------------------------------
     @abstractmethod
@@ -235,6 +424,15 @@ class Account(object):
     @abstractmethod
     def onBatchCancel(self, data, reqid):
         """批量撤单回调"""
+        pass
+
+    @abstractmethod
+    def onTrade(self, trade):
+        """交易成功回调"""
+        self._dictTrades[trade.vtTradeID] = trade
+        # update the current postion, this may overwrite during the sync by BrokerDriver
+        
+
         pass
 
     @abstractmethod
@@ -296,7 +494,7 @@ class Account(object):
     @abstractmethod
     def log(self, message):
         """记录日志"""
-        self.logList.append(message)
+        self._lstLogs.append(message)
         self.stdout(message)
 
     @abstractmethod
@@ -485,10 +683,10 @@ class Account(object):
     #----------------------------------------------------------------------
     def roundToPriceTick(self, price):
         """取整价格到合约最小价格变动"""
-        if not self.priceTick:
+        if not self._priceTick:
             return price
         
-        newPrice = round(price/self.priceTick, 0) * self.priceTick
+        newPrice = round(price/self._priceTick, 0) * self._priceTick
         return newPrice
 
     #----------------------------------------------------------------------
@@ -534,6 +732,11 @@ class Account(object):
         return resultDf
 
 
+
+
+
+
+
 ########################################################################
 class StopOrder(object):
     """本地停止单"""
@@ -561,9 +764,9 @@ class Account_AShare(Account):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self, dvrBroker, settings=None):
+    def __init__(self, trader, dvrBrokerClass, settings=None):
         """Constructor"""
-        super(Account_AShare, self).__init__(dvrBroker, settings)
+        super(Account_AShare, self).__init__(trader, dvrBrokerClass, settings)
 
     #----------------------------------------------------------------------
     def cashAmount(self): # returns (avail, total)
@@ -613,8 +816,27 @@ class Account_AShare(Account):
         turnOver, commission, slippage = self.calcAmountOfTrade(vtSymbol, price, volume)
         return volume, commission, slippage
 
+
+########################################################################
+class VtPositionData(object): # (VtBaseData):
+    """持仓数据类"""
+
     #----------------------------------------------------------------------
-    @abstractmethod
-    def onDayOpen(self, newDate):
-        self._lastTradeDate =self._thisTradeDate
-        self._thisTradeDate =newDate
+    def __init__(self):
+        """Constructor"""
+        super(VtPositionData, self).__init__()
+        
+        # 代码编号相关
+        self.symbol   = EMPTY_STRING            # 合约代码
+        self.exchange = EMPTY_STRING            # 交易所代码
+        self.vtSymbol = EMPTY_STRING            # 合约在vt系统中的唯一代码，合约代码.交易所代码  
+        
+        # 持仓相关
+        self.direction      = EMPTY_STRING      # 持仓方向
+        self.position       = EMPTY_INT         # 持仓量
+        self.frozen         = EMPTY_INT         # 冻结数量
+        self.price          = EMPTY_FLOAT       # 持仓均价
+        self.vtPositionName = EMPTY_STRING      # 持仓在vt系统中的唯一代码，通常是vtSymbol.方向
+        # self.ydPosition     = EMPTY_INT         # 昨持仓
+        # self.positionProfit = EMPTY_FLOAT       # 持仓盈亏
+

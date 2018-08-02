@@ -31,13 +31,13 @@ from __future__ import division
 
 from vnpy.trader.vtObject import VtBarData
 from vnpy.trader.vtConstant import *
-from ..Strategy import (Strategy, 
+from ..Strategy import (StrategyOfSymbol, 
                                                      BarGenerator, 
                                                      ArrayManager)
 
 
 ########################################################################
-class stgBBand(Strategy):
+class stgBBand(StrategyOfSymbol):
     """基于布林通道的交易策略"""
 
     className = 'BBand'
@@ -95,9 +95,9 @@ class stgBBand(Strategy):
                 'intraTradeLow']    
 
     #----------------------------------------------------------------------
-    def __init__(self, trader, account, setting):
+    def __init__(self, trader, symbol, account, setting):
         """Constructor"""
-        super(stgBBand, self).__init__(trader, account, setting)
+        super(stgBBand, self).__init__(trader, symbol, account, setting)
         
         self.bg    = BarGenerator(self.onBar, 15, self.onXminBar)        # 创建K线合成器对象
         self.bg_L2 = BarGenerator(self.onBar, 60, self.onBar_L2)

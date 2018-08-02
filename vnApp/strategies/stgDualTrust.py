@@ -137,7 +137,7 @@ class stgDualTrust(Strategy):
             if self.pos == 0:
                 if bar.close > self.dayOpen:
                     if not self.longEntered:
-                        self.buy(self.longEntry, self.fixedSize, stop=True)
+                        self.buy(bar.symbol, self.longEntry, self.fixedSize, stop=True)
                 else:
                     if not self.shortEntered:
                         self.short(self.shortEntry, self.fixedSize, stop=True)
@@ -162,7 +162,7 @@ class stgDualTrust(Strategy):
                 
                 # 多头开仓单
                 if not self.longEntered:
-                    self.buy(self.longEntry, self.fixedSize, stop=True)
+                    self.buy(bar.symbol, self.longEntry, self.fixedSize, stop=True)
             
         # 收盘平仓
         else:

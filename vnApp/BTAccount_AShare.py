@@ -274,7 +274,7 @@ class BTAccount_AShare(Account_AShare):
         """新的K线"""
 
         # shift the trade date and notify dayOpen if date changes
-        if self._thisTradeDate != bar.date :
+        if self._dateToday != bar.date :
             self.onDayOpen(bar.date)
 
         if self.bar ==None:
@@ -295,9 +295,9 @@ class BTAccount_AShare(Account_AShare):
         """新的Tick"""
 
         # shift the trade date and notify dayOpen if date changes
-        if self._account._thisTradeDate != tick.date :
-            self._account._lastTradeDate =self._account._thisTradeDate
-            self._account._thisTradeDate =tick.date
+        if self._account._dateToday != tick.date :
+            self._account._datePrevClose =self._account._dateToday
+            self._account._dateToday =tick.date
             self.strategy.onDayOpen(tick.date)
 
         if self.tick ==None:

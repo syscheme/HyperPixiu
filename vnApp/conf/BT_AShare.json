@@ -9,7 +9,7 @@
     },
 
     "startDate": "2012-01-01", // %Y-%m-%d
-    "endDate": "2012-09-06",   // %Y-%m-%d
+    "endDate": "2012-02-06",   // %Y-%m-%d
 
     "account" : {
         "accountId" : "12345556",

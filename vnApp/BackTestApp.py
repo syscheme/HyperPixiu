@@ -160,20 +160,20 @@ class BackTestData(MarketData):
                 self.postMarketEvent(event)
 
 ########################################################################
-class BackTestApp(BaseApplication):
+class BackTestApp(Trader):
     """
     回测Account
     函数接口和Application保持一样，
     """
-
+    
     TICK_MODE = 'tick'
     BAR_MODE  = 'bar'
 
     #----------------------------------------------------------------------
-    def __init__(self, mainRoutine, AccountClass, settings):
+    def __init__(self, AccountClass, settings):
         """Constructor"""
 
-        super(BackTestApp, self).__init__(mainRoutine, settings)
+        super(BackTest, self).__init__()
 
         self.engineType = ENGINETYPE_BACKTESTING    # 引擎类型为回测
 
@@ -183,16 +183,14 @@ class BackTestApp(BaseApplication):
 
         self.resetTest()
 
-        # 保存策略实例的字典
-        # key为策略名称，value为策略实例，注意策略名称不允许重复
-        self._strategyDict = {}
-
         # 回测相关属性
         # -----------------------------------------
         self.mode   = settings.mode(self.BAR_MODE)    # 引擎类型为回测
-        self.dataSource = settings.dataSource('')     # 回测数据库collection
+        self.dbName = settings.database.datadb(MINUTE_DB_NAME) # 回测数据库名
+        self.dbHost = settings.database.url('localhost')    # 回测数据库server
+        self.dbDataSet = settings.database.dataset('${SYMBOL}')    # 回测数据库collection
 
-        self.symbol = settings.symbols[0]("")          # 回测集合名
+        self.symbol = settings.symbols[0]("")            # 回测集合名
 
         self.dataStartDate = None       # 回测数据开始日期，datetime对象
         self.dataEndDate = None         # 回测数据结束日期，datetime对象
@@ -201,6 +199,9 @@ class BackTestApp(BaseApplication):
         self.setStartDate(settings.startDate("2010-01-01"), settings.initDays(10)) 
         self.setEndDate(settings.endDate("")) 
 
+        self._dbConn = None        # 数据库客户端
+        self.dbCursor = None        # 数据库指针
+        
         self.initData = []          # 初始化用的数据
         
         # 当前最新数据，用于模拟成交用
@@ -227,7 +228,7 @@ class BackTestApp(BaseApplication):
 
     #----------------------------------------------------------------------
     def resetTest(self) :
-        self._account = self._accountClass(tdBackTest, self._settings.account)
+        self._account = self._accountClass(None, tdBackTest, self._settings.account)
         self._account._dvrBroker._backtest= self
 #        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
         
@@ -424,7 +425,7 @@ class BackTestApp(BaseApplication):
         """新的K线"""
 
         # shift the trade date and notify dayOpen if date changes
-        if self._account._thisTradeDate != bar.date :
+        if self._account._dateToday != bar.date :
             self._account.onDayOpen(bar.date)
             self.strategy._posAvail = self.strategy.pos
             self.strategy.onDayOpen(bar.date)
@@ -448,7 +449,7 @@ class BackTestApp(BaseApplication):
 
         # shift the trade date and notify dayOpen if date changes
         if self._account._thisTradeDate != tick.date :
-            self._account._lastTradeDate =self._account._thisTradeDate
+            self._account._datePrevClose =self._account._thisTradeDate
             self._account._thisTradeDate =tick.date
             self._account.onDayOpen(tick.date)
             self.strategy._posAvail = self.strategy.pos
@@ -581,7 +582,7 @@ class BackTestApp(BaseApplication):
                 trade.dt = self.dtData
                 self.strategy.onTrade(trade)
             
-                self.tdDriver.tradeDict[tradeID] = trade
+                self._dictTrades[tradeID] = trade
                 self.log('limCrossed:pos(%s) %s[%s,%s,%s=%dx%s] per order:%s[%sx%s], cash[%s/%s]' %
                     (self.strategy.pos, tradeID, trade.direction, trade.vtSymbol, tradeAmount, trade.volume, trade.price, orderID, order.totalVolume, order.price, self._account._cashAvail, 'na'))
             
@@ -669,7 +670,7 @@ class BackTestApp(BaseApplication):
             trade.tradeTime = self.dtData.strftime('%H:%M:%S')
             trade.dt = self.dtData
                 
-            self.tdDriver.tradeDict[tradeID] = trade
+            self._dictTrades[tradeID] = trade
                 
             # 推送委托数据
             order = VtOrderData()
@@ -713,7 +714,7 @@ class BackTestApp(BaseApplication):
         # scan all 交易
         # ---------------------------
         # convert the trade records into result records then put them into resultList
-        for trade in self.tdDriver.tradeDict.values():
+        for trade in self._dictTrades.values():
             # 复制成交对象，因为下面的开平仓交易配对涉及到对成交数量的修改
             # 若不进行复制直接操作，则计算完后所有成交的数量会变成0
             trade = copy.copy(trade)
@@ -1006,7 +1007,7 @@ class BackTestApp(BaseApplication):
         
         # 清空成交相关
         self.tdDriver.tradeCount = 0
-        self.tdDriver.tradeDict.clear()
+        self._dictTrades.clear()
 
         self.clearResult()
         self._id = ""
@@ -1110,11 +1111,11 @@ class BackTestApp(BaseApplication):
         """计算按日统计的交易结果"""
         self.stdout(u'计算按日统计结果')
 
-        if self.tdDriver.tradeDict ==None or len(self.tdDriver.tradeDict) <=0:
+        if self._dictTrades ==None or len(self._dictTrades) <=0:
             return None
         
         # 将成交添加到每日交易结果中
-        for trade in self.tdDriver.tradeDict.values():
+        for trade in self._dictTrades.values():
             date = trade.dt.date()
             dailyResult = self.dailyResultDict[date]
             dailyResult.addTrade(trade)
@@ -1700,4 +1701,3 @@ class tdBackTest(BrokerDriver):
     def getPriceTick(self, strategy):
         """获取最小价格变动"""
         return self.priceTick
-

@@ -117,11 +117,11 @@ class stgDoubleMa(Strategy):
         if crossOver:
             # 如果金叉时手头没有持仓，则直接做多
             if self.pos == 0:
-                self.buy(bar.close, 1)
+                self.buy(bar.symbol, bar.close, 1)
             # 如果有空头持仓，则先平空，再做多
             elif self.pos < 0:
                 self.cover(bar.close, 1)
-                self.buy(bar.close, 1)
+                self.buy(bar.symbol, bar.close, 1)
         # 死叉和金叉相反
         elif crossBelow:
             if self.pos == 0:

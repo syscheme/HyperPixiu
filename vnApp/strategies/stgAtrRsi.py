@@ -143,7 +143,7 @@ class stgAtrRsi(Strategy):
                 # 使用RSI指标的趋势行情时，会在超买超卖区钝化特征，作为开仓信号
                 if self.rsiValue > self.rsiBuy:
                     # 这里为了保证成交，选择超价5个整指数点下单
-                    self.buy(bar.close+5, self.fixedSize)
+                    self.buy(bar.symbol, bar.close+5, self.fixedSize)
 
                 elif self.rsiValue < self.rsiSell:
                     self.short(bar.close-5, self.fixedSize)

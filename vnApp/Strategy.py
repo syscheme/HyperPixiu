@@ -198,9 +198,38 @@ class Strategy(object):
     
     #----------------------------------------------------------------------
     def saveSyncData(self):
-        """保存同步数据到数据库"""
-        if self.trading:
-            self.account.saveSyncData(self)
+        """保存策略的持仓情况到数据库"""
+        if not self.trading : # or not self._trader:
+            return
+
+        flt = {'name': self.name,
+               'vtSymbol': self.vtSymbol,
+               'account': account.ident
+               }
+        
+        d = copy(flt)
+        for key in strategy.syncList:
+            d[key] = strategy.__getattribute__(key)
+        
+        # self._trader.dbUpdate(POSITION_DB_NAME, strategy.className, d, flt, True)
+        # self._trader.log(u'策略%s同步数据保存成功，当前持仓%s' %(strategy.name, strategy.pos))
+
+    # def loadSyncData(self, strategy):
+    #     """从数据库载入策略的持仓情况"""
+    #     flt = {'name': self.name,
+    #            'vtSymbol': self.vtSymbol,
+    #            'account': account.ident
+    #            }
+
+    #     syncData = self.dbQuery(POSITION_DB_NAME, strategy.className, flt)
+        
+    #     if not syncData:
+    #         return
+        
+    #     d = syncData[0]
+    #     for key in strategy.syncList:
+    #         if key in d:
+    #             strategy.__setattr__(key, d[key])
     
     #----------------------------------------------------------------------
     def getPriceTick(self):

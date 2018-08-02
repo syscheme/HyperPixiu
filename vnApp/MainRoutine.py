@@ -131,6 +131,13 @@ class BaseApplication(object):
         event.dict_['data'] = log
         self._engine._eventChannel.put(event)
 
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def logError(self, eventType, content):
+        """处理错误事件"""
+    # TODO   error = event.dict_['data']
+    #    self._lstErrors.append(error)
+
 
 ########################################################################
 class MainRoutine(object):

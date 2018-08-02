@@ -214,6 +214,14 @@ class Account(object):
     @abstractmethod
     def maxBuyVolume(self, vtSymbol, price): raise NotImplementedError
 
+    def roundToPriceTick(self, price):
+        """取整价格到合约最小价格变动"""
+        if not self.priceTick:
+            return price
+        
+        newPrice = round(price/self.priceTick, 0) * self.priceTick
+        return newPrice    
+
     @abstractmethod
     def onDayOpen(self, newDate): raise NotImplementedError
     
@@ -283,7 +291,6 @@ class Account(object):
     def loadTick(self, dbName, collectionName, startDate):
         """直接返回初始化数据列表中的Tick"""
         return self.initData
-    
 
     #----------------------------------------------------------------------
     @abstractmethod
@@ -483,6 +490,49 @@ class Account(object):
         
         newPrice = round(price/self.priceTick, 0) * self.priceTick
         return newPrice
+
+    #----------------------------------------------------------------------
+    #  account daily statistics methods
+    #----------------------------------------------------------------------
+    def updateDailyStat(self, dt, price):
+        """更新每日收盘价"""
+        date = dt.date()
+        self._statDaily = DailyResult(date, price)
+
+        # 将成交添加到每日交易结果中
+        for trade in self._dvrBroker.tradeDict.values():
+            self._statDaily.addTrade(trade)
+            
+    def evaluateDailyStat(self, startdate, enddate):
+        previousClose = 0
+        openPosition = 0
+        # TODO: read the statDaily from the DB
+        # for dailyResult in self.dailyResultDict.values():
+        #     dailyResult.previousClose = previousClose
+        #     previousClose = dailyResult.closePrice
+            
+        #     dailyResult.calculatePnl(self._account, openPosition)
+        #     openPosition = dailyResult.closePosition
+            
+        # 生成DataFrame
+        resultDict ={}
+        for k in dailyResult.__dict__.keys() :
+            if k == 'tradeList' : # to exclude some columns
+                continue
+            resultDict[k] =[]
+
+        for dailyResult in self.dailyResultDict.values():
+            for k, v in dailyResult.__dict__.items() :
+                if k in resultDict :
+                    resultDict[k].append(v)
+                
+        resultDf = pd.DataFrame.from_dict(resultDict)
+        
+        # 计算衍生数据
+        resultDf = resultDf.set_index('date')
+
+        return resultDf
+
 
 ########################################################################
 class StopOrder(object):

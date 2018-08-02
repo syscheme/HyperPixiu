@@ -336,7 +336,7 @@ class BackTest(object):
         初始化策略
         setting是策略的参数设置，如果使用类中写好的默认设置则可以不传该参数
         """
-        strategy = strategyClass(self._account, setting)  
+        strategy = strategyClass(self, self._account, setting)  
         self.strategyName = strategy.className
         self._account._strategyDict[self.strategyName] = strategy
     

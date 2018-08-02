@@ -59,9 +59,9 @@ class stgMultiTimeframe(Strategy):
     syncList = ['pos']
 
     #----------------------------------------------------------------------
-    def __init__(self, account, setting):
+    def __init__(self, trader, account, setting):
         """Constructor"""
-        super(stgMultiTimeframe, self).__init__(account, setting)
+        super(stgMultiTimeframe, self).__init__(trader, account, setting)
         
         self.rsiLong = 50 + self.rsiSignal
         self.rsiShort = 50 - self.rsiSignal

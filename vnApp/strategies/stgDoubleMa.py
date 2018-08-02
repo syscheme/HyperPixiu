@@ -51,9 +51,9 @@ class stgDoubleMa(Strategy):
     syncList = ['pos']
 
     #----------------------------------------------------------------------
-    def __init__(self, account, setting):
+    def __init__(self, trader, account, setting):
         """Constructor"""
-        super(stgDoubleMa, self).__init__(account, setting)
+        super(stgDoubleMa, self).__init__(trader, account, setting)
         
         self.bg = BarGenerator(self.onBar)
         self.am = ArrayManager()

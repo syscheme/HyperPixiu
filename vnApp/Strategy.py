@@ -52,9 +52,10 @@ class Strategy(object):
     syncList = ['pos']
 
     #----------------------------------------------------------------------
-    def __init__(self, account, setting):
+    def __init__(self, trader, account, setting):
         """Constructor"""
         self.account = account
+        self._trader = trader
 
         # 设置策略的参数
         if setting:
@@ -199,17 +200,17 @@ class Strategy(object):
     #----------------------------------------------------------------------
     def saveSyncData(self):
         """保存策略的持仓情况到数据库"""
-        if not self.trading : # or not self._trader:
-            return
+        # if not self.trading : # or not self._trader:
+        #     return
 
-        flt = {'name': self.name,
-               'vtSymbol': self.vtSymbol,
-               'account': account.ident
-               }
+        # flt = {'name': self.name,
+        #        'vtSymbol': self.vtSymbol,
+        #        'account': self.account.ident
+        #        }
         
-        d = copy(flt)
-        for key in strategy.syncList:
-            d[key] = strategy.__getattribute__(key)
+        # d = copy(flt)
+        # for key in strategy.syncList:
+        #     d[key] = strategy.__getattribute__(key)
         
         # self._trader.dbUpdate(POSITION_DB_NAME, strategy.className, d, flt, True)
         # self._trader.log(u'策略%s同步数据保存成功，当前持仓%s' %(strategy.name, strategy.pos))
@@ -232,7 +233,8 @@ class Strategy(object):
     #             strategy.__setattr__(key, d[key])
     
     #----------------------------------------------------------------------
-    def getPriceTick(self):
+    @property
+    def priceTick(self):
         """查询最小价格变动"""
         return self.account.getPriceTick(self)
         

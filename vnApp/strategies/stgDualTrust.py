@@ -60,9 +60,9 @@ class stgDualTrust(Strategy):
     syncList = ['pos']    
 
     #----------------------------------------------------------------------
-    def __init__(self, account, setting):
+    def __init__(self, trader, account, setting):
         """Constructor"""
-        super(stgDualTrust, self).__init__(account, setting) 
+        super(stgDualTrust, self).__init__(trader, account, setting) 
         
         self.bg = BarGenerator(self.onBar)
         self.barList = []

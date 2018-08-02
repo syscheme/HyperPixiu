@@ -169,9 +169,9 @@ class stgMultiSignal(TargetPosTemplate):
     syncList = ['pos']
 
     #----------------------------------------------------------------------
-    def __init__(self, account, setting):
+    def __init__(self, trader, account, setting):
         """Constructor"""
-        super(stgMultiSignal, self).__init__(account, setting)
+        super(stgMultiSignal, self).__init__(trader, account, setting)
 
         self.rsiSignal = RsiSignal()
         self.cciSignal = CciSignal()

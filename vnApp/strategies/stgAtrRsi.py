@@ -66,9 +66,9 @@ class stgAtrRsi(Strategy):
                 'intraTradeLow']
 
     #----------------------------------------------------------------------
-    def __init__(self, account, setting):
+    def __init__(self, trader, account, setting):
         """Constructor"""
-        super(stgAtrRsi, self).__init__(account, setting)
+        super(stgAtrRsi, self).__init__(trader, account, setting)
         
         # 创建K线合成器对象
         self.bg = BarGenerator(self.onBar)

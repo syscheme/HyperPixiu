@@ -95,9 +95,9 @@ class stgBBand(Strategy):
                 'intraTradeLow']    
 
     #----------------------------------------------------------------------
-    def __init__(self, account, setting):
+    def __init__(self, trader, account, setting):
         """Constructor"""
-        super(stgBBand, self).__init__(account, setting)
+        super(stgBBand, self).__init__(trader, account, setting)
         
         self.bg    = BarGenerator(self.onBar, 15, self.onXminBar)        # 创建K线合成器对象
         self.bg_L2 = BarGenerator(self.onBar, 60, self.onBar_L2)

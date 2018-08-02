@@ -58,9 +58,9 @@ class stgKingKeltner(Strategy):
                 'intraTradeLow']    
 
     #----------------------------------------------------------------------
-    def __init__(self, account, setting):
+    def __init__(self, trader, account, setting):
         """Constructor"""
-        super(stgKingKeltner, self).__init__(account, setting)
+        super(stgKingKeltner, self).__init__(trader, account, setting)
         
         self.bg = BarGenerator(self.onBar, 5, self.onFiveBar)     # 创建K线合成器对象
         self.am = ArrayManager()

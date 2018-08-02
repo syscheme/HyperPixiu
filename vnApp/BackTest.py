@@ -1437,6 +1437,7 @@ class tdBackTest(BrokerDriver):
         orderID = str(self.limitOrderCount)
         
         order = VtOrderData()
+        order.symbol   = symbol
         order.vtSymbol = symbol
         order.price = self._account.roundToPriceTick(price)
         order.totalVolume = volume

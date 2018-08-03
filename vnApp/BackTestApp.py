@@ -39,125 +39,108 @@ class BackTestData(MarketData):
     def __init__(self, eventChannel, settings):
         """Constructor"""
 
-        super(BackTestData, self).__init__(eventChannel, dbConn, settings, DATA_SRCTYPE_BACKTEST)
+        super(BackTestData, self).__init__(btApp, settings, DATA_SRCTYPE_BACKTEST)
 
-        self._dbConn = dbConn
-        self._dbName = settings.dbNamePrefix + "Tick or 1min"
+        self._btApp = btApp
+        self._dbConn = self._btApp.dbConn
+        self._dbName = settings.dbName    # Prefix + "Tick or 1min"
         self._symbol = settings.symbol(A601005)
-        self._dbCursor= ???
+        self._mode   = settings.mode(self.BAR_MODE)
+        self._dbCursor = None
         self._initData =[]
-
-        self.ws = None
-        self.url = ''
-        self._dictCh = {}
-        
-        self._reqid = 0
-        self.thread = Thread(target=self._run)
-        self._exchange = settings.exchange('')
-        if self._exchange == self.HADAX:
-            hostname = HADAX_API_HOST
-        else:
-            hostname = HUOBI_API_HOST
-            self._exchange = self.HUOBI
-        
-        self.url = 'wss://%s/ws' % hostname
-        self._proxy = settings.proxy('')
 
     #----------------------------------------------------------------------
     def start(self):
         """载入历史数据"""
-        if self
-        dbName = _dbNamePrefix
-        collection = self._dbConn[self._dbName][self._symbol]          
-        self.stdout(u'开始载入数据 %s on %s/%s' % (self.symbol, self.dbHost, self.dbName))
+
+        self._collection = self._dbConn[self._dbName][self._symbol]          
       
         # 首先根据回测模式，确认要使用的数据类
-        if self.mode == self.BAR_MODE:
-            dataClass = VtBarData
-            func = self.OnNewBar
-        else:
+        if self.mode == self.TICK_MODE:
             dataClass = VtTickData
             func = self.OnNewTick
-
-        # 载入初始化需要用的数据
-        flt = {'datetime':{'$gte':self.dataStartDate,
-                           '$lt':self.strategyStartDate}}        
-        initCursor = collection.find(flt).sort('datetime')
-        
-        # 将数据从查询指针中读取出，并生成列表
-        self.initData = []              # 清空initData列表
-        for d in initCursor:
-            data = dataClass()
-            data.__dict__ = d
-            self._initData.append(data)      
-        
-        # 载入回测数据
-        if not self.dataEndDate:
-            flt = {'datetime':{'$gte':self.strategyStartDate}}   # 数据过滤条件
         else:
-            flt = {'datetime':{'$gte':self.strategyStartDate,
-                               '$lte':self.dataEndDate}}  
-        self._dbCursor = collection.find(flt).sort('datetime')
-        
-        cRows = initCursor.count() + self._dbCursor.count()
-        self.stdout(u'载入完成，数据量：%s' %cRows)
+            dataClass = VtBarData
+            func = self.OnNewBar
+
+        self.reqThread = Thread(target=self._run)   # 请求处理线程      
+
+        self.stdout(u'开始载入数据 %s from %s' % (self._symbol, self._dbName))
+
         return cRows
         
     #----------------------------------------------------------------------
     def _run(self):
 
-        while self._active and self._eventCh:
+        # 载入回测数据
+        flt = {'datetime':{'$gte':self.strategyStartDate}}   # 数据过滤条件
+        if self.dataEndDate:
+            flt = {'datetime':{'$gte':self.strategyStartDate,
+                               '$lte':self.dataEndDate}}  
+
+        self._dbCursor = collection.find(flt).sort('datetime')
+        reachedEnd = False
+
+        eventyType_= MarketData.EVENT_TICK
+        if not 'Tick' in self._dbName :
+            eventyType_=  MarketData.EVENT_1MIN
+            #TODO: more
+
+        while self._active and self._eventCh: # check if there are too many event pending on eventChannel
             if self._eventCh.pendingSize >100:
                 sleep(1)
                 continue
             
-        for i in range(1,10) :
-            if not self._dbCursor.hasNext() :
-                self._active = False
-                return
+            # read a batch then post to the event channel
+            for i in range(1, 10) :
+                try :
+                    if not self._dbCursor.hasNext() :
+                        self._active = False
+                        reachedEnd = True
+                        break
 
-            d = self._dbCursor.next()
-            # for d in self.dbCursor:
-            data = dataClass()
-            data.__dict__ = d
+                    d = self._dbCursor.next()
 
-            event = None
+                    event = None
+                    if eventType == MarketData.EVENT_TICK :
+                        edata = mdTickData(self)
+                        edata.__dict__ = d
+                        edata.vtSymbol  = edata.symbol = self._symbol
+                        event = Event(eventType)
+                        event.dict_['data'] = edata
+                    else: # as Kline
+                        edata = mdKLineData(self)
+                        edata.__dict__ = d
+                        edata.vtSymbol  = edata.symbol = self._symbol
+                        event = Event(eventType)
+                        event.dict_['data'] = edata
 
-            if 'Tick' in self._dbName :
+                    # post the event if valid
+                    if event:
+                        event['data'].sourceType = MarketData.DATA_SRCTYPE_BACKTEST  # 数据来源类型
+                        self.postMarketEvent(event)
+
+                except Exception as ex:
+                    pass
+
+        #fill a STOP event into the event channel
+        if reachedEnd:
+            if eventType == MarketData.EVENT_TICK :
                 edata = mdTickData(self)
-                edata.vtSymbol = edata.symbol = symbol
-                edata.lastPrice = tick['close']
-                edata.lastVolume = tick['vol']
-                edata.openPrice = tick['open']
-                edata.highPrice = tick['high']
-                edata.lowPrice = tick['low']
-
-                edata.date = ts.date().strftime('%Y%m%d')
-                edata.time = ts.time().strftime('%H:%M:%S.%3f')[:-3]
-
-                event = Event(type_=MarketData.EVENT_TICK)
+                edata.date ='39991231'
+                edata.vtSymbol  = edata.symbol = self._symbol
+                event = Event(eventType)
                 event.dict_['data'] = edata
-            else:
-                    edata = mdKLineData(self)
-                    edata.vtSymbol   = edata.symbol = symbol
-                    edata.open = t['open']
-                    edata.close = t['close']
-                    edata.high = t['high']
-                    edata.low = t['low']
-                    edata.volume = t['vol']
+            else: # as Kline
+                edata = mdKLineData(self)
+                edata.date ='39991231'
+                edata.vtSymbol  = edata.symbol = self._symbol
+                event = Event(eventType)
+                event.dict_['data'] = edata
+            
+            event['data'].sourceType = MarketData.DATA_SRCTYPE_BACKTEST  # 数据来源类型
+            self.postMarketEvent(event)
 
-
-                    ts = latest['stamp']['id']
-                    edata.date = ts.date().strftime('%Y%m%d')
-                    edata.time = ts.time().strftime('%H:%M:%S')
-
-                    event = Event(type_=eventType)
-                    event.dict_['data'] = edata
-
-            # post the event if valid
-            if event:
-                event['data'].sourceType = self._sourceType  # 数据来源类型
-                self.postMarketEvent(event)
 
 ########################################################################
 class BackTestApp(Trader):
@@ -170,13 +153,12 @@ class BackTestApp(Trader):
     BAR_MODE  = 'bar'
 
     #----------------------------------------------------------------------
-    def __init__(self, AccountClass, settings):
+    def __init__(self, mainRoutine, AccountClass, settings):
         """Constructor"""
 
         super(BackTest, self).__init__()
 
-        self.engineType = ENGINETYPE_BACKTESTING    # 引擎类型为回测
-
+        # self.engineType = ENGINETYPE_BACKTESTING    # 引擎类型为回测
         self._settings     = settings
         self._accountClass = AccountClass
         self._account = None
@@ -212,17 +194,28 @@ class BackTestApp(Trader):
         # 日线回测结果计算用
         self.dailyResultDict = OrderedDict()
 
+    #---- BEGIN properties ----------------------------------------
+    @property
+    def account(self):
+        return self._dictAccounts[self._defaultAccId]
+
+    #---- END properties ----------------------------------------
     #----- impl of BaseApplication ----------------------------------------
     @abstractmethod
     def start(self):
-        # TODO:
-        # self._active = True
+
+        # step1. adopt a BT account 
+        account = self._accountClass(None, tdBackTest, self._settings.account)
+        if account:
+            self.adopt(account)
+
+        super(BackTestApp, self).start() # self._active = True
 
     #----------------------------------------------------------------------
     @abstractmethod
     def stop(self):
         # TODO:
-        # self._active = False
+        super(BackTestApp, self).stop() # self._active = True
 
     #----- end  of BaseApplication ----------------------------------------
 
@@ -246,11 +239,11 @@ class BackTestApp(Trader):
     #------------------------------------------------    
     @property
     def strategy(self):
-        return self._account._strategyDict[self.strategyName]
+        return self.account._strategyDict[self.strategyName]
 
     @property
     def tdDriver(self):
-        return self._account._dvrBroker
+        return self.account._dvrBroker
 
     #----------------------------------------------------------------------
     def clearResult(self):

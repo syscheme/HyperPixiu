@@ -11,7 +11,7 @@
             },
             "type": "python",
             "request": "launch",
-            "program": "vnApp/tests/runBT_AShare.py"
+            "program": "vnApp/tests/runBT_AShare_app.py" // "vnApp/tests/runBT_AShare.py"
         },
         {
             "name": "Python: dr",

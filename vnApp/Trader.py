@@ -12,7 +12,7 @@ from copy import copy
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
 
-from .MainRoutine import *
+from vnApp.MainRoutine import *
 
 from vnpy.event import Event
 from vnpy.trader.vtGlobal import globalSetting
@@ -97,12 +97,9 @@ class Trader(BaseApplication):
         if not account:
             return
         
-        if len(account._id) <=0 and account._dvrBroker：
-            account._id = account._dvrBroker.__class__
-        
-        self._dictAccounts[account._id] = account
+        self._dictAccounts[account.ident] = account
         if default or self._defaultAccId ==None:
-            self._defaultAccId = account._id
+            self._defaultAccId = account.ident
         
     #----impl of BaseApplication ------------------------------------------
     def start(self):

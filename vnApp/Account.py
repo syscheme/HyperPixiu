@@ -305,21 +305,18 @@ class Account(object):
                 collection = db[tblName]
                 collection.update({'vtTradeID':t.vtTradeID}, t.__dict__, True)
 
-        # part 2. the daily stat
-        dstat, _ = self.calculateStat()
-        d = {
-            'date' : self._dateToday,
-            'dstat': dstat,
-        }
+        # part 2. the daily position
+        tblName = "dPos." + self.ident
 
-        tblName = "dstat." + self.ident
-        if self._trader:
-            self._trader.insertData(self._trader.dbName, tblName, d)
-        elif self._dbConn :
-            db = self._dbConn['Account']
-            collection = db[tblName]
-            collection.ensure_index([('date', ASCENDING)], unique=True) #TODO this should init ONCE
-            collection.update({'date':d['date']}, d, True)
+        result, _ = self.calculateStat()
+        for l in result:
+            if self._trader:
+                self._trader.insertData(self._trader.dbName, tblName, l)
+            elif self._dbConn :
+                db = self._dbConn['Account']
+                collection = db[tblName]
+                collection.ensure_index([('date', ASCENDING), ('symbol', ASCENDING)], unique=True) #TODO this should init ONCE
+                collection.update({'date':l['date'], 'symbol':l['symbol']}, l, True)
 
     @abstractmethod
     def loadDB(self, since =None):
@@ -341,11 +338,19 @@ class Account(object):
                 tradesOfSymbol[t.vtSymbol] = []
             tradesOfSymbol[t.vtSymbol].append(t)
 
-        result = {}
+        result = []
 
         for s in tradesOfSymbol.keys():
-            latestPos = self._dictPositions[s]
-            prevPos   = self._prevPositions[s]
+            if not s in self._dictPositions:
+                continue
+
+            currentPos = self._dictPositions[s]
+
+            if s in self._prevPositions:
+                prevPos = self._prevPositions[s]
+            else:
+                prevPos = VtPositionData()
+            
             tcBuy      = 0
             tcSell     = 0
             tradingPnl = 0             # 交易盈亏
@@ -358,8 +363,8 @@ class Account(object):
             txnHist    = ""
 
             # 持仓部分
-            # TODO get from latestPos:  openPosition = openPosition
-            positionPnl = round(openPosition * (closePrice - previousClose) * self.size, 3)
+            # TODO get from currentPos:  openPosition = openPosition
+            positionPnl = round(prevPos.position * (currentPos.price - prevPos.price) * self.size, 3)
             """
             计算盈亏
             size: 合约乘数
@@ -367,17 +372,18 @@ class Account(object):
             slippage：滑点点数
             """
             posChange = 0
+            closePosition =0
             for trade in tradesOfSymbol[s]:
                 if t.direction == DIRECTION_LONG:
                     posChange = trade.volume
-                    self.tcBuy += 1
+                    tcBuy += 1
                 else:
                     posChange = -trade.volume
-                    self.tcSell += 1
+                    tcSell += 1
 
                 txnHist += "%+dx%s" % (posChange, trade.price)
 
-                tradingPnl += round(posChange * (self.closePrice - trade.price) * account.size, 2)
+                tradingPnl += round(posChange * (currentPos.price - trade.price) * self.size, 2)
                 closePosition += posChange
                 tover, comis, slpfee = self.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
                 turnover += tover
@@ -385,31 +391,32 @@ class Account(object):
                 slippage += slpfee
 
             # 汇总
-            totalPnl = round(self.tradingPnl + self.positionPnl, 2)
-            netPnl = round(self.totalPnl - self.commission - self.slippage, 2)
+            totalPnl = round(tradingPnl + positionPnl, 2)
+            netPnl = round(totalPnl - commission - slippage, 2)
             
             dstat = {
-                'date'       : self._dateToday,         # 日期
-                'close'      : latestPos,  # 当日收盘
-                'prevClose'  : prevPos,    # 昨日收盘
+                'symbol'      : s,
+                'date'        : self._dateToday,   # 日期
+                'recentPrice' : currentPos.price,  # 当日收盘
+                'prevClose'   : prevPos.price,     # 昨日收盘
                 
-                'calcPosition' : closePosition,
-                'tcBuy': tcBuy,            # 成交数量
-                'tcSell': tcSell,            # 成交数量
+                'calcPos'     : closePosition,
+                'cBuy'        : tcBuy,             # 成交数量
+                'cSell'       : tcSell,            # 成交数量
                 
-                'tradingPnl': tradingPnl,             # 交易盈亏
-                'positionPnl': positionPnl,            # 持仓盈亏
-                'totalPnl' : round(self.tradingPnl + self.positionPnl, 2), # 总盈亏
+                'tradingPnl'  : tradingPnl,        # 交易盈亏
+                'positionPnl' : positionPnl,       # 持仓盈亏
+                'totalPnl'    : round(tradingPnl + positionPnl, 2), # 总盈亏
                 
-                'turnover' : turnover,               # 成交量
-                'commission': commission,           # 手续费
-                'slippage' : slippage,               # 滑点
-                'netPnl' : netPnl,             # 净盈亏
+                'turnover'    : turnover,          # 成交量
+                'commission'  : commission,        # 手续费
+                'slippage'    : slippage,          # 滑点
+                'netPnl'      : netPnl,            # 净盈亏
                 
-                'txnHist' : txnHist
+                'txnHist'     : txnHist
                 }
 
-            result[s] =dstat
+            result.append(dstat)
 
         return result, tradesOfSymbol
 
@@ -430,10 +437,26 @@ class Account(object):
     def onTrade(self, trade):
         """交易成功回调"""
         self._dictTrades[trade.vtTradeID] = trade
-        # update the current postion, this may overwrite during the sync by BrokerDriver
-        
 
-        pass
+        # update the current postion, this may overwrite during the sync by BrokerDriver
+        s = trade.symbol
+        if not s in self._dictPositions :
+            self._dictPositions[s] = VtPositionData()
+            pos = self._dictPositions[s]
+            pos.symbol = s
+            pos.vtSymbol = trade.vtSymbol
+            pos.exchange = trade.exchange
+
+        pos = self._dictPositions[s]
+        # 持仓相关
+        pos.price      = trade.price
+        pos.direction  = trade.direction      # 持仓方向
+        # pos.frozen =  # 冻结数量
+
+        if trade.direction == DIRECTION_LONG:
+            pos.position += trade.volume
+        else:
+            pos.position -= trade.volume
 
     @abstractmethod
     def onTradeError(self, msg, reqid):

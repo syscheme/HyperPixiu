@@ -245,7 +245,7 @@ class MainRoutine(object):
             'appName': id,
             'displayName': settings.displayName(id),
             'appWidget': settings.widget(id),
-            'appIco': appModule.appIco
+#            'appIco': appModule.appIco
         }
         self._dlstApps.append(d)
         

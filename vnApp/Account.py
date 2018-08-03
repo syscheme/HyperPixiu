@@ -59,10 +59,6 @@ TICK_DB_NAME   = 'vnDB_Tick'
 DAILY_DB_NAME  = 'vnDB_Daily'
 MINUTE_DB_NAME = 'vnDB_1Min'
 
-# 引擎类型，用于区分当前策略的运行环境
-ENGINETYPE_BACKTESTING = 'backtesting'  # 回测
-ENGINETYPE_TRADING = 'trading'          # 实盘
-
 # CTA模块事件
 EVENT_LOG      = 'eVNLog'          # 相关的日志事件
 EVENT_STRATEGY = 'eVNStrategy.'    # 策略状态变化事件
@@ -404,7 +400,7 @@ class Account(object):
 
             # 持仓部分
             # TODO get from currentPos:  openPosition = openPosition
-            positionPnl = round(prevPos.position * (currentPos.price - prevPos.price) * self.size, 3)
+            positionPnl = round(prevPos.position * (currentPos.price - currentPos.avgPrice) * self.size, 3)
             """
             计算盈亏
             size: 合约乘数
@@ -447,8 +443,10 @@ class Account(object):
             dstat = {
                 'symbol'      : s,
                 'date'        : self._dateToday,   # 日期
-                'recentPrice' : round(currentPos.price, 3),  # 当日收盘
+                'recentPrice' : round(currentPos.price, 3),     # 当日收盘
+                'avgPrice'    : round(currentPos.avgPrice, 3),  # 持仓均价
                 'recentPos'   : round(currentPos.position, 3),  # 当日收盘
+                'posAvail'    : round(currentPos.posAvail, 3),  # the rest avail pos
                 'calcPos'     : round(calcPosition, 3),     # MarketValue
                 'calcMValue'  : round(calcPosition*currentPos.price*self.size , 2),     # 昨日收盘
                 'prevClose'   : round(prevPos.price, 3),     # 昨日收盘
@@ -460,7 +458,7 @@ class Account(object):
 
                 'tradingPnl'  : round(tradingPnl, 2),        # 交易盈亏
                 'positionPnl' : round(positionPnl, 2),      # 持仓盈亏
-                'totalPnl'    : round(tradingPnl + positionPnl, 2), # 总盈亏
+                'dailyPnl'    : round(tradingPnl + positionPnl, 2), # 总盈亏
                 'netPnl'      : round(netPnl, 2),           # 净盈亏
                 
                 'cBuy'        : tcBuy,             # 成交数量
@@ -503,20 +501,51 @@ class Account(object):
             pos.vtSymbol = trade.vtSymbol
             pos.exchange = trade.exchange
         else:
-            pos = self._dictPositions[s]\
+            pos = self._dictPositions[s]
 
         # 持仓相关
         pos.price      = trade.price
         pos.direction  = trade.direction      # 持仓方向
         # pos.frozen =  # 冻结数量
 
+        # update the position of symbol and its average cost
         tdvol = trade.volume
         if trade.direction != DIRECTION_LONG:
-            tdvol = -tdvol
+            tdvol = -tdvol 
+        else: 
+            # pos.price
+            cost = pos.position * pos.avgPrice
+            cost += trade.volume * trade.price
+            newPos = pos.position + trade.volume
+            if newPos:
+                pos.avgPrice = cost / newPos
 
-        # update the pos of symbol
         pos.position += tdvol
         pos.stampByTrader = trade.dt
+
+        # update the position mean cost
+    #----------------------------------------------------------------------
+    def calculatePrice(self, trade):
+        """计算持仓均价（基于成交数据）"""
+        # 只有开仓会影响持仓均价
+        if trade.offset == OFFSET_OPEN:
+            if trade.direction == DIRECTION_LONG:
+                cost = self.longPrice * self.longPos
+                cost += trade.volume * trade.price
+                newPos = self.longPos + trade.volume
+                if newPos:
+                    self.longPrice = cost / newPos
+                else:
+                    self.longPrice = 0
+            else:
+                cost = self.shortPrice * self.shortPos
+                cost += trade.volume * trade.price
+                newPos = self.shortPos + trade.volume
+                if newPos:
+                    self.shortPrice = cost / newPos
+                else:
+                    self.shortPrice = 0
+
 
         # update the cashTotal
         turnover, commission, slippage = self.calcAmountOfTrade(s, trade.price, tdvol)
@@ -849,9 +878,7 @@ class StopOrder(object):
 ########################################################################
 class Account_AShare(Account):
     """
-    回测Account
-    函数接口和策略引擎保持一样，
-    从而实现同一套代码从回测到实盘。
+    A股帐号，主要实现交易费和T+1
     """
 
     #----------------------------------------------------------------------
@@ -900,6 +927,21 @@ class Account_AShare(Account):
         turnOver, commission, slippage = self.calcAmountOfTrade(vtSymbol, price, volume)
         return volume, commission, slippage
 
+    @abstractmethod
+    def onDayOpen(self, newDate):
+        super(Account_AShare, self).onDayOpen(newDate)
+        for pos in self._dictPositions.values():
+            if Account.SYMBOL_CASH == pos.symbol:
+                continue
+            pos.posAvail = pos.position
+
+    @abstractmethod
+    def onTrade(self, trade):
+        super(Account_AShare, self).onTrade(trade)
+
+        if trade.direction != DIRECTION_LONG:
+            pos = self._dictPositions[trade.symbol]
+            pos.posAvail -= trade.volume
 
 ########################################################################
 class VtPositionData(object): # (VtBaseData):
@@ -919,7 +961,8 @@ class VtPositionData(object): # (VtBaseData):
         self.direction      = EMPTY_STRING      # 持仓方向
         self.position       = EMPTY_INT         # 持仓量
         self.posAvail       = EMPTY_INT         # 冻结数量
-        self.price          = EMPTY_FLOAT       # 持仓均价
+        self.price          = EMPTY_FLOAT       # 持仓最新交易价
+        self.avgPrice       = EMPTY_FLOAT       # 持仓均价
         self.vtPositionName = EMPTY_STRING      # 持仓在vt系统中的唯一代码，通常是vtSymbol.方向
         # self.ydPosition     = EMPTY_INT         # 昨持仓
         # self.positionProfit = EMPTY_FLOAT       # 持仓盈亏

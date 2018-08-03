@@ -21,6 +21,9 @@ from vnpy.trader.vtGateway import *
 from vnpy.trader.language import text
 from vnpy.trader.vtFunction import getTempPath
 
+# 引擎类型，用于区分当前策略的运行环境
+TRADER_TYPE_BACKTESTING = 'backtesting'  # 回测
+TRADER_TYPE_TRADING = 'trading'          # 实盘
 
 ########################################################################
 class Trader(BaseApplication):
@@ -35,7 +38,7 @@ class Trader(BaseApplication):
         super(Trader, self).__init__(mainRoutine, settings)
 
         # 引擎类型为实盘
-        self._tradeType = ENGINETYPE_TRADING
+        self._tradeType = TRADER_TYPE_TRADING
         
         #--------------------
         # from old 数据引擎
@@ -43,15 +46,15 @@ class Trader(BaseApplication):
         self._dickLatestTick = {}    # the latest tick of each symbol
         self._dictLatestContract = {}
         self._dictLatestOrder = {}
-        self._dictWorkingOrder = {}  # 可撤销委托
-        self._dictTrade = {}
+        self._dictWorkingOrder = {} # 可撤销委托
+        # inside of Account self._dictTrade = {}
         self._dictAccounts = {}
         self._defaultAccId = None
-        self._dictPositions= {}
+        # inside of Account self._dictPositions= {}
         self._lstErrors = []
         
         # 持仓细节相关
-        self._dictDetails = {}                        # vtSymbol:PositionDetail
+        # inside of Account self._dictDetails = {}                        # vtSymbol:PositionDetail
         self._lstTdPenalty = settings.tdPenalty       # 平今手续费惩罚的产品代码列表
 
         # 读取保存在硬盘的合约数据
@@ -84,7 +87,7 @@ class Trader(BaseApplication):
         self._ordersOfStrategy = {}
         
         # 成交号集合，用来过滤已经收到过的成交推送
-        self.tradeSet = set()
+        # inside of Account self.tradeSet = set()
 
         #------end of old ctaEngine--------------
 
@@ -93,6 +96,8 @@ class Trader(BaseApplication):
         # stopOrderID = STOPORDERPREFIX + str(stopOrderCount)
         
     #----------------------------------------------------------------------
+    # access to the Account
+    #----------------------------------------------------------------------
     def adoptAccount(self, account, default=False):
         if not account:
             return
@@ -100,19 +105,30 @@ class Trader(BaseApplication):
         self._dictAccounts[account.ident] = account
         if default or self._defaultAccId ==None:
             self._defaultAccId = account.ident
+
+    @property
+    def account(self): # the default account
+        return self._dictAccounts[self._defaultAccId]
+
+    @property
+    def allAccounts(self):
+        """获取所有帐号"""
+        return self._dictAccounts.values()
         
-    #----impl of BaseApplication ------------------------------------------
+    #----------------------------------------------------------------------
+    # impl of BaseApplication
+    #----------------------------------------------------------------------
     def start(self):
         # TODO: subscribe all interested market data
         pass
 
-    #----------------------------------------------------------------------
     def stop(self):
         """退出程序前调用，保证正常退出"""        
         # TODO: subscribe all interested market data
         pass
     
-    #----end of BaseApplication ------------------------------------------
+    #----------------------------------------------------------------------
+    # local the recent data by symbol
     #----------------------------------------------------------------------
     def getTick(self, vtSymbol):
         """查询行情对象"""
@@ -121,7 +137,6 @@ class Trader(BaseApplication):
         except KeyError:
             return None        
     
-    #----------------------------------------------------------------------
     def getContract(self, vtSymbol):
         """查询合约对象"""
         try:
@@ -129,19 +144,16 @@ class Trader(BaseApplication):
         except KeyError:
             return None
         
-    #----------------------------------------------------------------------
     def getAllContracts(self):
         """查询所有合约对象（返回列表）"""
         return self._dictLatestContract.values()
     
-    #----------------------------------------------------------------------
     def saveContracts(self):
         """保存所有合约对象到硬盘"""
         f = shelve.open(self.contractFilePath)
         f['data'] = self._dictLatestContract
         f.close()
     
-    #----------------------------------------------------------------------
     def loadContracts(self):
         """从硬盘读取合约对象"""
         f = shelve.open(self.contractFilePath)
@@ -152,6 +164,8 @@ class Trader(BaseApplication):
         f.close()
         
     #----------------------------------------------------------------------
+    # about the orders
+    #----------------------------------------------------------------------
     def getOrder(self, vtOrderID):
         """查询委托"""
         try:
@@ -159,32 +173,34 @@ class Trader(BaseApplication):
         except KeyError:
             return None
     
-    #----------------------------------------------------------------------
     def getAllWorkingOrders(self):
         """查询所有活动委托（返回列表）"""
         return self._dictWorkingOrder.values()
-    
-    #----------------------------------------------------------------------
+
     def getAllOrders(self):
         """获取所有委托"""
         return self._dictLatestOrder.values()
     
-    #----------------------------------------------------------------------
     def getAllTrades(self):
         """获取所有成交"""
         return self._dictTrade.values()
     
     #----------------------------------------------------------------------
+    def convertOrderReq(self, req):
+        """根据规则转换委托请求"""
+        detail = self._dictDetails.get(req.vtSymbol, None)
+        if not detail:
+            return [req]
+        else:
+            return detail.convertOrderReq(req)
+
+    #----------------------------------------------------------------------
+    # about the position
+    #----------------------------------------------------------------------
     def getAllPositions(self):
         """获取所有持仓"""
         return self._dictPositions.values()
-    
-    #----------------------------------------------------------------------
-    def getAllAccounts(self):
-        """获取所有帐号"""
-        return self._dictAccounts.values()
-    
-    #----------------------------------------------------------------------
+
     def getPositionDetail(self, vtSymbol):
         """查询持仓细节"""
         if vtSymbol in self._dictDetails:
@@ -211,12 +227,10 @@ class Trader(BaseApplication):
                 
         return detail
     
-    #----------------------------------------------------------------------
     def getAllPositionDetails(self):
         """查询所有本地持仓缓存细节"""
         return self._dictDetails.values()
     
-    #----------------------------------------------------------------------
     def updateOrderReq(self, req, vtOrderID):
         """委托请求更新"""
         vtSymbol = req.vtSymbol
@@ -224,6 +238,8 @@ class Trader(BaseApplication):
         detail = self.getPositionDetail(vtSymbol)
         detail.updateOrderReq(req, vtOrderID)
     
+    #----------------------------------------------------------------------
+    # logging
     #----------------------------------------------------------------------
     @abstractmethod
     def logEvent(self, event):
@@ -246,15 +262,6 @@ class Trader(BaseApplication):
     def getError(self):
         """获取错误"""
         return self._lstErrors
-
-    #----------------------------------------------------------------------
-    def convertOrderReq(self, req):
-        """根据规则转换委托请求"""
-        detail = self._dictDetails.get(req.vtSymbol, None)
-        if not detail:
-            return [req]
-        else:
-            return detail.convertOrderReq(req)
 
     #----------------------------------------------------------------------
     # Interested Events from EventChannel

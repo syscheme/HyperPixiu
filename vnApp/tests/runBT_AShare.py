@@ -22,7 +22,7 @@ symbols= ["601000"]
 #---------------------------------------------------------------------
 def backTestSymbol(symbol, startDate, endDate=''):
     """将Multicharts导出的csv格式的历史数据插入到Mongo数据库中"""
-    from vnApp.strategies.stgKingKeltner import stgKingKeltner
+    # from vnApp.strategies.stgKingKeltner import stgKingKeltner
     from vnApp.strategies.stgBBand import stgBBand
 
     settings= None

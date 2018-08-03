@@ -148,7 +148,9 @@ class stgBBand(StrategyOfSymbol):
         # 全撤之前发出的委托
         self.cancelAll()
 
-        if self.account.capital <0:
+        cash, cashTotal = self.account.cashAmount()
+
+        if cashTotal <0:
             return
     
         # 保存K线数据
@@ -183,9 +185,6 @@ class stgBBand(StrategyOfSymbol):
 
         dCCI = self.cciValue - self._lastCCI
         dATR = self.atrValue - self._lastATR
-
-        # 判断是否要进行交易
-        cash, _ = self.account.cashAmount()
 
         posDesc ='%s/%s,ca%.2f' % (self._posAvail, self.pos, cash)
         barDesc = '%.2f,%.2f,%.2f,%.2f' % (bar.open, bar.close, bar.high, bar.low)

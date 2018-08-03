@@ -91,7 +91,8 @@ class BackTest(object):
         self._account._dvrBroker._backtest= self
 #        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
         
-        self.capital  = self._settings.capital(100000) # 回测时的起始本金（默认10万）
+        self._startBalance = self._settings.capital(100000)
+        self.setCapital(self._startBalance) # 回测时的起始本金（默认10万）
 
         self._execStart = ''
         self._execEnd = ''
@@ -158,7 +159,7 @@ class BackTest(object):
     #----------------------------------------------------------------------
     def setCapital(self, capital):
         """设置资本金"""
-        self._account.capital = capital
+        self._account.setCapital(capital)
     
     #----------------------------------------------------------------------
     def setSlippage(self, slippage):
@@ -253,8 +254,7 @@ class BackTest(object):
             dataClass = VtTickData
             func = self.OnNewTick
 
-        self._account.capital = self.capital
-        self._account._cashAvail = self.capital
+        self._account.setCapital(self._startBalance, True) # init 10W
 
         self.stdout(u'开始回测')
         
@@ -414,10 +414,12 @@ class BackTest(object):
             tradeAmount =0
             (turnoverO, commissionO, slippageO) =(0,0,0)
             (turnoverT, commissionT, slippageT) =(0,0,0)
+
+            cashAvail, _ = self._account.cashAmount()
             if buyCross:
                 turnoverO, commissionO, slippageO = self._account.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
                 trade.volume = order.totalVolume
-#                if (turnoverO + commissionO + slippageO) > self._account._cashAvail : # the volume should depends on available cache
+#                if (turnoverO + commissionO + slippageO) > cashAvail : # the volume should depends on available cache
 #                    trade.volume =0
 
                 trade.price = min(order.price, buyBestCrossPrice)
@@ -446,7 +448,7 @@ class BackTest(object):
                 self.strategy.onTrade(trade)
             
                 self.log('limCrossed:pos(%s) %s[%s,%s,%s=%dx%s] per order:%s[%sx%s], cash[%s/%s]' %
-                    (self.strategy.pos, tradeID, trade.direction, trade.vtSymbol, tradeAmount, trade.volume, trade.price, orderID, order.totalVolume, order.price, self._account._cashAvail, 'na'))
+                    (self.strategy.pos, tradeID, trade.direction, trade.vtSymbol, tradeAmount, trade.volume, trade.price, orderID, order.totalVolume, order.price, cashAvail, 'na'))
             
                 # 推送委托数据
                 order.tradedVolume = trade.tradeTime
@@ -460,12 +462,15 @@ class BackTest(object):
                 order.status = STATUS_CANCELLED
                 self.strategy.onOrder(order)
 
-            # update avail cache
+            # update avail cache per order has been executed
             if buyCross: #this was a buy
-                self._account._cashAvail += turnoverO + commissionO + slippageO
-                self._account._cashAvail -= tradeAmount
+                # self._account._cashAvail += turnoverO + commissionO + slippageO
+                # self._account._cashAvail -= tradeAmount
+                dCacheAval = (turnoverO + commissionO + slippageO) -tradeAmount
+                self._account.cashChange(dCacheAval)
             else :
-                self._account._cashAvail += tradeAmount
+                # self._account._cashAvail += tradeAmount
+                self._account.cashChange(tradeAmount)
             
             # 从字典中删除该限价单
             if orderID in self.tdDriver.workingLimitOrderDict:
@@ -550,6 +555,8 @@ class BackTest(object):
                 
             self.tdDriver.limitOrderDict[orderID] = order
                 
+            self._account.onTrade(trade)
+
             # 按照顺序推送数据
             self.strategy.onStopOrder(so)
             self.strategy.onOrder(order)
@@ -1019,7 +1026,7 @@ class BackTest(object):
         #     self.stdout(u'计算按日统计结果')
         #     return None, None
 
-        df['balance'] = df['netPnl'].cumsum() + self._account.capital
+        df['balance'] = df['netPnl'].cumsum() + self._startBalance
         df['return'] = (np.log(df['balance']) - np.log(df['balance'].shift(1))).fillna(0)
         df['highlevel'] = df['balance'].rolling(min_periods=1,window=len(df),center=False).max()
         df['drawdown'] = df['balance'] - df['highlevel']
@@ -1052,7 +1059,7 @@ class BackTest(object):
         totalTradeCount = df['tcBuy'].sum() + df['tcSell'].sum()
         dailyTradeCount = totalTradeCount / totalDays
         
-        totalReturn = (endBalance/self.capital - 1) * 100
+        totalReturn = (endBalance/self._startBalance - 1) * 100
         annualizedReturn = totalReturn / totalDays * 240
         dailyReturn = df['return'].mean() * 100
         returnStd = df['return'].std() * 100
@@ -1111,7 +1118,7 @@ class BackTest(object):
         
         self.stdout(u'交易日数：\t%s (盈利%s,亏损%s)' % (result['totalDays'], result['profitDays'], result['lossDays']))
         
-        self.stdout(u'起始资金：\t%s' % formatNumber(self.capital))
+        self.stdout(u'起始资金：\t%s' % formatNumber(self._startBalance))
         self.stdout(u'结束资金：\t%s' % formatNumber(result['endBalance']))
     
         self.stdout(u'总收益率：\t%s%%' % formatNumber(result['totalReturn']))
@@ -1466,7 +1473,8 @@ class tdBackTest(BrokerDriver):
         # reduce available cash
         if order.direction == DIRECTION_LONG :
             turnoverO, commissionO, slippageO = self._account.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
-            self._account._cashAvail -= turnoverO + commissionO + slippageO
+            dCashDeduct = turnoverO + commissionO + slippageO
+            self._account.cashChange(-dCashDeduct)
         
         return [orderID]
     
@@ -1482,7 +1490,8 @@ class tdBackTest(BrokerDriver):
             # restore available cash
             if order.direction == DIRECTION_LONG :
                 turnoverO, commissionO, slippageO = self._account.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
-                self._account._cashAvail += turnoverO + commissionO + slippageO
+                # self._account._cashAvail += turnoverO + commissionO + slippageO
+                self._account.cashChange(turnoverO + commissionO + slippageO)
 
             self._backtest.strategy.onOrder(order)
             

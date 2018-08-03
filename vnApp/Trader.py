@@ -373,7 +373,7 @@ class Trader(BaseApplication):
         """处理持仓事件"""
         pos = event.dict_['data']
 
-        self._dictPositions[pos.vtPositionName] = pos
+        self._dictPositions[pos.symbol] = pos
     
         # 更新到持仓细节中 lnf ctaEngine
         detail = self.getPositionDetail(pos.vtSymbol)

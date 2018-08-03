@@ -95,6 +95,8 @@ class Account(object):
     STATE_OPEN  = 'open'   # during trading hours
     STATE_CLOSE = 'close'  # during market close
 
+    SYMBOL_CASH = '.RMB.' # the dummy symbol in order to represent cache in _dictPositions
+
     #----------------------------------------------------------------------
     def __init__(self, trader, dvrBrokerClass, settings):
         """Constructor"""
@@ -116,11 +118,13 @@ class Account(object):
         self._dateToday      = None # date of previous close
         self._datePrevClose  = None # date of previous close
         self._prevPositions = {} # dict from symbol to previous VtPositionData
-        self._dictPositions = {} # dict from symbol to latest VtPositionData
+        self._dictPositions = { # dict from symbol to latest VtPositionData
+            Account.SYMBOL_CASH : VtPositionData()
+        }
         self._dictTrades = {} # dict from tradeId to trade confirmed during today
 
-        self.capital = 0        # 起始本金（默认10万）
-        self._cashAvail =0
+        # self.capital = 0        # 起始本金（默认10万）
+        # self._cashAvail =0
         
         # 保存策略实例的字典
         # key为策略名称，value为策略实例，注意策略名称不允许重复
@@ -173,10 +177,40 @@ class Account(object):
         return self._dvrBroker.__class__.__name__ +"." + self._id
 
     @abstractmethod
-    def cashAmount(self): raise NotImplementedError # returns (avail, total)
+    def getPosition(self, symbol): # returns VtPositionData
+        if not symbol in self._dictPositions:
+            return VtPositionData()
+        return copy(self._dictPositions[symbol])
 
     @abstractmethod
-    def positionOf(self, vtSymbol): raise NotImplementedError # returns (availVol, totalVol)
+    def cashAmount(self): # returns (avail, total)
+        pos = self._dictPositions[Account.SYMBOL_CASH]
+        volprice = pos.price * self.size
+        return (pos.posAvail * volprice), (pos.position * volprice)
+
+    @abstractmethod
+    def cashChange(self, dAvail=0, dTotal=0):
+        pos = self._dictPositions[Account.SYMBOL_CASH]
+        volprice = pos.price * self.size
+        if pos.price <=0 :   # if cache.price not initialized
+            volprice = pos.price =1
+            if self.size >0:
+                pos.price /=self.size
+
+        pos.posAvail += dAvail / volprice
+        pos.position += dTotal / volprice
+        pos.stampByTrader = self.now()
+        return (pos.posAvail * volprice), (pos.position * volprice)
+
+    def setCapital(self, capital, resetAvail=False):
+        """设置资本金"""
+        cachAvail, cashTotal = self.cashAmount()
+        dCap = capital-cashTotal
+        dAvail = dCap
+        if resetAvail :
+            dAvail = capital-cachAvail
+
+        self.cashChange(dAvail, dCap)
 
     @abstractmethod
     def cancelAll(self, name):
@@ -246,6 +280,10 @@ class Account(object):
         newPrice = round(price/self._priceTick, 0) * self._priceTick
         return newPrice    
 
+    @abstractmethod
+    def now(self): # BT may simuate a older datetime eairlier than the real clock
+        return datetime.now()
+
     #----------------------------------------------------------------------
     # callbacks about timing
     #----------------------------------------------------------------------
@@ -267,7 +305,11 @@ class Account(object):
 
         self._dateToday = newDate
         self._dictTrades.clear() # clean the trade list
-        self._prevPositions = self._dictPositions
+        if self._dictPositions: # shift the positions, must do copy each VtPositionData
+            self._prevPositions = copy.deepcopy(self._dictPositions)
+#            for pos in self._dictPositions.values():
+#                self._prevPositions[pos.symbol] = copy(pos)
+
         self._state = Account.STATE_OPEN
     
     @abstractmethod
@@ -307,8 +349,7 @@ class Account(object):
 
         # part 2. the daily position
         tblName = "dPos." + self.ident
-
-        result, _ = self.calculateStat()
+        result, _ = self.calcDailyPositions()
         for l in result:
             if self._trader:
                 self._trader.insertData(self._trader.dbName, tblName, l)
@@ -326,10 +367,10 @@ class Account(object):
         pass
 
     @abstractmethod
-    def calculateStat(self):
+    def calcDailyPositions(self):
         """今日交易的结果"""
 
-        tradesOfSymbol = {}        # 成交列表
+        tradesOfSymbol = { Account.SYMBOL_CASH:[] }        # 成交列表
         for t in self._dictTrades.values():
             if len(t.vtSymbol) <=0:
                 t.vtSymbol='$' #default symbol
@@ -339,7 +380,6 @@ class Account(object):
             tradesOfSymbol[t.vtSymbol].append(t)
 
         result = []
-
         for s in tradesOfSymbol.keys():
             if not s in self._dictPositions:
                 continue
@@ -372,9 +412,10 @@ class Account(object):
             slippage：滑点点数
             """
             posChange = 0
-            closePosition =0
+            calcPosition = prevPos.position
+
             for trade in tradesOfSymbol[s]:
-                if t.direction == DIRECTION_LONG:
+                if trade.direction == DIRECTION_LONG:
                     posChange = trade.volume
                     tcBuy += 1
                 else:
@@ -383,37 +424,49 @@ class Account(object):
 
                 txnHist += "%+dx%s" % (posChange, trade.price)
 
-                tradingPnl += round(posChange * (currentPos.price - trade.price) * self.size, 2)
-                closePosition += posChange
+                tradingPnl += posChange * (currentPos.price - trade.price) * self.size
+                calcPosition += posChange
                 tover, comis, slpfee = self.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
                 turnover += tover
                 commission += comis
                 slippage += slpfee
 
+            if Account.SYMBOL_CASH == s: # cash dosn't need to sum trades
+                calcPosition = currentPos.position
+            elif calcPosition != currentPos.position:
+                self.stdout("%s WARN: %s.calcDailyPositions() calcPos[%s] mismatch currentPos[%s]" %(self._dateToday, s, calcPosition, currentPos.position))
+
             # 汇总
-            totalPnl = round(tradingPnl + positionPnl, 2)
-            netPnl = round(totalPnl - commission - slippage, 2)
+            totalPnl = tradingPnl + positionPnl
+            netPnl   = totalPnl - commission - slippage
+            # stampstr = ''
+            # if currentPos.stampByTrader :
+            #     stampstr += currentPos.stampByTrader
+            # [ currentPos.stampByTrader, currentPos.stampByBroker ]
             
             dstat = {
                 'symbol'      : s,
                 'date'        : self._dateToday,   # 日期
-                'recentPrice' : currentPos.price,  # 当日收盘
-                'prevClose'   : prevPos.price,     # 昨日收盘
+                'recentPrice' : round(currentPos.price, 3),  # 当日收盘
+                'recentPos'   : round(currentPos.position, 3),  # 当日收盘
+                'calcPos'     : round(calcPosition, 3),     # MarketValue
+                'calcMValue'  : round(calcPosition*currentPos.price*self.size , 2),     # 昨日收盘
+                'prevClose'   : round(prevPos.price, 3),     # 昨日收盘
+                'prevPos'     : round(prevPos.position, 3),     # 昨日收盘
                 
-                'calcPos'     : closePosition,
+                'turnover'    : round(turnover, 2),          # 成交量
+                'commission'  : round(commission, 2),        # 手续费
+                'slippage'    : round(slippage, 2),          # 滑点
+
+                'tradingPnl'  : round(tradingPnl, 2),        # 交易盈亏
+                'positionPnl' : round(positionPnl, 2),      # 持仓盈亏
+                'totalPnl'    : round(tradingPnl + positionPnl, 2), # 总盈亏
+                'netPnl'      : round(netPnl, 2),           # 净盈亏
+                
                 'cBuy'        : tcBuy,             # 成交数量
                 'cSell'       : tcSell,            # 成交数量
-                
-                'tradingPnl'  : tradingPnl,        # 交易盈亏
-                'positionPnl' : positionPnl,       # 持仓盈亏
-                'totalPnl'    : round(tradingPnl + positionPnl, 2), # 总盈亏
-                
-                'turnover'    : turnover,          # 成交量
-                'commission'  : commission,        # 手续费
-                'slippage'    : slippage,          # 滑点
-                'netPnl'      : netPnl,            # 净盈亏
-                
-                'txnHist'     : txnHist
+                'txnHist'     : txnHist,
+                'timestamps'  : [ currentPos.stampByTrader, currentPos.stampByBroker ]
                 }
 
             result.append(dstat)
@@ -436,6 +489,9 @@ class Account(object):
     @abstractmethod
     def onTrade(self, trade):
         """交易成功回调"""
+        if trade.vtTradeID in self._dictTrades:
+            return
+
         self._dictTrades[trade.vtTradeID] = trade
 
         # update the current postion, this may overwrite during the sync by BrokerDriver
@@ -446,17 +502,29 @@ class Account(object):
             pos.symbol = s
             pos.vtSymbol = trade.vtSymbol
             pos.exchange = trade.exchange
+        else:
+            pos = self._dictPositions[s]\
 
-        pos = self._dictPositions[s]
         # 持仓相关
         pos.price      = trade.price
         pos.direction  = trade.direction      # 持仓方向
         # pos.frozen =  # 冻结数量
 
-        if trade.direction == DIRECTION_LONG:
-            pos.position += trade.volume
-        else:
-            pos.position -= trade.volume
+        tdvol = trade.volume
+        if trade.direction != DIRECTION_LONG:
+            tdvol = -tdvol
+
+        # update the pos of symbol
+        pos.position += tdvol
+        pos.stampByTrader = trade.dt
+
+        # update the cashTotal
+        turnover, commission, slippage = self.calcAmountOfTrade(s, trade.price, tdvol)
+        tradeAmount = -(turnover + commission + slippage)
+        if trade.direction != DIRECTION_LONG:
+            tradeAmount = turnover - commission - slippage
+
+        self.cashChange(0, tradeAmount)
 
     @abstractmethod
     def onTradeError(self, msg, reqid):
@@ -523,7 +591,7 @@ class Account(object):
     @abstractmethod
     def stdout(self, message):
         """输出内容"""
-        print str(datetime.now()) + " ACC[" + self.ident + "] " + message
+        print str(self.now()) + " ACC[" + self.ident + "] " + message
 
     #----------------------------------------------------------------------
     def loadStrategy(self, setting):
@@ -792,13 +860,6 @@ class Account_AShare(Account):
         super(Account_AShare, self).__init__(trader, dvrBrokerClass, settings)
 
     #----------------------------------------------------------------------
-    def cashAmount(self): # returns (avail, total)
-        return (self._cashAvail, 0)
-
-    def positionOf(self, vtSymbol): # returns (availVol, totalVol)
-        return (0, 0)
-
-    #----------------------------------------------------------------------
     def calcAmountOfTrade(self, symbol, price, volume):
         # 交易手续费=印花税+过户费+券商交易佣金
         volumeX1 = abs(volume) * self.size
@@ -857,9 +918,11 @@ class VtPositionData(object): # (VtBaseData):
         # 持仓相关
         self.direction      = EMPTY_STRING      # 持仓方向
         self.position       = EMPTY_INT         # 持仓量
-        self.frozen         = EMPTY_INT         # 冻结数量
+        self.posAvail       = EMPTY_INT         # 冻结数量
         self.price          = EMPTY_FLOAT       # 持仓均价
         self.vtPositionName = EMPTY_STRING      # 持仓在vt系统中的唯一代码，通常是vtSymbol.方向
         # self.ydPosition     = EMPTY_INT         # 昨持仓
         # self.positionProfit = EMPTY_FLOAT       # 持仓盈亏
+        self.stampByTrader   = EMPTY_INT         # 该持仓数是基于Trader的计算
+        self.stampByBroker = EMPTY_INT        # 该持仓数是基于与broker的数据同步
 

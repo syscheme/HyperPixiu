@@ -141,11 +141,6 @@ class BTAccount_AShare(Account_AShare):
         self.symbol = symbol
     
     #----------------------------------------------------------------------
-    def setCapital(self, capital):
-        """设置资本金"""
-        self.capital = capital
-    
-    #----------------------------------------------------------------------
     def setSlippage(self, slippage):
         """设置滑点点数"""
         self.slippage = slippage
@@ -232,7 +227,7 @@ class BTAccount_AShare(Account_AShare):
             dataClass = VtTickData
             func = self.OnNewTick
 
-        self._cashAvail = self.capital
+        self.setCapital(self.capital, True)
 
         self.stdout(u'开始回测')
         
@@ -397,10 +392,12 @@ class BTAccount_AShare(Account_AShare):
             tradeAmount =0
             (turnoverO, commissionO, slippageO) =(0,0,0)
             (turnoverT, commissionT, slippageT) =(0,0,0)
+
+            cashAval, _= self.cashAmount()
             if buyCross:
                 turnoverO, commissionO, slippageO = self.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
                 trade.volume = order.totalVolume
-                if (turnoverO + commissionO + slippageO) > self._cashAvail : # the volume should depends on available cache
+                if (turnoverO + commissionO + slippageO) > cashAval : # the volume should depends on available cache
                     trade.volume =0
 
                 trade.price = min(order.price, buyBestCrossPrice)
@@ -445,10 +442,13 @@ class BTAccount_AShare(Account_AShare):
 
             # update avail cache
             if buyCross: #this was a buy
-                self._cashAvail += turnoverO + commissionO + slippageO
-                self._cashAvail -= tradeAmount
+                # self._cashAvail += turnoverO + commissionO + slippageO
+                # self._cashAvail -= tradeAmount
+                dCacheAval = (turnoverO + commissionO + slippageO) -tradeAmount
+                self.cashChange(dCacheAval)
             else :
-                self._cashAvail += tradeAmount
+                # self._cashAvail += tradeAmount
+                self.cashChange(tradeAmount)
             
             # 从字典中删除该限价单
             if orderID in self.workingLimitOrderDict:
@@ -577,8 +577,9 @@ class BTAccount_AShare(Account_AShare):
         # reduce available cash
         if order.direction == DIRECTION_LONG :
             turnoverO, commissionO, slippageO = self.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
-            self._cashAvail -= turnoverO + commissionO + slippageO
-        
+            # self._cashAvail -= turnoverO + commissionO + slippageO
+            self.cashChange(-(turnoverO + commissionO + slippageO))
+
         return [orderID]
     
     #----------------------------------------------------------------------
@@ -592,7 +593,8 @@ class BTAccount_AShare(Account_AShare):
             
             # restore available cash
             if order.direction == DIRECTION_LONG :
-                self._cashAvail += order.price * order.totalVolume * self.size # TODO: I have ignored the commission here
+                # self._cashAvail += order.price * order.totalVolume * self.size # TODO: I have ignored the commission here
+                self.cashChange(order.price * order.totalVolume)
 
             self.strategy.onOrder(order)
             

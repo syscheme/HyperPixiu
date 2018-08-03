@@ -232,7 +232,7 @@ class BackTestApp(Trader):
         self._account._dvrBroker._backtest= self
 #        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
         
-        self.capital  = self._settings.capital(100000) # 回测时的起始本金（默认10万）
+        self._account.setCapital(self._startBalance, True) # 回测时的起始本金（默认10万）
 
         self._execStart = ''
         self._execEnd = ''

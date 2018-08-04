@@ -9,13 +9,16 @@ from collections import defaultdict
 # 第三方模块
 from qtpy.QtCore import QTimer
 
-EVENT_TIMER = 'eTimer'                  # 计时器事件，每隔1秒发送一次
-
 ########################################################################
 class EventChannel(object):
     """
     计时器使用python线程的事件驱动引擎        
     """
+
+    # 系统相关
+    EVENT_TIMER = 'eTimer'                  # 计时器事件，每隔1秒发送一次
+    EVENT_LOG   = 'eLog'                    # 日志事件，全局通用
+    EVENT_ERROR = 'eError.'                 # 错误回报事件
 
     #----------------------------------------------------------------------
     def __init__(self):
@@ -77,7 +80,7 @@ class EventChannel(object):
         """运行在计时器线程中的循环函数"""
         while self.__timerActive:
             # 创建计时器事件
-            event = Event(type_=EVENT_TIMER)
+            event = Event(type_= EventChannel.EVENT_TIMER)
         
             # 向队列中存入计时器事件
             self.put(event)    
@@ -186,7 +189,7 @@ def test():
     app = QCoreApplication(sys.argv)
     
     ee = EventChannel()
-    #ee.register(EVENT_TIMER, simpletest)
+    #ee.register(EventChannel.EVENT_TIMER, simpletest)
     ee.registerGeneralHandler(simpletest)
     ee.start()
     

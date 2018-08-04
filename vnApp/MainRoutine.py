@@ -10,6 +10,8 @@ from datetime import datetime
 from copy import copy
 from abc import ABCMeta, abstractmethod
 
+from vnApp.EventChannel import EventChannel
+
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
 
@@ -21,6 +23,8 @@ from vnpy.trader.vtEvent import *
 from vnpy.trader.vtGateway import *
 from vnpy.trader.language import text
 from vnpy.trader.vtFunction import getTempPath
+
+import jsoncfg # pip install json-cfg
 
 ########################################################################
 class BaseApplication(object):
@@ -67,6 +71,31 @@ class BaseApplication(object):
     def subscribeEvent(self, event, funcCallback) :
         if self._engine and self._engine._eventChannel:
             self._engine._eventChannel.register(event, funcCallback)
+
+    #---logging -----------------------
+    @abstractmethod
+    def debug(self, msg):
+        self._engine.debug('APP['+self.ident +'] ' + msg)
+        
+    def info(self, msg):
+        """正常输出"""
+        self._engine.info('APP['+self.ident +'] ' + msg)
+
+    def warn(self, msg):
+        """警告信息"""
+        self._engine.warn('APP['+self.ident +'] ' + msg)
+        
+    def error(self, msg):
+        """报错输出"""
+        self._engine.error('APP['+self.ident +'] ' + msg)
+        
+    def critical(self, msg):
+        """影响程序运行的严重错误"""
+        self._engine.critical('APP['+self.ident +'] ' + msg)
+
+    def logexception(self, msg):
+        """报错输出+记录异常信息"""
+        self._engine.logexception('APP['+self.ident +'] ' + msg)
 
     #----------------------------------------------------------------------
     @abstractmethod
@@ -143,10 +172,21 @@ class BaseApplication(object):
 class MainRoutine(object):
     """主引擎"""
 
+    # 单例模式
+    __metaclass__ = VtSingleton
+    
+    # 日志级别
+    LOGLEVEL_DEBUG    = logging.DEBUG
+    LOGLEVEL_INFO     = logging.INFO
+    LOGLEVEL_WARN     = logging.WARN
+    LOGLEVEL_ERROR    = logging.ERROR
+    LOGLEVEL_CRITICAL = logging.CRITICAL
+
+
     FINISHED_STATUS = [STATUS_ALLTRADED, STATUS_REJECTED, STATUS_CANCELLED]
 
     #----------------------------------------------------------------------
-    def __init__(self, eventChannel, settings):
+    def __init__(self, settings):
         """Constructor"""
         
         self._settings = settings
@@ -154,9 +194,13 @@ class MainRoutine(object):
         # 记录今日日期
         self.todayDate = datetime.now().strftime('%Y%m%d')
         
-        # 绑定事件引擎
-        self._eventChannel = eventChannel
-        self._eventChannel.start()
+        # 创建EventChannel
+        self._eventChannel = EventChannel()
+        # self._eventChannel.start()
+
+        # 日志引擎实例
+        self._logger = None
+        self.initLogger()
         
         #----------------------------------------------------------------------
         # from old 数据引擎
@@ -171,24 +215,6 @@ class MainRoutine(object):
         self._lstLogs = []
         self._lstErrors = []
         
-
-        # 读取保存在硬盘的合约数据
-        # TODO self.loadContracts()
-        
-        # 注册事件监听
-        #   1. about the MarketData
-        # self._eventChannel.register(MarketData.EVENT_TICK,       self.processTickEvent)
-        # self._eventChannel.register(MarketData.EVENT_KLINE_1MIN, self.processContractEvent)
-
-        # self._eventChannel.register(EVENT_CONTRACT, self.processContractEvent)
-        # self._eventChannel.register(EVENT_ORDER, self.processOrderEvent)
-        # self._eventChannel.register(EVENT_TRADE, self.processTradeEvent)
-        # self._eventChannel.register(EVENT_POSITION, self.processPositionEvent)
-        # self._eventChannel.register(EVENT_ACCOUNT, self.processAccountEvent)
-        # self._eventChannel.register(EVENT_LOG, self.processLogEvent)
-        # self._eventChannel.register(EVENT_ERROR, self.processErrorEvent)
-        #----------------------------------------------------------------------
-        
         # MongoDB数据库相关
         self._dbConn = None    # MongoDB客户端对象
         
@@ -202,10 +228,6 @@ class MainRoutine(object):
         
         # 风控引擎实例（特殊独立对象）
         self._riskMgm = None
-        
-        # 日志引擎实例
-        self.logEngine = None
-        self.initLogger()
 
     #----------------------------------------------------------------------
     def addMarketData(self, dsModule, settings):
@@ -260,22 +282,32 @@ class MainRoutine(object):
         
     #----------------------------------------------------------------------
     def start(self):
-        # if self._eventChannel:
-        #     self._eventChannel.start()
 
+        self.debug('starting event channel')
+        if self._eventChannel:
+            self._eventChannel.start()
+            self.info('started event channel')
+
+        self.debug('connecting DB')
         self.dbConnect()
         
+        self.debug('starting market data subscribers')
         for (k, ds) in self._dictMarketDatas.items():
             if ds == None:
                 continue
             
+            self.debug('connecting market data [%s]' % k)
             ds.connect()
 
+        self.debug('starting applications')
         for (k, app) in self._dictApps.items() :
             if app == None:
                 continue
             
+            self.debug('staring app[%s]' % k)
             app.start()
+
+        self.info('main-routine started')
 
     #----------------------------------------------------------------------
     def subscribeMarketData(self, subscribeReq, dsName):
@@ -285,6 +317,139 @@ class MainRoutine(object):
         if ds:
             ds.subscribe(subscribeReq)
   
+    #----------------------------------------------------------------------
+    # methods about logging
+    # ----------------------------------------------------------------------
+    def initLogger(self):
+        """初始化日志引擎"""
+        if not jsoncfg.node_exists(self._settings.logger):
+            return
+        
+        # 创建引擎
+
+        # abbout the logger
+        # ----------------------------------------------------------------------
+        self._logger   = logging.getLogger()        
+        self._logfmtr  = logging.Formatter('%(asctime)s  %(levelname)s: %(message)s')
+        self._loglevel = self.LOGLEVEL_CRITICAL
+        
+        self._hdlrConsole = None
+        self._hdlrFile = None
+        
+        # 日志级别函数映射
+        self._loglevelFunctionDict = {
+            self.LOGLEVEL_DEBUG:    self.debug,
+            self.LOGLEVEL_INFO:     self.info,
+            self.LOGLEVEL_WARN:     self.warn,
+            self.LOGLEVEL_ERROR:    self.error,
+            self.LOGLEVEL_CRITICAL: self.critical,
+        }
+
+        # 设置日志级别
+        self.setLogLevel(self._settings.logger.level(MainRoutine.LOGLEVEL_DEBUG)) # LOGLEVEL_INFO))
+        
+        BOOL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh']
+
+        # 设置输出
+        tmpval = self._settings.logger.console('True').lower()
+        if tmpval in BOOL_TRUE and not self._hdlrConsole:
+            """添加终端输出"""
+            self._hdlrConsole = logging.StreamHandler()
+            self._hdlrConsole.setLevel(self._loglevel)
+            self._hdlrConsole.setFormatter(self._logfmtr)
+            self._logger.addHandler(self._hdlrConsole)
+        else :
+            # 添加NullHandler防止无handler的错误输出
+            nullHandler = logging.NullHandler()
+            self._logger.addHandler(nullHandler)    
+
+        tmpval = self._settings.logger.file('True').lower()
+        if tmpval in BOOL_TRUE and not self._hdlrFile:
+            filepath = getTempPath('vnApp' + datetime.now().strftime('%Y%m%d') + '.log')
+            self._hdlrFile = logging.FileHandler(filepath)
+            self._hdlrFile.setLevel(self._loglevel)
+            self._hdlrFile.setFormatter(self._logfmtr)
+            self._logger.addHandler(self._hdlrFile)
+            
+        # 注册事件监听
+        tmpval = self._settings.logger.event.log('True').lower()
+        if tmpval in BOOL_TRUE :
+            self._eventChannel.register(EventChannel.EVENT_LOG, self.eventHdlr_Log)
+
+        tmpval = self._settings.logger.event.error('True').lower()
+        if tmpval in BOOL_TRUE :
+            self._eventChannel.register(EventChannel.EVENT_ERROR, self.eventHdlr_Error)
+
+    def setLogLevel(self, level):
+        """设置日志级别"""
+        if self._logger ==None:
+            return
+
+        self._logger.setLevel(level)
+        self._loglevel = level
+    
+    def debug(self, msg):
+        """开发时用"""
+        if self._logger ==None:
+            return
+
+        self._logger.debug(msg)
+        
+    def info(self, msg):
+        """正常输出"""
+        if self._logger ==None:
+            return
+
+        self._logger.info(msg)
+
+    def warn(self, msg):
+        """警告信息"""
+        if self._logger ==None:
+            return
+
+        self._logger.warn(msg)
+        
+    def error(self, msg):
+        """报错输出"""
+        if self._logger ==None:
+            return
+
+        self._logger.error(msg)
+        
+    def critical(self, msg):
+        """影响程序运行的严重错误"""
+        if self._logger ==None:
+            return
+
+        self._logger.critical(msg)
+
+    def logexception(self, msg):
+        """报错输出+记录异常信息"""
+        if self._logger ==None:
+            return
+
+        self._logger.exception(msg)
+
+    def eventHdlr_Log(self, event):
+        """处理日志事件"""
+        if self._logger ==None:
+            return
+
+        log = event.dict_['data']
+        function = self._loglevelFunctionDict[log.logLevel]     # 获取日志级别对应的处理函数
+        msg = '\t'.join([log.dsName, log.logContent])
+        function(msg)
+
+    def eventHdlr_Error(self, event):
+        """
+        处理错误事件
+        """
+        if self._logger ==None:
+            return
+
+        error = event.dict_['data']
+        self.error(u'错误代码：%s，错误信息：%s' %(error.errorID, error.errorMsg))
+
     # #----------------------------------------------------------------------
     # def sendOrder(self, orderReq, dsName):
     #     """对特定接口发单"""
@@ -396,67 +561,6 @@ class MainRoutine(object):
         }
         self.dbInsert(LOG_DB_NAME, self.todayDate, d)
     
-    # #----------------------------------------------------------------------
-    # def getTick(self, vtSymbol):
-    #     """查询行情对象"""
-    #     try:
-    #         return self._dickLatestTick[vtSymbol]
-    #     except KeyError:
-    #         return None        
-    
-    # #----------------------------------------------------------------------
-    # def getContract(self, vtSymbol):
-    #     """查询合约对象"""
-    #     try:
-    #         return self._dictLatestContract[vtSymbol]
-    #     except KeyError:
-    #         return None
-    
-    # #----------------------------------------------------------------------
-    # def getAllContracts(self):
-    #     """查询所有合约对象（返回列表）"""
-    #     return self._dictLatestContract.values()
-    
-    # #----------------------------------------------------------------------
-    # def getOrder(self, vtOrderID):
-    #     """查询委托"""
-    #     return self.dataEngine.getOrder(vtOrderID)
-    
-    # #----------------------------------------------------------------------
-    # def getPositionDetail(self, vtSymbol):
-    #     """查询持仓细节"""
-    #     return self.dataEngine.getPositionDetail(vtSymbol)
-    
-    # #----------------------------------------------------------------------
-    # def getAllWorkingOrders(self):
-    #     """查询所有的活跃的委托（返回列表）"""
-    #     return self.dataEngine.getAllWorkingOrders()
-    
-    # #----------------------------------------------------------------------
-    # def getAllOrders(self):
-    #     """查询所有委托"""
-    #     return self.dataEngine.getAllOrders()
-    
-    # #----------------------------------------------------------------------
-    # def getAllTrades(self):
-    #     """查询所有成交"""
-    #     return self.dataEngine.getAllTrades()    
-    
-    # #----------------------------------------------------------------------
-    # def getAllAccounts(self):
-    #     """查询所有账户"""
-    #     return self.dataEngine.getAllAccounts()
-    
-    # #----------------------------------------------------------------------
-    # def getAllPositions(self):
-    #     """查询所有持仓"""
-    #     return self.dataEngine.getAllPositions()
-    
-    # #----------------------------------------------------------------------
-    # def getAllPositionDetails(self):
-    #     """查询本地持仓缓存细节"""
-    #     return self.dataEngine.getAllPositionDetails()
-    
     #----------------------------------------------------------------------
     def getAllGatewayDetails(self):
         """查询引擎中所有底层接口的信息"""
@@ -473,35 +577,6 @@ class MainRoutine(object):
         return self._dictApps[appName]
     
     #----------------------------------------------------------------------
-    def initLogger(self):
-        """初始化日志引擎"""
-        if not globalSetting["logActive"]:
-            return
-        
-        # 创建引擎
-        self.logEngine = Logger()
-        
-        # 设置日志级别
-        levelDict = {
-            "debug": Logger.LEVEL_DEBUG,
-            "info": Logger.LEVEL_INFO,
-            "warn": Logger.LEVEL_WARN,
-            "error": Logger.LEVEL_ERROR,
-            "critical": Logger.LEVEL_CRITICAL,
-        }
-        level = levelDict.get(globalSetting["logLevel"], Logger.LEVEL_CRITICAL)
-        self.logEngine.setLogLevel(level)
-        
-        # 设置输出
-        if globalSetting['logConsole']:
-            self.logEngine.addConsoleHandler()
-            
-        if globalSetting['logFile']:
-            self.logEngine.addFileHandler()
-            
-        # 注册事件监听
-        if self.logEngine:
-            self._eventChannel.register(EVENT_LOG, self.logEngine.processLogEvent)
     
     # #----------------------------------------------------------------------
     # def convertOrderReq(self, req):
@@ -578,7 +653,7 @@ class MainRoutine(object):
     #     self._dictAccounts[account.vtAccountID] = account
     
     # #----------------------------------------------------------------------
-    # def processLogEvent(self, event):
+    # def eventHdlr_Log(self, event):
     #     """处理日志事件"""
     #     log = event.dict_['data']
     #     self._lstLogs.append(log)
@@ -590,248 +665,6 @@ class MainRoutine(object):
     #     self._lstErrors.append(error)
         
 
-########################################################################
-class DataCache(object):
-    """数据引擎"""
-    contractFileName = 'ContractData.vt'
-    contractFilePath = getTempPath(contractFileName)
-    
-    FINISHED_STATUS = [STATUS_ALLTRADED, STATUS_REJECTED, STATUS_CANCELLED]
-
-    #----------------------------------------------------------------------
-    def getTick(self, vtSymbol):
-        """查询行情对象"""
-        try:
-            return self._dickLatestTick[vtSymbol]
-        except KeyError:
-            return None        
-    
-    #----------------------------------------------------------------------
-    def getContract(self, vtSymbol):
-        """查询合约对象"""
-        try:
-            return self._dictLatestContract[vtSymbol]
-        except KeyError:
-            return None
-        
-    #----------------------------------------------------------------------
-    def getAllContracts(self):
-        """查询所有合约对象（返回列表）"""
-        return self._dictLatestContract.values()
-    
-    #----------------------------------------------------------------------
-    def saveContracts(self):
-        """保存所有合约对象到硬盘"""
-        f = shelve.open(self.contractFilePath)
-        f['data'] = self._dictLatestContract
-        f.close()
-    
-    #----------------------------------------------------------------------
-    def loadContracts(self):
-        """从硬盘读取合约对象"""
-        f = shelve.open(self.contractFilePath)
-        if 'data' in f:
-            d = f['data']
-            for key, value in d.items():
-                self._dictLatestContract[key] = value
-        f.close()
-        
-    #----------------------------------------------------------------------
-    def getOrder(self, vtOrderID):
-        """查询委托"""
-        try:
-            return self._dictLatestOrder[vtOrderID]
-        except KeyError:
-            return None
-    
-    #----------------------------------------------------------------------
-    def getAllWorkingOrders(self):
-        """查询所有活动委托（返回列表）"""
-        return self._dictWorkingOrder.values()
-    
-    #----------------------------------------------------------------------
-    def getAllOrders(self):
-        """获取所有委托"""
-        return self._dictLatestOrder.values()
-    
-    #----------------------------------------------------------------------
-    def getAllTrades(self):
-        """获取所有成交"""
-        return self._dictTrade.values()
-    
-    #----------------------------------------------------------------------
-    def getAllPositions(self):
-        """获取所有持仓"""
-        return self._dictPositions.values()
-    
-    #----------------------------------------------------------------------
-    def getAllAccounts(self):
-        """获取所有资金"""
-        return self._dictAccounts.values()
-    
-    #----------------------------------------------------------------------
-    def getPositionDetail(self, vtSymbol):
-        """查询持仓细节"""
-        if vtSymbol in self._dictDetails:
-            detail = self._dictDetails[vtSymbol]
-        else:
-            contract = self.getContract(vtSymbol)
-            detail = PositionDetail(vtSymbol, contract)
-            self._dictDetails[vtSymbol] = detail
-            
-            # 设置持仓细节的委托转换模式
-            contract = self.getContract(vtSymbol)
-            
-            if contract:
-                detail.exchange = contract.exchange
-                
-                # 上期所合约
-                if contract.exchange == EXCHANGE_SHFE:
-                    detail.mode = detail.MODE_SHFE
-                
-                # 检查是否有平今惩罚
-                for productID in self._lstTdPenalty:
-                    if str(productID) in contract.symbol:
-                        detail.mode = detail.MODE_TDPENALTY
-                
-        return detail
-    
-    #----------------------------------------------------------------------
-    def getAllPositionDetails(self):
-        """查询所有本地持仓缓存细节"""
-        return self._dictDetails.values()
-    
-    #----------------------------------------------------------------------
-    def updateOrderReq(self, req, vtOrderID):
-        """委托请求更新"""
-        vtSymbol = req.vtSymbol
-            
-        detail = self.getPositionDetail(vtSymbol)
-        detail.updateOrderReq(req, vtOrderID)
-    
-    #----------------------------------------------------------------------
-    def convertOrderReq(self, req):
-        """根据规则转换委托请求"""
-        detail = self._dictDetails.get(req.vtSymbol, None)
-        if not detail:
-            return [req]
-        else:
-            return detail.convertOrderReq(req)
-
-    #----------------------------------------------------------------------
-    def getLog(self):
-        """获取日志"""
-        return self._lstLogs
-    
-    #----------------------------------------------------------------------
-    def getError(self):
-        """获取错误"""
-        return self._lstErrors
-    
-
-########################################################################    
-class Logger(object):
-    """日志引擎"""
-    
-    # 单例模式
-    __metaclass__ = VtSingleton
-    
-    # 日志级别
-    LEVEL_DEBUG = logging.DEBUG
-    LEVEL_INFO = logging.INFO
-    LEVEL_WARN = logging.WARN
-    LEVEL_ERROR = logging.ERROR
-    LEVEL_CRITICAL = logging.CRITICAL
-
-    #----------------------------------------------------------------------
-    def __init__(self):
-        """Constructor"""
-        self.logger = logging.getLogger()        
-        self.formatter = logging.Formatter('%(asctime)s  %(levelname)s: %(message)s')
-        self.level = self.LEVEL_CRITICAL
-        
-        self.consoleHandler = None
-        self.fileHandler = None
-        
-        # 添加NullHandler防止无handler的错误输出
-        nullHandler = logging.NullHandler()
-        self.logger.addHandler(nullHandler)    
-        
-        # 日志级别函数映射
-        self.levelFunctionDict = {
-            self.LEVEL_DEBUG: self.debug,
-            self.LEVEL_INFO: self.info,
-            self.LEVEL_WARN: self.warn,
-            self.LEVEL_ERROR: self.error,
-            self.LEVEL_CRITICAL: self.critical,
-        }
-        
-    #----------------------------------------------------------------------
-    def setLogLevel(self, level):
-        """设置日志级别"""
-        self.logger.setLevel(level)
-        self.level = level
-    
-    #----------------------------------------------------------------------
-    def addConsoleHandler(self):
-        """添加终端输出"""
-        if not self.consoleHandler:
-            self.consoleHandler = logging.StreamHandler()
-            self.consoleHandler.setLevel(self.level)
-            self.consoleHandler.setFormatter(self.formatter)
-            self.logger.addHandler(self.consoleHandler)
-            
-    #----------------------------------------------------------------------
-    def addFileHandler(self, filename=''):
-        """添加文件输出"""
-        if not self.fileHandler:
-            if not filename:
-                filename = 'vt_' + datetime.now().strftime('%Y%m%d') + '.log'
-            filepath = getTempPath(filename)
-            self.fileHandler = logging.FileHandler(filepath)
-            self.fileHandler.setLevel(self.level)
-            self.fileHandler.setFormatter(self.formatter)
-            self.logger.addHandler(self.fileHandler)
-    
-    #----------------------------------------------------------------------
-    def debug(self, msg):
-        """开发时用"""
-        self.logger.debug(msg)
-        
-    #----------------------------------------------------------------------
-    def info(self, msg):
-        """正常输出"""
-        self.logger.info(msg)
-        
-    #----------------------------------------------------------------------
-    def warn(self, msg):
-        """警告信息"""
-        self.logger.warn(msg)
-        
-    #----------------------------------------------------------------------
-    def error(self, msg):
-        """报错输出"""
-        self.logger.error(msg)
-        
-    #----------------------------------------------------------------------
-    def exception(self, msg):
-        """报错输出+记录异常信息"""
-        self.logger.exception(msg)
-
-    #----------------------------------------------------------------------
-    def critical(self, msg):
-        """影响程序运行的严重错误"""
-        self.logger.critical(msg)
-
-    #----------------------------------------------------------------------
-    def processLogEvent(self, event):
-        """处理日志事件"""
-        log = event.dict_['data']
-        function = self.levelFunctionDict[log.logLevel]     # 获取日志级别对应的处理函数
-        msg = '\t'.join([log.dsName, log.logContent])
-        function(msg)
-        
-    
 ########################################################################
 class PositionDetail(object):
     """本地维护的持仓信息"""

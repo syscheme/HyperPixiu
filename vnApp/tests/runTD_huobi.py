@@ -7,7 +7,7 @@ import multiprocessing
 from time import sleep
 from datetime import datetime, time
 
-from vnApp.MainRoutine import MainRoutine, Logger
+from vnApp.MainRoutine import MainRoutine
 from vnApp.marketdata.mdHuobi import mdHuobi
 from vnApp.DataRecorder import *
 from vnApp.EventChannel import EventChannel
@@ -42,37 +42,50 @@ def runChildProcess():
         return
 
     # 创建日志引擎
-    le = Logger()
-    le.setLogLevel(le.LEVEL_INFO)
-    le.addConsoleHandler()
-    le.info(u'启动行情记录运行子进程')
+    # logger = Logger()
+    # logger.setLogLevel(logger.LEVEL_INFO)
+    # logger.addConsoleHandler()
+    # logger.info(u'Huobi交易子进程')
     
-    ee = EventChannel()
-    le.info(u'事件引擎创建成功')
+    # ee = EventChannel()
+    # logger.info(u'事件引擎创建成功')
     
-    me = MainRoutine(ee, settings)
+    me = MainRoutine(settings)
 
     me.addMarketData(mdHuobi, settings['marketdata'][0])
     me.addApp(Trader, settings['trader'])
-    le.info(u'主引擎创建成功')
-
-    ee.register(EVENT_LOG, le.processLogEvent)
-    ee.register(EVENT_ERROR, processErrorEvent)
-    le.info(u'注册日志事件监听')
+    # logger.info(u'主引擎创建成功')
 
     me.start()
-    le.info(u'MainRoutine starts')
+    # logger.info(u'MainRoutine starts')
 
-    input()
+    # cta.loadSetting()
+    # logger.info(u'CTA策略载入成功')
+    
+    # cta.initAll()
+    # logger.info(u'CTA策略初始化成功')
+    
+    # cta.startAll()
+    # logger.info(u'CTA策略启动成功')
+    
+    while True:
+        try :
+            sleep(1)
+            me.debug(u'MainThread heartbeat')
+        except KeyboardInterrupt as ki:
+            break
+
+    me.info(u'MainRoutine stopping')
+    me.stop()
 
 #----------------------------------------------------------------------
 def runParentProcess():
     """父进程运行函数"""
     # 创建日志引擎
-    le = Logger()
-    le.setLogLevel(le.LEVEL_INFO)
-    le.addConsoleHandler()
-    le.info(u'启动行情记录守护父进程')
+    logger = Logger()
+    logger.setLogLevel(logger.LEVEL_INFO)
+    logger.addConsoleHandler()
+    logger.info(u'启动行情记录守护父进程')
     
     DAY_START = time(8, 57)         # 日盘启动和停止时间
     DAY_END = time(15, 18)
@@ -99,18 +112,18 @@ def runParentProcess():
 
         # 记录时间则需要启动子进程
         if recording and p is None:
-            le.info(u'启动子进程')
+            logger.info(u'启动子进程')
             p = multiprocessing.Process(target=runChildProcess)
             p.start()
-            le.info(u'子进程启动成功')
+            logger.info(u'子进程启动成功')
 
         # 非记录时间则退出子进程
         if not recording and p is not None:
-            le.info(u'关闭子进程')
+            logger.info(u'关闭子进程')
             p.terminate()
             p.join()
             p = None
-            le.info(u'子进程关闭成功')
+            logger.info(u'子进程关闭成功')
 
         sleep(5)
 

@@ -1,0 +1,31 @@
+{
+    "logger": {
+        // "level": "99",
+        // "console": "False",
+        // "file": "True",
+        // "event": { "log": "True", "error": "True" }
+    },
+
+    "marketdata": [
+        {
+            "id": "hadax",
+
+            // "exchange": "hadax",
+            "proxy": "localhost:8118",
+        },
+    ],
+
+    "working": true,
+
+    "datarecorder": {
+        // "ticks": [
+        //     {"symbol":"ethusdt", "ds": "hadax"}, 
+        //     {"symbol":"btcusdt", "ds": "hadax"}, 
+        // ],
+
+        "kline1min": [
+            {"symbol":"ethusdt", "ds": "hadax"}, 
+            {"symbol":"btcusdt", "ds": "hadax"}, 
+        ],
+    }
+}

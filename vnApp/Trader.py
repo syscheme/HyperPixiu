@@ -13,6 +13,7 @@ from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
 
 from vnApp.MainRoutine import *
+from vnApp.BrokerDriver import *
 
 from vnpy.event import Event
 from vnpy.trader.vtGlobal import globalSetting
@@ -119,8 +120,10 @@ class Trader(BaseApplication):
     # impl of BaseApplication
     #----------------------------------------------------------------------
     def start(self):
+        # subscribe all interested market data
+        self.registerEventHandlers()
         # TODO: subscribe all interested market data
-        pass
+        """注册事件监听"""
 
     def stop(self):
         """退出程序前调用，保证正常退出"""        
@@ -266,11 +269,11 @@ class Trader(BaseApplication):
     #----------------------------------------------------------------------
     # Interested Events from EventChannel
     #----------------------------------------------------------------------
-    def registerEvent(self):
+    def registerEventHandlers(self):
         """注册事件监听"""
-        self.eventEngine.register(EVENT_TICK, self.eventHdl_Tick)
-        self.eventEngine.register(EVENT_ORDER, self.eventHdl_Order)
-        self.eventEngine.register(EVENT_TRADE, self.eventHdl_Trade)
+        self.subscribeEvent(MarketData.EVENT_TICK,    self.eventHdl_Tick)
+        self.subscribeEvent(BrokerDriver.EVENT_ORDER, self.eventHdl_Order)
+        self.subscribeEvent(BrokerDriver.EVENT_TRADE, self.eventHdl_Trade)
 
     ### eventTick from MarketData ----------------
     @abstractmethod

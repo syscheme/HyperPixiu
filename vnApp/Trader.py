@@ -22,6 +22,8 @@ from vnpy.trader.vtGateway import *
 from vnpy.trader.language import text
 from vnpy.trader.vtFunction import getTempPath
 
+import jsoncfg # pip install json-cfg
+
 # 引擎类型，用于区分当前策略的运行环境
 TRADER_TYPE_BACKTESTING = 'backtesting'  # 回测
 TRADER_TYPE_TRADING = 'trading'          # 实盘
@@ -44,7 +46,8 @@ class Trader(BaseApplication):
         #--------------------
         # from old 数据引擎
         # 保存数据的字典和列表
-        self._dickLatestTick = {}    # the latest tick of each symbol
+        self._dickLatestTick = {}         # the latest tick of each symbol
+        self._dickLatestKline1min = {}    #SSS the latest kline1min of each symbol
         self._dictLatestContract = {}
         self._dictLatestOrder = {}
         self._dictWorkingOrder = {} # 可撤销委托
@@ -120,9 +123,13 @@ class Trader(BaseApplication):
     # impl of BaseApplication
     #----------------------------------------------------------------------
     def start(self):
-        # subscribe all interested market data
-        self.registerEventHandlers()
         # TODO: subscribe all interested market data
+        self.subscribeSymbols()
+
+        # subscribe account events
+        self.subscribeEvent(BrokerDriver.EVENT_ORDER, self.eventHdl_Order)
+        self.subscribeEvent(BrokerDriver.EVENT_TRADE, self.eventHdl_Trade)
+
         """注册事件监听"""
 
     def stop(self):
@@ -269,26 +276,77 @@ class Trader(BaseApplication):
     #----------------------------------------------------------------------
     # Interested Events from EventChannel
     #----------------------------------------------------------------------
-    def registerEventHandlers(self):
-        """注册事件监听"""
-        self.subscribeEvent(MarketData.EVENT_TICK,    self.eventHdl_Tick)
-        self.subscribeEvent(BrokerDriver.EVENT_ORDER, self.eventHdl_Order)
-        self.subscribeEvent(BrokerDriver.EVENT_TRADE, self.eventHdl_Trade)
+    def subscribeSymbols(self) :
+
+        # step 1. collect all interested symbol of market data to subscribe
+        self._interests = ''
+        interested_marketdata = {}
+        #   part 1. those specified in the configuration
+        if jsoncfg.node_is_array(self._settings.symbols):
+            for s in jsoncfg.expect_array(self._settings.symbols):
+                k = '.'.join([s.symbol(''), s.ds('')])
+                if len(k) <3:
+                    continue
+                interested_marketdata[k] = s({})
+        
+        # TODO part 2. those in the positions of Accounts
+
+        # step 2. subscribe the symbols
+        self.debug('collected %s interested symbols' % len(interested_marketdata))
+        self._interests = ''
+        self.subscribeEvent(MarketData.EVENT_TICK,       self.eventHdl_Tick)
+        self.subscribeEvent(MarketData.EVENT_KLINE_1MIN, self.eventHdl_KLine1min)
+        for k in interested_marketdata.keys():
+            s = interested_marketdata[k]
+            try:
+                if len(s['symbol']) <=3 or len(s['ds'])<=0:
+                    self.warn('subscribeSymbols() ignore: %s' % k)
+                    continue
+                self._interests +=k
+                ds = self._engine.getMarketData(s['ds'])
+                if ds:
+                    self.debug('calling local subcribers for interested: %s' % s)
+                    ds.subscribe(s['symbol'], MarketData.EVENT_TICK)
+                    # ds.subscribe(s['symbol'], MarketData.EVENT_KLINE_1MIN)
+                else:
+                    self.warn('no local subscriber, may rely on remote subscribers: %s' % s)
+            except Exception as e:
+                self.logexception(e)
 
     ### eventTick from MarketData ----------------
     @abstractmethod
+    def eventHdl_KLine1min(self, event):
+        """TODO: 处理行情推送"""
+        self.debug('eventHdl_KLine1min')
+        d = event.dict_['data']
+        if not d.symbol in self._interests:
+            return
+        kline = copy(d)
+
+        # step 1. cache into the latest, lnf DataEngine
+        self._dickLatestKline1min[kline.symbol] = kline
+        pass
+
+    @abstractmethod
     def eventHdl_Tick(self, event):
         """处理行情推送"""
-        tick = event.dict_['data']
-        tick = copy(tick)
+        d = event.dict_['data']
+        self.debug('eventHdl_Tick %s' %d)
+        if not d.symbol in self._interests:
+            self.debug('eventHdl_Tick not interest %s' % d.symbol)
+            return
+        tick = copy(d)
 
+        self.debug('eventHdl_Tick 1')
         # step 1. cache into the latest, lnf DataEngine
         self._dickLatestTick[tick.vtSymbol] = tick
 
         # step 2. 收到tick行情后，先处理本地停止单（检查是否要立即发出） lnf ctaEngine
+        self.debug('eventHdl_Tick2')
         self.processStopOrder(tick)
 
         # step 3. 推送tick到对应的策略实例进行处理 lnf ctaEngine
+        self.debug('eventHdl_Tick3')
         if tick.vtSymbol in self.tickStrategyDict:
             # tick时间可能出现异常数据，使用try...except实现捕捉和过滤
             try:
@@ -304,6 +362,7 @@ class Trader(BaseApplication):
             for strategy in l:
                 self._stg_call(strategy, strategy.onTick, tick)
     
+        self.debug('eventHdl_Tick done')
     ### eventTick from Account ----------------
     @abstractmethod
     def eventHdl_Order(self, event):

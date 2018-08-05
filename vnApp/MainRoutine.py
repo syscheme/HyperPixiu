@@ -11,7 +11,7 @@ from copy import copy
 from abc import ABCMeta, abstractmethod
 import traceback
 
-from vnApp.EventChannel import EventChannel
+from vnApp.EventChannel import Event, EventLoop, EventChannel
 
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
@@ -191,12 +191,16 @@ class MainRoutine(object):
         """Constructor"""
         
         self._settings = settings
+        self._threadMode = False
 
         # 记录今日日期
         self.todayDate = datetime.now().strftime('%Y%m%d')
         
         # 创建EventChannel
-        self._eventChannel = EventChannel()
+        if self.threadMode :
+            self._eventChannel = EventChannel()
+        else :
+            self._eventChannel = EventLoop()
         # self._eventChannel.start()
 
         # 日志引擎实例
@@ -229,6 +233,35 @@ class MainRoutine(object):
         
         # 风控引擎实例（特殊独立对象）
         self._riskMgm = None
+    
+    @property
+    def threadMode(self) :
+        return self._threadMode
+
+    #----------------------------------------------------------------------
+    def loop(self):
+
+        c=0
+        while True:
+            if self._threadMode :
+                try :
+                    sleep(1)
+                    me.debug(u'MainThread heartbeat')
+                except KeyboardInterrupt as ki:
+                    break
+
+                continue
+
+            # loop mode as below
+            try :
+                self._eventChannel.step()
+                time.sleep(0.1)
+                c+=1
+
+                if c % 10 ==0:
+                    self.debug(u'MainThread heartbeat')
+            except KeyboardInterrupt as ki:
+                break
 
     #----------------------------------------------------------------------
     def addMarketData(self, dsModule, settings):
@@ -247,6 +280,7 @@ class MainRoutine(object):
         }
         
         self._dlstMarketDatas.append(d)
+        self.info('md[%s] added: %s' %(id, d))
         
     #----------------------------------------------------------------------
     def addApp(self, appModule, settings):
@@ -271,6 +305,7 @@ class MainRoutine(object):
 #            'appIco': appModule.appIco
         }
         self._dlstApps.append(d)
+        self.info('app[%s] added: %s' %(id, d))
         
     #----------------------------------------------------------------------
     def getMarketData(self, dsName):
@@ -307,6 +342,7 @@ class MainRoutine(object):
             
             self.debug('staring app[%s]' % k)
             app.start()
+            self.info('started app[%s]' % k)
 
         self.info('main-routine started')
 

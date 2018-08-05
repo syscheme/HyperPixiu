@@ -68,13 +68,7 @@ def runChildProcess():
     # cta.startAll()
     # logger.info(u'CTA策略启动成功')
     
-    while True:
-        try :
-            sleep(1)
-            me.debug(u'MainThread heartbeat')
-        except KeyboardInterrupt as ki:
-            break
-
+    me.loop()
     me.info(u'MainRoutine stopping')
     me.stop()
 

@@ -65,7 +65,11 @@ class MarketData(object):
         raise NotImplementedError
         return self.active
         
-    #----------------------------------------------------------------------
+    @abstractmethod
+    def step(self):
+        """连接"""
+        raise NotImplementedError
+
     @abstractmethod
     def close(self):
         """停止"""
@@ -120,11 +124,13 @@ class MarketData(object):
             return
 
         self._eventCh.put(event)
+        self.info('posted %s[%s]' % (event.type_, event.dict_['data'].symbol))
 
     #----------------------------------------------------------------------
     def debug(self, msg):
         """开发时用"""
-        print ('DEBUG md[%s] %s' % (self.ident, msg))
+    #    print ('DEBUG md[%s] %s' % (self.ident, msg))
+        pass
         
     def info(self, msg):
         """正常输出"""

@@ -13,6 +13,7 @@ import base64
 import hashlib
 import requests 
 import traceback
+import socket
 from copy import copy
 from datetime import datetime
 from threading import Thread
@@ -93,29 +94,13 @@ class mdHuobi(MarketData):
     def _run(self):
         """执行连接 and receive"""
         while self._active:
-            data = None
-            try:
-                stream = self.ws.recv()
-                result = zlib.decompress(stream, 47).decode('utf-8')
-                data = json.loads(result)
-            except zlib.error:
-                self.onError(u'数据解压出错：%s' %stream)
-            except Exception as ex:
-                self.onError('行情服务器连接断开: %s' %ex)
-                if self._doConnect() :
-                    self.onError(u'行情服务器重连成功')
-                    self._resubscribe()
-                else:
+            try :
+                if self.step() <0:
                     self.onError(u'等待3秒后再次重连')
-                    sleep(3)
-
-            if not data:
-                continue
-
-            try:
-                self._onData(data)
+                    time.sleep(3)
             except Exception as ex:
-                self.onError(u'数据分发错误：%s'  %ex)
+                self.onError(u'行情服务器step err: %s' % ex)
+
     
     #----------------------------------------------------------------------
     def connect(self):
@@ -128,7 +113,44 @@ class mdHuobi(MarketData):
         self.thread.start()
             
         return self.active
-        
+
+    def step(self):
+        if not self.ws :
+            if self._doConnect() :
+                self.onError(u'行情服务器重连成功')
+                self._resubscribe()
+            else:
+                self.onError(u'等待3秒后再次重连')
+                return -1
+
+        c = 0
+        while self.ws:
+            data = None
+            try:
+                stream = self.ws.recv() # (timeout=0.1)
+                if not stream or len(stream) <=0:
+                    break
+                result = zlib.decompress(stream, 47).decode('utf-8')
+                data = json.loads(result)
+                c +=1
+            except socket.timeout:
+                break
+            except zlib.error:
+                self.onError(u'数据解压出错：%s' %stream)
+            except Exception as ex:
+                self.onError(u'行情服务器recv err %s' % ex)
+                self.ws = None # disconnect it 
+
+            if not data:
+                break
+
+            try:
+                self._onData(data)
+                return 1
+            except Exception as ex:
+                self.onError(u'数据分发错误：%s'  %ex)
+
+        return c
     #----------------------------------------------------------------------
     def close(self):
         """停止"""

@@ -97,22 +97,27 @@ class mdHuobi(MarketData):
             try :
                 if self.step() <0:
                     self.onError(u'等待3秒后再次重连')
-                    time.sleep(3)
+                    sleep(3)
             except Exception as ex:
                 self.onError(u'行情服务器step err: %s' % ex)
 
     
     #----------------------------------------------------------------------
+    def start(self):
+        """连接"""
+        self.connect()
+
+        self._active = True
+        self.thread.start()
+            
+        return self.active
+
     def connect(self):
         """连接"""
         if not self._doConnect() :
             return False
 
         self._resubscribe()
-        self._active = True
-        self.thread.start()
-            
-        return self.active
 
     def step(self):
         if not self.ws :

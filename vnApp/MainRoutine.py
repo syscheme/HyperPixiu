@@ -237,32 +237,6 @@ class MainRoutine(object):
     @property
     def threadMode(self) :
         return self._threadMode
-
-    #----------------------------------------------------------------------
-    def loop(self):
-
-        c=0
-        while True:
-            if self._threadMode :
-                try :
-                    sleep(1)
-                    me.debug(u'MainThread heartbeat')
-                except KeyboardInterrupt as ki:
-                    break
-
-                continue
-
-            # loop mode as below
-            try :
-                self._eventChannel.step()
-                time.sleep(0.1)
-                c+=1
-
-                if c % 10 ==0:
-                    self.debug(u'MainThread heartbeat')
-            except KeyboardInterrupt as ki:
-                break
-
     #----------------------------------------------------------------------
     def addMarketData(self, dsModule, settings):
         """添加底层接口"""
@@ -331,9 +305,13 @@ class MainRoutine(object):
         for (k, ds) in self._dictMarketDatas.items():
             if ds == None:
                 continue
-            
-            self.debug('connecting market data [%s]' % k)
-            ds.connect()
+
+            if self._threadMode :
+                ds.start()
+                self.debug('market subscriber[%s] started' % k)
+            else :
+                ds.connect()
+                self.debug('market subscriber[%s] connected' % k)
 
         self.debug('starting applications')
         for (k, app) in self._dictApps.items() :
@@ -345,6 +323,60 @@ class MainRoutine(object):
             self.info('started app[%s]' % k)
 
         self.info('main-routine started')
+
+    def stop(self):
+        """退出程序前调用，保证正常退出"""        
+        # 安全关闭所有接口
+        for ds in self._dictMarketDatas.values():        
+            ds.close()
+        
+        # 停止事件引擎
+        self._eventChannel.stop()
+        
+        # 停止上层应用引擎
+        for app in self._dictApps.values():
+            app.stop()
+        
+        # # 保存数据引擎里的合约数据到硬盘
+        # self.dataEngine.saveContracts()
+
+    #----------------------------------------------------------------------
+    def loop(self):
+
+        self.info(u'MainRoutine start looping')
+        c=0
+        while True:
+            if self._threadMode :
+                try :
+                    sleep(1)
+                    self.debug(u'MainThread heartbeat')
+                except KeyboardInterrupt as ki:
+                    break
+
+                continue
+
+            # loop mode as below
+            for (k, ds) in self._dictMarketDatas.items():
+                try :
+                    if ds == None:
+                        continue
+                    ds.step()
+                except Exception as ex:
+                    self.logexception(ex)
+
+            try :
+                self._eventChannel.step()
+                sleep(0.1)
+                c+=1
+
+                if c % 10 ==0:
+                    self.debug(u'MainThread heartbeat')
+            except KeyboardInterrupt as ki:
+                break
+            except Exception as ex:
+                self.logexception(ex)
+
+        self.info(u'MainRoutine finish looping')
 
     #----------------------------------------------------------------------
     def subscribeMarketData(self, subscribeReq, dsName):
@@ -529,21 +561,6 @@ class MainRoutine(object):
     #         ds.qryPosition()
             
     #----------------------------------------------------------------------
-    def stop(self):
-        """退出程序前调用，保证正常退出"""        
-        # 安全关闭所有接口
-        for ds in self._dictMarketDatas.values():        
-            ds.close()
-        
-        # 停止事件引擎
-        self._eventChannel.stop()
-        
-        # 停止上层应用引擎
-        for app in self._dictApps.values():
-            app.stop()
-        
-        # # 保存数据引擎里的合约数据到硬盘
-        # self.dataEngine.saveContracts()
     
     #----------------------------------------------------------------------
     def writeLog(self, content):

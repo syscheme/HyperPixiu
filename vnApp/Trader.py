@@ -293,7 +293,7 @@ class Trader(BaseApplication):
 
         # step 2. subscribe the symbols
         self.debug('collected %s interested symbols' % len(interested_marketdata))
-        self._interests = ''
+        self._interests = ';'
         self.subscribeEvent(MarketData.EVENT_TICK,       self.eventHdl_Tick)
         self.subscribeEvent(MarketData.EVENT_KLINE_1MIN, self.eventHdl_KLine1min)
         for k in interested_marketdata.keys():
@@ -302,7 +302,7 @@ class Trader(BaseApplication):
                 if len(s['symbol']) <=3 or len(s['ds'])<=0:
                     self.warn('subscribeSymbols() ignore: %s' % k)
                     continue
-                self._interests +=k
+                self._interests +=k +';'
                 ds = self._engine.getMarketData(s['ds'])
                 if ds:
                     self.debug('calling local subcribers for interested: %s' % s)
@@ -331,11 +331,11 @@ class Trader(BaseApplication):
     def eventHdl_Tick(self, event):
         """处理行情推送"""
         d = event.dict_['data']
-        self.debug('eventHdl_Tick %s' %d)
+        self.debug('eventHdl_Tick %s' %d.__dict__)
         if not d.symbol in self._interests:
             self.debug('eventHdl_Tick not interest %s' % d.symbol)
             return
-        tick = copy(d)
+        tick = copy.copy(d)
 
         self.debug('eventHdl_Tick 1')
         # step 1. cache into the latest, lnf DataEngine

@@ -69,7 +69,6 @@ def runChildProcess():
     # logger.info(u'CTA策略启动成功')
     
     me.loop()
-    me.info(u'MainRoutine stopping')
     me.stop()
 
 #----------------------------------------------------------------------

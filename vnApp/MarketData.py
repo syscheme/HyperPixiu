@@ -59,11 +59,18 @@ class MarketData(object):
         return self.subDict
         
     #----------------------------------------------------------------------
+    # if the MarketData has background thread, connect() will not start the thread
+    # but start() will
     @abstractmethod
     def connect(self):
         """连接"""
         raise NotImplementedError
         return self.active
+
+    @abstractmethod
+    def start(self):
+        """连接"""
+        self.connect()
         
     @abstractmethod
     def step(self):
@@ -71,7 +78,7 @@ class MarketData(object):
         raise NotImplementedError
 
     @abstractmethod
-    def close(self):
+    def stop(self):
         """停止"""
         if self._active:
             self._active = False

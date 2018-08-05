@@ -7,7 +7,7 @@ import multiprocessing
 from time import sleep
 from datetime import datetime, time
 
-from vnApp.MainRoutine import MainRoutine, Logger
+from vnApp.MainRoutine import MainRoutine
 from vnApp.marketdata.mdHuobi import mdHuobi
 from vnApp.DataRecorder import *
 from vnApp.EventChannel import EventChannel
@@ -40,27 +40,13 @@ def runChildProcess():
         print('failed to load configure[%s]: %s' % (conf_fn, e))
         return
 
-    # 创建日志引擎
-    le = Logger()
-    le.setLogLevel(le.LEVEL_INFO)
-    le.addConsoleHandler()
-    le.info(u'启动行情记录运行子进程')
-    
-    ee = EventChannel()
-    le.info(u'事件引擎创建成功')
-    
-    me = MainRoutine(ee, settings)
+    me = MainRoutine(settings)
 
     me.addMarketData(mdHuobi, settings['marketdata'][0])
     me.addApp(DataRecorder, settings['datarecorder'])
-    le.info(u'主引擎创建成功')
-
-    ee.register(EVENT_LOG, le.processLogEvent)
-    ee.register(EVENT_ERROR, processErrorEvent)
-    le.info(u'注册日志事件监听')
+    me.info(u'主引擎创建成功')
 
     me.start()
-    le.info(u'MainRoutine starts')
 
     input()
 

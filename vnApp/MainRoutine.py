@@ -9,6 +9,7 @@ from collections import OrderedDict
 from datetime import datetime
 from copy import copy
 from abc import ABCMeta, abstractmethod
+import traceback
 
 from vnApp.EventChannel import EventChannel
 
@@ -93,9 +94,9 @@ class BaseApplication(object):
         """影响程序运行的严重错误"""
         self._engine.critical('APP['+self.ident +'] ' + msg)
 
-    def logexception(self, msg):
+    def logexception(self, ex):
         """报错输出+记录异常信息"""
-        self._engine.logexception('APP['+self.ident +'] ' + msg)
+        self._engine.logexception('APP['+self.ident +'] %s: %s' % (ex, traceback.format_exc()))
 
     #----------------------------------------------------------------------
     @abstractmethod
@@ -423,12 +424,13 @@ class MainRoutine(object):
 
         self._logger.critical(msg)
 
-    def logexception(self, msg):
+    def logexception(self, ex):
         """报错输出+记录异常信息"""
         if self._logger ==None:
             return
 
-        self._logger.exception(msg)
+        traceback.format_exc()
+        #s elf._logger.exception(msg)
 
     def eventHdlr_Log(self, event):
         """处理日志事件"""

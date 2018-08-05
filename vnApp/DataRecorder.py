@@ -31,9 +31,6 @@ TICK_DB_NAME   = 'drTick'
 DAILY_DB_NAME  = 'drDaily'
 MINUTE_DB_NAME = 'dr1Min'
 
-# 行情记录模块事件
-EVENT_DATARECORDER_LOG = 'eRec_LOG'     # 行情记录日志更新事件
-
 from vnpy.trader.vtConstant import EMPTY_UNICODE, EMPTY_STRING, EMPTY_FLOAT, EMPTY_INT
 
 from .language import text
@@ -64,10 +61,10 @@ class DataRecorder(BaseApplication):
         # 负责执行数据库插入的单独线程相关
         self.queue = Queue()                    # 队列
         self.thread = Thread(target=self.run)   # 线程
-        
+
         # 载入设置，订阅行情
         self.subscriber()
-        
+
     #----------------------------------------------------------------------
     def _subscribeMarketData(self, settingnode, event, dict, cbFunc) :
         if len(settingnode({})) <=0:
@@ -92,8 +89,11 @@ class DataRecorder(BaseApplication):
                     }
 
                     dict[symbol] = d
+
+                # TODO: check if the collection exists in DB
+                # print("posts" in db.collection_names())
             except Exception as e:
-                print(e)
+                self.logexception(e)
 
     def subscriber(self):
         """加载配置"""
@@ -134,14 +134,12 @@ class DataRecorder(BaseApplication):
         if tick.sourceType != MarketData.DATA_SRCTYPE_REALTIME:
             return
 
-        vtSymbol = tick.vtSymbol
-        if not vtSymbol in self._dictTicks :
+        if not tick.symbol in self._dictTicks :
             return
 
-        tblName = vtSymbol
-        if len(tick.exchange) >0:
-            tblName += '_'+tick.exchange
+        self.debug('OnTick:%s' % tick)
 
+        tblName = tick.vtSymbol
         self.enqueue(self._dbNameTick, tblName, tick)
         return #TODO: merge the Kline data by Tick if KLine data is not available 
 
@@ -197,14 +195,16 @@ class DataRecorder(BaseApplication):
                 # 使用insert模式更新数据，可能存在时间戳重复的情况，需要用户自行清洗
                 try:
                     self.dbInsert(dbName, collectionName, d)
+                    self.debug('DB %s[%s] inserted: %s' % (dbName, collectionName, d))
                 except DuplicateKeyError:
-                    self.logEvent(EVENT_DATARECORDER_LOG, u'键值重复插入失败，报错信息：%s' %traceback.format_exc())
+                    self.error('键值重复插入失败：%s' %traceback.format_exc())
             except Empty:
                 pass
             
     #----------------------------------------------------------------------
     def start(self):
         """启动"""
+
         self.active = True
         self.thread.start()
         

@@ -23,11 +23,19 @@ class MarketData(object):
     DATA_SRCTYPE_IMPORT     = 'import'
     DATA_SRCTYPE_BACKTEST   = 'backtest'
 
+    __lastId__ =100
+
     from abc import ABCMeta, abstractmethod
 
     #----------------------------------------------------------------------
     def __init__(self, eventChannel, settings, srcType=DATA_SRCTYPE_REALTIME):
         """Constructor"""
+
+        # the MarketData instance Id
+        self._id = settings.id("")
+        if len(self._id)<=0 :
+            MarketData.__lastId__ +=1
+            self._id = 'M%d' % BaseApplication.__lastId__
 
         self._eventCh = eventChannel
         self._sourceType = srcType
@@ -38,6 +46,10 @@ class MarketData(object):
         self.proxies = {}
     
     #----------------------------------------------------------------------
+    @property
+    def ident(self) :
+        return self.__class__.__name__ +":" + self._id
+
     @property
     def active(self):
         return self._active
@@ -108,6 +120,19 @@ class MarketData(object):
             return
 
         self._eventCh.put(event)
+
+    #----------------------------------------------------------------------
+    def debug(self, msg):
+        """开发时用"""
+        print ('DEBUG md[%s] %s' % (self.ident, msg))
+        
+    def info(self, msg):
+        """正常输出"""
+        print ('INFO md[%s] %s' % (self.ident, msg))
+
+    def error(self, msg):
+        """报错输出"""
+        print ('ERROR md[%s] %s' % (self.ident, msg))
     
  
 ########################################################################
@@ -115,13 +140,16 @@ class mdTickData(VtTickData):
     """Tick行情数据类"""
 
     #----------------------------------------------------------------------
-    def __init__(self, md):
+    def __init__(self, md, symbol =None):
         """Constructor"""
         super(mdTickData, self).__init__()
         
         self.exchange   = md._exchange
         self.sourceType = md._sourceType          # 数据来源类型
-    
+        if symbol:
+            self.symbol = symbol
+            self.vtSymbol = '.'.join([self.symbol, self.exchange])
+
 ########################################################################
 class mdKLineData(VtBarData):
     """K线数据"""

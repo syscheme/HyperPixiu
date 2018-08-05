@@ -136,7 +136,7 @@ class Account(object):
         # # 保存vtSymbol和策略实例映射的字典（用于推送tick数据）
         # # 由于可能多个strategy交易同一个vtSymbol，因此key为vtSymbol
         # # value为包含所有相关strategy对象的list
-        # self.tickStrategyDict = {}
+        # self._idxTickToStrategy = {}
         
         # # 保存vtOrderID和strategy对象映射的字典（用于推送order和trade数据）
         # # key为vtOrderID，value为strategy对象
@@ -651,11 +651,11 @@ class Account(object):
             self.strategyOrderDict[name] = set()
             
             # 保存Tick映射关系
-            if strategy.vtSymbol in self.tickStrategyDict:
-                l = self.tickStrategyDict[strategy.vtSymbol]
+            if strategy.vtSymbol in self._idxTickToStrategy:
+                l = self._idxTickToStrategy[strategy.vtSymbol]
             else:
                 l = []
-                self.tickStrategyDict[strategy.vtSymbol] = l
+                self._idxTickToStrategy[strategy.vtSymbol] = l
             l.append(strategy)
             
     #----------------------------------------------------------------------

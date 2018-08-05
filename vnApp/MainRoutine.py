@@ -210,7 +210,7 @@ class MainRoutine(object):
         #----------------------------------------------------------------------
         # from old 数据引擎
         # 保存数据的字典和列表
-        self._dickLatestTick = {}    # the latest tick of each symbol
+        self._dictLatestTick = {}    # the latest tick of each symbol
         self._dictLatestContract = {}
         self._dictLatestOrder = {}
         self._dictWorkingOrder = {}  # 可撤销委托
@@ -652,7 +652,7 @@ class MainRoutine(object):
     # def processTickEvent(self, event):
     #     """处理成交事件"""
     #     tick = event.dict_['data']
-    #     self._dickLatestTick[tick.vtSymbol] = tick    
+    #     self._dictLatestTick[tick.vtSymbol] = tick    
     
     # #----------------------------------------------------------------------
     # def processContractEvent(self, event):

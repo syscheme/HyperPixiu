@@ -59,6 +59,16 @@ class Strategy(object):
             for key in self.paramList:
                 if key in setting:
                     d[key] = setting[key]
+
+        # the instance Id
+        self._id = settings.id("")
+        if len(self._id)<=0 :
+            Account.__lastId__ +=1
+            self._id = '%s@%s' % (self.__class__.__name__, account.id)
+
+    @property
+    def id(self):
+        return self._id
     
     #----------------------------------------------------------------------
     def onInit(self):
@@ -224,12 +234,13 @@ class StrategyOfSymbol(Strategy):
         super(StrategyOfSymbol, self).__init__(trader, account, setting)
         self._symbol = symbol
 
-        # 设置策略的参数
-        if setting:
-            d = self.__dict__
-            for key in self.paramList:
-                if key in setting:
-                    d[key] = setting[key]
+        # the instance Id
+        if self._id != settings.id("") :
+            self._id += '.%s' % symbol
+
+    @property
+    def vtSymbol(self):
+        return self._symbol
 
     #----------------------------------------------------------------------
     def buy(self, price, volume, stop=False):

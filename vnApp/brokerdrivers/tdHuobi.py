@@ -1,10 +1,18 @@
+# encoding: UTF-8
+
 from ..BrokerDriver import *
 
 ########################################################################
 class tdHuobi(BrokerDriver):
     """交易API"""
+    # 常量定义
+
     HUOBI = 'huobi'
     HADAX = 'hadax'
+    HUOBI_API_HOST = "api.huobi.pro"
+    HADAX_API_HOST = "api.hadax.com"
+    LANG = 'zh-CN'
+    TIMEOUT = 5
     
     #----------------------------------------------------------------------
     def __init__(self, account, settings, mode=None):
@@ -22,10 +30,10 @@ class tdHuobi(BrokerDriver):
             self._proxies['https'] = prx
 
         # about the exchange
-        if self._settings.exchange('') == self.HUOBI:
-            self._hostname = HUOBI_API_HOST
+        if self._settings.exchange('') == self.HADAX:
+            self._hostname = self.HADAX_API_HOST
         else:
-            self._hostname = HADAX_API_HOST
+            self._hostname = self.HUOBI_API_HOST
             
         self._hosturl = 'https://%s' %self._hostname
 
@@ -457,3 +465,171 @@ class tdHuobi(BrokerDriver):
         print (reqid, data)
 
 
+########################################################################
+class tdHuobi_sim(tdHuobi):
+    ''' 
+    simulate the account ordres
+    '''
+    #----------------------------------------------------------------------
+    def __init__(self, account, settings, mode=None):
+        """Constructor"""
+        super(tdHuobi_virtual, self).__init__(account, settings, mode)
+
+    #----------------------------------------------------------------------
+    def getOrders(self, symbol, states, types=None, startDate=None, 
+                  endDate=None, from_=None, direct=None, size=None):
+        """查询委托"""
+        path = '/v1/order/orders'
+        
+        params = {
+            'symbol': symbol,
+            'states': states
+        }
+        
+        if types:
+            params['types'] = types
+        if startDate:
+            params['start-date'] = startDate
+        if endDate:
+            params['end-date'] = endDate        
+        if from_:
+            params['from'] = from_
+        if direct:
+            params['direct'] = direct
+        if size:
+            params['size'] = size        
+    
+        func = self.apiGet
+        callback = self.onGetOrders
+    
+        return self.addReq(path, params, func, callback)     
+
+    #----------------------------------------------------------------------
+    def getOpenOrders(self, accountId=None, symbol=None, side=None, size=None):
+        """查询当前帐号下未成交订单
+            “account_id” 和 “symbol” 需同时指定或者二者都不指定。如果二者都不指定，返回最多500条尚未成交订单，按订单号降序排列。
+        """
+        path = '/v1/order/openOrders'
+        
+        params = { # initial with default required params
+            #'account_id': accountId,
+            #'symbol': symbol,
+        }
+        
+        if symbol:
+            params['symbol'] = symbol
+            params['account_id'] = accountId
+
+        if side:
+            params['side'] = side
+
+        if size:
+            params['size'] = size        
+    
+        func = self.apiGet
+        callback = self.onGetOrders
+    
+        return self.addReq(path, params, func, callback)     
+    
+    #----------------------------------------------------------------------
+    def getMatchResults(self, symbol, types=None, startDate=None, 
+                  endDate=None, from_=None, direct=None, size=None):
+        """查询委托"""
+        path = '/v1/order/matchresults'
+
+        params = {
+            'symbol': symbol
+        }
+
+        if types:
+            params['types'] = types
+        if startDate:
+            params['start-date'] = startDate
+        if endDate:
+            params['end-date'] = endDate        
+        if from_:
+            params['from'] = from_
+        if direct:
+            params['direct'] = direct
+        if size:
+            params['size'] = size        
+
+        func = self.apiGet
+        callback = self.onGetMatchResults
+
+        return self.addReq(path, params, func, callback)   
+    
+    #----------------------------------------------------------------------
+    def getOrder(self, orderid):
+        """查询某一委托"""
+        path = '/v1/order/orders/%s' %orderid
+    
+        params = {}
+    
+        func = self.apiGet
+        callback = self.onGetOrder
+    
+        return self.addReq(path, params, func, callback)             
+    
+    #----------------------------------------------------------------------
+    def getMatchResult(self, orderid):
+        """查询某一委托"""
+        path = '/v1/order/orders/%s/matchresults' %orderid
+    
+        params = {}
+    
+        func = self.apiGet
+        callback = self.onGetMatchResult
+    
+        return self.addReq(path, params, func, callback)     
+    
+    #----------------------------------------------------------------------
+    def placeOrder(self, amount, symbol, type_, price=None, source=None):
+        """下单"""
+        if self._hostname == HUOBI_API_HOST:
+            path = '/v1/order/orders/place'
+        else:
+            path = '/v1/hadax/order/orders/place'
+        
+        params = {
+            'account-id': accountid,
+            'amount': amount,
+            'symbol': symbol,
+            'type': type_
+        }
+        
+        if price:
+            params['price'] = price
+        if source:
+            params['source'] = source     
+
+        func = self.apiPost
+        callback = self.onPlaceOrder
+
+        return self.addReq(path, params, func, callback)           
+    
+    #----------------------------------------------------------------------
+    def cancelOrder(self, orderid):
+        """撤单"""
+        path = '/v1/order/orders/%s/submitcancel' %orderid
+        
+        params = {}
+        
+        func = self.apiPost
+        callback = self.onCancelOrder
+
+        return self.addReq(path, params, func, callback)          
+    
+    #----------------------------------------------------------------------
+    def batchCancel(self, orderids):
+        """批量撤单"""
+        path = '/v1/order/orders/batchcancel'
+    
+        params = {
+            'order-ids': orderids
+        }
+    
+        func = self.apiPost
+        callback = self.onBatchCancel
+    
+        return self.addReq(path, params, func, callback)     

@@ -14,6 +14,8 @@ from pymongo.errors import ConnectionFailure
 
 from vnApp.MainRoutine import *
 from vnApp.BrokerDriver import *
+import vnApp.strategies as tg
+from vnApp.brokerdrivers import tdHuobi as td
 
 from vnpy.event import Event
 from vnpy.trader.vtGlobal import globalSetting
@@ -46,8 +48,9 @@ class Trader(BaseApplication):
         #--------------------
         # from old 数据引擎
         # 保存数据的字典和列表
-        self._dickLatestTick = {}         # the latest tick of each symbol
-        self._dickLatestKline1min = {}    #SSS the latest kline1min of each symbol
+
+        self._dictLatestTick = {}         # the latest tick of each symbol
+        self._dictLatestKline1min = {}    #SSS the latest kline1min of each symbol
         self._dictLatestContract = {}
         self._dictLatestOrder = {}
         self._dictWorkingOrder = {} # 可撤销委托
@@ -56,6 +59,8 @@ class Trader(BaseApplication):
         self._defaultAccId = None
         # inside of Account self._dictPositions= {}
         self._lstErrors = []
+
+        self.debug('local data cache initialized')
         
         # 持仓细节相关
         # inside of Account self._dictDetails = {}                        # vtSymbol:PositionDetail
@@ -75,7 +80,7 @@ class Trader(BaseApplication):
         # 保存vtSymbol和策略实例映射的字典（用于推送tick数据）
         # 由于可能多个strategy交易同一个vtSymbol，因此key为vtSymbol
         # value为包含所有相关strategy对象的list
-        self.tickStrategyDict = {}
+        self._idxTickToStrategy = {}
         
         # 保存vtOrderID和strategy对象映射的字典（用于推送order和trade数据）
         # key为vtOrderID，value为strategy对象
@@ -98,6 +103,13 @@ class Trader(BaseApplication):
         # 本地停止单编号计数
         self.stopOrderCount = 0
         # stopOrderID = STOPORDERPREFIX + str(stopOrderCount)
+
+        # test hardcoding
+        account = Account(self, td.tdHuobi, self._settings.account)
+        if account:
+            self.adoptAccount(account)
+
+        self.strategies_LoadAll(self._settings.strategies)
         
     #----------------------------------------------------------------------
     # access to the Account
@@ -143,7 +155,7 @@ class Trader(BaseApplication):
     def getTick(self, vtSymbol):
         """查询行情对象"""
         try:
-            return self._dickLatestTick[vtSymbol]
+            return self._dictLatestTick[vtSymbol]
         except KeyError:
             return None        
     
@@ -321,10 +333,10 @@ class Trader(BaseApplication):
         d = event.dict_['data']
         if not d.symbol in self._interests:
             return
-        kline = copy(d)
+        kline = copy.copy(d)
 
         # step 1. cache into the latest, lnf DataEngine
-        self._dickLatestKline1min[kline.symbol] = kline
+        self._dictLatestKline1min[kline.symbol] = kline
         pass
 
     @abstractmethod
@@ -339,7 +351,7 @@ class Trader(BaseApplication):
 
         self.debug('eventHdl_Tick 1')
         # step 1. cache into the latest, lnf DataEngine
-        self._dickLatestTick[tick.vtSymbol] = tick
+        self._dictLatestTick[tick.vtSymbol] = tick
 
         # step 2. 收到tick行情后，先处理本地停止单（检查是否要立即发出） lnf ctaEngine
         self.debug('eventHdl_Tick2')
@@ -347,7 +359,7 @@ class Trader(BaseApplication):
 
         # step 3. 推送tick到对应的策略实例进行处理 lnf ctaEngine
         self.debug('eventHdl_Tick3')
-        if tick.vtSymbol in self.tickStrategyDict:
+        if tick.vtSymbol in self._idxTickToStrategy:
             # tick时间可能出现异常数据，使用try...except实现捕捉和过滤
             try:
                 # 添加datetime字段
@@ -358,7 +370,7 @@ class Trader(BaseApplication):
                 return
                 
             # 逐个推送到策略实例中
-            l = self.tickStrategyDict[tick.vtSymbol]
+            l = self._idxTickToStrategy[tick.vtSymbol]
             for strategy in l:
                 self._stg_call(strategy, strategy.onTick, tick)
     
@@ -453,17 +465,17 @@ class Trader(BaseApplication):
     #----------------------------------------------------------------------
     #  Strategy methods
     #----------------------------------------------------------------------
-    def strategies_Load(self):
+    def strategies_LoadAll(self, settingList):
         """读取策略配置"""
-        with open(self.settingfilePath) as f:
-            l = json.load(f)
+        self.debug('loading all strategies')
+        for s in jsoncfg.expect_array(settingList):
+            self._stg_load(s)
             
-            for setting in l:
-                self._stg_load(setting)
+        self.debug('loaded strategies: %s' % self._dictStrategies.keys())
 
     def strategies_List(self):
         """查询所有策略名称"""
-        return self.strategyDict.keys()        
+        return self._dictStrategies.keys()        
 
     def strategies_Init(self):
         """全部初始化"""
@@ -534,43 +546,37 @@ class Trader(BaseApplication):
 
     def _stg_load(self, setting):
         """载入策略"""
-        try:
-            name = setting['name']
-            className = setting['className']
-        except Exception:
-            msg = traceback.format_exc()
-            self.writeCtaLog(u'载入策略出错：%s' %msg)
-            return
-        
+        className = setting.className()
+
         # 获取策略类
-        strategyClass = STRATEGY_CLASS.get(className, None)
+        strategyClass = tg.STRATEGY_CLASS.get(className, None)
         if not strategyClass:
-            self.writeCtaLog(u'找不到策略类：%s' %className)
+            self.error(u'找不到策略类：%s' %className)
             return
         
-        # 防止策略重名
-        if name in self.strategyDict:
-            self.writeCtaLog(u'策略实例重名：%s' %name)
+        # 创建策略实例
+        strategy = strategyClass(self, self.account, setting)
+        if id in self._dictStrategies:  # 防止策略重名
+            self.error(u'策略实例重名：%s' %id)
+            return
+
+        self._dictStrategies[strategy.id] = strategy
+        
+        # 创建委托号列表
+        self.strategyOrderDict[strategy.id] = set()
+        
+        # 保存Tick映射关系
+        if strategy.vtSymbol in self._idxTickToStrategy:
+            l = self._idxTickToStrategy[strategy.vtSymbol]
         else:
-            # 创建策略实例
-            strategy = strategyClass(self, setting)  
-            self.strategyDict[name] = strategy
-            
-            # 创建委托号列表
-            self.strategyOrderDict[name] = set()
-            
-            # 保存Tick映射关系
-            if strategy.vtSymbol in self.tickStrategyDict:
-                l = self.tickStrategyDict[strategy.vtSymbol]
-            else:
-                l = []
-                self.tickStrategyDict[strategy.vtSymbol] = l
-            l.append(strategy)
+            l = []
+            self._idxTickToStrategy[strategy.vtSymbol] = l
+        l.append(strategy)
 
     def _stg_allVars(self, name):
         """获取策略当前的变量字典"""
-        if name in self.strategyDict:
-            strategy = self.strategyDict[name]
+        if name in self._dictStrategies:
+            strategy = self._dictStrategies[name]
             varDict = OrderedDict()
             
             for key in strategy.varList:
@@ -578,13 +584,13 @@ class Trader(BaseApplication):
             
             return varDict
         else:
-            self.writeCtaLog(u'策略实例不存在：' + name)    
+            self.error(u'策略实例不存在：' + name)    
             return None
     
     def _stg_allParams(self, name):
         """获取策略的参数字典"""
-        if name in self.strategyDict:
-            strategy = self.strategyDict[name]
+        if name in self._dictStrategies:
+            strategy = self._dictStrategies[name]
             paramDict = OrderedDict()
             
             for key in strategy.paramList:  
@@ -592,7 +598,7 @@ class Trader(BaseApplication):
             
             return paramDict
         else:
-            self.writeCtaLog(u'策略实例不存在：' + name)    
+            self.error(u'策略实例不存在：' + name)    
             return None
 
     def _stg_call(self, strategy, func, params=None):
@@ -610,7 +616,7 @@ class Trader(BaseApplication):
             # 发出日志
             content = '\n'.join([u'策略%s触发异常已停止' %strategy.name,
                                 traceback.format_exc()])
-            self.writeCtaLog(content)
+            self.error(content)
     #----------------------------------------------------------------------
 
 ########################################################################
@@ -907,12 +913,12 @@ class PositionDetail(object):
                 l = []
                 
                 if tdAvailable > 0:
-                    reqTd = copy(req)
+                    reqTd = copy.copy(req)
                     reqTd.offset = OFFSET_CLOSETODAY
                     reqTd.volume = tdAvailable
                     l.append(reqTd)
                     
-                reqYd = copy(req)
+                reqYd = copy.copy(req)
                 reqYd.offset = OFFSET_CLOSEYESTERDAY
                 reqYd.volume = req.volume - tdAvailable
                 l.append(reqYd)
@@ -948,7 +954,7 @@ class PositionDetail(object):
                 l = []
                 
                 if ydAvailable > 0:
-                    reqClose = copy(req)
+                    reqClose = copy.copy(req)
                     if self.exchange is EXCHANGE_SHFE:
                         reqClose.offset = OFFSET_CLOSEYESTERDAY
                     else:
@@ -957,7 +963,7 @@ class PositionDetail(object):
                     
                     l.append(reqClose)
                     
-                reqOpen = copy(req)
+                reqOpen = copy.copy(req)
                 reqOpen.offset = OFFSET_OPEN
                 reqOpen.volume = req.volume - ydAvailable
                 l.append(reqOpen)

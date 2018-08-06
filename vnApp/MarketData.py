@@ -168,11 +168,13 @@ class mdKLineData(VtBarData):
     """K线数据"""
 
     #----------------------------------------------------------------------
-    def __init__(self, md):
+    def __init__(self, md, symbol =None):
         """Constructor"""
         super(mdKLineData, self).__init__()
         
         self.exchange   = md._exchange
         self.sourceType = md._sourceType          # 数据来源类型
-
+        if symbol:
+            self.symbol = symbol
+            self.vtSymbol = '.'.join([self.symbol, self.exchange])
 

@@ -61,10 +61,10 @@ class Strategy(object):
                     d[key] = setting[key]
 
         # the instance Id
-        self._id = settings.id("")
+        self._id = setting.id('')
         if len(self._id)<=0 :
             Account.__lastId__ +=1
-            self._id = '%s@%s' % (self.__class__.__name__, account.id)
+            self._id = '%s@%s' % (self.__class__.__name__, account.ident)
 
     @property
     def id(self):
@@ -235,7 +235,7 @@ class StrategyOfSymbol(Strategy):
         self._symbol = symbol
 
         # the instance Id
-        if self._id != settings.id("") :
+        if self._id != setting.id("") :
             self._id += '.%s' % symbol
 
     @property

@@ -80,20 +80,17 @@ class Trader(BaseApplication):
         # 保存vtSymbol和策略实例映射的字典（用于推送tick数据）
         # 由于可能多个strategy交易同一个vtSymbol，因此key为vtSymbol
         # value为包含所有相关strategy对象的list
-        self._idxTickToStrategy = {}
+        self._idxSymbolToStrategy = {}
         
         # 保存vtOrderID和strategy对象映射的字典（用于推送order和trade数据）
         # key为vtOrderID，value为strategy对象
-        self._idxOrderToStategy = {}     
+        self._idxOrderToStategy = {}
+        self._idxStrategyToOrder = {}
 
         # # 本地停止单字典
         # # key为stopOrderID，value为stopOrder对象
         # self.stopOrderDict = {}             # 停止单撤销后不会从本字典中删除
         # self.workingStopOrderDict = {}      # 停止单撤销后会从本字典中删除
-        
-        # 保存策略名称和委托号列表的字典
-        # key为name，value为保存orderID（限价+本地停止）的集合
-        self._ordersOfStrategy = {}
         
         # 成交号集合，用来过滤已经收到过的成交推送
         # inside of Account self.tradeSet = set()
@@ -135,7 +132,7 @@ class Trader(BaseApplication):
 
         self.debug('collected %s interested symbols, adopting strategies' % len(self._dictObjectives))
 
-        # self.strategies_LoadAll(self._settings.strategies)
+        self.strategies_LoadAll(self._settings.strategies)
         
     #----------------------------------------------------------------------
     # access to the Account
@@ -337,60 +334,83 @@ class Trader(BaseApplication):
         """TODO: 处理行情推送"""
         self.debug('eventHdl_KLine1min')
         d = event.dict_['data']
-        tokens = (d.symbol.split('.'))[0]
+        tokens = (d.vtSymbol.split('.'))
         symbol = tokens[0]
         ds =""
-        if len(tokens) >0:
+        if len(tokens) >1:
             ds = tokens[1]
-        if not symbol in self._dictObjectives or ds != self._dictObjectives['dsTick']:
+        if not symbol in self._dictObjectives or ds != self._dictObjectives[symbol]['ds1min']:
             return # ignore those not interested
 
         kline = copy.copy(d)
 
         # step 1. cache into the latest, lnf DataEngine
-        self._dictLatestKline1min[kline.symbol] = kline
-        pass
+        self.debug('eventHdl_KLine1min(%s)' % kline.vtSymbol)
+        self._dictLatestKline1min[symbol] = kline
+
+        # step 2. 收到tick行情后，先处理本地停止单（检查是否要立即发出） lnf ctaEngine
+        self.debug('eventHdl_KLine1min(%s) processing stop orders' % kline.vtSymbol)
+        self.processStopOrder(kline)
+
+        # step 3. 推送tick到对应的策略实例进行处理 lnf ctaEngine
+        if symbol in self._idxSymbolToStrategy:
+            # tick时间可能出现异常数据，使用try...except实现捕捉和过滤
+            try:
+                # 添加datetime字段
+                if not kline.datetime:
+                    kline.datetime = datetime.strptime(' '.join([tick.date, tick.time]), '%Y%m%d %H:%M:%S.%f')
+            except ValueError:
+                self.error(traceback.format_exc())
+                return
+                
+            # 逐个推送到策略实例中
+            l = self._idxSymbolToStrategy[symbol]
+            self.debug('eventHdl_KLine1min(%s) dispatching to %d strategies' % (kline.vtSymbol, len(l)))
+            for strategy in l:
+                self._stg_call(strategy, strategy.onKline, kline)
+
+        self.debug('eventHdl_KLine1min(%s) done' % kline.vtSymbol)
 
     @abstractmethod
     def eventHdl_Tick(self, event):
         """处理行情推送"""
         d = event.dict_['data']
-        tokens = (d.symbol.split('.'))[0]
+        tokens = (d.vtSymbol.split('.'))
         symbol = tokens[0]
         ds =""
-        if len(tokens) >0:
+        if len(tokens) >1:
             ds = tokens[1]
-        if not symbol in self._dictObjectives or ds != self._dictObjectives['ds1min']:
+        if not symbol in self._dictObjectives or ds != self._dictObjectives[symbol]['ds1min']:
             return # ignore those not interested
 
         tick = copy.copy(d)
 
-        self.debug('eventHdl_Tick 1')
+        self.debug('eventHdl_Tick(%s)' % tick.vtSymbol)
         # step 1. cache into the latest, lnf DataEngine
-        self._dictLatestTick[tick.vtSymbol] = tick
+        self._dictLatestTick[symbol] = tick
 
         # step 2. 收到tick行情后，先处理本地停止单（检查是否要立即发出） lnf ctaEngine
-        self.debug('eventHdl_Tick2')
+        self.debug('eventHdl_Tick(%s) processing stop orders' % tick.vtSymbol)
         self.processStopOrder(tick)
 
         # step 3. 推送tick到对应的策略实例进行处理 lnf ctaEngine
-        self.debug('eventHdl_Tick3')
-        if tick.vtSymbol in self._idxTickToStrategy:
+        if symbol in self._idxSymbolToStrategy:
             # tick时间可能出现异常数据，使用try...except实现捕捉和过滤
             try:
                 # 添加datetime字段
                 if not tick.datetime:
                     tick.datetime = datetime.strptime(' '.join([tick.date, tick.time]), '%Y%m%d %H:%M:%S.%f')
             except ValueError:
-                self.writeCtaLog(traceback.format_exc())
+                self.error(traceback.format_exc())
                 return
                 
             # 逐个推送到策略实例中
-            l = self._idxTickToStrategy[tick.vtSymbol]
+            l = self._idxSymbolToStrategy[symbol]
+            self.debug('eventHdl_Tick(%s) dispatching to %d strategies' % (tick.vtSymbol, len(l)))
             for strategy in l:
                 self._stg_call(strategy, strategy.onTick, tick)
     
-        self.debug('eventHdl_Tick done')
+        self.debug('eventHdl_Tick(%s) done' % tick.vtSymbol)
     ### eventTick from Account ----------------
     @abstractmethod
     def eventHdl_Order(self, event):
@@ -416,7 +436,7 @@ class Trader(BaseApplication):
             
             # 如果委托已经完成（拒单、撤销、全成），则从活动委托集合中移除
             if order.status == self.STATUS_FINISHED:
-                s = self._ordersOfStrategy[strategy.name]
+                s = self._idxStrategyToOrder[strategy.name]
                 if vtOrderID in s:
                     s.remove(vtOrderID)
             
@@ -520,7 +540,7 @@ class Trader(BaseApplication):
     def _stg_init(self, name):
         """初始化策略"""
         if name in self._dictStrategies:
-            self.writeCtaLog(u'策略实例不存在：%s' %name)    
+            self.error(u'策略实例不存在：%s' %name)    
 
         strategy = self._dictStrategies[name]
         if not strategy.inited:
@@ -532,7 +552,7 @@ class Trader(BaseApplication):
     def _stg_start(self, name):
         """启动策略"""
         if name in self._dictStrategies:
-            self.writeCtaLog(u'策略实例不存在：%s' %name)    
+            self.error(u'策略实例不存在：%s' %name)    
 
         strategy = self._dictStrategies[name]
         if strategy.inited and not strategy.trading:
@@ -542,7 +562,7 @@ class Trader(BaseApplication):
     def _stg_stop(self, name):
         """停止策略"""
         if name in self._dictStrategies:
-            self.writeCtaLog(u'策略实例不存在：%s' %name)    
+            self.error(u'策略实例不存在：%s' %name)    
 
         strategy = self._dictStrategies[name]
             
@@ -561,7 +581,19 @@ class Trader(BaseApplication):
                     self.cancelStopOrder(stopOrderID)   
 
     def _stg_load(self, setting):
-        """载入策略"""
+        """载入策略, setting schema:
+            {
+                "name" : "BBand", // strategy name equals to class name
+                "symbols": ["ethusdt"],
+                "weights": { // weights to affect decisions, in range of [0-100] each
+                    "long" : 100, // optimisti
+                    "short": 100, // pessimistic
+                },
+
+                // the following is up to the stategy class
+            },
+        """
+
         className = setting.name()
 
         # 获取策略类
@@ -571,23 +603,38 @@ class Trader(BaseApplication):
             return
         
         # 创建策略实例
-        strategy = strategyClass(self, self.account, setting)
-        if strategy.id in self._dictStrategies:  # 防止策略重名
-            self.error(u'策略实例重名：%s' %id)
-            return
+        symbols = []
+        for s in jsoncfg.expect_array(setting.symbols):
+            symbol = s('')
+            if len(symbol) <=0:
+                continue
+            if '*' == symbol:
+                symbols = []
+            symbols.append(symbol)
+        if len(symbols) <=0:
+            symbols = self._dictObjectives.keys()
+        
+        for s in symbols:
+            strategy = strategyClass(self, s, self.account, setting)
+            if strategy.id in self._dictStrategies:  # 防止策略重名
+                self.error(u'策略实例重名：%s' %id)
+                continue
 
-        self._dictStrategies[strategy.id] = strategy
-        
-        # 创建委托号列表
-        self.strategyOrderDict[strategy.id] = set()
-        
-        # 保存Tick映射关系
-        if strategy.vtSymbol in self._idxTickToStrategy:
-            l = self._idxTickToStrategy[strategy.vtSymbol]
-        else:
-            l = []
-            self._idxTickToStrategy[strategy.vtSymbol] = l
-        l.append(strategy)
+            self._dictStrategies[strategy.id] = {
+                'weights' : setting.weights({}),
+                'strategy' : strategy
+            }
+
+            # 创建委托号列表
+            self._idxStrategyToOrder[strategy.id] = set()
+
+            # 保存Tick映射关系
+            if s in self._idxSymbolToStrategy:
+                l = self._idxSymbolToStrategy[s]
+            else:
+                l = []
+                self._idxSymbolToStrategy[s] = l
+            l.append(strategy)
 
     def _stg_allVars(self, name):
         """获取策略当前的变量字典"""

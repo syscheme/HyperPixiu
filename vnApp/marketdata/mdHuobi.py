@@ -78,6 +78,9 @@ class mdHuobi(MarketData):
         self._dictSubscriptions = {}
         self._dictTicks = {}
         
+        # huobi will repeat message for a same KLine, so to merge and only post the last
+        self._dictKLineLatest = {}
+        
         self._reqid = 0
         self.thread = Thread(target=self._run)
         self._exchange = settings.exchange('')
@@ -410,19 +413,17 @@ class mdHuobi(MarketData):
 
             k = self.subscribeKey(symbol, eventType)
 
-            if k in self._dictCh:
-                latest = self._dictCh[k]
+            if k in self._dictKLineLatest:
+                latest = self._dictKLineLatest[k]
                 if d['stamp']['id'] > latest['stamp']['id'] :
                     t = latest['tick']
 
-                    edata = mdKLineData(self)
-                    edata.vtSymbol   = edata.symbol = symbol
+                    edata = mdKLineData(self, symbol)
                     edata.open = t['open']
                     edata.close = t['close']
                     edata.high = t['high']
                     edata.low = t['low']
                     edata.volume = t['vol']
-
 
                     ts = latest['stamp']['id']
                     edata.date = ts.date().strftime('%Y%m%d')
@@ -431,7 +432,7 @@ class mdHuobi(MarketData):
                     event = Event(type_=eventType)
                     event.dict_['data'] = edata
 
-            self._dictCh[k] = d
+            self._dictKLineLatest[k] = d
             if event:
                 self.postMarketEvent(event)
             return

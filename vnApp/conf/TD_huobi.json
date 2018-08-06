@@ -8,7 +8,7 @@
 
     "marketdata": [
         {
-            "id": "hadax",
+            "id": "huobi",
             "source": "Huobi", // sepecify the MarketData source class
 
             // the following is up to the MarketData class
@@ -23,13 +23,13 @@
         "objectives": [
             { 
                 "symbol": "eosusdt", 
-                "dsTick": "hadax", 
-                "ds1min": "hadax",  // sample "ds1min":"hadax_t2k1", in the case that we don't subscribe Kline directly from the market but take those merged from ticks
+                "dsTick": "huobi", 
+                "ds1min": "huobi",  // sample "ds1min":"hadax_t2k1", in the case that we don't subscribe Kline directly from the market but take those merged from ticks
             }, 
             { 
                 "symbol": "ethusdt", 
-                "dsTick": "hadax", 
-                "ds1min": "hadax", // empty at ds1min means the trader only replies on ticks for this symbol
+                "dsTick": "huobi", 
+                "ds1min": "huobi", // empty at ds1min means the trader only replies on ticks for this symbol
             }, 
         ],
 

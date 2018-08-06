@@ -350,7 +350,7 @@ class Trader(BaseApplication):
 
         # step 2. 收到tick行情后，先处理本地停止单（检查是否要立即发出） lnf ctaEngine
         self.debug('eventHdl_KLine1min(%s) processing stop orders' % kline.vtSymbol)
-        self.processStopOrder(kline)
+        self._procOrdersByKLine(kline)
 
         # step 3. 推送tick到对应的策略实例进行处理 lnf ctaEngine
         if symbol in self._idxSymbolToStrategy:
@@ -391,7 +391,7 @@ class Trader(BaseApplication):
 
         # step 2. 收到tick行情后，先处理本地停止单（检查是否要立即发出） lnf ctaEngine
         self.debug('eventHdl_Tick(%s) processing stop orders' % tick.vtSymbol)
-        self.processStopOrder(tick)
+        self._procOrdersByTick(tick)
 
         # step 3. 推送tick到对应的策略实例进行处理 lnf ctaEngine
         if symbol in self._idxSymbolToStrategy:
@@ -494,7 +494,27 @@ class Trader(BaseApplication):
         detail.updatePosition(pos)                
         
     #----------------------------------------------------------------------
-    def processStopOrder(self, tick):
+    @abstractmethod    # usually back test will overwrite this
+    def _procOrdersByKLine(self, kline):
+        """收到行情后处理本地停止单（检查是否要立即发出）"""
+        self.processStopOrdersByKLine(kline)
+        pass
+
+    @abstractmethod    # usually back test will overwrite this
+    def _procOrdersByTick(self, tick):
+        """收到行情后处理本地停止单（检查是否要立即发出）"""
+        self.processStopOrdersByTick(tick)
+        pass
+
+    # normal Trader cares StopOrders
+    @abstractmethod
+    def processStopOrdersByTick(self, tick):
+        """收到行情后处理本地停止单（检查是否要立即发出）"""
+        pass
+
+    # normal Trader cares StopOrders
+    @abstractmethod
+    def processStopOrdersByKLine(self, kline):
         """收到行情后处理本地停止单（检查是否要立即发出）"""
         pass
 
@@ -681,6 +701,21 @@ class Trader(BaseApplication):
                                 traceback.format_exc()])
             self.error(content)
     #----------------------------------------------------------------------
+    def ordersOfStrategy(self, strategyId, symbol=None):
+        if not strategyId in self._idxStrategyToOrder :
+            return []
+        l = self._idxStrategyToOrder[strategyId]
+        if not symbol:
+            return l
+        
+        ret = []
+        for o in l:
+            if o.symbol == symbol:
+                ret.append(o)
+        return ret
+
+
+
 
 ########################################################################
 class PositionDetail(object):

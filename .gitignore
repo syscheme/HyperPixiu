@@ -31,8 +31,6 @@ Huobi.json
 # 本地持久化文件
 *.vn
 
-
-
 # 其他文件
 *.dump
 *.vssettings
@@ -44,6 +42,15 @@ Huobi.json
 *.temp
 *.vt
 *.log
+temp/*
+tmp/*
+log/*
+logs/*
+*.log
+*~
+*.tar.*
+*.zip
+Untitled*.*
 
 vn.ctp/build/*
 vn.lts/build/*

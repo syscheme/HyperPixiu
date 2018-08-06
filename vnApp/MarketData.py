@@ -5,6 +5,8 @@ from __future__ import division
 from vnpy.trader.vtConstant import *
 from vnpy.trader.vtObject import VtBarData, VtTickData
 
+from abc import ABCMeta, abstractmethod
+
 ########################################################################
 class MarketData(object):
     # Market相关events
@@ -28,7 +30,7 @@ class MarketData(object):
     from abc import ABCMeta, abstractmethod
 
     #----------------------------------------------------------------------
-    def __init__(self, eventChannel, settings, srcType=DATA_SRCTYPE_REALTIME):
+    def __init__(self, mainRoutine, settings, srcType=DATA_SRCTYPE_REALTIME):
         """Constructor"""
 
         # the MarketData instance Id
@@ -37,7 +39,8 @@ class MarketData(object):
             MarketData.__lastId__ +=1
             self._id = 'M%d' % BaseApplication.__lastId__
 
-        self._eventCh = eventChannel
+        self._mr = mainRoutine
+        self._eventCh = mainRoutine._eventChannel
         self._sourceType = srcType
 
         self._active = False
@@ -68,6 +71,10 @@ class MarketData(object):
         return self.active
 
     @abstractmethod
+    def close(self):
+        raise NotImplementedError
+
+    @abstractmethod
     def start(self):
         """连接"""
         self.connect()
@@ -82,8 +89,7 @@ class MarketData(object):
         """停止"""
         if self._active:
             self._active = False
-
-        raise NotImplementedError
+            self.close()
         
     #----------------------------------------------------------------------
     def subscribeKey(self, symbol, eventType):
@@ -131,23 +137,64 @@ class MarketData(object):
             return
 
         self._eventCh.put(event)
-        self.info('posted %s[%s]' % (event.type_, event.dict_['data'].symbol))
+        self.info('posted %s%s' % (event.type_, event.dict_['data'].symbol))
 
-    #----------------------------------------------------------------------
+    #---logging -----------------------
     def debug(self, msg):
-        """开发时用"""
-    #    print ('DEBUG md[%s] %s' % (self.ident, msg))
-        pass
+        self._mr.debug('MD['+self.ident +'] ' + msg)
         
     def info(self, msg):
         """正常输出"""
-        print ('INFO md[%s] %s' % (self.ident, msg))
+        self._mr.info('MD['+self.ident +'] ' + msg)
 
+    def warn(self, msg):
+        """警告信息"""
+        self._mr.warn('MD['+self.ident +'] ' + msg)
+        
     def error(self, msg):
         """报错输出"""
-        print ('ERROR md[%s] %s' % (self.ident, msg))
+        self._mr.error('MD['+self.ident +'] ' + msg)
+        
+    def logexception(self, ex):
+        """报错输出+记录异常信息"""
+        self._mr.logexception('MD['+self.ident +'] %s: %s' % (ex, traceback.format_exc()))
     
- 
+ ########################################################################
+class ThreadedMd(object):
+    #----------------------------------------------------------------------
+    def __init__(self, marketData):
+        """Constructor"""
+        self._md = marketData
+        self.thread = Thread(target=self._run)
+
+    #----------------------------------------------------------------------
+    def _run(self):
+        """执行连接 and receive"""
+        while self._md._active:
+            try :
+                nextSleep = - self._md.step()
+                if nextSleep >0:
+                    sleep(nextSleep)
+            except Exception as ex:
+                self._md.error('ThreadedMd::step() excepton: %s' % ex)
+        self._md.info('ThreadedMd exit')
+
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def start(self):
+        self._md.start()
+        self.thread.start()
+        self._md.debug('ThreadedMd starts')
+        return self._md._active
+
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def stop(self):
+        self._md.stop()
+        self.thread.join()
+        self._md.info('ThreadedMd stopped')
+    
+
 ########################################################################
 class mdTickData(VtTickData):
     """Tick行情数据类"""

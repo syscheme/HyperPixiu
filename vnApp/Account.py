@@ -209,16 +209,16 @@ class Account(object):
         self.cashChange(dAvail, dCap)
 
     @abstractmethod
-    def cancelAll(self, name):
-        if self._dvrBroker == None:
-            raise NotImplementedError
-        self._dvrBroker.cancelAll(name)
-        
-    @abstractmethod
     def cancelOrder(self, vtOrderID):
         if self._dvrBroker == None:
             raise NotImplementedError
         self._dvrBroker.cancelOrder(vtOrderID)
+
+    @abstractmethod
+    def batchCancel(self, orderids):
+        if self._dvrBroker == None:
+            raise NotImplementedError
+        self._dvrBroker.batchCancel(orderids)
 
     @abstractmethod
     def cancelStopOrder(self, stopOrderID): raise NotImplementedError

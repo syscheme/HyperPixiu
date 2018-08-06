@@ -15,6 +15,17 @@
             "exchange": "huobi",
             "proxy": "localhost:8118",
         },
+        {
+            "id": "backtest",
+            "source": "Backtest",
+
+            // the following is up to the MarketData class
+            "sourceDB": "dr1min",
+            "exchange": "huobi", // the original exchange
+            "events": {
+                "tick": "True", // to trigger tick events
+            }
+        },
     ],
 
     "trader": {

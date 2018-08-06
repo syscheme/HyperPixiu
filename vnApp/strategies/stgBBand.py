@@ -146,6 +146,7 @@ class stgBBand(StrategyOfSymbol):
         """收到X分钟K线"""
 
         # 全撤之前发出的委托
+        self.log(u'onXminBar() cancelling all previous orders')
         self.cancelAll()
 
         cash, cashTotal = self.account.cashAmount()
@@ -154,14 +155,15 @@ class stgBBand(StrategyOfSymbol):
             return
     
         # 保存K线数据
+        self.log(u'onXminBar() caching K lines')
         am = self.am
-        
         am.updateBar(bar)
         
         if not am.inited:
             return
 
         # 计算指标数值
+        self.log(u'onXminBar() evaluating factors')
         self._lastCCI, self._lastATR = self.cciValue, self.atrValue
 
         if self.pos ==0:
@@ -264,6 +266,7 @@ class stgBBand(StrategyOfSymbol):
         #         self.sell(bar.close-0.01, abs(self.pos), False)
     
         # 同步数据到数据库
+        self.log(u'onXminBar() saving the issue events')
         self.saveSyncData()        
     
         # 发出状态更新事件

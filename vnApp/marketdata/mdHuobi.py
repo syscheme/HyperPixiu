@@ -68,10 +68,10 @@ class mdHuobi(MarketData):
     #----------------------------------------------------------------------
     # setting schema
     # {'exchange':HADAX, 'proxies':{'host': 'url' }} } 
-    def __init__(self, eventChannel, settings):
+    def __init__(self, mainRoutine, settings):
         """Constructor"""
 
-        super(mdHuobi, self).__init__(eventChannel, settings, MarketData.DATA_SRCTYPE_REALTIME)
+        super(mdHuobi, self).__init__(mainRoutine, settings, MarketData.DATA_SRCTYPE_REALTIME)
 
         self.ws = None
         self.url = ''
@@ -82,7 +82,7 @@ class mdHuobi(MarketData):
         self._dictKLineLatest = {}
         
         self._reqid = 0
-        self.thread = Thread(target=self._run)
+        # self.thread = Thread(target=self._run)
         self._exchange = settings.exchange('')
         if self._exchange == self.HADAX:
             hostname = HADAX_API_HOST
@@ -93,27 +93,27 @@ class mdHuobi(MarketData):
         self.url = 'wss://%s/ws' % hostname
         self._proxy = settings.proxy('')
 
-    #----------------------------------------------------------------------
-    def _run(self):
-        """执行连接 and receive"""
-        while self._active:
-            try :
-                if self.step() <0:
-                    self.onError(u'等待3秒后再次重连')
-                    sleep(3)
-            except Exception as ex:
-                self.onError(u'行情服务器step err: %s' % ex)
+    # #----------------------------------------------------------------------
+    # def _run(self):
+    #     """执行连接 and receive"""
+    #     while self._active:
+    #         try :
+    #             if self.step() <0:
+    #                 self.onError(u'等待3秒后再次重连')
+    #                 sleep(3)
+    #         except Exception as ex:
+    #             self.onError(u'行情服务器step err: %s' % ex)
 
     
-    #----------------------------------------------------------------------
-    def start(self):
-        """连接"""
-        self.connect()
+    # #----------------------------------------------------------------------
+    # def start(self):
+    #     """连接"""
+    #     self.connect()
 
-        self._active = True
-        self.thread.start()
+    #     self._active = True
+    #     self.thread.start()
             
-        return self.active
+    #     return self.active
 
     def connect(self):
         """连接"""
@@ -159,12 +159,13 @@ class mdHuobi(MarketData):
                 self.onError(u'数据分发错误：%s'  %ex)
 
         return c
+
     #----------------------------------------------------------------------
     def close(self):
         """停止"""
         if self._active:
             self._active = False
-            self.thread.join()
+            # self.thread.join()
             self.ws.close()
         
     #----------------------------------------------------------------------

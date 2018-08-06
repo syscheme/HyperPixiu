@@ -25,6 +25,13 @@ from vnpy.trader.vtGateway import *
 from vnpy.trader.language import text
 from vnpy.trader.vtFunction import getTempPath
 
+# 日志级别
+LOGLEVEL_DEBUG    = logging.DEBUG
+LOGLEVEL_INFO     = logging.INFO
+LOGLEVEL_WARN     = logging.WARN
+LOGLEVEL_ERROR    = logging.ERROR
+LOGLEVEL_CRITICAL = logging.CRITICAL
+
 import jsoncfg # pip install json-cfg
 
 ########################################################################
@@ -46,10 +53,23 @@ class BaseApplication(object):
             BaseApplication.__lastId__ +=1
             self._id = 'P%d' % BaseApplication.__lastId__
 
+        # 日志级别函数映射
+        self._loglevelFunctionDict = {
+            LOGLEVEL_DEBUG:    self.debug,
+            LOGLEVEL_INFO:     self.info,
+            LOGLEVEL_WARN:     self.warn,
+            LOGLEVEL_ERROR:    self.error,
+            LOGLEVEL_CRITICAL: self.critical,
+        }
+
     #----------------------------------------------------------------------
     @property
     def ident(self) :
         return self.__class__.__name__ +":" + self._id
+
+    @property
+    def app(self) : # for the thread wrapper
+        return self
 
     @property
     def mainRoutine(self) :
@@ -74,7 +94,13 @@ class BaseApplication(object):
             self._engine._eventChannel.register(event, funcCallback)
 
     #---logging -----------------------
-    @abstractmethod
+    def log(self, level, msg):
+        if not level in self._loglevelFunctionDict : 
+            return
+        
+        function = self._loglevelFunctionDict[level] # 获取日志级别对应的处理函数
+        function(msg)
+
     def debug(self, msg):
         self._engine.debug('APP['+self.ident +'] ' + msg)
         
@@ -109,6 +135,12 @@ class BaseApplication(object):
     def stop(self):
         # TODO:
         self._active = False
+
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def step(self):
+        # TODO:
+        pass
 
     #----------------------------------------------------------------------
     @abstractmethod
@@ -168,7 +200,41 @@ class BaseApplication(object):
     # TODO   error = event.dict_['data']
     #    self._lstErrors.append(error)
 
+########################################################################
+class ThreadedApplication(object):
+    #----------------------------------------------------------------------
+    def __init__(self, app):
+        """Constructor"""
+        self._app = app
+        self.thread = Thread(target=self._run)
 
+    #----------------------------------------------------------------------
+    def _run(self):
+        """执行连接 and receive"""
+        while self._app._active:
+            try :
+                nextSleep = - self._app.step()
+                if nextSleep >0:
+                    sleep(nextSleep)
+            except Exception as ex:
+                self._app.error('ThreadedApplication::step() excepton: %s' % ex)
+        self._app.info('ThreadedApplication exit')
+
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def start(self):
+        ret = self._app.start()
+        self.thread.start()
+        self._app.debug('ThreadedApplication starts')
+        return ret
+
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def stop(self):
+        self._app.stop()
+        self.thread.join()
+        self._app.info('ThreadedApplication stopped')
+    
 ########################################################################
 class MainRoutine(object):
     """主引擎"""
@@ -176,14 +242,6 @@ class MainRoutine(object):
     # 单例模式
     __metaclass__ = VtSingleton
     
-    # 日志级别
-    LOGLEVEL_DEBUG    = logging.DEBUG
-    LOGLEVEL_INFO     = logging.INFO
-    LOGLEVEL_WARN     = logging.WARN
-    LOGLEVEL_ERROR    = logging.ERROR
-    LOGLEVEL_CRITICAL = logging.CRITICAL
-
-
     FINISHED_STATUS = [STATUS_ALLTRADED, STATUS_REJECTED, STATUS_CANCELLED]
 
     #----------------------------------------------------------------------
@@ -244,7 +302,7 @@ class MainRoutine(object):
         id = settings.id(clsName)
 
         # 创建接口实例
-        self._dictMarketDatas[id] = dsModule(self._eventChannel, settings)
+        self._dictMarketDatas[id] = dsModule(self, settings)
         
         # 保存接口详细信息
         d = {
@@ -255,7 +313,6 @@ class MainRoutine(object):
         
         self._dlstMarketDatas.append(d)
         self.info('md[%s] added: %s' %(id, d))
-        
     #----------------------------------------------------------------------
     def addApp(self, appModule, settings):
         """添加上层应用"""
@@ -400,22 +457,22 @@ class MainRoutine(object):
         # ----------------------------------------------------------------------
         self._logger   = logging.getLogger()        
         self._logfmtr  = logging.Formatter('%(asctime)s  %(levelname)s: %(message)s')
-        self._loglevel = self.LOGLEVEL_CRITICAL
+        self._loglevel = LOGLEVEL_CRITICAL
         
         self._hdlrConsole = None
         self._hdlrFile = None
         
         # 日志级别函数映射
         self._loglevelFunctionDict = {
-            self.LOGLEVEL_DEBUG:    self.debug,
-            self.LOGLEVEL_INFO:     self.info,
-            self.LOGLEVEL_WARN:     self.warn,
-            self.LOGLEVEL_ERROR:    self.error,
-            self.LOGLEVEL_CRITICAL: self.critical,
+            LOGLEVEL_DEBUG:    self.debug,
+            LOGLEVEL_INFO:     self.info,
+            LOGLEVEL_WARN:     self.warn,
+            LOGLEVEL_ERROR:    self.error,
+            LOGLEVEL_CRITICAL: self.critical,
         }
 
         # 设置日志级别
-        self.setLogLevel(self._settings.logger.level(MainRoutine.LOGLEVEL_DEBUG)) # LOGLEVEL_INFO))
+        self.setLogLevel(self._settings.logger.level(LOGLEVEL_DEBUG)) # LOGLEVEL_INFO))
         
         BOOL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh']
 
@@ -457,6 +514,13 @@ class MainRoutine(object):
         self._logger.setLevel(level)
         self._loglevel = level
     
+    def log(self, level, msg):
+        if not level in self._loglevelFunctionDict : 
+            return
+        
+        function = self._loglevelFunctionDict[level] # 获取日志级别对应的处理函数
+        function(msg)
+
     def debug(self, msg):
         """开发时用"""
         if self._logger ==None:

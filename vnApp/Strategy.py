@@ -11,6 +11,7 @@ from vnpy.trader.vtConstant import *
 from vnpy.trader.vtObject import VtBarData
 
 from Account import *
+from MainRoutine import *
 
 
 ########################################################################
@@ -164,14 +165,23 @@ class Strategy(object):
             self.account.cancelOrder(vtOrderID)
             
     #----------------------------------------------------------------------
-    def cancelAll(self):
+    def cancelAll(self, symbol):
         """全部撤单"""
-        self.account.cancelAll(self.name)
+        l = self._trader.ordersOfStrategy(self._id, symbol)
+
+        orderIdList = []
+        for o in l:
+            orderIdList.append(o.vtOrderID)
+        self.account.batchCancel(self, orderIdList)
+        self.log2(LOGLEVEL_INFO, 'cancelAll() symbol[%s] order-batch: %s' %(symbol, orderIdList))
     
     #----------------------------------------------------------------------
+    def log2(self, level, msg):
+        self._trader.log(level, 'stg[%s] %s' %(self._id, msg))
+
     def log(self, content):
         """记录CTA日志"""
-        self.account.log(content)
+        self.log2(LOGLEVEL_DEBUG, content)
         
     #----------------------------------------------------------------------
     def putEvent(self):
@@ -259,6 +269,9 @@ class StrategyOfSymbol(Strategy):
         """买平"""
         return super(StrategyOfSymbol, self)._cover(self._symbol, price, volume, stop)
         
+    def cancelAll(self):
+        return super(StrategyOfSymbol, self).cancelAll(self._symbol, price, volume, stop)
+
     #----------------------------------------------------------------------
     def insertTick(self, tick):
         """向数据库中插入tick数据"""

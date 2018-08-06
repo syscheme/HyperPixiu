@@ -3,50 +3,57 @@
         // "level": "99",
         // "console": "False",
         // "file": "True",
-        // "event": { "log": "True", "error": "True" }
+        // "event": { "log": "True", "error": "True" } // whether to post the log into event channel
     },
 
     "marketdata": [
         {
             "id": "hadax",
+            "source": "Huobi", // sepecify the MarketData source class
 
-            // "exchange": "hadax",
+            // the following is up to the MarketData class
+            "exchange": "huobi",
             "proxy": "localhost:8118",
         },
     ],
 
-    "working": true,
-
     "trader": {
-        // "ticks": [
-        //     {"symbol":"ethusdt", "ds": "hadax"}, 
-        //     {"symbol":"btcusdt", "ds": "hadax"}, 
-        // ],
 
-        "symbols": [
-            {"symbol":"ethusdt", "ds": "hadax"}, 
-            {"symbol":"btcusdt", "ds": "hadax"}, 
+        "dbNamePrefixHist" : "dr", // the preffix of DB name where to read history data from: <dbNamePrefixHist>Tick, <dbNamePrefixHist>K1min
+        "objectives": [
+            { 
+                "symbol": "eosusdt", 
+                "dsTick": "hadax", 
+                "ds1min": "hadax",  // sample "ds1min":"hadax_t2k1", in the case that we don't subscribe Kline directly from the market but take those merged from ticks
+            }, 
+            { 
+                "symbol": "ethusdt", 
+                "dsTick": "hadax", 
+                "ds1min": "ethusdt", // empty at ds1min means the trader only replies on ticks for this symbol
+            }, 
         ],
 
-        "account": {
-            "id": "myhuobiAccount",
-            "accessKey" :"",
-            "secretKey" :"",
-            "broker": {
-                "exchange": "huobi.virtual",
-                "proxy": "localhost:8118",
-                },
-            },
+        "account": { // account settings
+            "id": "blah",
+            "broker": "huobi",
+
+            // the following is up to the broker driver
+            "httpproxy": "localhost:8118",
+            "accessKey": "blah",
+            "secretKey": "blah",
+        },
 
         "strategies": [
             {
-                "className" : "BBand",
+                "name" : "BBand", // strategy name equals to class name
                 "symbols": ["ethusdt"],
-                "weights": [100, 100], //optimistic and pessimistic, in range of [0-100]
-                //TODO: support multiple accounts  "accounts": ["myhuobiAccount"],
+                "weights": { // weights to affect decisions, in range of [0-100] each
+                    "long" : 100, // optimisti
+                    "short": 100, // pessimistic
+                },
+
+                // TODO: the following is up to the stategy class
             },
         ],
     },
-
-    "accounts": {}
 }

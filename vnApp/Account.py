@@ -109,7 +109,7 @@ class Account(object):
         self._state        = Account.STATE_CLOSE
 
         # trader executer
-        self._dvrBroker = dvrBrokerClass(self, self._settings.broker)
+        self._dvrBroker = dvrBrokerClass(self, self._settings)
 
         self._dateToday      = None # date of previous close
         self._datePrevClose  = None # date of previous close

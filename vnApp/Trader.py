@@ -105,11 +105,37 @@ class Trader(BaseApplication):
         # stopOrderID = STOPORDERPREFIX + str(stopOrderCount)
 
         # test hardcoding
+        self.debug('adopting account')
         account = Account(self, td.tdHuobi, self._settings.account)
         if account:
             self.adoptAccount(account)
 
-        self.strategies_LoadAll(self._settings.strategies)
+        # step 1. collect all interested symbol of market data into _dictObjectives
+        self.debug('building up security objectives')
+        self._dictObjectives = {}
+
+        #   part 1. those specified in the configuration
+        for s in jsoncfg.expect_array(self._settings.objectives):
+            try :
+                symbol = s.symbol('')
+                dsTick = s.dsTick('')
+                ds1min = s.ds1min('')
+                if len(symbol) <=0 or (len(dsTick) <=0 and len(ds1min) <=0):
+                    continue
+                d = {
+                    "dsTick" : dsTick,
+                    "ds1min" : ds1min,
+                }
+
+                self._dictObjectives[symbol] = d
+            except:
+                pass
+        
+        # TODO part 2. scan those in the positions of Accounts, and also put into _dictObjectives
+
+        self.debug('collected %s interested symbols, adopting strategies' % len(self._dictObjectives))
+
+        # self.strategies_LoadAll(self._settings.strategies)
         
     #----------------------------------------------------------------------
     # access to the Account
@@ -290,40 +316,20 @@ class Trader(BaseApplication):
     #----------------------------------------------------------------------
     def subscribeSymbols(self) :
 
-        # step 1. collect all interested symbol of market data to subscribe
-        self._interests = ''
-        interested_marketdata = {}
-        #   part 1. those specified in the configuration
-        if jsoncfg.node_is_array(self._settings.symbols):
-            for s in jsoncfg.expect_array(self._settings.symbols):
-                k = '.'.join([s.symbol(''), s.ds('')])
-                if len(k) <3:
-                    continue
-                interested_marketdata[k] = s({})
-        
-        # TODO part 2. those in the positions of Accounts
-
-        # step 2. subscribe the symbols
-        self.debug('collected %s interested symbols' % len(interested_marketdata))
-        self._interests = ';'
+        # subscribe the symbols
         self.subscribeEvent(MarketData.EVENT_TICK,       self.eventHdl_Tick)
         self.subscribeEvent(MarketData.EVENT_KLINE_1MIN, self.eventHdl_KLine1min)
-        for k in interested_marketdata.keys():
-            s = interested_marketdata[k]
-            try:
-                if len(s['symbol']) <=3 or len(s['ds'])<=0:
-                    self.warn('subscribeSymbols() ignore: %s' % k)
-                    continue
-                self._interests +=k +';'
-                ds = self._engine.getMarketData(s['ds'])
+        for k in self._dictObjectives.keys():
+            s = self._dictObjectives[k]
+            if len(s['dsTick']) >0:
+                ds = self._engine.getMarketData(s['dsTick'])
                 if ds:
-                    self.debug('calling local subcribers for interested: %s' % s)
-                    ds.subscribe(s['symbol'], MarketData.EVENT_TICK)
-                    # ds.subscribe(s['symbol'], MarketData.EVENT_KLINE_1MIN)
-                else:
-                    self.warn('no local subscriber, may rely on remote subscribers: %s' % s)
-            except Exception as e:
-                self.logexception(e)
+                    self.debug('calling local subcribers for EVENT_TICK: %s' % s)
+                    ds.subscribe(k, MarketData.EVENT_TICK)
+                ds = self._engine.getMarketData(s['ds1min'])
+                if ds:
+                    self.debug('calling local subcribers for EVENT_KLINE_1MIN: %s' % s)
+                    ds.subscribe(k, MarketData.EVENT_KLINE_1MIN)
 
     ### eventTick from MarketData ----------------
     @abstractmethod
@@ -331,8 +337,14 @@ class Trader(BaseApplication):
         """TODO: 处理行情推送"""
         self.debug('eventHdl_KLine1min')
         d = event.dict_['data']
-        if not d.symbol in self._interests:
-            return
+        tokens = (d.symbol.split('.'))[0]
+        symbol = tokens[0]
+        ds =""
+        if len(tokens) >0:
+            ds = tokens[1]
+        if not symbol in self._dictObjectives or ds != self._dictObjectives['dsTick']:
+            return # ignore those not interested
+
         kline = copy.copy(d)
 
         # step 1. cache into the latest, lnf DataEngine
@@ -343,10 +355,14 @@ class Trader(BaseApplication):
     def eventHdl_Tick(self, event):
         """处理行情推送"""
         d = event.dict_['data']
-        self.debug('eventHdl_Tick %s' %d.__dict__)
-        if not d.symbol in self._interests:
-            self.debug('eventHdl_Tick not interest %s' % d.symbol)
-            return
+        tokens = (d.symbol.split('.'))[0]
+        symbol = tokens[0]
+        ds =""
+        if len(tokens) >0:
+            ds = tokens[1]
+        if not symbol in self._dictObjectives or ds != self._dictObjectives['ds1min']:
+            return # ignore those not interested
+
         tick = copy.copy(d)
 
         self.debug('eventHdl_Tick 1')
@@ -546,7 +562,7 @@ class Trader(BaseApplication):
 
     def _stg_load(self, setting):
         """载入策略"""
-        className = setting.className()
+        className = setting.name()
 
         # 获取策略类
         strategyClass = tg.STRATEGY_CLASS.get(className, None)
@@ -556,7 +572,7 @@ class Trader(BaseApplication):
         
         # 创建策略实例
         strategy = strategyClass(self, self.account, setting)
-        if id in self._dictStrategies:  # 防止策略重名
+        if strategy.id in self._dictStrategies:  # 防止策略重名
             self.error(u'策略实例重名：%s' %id)
             return
 

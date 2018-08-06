@@ -167,9 +167,31 @@ class mdHuobi(MarketData):
     #----------------------------------------------------------------------
     def subscribe(self, symbol, eventType):
         """订阅成交细节"""
-        if not eventType == MarketData.EVENT_TICK:
-            return self._subTopic(symbol, eventType)
+        if eventType != MarketData.EVENT_TICK:
+            topic =""
+            if eventType == MarketData.EVENT_MARKET_DEPTH0:
+                topic = 'market.%s.depth.step0' % symbol
+            elif eventType == MarketData.EVENT_KLINE_1MIN:
+                topic = 'market.%s.kline.1min' % symbol
+            elif eventType == MarketData.EVENT_KLINE_5MIN:
+                topic = 'market.%s.kline.5min' % symbol
+            elif eventType == MarketData.EVENT_KLINE_15MIN:
+                topic = 'market.%s.kline.15min' % symbol
+            elif eventType == MarketData.EVENT_KLINE_30MIN:
+                topic = 'market.%s.kline.30min' % symbol
+            elif eventType == MarketData.EVENT_KLINE_1HOUR:
+                topic = 'market.%s.kline.60min' % symbol
+            elif eventType == MarketData.EVENT_KLINE_4HOUR:
+                topic = 'market.%s.kline.4hour' % symbol
+            elif eventType == MarketData.EVENT_KLINE_1DAY:
+                topic = 'market.%s.kline.1day' % symbol            
+        
+            if len(topic) <=0 or topic in self._dictSubscriptions.keys():
+                return
 
+            return self._subTopic(topic)
+
+        # MarketData.EVENT_TICK here
         if symbol in self._dictTicks:
             return
 

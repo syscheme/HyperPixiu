@@ -137,7 +137,7 @@ class MarketData(object):
             return
 
         self._eventCh.put(event)
-        self.info('posted %s%s' % (event.type_, event.dict_['data'].symbol))
+        self.info('posted %s%s' % (event.type_, event.dict_['data'].vtSymbol))
 
     #---logging -----------------------
     def debug(self, msg):

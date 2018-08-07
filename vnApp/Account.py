@@ -309,7 +309,7 @@ class Account(object):
         self._state = Account.STATE_OPEN
     
     @abstractmethod
-    def onTimer(self):
+    def onTimer(self, dt):
         # TODO refresh from BrokerDriver
         pass
 

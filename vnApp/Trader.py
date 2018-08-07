@@ -165,6 +165,8 @@ class Trader(BaseApplication):
         self.subscribeEvent(BrokerDriver.EVENT_ORDER, self.eventHdl_Order)
         self.subscribeEvent(BrokerDriver.EVENT_TRADE, self.eventHdl_Trade)
 
+        self.subscribeEvent(EventChannel.EVENT_TIMER, self.eventHdl_OnTimer)
+
         """注册事件监听"""
 
     def stop(self):
@@ -411,6 +413,7 @@ class Trader(BaseApplication):
                 self._stg_call(strategy, strategy.onTick, tick)
     
         self.debug('eventHdl_Tick(%s) done' % tick.vtSymbol)
+
     ### eventTick from Account ----------------
     @abstractmethod
     def eventHdl_Order(self, event):
@@ -470,7 +473,14 @@ class Trader(BaseApplication):
             self._stg_call(strategy, strategy.onTrade, trade)
             
             # 保存策略持仓到数据库
-            self._stg_flushPos(strategy)              
+            self._stg_flushPos(strategy)
+
+    ### generic events ??? ----------------
+    def eventHdl_OnTimer(self, event):
+        edata = event.dict_['data']
+        self.debug('OnTimer() src[%s] %s' % (edata.sourceType, edata.datetime.strftime('%Y%m%dT%H:%M:%S.%f')))
+        # TODO: forward to account.onTimer()
+        pass                      
 
     ### eventContract from ??? ----------------
     @abstractmethod

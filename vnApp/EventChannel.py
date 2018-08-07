@@ -46,6 +46,7 @@ class EventLoop(object): # non-thread
     #----------------------------------------------------------------------
     def step(self):
         """引擎运行"""
+        dt = datetime.now()
         stampNow = datetime2float(datetime.now())
         c =0
         try:
@@ -58,7 +59,7 @@ class EventLoop(object): # non-thread
                 self.__stampTimerLast = stampNow
                     
                 # 向队列中存入计时器事件
-                edata = edTimer(self.__stampTimerLast)
+                edata = edTimer(dt)
                 event = Event(type_= EventChannel.EVENT_TIMER)
                 event.dict_['data'] = edata
                 self.put(event)
@@ -69,7 +70,7 @@ class EventLoop(object): # non-thread
                 self.__process(event)
                 c+=1
         except Exception as ex:
-            print("eventCH %s" % ex)
+            print("eventCH exception %s" % ex)
 
         if c<=0:
             return -3
@@ -238,9 +239,9 @@ class edTimer(VtBaseData):
     """K线数据"""
 
     #----------------------------------------------------------------------
-    def __init__(self, stamp, type='clock'):
+    def __init__(self, dt, type='clock'):
         """Constructor"""
         super(edTimer, self).__init__()
         
-        self.stamp   = stamp
+        self.datetime   = dt
         self.sourceType = type          # 数据来源类型

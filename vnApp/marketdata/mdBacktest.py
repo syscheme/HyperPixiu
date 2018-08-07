@@ -3,6 +3,7 @@
 from __future__ import division
 
 from vnApp.MarketData import *
+from vnApp.EventChannel import *
 
 from vnpy.trader.vtConstant import *
 from vnpy.event import Event
@@ -80,7 +81,8 @@ class mdBacktest(MarketData):
             self._t2k1min = True
                 
         # self._symbol = settings.symbol(A601005)
-        self._stampLastTimer =  0
+        self._stampLastTimer = 0
+        self._timerStep = 10
         self._dictCursors = {} # symbol to dbCusor
         # self._dictCollectionNames = {} # symbol to CollectionNames
 
@@ -201,13 +203,24 @@ class mdBacktest(MarketData):
                 event.dict_['data'] = edata
 
             # cursorFocus['currentData'] sent, force to None to read next
+            dtData = cursorFocus['currentData']['datetime']
             cursorFocus['currentData'] = None
+            nleft -=1 # decrease anyway each loop
 
             # post the event if valid
             if event:
                 # event['data'].sourceType = MarketData.DATA_SRCTYPE_BACKTEST  # 数据来源类型
                 self.postMarketEvent(event); c +=1
-            nleft -=1 # decrease anyway each loop
+
+            # 向队列中模拟计时器事件
+            stampData = datetime2float(dtData)
+            if self._timerStep >0 and (self._stampLastTimer + self._timerStep) < stampData:
+                edata = edTimer(dtData, mdBacktest.BT_TAG)
+                event = Event(type_= EventChannel.EVENT_TIMER)
+                event.dict_['data'] = edata
+                self._stampLastTimer = stampData
+                self._eventCh.put(event)
+
         return c
 
         # reachedEnd = False

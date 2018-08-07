@@ -149,9 +149,6 @@ class BackTestApp(Trader):
     函数接口和Application保持一样，
     """
     
-    TICK_MODE = 'tick'
-    BAR_MODE  = 'bar'
-
     #----------------------------------------------------------------------
     def __init__(self, mainRoutine, AccountClass, settings):
         """Constructor"""

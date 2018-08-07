@@ -29,7 +29,7 @@ from vnpy.trader.vtObject import VtSubscribeReq, VtLogData, VtBarData, VtTickDat
 SETTING_DB_NAME = 'vnRec_Db'
 TICK_DB_NAME   = 'drTick'
 DAILY_DB_NAME  = 'drDaily'
-MINUTE_DB_NAME = 'dr1Min'
+MINUTE_DB_NAME = 'dr1min'
 
 from vnpy.trader.vtConstant import EMPTY_UNICODE, EMPTY_STRING, EMPTY_FLOAT, EMPTY_INT
 
@@ -139,7 +139,7 @@ class DataRecorder(BaseApplication):
 
         self.debug('OnTick:%s' % tick)
 
-        tblName = tick.vtSymbol
+        tblName = tick.vtSymbol+ tick.exchange
         self.enqueue(self._dbNameTick, tblName, tick)
         return #TODO: merge the Kline data by Tick if KLine data is not available 
 
@@ -164,7 +164,7 @@ class DataRecorder(BaseApplication):
 
         tblName = vtSymbol
         if len(bar.exchange) >0:
-            tblName += '.'+bar.exchange
+            tblName += '.'+ bar.exchange
         
         self.enqueue(MINUTE_DB_NAME, tblName, bar)
         

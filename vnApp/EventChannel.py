@@ -32,8 +32,8 @@ class EventLoop(object): # non-thread
         self.__active = False
         
         # 计时器，用于触发计时器事件
-        self.__timerActive = False                      # 计时器工作状态
-        self.__timerSleep = 1                           # 计时器触发间隔（默认1秒）
+        self.__timerActive = False     # 计时器工作状态
+        self.__timerStep = 1           # 计时器触发间隔（默认1秒）
         self.__stampTimerLast = None
         
         # 这里的__handlers是一个字典，用来保存对应的事件调用关系
@@ -51,14 +51,18 @@ class EventLoop(object): # non-thread
             if not self.__stampTimerLast :
                 self.__stampTimerLast = stampNow
 
-            while self.__timerActive and self.__stampTimerLast + self.__timerSleep < stampNow:
-                self.__stampTimerLast += 1
+            #while self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
+            #    self.__stampTimerLast += self.__timerStep
+            if self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
+                self.__stampTimerLast = stampNow
                     
                 # 向队列中存入计时器事件
+                edata = edTimer(self.__stampTimerLast)
                 event = Event(type_= EventChannel.EVENT_TIMER)
+                event.dict_['data'] = edata
                 self.put(event)
-                self.__stampTimerLast = stampNow
 
+            # pop the event to dispatch
             event = self.__queue.get(block = True, timeout = 0.5)  # 获取事件的阻塞时间设为1秒
             if event :
                 self.__process(event)
@@ -220,3 +224,16 @@ def test():
     ee.start()
     
     app.exec_()
+
+########################################################################
+from vnpy.trader.vtObject import VtBaseData
+class edTimer(VtBaseData):
+    """K线数据"""
+
+    #----------------------------------------------------------------------
+    def __init__(self, stamp, type='clock'):
+        """Constructor"""
+        super(edTimer, self).__init__()
+        
+        self.stamp   = stamp
+        self.sourceType = type          # 数据来源类型

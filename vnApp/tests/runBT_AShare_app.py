@@ -36,7 +36,7 @@ def runChildProcess():
     # dirname(dirname(abspath(file)))
     settings= None
     try :
-        conf_fn = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/TD_huobi.json'
+        conf_fn = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/BT_app.json'
         settings= jsoncfg.load_config(conf_fn)
     except Exception as e :
         print('failed to load configure[%s]: %s' % (conf_fn, e))
@@ -54,7 +54,7 @@ def runChildProcess():
     me = MainRoutine(settings)
 
     # me.addMarketData(mdHuobi, settings['marketdata'][0])
-    me.addMarketData(mdBacktest, settings['marketdata'][1])
+    me.addMarketData(mdBacktest, settings['marketdata'][0])
 
     me.addApp(Trader, settings['trader'])
     # logger.info(u'主引擎创建成功')

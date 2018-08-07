@@ -34,6 +34,10 @@ from ..Account import *
 ########################################################################
 class mdBacktest(MarketData):
 
+    TICK_MODE = 'tick'
+    BAR_MODE = 'bar'
+    BT_TAG = '$BT'
+
     className = 'Backtest'
     displayName = 'Playback history data as MarketData'
     typeName = 'Market data subscriber from HHistDB'
@@ -59,118 +63,216 @@ class mdBacktest(MarketData):
 
         # self._btApp = btApp
         self._main = mainRoutine
-        self._dbConn = self._main._dbConn
-        self._dbPreffix = settings.sourceDBPreffix    # Prefix + "Tick or 1min"
+        self._dbPreffix = settings.sourceDBPreffix('')    # Prefix + "Tick or 1min"
         self._exchange =  settings.exchange('')
+        self._timerStep =  settings.timerStep(0)
+        self._dateStart = '20000101'
+        self._dateEnd   = None
         
-        self._mode = self.TICK_MODE
-        self._t2k1min = False
-        mode = settings.mode('') # "mode": "tick,t2k1"
+        self._mode        = self.TICK_MODE
+        self._dbName      = self._dbPreffix + 'Tick'
+        self._t2k1min     = False
+        mode = settings.mode('') # "mode": "tick,t2k1min"
         if 'kl1min' == mode[:4] :
-            self._mode = self.BAR_MODE
-            self._dbName = self._dbPreffix + '1min'
-        else:
-            self._mode = self.TICK_MODE
-            self._dbName = self._dbPreffix + 'Tick'
-            if 't2k1min' in mode:
-                self._t2k1min = True 
-
-#        self._symbol = settings.symbol(A601005)
-        self._dbCursor = None
-        self._initData =[]
+            self._mode        = self.BAR_MODE
+            self._dbName      = self._dbPreffix + '1min'
+        elif 't2k1min' in mode:
+            self._t2k1min = True
+                
+        # self._symbol = settings.symbol(A601005)
+        self._stampLastTimer =  0
+        self._dictCursors = {} # symbol to dbCusor
+        # self._dictCollectionNames = {} # symbol to CollectionNames
 
     #----------------------------------------------------------------------
     def subscribe(self, symbol, eventType=None) :
         """订阅成交细节"""
 
-        self._collectionName = symbol +'.' + self._exchange
+        collectionName = symbol +'.' + self._exchange
+        if collectionName in self._dictCursors:
+            self.warn('subscribe() %s already exists' % symbol)
+            return
+
+        d = {
+            'collectionName' : collectionName,
+            'cursor': None,
+            'currentData': None
+        }
+        self._dictCursors[collectionName] =d
 
     #----------------------------------------------------------------------
     def connect(self):
         """载入历史数据"""
+        self._doConnect()
 
-        self._collection = self._dbConn[self._dbName][self._collectionName]          
-      
-        # 首先根据回测模式，确认要使用的数据类
-        if self.mode == self.TICK_MODE:
-            dataClass = VtTickData
-            func = self.OnNewTick
-        else:
-            dataClass = VtBarData
-            func = self.OnNewBar
+    #----------------------------------------------------------------------
+    def _doConnect(self):
+        """载入历史数据"""
+        flt = {'date':{'$gte':self._dateStart}}   # 数据过滤条件
+        if self._dateEnd:
+            flt = {'date':{'$gte':self._dateStart,
+                              '$lte':self._dateEnd}}  
 
-        self.log('reading %s from %s' % (self._collectionName, self._dbName))
-        return cRows
-        
+        for c in self._dictCursors.values() :
+            if c['cursor']:
+                continue # already connected
+
+            collection = self._main.dbConn[self._dbName][c['collectionName']]
+            self.debug('reading %s from %s' % (c['collectionName'], self._dbName))
+            c['cursor'] = collection.find(flt).sort('datetime')
+
     #----------------------------------------------------------------------
     def step(self):
 
-        # 载入回测数据
-        flt = {'datetime':{'$gte':self.strategyStartDate}}   # 数据过滤条件
-        if self.dataEndDate:
-            flt = {'datetime':{'$gte':self.strategyStartDate,
-                               '$lte':self.dataEndDate}}  
+#        if not self._active :
+#            return 0
+        nleft = 10 # - self._main._eventChannel.pendingSize
+        if nleft <= 0 or len(self._dictCursors) <=0:
+            return -3
+        
+        self._doConnect()
 
-        self._dbCursor = collection.find(flt).sort('datetime')
-        reachedEnd = False
+        cursorFocus = None
+        c= 0
+        while nleft >0 and len(self._dictCursors) >0:
+            # scan the _dictCursors for the eariest data
+            cursorsEnd = []
+            for d in self._dictCursors.values():
 
-        eventyType_= MarketData.EVENT_TICK
-        if not 'Tick' in self._dbName :
-            eventyType_=  MarketData.EVENT_1MIN
-            #TODO: more
+                if not d['cursor']: # ignore those collection disconnected
+                    continue
 
-        while self._active and self._eventCh: # check if there are too many event pending on eventChannel
-            if self._eventCh.pendingSize >100:
-                sleep(1)
-                continue
+                if not d['currentData'] :
+                    d['currentData'] = next(d['cursor'], None)
+                
+                if not d['currentData']: # end of cursor
+                    cursorsEnd.append(d)
+                    continue
+                
+                value = d['currentData']
+                if not value['datetime']:
+                    dtstr = ' '.join([value['date'], value['time']])
+                    value['datetime'] = datetime.strptime(dtstr, '%Y%m%d %H:%M:%S.')
+
+                if not cursorFocus or not cursorFocus['currentData'] or cursorFocus['currentData']['datetime'] > value['datetime']:
+                    cursorFocus =d
             
-            # read a batch then post to the event channel
-            for i in range(1, 10) :
-                try :
-                    if not self._dbCursor.hasNext() :
-                        self._active = False
-                        reachedEnd = True
-                        break
-
-                    d = self._dbCursor.next()
-
-                    event = None
-                    if eventType == MarketData.EVENT_TICK :
-                        edata = mdTickData(self)
-                        edata.__dict__ = d
-                        edata.vtSymbol  = edata.symbol = self._symbol
-                        event = Event(eventType)
-                        event.dict_['data'] = edata
-                    else: # as Kline
-                        edata = mdKLineData(self)
-                        edata.__dict__ = d
-                        edata.vtSymbol  = edata.symbol = self._symbol
-                        event = Event(eventType)
-                        event.dict_['data'] = edata
-
-                    # post the event if valid
-                    if event:
-                        event['data'].sourceType = MarketData.DATA_SRCTYPE_BACKTEST  # 数据来源类型
-                        self.postMarketEvent(event)
-
-                except Exception as ex:
-                    pass
-
-        #fill a STOP event into the event channel
-        if reachedEnd:
-            if eventType == MarketData.EVENT_TICK :
-                edata = mdTickData(self)
+            for d in cursorsEnd:
+                #fill a dummy END event into the event channel
+                symbol = d['collectionName'].split('.')[0]
+                if self.TICK_MODE == self._mode:
+                    edata = mdTickData(self, symbol)
+                    event = Event(MarketData.EVENT_TICK)
+                else: # as Kline
+                    edata = mdKLineData(self, symbol)
+                    event = Event(MarketData.EVENT_1MIN)
+                
                 edata.date ='39991231'
-                edata.vtSymbol  = edata.symbol = self._symbol
-                event = Event(eventType)
+                edata.vtSymbol  = d['collectionName'] + mdBacktest.BT_TAG
                 event.dict_['data'] = edata
+                # event['data'].sourceType = MarketData.DATA_SRCTYPE_BACKTEST  # 数据来源类型
+                self.postMarketEvent(event); c+=1
+                nleft -=1
+
+                self.info('%s reached end, issued dummy Event(End), deleting from _dictCursors' % d['collectionName'])
+                del self._dictCursors[d['collectionName']]
+
+            if not cursorFocus or not cursorFocus['currentData'] : # none of the read found
+                self._active = False
+                break
+
+            # cursorFocus['currentData'] is the most earilest record
+            event = None
+            symbol = cursorFocus['collectionName'].split('.')[0]
+            if self._mode == self.TICK_MODE :
+                edata = mdTickData(self, symbol)
+                edata.__dict__ = copy.copy(cursorFocus['currentData'])
+                edata.vtSymbol  = cursorFocus['collectionName'] + mdBacktest.BT_TAG
+                event = Event(MarketData.EVENT_TICK)
+                event.dict_['data'] = edata
+                if self._t2k1min :
+                    pass # TODO: ...
+
             else: # as Kline
-                edata = mdKLineData(self)
-                edata.date ='39991231'
-                edata.vtSymbol  = edata.symbol = self._symbol
-                event = Event(eventType)
+                edata = mdKLineData(self, symbol)
+                edata.__dict__ = copy.copy(cursorFocus['currentData'])
+                edata.vtSymbol  = cursorFocus['collectionName'] + mdBacktest.BT_TAG
+                event = Event(MarketData.EVENT_1MIN)
                 event.dict_['data'] = edata
+
+            # cursorFocus['currentData'] sent, force to None to read next
+            cursorFocus['currentData'] = None
+
+            # post the event if valid
+            if event:
+                # event['data'].sourceType = MarketData.DATA_SRCTYPE_BACKTEST  # 数据来源类型
+                self.postMarketEvent(event); c +=1
+            nleft -=1 # decrease anyway each loop
+        return c
+
+        # reachedEnd = False
+
+        # # read a batch then post to the event channel
+        # for i in range(1, 10) :
+        #     try :
+        #         if not self._dbCursor.hasNext() :
+        #             self._active = False
+        #             reachedEnd = True
+        #             break
+
+        #         d = self._dbCursor.next()
+
+        #         event = None
+        #         if self._mode == self.TICK_MODE :
+        #             edata = mdTickData(self, self._symbol)
+        #             edata.__dict__ = d
+        #             edata.vtSymbol  = self._symbol + self._exchange + BT_TAG
+        #             event = Event(MarketData.EVENT_TICK)
+        #             event.dict_['data'] = edata
+        #             if self._t2k1min :
+        #                 pass # TODO: ...
+
+        #         else: # as Kline
+        #             edata = mdKLineData(self, self._symbol)
+        #             edata.__dict__ = d
+        #             edata.vtSymbol  = self._symbol + self._exchange + BT_TAG
+        #             event = Event(MarketData.EVENT_1MIN)
+        #             event.dict_['data'] = edata
+
+        #         # post the event if valid
+        #         if not event:
+        #             continue
+
+        #         event['data'].sourceType = MarketData.DATA_SRCTYPE_BACKTEST  # 数据来源类型
+        #         self.postMarketEvent(event)
+
+        #         # 向队列中模拟计时器事件
+        #         if self._timerStep >0 :
+        #             dtData = EventChannel.datetime2float(edata.datetime)
+        #             if self._stampLastTimer + self._timerStep < dtData :
+        #                 edata = edTimer(dtData, BT_TAG)
+        #                 event = Event(type_= EventChannel.EVENT_TIMER)
+        #                 event.dict_['data'] = edata
+        #                 self._stampLastTimer = dtData
+        #                 self.postMarketEvent(event)
+
+        #     except Exception as ex:
+        #         pass
+
+        # #fill a dummy END event into the event channel
+        # if reachedEnd:
+        #     if eventType == MarketData.EVENT_TICK :
+        #         edata = mdTickData(self, self._symbol)
+        #         event = Event(MarketData.EVENT_TICK)
+        #     else: # as Kline
+        #         edata = mdKLineData(self, self._symbol)
+        #         event = Event(MarketData.EVENT_1MIN)
             
-            event['data'].sourceType = MarketData.DATA_SRCTYPE_BACKTEST  # 数据来源类型
-            self.postMarketEvent(event)
+        #     edata.date ='39991231'
+        #     edata.vtSymbol  = self._symbol + self._exchange + BT_TAG
+        #     event.dict_['data'] = edata
+        #     event['data'].sourceType = MarketData.DATA_SRCTYPE_BACKTEST  # 数据来源类型
+        #     self.postMarketEvent(event)
+
+        #     self._active = False
 

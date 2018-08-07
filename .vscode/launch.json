@@ -20,7 +20,7 @@
             },
             "type": "python",
             "request": "launch",
-            "program": "vnApp/tests/runBT_AShare.py" // "vnApp/tests/runBT_AShare_app.py"
+            "program": "vnApp/tests/runBT_AShare_app.py" // "vnApp/tests/runBT_AShare_app.py"
         },
         {
             "name": "Python: dr",

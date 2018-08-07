@@ -85,7 +85,7 @@ class BaseApplication(object):
     
     @property
     def _dbConn(self) :
-        return self._engine._dbConn
+        return self._engine.dbConn
 
     #----------------------------------------------------------------------
     @abstractmethod
@@ -249,16 +249,16 @@ class MainRoutine(object):
         """Constructor"""
         
         self._settings = settings
-        self._threadMode = False
+        self._threadless = True
 
         # 记录今日日期
         self.todayDate = datetime.now().strftime('%Y%m%d')
         
         # 创建EventChannel
-        if self.threadMode :
-            self._eventChannel = EventChannel()
-        else :
+        if self.threadless :
             self._eventChannel = EventLoop()
+        else :
+            self._eventChannel = EventChannel()
         # self._eventChannel.start()
 
         # 日志引擎实例
@@ -293,8 +293,13 @@ class MainRoutine(object):
         self._riskMgm = None
     
     @property
-    def threadMode(self) :
-        return self._threadMode
+    def threadless(self) :
+        return self._threadless
+
+    @property
+    def dbConn(self) :
+        return self._dbConn
+
     #----------------------------------------------------------------------
     def addMarketData(self, dsModule, settings):
         """添加底层接口"""
@@ -344,7 +349,7 @@ class MainRoutine(object):
         if dsName in self._dictMarketDatas:
             return self._dictMarketDatas[dsName]
         else:
-            self.writeLog(text.GATEWAY_NOT_EXIST.format(ds=dsName))
+            self.error('getMarketData() %s not exist' % dsName)
             return None
         
     #----------------------------------------------------------------------
@@ -355,7 +360,6 @@ class MainRoutine(object):
             self._eventChannel.start()
             self.info('started event channel')
 
-        self.debug('connecting DB')
         self.dbConnect()
         
         self.debug('starting market data subscribers')
@@ -363,12 +367,12 @@ class MainRoutine(object):
             if ds == None:
                 continue
 
-            if self._threadMode :
-                ds.start()
-                self.debug('market subscriber[%s] started' % k)
-            else :
+            if self.threadless :
                 ds.connect()
                 self.debug('market subscriber[%s] connected' % k)
+            else :
+                ds.start()
+                self.debug('market subscriber[%s] started' % k)
 
         self.debug('starting applications')
         for (k, app) in self._dictApps.items() :
@@ -402,8 +406,9 @@ class MainRoutine(object):
 
         self.info(u'MainRoutine start looping')
         c=0
+        sec2sleep =0
         while True:
-            if self._threadMode :
+            if not self.threadless :
                 try :
                     sleep(1)
                     self.debug(u'MainThread heartbeat')
@@ -412,18 +417,19 @@ class MainRoutine(object):
 
                 continue
 
+            if sec2sleep >0:
+                sleep(sec2sleep)
             # loop mode as below
             for (k, ds) in self._dictMarketDatas.items():
                 try :
                     if ds == None:
                         continue
-                    ds.step()
+                    sec2sleep -= ds.step()
                 except Exception as ex:
                     self.logexception(ex)
 
             try :
-                self._eventChannel.step()
-                sleep(0.1)
+                sec2sleep -= self._eventChannel.step()
                 c+=1
 
                 if c % 10 ==0:
@@ -641,21 +647,26 @@ class MainRoutine(object):
         """连接MongoDB数据库"""
         if not self._dbConn:
             # 读取MongoDB的设置
+            dbhost = self._settings.database.host('localhost')
+            dbport = self._settings.database.port(27017)
+            self.debug('connecting DB[%s :%s]'%(dbhost, dbport))
+            
             try:
                 # 设置MongoDB操作的超时时间为0.5秒
-                self._dbConn = MongoClient(globalSetting['mongoHost'], globalSetting['mongoPort'], connectTimeoutMS=500)
+                self._dbConn = MongoClient(dbhost, dbport, connectTimeoutMS=500)
                 
                 # 调用server_info查询服务器状态，防止服务器异常并未连接成功
                 self._dbConn.server_info()
 
-                self.writeLog(text.DATABASE_CONNECTING_COMPLETED)
-                
                 # 如果启动日志记录，则注册日志事件监听函数
-                if globalSetting['mongoLogging']:
+                if self._settings.database.logging("") in ['True']:
                     self._eventChannel.register(EVENT_LOG, self.dbLogging)
                     
+                self.info('connecting DB[%s :%s] %s'%(dbhost, dbport, text.DATABASE_CONNECTING_COMPLETED))
             except ConnectionFailure:
-                self.writeLog(text.DATABASE_CONNECTING_FAILED)
+                self.error('failed to connect DB[%s :%s] %s' %(dbhost, dbport, text.DATABASE_CONNECTING_FAILED))
+            except:
+                self.error('failed to connect DB[%s :%s]' %(dbhost, dbport))
     
     #----------------------------------------------------------------------
     @abstractmethod

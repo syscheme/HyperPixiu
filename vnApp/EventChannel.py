@@ -47,6 +47,7 @@ class EventLoop(object): # non-thread
     def step(self):
         """引擎运行"""
         stampNow = datetime2float(datetime.now())
+        c =0
         try:
             if not self.__stampTimerLast :
                 self.__stampTimerLast = stampNow
@@ -66,8 +67,14 @@ class EventLoop(object): # non-thread
             event = self.__queue.get(block = True, timeout = 0.5)  # 获取事件的阻塞时间设为1秒
             if event :
                 self.__process(event)
+                c+=1
         except Exception as ex:
             print("eventCH %s" % ex)
+
+        if c<=0:
+            return -3
+        
+        return c
             
     #----------------------------------------------------------------------
     def __process(self, event):

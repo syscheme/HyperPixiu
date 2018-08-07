@@ -7,6 +7,7 @@ import shelve
 import logging
 from collections import OrderedDict
 from datetime import datetime
+from time import sleep
 from copy import copy
 from abc import ABCMeta, abstractmethod
 import traceback

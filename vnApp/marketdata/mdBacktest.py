@@ -28,14 +28,18 @@ from vnpy.trader.vtObject import VtTickData, VtBarData
 from vnpy.trader.vtConstant import *
 from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 
-from .MainRoutine import *
-from .Account import *
+from ..MainRoutine import *
+from ..Account import *
 
 ########################################################################
 class mdBacktest(MarketData):
 
+    className = 'Backtest'
+    displayName = 'Playback history data as MarketData'
+    typeName = 'Market data subscriber from HHistDB'
+
     #----------------------------------------------------------------------
-    def __init__(self, eventChannel, settings):
+    def __init__(self, mainRoutine, settings):
         """Constructor
             setting schema:
                 {
@@ -53,19 +57,39 @@ class mdBacktest(MarketData):
 
         super(mdBacktest, self).__init__(mainRoutine, settings, MarketData.DATA_SRCTYPE_BACKTEST)
 
-        self._btApp = btApp
-        self._dbConn = self._btApp.dbConn
+        # self._btApp = btApp
+        self._main = mainRoutine
+        self._dbConn = self._main._dbConn
         self._dbPreffix = settings.sourceDBPreffix    # Prefix + "Tick or 1min"
-        self._symbol = settings.symbol(A601005)
-        self._mode   = settings.mode(self.BAR_MODE)
+        self._exchange =  settings.exchange('')
+        
+        self._mode = self.TICK_MODE
+        self._t2k1min = False
+        mode = settings.mode('') # "mode": "tick,t2k1"
+        if 'kl1min' == mode[:4] :
+            self._mode = self.BAR_MODE
+            self._dbName = self._dbPreffix + '1min'
+        else:
+            self._mode = self.TICK_MODE
+            self._dbName = self._dbPreffix + 'Tick'
+            if 't2k1min' in mode:
+                self._t2k1min = True 
+
+#        self._symbol = settings.symbol(A601005)
         self._dbCursor = None
         self._initData =[]
+
+    #----------------------------------------------------------------------
+    def subscribe(self, symbol, eventType=None) :
+        """订阅成交细节"""
+
+        self._collectionName = symbol +'.' + self._exchange
 
     #----------------------------------------------------------------------
     def connect(self):
         """载入历史数据"""
 
-        self._collection = self._dbConn[self._dbName][self._symbol]          
+        self._collection = self._dbConn[self._dbName][self._collectionName]          
       
         # 首先根据回测模式，确认要使用的数据类
         if self.mode == self.TICK_MODE:
@@ -75,10 +99,7 @@ class mdBacktest(MarketData):
             dataClass = VtBarData
             func = self.OnNewBar
 
-        self.reqThread = Thread(target=self._run)   # 请求处理线程      
-
-        self.stdout(u'开始载入数据 %s from %s' % (self._symbol, self._dbName))
-
+        self.log('reading %s from %s' % (self._collectionName, self._dbName))
         return cRows
         
     #----------------------------------------------------------------------

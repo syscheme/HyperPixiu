@@ -14,6 +14,15 @@
             "program": "vnApp/tests/runBT_AShare.py" // "vnApp/tests/runBT_AShare.py"
         },
         {
+            "name": "Python: bt2",
+            "env": {
+                "PYTHONPATH":"${workspaceFolder}:${PYTHONPATH}"
+            },
+            "type": "python",
+            "request": "launch",
+            "program": "vnApp/tests/runBT_AShare.py" // "vnApp/tests/runBT_AShare_app.py"
+        },
+        {
             "name": "Python: dr",
             "env": {
                 "PYTHONPATH":"${workspaceFolder}:${PYTHONPATH}"

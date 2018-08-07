@@ -9,7 +9,6 @@ from datetime import datetime, time
 
 from vnApp.MainRoutine import MainRoutine
 from vnApp.marketdata.mdHuobi import mdHuobi
-from vnApp.marketdata.mdBacktest import mdBacktest
 from vnApp.DataRecorder import *
 from vnApp.EventChannel import EventChannel
 from vnApp.Trader import *
@@ -53,8 +52,7 @@ def runChildProcess():
     
     me = MainRoutine(settings)
 
-    # me.addMarketData(mdHuobi, settings['marketdata'][0])
-    me.addMarketData(mdBacktest, settings['marketdata'][1])
+    me.addMarketData(mdHuobi, settings['marketdata'][0])
 
     me.addApp(Trader, settings['trader'])
     # logger.info(u'主引擎创建成功')

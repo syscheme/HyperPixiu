@@ -81,12 +81,9 @@ def loadSettings(filepath):
 
 ########################################################################
 from abc import ABCMeta, abstractmethod
-import threading
 class Account(object):
     """
     Basic Account
-
-    Account must be thread-protected
     """
     __lastId__ =10000
 
@@ -100,14 +97,13 @@ class Account(object):
     def __init__(self, dbConn, eventCh, dvrBrokerClass, settings):
         """Constructor"""
 
-        self._lock = lock = threading.Lock()
-
         # the app instance Id
         self._id = settings.id("")
         if len(self._id)<=0 :
             Account.__lastId__ +=1
             self._id = 'A%d' % Account.__lastId__
 
+        self._orderId = int(EventChannel.datetime2float(datetime.now())) %1000000 # start with a big number
         self._settings     = settings
         self._dbConn       = dbConn
         self._eventCh      = eventCh
@@ -119,12 +115,8 @@ class Account(object):
         self._dateToday      = None # date of previous close
         self._datePrevClose  = None # date of previous close
         self._prevPositions = {} # dict from symbol to previous VtPositionData
-        self._dictPositions = { # dict from symbol to latest VtPositionData
-            Account.SYMBOL_CASH : VtPositionData()
-        }
 
         self._dictTrades = {} # dict from tradeId to trade confirmed during today
-        self._dictWorkingOrder = {} # 可撤销委托
 
         # self.capital = 0        # 起始本金（默认10万）
         # self._cashAvail =0
@@ -175,44 +167,27 @@ class Account(object):
 
     @property
     def nextOrderReqId(self):
-        with self._lock :
-            if not self._orderId:
-                self._orderId = int(EventChannel.datetime2float(datetime.now())) %1000000 # start with a big number
-            self._orderId +=1
-            return '%s@%s' % (self._orderId, self.ident)
+        self._orderId = int(EventChannel.datetime2float(datetime.now())) %1000000 # start with a big number
+        self._orderId +=1
+        return '%s@%s' % (self._orderId, self.ident)
 
     #----------------------------------------------------------------------
     @abstractmethod
     def getPosition(self, symbol): # returns VtPositionData
-        with self._lock :
-            if not symbol in self._dictPositions:
-                return VtPositionData()
-            return copy(self._dictPositions[symbol])
+        if self._dvrBroker:
+            return self._dvrBroker.getPosition(symbol)
+        return VtPositionData()
+
+    def getAllPosition(self, symbol): # returns VtPositionData
+        if self._dvrBroker:
+            return self._dvrBroker.getAllPositions()
+        return {}
 
     @abstractmethod
     def cashAmount(self): # returns (avail, total)
-        with self._lock :
-            pos = self._dictPositions[Account.SYMBOL_CASH]
-            volprice = pos.price * self.size
-            return (pos.posAvail * volprice), (pos.position * volprice)
-
-    @abstractmethod
-    def cashChange(self, dAvail=0, dTotal=0):
-        with self._lock :
-            pos = self._dictPositions[Account.SYMBOL_CASH]
-            volprice = pos.price * self.size
-            if pos.price <=0 :   # if cache.price not initialized
-                volprice = pos.price =1
-                if self.size >0:
-                    pos.price /=self.size
-            tmp1, tmp2 = pos.posAvail + dAvail / volprice, pos.position + dTotal / volprice
-            if tmp1<0 or tmp2 <0:
-                return False
-
-            pos.posAvail += tmp1
-            pos.position += tmp2
-            pos.stampByTrader = self.datetimeAsof()
-            return True
+        pos = self.getPosition(Account.SYMBOL_CASH)
+        volprice = pos.price * self.size
+        return (pos.posAvail * volprice), (pos.position * volprice)
 
     def setCapital(self, capital, resetAvail=False):
         """设置资本金"""
@@ -389,43 +364,9 @@ class Account(object):
             self._dvrBroker.cancelOrder(o)
 
     @abstractmethod
-    def onTrade(self, trade):
+    def onTraded(self, trade):
         """交易成功回调"""
-        if trade.vtTradeID in self._dictTrades:
-            return
-
-        self._dictTrades[trade.vtTradeID] = trade
-
-        # update the current postion, this may overwrite during the sync by BrokerDriver
-        s = trade.symbol
-        if not s in self._dictPositions :
-            self._dictPositions[s] = VtPositionData()
-            pos = self._dictPositions[s]
-            pos.symbol = s
-            pos.vtSymbol = trade.vtSymbol
-            pos.exchange = trade.exchange
-        else:
-            pos = self._dictPositions[s]
-
-        # 持仓相关
-        pos.price      = trade.price
-        pos.direction  = trade.direction      # 持仓方向
-        # pos.frozen =  # 冻结数量
-
-        # update the position of symbol and its average cost
-        tdvol = trade.volume
-        if trade.direction != DIRECTION_LONG:
-            tdvol = -tdvol 
-        else: 
-            # pos.price
-            cost = pos.position * pos.avgPrice
-            cost += trade.volume * trade.price
-            newPos = pos.position + trade.volume
-            if newPos:
-                pos.avgPrice = cost / newPos
-
-        pos.position += tdvol
-        pos.stampByTrader = trade.dt
+        pass
 
     # end with BrokerDriver
     #----------------------------------------------------------------------
@@ -472,11 +413,8 @@ class Account(object):
 
         self._dateToday = newDate
         self._dictTrades.clear() # clean the trade list
-        if self._dictPositions: # shift the positions, must do copy each VtPositionData
-            self._prevPositions = copy.deepcopy(self._dictPositions)
-#            for pos in self._dictPositions.values():
-#                self._prevPositions[pos.symbol] = copy(pos)
-
+        # shift the positions, must do copy each VtPositionData
+        self._prevPositions = self.getAllPosition()
         self._state = Account.STATE_OPEN
     
     @abstractmethod
@@ -547,11 +485,12 @@ class Account(object):
             tradesOfSymbol[t.vtSymbol].append(t)
 
         result = []
+        currentPositions = self._dvrBroker.getAllPositions()
         for s in tradesOfSymbol.keys():
-            if not s in self._dictPositions:
+            if not s in currentPositions:
                 continue
 
-            currentPos = self._dictPositions[s]
+            currentPos = currentPositions[s]
 
             if s in self._prevPositions:
                 prevPos = self._prevPositions[s]
@@ -1020,14 +959,6 @@ class Account_AShare(Account):
             if Account.SYMBOL_CASH == pos.symbol:
                 continue
             pos.posAvail = pos.position
-
-    @abstractmethod
-    def onTrade(self, trade):
-        super(Account_AShare, self).onTrade(trade)
-
-        if trade.direction != DIRECTION_LONG:
-            pos = self._dictPositions[trade.symbol]
-            pos.posAvail -= trade.volume
 
 
 ########################################################################

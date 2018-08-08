@@ -1,12 +1,16 @@
 # encoding: UTF-8
 
 from .Account import *
+import threading
 
 ########################################################################
 from abc import ABCMeta, abstractmethod
 class BrokerDriver(object):
     """交易API
-    BrokerDriver appears as an API and it keeps the data of the broker in its account object"""
+    BrokerDriver appears as an API and it interacts with the broker
+    BrokerDriver most likely will have a background thread the keep sync-ed with
+    the broker, so that its member datat should be thread-safe
+    """
     SYNC_MODE = 'sync'
     ASYNC_MODE = 'async'
 
@@ -20,6 +24,8 @@ class BrokerDriver(object):
     def __init__(self, account, settings, mode=None):
 
         """Constructor"""
+        self._lock = threading.Lock()
+
         self._account  = account
         self._settings = settings
 

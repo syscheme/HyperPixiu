@@ -195,7 +195,7 @@ class TraderAccount(Account):
         vtSymbol = tick.vtSymbol
         
         # 首先检查是否有策略交易该合约
-        if vtSymbol in self.tickStrategyDict:
+        if vtSymbol in self._idxTickToStrategy:
             # 遍历等待中的停止单，检查是否会被触发
             for so in self.workingStopOrderDict.values():
                 if so.vtSymbol == vtSymbol:
@@ -235,7 +235,7 @@ class TraderAccount(Account):
         self.processStopOrder(tick)
         
         # 推送tick到对应的策略实例进行处理
-        if tick.vtSymbol in self.tickStrategyDict:
+        if tick.vtSymbol in self._idxTickToStrategy:
             # tick时间可能出现异常数据，使用try...except实现捕捉和过滤
             try:
                 # 添加datetime字段
@@ -246,7 +246,7 @@ class TraderAccount(Account):
                 return
                 
             # 逐个推送到策略实例中
-            l = self.tickStrategyDict[tick.vtSymbol]
+            l = self._idxTickToStrategy[tick.vtSymbol]
             for strategy in l:
                 self.callStrategyFunc(strategy, strategy.onTick, tick)
     

@@ -5,16 +5,21 @@ from Queue import Queue, Empty
 from threading import Thread
 from time import sleep
 from collections import defaultdict
+from datetime import datetime
 
 # 第三方模块
 from qtpy.QtCore import QTimer
 
-EVENT_TIMER = 'eTimer'                  # 计时器事件，每隔1秒发送一次
+__dtEpoch = datetime.utcfromtimestamp(0)
+def datetime2float(dt):
+    total_seconds =  (dt - __dtEpoch).total_seconds()
+    # total_seconds will be in decimals (millisecond precision)
+    return total_seconds
 
 ########################################################################
-class EventChannel(object):
+class EventLoop(object): # non-thread
     """
-    计时器使用python线程的事件驱动引擎        
+    非线程的事件驱动引擎        
     """
 
     #----------------------------------------------------------------------
@@ -26,13 +31,10 @@ class EventChannel(object):
         # 事件引擎开关
         self.__active = False
         
-        # 事件处理线程
-        self.__thread = Thread(target = self.__run)
-        
         # 计时器，用于触发计时器事件
-        self.__timer = Thread(target = self.__runTimer)
-        self.__timerActive = False                      # 计时器工作状态
-        self.__timerSleep = 1                           # 计时器触发间隔（默认1秒）        
+        self.__timerActive = False     # 计时器工作状态
+        self.__timerStep = 1           # 计时器触发间隔（默认1秒）
+        self.__stampTimerLast = None
         
         # 这里的__handlers是一个字典，用来保存对应的事件调用关系
         # 其中每个键对应的值是一个列表，列表中保存了对该事件进行监听的函数功能
@@ -42,15 +44,38 @@ class EventChannel(object):
         self.__generalHandlers = []        
         
     #----------------------------------------------------------------------
-    def __run(self):
+    def step(self):
         """引擎运行"""
-        while self.__active == True:
-            try:
-                event = self.__queue.get(block = True, timeout = 1)  # 获取事件的阻塞时间设为1秒
-                if event :
-                    self.__process(event)
-            except Exception:
-                pass
+        dt = datetime.now()
+        stampNow = datetime2float(datetime.now())
+        c =0
+        try:
+            if not self.__stampTimerLast :
+                self.__stampTimerLast = stampNow
+
+            #while self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
+            #    self.__stampTimerLast += self.__timerStep
+            if self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
+                self.__stampTimerLast = stampNow
+                    
+                # 向队列中存入计时器事件
+                edata = edTimer(dt)
+                event = Event(type_= EventChannel.EVENT_TIMER)
+                event.dict_['data'] = edata
+                self.put(event)
+
+            # pop the event to dispatch
+            event = self.__queue.get(block = True, timeout = 0.5)  # 获取事件的阻塞时间设为1秒
+            if event :
+                self.__process(event)
+                c+=1
+        except Exception as ex:
+            print("eventCH exception %s %s" % (ex, traceback.format_exc()))
+
+        if c<=0:
+            return -3
+        
+        return c
             
     #----------------------------------------------------------------------
     def __process(self, event):
@@ -62,7 +87,7 @@ class EventChannel(object):
                 try:
                     handler(event)
                 except Exception as ex:
-                    print(ex)
+                    print("eventCH handle(%s) %s: %s %s" % (event.type_, ex, handler, traceback.format_exc()))
             
         # 调用通用处理函数进行处理
         if self.__generalHandlers:
@@ -70,50 +95,18 @@ class EventChannel(object):
                 try:
                     handler(event)
                 except Exception as ex:
-                    print(ex)
+                    print("eventCH handle %s %s" % (ex, traceback.format_exc()))
                
     #----------------------------------------------------------------------
-    def __runTimer(self):
-        """运行在计时器线程中的循环函数"""
-        while self.__timerActive:
-            # 创建计时器事件
-            event = Event(type_=EVENT_TIMER)
-        
-            # 向队列中存入计时器事件
-            self.put(event)    
-            
-            # 等待
-            sleep(self.__timerSleep)
-
-    #----------------------------------------------------------------------
     def start(self, timer=True):
-        """
-        引擎启动
-        timer：是否要启动计时器
-        """
-        # 将引擎设为启动
-        self.__active = True
-        
-        # 启动事件处理线程
-        self.__thread.start()
-        
         # 启动计时器，计时器事件间隔默认设定为1秒
         if timer:
             self.__timerActive = True
-            self.__timer.start()
     
     #----------------------------------------------------------------------
     def stop(self):
         """停止引擎"""
-        # 将引擎设为停止
-        self.__active = False
-        
-        # 停止计时器
-        self.__timerActive = False
-        self.__timer.join()
-        
-        # 等待事件处理线程退出
-        self.__thread.join()
+        pass
             
     #----------------------------------------------------------------------
     def register(self, type_, handler):
@@ -161,6 +154,55 @@ class EventChannel(object):
         if handler in self.__generalHandlers:
             self.__generalHandlers.remove(handler)
 
+########################################################################
+class EventChannel(EventLoop):
+    # 系统相关
+    EVENT_TIMER = 'eTimer'                  # 计时器事件，每隔1秒发送一次
+    EVENT_LOG   = 'eLog'                    # 日志事件，全局通用
+    EVENT_ERROR = 'eError.'                 # 错误回报事件
+
+    #----------------------------------------------------------------------
+    def __init__(self):
+        """初始化事件引擎"""
+
+        # 事件引擎开关
+        self.__active = False
+        
+        # 事件处理线程
+        self.__thread = Thread(target = self.__run)
+
+    #----------------------------------------------------------------------
+    def __run(self):
+        """引擎运行"""
+        while self.__active == True:
+            self.step()
+            
+    #----------------------------------------------------------------------
+    def start(self, timer=True):
+        """
+        引擎启动
+        timer：是否要启动计时器
+        """
+        # 将引擎设为启动
+        self.__active = True
+        
+        # 启动事件处理线程
+        self.__thread.start()
+
+        super(EventChannel, self).start(timer)
+        
+    #----------------------------------------------------------------------
+    def stop(self):
+        """停止引擎"""
+        # 将引擎设为停止
+        self.__active = False
+        
+        # 停止计时器
+        self.__timerActive = False
+
+        # 等待事件处理线程退出
+        self.__thread.join()
+            
 
 ########################################################################
 class Event:
@@ -171,7 +213,6 @@ class Event:
         """Constructor"""
         self.type_ = type_      # 事件类型
         self.dict_ = {}         # 字典用于保存具体的事件数据
-
 
 #----------------------------------------------------------------------
 def test():
@@ -186,8 +227,21 @@ def test():
     app = QCoreApplication(sys.argv)
     
     ee = EventChannel()
-    #ee.register(EVENT_TIMER, simpletest)
+    #ee.register(EventChannel.EVENT_TIMER, simpletest)
     ee.registerGeneralHandler(simpletest)
     ee.start()
     
     app.exec_()
+
+########################################################################
+from vnpy.trader.vtObject import VtBaseData
+class edTimer(VtBaseData):
+    """K线数据"""
+
+    #----------------------------------------------------------------------
+    def __init__(self, dt, type='clock'):
+        """Constructor"""
+        super(edTimer, self).__init__()
+        
+        self.datetime   = dt
+        self.sourceType = type          # 数据来源类型

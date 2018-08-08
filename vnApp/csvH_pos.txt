@@ -1,7 +1,9 @@
 symbol
 date
 recentPrice
+avgPrice
 recentPos
+posAvail
 calcPos
 calcMValue
 prevClose

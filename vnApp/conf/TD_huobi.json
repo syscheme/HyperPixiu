@@ -1,0 +1,68 @@
+{
+    "logger": {
+        // "level": "99",
+        // "console": "False",
+        // "file": "True",
+        // "event": { "log": "True", "error": "True" } // whether to post the log into event channel
+    },
+
+    "marketdata": [
+        {
+            "id": "huobi",
+            "source": "Huobi", // sepecify the MarketData source class
+
+            // the following is up to the MarketData class
+            "exchange": "huobi",
+            "proxy": "localhost:8118",
+        },
+        {
+            "id": "backtest",
+            "source": "Backtest",
+
+            // the following is up to the MarketData class
+            "sourceDB": "dr1min",
+            "exchange": "huobi", // the original exchange
+            "mode": "tick,t2k1"
+        },
+    ],
+
+    "trader": {
+
+        "dbNamePrefixHist" : "dr", // the preffix of DB name where to read history data from: <dbNamePrefixHist>Tick, <dbNamePrefixHist>K1min
+        "objectives": [
+            { 
+                "symbol": "eosusdt", 
+                "dsTick": "huobi", 
+                "ds1min": "huobi",  // sample "ds1min":"hadax_t2k1", in the case that we don't subscribe Kline directly from the market but take those merged from ticks
+            }, 
+            { 
+                "symbol": "ethusdt", 
+                "dsTick": "huobi", 
+                "ds1min": "huobi", // empty at ds1min means the trader only replies on ticks for this symbol
+            }, 
+        ],
+
+        "account": { // account settings
+            "id": "blah",
+            "broker": "huobi",
+
+            // the following is up to the broker driver
+            "httpproxy": "localhost:8118",
+            "accessKey": "blah",
+            "secretKey": "blah",
+        },
+
+        "strategies": [
+            {
+                "name" : "BBand", // strategy name equals to class name
+                "symbols": ["ethusdt"],
+                "weights": { // weights to affect decisions, in range of [0-100] each
+                    "long" : 100, // optimisti
+                    "short": 100, // pessimistic
+                },
+
+                // TODO: the following is up to the stategy class
+            },
+        ],
+    },
+}

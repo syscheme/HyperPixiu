@@ -6,6 +6,9 @@
 '''
 from __future__ import division
 
+from .Account import *
+from .Trader import *
+
 from datetime import datetime, timedelta
 from collections import OrderedDict
 from itertools import product
@@ -29,8 +32,6 @@ from vnpy.trader.vtObject import VtTickData, VtBarData
 from vnpy.trader.vtConstant import *
 from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 
-from .Account import *
-
 ########################################################################
 class BackTest(object):
     """
@@ -48,7 +49,7 @@ class BackTest(object):
 
         super(BackTest, self).__init__()
 
-        self.engineType = ENGINETYPE_BACKTESTING    # 引擎类型为回测
+        self.engineType = TRADER_TYPE_BACKTESTING    # 引擎类型为回测
 
         self._settings     = settings
         self._accountClass = AccountClass

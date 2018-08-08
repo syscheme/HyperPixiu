@@ -13,6 +13,7 @@ import base64
 import hashlib
 import requests 
 import traceback
+import socket
 from copy import copy
 from datetime import datetime
 from threading import Thread
@@ -67,17 +68,21 @@ class mdHuobi(MarketData):
     #----------------------------------------------------------------------
     # setting schema
     # {'exchange':HADAX, 'proxies':{'host': 'url' }} } 
-    def __init__(self, eventChannel, settings):
+    def __init__(self, mainRoutine, settings):
         """Constructor"""
 
-        super(mdHuobi, self).__init__(eventChannel, settings, MarketData.DATA_SRCTYPE_REALTIME)
+        super(mdHuobi, self).__init__(mainRoutine, settings, MarketData.DATA_SRCTYPE_REALTIME)
 
         self.ws = None
         self.url = ''
-        self._dictCh = {}
+        self._dictSubscriptions = {}
+        self._dictTicks = {}
+        
+        # huobi will repeat message for a same KLine, so to merge and only post the last
+        self._dictKLineLatest = {}
         
         self._reqid = 0
-        self.thread = Thread(target=self._run)
+        # self.thread = Thread(target=self._run)
         self._exchange = settings.exchange('')
         if self._exchange == self.HADAX:
             hostname = HADAX_API_HOST
@@ -88,58 +93,118 @@ class mdHuobi(MarketData):
         self.url = 'wss://%s/ws' % hostname
         self._proxy = settings.proxy('')
 
-    #----------------------------------------------------------------------
-    def _run(self):
-        """执行连接 and receive"""
-        while self._active:
-            data = None
-            try:
-                stream = self.ws.recv()
-                result = zlib.decompress(stream, 47).decode('utf-8')
-                data = json.loads(result)
-            except zlib.error:
-                self.onError(u'数据解压出错：%s' %stream)
-            except Exception as ex:
-                self.onError('行情服务器连接断开: %s' %ex)
-                if self._doConnect() :
-                    self.onError(u'行情服务器重连成功')
-                    self._resubscribe()
-                else:
-                    self.onError(u'等待3秒后再次重连')
-                    sleep(3)
+    # #----------------------------------------------------------------------
+    # def _run(self):
+    #     """执行连接 and receive"""
+    #     while self._active:
+    #         try :
+    #             if self.step() <0:
+    #                 self.onError(u'等待3秒后再次重连')
+    #                 sleep(3)
+    #         except Exception as ex:
+    #             self.onError(u'行情服务器step err: %s' % ex)
 
-            if not data:
-                continue
-
-            try:
-                self._onData(data)
-            except Exception as ex:
-                self.onError(u'数据分发错误：%s'  %ex)
     
-    #----------------------------------------------------------------------
+    # #----------------------------------------------------------------------
+    # def start(self):
+    #     """连接"""
+    #     self.connect()
+
+    #     self._active = True
+    #     self.thread.start()
+            
+    #     return self.active
+
     def connect(self):
         """连接"""
         if not self._doConnect() :
             return False
 
         self._resubscribe()
-        self._active = True
-        self.thread.start()
-            
-        return self.active
-        
+
+    def step(self):
+        if not self.ws :
+            if self._doConnect() :
+                self.onError(u'行情服务器重连成功')
+                self._resubscribe()
+            else:
+                self.onError(u'等待3秒后再次重连')
+                return -1
+
+        c = 0
+        while self.ws:
+            data = None
+            try:
+                stream = self.ws.recv() # (timeout=0.1)
+                if not stream or len(stream) <=0:
+                    break
+                result = zlib.decompress(stream, 47).decode('utf-8')
+                data = json.loads(result)
+                c +=1
+            except socket.timeout:
+                break
+            except zlib.error:
+                self.onError(u'数据解压出错：%s' %stream)
+            except Exception as ex:
+                self.onError(u'行情服务器recv err %s' % ex)
+                self.ws = None # disconnect it 
+
+            if not data:
+                break
+
+            try:
+                self._onData(data)
+                return 1
+            except Exception as ex:
+                self.onError(u'数据分发错误：%s'  %ex)
+
+        return c
+
     #----------------------------------------------------------------------
     def close(self):
         """停止"""
         if self._active:
             self._active = False
-            self.thread.join()
+            # self.thread.join()
             self.ws.close()
         
     #----------------------------------------------------------------------
     def subscribe(self, symbol, eventType):
         """订阅成交细节"""
-        self._subTopic(symbol, eventType)
+        if eventType != MarketData.EVENT_TICK:
+            topic =""
+            if eventType == MarketData.EVENT_MARKET_DEPTH0:
+                topic = 'market.%s.depth.step0' % symbol
+            elif eventType == MarketData.EVENT_KLINE_1MIN:
+                topic = 'market.%s.kline.1min' % symbol
+            elif eventType == MarketData.EVENT_KLINE_5MIN:
+                topic = 'market.%s.kline.5min' % symbol
+            elif eventType == MarketData.EVENT_KLINE_15MIN:
+                topic = 'market.%s.kline.15min' % symbol
+            elif eventType == MarketData.EVENT_KLINE_30MIN:
+                topic = 'market.%s.kline.30min' % symbol
+            elif eventType == MarketData.EVENT_KLINE_1HOUR:
+                topic = 'market.%s.kline.60min' % symbol
+            elif eventType == MarketData.EVENT_KLINE_4HOUR:
+                topic = 'market.%s.kline.4hour' % symbol
+            elif eventType == MarketData.EVENT_KLINE_1DAY:
+                topic = 'market.%s.kline.1day' % symbol            
+        
+            if len(topic) <=0 or topic in self._dictSubscriptions.keys():
+                return
+
+            return self._subTopic(topic)
+
+        # MarketData.EVENT_TICK here
+        if symbol in self._dictTicks:
+            return
+
+        tick = mdTickData(self, symbol)
+        tick.gatewayName = self.ident
+        self._dictTicks[symbol] = tick
+
+        self.subscribeMarketDepth(symbol)
+        self.subscribeMarketDetail(symbol)
 
     #----------------------------------------------------------------------
     def subscribeMarketDepth(self, symbol,step=0):
@@ -150,7 +215,7 @@ class mdHuobi(MarketData):
     #----------------------------------------------------------------------
     def subscribeTradeDetail(self, symbol):
         """订阅成交细节"""
-        topic = 'market.%s.trade.detail' %symbol
+        topic = 'market.%s.detail' %symbol
         self._subTopic(topic)
         
     #----------------------------------------------------------------------
@@ -248,74 +313,51 @@ class mdHuobi(MarketData):
     #----------------------------------------------------------------------
     def _resubscribe(self):
         """重新订阅"""
-        d = self.subDict
-        self.subDict = {}
-        for key in d.keys():
-            eventType, symbol= self.chopSubscribeKey(key)
-            self._subTopic(symbol, eventType)
+        d = self._dictSubscriptions
+        self._dictSubscriptions = {}
+        for topic in d.keys():
+            self._subTopic(topic)
         
     #----------------------------------------------------------------------
-    def _subTopic(self, symbol, eventType):
+    @property
+    def nextReqId(self) :
+        self._reqid += 1
+        return 'cseq-' + str(self._reqid)
+
+    def _subTopic(self, topic):
         """订阅主题"""
 
-        key = self.subscribeKey(symbol, eventType)
-        if key in self.subDict:
+        if topic in self._dictSubscriptions:
             return
 
-        topic = 'market.%s.trade.detail' %symbol
-        if   eventType == MarketData.EVENT_TICK:
-            topic = 'market.%s.detail' %symbol
-        elif eventType == MarketData.EVENT_MARKET_DEPTH0:
-            topic = 'market.%s.depth.step0' % symbol
-        elif eventType == MarketData.EVENT_KLINE_1MIN:
-            topic = 'market.%s.kline.1min' % symbol
-        elif eventType == MarketData.EVENT_KLINE_5MIN:
-            topic = 'market.%s.kline.5min' % symbol
-        elif eventType == MarketData.EVENT_KLINE_15MIN:
-            topic = 'market.%s.kline.15min' % symbol
-        elif eventType == MarketData.EVENT_KLINE_30MIN:
-            topic = 'market.%s.kline.30min' % symbol
-        elif eventType == MarketData.EVENT_KLINE_1HOUR:
-            topic = 'market.%s.kline.60min' % symbol
-        elif eventType == MarketData.EVENT_KLINE_4HOUR:
-            topic = 'market.%s.kline.4hour' % symbol
-        elif eventType == MarketData.EVENT_KLINE_1DAY:
-            topic = 'market.%s.kline.1day' % symbol
-        
-        self._reqid += 1
+        reqId = self.nextReqId
         req = {
             'sub': topic,
-            'id': 'cseq-' + str(self._reqid)
+            'id' : reqId
         }
 
         if self.ws :
             self._sendReq(req)
-        self.subDict[key] = str(self._reqid)+'>' + topic
+        self._dictSubscriptions[topic] = reqId
     
     #----------------------------------------------------------------------
-    def _doUnsubscribe(self, key):
+    def _doUnsubscribe(self, topic):
         """取消订阅主题"""
 
-        pos = self.subDict[key].find('>')
-        self.subDict[key]
-        id, topic = self.subDict[key][:pos], self.subDict[key][pos+1:]
+        reqId = self._dictSubscriptions[topic]
 
         req = {
             'unsub': topic,
-            'id': id
+            'id': reqId
         }
 
         self._sendReq(req)
+        del self._dictSubscriptions[topic]
     
-    #----------------------------------------------------------------------
-    def debug(self, msg):
-        """错误推送"""
-        print (msg)
-
     #----------------------------------------------------------------------
     def onError(self, msg):
         """错误推送"""
-        self.debug('ERR:%s' % msg)
+        self.error(msg)
         
     #----------------------------------------------------------------------
     #
@@ -336,10 +378,7 @@ class mdHuobi(MarketData):
 
         event = None
         ch = data['ch']
-        if 'depth.step' in ch:
-            event = Event(type_=MarketData.EVENT_MARKET_DEPTH)
-            event.dict_['data'] = data # TODO: covert the event format
-        elif '.kline.' in ch:
+        if '.kline.' in ch:
             """K线数据
             RECV:{u'tick': {u'count': 49, u'vol': 37120.18320073684, u'high': 8123.28, u'amount': 4.569773683996716, u'low': 8122.46, u'close': 8123.16, u'open': 8122.46, u'id': 1533014820}, u'ch': u'market.btcusdt.kline.1min', u'ts': 1533014873302}            """
             pos = ch.find('.kline.')
@@ -375,19 +414,17 @@ class mdHuobi(MarketData):
 
             k = self.subscribeKey(symbol, eventType)
 
-            if k in self._dictCh:
-                latest = self._dictCh[k]
+            if k in self._dictKLineLatest:
+                latest = self._dictKLineLatest[k]
                 if d['stamp']['id'] > latest['stamp']['id'] :
                     t = latest['tick']
 
-                    edata = mdKLineData(self)
-                    edata.vtSymbol   = edata.symbol = symbol
+                    edata = mdKLineData(self, symbol)
                     edata.open = t['open']
                     edata.close = t['close']
                     edata.high = t['high']
                     edata.low = t['low']
                     edata.volume = t['vol']
-
 
                     ts = latest['stamp']['id']
                     edata.date = ts.date().strftime('%Y%m%d')
@@ -396,38 +433,73 @@ class mdHuobi(MarketData):
                     event = Event(type_=eventType)
                     event.dict_['data'] = edata
 
-            self._dictCh[k] = d
+            self._dictKLineLatest[k] = d
+            if event:
+                self.postMarketEvent(event)
+            return
+        # end of Kline
+
+        # now combine marketDepth and marketDetail into tick
+        tick = None
+        tickReady = False
+        if 'depth.step' in ch:
+            symbol = data['ch'].split('.')[1]
+            tick = self._dictTicks.get(symbol, None)
+            if not tick:
+                return
+            tick.datetime = datetime.fromtimestamp(data['ts']/1000)
+            tick.date = tick.datetime.strftime('%Y%m%d')
+            tick.time = tick.datetime.strftime('%H:%M:%S.%f')
+
+            bids = data['tick']['bids']
+            for n in range(5):
+                l = bids[n]
+                tick.__setattr__('bidPrice' + str(n+1), l[0])
+                tick.__setattr__('bidVolume' + str(n+1), l[1])
+
+            asks = data['tick']['asks']
+            for n in range(5):
+                l = asks[n]
+                tick.__setattr__('askPrice' + str(n+1), l[0])
+                tick.__setattr__('askVolume' + str(n+1), l[1])
+
+            if tick.lastPrice:
+                 tickReady = True
 
         elif 'trade.detail' in ch:
             """成交细节推送
             {u'tick': {u'data': [{u'price': 481.93, u'amount': 0.1499, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405480484L}, {u'price': 481.94, u'amount': 0.2475, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405466973L}, {u'price': 481.97, u'amount': 6.3635, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405475106L}, {u'price': 481.98, u'amount': 0.109, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405468495L}, {u'price': 481.98, u'amount': 0.109, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405468818L}, {u'price': 481.99, u'amount': 6.3844, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405471868L}, {u'price': 482.0, u'amount': 0.6367, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405439802L}], u'id': 11837877646, u'ts': 1531119914439}, u'ch': u'market.ethusdt.trade.detail', u'ts': 1531119914494}
             {u'tick': {u'data': [{u'price': 481.96, u'amount': 0.109, u'direction': u'sell', u'ts': 1531119918505, u'id': 118378822907405482834L}], u'id': 11837882290, u'ts': 1531119918505}, u'ch': u'market.ethusdt.trade.detail', u'ts': 1531119918651}
             """
-            event = Event(type_=MarketData.EVENT_TICK)
-            event.dict_['data'] = data # TODO: covert the event format
+            pass
+            # event = Event(type_=MarketData.EVENT_TICK)
+            # event.dict_['data'] = data # TODO: covert the event format
         elif '.detail' in ch:
             """市场细节推送, 最近24小时成交量、成交额、开盘价、收盘价、最高价、最低价、成交笔数等
             RECV:{u'tick': {u'count': 124159, u'vol': 69271108.31560345, u'high': 465.03, u'amount': 151833.21684737998, u'version': 14324514537, u'low': 446.41, u'close': 451.07, u'open': 463.97, u'id': 14324514537}, u'ch': u'market.ethusdt.detail', u'ts': 1533015571033}
             """
-            pos = ch.find('.detail')
-            symbol =ch[len('market.'): pos]
-            tick = data['tick']
-            ts = datetime.fromtimestamp(float(data['ts'])/1000)
-            
-            edata = mdTickData(self)
-            edata.vtSymbol = edata.symbol = symbol
-            edata.lastPrice = tick['close']
-            edata.lastVolume = tick['vol']
-            edata.openPrice = tick['open']
-            edata.highPrice = tick['high']
-            edata.lowPrice = tick['low']
+            symbol = data['ch'].split('.')[1]
+            tick = self._dictTicks.get(symbol, None)
+            if not tick:
+                return
 
-            edata.date = ts.date().strftime('%Y%m%d')
-            edata.time = ts.time().strftime('%H:%M:%S.%3f')[:-3]
+            tick.datetime = datetime.fromtimestamp(data['ts']/1000)
+            tick.date = tick.datetime.strftime('%Y%m%d')
+            tick.time = tick.datetime.strftime('%H:%M:%S.%f')
 
+            t = data['tick']
+            tick.openPrice = t['open']
+            tick.highPrice = t['high']
+            tick.lowPrice = t['low']
+            tick.lastPrice = t['close']
+            tick.volume = t['vol']
+            tick.preClosePrice = tick.openPrice
+
+            if tick.bidPrice1:
+                 tickReady = True
+
+        if tick and tickReady :
             event = Event(type_=MarketData.EVENT_TICK)
-            event.dict_['data'] = edata
-
-        # post the event if valid
-        if event:
+            event.dict_['data'] = copy(tick)
             self.postMarketEvent(event)
+

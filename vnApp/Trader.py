@@ -12,7 +12,10 @@ from copy import copy
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
 
-from .MainRoutine import *
+from vnApp.MainRoutine import *
+from vnApp.BrokerDriver import *
+import vnApp.strategies as tg
+from vnApp.brokerdrivers import tdHuobi as td
 
 from vnpy.event import Event
 from vnpy.trader.vtGlobal import globalSetting
@@ -21,12 +24,19 @@ from vnpy.trader.vtGateway import *
 from vnpy.trader.language import text
 from vnpy.trader.vtFunction import getTempPath
 
+import jsoncfg # pip install json-cfg
+
+# 引擎类型，用于区分当前策略的运行环境
+TRADER_TYPE_BACKTESTING = 'backtesting'  # 回测
+TRADER_TYPE_TRADING = 'trading'          # 实盘
 
 ########################################################################
 class Trader(BaseApplication):
     """Trader Application"""
 
     FINISHED_STATUS = [STATUS_ALLTRADED, STATUS_REJECTED, STATUS_CANCELLED]
+
+    RUNTIME_TAG_TODAY = '$today'
 
     #----------------------------------------------------------------------
     def __init__(self, mainRoutine, settings):
@@ -35,23 +45,27 @@ class Trader(BaseApplication):
         super(Trader, self).__init__(mainRoutine, settings)
 
         # 引擎类型为实盘
-        self._tradeType = ENGINETYPE_TRADING
+        self._tradeType = TRADER_TYPE_TRADING
         
         #--------------------
         # from old 数据引擎
         # 保存数据的字典和列表
-        self._dickLatestTick = {}    # the latest tick of each symbol
+
+        self._dictLatestTick = {}         # the latest tick of each symbol
+        self._dictLatestKline1min = {}    #SSS the latest kline1min of each symbol
         self._dictLatestContract = {}
         self._dictLatestOrder = {}
-        self._dictWorkingOrder = {}  # 可撤销委托
-        self._dictTrade = {}
+        self._dictWorkingOrder = {} # 可撤销委托
+        # inside of Account self._dictTrade = {}
         self._dictAccounts = {}
         self._defaultAccId = None
-        self._dictPositions= {}
+        # inside of Account self._dictPositions= {}
         self._lstErrors = []
+
+        self.debug('local data cache initialized')
         
         # 持仓细节相关
-        self._dictDetails = {}                        # vtSymbol:PositionDetail
+        # inside of Account self._dictDetails = {}                        # vtSymbol:PositionDetail
         self._lstTdPenalty = settings.tdPenalty       # 平今手续费惩罚的产品代码列表
 
         # 读取保存在硬盘的合约数据
@@ -68,63 +82,111 @@ class Trader(BaseApplication):
         # 保存vtSymbol和策略实例映射的字典（用于推送tick数据）
         # 由于可能多个strategy交易同一个vtSymbol，因此key为vtSymbol
         # value为包含所有相关strategy对象的list
-        self.tickStrategyDict = {}
+        self._idxSymbolToStrategy = {}
         
         # 保存vtOrderID和strategy对象映射的字典（用于推送order和trade数据）
         # key为vtOrderID，value为strategy对象
-        self._idxOrderToStategy = {}     
+        self._idxOrderToStategy = {}
+        self._idxStrategyToOrder = {}
 
         # # 本地停止单字典
         # # key为stopOrderID，value为stopOrder对象
         # self.stopOrderDict = {}             # 停止单撤销后不会从本字典中删除
         # self.workingStopOrderDict = {}      # 停止单撤销后会从本字典中删除
         
-        # 保存策略名称和委托号列表的字典
-        # key为name，value为保存orderID（限价+本地停止）的集合
-        self._ordersOfStrategy = {}
-        
         # 成交号集合，用来过滤已经收到过的成交推送
-        self.tradeSet = set()
+        # inside of Account self.tradeSet = set()
 
         #------end of old ctaEngine--------------
 
         # 本地停止单编号计数
         self.stopOrderCount = 0
         # stopOrderID = STOPORDERPREFIX + str(stopOrderCount)
+
+        # test hardcoding
+        self.debug('adopting account')
+        account = Account(self, td.tdHuobi, self._settings.account)
+        if account:
+            self.adoptAccount(account)
+
+        # step 1. collect all interested symbol of market data into _dictObjectives
+        self.debug('building up security objectives')
+        self._dictObjectives = {}
+
+        #   part 1. those specified in the configuration
+        for s in jsoncfg.expect_array(self._settings.objectives):
+            try :
+                symbol = s.symbol('')
+                dsTick = s.dsTick('')
+                ds1min = s.ds1min('')
+                if len(symbol) <=0 or (len(dsTick) <=0 and len(ds1min) <=0):
+                    continue
+                d = {
+                    "dsTick" : dsTick,
+                    "ds1min" : ds1min,
+                    Trader.RUNTIME_TAG_TODAY : None,
+                }
+
+                self._dictObjectives[symbol] = d
+            except:
+                pass
         
+        # TODO part 2. scan those in the positions of Accounts, and also put into _dictObjectives
+
+        self.debug('collected %s interested symbols, adopting strategies' % len(self._dictObjectives))
+
+        self.strategies_LoadAll(self._settings.strategies)
+        
+    #----------------------------------------------------------------------
+    # access to the Account
     #----------------------------------------------------------------------
     def adoptAccount(self, account, default=False):
         if not account:
             return
         
-        if len(account._id) <=0 and account._dvrBroker：
-            account._id = account._dvrBroker.__class__
-        
-        self._dictAccounts[account._id] = account
+        self._dictAccounts[account.ident] = account
         if default or self._defaultAccId ==None:
-            self._defaultAccId = account._id
+            self._defaultAccId = account.ident
+
+    @property
+    def account(self): # the default account
+        return self._dictAccounts[self._defaultAccId]
+
+    @property
+    def allAccounts(self):
+        """获取所有帐号"""
+        return self._dictAccounts.values()
         
-    #----impl of BaseApplication ------------------------------------------
+    #----------------------------------------------------------------------
+    # impl of BaseApplication
+    #----------------------------------------------------------------------
     def start(self):
         # TODO: subscribe all interested market data
-        pass
+        self.subscribeSymbols()
 
-    #----------------------------------------------------------------------
+        # subscribe account events
+        self.subscribeEvent(BrokerDriver.EVENT_ORDER, self.eventHdl_Order)
+        self.subscribeEvent(BrokerDriver.EVENT_TRADE, self.eventHdl_Trade)
+
+        self.subscribeEvent(EventChannel.EVENT_TIMER, self.eventHdl_OnTimer)
+
+        """注册事件监听"""
+
     def stop(self):
         """退出程序前调用，保证正常退出"""        
         # TODO: subscribe all interested market data
         pass
     
-    #----end of BaseApplication ------------------------------------------
+    #----------------------------------------------------------------------
+    # local the recent data by symbol
     #----------------------------------------------------------------------
     def getTick(self, vtSymbol):
         """查询行情对象"""
         try:
-            return self._dickLatestTick[vtSymbol]
+            return self._dictLatestTick[vtSymbol]
         except KeyError:
             return None        
     
-    #----------------------------------------------------------------------
     def getContract(self, vtSymbol):
         """查询合约对象"""
         try:
@@ -132,19 +194,16 @@ class Trader(BaseApplication):
         except KeyError:
             return None
         
-    #----------------------------------------------------------------------
     def getAllContracts(self):
         """查询所有合约对象（返回列表）"""
         return self._dictLatestContract.values()
     
-    #----------------------------------------------------------------------
     def saveContracts(self):
         """保存所有合约对象到硬盘"""
         f = shelve.open(self.contractFilePath)
         f['data'] = self._dictLatestContract
         f.close()
     
-    #----------------------------------------------------------------------
     def loadContracts(self):
         """从硬盘读取合约对象"""
         f = shelve.open(self.contractFilePath)
@@ -155,6 +214,8 @@ class Trader(BaseApplication):
         f.close()
         
     #----------------------------------------------------------------------
+    # about the orders
+    #----------------------------------------------------------------------
     def getOrder(self, vtOrderID):
         """查询委托"""
         try:
@@ -162,32 +223,34 @@ class Trader(BaseApplication):
         except KeyError:
             return None
     
-    #----------------------------------------------------------------------
     def getAllWorkingOrders(self):
         """查询所有活动委托（返回列表）"""
         return self._dictWorkingOrder.values()
-    
-    #----------------------------------------------------------------------
+
     def getAllOrders(self):
         """获取所有委托"""
         return self._dictLatestOrder.values()
     
-    #----------------------------------------------------------------------
     def getAllTrades(self):
         """获取所有成交"""
         return self._dictTrade.values()
     
     #----------------------------------------------------------------------
+    def convertOrderReq(self, req):
+        """根据规则转换委托请求"""
+        detail = self._dictDetails.get(req.vtSymbol, None)
+        if not detail:
+            return [req]
+        else:
+            return detail.convertOrderReq(req)
+
+    #----------------------------------------------------------------------
+    # about the position
+    #----------------------------------------------------------------------
     def getAllPositions(self):
         """获取所有持仓"""
         return self._dictPositions.values()
-    
-    #----------------------------------------------------------------------
-    def getAllAccounts(self):
-        """获取所有帐号"""
-        return self._dictAccounts.values()
-    
-    #----------------------------------------------------------------------
+
     def getPositionDetail(self, vtSymbol):
         """查询持仓细节"""
         if vtSymbol in self._dictDetails:
@@ -214,12 +277,10 @@ class Trader(BaseApplication):
                 
         return detail
     
-    #----------------------------------------------------------------------
     def getAllPositionDetails(self):
         """查询所有本地持仓缓存细节"""
         return self._dictDetails.values()
     
-    #----------------------------------------------------------------------
     def updateOrderReq(self, req, vtOrderID):
         """委托请求更新"""
         vtSymbol = req.vtSymbol
@@ -227,6 +288,8 @@ class Trader(BaseApplication):
         detail = self.getPositionDetail(vtSymbol)
         detail.updateOrderReq(req, vtOrderID)
     
+    #----------------------------------------------------------------------
+    # logging
     #----------------------------------------------------------------------
     @abstractmethod
     def logEvent(self, event):
@@ -251,52 +314,125 @@ class Trader(BaseApplication):
         return self._lstErrors
 
     #----------------------------------------------------------------------
-    def convertOrderReq(self, req):
-        """根据规则转换委托请求"""
-        detail = self._dictDetails.get(req.vtSymbol, None)
-        if not detail:
-            return [req]
-        else:
-            return detail.convertOrderReq(req)
-
-    #----------------------------------------------------------------------
     # Interested Events from EventChannel
     #----------------------------------------------------------------------
-    def registerEvent(self):
-        """注册事件监听"""
-        self.eventEngine.register(EVENT_TICK, self.eventHdl_Tick)
-        self.eventEngine.register(EVENT_ORDER, self.eventHdl_Order)
-        self.eventEngine.register(EVENT_TRADE, self.eventHdl_Trade)
+    def subscribeSymbols(self) :
+
+        # subscribe the symbols
+        self.subscribeEvent(MarketData.EVENT_TICK,       self.eventHdl_Tick)
+        self.subscribeEvent(MarketData.EVENT_KLINE_1MIN, self.eventHdl_KLine1min)
+        for k in self._dictObjectives.keys():
+            s = self._dictObjectives[k]
+            if len(s['dsTick']) >0:
+                ds = self._engine.getMarketData(s['dsTick'])
+                if ds:
+                    self.debug('calling local subcribers for EVENT_TICK: %s' % s)
+                    ds.subscribe(k, MarketData.EVENT_TICK)
+                ds = self._engine.getMarketData(s['ds1min'])
+                if ds:
+                    self.debug('calling local subcribers for EVENT_KLINE_1MIN: %s' % s)
+                    ds.subscribe(k, MarketData.EVENT_KLINE_1MIN)
 
     ### eventTick from MarketData ----------------
     @abstractmethod
-    def eventHdl_Tick(self, event):
-        """处理行情推送"""
-        tick = event.dict_['data']
-        tick = copy(tick)
+    def eventHdl_KLine1min(self, event):
+        """TODO: 处理行情推送"""
+        self.debug('eventHdl_KLine1min')
+        d = event.dict_['data']
+        tokens = (d.vtSymbol.split('.'))
+        symbol = tokens[0]
+        ds =""
+        if len(tokens) >1:
+            ds = tokens[1]
+        if not symbol in self._dictObjectives or ds != self._dictObjectives[symbol]['ds1min']:
+            return # ignore those not interested
+
+        kline = copy.copy(d)
+        try:
+            # 添加datetime字段
+            if not tick.datetime:
+                tmpstr = ' '.join([tick.date, tick.time])
+                tick.datetime = datetime.strptime(tmpstr, '%Y%m%d %H:%M:%S')
+                tick.datetime = datetime.strptime(tmpstr, '%Y%m%d %H:%M:%S.%f')
+        except ValueError:
+            self.error(traceback.format_exc())
+
+        if self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] != kline.date:
+            self.onDayOpen(symbol, kline.date)
+            self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = kline.date
 
         # step 1. cache into the latest, lnf DataEngine
-        self._dickLatestTick[tick.vtSymbol] = tick
+        self.debug('eventHdl_KLine1min(%s)' % kline.vtSymbol)
+        self._dictLatestKline1min[symbol] = kline
 
-        # step 2. 收到tick行情后，先处理本地停止单（检查是否要立即发出） lnf ctaEngine
-        self.processStopOrder(tick)
+        # step 2. 收到行情后，在启动策略前的处理
+        # 先处理本地停止单（检查是否要立即发出） lnf ctaEngine
+        self.debug('eventHdl_KLine1min(%s) pre-strategy processing' % kline.vtSymbol)
+        self.preStrategyByKLine(kline)
 
         # step 3. 推送tick到对应的策略实例进行处理 lnf ctaEngine
-        if tick.vtSymbol in self.tickStrategyDict:
-            # tick时间可能出现异常数据，使用try...except实现捕捉和过滤
-            try:
-                # 添加datetime字段
-                if not tick.datetime:
-                    tick.datetime = datetime.strptime(' '.join([tick.date, tick.time]), '%Y%m%d %H:%M:%S.%f')
-            except ValueError:
-                self.writeCtaLog(traceback.format_exc())
-                return
-                
+        if symbol in self._idxSymbolToStrategy:
             # 逐个推送到策略实例中
-            l = self.tickStrategyDict[tick.vtSymbol]
+            l = self._idxSymbolToStrategy[symbol]
+            self.debug('eventHdl_KLine1min(%s) dispatching to %d strategies' % (kline.vtSymbol, len(l)))
+            for strategy in l:
+                self._stg_call(strategy, strategy.onKline, kline)
+
+        # step 4. 执行完策略后的的处理，通常为综合决策
+        self.debug('eventHdl_KLine1min(%s) post-strategy processing' % kline.vtSymbol)
+        self.postStrategy()
+
+        self.debug('eventHdl_KLine1min(%s) done' % kline.vtSymbol)
+
+    @abstractmethod
+    def eventHdl_Tick(self, event):
+        """处理行情推送"""
+        d = event.dict_['data']
+        tokens = (d.vtSymbol.split('.'))
+        symbol = tokens[0]
+        ds =""
+        if len(tokens) >1:
+            ds = tokens[1]
+        if not symbol in self._dictObjectives or ds != self._dictObjectives[symbol]['ds1min']:
+            return # ignore those not interested
+
+        tick = copy.copy(d)
+        try:
+            # 添加datetime字段
+            if not tick.datetime:
+                tmpstr = ' '.join([tick.date, tick.time])
+                tick.datetime = datetime.strptime(tmpstr, '%Y%m%d %H:%M:%S')
+                tick.datetime = datetime.strptime(tmpstr, '%Y%m%d %H:%M:%S.%f')
+        except ValueError:
+            self.error(traceback.format_exc())
+
+        if self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] != tick.date:
+            self.onDayOpen(symbol, tick.date)
+            self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = tick.date
+
+        self.debug('eventHdl_Tick(%s)' % tick.vtSymbol)
+        # step 1. cache into the latest, lnf DataEngine
+        self._dictLatestTick[symbol] = tick
+
+        # step 2. 收到行情后，在启动策略前的处理
+        # 先处理本地停止单（检查是否要立即发出） lnf ctaEngine
+        self.debug('eventHdl_Tick(%s) pre-strategy processing' % tick.vtSymbol)
+        self.preStrategyByTick(tick)
+
+        # step 3. 推送tick到对应的策略实例进行处理 lnf ctaEngine
+        if symbol in self._idxSymbolToStrategy:
+            # 逐个推送到策略实例中
+            l = self._idxSymbolToStrategy[symbol]
+            self.debug('eventHdl_Tick(%s) dispatching to %d strategies' % (tick.vtSymbol, len(l)))
             for strategy in l:
                 self._stg_call(strategy, strategy.onTick, tick)
     
+        # step 4. 执行完策略后的的处理，通常为综合决策
+        self.debug('eventHdl_Tick(%s) post-strategy processing' % tick.vtSymbol)
+        self.postStrategy()
+
+        self.debug('eventHdl_Tick(%s) done' % tick.vtSymbol)
+
     ### eventTick from Account ----------------
     @abstractmethod
     def eventHdl_Order(self, event):
@@ -322,7 +458,7 @@ class Trader(BaseApplication):
             
             # 如果委托已经完成（拒单、撤销、全成），则从活动委托集合中移除
             if order.status == self.STATUS_FINISHED:
-                s = self._ordersOfStrategy[strategy.name]
+                s = self._idxStrategyToOrder[strategy.name]
                 if vtOrderID in s:
                     s.remove(vtOrderID)
             
@@ -356,7 +492,14 @@ class Trader(BaseApplication):
             self._stg_call(strategy, strategy.onTrade, trade)
             
             # 保存策略持仓到数据库
-            self._stg_flushPos(strategy)              
+            self._stg_flushPos(strategy)
+
+    ### generic events ??? ----------------
+    def eventHdl_OnTimer(self, event):
+        edata = event.dict_['data']
+        self.debug('OnTimer() src[%s] %s' % (edata.sourceType, edata.datetime.strftime('%Y%m%dT%H:%M:%S.%f')))
+        # TODO: forward to account.onTimer()
+        pass                      
 
     ### eventContract from ??? ----------------
     @abstractmethod
@@ -380,24 +523,69 @@ class Trader(BaseApplication):
         detail.updatePosition(pos)                
         
     #----------------------------------------------------------------------
-    def processStopOrder(self, tick):
+    @abstractmethod    # usually back test will overwrite this
+    def onDayOpen(self, symbol, date):
+
+        # step1. notify accounts
+        # TODO: to support multiaccount: for acc in self._dictAccounts.values():
+        self.debug('onDayOpen(%s) dispatching account' % symbol)
+        self.account.onDayOpen(date)
+
+        # step1. notify stategies
+        if symbol in self._idxSymbolToStrategy:
+            # 逐个推送到策略实例中
+            l = self._idxSymbolToStrategy[symbol]
+            self.debug('onDayOpen(%s) dispatching to %d strategies' % (symbol, len(l)))
+            for strategy in l:
+                self._stg_call(strategy, strategy.onDayOpen, tick)
+
+    @abstractmethod    # usually back test will overwrite this
+    def preStrategyByKLine(self, kline):
+        """收到行情后，在启动策略前的处理
+        通常处理本地停止单（检查是否要立即发出）"""
+
+        self.processStopOrdersByKLine(kline)
+        pass
+
+    @abstractmethod    # usually back test will overwrite this
+    def postStrategy(self, symbol) :
+        """执行完策略后的的处理，通常为综合决策"""
+        pass
+
+    @abstractmethod    # usually back test will overwrite this
+    def preStrategyByTick(self, tick):
+        """收到行情后，在启动策略前的处理
+        通常处理本地停止单（检查是否要立即发出）"""
+
+        self.processStopOrdersByTick(tick)
+        pass
+
+    # normal Trader cares StopOrders
+    @abstractmethod
+    def processStopOrdersByTick(self, tick):
+        """收到行情后处理本地停止单（检查是否要立即发出）"""
+        pass
+
+    # normal Trader cares StopOrders
+    @abstractmethod
+    def processStopOrdersByKLine(self, kline):
         """收到行情后处理本地停止单（检查是否要立即发出）"""
         pass
 
     #----------------------------------------------------------------------
     #  Strategy methods
     #----------------------------------------------------------------------
-    def strategies_Load(self):
+    def strategies_LoadAll(self, settingList):
         """读取策略配置"""
-        with open(self.settingfilePath) as f:
-            l = json.load(f)
+        self.debug('loading all strategies')
+        for s in jsoncfg.expect_array(settingList):
+            self._stg_load(s)
             
-            for setting in l:
-                self._stg_load(setting)
+        self.debug('loaded strategies: %s' % self._dictStrategies.keys())
 
     def strategies_List(self):
         """查询所有策略名称"""
-        return self.strategyDict.keys()        
+        return self._dictStrategies.keys()        
 
     def strategies_Init(self):
         """全部初始化"""
@@ -426,7 +614,7 @@ class Trader(BaseApplication):
     def _stg_init(self, name):
         """初始化策略"""
         if name in self._dictStrategies:
-            self.writeCtaLog(u'策略实例不存在：%s' %name)    
+            self.error(u'策略实例不存在：%s' %name)    
 
         strategy = self._dictStrategies[name]
         if not strategy.inited:
@@ -438,7 +626,7 @@ class Trader(BaseApplication):
     def _stg_start(self, name):
         """启动策略"""
         if name in self._dictStrategies:
-            self.writeCtaLog(u'策略实例不存在：%s' %name)    
+            self.error(u'策略实例不存在：%s' %name)    
 
         strategy = self._dictStrategies[name]
         if strategy.inited and not strategy.trading:
@@ -448,7 +636,7 @@ class Trader(BaseApplication):
     def _stg_stop(self, name):
         """停止策略"""
         if name in self._dictStrategies:
-            self.writeCtaLog(u'策略实例不存在：%s' %name)    
+            self.error(u'策略实例不存在：%s' %name)    
 
         strategy = self._dictStrategies[name]
             
@@ -467,44 +655,65 @@ class Trader(BaseApplication):
                     self.cancelStopOrder(stopOrderID)   
 
     def _stg_load(self, setting):
-        """载入策略"""
-        try:
-            name = setting['name']
-            className = setting['className']
-        except Exception:
-            msg = traceback.format_exc()
-            self.writeCtaLog(u'载入策略出错：%s' %msg)
-            return
-        
+        """载入策略, setting schema:
+            {
+                "name" : "BBand", // strategy name equals to class name
+                "symbols": ["ethusdt"],
+                "weights": { // weights to affect decisions, in range of [0-100] each
+                    "long" : 100, // optimisti
+                    "short": 100, // pessimistic
+                },
+
+                // the following is up to the stategy class
+            },
+        """
+
+        className = setting.name()
+
         # 获取策略类
-        strategyClass = STRATEGY_CLASS.get(className, None)
+        strategyClass = tg.STRATEGY_CLASS.get(className, None)
         if not strategyClass:
-            self.writeCtaLog(u'找不到策略类：%s' %className)
+            self.error(u'找不到策略类：%s' %className)
             return
         
-        # 防止策略重名
-        if name in self.strategyDict:
-            self.writeCtaLog(u'策略实例重名：%s' %name)
-        else:
-            # 创建策略实例
-            strategy = strategyClass(self, setting)  
-            self.strategyDict[name] = strategy
-            
+        # 创建策略实例
+        symbols = []
+        for s in jsoncfg.expect_array(setting.symbols):
+            symbol = s('')
+            if len(symbol) <=0:
+                continue
+            if '*' == symbol:
+                symbols = []
+            symbols.append(symbol)
+        if len(symbols) <=0:
+            symbols = self._dictObjectives.keys()
+        
+        for s in symbols:
+            strategy = strategyClass(self, s, self.account, setting)
+            if strategy.id in self._dictStrategies:  # 防止策略重名
+                self.error(u'策略实例重名：%s' %id)
+                continue
+
+            self._dictStrategies[strategy.id] = {
+                'weights' : setting.weights({}),
+                'strategy' : strategy
+            }
+
             # 创建委托号列表
-            self.strategyOrderDict[name] = set()
-            
+            self._idxStrategyToOrder[strategy.id] = set()
+
             # 保存Tick映射关系
-            if strategy.vtSymbol in self.tickStrategyDict:
-                l = self.tickStrategyDict[strategy.vtSymbol]
+            if s in self._idxSymbolToStrategy:
+                l = self._idxSymbolToStrategy[s]
             else:
                 l = []
-                self.tickStrategyDict[strategy.vtSymbol] = l
+                self._idxSymbolToStrategy[s] = l
             l.append(strategy)
 
     def _stg_allVars(self, name):
         """获取策略当前的变量字典"""
-        if name in self.strategyDict:
-            strategy = self.strategyDict[name]
+        if name in self._dictStrategies:
+            strategy = self._dictStrategies[name]
             varDict = OrderedDict()
             
             for key in strategy.varList:
@@ -512,13 +721,13 @@ class Trader(BaseApplication):
             
             return varDict
         else:
-            self.writeCtaLog(u'策略实例不存在：' + name)    
+            self.error(u'策略实例不存在：' + name)    
             return None
     
     def _stg_allParams(self, name):
         """获取策略的参数字典"""
-        if name in self.strategyDict:
-            strategy = self.strategyDict[name]
+        if name in self._dictStrategies:
+            strategy = self._dictStrategies[name]
             paramDict = OrderedDict()
             
             for key in strategy.paramList:  
@@ -526,7 +735,7 @@ class Trader(BaseApplication):
             
             return paramDict
         else:
-            self.writeCtaLog(u'策略实例不存在：' + name)    
+            self.error(u'策略实例不存在：' + name)    
             return None
 
     def _stg_call(self, strategy, func, params=None):
@@ -544,8 +753,23 @@ class Trader(BaseApplication):
             # 发出日志
             content = '\n'.join([u'策略%s触发异常已停止' %strategy.name,
                                 traceback.format_exc()])
-            self.writeCtaLog(content)
+            self.error(content)
     #----------------------------------------------------------------------
+    def ordersOfStrategy(self, strategyId, symbol=None):
+        if not strategyId in self._idxStrategyToOrder :
+            return []
+        l = self._idxStrategyToOrder[strategyId]
+        if not symbol:
+            return l
+        
+        ret = []
+        for o in l:
+            if o.symbol == symbol:
+                ret.append(o)
+        return ret
+
+
+
 
 ########################################################################
 class PositionDetail(object):
@@ -841,12 +1065,12 @@ class PositionDetail(object):
                 l = []
                 
                 if tdAvailable > 0:
-                    reqTd = copy(req)
+                    reqTd = copy.copy(req)
                     reqTd.offset = OFFSET_CLOSETODAY
                     reqTd.volume = tdAvailable
                     l.append(reqTd)
                     
-                reqYd = copy(req)
+                reqYd = copy.copy(req)
                 reqYd.offset = OFFSET_CLOSEYESTERDAY
                 reqYd.volume = req.volume - tdAvailable
                 l.append(reqYd)
@@ -882,7 +1106,7 @@ class PositionDetail(object):
                 l = []
                 
                 if ydAvailable > 0:
-                    reqClose = copy(req)
+                    reqClose = copy.copy(req)
                     if self.exchange is EXCHANGE_SHFE:
                         reqClose.offset = OFFSET_CLOSEYESTERDAY
                     else:
@@ -891,7 +1115,7 @@ class PositionDetail(object):
                     
                     l.append(reqClose)
                     
-                reqOpen = copy(req)
+                reqOpen = copy.copy(req)
                 reqOpen.offset = OFFSET_OPEN
                 reqOpen.volume = req.volume - ydAvailable
                 l.append(reqOpen)

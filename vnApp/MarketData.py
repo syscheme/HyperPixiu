@@ -5,6 +5,8 @@ from __future__ import division
 from vnpy.trader.vtConstant import *
 from vnpy.trader.vtObject import VtBarData, VtTickData
 
+from abc import ABCMeta, abstractmethod
+
 ########################################################################
 class MarketData(object):
     # Market相关events
@@ -23,13 +25,22 @@ class MarketData(object):
     DATA_SRCTYPE_IMPORT     = 'import'
     DATA_SRCTYPE_BACKTEST   = 'backtest'
 
+    __lastId__ =100
+
     from abc import ABCMeta, abstractmethod
 
     #----------------------------------------------------------------------
-    def __init__(self, eventChannel, settings, srcType=DATA_SRCTYPE_REALTIME):
+    def __init__(self, mainRoutine, settings, srcType=DATA_SRCTYPE_REALTIME):
         """Constructor"""
 
-        self._eventCh = eventChannel
+        # the MarketData instance Id
+        self._id = settings.id("")
+        if len(self._id)<=0 :
+            MarketData.__lastId__ +=1
+            self._id = 'M%d' % BaseApplication.__lastId__
+
+        self._mr = mainRoutine
+        self._eventCh = mainRoutine._eventChannel
         self._sourceType = srcType
 
         self._active = False
@@ -39,6 +50,10 @@ class MarketData(object):
     
     #----------------------------------------------------------------------
     @property
+    def ident(self) :
+        return self.__class__.__name__ +":" + self._id
+
+    @property
     def active(self):
         return self._active
 
@@ -47,20 +62,34 @@ class MarketData(object):
         return self.subDict
         
     #----------------------------------------------------------------------
+    # if the MarketData has background thread, connect() will not start the thread
+    # but start() will
     @abstractmethod
     def connect(self):
         """连接"""
         raise NotImplementedError
         return self.active
-        
-    #----------------------------------------------------------------------
+
     @abstractmethod
     def close(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def start(self):
+        """连接"""
+        self.connect()
+        
+    @abstractmethod
+    def step(self):
+        """连接"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def stop(self):
         """停止"""
         if self._active:
             self._active = False
-
-        raise NotImplementedError
+            self.close()
         
     #----------------------------------------------------------------------
     def subscribeKey(self, symbol, eventType):
@@ -108,30 +137,91 @@ class MarketData(object):
             return
 
         self._eventCh.put(event)
+        self.info('posted %s%s' % (event.type_, event.dict_['data'].vtSymbol))
+
+    #---logging -----------------------
+    def debug(self, msg):
+        self._mr.debug('MD['+self.ident +'] ' + msg)
+        
+    def info(self, msg):
+        """正常输出"""
+        self._mr.info('MD['+self.ident +'] ' + msg)
+
+    def warn(self, msg):
+        """警告信息"""
+        self._mr.warn('MD['+self.ident +'] ' + msg)
+        
+    def error(self, msg):
+        """报错输出"""
+        self._mr.error('MD['+self.ident +'] ' + msg)
+        
+    def logexception(self, ex):
+        """报错输出+记录异常信息"""
+        self._mr.logexception('MD['+self.ident +'] %s: %s' % (ex, traceback.format_exc()))
     
- 
+ ########################################################################
+class ThreadedMd(object):
+    #----------------------------------------------------------------------
+    def __init__(self, marketData):
+        """Constructor"""
+        self._md = marketData
+        self.thread = Thread(target=self._run)
+
+    #----------------------------------------------------------------------
+    def _run(self):
+        """执行连接 and receive"""
+        while self._md._active:
+            try :
+                nextSleep = - self._md.step()
+                if nextSleep >0:
+                    sleep(nextSleep)
+            except Exception as ex:
+                self._md.error('ThreadedMd::step() excepton: %s' % ex)
+        self._md.info('ThreadedMd exit')
+
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def start(self):
+        self._md.start()
+        self.thread.start()
+        self._md.debug('ThreadedMd starts')
+        return self._md._active
+
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def stop(self):
+        self._md.stop()
+        self.thread.join()
+        self._md.info('ThreadedMd stopped')
+    
+
 ########################################################################
 class mdTickData(VtTickData):
     """Tick行情数据类"""
 
     #----------------------------------------------------------------------
-    def __init__(self, md):
+    def __init__(self, md, symbol =None):
         """Constructor"""
         super(mdTickData, self).__init__()
         
         self.exchange   = md._exchange
         self.sourceType = md._sourceType          # 数据来源类型
-    
+        if symbol:
+            self.symbol = symbol
+            self.vtSymbol = '.'.join([self.symbol, self.exchange])
+
 ########################################################################
 class mdKLineData(VtBarData):
     """K线数据"""
 
     #----------------------------------------------------------------------
-    def __init__(self, md):
+    def __init__(self, md, symbol =None):
         """Constructor"""
         super(mdKLineData, self).__init__()
         
         self.exchange   = md._exchange
         self.sourceType = md._sourceType          # 数据来源类型
-
+        if symbol:
+            self.symbol = symbol
+            self.vtSymbol = '.'.join([self.symbol, self.exchange])
 

@@ -1,0 +1,224 @@
+# encoding: UTF-8
+
+from __future__ import division
+
+from vnApp.MarketData import *
+from vnApp.EventChannel import *
+
+from vnpy.trader.vtConstant import *
+from vnpy.event import Event
+
+from copy import copy
+from datetime import datetime
+from threading import Thread
+from Queue import Queue, Empty
+from multiprocessing.dummy import Pool
+from time import sleep
+
+import json
+
+# 如果安装了seaborn则设置为白色风格
+try:
+    import seaborn as sns       
+    sns.set_style('whitegrid')  
+except ImportError:
+    pass
+
+from vnpy.trader.vtGlobal import globalSetting
+from vnpy.trader.vtObject import VtTickData, VtBarData
+from vnpy.trader.vtConstant import *
+from vnpy.trader.vtGateway import VtOrderData, VtTradeData
+
+from ..MainRoutine import *
+from ..Account import *
+
+########################################################################
+class mdBacktest(MarketData):
+
+    TICK_MODE = 'tick'
+    BAR_MODE = 'bar'
+    BT_TAG = '$BT'
+
+    className = 'Backtest'
+    displayName = 'Playback history data as MarketData'
+    typeName = 'Market data subscriber from HHistDB'
+
+    #----------------------------------------------------------------------
+    def __init__(self, mainRoutine, settings):
+        """Constructor
+            setting schema:
+                {
+                    "id": "backtest",
+                    "source": "Backtest",
+
+                    // the following is up to the MarketData class
+                    "sourceDBPreffix": "dr1min",
+                    "exchange": "huobi", // the original exchange
+                    "events": {
+                        "tick": "True", // to trigger tick events
+                    }
+                },
+        """
+
+        super(mdBacktest, self).__init__(mainRoutine, settings, MarketData.DATA_SRCTYPE_BACKTEST)
+
+        # self._btApp = btApp
+        self._main = mainRoutine
+        self._dbPreffix = settings.sourceDBPreffix('')    # Prefix + "Tick or 1min"
+        self._exchange =  settings.exchange('')
+        self._timerStep =  settings.timerStep(0)
+        self._dateStart = '20000101'
+        self._dateEnd   = None
+        
+        self._mode        = self.TICK_MODE
+        self._dbName      = self._dbPreffix + 'Tick'
+        self._t2k1min     = False
+        mode = settings.mode('') # "mode": "tick,t2k1min"
+        if 'kl1min' == mode[:4] :
+            self._mode        = self.BAR_MODE
+            self._dbName      = self._dbPreffix + '1min'
+        elif 't2k1min' in mode:
+            self._t2k1min = True
+                
+        # self._symbol = settings.symbol(A601005)
+        self._stampLastTimer = 0
+        self._timerStep = 10
+        self._dictCursors = {} # symbol to dbCusor
+        # self._dictCollectionNames = {} # symbol to CollectionNames
+
+    #----------------------------------------------------------------------
+    def subscribe(self, symbol, eventType=None) :
+        """订阅成交细节"""
+
+        collectionName = symbol +'.' + self._exchange
+        if collectionName in self._dictCursors:
+            self.warn('subscribe() %s already exists' % symbol)
+            return
+
+        d = {
+            'collectionName' : collectionName,
+            'cursor': None,
+            'currentData': None
+        }
+        self._dictCursors[collectionName] =d
+
+    #----------------------------------------------------------------------
+    def connect(self):
+        """载入历史数据"""
+        self._doConnect()
+
+    #----------------------------------------------------------------------
+    def _doConnect(self):
+        """载入历史数据"""
+        flt = {'date':{'$gte':self._dateStart}}   # 数据过滤条件
+        if self._dateEnd:
+            flt = {'date':{'$gte':self._dateStart,
+                              '$lte':self._dateEnd}}  
+
+        for c in self._dictCursors.values() :
+            if c['cursor']:
+                continue # already connected
+
+            collection = self._main.dbConn[self._dbName][c['collectionName']]
+            self.debug('reading %s from %s' % (c['collectionName'], self._dbName))
+            c['cursor'] = collection.find(flt).sort('datetime')
+
+    #----------------------------------------------------------------------
+    def step(self):
+
+#        if not self._active :
+#            return 0
+        nleft = 10 # - self._main._eventChannel.pendingSize
+        if nleft <= 0 or len(self._dictCursors) <=0:
+            return -3
+        
+        self._doConnect()
+
+        cursorFocus = None
+        c= 0
+        while nleft >0 and len(self._dictCursors) >0:
+            # scan the _dictCursors for the eariest data
+            cursorsEnd = []
+            for d in self._dictCursors.values():
+
+                if not d['cursor']: # ignore those collection disconnected
+                    continue
+
+                if not d['currentData'] :
+                    d['currentData'] = next(d['cursor'], None)
+                
+                if not d['currentData']: # end of cursor
+                    cursorsEnd.append(d)
+                    continue
+                
+                value = d['currentData']
+                if not value['datetime']:
+                    dtstr = ' '.join([value['date'], value['time']])
+                    value['datetime'] = datetime.strptime(dtstr, '%Y%m%d %H:%M:%S.')
+
+                if not cursorFocus or not cursorFocus['currentData'] or cursorFocus['currentData']['datetime'] > value['datetime']:
+                    cursorFocus =d
+            
+            for d in cursorsEnd:
+                #fill a dummy END event into the event channel
+                symbol = d['collectionName'].split('.')[0]
+                if self.TICK_MODE == self._mode:
+                    edata = mdTickData(self, symbol)
+                    event = Event(MarketData.EVENT_TICK)
+                else: # as Kline
+                    edata = mdKLineData(self, symbol)
+                    event = Event(MarketData.EVENT_1MIN)
+                
+                edata.date ='39991231'
+                edata.vtSymbol  = d['collectionName'] + mdBacktest.BT_TAG
+                event.dict_['data'] = edata
+                # event['data'].sourceType = MarketData.DATA_SRCTYPE_BACKTEST  # 数据来源类型
+                self.postMarketEvent(event); c+=1
+                nleft -=1
+
+                self.info('%s reached end, issued dummy Event(End), deleting from _dictCursors' % d['collectionName'])
+                del self._dictCursors[d['collectionName']]
+
+            if not cursorFocus or not cursorFocus['currentData'] : # none of the read found
+                self._active = False
+                break
+
+            # cursorFocus['currentData'] is the most earilest record
+            event = None
+            symbol = cursorFocus['collectionName'].split('.')[0]
+            if self._mode == self.TICK_MODE :
+                edata = mdTickData(self, symbol)
+                edata.__dict__ = copy.copy(cursorFocus['currentData'])
+                edata.vtSymbol  = cursorFocus['collectionName'] + mdBacktest.BT_TAG
+                event = Event(MarketData.EVENT_TICK)
+                event.dict_['data'] = edata
+                if self._t2k1min :
+                    pass # TODO: ...
+
+            else: # as Kline
+                edata = mdKLineData(self, symbol)
+                edata.__dict__ = copy.copy(cursorFocus['currentData'])
+                edata.vtSymbol  = cursorFocus['collectionName'] + mdBacktest.BT_TAG
+                event = Event(MarketData.EVENT_1MIN)
+                event.dict_['data'] = edata
+
+            # cursorFocus['currentData'] sent, force to None to read next
+            dtData = cursorFocus['currentData']['datetime']
+            cursorFocus['currentData'] = None
+            nleft -=1 # decrease anyway each loop
+
+            # post the event if valid
+            if event:
+                # event['data'].sourceType = MarketData.DATA_SRCTYPE_BACKTEST  # 数据来源类型
+                self.postMarketEvent(event); c +=1
+
+            # 向队列中模拟计时器事件
+            stampData = datetime2float(dtData)
+            if self._timerStep >0 and (self._stampLastTimer + self._timerStep) < stampData:
+                edata = edTimer(dtData, mdBacktest.BT_TAG)
+                event = Event(type_= EventChannel.EVENT_TIMER)
+                event.dict_['data'] = edata
+                self._stampLastTimer = stampData
+                self._eventCh.put(event)
+
+        return c

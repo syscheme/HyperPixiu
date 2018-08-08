@@ -11,7 +11,16 @@
             },
             "type": "python",
             "request": "launch",
-            "program": "vnApp/tests/runBT_AShare.py"
+            "program": "vnApp/tests/runBT_AShare.py" // "vnApp/tests/runBT_AShare.py"
+        },
+        {
+            "name": "Python: bt2",
+            "env": {
+                "PYTHONPATH":"${workspaceFolder}:${PYTHONPATH}"
+            },
+            "type": "python",
+            "request": "launch",
+            "program": "vnApp/tests/runBT_AShare_app.py" // "vnApp/tests/runBT_AShare_app.py"
         },
         {
             "name": "Python: dr",
@@ -21,6 +30,15 @@
             "type": "python",
             "request": "launch",
             "program": "vnApp/tests/runDR_huobi.py"
+        },
+        {
+            "name": "Python: td",
+            "env": {
+                "PYTHONPATH":"${workspaceFolder}:${PYTHONPATH}"
+            },
+            "type": "python",
+            "request": "launch",
+            "program": "vnApp/tests/runTD_huobi.py"
         },
         {
             "name": "Python: Current File",

@@ -22,9 +22,7 @@
             // the following is up to the MarketData class
             "sourceDB": "dr1min",
             "exchange": "huobi", // the original exchange
-            "events": {
-                "tick": "True", // to trigger tick events
-            }
+            "mode": "tick,t2k1"
         },
     ],
 

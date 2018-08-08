@@ -12,7 +12,7 @@ from vnApp.marketdata.mdHuobi import mdHuobi
 from vnApp.marketdata.mdBacktest import mdBacktest
 from vnApp.DataRecorder import *
 from vnApp.EventChannel import EventChannel
-from vnApp.Trader import *
+from vnApp.BackTestApp import *
 
 from vnpy.trader.vtEvent import EVENT_LOG, EVENT_ERROR
 
@@ -56,7 +56,7 @@ def runChildProcess():
     # me.addMarketData(mdHuobi, settings['marketdata'][0])
     me.addMarketData(mdBacktest, settings['marketdata'][0])
 
-    me.addApp(Trader, settings['trader'])
+    me.addApp(BackTestApp, settings['trader'])
     # logger.info(u'主引擎创建成功')
 
     me.start()

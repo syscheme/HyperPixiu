@@ -70,7 +70,7 @@ class EventLoop(object): # non-thread
                 self.__process(event)
                 c+=1
         except Exception as ex:
-            print("eventCH exception %s" % ex)
+            print("eventCH exception %s %s" % (ex, traceback.format_exc()))
 
         if c<=0:
             return -3
@@ -87,7 +87,7 @@ class EventLoop(object): # non-thread
                 try:
                     handler(event)
                 except Exception as ex:
-                    print("eventCH handle(%s) %s: %s" % (event.type_, ex, handler))
+                    print("eventCH handle(%s) %s: %s %s" % (event.type_, ex, handler, traceback.format_exc()))
             
         # 调用通用处理函数进行处理
         if self.__generalHandlers:
@@ -95,7 +95,7 @@ class EventLoop(object): # non-thread
                 try:
                     handler(event)
                 except Exception as ex:
-                    print("eventCH handle %s" % ex)
+                    print("eventCH handle %s %s" % (ex, traceback.format_exc()))
                
     #----------------------------------------------------------------------
     def start(self, timer=True):

@@ -36,6 +36,8 @@ class Trader(BaseApplication):
 
     FINISHED_STATUS = [STATUS_ALLTRADED, STATUS_REJECTED, STATUS_CANCELLED]
 
+    RUNTIME_TAG_TODAY = '$today'
+
     #----------------------------------------------------------------------
     def __init__(self, mainRoutine, settings):
         """Constructor"""
@@ -122,6 +124,7 @@ class Trader(BaseApplication):
                 d = {
                     "dsTick" : dsTick,
                     "ds1min" : ds1min,
+                    Trader.RUNTIME_TAG_TODAY : None,
                 }
 
                 self._dictObjectives[symbol] = d
@@ -345,31 +348,39 @@ class Trader(BaseApplication):
             return # ignore those not interested
 
         kline = copy.copy(d)
+        try:
+            # 添加datetime字段
+            if not tick.datetime:
+                tmpstr = ' '.join([tick.date, tick.time])
+                tick.datetime = datetime.strptime(tmpstr, '%Y%m%d %H:%M:%S')
+                tick.datetime = datetime.strptime(tmpstr, '%Y%m%d %H:%M:%S.%f')
+        except ValueError:
+            self.error(traceback.format_exc())
+
+        if self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] != kline.date:
+            self.onDayOpen(symbol, kline.date)
+            self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = kline.date
 
         # step 1. cache into the latest, lnf DataEngine
         self.debug('eventHdl_KLine1min(%s)' % kline.vtSymbol)
         self._dictLatestKline1min[symbol] = kline
 
-        # step 2. 收到tick行情后，先处理本地停止单（检查是否要立即发出） lnf ctaEngine
-        self.debug('eventHdl_KLine1min(%s) processing stop orders' % kline.vtSymbol)
-        self._procOrdersByKLine(kline)
+        # step 2. 收到行情后，在启动策略前的处理
+        # 先处理本地停止单（检查是否要立即发出） lnf ctaEngine
+        self.debug('eventHdl_KLine1min(%s) pre-strategy processing' % kline.vtSymbol)
+        self.preStrategyByKLine(kline)
 
         # step 3. 推送tick到对应的策略实例进行处理 lnf ctaEngine
         if symbol in self._idxSymbolToStrategy:
-            # tick时间可能出现异常数据，使用try...except实现捕捉和过滤
-            try:
-                # 添加datetime字段
-                if not kline.datetime:
-                    kline.datetime = datetime.strptime(' '.join([tick.date, tick.time]), '%Y%m%d %H:%M:%S.%f')
-            except ValueError:
-                self.error(traceback.format_exc())
-                return
-                
             # 逐个推送到策略实例中
             l = self._idxSymbolToStrategy[symbol]
             self.debug('eventHdl_KLine1min(%s) dispatching to %d strategies' % (kline.vtSymbol, len(l)))
             for strategy in l:
                 self._stg_call(strategy, strategy.onKline, kline)
+
+        # step 4. 执行完策略后的的处理，通常为综合决策
+        self.debug('eventHdl_KLine1min(%s) post-strategy processing' % kline.vtSymbol)
+        self.postStrategy()
 
         self.debug('eventHdl_KLine1min(%s) done' % kline.vtSymbol)
 
@@ -386,32 +397,40 @@ class Trader(BaseApplication):
             return # ignore those not interested
 
         tick = copy.copy(d)
+        try:
+            # 添加datetime字段
+            if not tick.datetime:
+                tmpstr = ' '.join([tick.date, tick.time])
+                tick.datetime = datetime.strptime(tmpstr, '%Y%m%d %H:%M:%S')
+                tick.datetime = datetime.strptime(tmpstr, '%Y%m%d %H:%M:%S.%f')
+        except ValueError:
+            self.error(traceback.format_exc())
+
+        if self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] != tick.date:
+            self.onDayOpen(symbol, tick.date)
+            self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = tick.date
 
         self.debug('eventHdl_Tick(%s)' % tick.vtSymbol)
         # step 1. cache into the latest, lnf DataEngine
         self._dictLatestTick[symbol] = tick
 
-        # step 2. 收到tick行情后，先处理本地停止单（检查是否要立即发出） lnf ctaEngine
-        self.debug('eventHdl_Tick(%s) processing stop orders' % tick.vtSymbol)
-        self._procOrdersByTick(tick)
+        # step 2. 收到行情后，在启动策略前的处理
+        # 先处理本地停止单（检查是否要立即发出） lnf ctaEngine
+        self.debug('eventHdl_Tick(%s) pre-strategy processing' % tick.vtSymbol)
+        self.preStrategyByTick(tick)
 
         # step 3. 推送tick到对应的策略实例进行处理 lnf ctaEngine
         if symbol in self._idxSymbolToStrategy:
-            # tick时间可能出现异常数据，使用try...except实现捕捉和过滤
-            try:
-                # 添加datetime字段
-                if not tick.datetime:
-                    tick.datetime = datetime.strptime(' '.join([tick.date, tick.time]), '%Y%m%d %H:%M:%S.%f')
-            except ValueError:
-                self.error(traceback.format_exc())
-                return
-                
             # 逐个推送到策略实例中
             l = self._idxSymbolToStrategy[symbol]
             self.debug('eventHdl_Tick(%s) dispatching to %d strategies' % (tick.vtSymbol, len(l)))
             for strategy in l:
                 self._stg_call(strategy, strategy.onTick, tick)
     
+        # step 4. 执行完策略后的的处理，通常为综合决策
+        self.debug('eventHdl_Tick(%s) post-strategy processing' % tick.vtSymbol)
+        self.postStrategy()
+
         self.debug('eventHdl_Tick(%s) done' % tick.vtSymbol)
 
     ### eventTick from Account ----------------
@@ -505,14 +524,39 @@ class Trader(BaseApplication):
         
     #----------------------------------------------------------------------
     @abstractmethod    # usually back test will overwrite this
-    def _procOrdersByKLine(self, kline):
-        """收到行情后处理本地停止单（检查是否要立即发出）"""
+    def onDayOpen(self, symbol, date):
+
+        # step1. notify accounts
+        # TODO: to support multiaccount: for acc in self._dictAccounts.values():
+        self.debug('onDayOpen(%s) dispatching account' % symbol)
+        self.account.onDayOpen(date)
+
+        # step1. notify stategies
+        if symbol in self._idxSymbolToStrategy:
+            # 逐个推送到策略实例中
+            l = self._idxSymbolToStrategy[symbol]
+            self.debug('onDayOpen(%s) dispatching to %d strategies' % (symbol, len(l)))
+            for strategy in l:
+                self._stg_call(strategy, strategy.onDayOpen, tick)
+
+    @abstractmethod    # usually back test will overwrite this
+    def preStrategyByKLine(self, kline):
+        """收到行情后，在启动策略前的处理
+        通常处理本地停止单（检查是否要立即发出）"""
+
         self.processStopOrdersByKLine(kline)
         pass
 
     @abstractmethod    # usually back test will overwrite this
-    def _procOrdersByTick(self, tick):
-        """收到行情后处理本地停止单（检查是否要立即发出）"""
+    def postStrategy(self, symbol) :
+        """执行完策略后的的处理，通常为综合决策"""
+        pass
+
+    @abstractmethod    # usually back test will overwrite this
+    def preStrategyByTick(self, tick):
+        """收到行情后，在启动策略前的处理
+        通常处理本地停止单（检查是否要立即发出）"""
+
         self.processStopOrdersByTick(tick)
         pass
 

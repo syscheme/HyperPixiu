@@ -94,6 +94,14 @@ class BaseApplication(object):
         if self._engine and self._engine._eventChannel:
             self._engine._eventChannel.register(event, funcCallback)
 
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def postEvent(self, eventType, edata):
+        """发出事件"""
+        event = Event(type_= eventType)
+        event.dict_['data'] = edata
+        self._engine._eventChannel.put(event)
+
     #---logging -----------------------
     def log(self, level, msg):
         if not level in self._loglevelFunctionDict : 
@@ -190,9 +198,7 @@ class BaseApplication(object):
         log = VtLogData()
         log.dsName = self.ident
         log.logContent = content
-        event = Event(type_= eventType)
-        event.dict_['data'] = log
-        self._engine._eventChannel.put(event)
+        self.postEvent(eventType, edata)
 
     #----------------------------------------------------------------------
     @abstractmethod

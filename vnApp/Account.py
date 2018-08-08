@@ -184,7 +184,7 @@ class Account(object):
                 return VtPositionData()
             return copy(self._dictPositions[symbol])
 
-    def getAllPosition(self): # returns VtPositionData
+    def getAllPositions(self): # returns VtPositionData
         with self._lock :
             return copy.deepcopy(self._dictPositions)
 
@@ -199,39 +199,14 @@ class Account(object):
         with self._lock :
             return self._cashChange(dAvail, dTotal)
 
-    def setCapital(self, capital, resetAvail=False):
-        """设置资本金"""
-        cachAvail, cashTotal = self.cashAmount()
-        dCap = capital-cashTotal
-        dAvail = dCap
-        if resetAvail :
-            dAvail = capital-cachAvail
-
-        self.cashChange(dAvail, dCap)
-
-    @abstractmethod
-    def cancelStopOrder(self, stopOrderID): raise NotImplementedError
-
     @abstractmethod
     def insertData(self, dbName, collectionName, data): raise NotImplementedError
-
-    @abstractmethod
-    def putStrategyEvent(self, name):
-        """发送策略更新事件，回测中忽略"""
-        pass
-
-    @abstractmethod
-    def saveSyncData(self, strategy):
-        """保存同步数据"""
-        pass
 
     def postEvent_Order(self, orderData):
         if self._eventCh ==None:
             return
 
-        event = Event(type= Account.EVENT_ORDER)
-        event.dict_['data'] = copy(orderData)
-        self._eventCh.put(event)
+        self._trader.postEvent(Account.EVENT_ORDER, copy.copy(orderData))
         self.info('posted %s[%s]' % (event.type_, event.dict_['data'].brokerOrderId))
 
     #----------------------------------------------------------------------
@@ -324,21 +299,26 @@ class Account(object):
         raise NotImplementedError
 
     @abstractmethod
-    def _broker_onStopPlaced(self, orderData):
+    def _broker_onOrderPlaced(self, orderData):
         """委托回调"""
         # order placed, move it from _dictOutgoingLimitOrders to _dictOpenningLimitOrders
         with self._lock :
-            del self._account._dictOutgoingOrders[orderData.reqId]
+            del self._dictOutgoingOrders[orderData.reqId]
             if VtOrderData.STOPORDERPREFIX in orderData.reqId :
-                self._account._dictOpeningStopOrders[orderData.brokerOrderId] = orderData
+                self._dictOpeningStopOrders[orderData.brokerOrderId] = orderData
             else :
-                self._account._dictOpeningLimitOrders[orderData.brokerOrderId] = orderData
+                self._dictOpeningLimitOrders[orderData.brokerOrderId] = orderData
 
         self.info('order[%s] has been placed, brokerOrderId[%s]', (orderData.reqId, orderData.brokerOrderId))
+
+        if orderData.direction == DIRECTION_LONG:
+            turnover, commission, slippage = self.calcAmountOfTrade(s, orderData.price, orderData.volume)
+            self._cashChange(-(turnover + commission + slippage))
+
         self.postEvent_Order(orderData)
 
     @abstractmethod
-    def _broker_cancelOrder(brokerOrderId) :
+    def _broker_cancelOrder(brokerOrderId):
         """撤单"""
         raise NotImplementedError
 
@@ -351,11 +331,11 @@ class Account(object):
 
         with self._lock :
             if VtOrderData.STOPORDERPREFIX in orderData.reqId :
-                del self._account._dictOpenningLimitOrders[brokerOrderId]
+                del self._dictOpenningLimitOrders[orderData.rokerOrderId]
             else :
-                del self._account._dictOpenningStopOrders[brokerOrderId]
+                del self._dictOpenningStopOrders[orderData.brokerOrderId]
 
-            del self._account._dictOutgoingLimitOrders[reqId]
+            del self._dictOutgoingLimitOrders[orderData.reqId]
 
             if orderData.direction == DIRECTION_LONG:
                 turnover, commission, slippage = self.calcAmountOfTrade(s, orderData.price, orderData.volume)
@@ -423,18 +403,43 @@ class Account(object):
                 
             pos.stampByTrader = trade.dt  # the current position is calculated based on trade
 
-        eventstr =""
-        if self._eventCh :
-            event = Event(type= Account.EVENT_TRADE)
-            event.dict_['data'] = copy(trade)
-            self._eventCh.put(event)
-            eventstr =  '%s[%s]' % (event.type_, event.dict_['data'].tradeID)
+        eventstr =  '%s[%s]' % (event.type_, event.dict_['data'].tradeID)
+        self._trader.postEvent(Account.EVENT_TRADE, copy.copy(trade))
 
         self.info('OnTrade(%s) posted %s' % (trade.tradeID, eventstr))
 
     @abstractmethod
     def _broker_datetimeAsOf(self):
         return datetime.now()
+
+    @abstractmethod
+    def _broker_onGetAccountBalance(self, data, reqid):
+        """查询余额回调"""
+        pass
+        
+    @abstractmethod
+    def _broker_onGetOrder(self, data, reqid):
+        """查询单一委托回调"""
+        pass
+
+    def _broker_onGetOrders(self, data, reqid):
+        """查询委托回调"""
+        pass
+        
+    @abstractmethod
+    def _broker_onGetMatchResults(self, data, reqid):
+        """查询成交回调"""
+        pass
+        
+    @abstractmethod
+    def _broker_onGetMatchResult(self, data, reqid):
+        """查询单一成交回调"""
+        pass
+
+    @abstractmethod
+    def _broker_onGetTimestamp(self, data, reqid):
+        """查询时间回调"""
+        pass
 
     # end with BrokerDriver
     #----------------------------------------------------------------------
@@ -489,7 +494,7 @@ class Account(object):
             return price
         
         newPrice = round(price/self._priceTick, 0) * self._priceTick
-        return newPrice    
+        return newPrice
 
     #----------------------------------------------------------------------
     # callbacks about timing
@@ -513,7 +518,7 @@ class Account(object):
         self._dateToday = newDate
         self._dictTrades.clear() # clean the trade list
         # shift the positions, must do copy each VtPositionData
-        self._prevPositions = self.getAllPosition()
+        self._prevPositions = self.getAllPositions()
         self._state = Account.STATE_OPEN
     
     @abstractmethod
@@ -682,51 +687,6 @@ class Account(object):
 
         return result, tradesOfSymbol
 
-    @abstractmethod
-    def onTradeError(self, msg, reqid):
-        """错误回调"""
-        pass
-
-    @abstractmethod
-    def onGetAccountBalance(self, data, reqid):
-        """查询余额回调"""
-        pass
-        
-    @abstractmethod
-    def onGetOrder(self, data, reqid):
-        """查询单一委托回调"""
-        pass
-
-    def onGetOrders(self, data, reqid):
-        """查询委托回调"""
-        pass
-        
-    @abstractmethod
-    def onGetMatchResults(self, data, reqid):
-        """查询成交回调"""
-        pass
-        
-    @abstractmethod
-    def onGetMatchResult(self, data, reqid):
-        """查询单一成交回调"""
-        pass
-
-    @abstractmethod
-    def onGetTimestamp(self, data, reqid):
-        """查询时间回调"""
-        pass
-
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def loadBar(self, dbName, collectionName, startDate):
-        """直接返回初始化数据列表中的Bar"""
-        return self.initData
-    
-    @abstractmethod
-    def loadTick(self, dbName, collectionName, startDate):
-        """直接返回初始化数据列表中的Tick"""
-        return self.initData
-
     #----------------------------------------------------------------------
     @abstractmethod
     def log(self, message):
@@ -739,193 +699,184 @@ class Account(object):
         """输出内容"""
         print str(self.now()) + " ACC[" + self.ident + "] " + message
 
-    #----------------------------------------------------------------------
-    def loadStrategy(self, setting):
-        """载入策略"""
-        try:
-            name = setting['name']
-            className = setting['className']
-        except Exception:
-            msg = traceback.format_exc()
-            self.log(u'错误策略配置：%s' %msg)
-            return
+    # #----------------------------------------------------------------------
+    # def loadStrategy(self, setting):
+    #     """载入策略"""
+    #     try:
+    #         name = setting['name']
+    #         className = setting['className']
+    #     except Exception:
+    #         msg = traceback.format_exc()
+    #         self.log(u'错误策略配置：%s' %msg)
+    #         return
         
-        # 获取策略类
-        strategyClass = STRATEGY_CLASS.get(className, None)
-        if not strategyClass:
-            self.log(u'找不到策略类：%s' %className)
-            return
+    #     # 获取策略类
+    #     strategyClass = STRATEGY_CLASS.get(className, None)
+    #     if not strategyClass:
+    #         self.log(u'找不到策略类：%s' %className)
+    #         return
         
-        # 防止策略重名
-        if name in self._strategyDict:
-            self.log(u'策略实例重名：%s' %name)
-        else:
-            # 创建策略实例
-            strategy = strategyClass(self, setting)  
-            self._strategyDict[name] = strategy
+    #     # 防止策略重名
+    #     if name in self._strategyDict:
+    #         self.log(u'策略实例重名：%s' %name)
+    #     else:
+    #         # 创建策略实例
+    #         strategy = strategyClass(self, setting)  
+    #         self._strategyDict[name] = strategy
             
-            # 创建委托号列表
-            self.strategyOrderDict[name] = set()
+    #         # 创建委托号列表
+    #         self.strategyOrderDict[name] = set()
             
-            # 保存Tick映射关系
-            if strategy.vtSymbol in self._idxTickToStrategy:
-                l = self._idxTickToStrategy[strategy.vtSymbol]
-            else:
-                l = []
-                self._idxTickToStrategy[strategy.vtSymbol] = l
-            l.append(strategy)
+    #         # 保存Tick映射关系
+    #         if strategy.vtSymbol in self._idxTickToStrategy:
+    #             l = self._idxTickToStrategy[strategy.vtSymbol]
+    #         else:
+    #             l = []
+    #             self._idxTickToStrategy[strategy.vtSymbol] = l
+    #         l.append(strategy)
             
-    #----------------------------------------------------------------------
-    def getStrategyNames(self):
-        """查询所有策略名称"""
-        return self._strategyDict.keys()        
+    # #----------------------------------------------------------------------
+    # def getStrategyNames(self):
+    #     """查询所有策略名称"""
+    #     return self._strategyDict.keys()        
         
-    #----------------------------------------------------------------------
-    def getStrategyVar(self, name):
-        """获取策略当前的变量字典"""
-        if name in self._strategyDict:
-            strategy = self._strategyDict[name]
-            varDict = OrderedDict()
+    # #----------------------------------------------------------------------
+    # def getStrategyVar(self, name):
+    #     """获取策略当前的变量字典"""
+    #     if name in self._strategyDict:
+    #         strategy = self._strategyDict[name]
+    #         varDict = OrderedDict()
             
-            for key in strategy.varList:
-                varDict[key] = strategy.__getattribute__(key)
+    #         for key in strategy.varList:
+    #             varDict[key] = strategy.__getattribute__(key)
             
-            return varDict
-        else:
-            self.log(u'策略实例不存在：' + name)    
-            return None
+    #         return varDict
+    #     else:
+    #         self.log(u'策略实例不存在：' + name)    
+    #         return None
     
-    #----------------------------------------------------------------------
-    def getStrategyParam(self, name):
-        """获取策略的参数字典"""
-        if name in self._strategyDict:
-            strategy = self._strategyDict[name]
-            paramDict = OrderedDict()
+    # #----------------------------------------------------------------------
+    # def getStrategyParam(self, name):
+    #     """获取策略的参数字典"""
+    #     if name in self._strategyDict:
+    #         strategy = self._strategyDict[name]
+    #         paramDict = OrderedDict()
             
-            for key in strategy.paramList:  
-                paramDict[key] = strategy.__getattribute__(key)
+    #         for key in strategy.paramList:  
+    #             paramDict[key] = strategy.__getattribute__(key)
             
-            return paramDict
-        else:
-            self.log(u'策略实例不存在：' + name)    
-            return None
+    #         return paramDict
+    #     else:
+    #         self.log(u'策略实例不存在：' + name)    
+    #         return None
     
-    #----------------------------------------------------------------------
-    def initStrategy(self, name):
-        """初始化策略"""
-        if not name in self._strategyDict:
-            strategy = self._strategyDict[name]
-            self.log(u'策略实例不存在：%s' %name)
-            return
+    # #----------------------------------------------------------------------
+    # def initStrategy(self, name):
+    #     """初始化策略"""
+    #     if not name in self._strategyDict:
+    #         strategy = self._strategyDict[name]
+    #         self.log(u'策略实例不存在：%s' %name)
+    #         return
             
-        if strategy and strategy.inited:
-            self.log(u'请勿重复初始化策略实例：%s' %name)
-            return
+    #     if strategy and strategy.inited:
+    #         self.log(u'请勿重复初始化策略实例：%s' %name)
+    #         return
 
-        strategy.inited = True
-        self.callStrategyFunc(strategy, strategy.onInit)
-        self.loadSyncData(strategy)                             # 初始化完成后加载同步数据
-        self.subscribeMarketData(strategy)                      # 加载同步数据后再订阅行情
+    #     strategy.inited = True
+    #     self.callStrategyFunc(strategy, strategy.onInit)
+    #     self.loadSyncData(strategy)                             # 初始化完成后加载同步数据
+    #     self.subscribeMarketData(strategy)                      # 加载同步数据后再订阅行情
 
-    #---------------------------------------------------------------------
-    def startStrategy(self, name):
-        """启动策略"""
-        if name in self._strategyDict:
-            strategy = self._strategyDict[name]
+    # #---------------------------------------------------------------------
+    # def startStrategy(self, name):
+    #     """启动策略"""
+    #     if name in self._strategyDict:
+    #         strategy = self._strategyDict[name]
             
-            if strategy.inited and not strategy.trading:
-                strategy.trading = True
-                self.callStrategyFunc(strategy, strategy.onStart)
-        else:
-            self.log(u'策略实例不存在：%s' %name)
+    #         if strategy.inited and not strategy.trading:
+    #             strategy.trading = True
+    #             self.callStrategyFunc(strategy, strategy.onStart)
+    #     else:
+    #         self.log(u'策略实例不存在：%s' %name)
     
-    #----------------------------------------------------------------------
-    def stopStrategy(self, name):
-        """停止策略"""
-        if name in self._strategyDict:
-            strategy = self._strategyDict[name]
+    # #----------------------------------------------------------------------
+    # def stopStrategy(self, name):
+    #     """停止策略"""
+    #     if name in self._strategyDict:
+    #         strategy = self._strategyDict[name]
             
-            if strategy.trading:
-                strategy.trading = False
-                self.callStrategyFunc(strategy, strategy.onStop)
+    #         if strategy.trading:
+    #             strategy.trading = False
+    #             self.callStrategyFunc(strategy, strategy.onStop)
                 
-                # 对该策略发出的所有限价单进行撤单
-                for brokerOrderId, s in self.orderStrategyDict.items():
-                    if s is strategy:
-                        self.cancelOrder(brokerOrderId)
+    #             # 对该策略发出的所有限价单进行撤单
+    #             for brokerOrderId, s in self.orderStrategyDict.items():
+    #                 if s is strategy:
+    #                     self.cancelOrder(brokerOrderId)
                 
-                # 对该策略发出的所有本地停止单撤单
-                for stopOrderID, so in self.workingStopOrderDict.items():
-                    if so.strategy is strategy:
-                        self.cancelStopOrder(stopOrderID)   
-        else:
-            self.log(u'策略实例不存在：%s' %name)    
+    #             # 对该策略发出的所有本地停止单撤单
+    #             for stopOrderID, so in self.workingStopOrderDict.items():
+    #                 if so.strategy is strategy:
+    #                     self.cancelStopOrder(stopOrderID)   
+    #     else:
+    #         self.log(u'策略实例不存在：%s' %name)    
             
-    #----------------------------------------------------------------------
-    def callStrategyFunc(self, strategy, func, params=None):
-        """调用策略的函数，若触发异常则捕捉"""
-        try:
-            if params:
-                func(params)
-            else:
-                func()
-        except Exception:
-            # 停止策略，修改状态为未初始化
-            strategy.trading = False
-            strategy.inited = False
+    # #----------------------------------------------------------------------
+    # def callStrategyFunc(self, strategy, func, params=None):
+    #     """调用策略的函数，若触发异常则捕捉"""
+    #     try:
+    #         if params:
+    #             func(params)
+    #         else:
+    #             func()
+    #     except Exception:
+    #         # 停止策略，修改状态为未初始化
+    #         strategy.trading = False
+    #         strategy.inited = False
             
-            # 发出日志
-            content = '\n'.join([u'策略%s触发异常已停止' %strategy.name,
-                                traceback.format_exc()])
-            self.log(content)
+    #         # 发出日志
+    #         content = '\n'.join([u'策略%s触发异常已停止' %strategy.name,
+    #                             traceback.format_exc()])
+    #         self.log(content)
             
-    #----------------------------------------------------------------------
-    def initAll(self):
-        """全部初始化"""
-        for name in self._strategyDict.keys():
-            self.initStrategy(name)    
+    # #----------------------------------------------------------------------
+    # def initAll(self):
+    #     """全部初始化"""
+    #     for name in self._strategyDict.keys():
+    #         self.initStrategy(name)    
             
-    #----------------------------------------------------------------------
-    def startAll(self):
-        """全部启动"""
-        for name in self._strategyDict.keys():
-            self.startStrategy(name)
+    # #----------------------------------------------------------------------
+    # def startAll(self):
+    #     """全部启动"""
+    #     for name in self._strategyDict.keys():
+    #         self.startStrategy(name)
             
     #----------------------------------------------------------------------
     def stop(self):
         """停止"""
         pass
 
-    #----------------------------------------------------------------------
-    def stopAll(self):
-        """全部停止"""
-        for name in self._strategyDict.keys():
-            self.stopStrategy(name)    
+    # #----------------------------------------------------------------------
+    # def stopAll(self):
+    #     """全部停止"""
+    #     for name in self._strategyDict.keys():
+    #         self.stopStrategy(name)    
     
-    #----------------------------------------------------------------------
-    def saveSetting(self):
-        """保存策略配置"""
-        with open(self.settingfilePath, 'w') as f:
-            l = []
+    # #----------------------------------------------------------------------
+    # def saveSetting(self):
+    #     """保存策略配置"""
+    #     with open(self.settingfilePath, 'w') as f:
+    #         l = []
             
-            for strategy in self._strategyDict.values():
-                setting = {}
-                for param in strategy.paramList:
-                    setting[param] = strategy.__getattribute__(param)
-                l.append(setting)
+    #         for strategy in self._strategyDict.values():
+    #             setting = {}
+    #             for param in strategy.paramList:
+    #                 setting[param] = strategy.__getattribute__(param)
+    #             l.append(setting)
             
-            jsonL = json.dumps(l, indent=4)
-            f.write(jsonL)
+    #         jsonL = json.dumps(l, indent=4)
+    #         f.write(jsonL)
     
-    #----------------------------------------------------------------------
-    def roundToPriceTick(self, price):
-        """取整价格到合约最小价格变动"""
-        if not self._priceTick:
-            return price
-        
-        newPrice = round(price/self._priceTick, 0) * self._priceTick
-        return newPrice
-
     #----------------------------------------------------------------------
     #  account daily statistics methods
     #----------------------------------------------------------------------

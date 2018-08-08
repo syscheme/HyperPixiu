@@ -79,12 +79,6 @@ class BrokerDriver(object):
 
     #----------------------------------------------------------------------
     @abstractmethod
-    def onError(self, msg, reqid):
-        """错误回调"""
-        _account.onTradeError(self, msg, reqid)
-
-    #----------------------------------------------------------------------
-    @abstractmethod
     def getAllPositions(self):
         with self._lock :
             return copy.deepcopy(self._dictPositions)

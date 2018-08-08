@@ -105,8 +105,8 @@ class Trader(BaseApplication):
 
         # test hardcoding
         self.debug('adopting account')
-        accountClass = self._settings.account.class('Account')
-        account = Account(self, td.tdHuobi, self._settings.account)
+        accountClass = self._settings.account.type('Account')
+        account = Account(self, self._settings.account)
         if account:
             self.adoptAccount(account)
 
@@ -381,7 +381,7 @@ class Trader(BaseApplication):
 
         # step 4. 执行完策略后的的处理，通常为综合决策
         self.debug('eventHdl_KLine1min(%s) post-strategy processing' % kline.vtSymbol)
-        self.postStrategy()
+        self.postStrategy(symbol)
 
         self.debug('eventHdl_KLine1min(%s) done' % kline.vtSymbol)
 
@@ -408,8 +408,8 @@ class Trader(BaseApplication):
             self.error(traceback.format_exc())
 
         if self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] != tick.date:
-            self.onDayOpen(symbol, tick.date)
             self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = tick.date
+            self.onDayOpen(symbol, tick.date)
 
         self.debug('eventHdl_Tick(%s)' % tick.vtSymbol)
         # step 1. cache into the latest, lnf DataEngine
@@ -430,7 +430,7 @@ class Trader(BaseApplication):
     
         # step 4. 执行完策略后的的处理，通常为综合决策
         self.debug('eventHdl_Tick(%s) post-strategy processing' % tick.vtSymbol)
-        self.postStrategy()
+        self.postStrategy(symbol)
 
         self.debug('eventHdl_Tick(%s) done' % tick.vtSymbol)
 
@@ -529,7 +529,7 @@ class Trader(BaseApplication):
 
         # step1. notify accounts
         # TODO: to support multiaccount: for acc in self._dictAccounts.values():
-        self.debug('onDayOpen(%s) dispatching account' % symbol)
+        self.debug('onDayOpen(%s) dispatching to account' % symbol)
         self.account.onDayOpen(date)
 
         # step1. notify stategies
@@ -538,7 +538,7 @@ class Trader(BaseApplication):
             l = self._idxSymbolToStrategy[symbol]
             self.debug('onDayOpen(%s) dispatching to %d strategies' % (symbol, len(l)))
             for strategy in l:
-                self._stg_call(strategy, strategy.onDayOpen, tick)
+                self._stg_call(strategy, strategy.onDayOpen, date)
 
     @abstractmethod    # usually back test will overwrite this
     def preStrategyByKLine(self, kline):

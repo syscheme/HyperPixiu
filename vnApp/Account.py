@@ -18,7 +18,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-import vnApp.EventChannel
+from vnApp.EventChannel import *
 
 # 如果安装了seaborn则设置为白色风格
 try:
@@ -94,7 +94,7 @@ class Account(object):
     SYMBOL_CASH = '.RMB.' # the dummy symbol in order to represent cache in _dictPositions
 
     #----------------------------------------------------------------------
-    def __init__(self, dbConn, eventCh, dvrBrokerClass, settings):
+    def __init__(self, trader, settings):
         """Constructor"""
 
         self._lock = threading.Lock()
@@ -105,14 +105,16 @@ class Account(object):
             Account.__lastId__ +=1
             self._id = 'A%d' % Account.__lastId__
 
-        self._orderId = int(EventChannel.datetime2float(datetime.now())) %1000000 # start with a big number
+        self._orderId = int(datetime2float(datetime.now())) %100000000 # start with a big number
         self._settings     = settings
-        self._dbConn       = dbConn
-        self._eventCh      = eventCh
+        self._trader       = trader
+
+        # self._dbConn       = dbConn
+        # self._eventCh      = eventCh
         self._state        = Account.STATE_CLOSE
 
         # trader executer
-        self._dvrBroker = dvrBrokerClass(self, self._settings)
+        # self._dvrBroker = dvrBrokerClass(self, self._settings)
 
         self._dateToday      = None # date of previous close
         self._datePrevClose  = None # date of previous close
@@ -170,9 +172,9 @@ class Account(object):
 
     @property
     def nextOrderReqId(self):
-        self._orderId = int(EventChannel.datetime2float(datetime.now())) %1000000 # start with a big number
-        self._orderId +=1
-        return '%s@%s' % (self._orderId, self.ident)
+        with self._lock :
+            self._orderId +=1
+            return '%s@%s' % (self._orderId, self.ident)
 
     #----------------------------------------------------------------------
     @abstractmethod
@@ -182,7 +184,7 @@ class Account(object):
                 return VtPositionData()
             return copy(self._dictPositions[symbol])
 
-    def getAllPosition(self, symbol): # returns VtPositionData
+    def getAllPosition(self): # returns VtPositionData
         with self._lock :
             return copy.deepcopy(self._dictPositions)
 
@@ -237,9 +239,6 @@ class Account(object):
     @abstractmethod
     def sendOrder(self, vtSymbol, orderType, price, volume, strategy):
         """发单"""
-        if self._dvrBroker == None:
-            raise NotImplementedError
-
         source = 'ACCOUNT'
         if strategy:
             source = strategy.name
@@ -274,15 +273,11 @@ class Account(object):
 
     @abstractmethod
     def cancelOrder(self, brokerOrderId):
-        if self._dvrBroker == None:
-            raise NotImplementedError
         self.debug('cancelling order[%s]' % brokerOrderId)
         self._broker_cancelOrder(brokerOrderId)
 
     @abstractmethod
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy):
-        if self._dvrBroker == None:
-            raise NotImplementedError
 
         source = 'ACCOUNT'
         if strategy:

@@ -232,25 +232,6 @@ class BrokerDriver(object):
         pos.position += tdvol
         pos.stampByTrader = trade.dt
 
-        
-    @abstractmethod
-    def cashChange(self, dAvail=0, dTotal=0):
-        with self._lock :
-            pos = self._dictPositions[Account.SYMBOL_CASH]
-            volprice = pos.price * self.size
-            if pos.price <=0 :   # if cache.price not initialized
-                volprice = pos.price =1
-                if self.size >0:
-                    pos.price /=self.size
-            tmp1, tmp2 = pos.posAvail + dAvail / volprice, pos.position + dTotal / volprice
-            if tmp1<0 or tmp2 <0:
-                return False
-
-            pos.posAvail += tmp1
-            pos.position += tmp2
-            pos.stampByTrader = self.datetimeAsof()
-            return True
-
     @abstractmethod # from Account_AShare
     def onTrade(self, trade):
         super(Account_AShare, self).onTrade(trade)

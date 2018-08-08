@@ -105,6 +105,7 @@ class Trader(BaseApplication):
 
         # test hardcoding
         self.debug('adopting account')
+        accountClass = self._settings.account.class('Account')
         account = Account(self, td.tdHuobi, self._settings.account)
         if account:
             self.adoptAccount(account)

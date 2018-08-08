@@ -10,12 +10,15 @@ from collections import OrderedDict
 from itertools import product
 import multiprocessing
 import copy
+import threading
 
 import jsoncfg # pip install json-cfg
 
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+
+import vnApp.EventChannel
 
 # 如果安装了seaborn则设置为白色风格
 try:
@@ -47,9 +50,6 @@ ORDER_COVER = ctaBase.CTAORDER_COVER  # u'买平' 是指投资者将持有的卖
 STOPORDER_WAITING   = u'WAITING'   #u'等待中'
 STOPORDER_CANCELLED = u'CANCELLED' #u'已撤销'
 STOPORDER_TRIGGERED = u'TRIGGERED' #u'已触发'
-
-# 本地停止单前缀
-STOPORDERPREFIX = 'SO#'
 
 # 数据库名称
 SETTING_DB_NAME = 'vnDB_Setting'
@@ -97,6 +97,8 @@ class Account(object):
     def __init__(self, dbConn, eventCh, dvrBrokerClass, settings):
         """Constructor"""
 
+        self._lock = threading.Lock()
+
         # the app instance Id
         self._id = settings.id("")
         if len(self._id)<=0 :
@@ -115,6 +117,9 @@ class Account(object):
         self._dateToday      = None # date of previous close
         self._datePrevClose  = None # date of previous close
         self._prevPositions = {} # dict from symbol to previous VtPositionData
+        self._dictPositions = { # dict from symbol to latest VtPositionData
+            Account.SYMBOL_CASH : VtPositionData()
+        }
 
         self._dictTrades = {} # dict from tradeId to trade confirmed during today
 
@@ -161,9 +166,7 @@ class Account(object):
 
     @property
     def ident(self) :
-        if not self._dvrBroker:
-            return self.__class__.__name__ +"." + self._id
-        return self._dvrBroker.className +"." + self._id
+        return self.__class__.__name__ +"." + self._id
 
     @property
     def nextOrderReqId(self):
@@ -174,20 +177,25 @@ class Account(object):
     #----------------------------------------------------------------------
     @abstractmethod
     def getPosition(self, symbol): # returns VtPositionData
-        if self._dvrBroker:
-            return self._dvrBroker.getPosition(symbol)
-        return VtPositionData()
+        with self._lock :
+            if not symbol in self._dictPositions:
+                return VtPositionData()
+            return copy(self._dictPositions[symbol])
 
     def getAllPosition(self, symbol): # returns VtPositionData
-        if self._dvrBroker:
-            return self._dvrBroker.getAllPositions()
-        return {}
+        with self._lock :
+            return copy.deepcopy(self._dictPositions)
 
     @abstractmethod
     def cashAmount(self): # returns (avail, total)
-        pos = self.getPosition(Account.SYMBOL_CASH)
-        volprice = pos.price * self.size
-        return (pos.posAvail * volprice), (pos.position * volprice)
+        with self._lock :
+            pos = self._dictPositions[Account.SYMBOL_CASH]
+            volprice = pos.price * self.size
+            return (pos.posAvail * volprice), (pos.position * volprice)
+
+    def cashChange(self, dAvail=0, dTotal=0):
+        with self._lock :
+            return self._cashChange(dAvail, dTotal)
 
     def setCapital(self, capital, resetAvail=False):
         """设置资本金"""
@@ -215,9 +223,17 @@ class Account(object):
         """保存同步数据"""
         pass
 
-    #----------------------------------------------------------------------
-    # Interactions with BrokerDriver
+    def postEvent_Order(self, orderData):
+        if self._eventCh ==None:
+            return
 
+        event = Event(type= Account.EVENT_ORDER)
+        event.dict_['data'] = copy(orderData)
+        self._eventCh.put(event)
+        self.info('posted %s[%s]' % (event.type_, event.dict_['data'].brokerOrderId))
+
+    #----------------------------------------------------------------------
+    # Account operations
     @abstractmethod
     def sendOrder(self, vtSymbol, orderType, price, volume, strategy):
         """发单"""
@@ -252,45 +268,16 @@ class Account(object):
         with self._lock :
             self._account._dictOutgoingLimitOrders[orderData.reqId] = order
         self.debug('placing order[%s] %s: %+dx%s' % (orderData.reqId, orderData.totalVolume, orderData.price))
-        self._dvrBroker.placeOrder(orderData)
+        self._broker_placeOrder(orderData)
 
         return orderData.reqId
-
-    @abstractmethod
-    def onOrderPlaced(self, orderData):
-        """委托回调"""
-        # order placed, move it from _dictOutgoingLimitOrders to _dictOpenningLimitOrders
-        with self._lock :
-            del self._account._dictOutgoingLimitOrders[orderData.reqId]
-            self._account._dictOpenningLimitOrders[orderData.brokerOrderId] = orderData
-
-        self.info('order[%s] has been placed, brokerOrderId[%s]', (orderData.reqId, orderData.brokerOrderId))
-        self..postEvent_Order(orderData)
-
-    def postEvent_Order(self, orderData):
-        if self._eventCh ==None:
-            return
-
-        event = Event(type= Account.EVENT_ORDER)
-        event.dict_['data'] = copy(orderData)
-        self._eventCh.put(event)
-        self.info('posted %s%s' % (event.type_, event.dict_['data'].brokerOrderId))
 
     @abstractmethod
     def cancelOrder(self, brokerOrderId):
         if self._dvrBroker == None:
             raise NotImplementedError
         self.debug('cancelling order[%s]' % brokerOrderId)
-        self._dvrBroker.cancelOrder(brokerOrderId)
-
-    @abstractmethod
-    def onOrderCancelled(self, brokerOrderId, reqId=None):
-        """撤单回调"""
-        with self._lock :
-            del self._account._dictOpenningLimitOrders[brokerOrderId]
-            if reqId :
-                del self._account._dictOutgoingLimitOrders[reqId]
-        self.info('order.brokerOrderId[%s] canceled' % brokerOrderId)
+        self._broker_cancelOrder(brokerOrderId)
 
     @abstractmethod
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy):
@@ -301,9 +288,8 @@ class Account(object):
         if strategy:
             source = strategy.name
 
-        orderData = VtOrderData(self)
+        orderData = VtOrderData(self, stopOrder=True)
         # 代码编号相关
-        orderData.reqId       = VtOrderData.STOPORDERPREFIX + orderData.reqId
         orderData.symbol      = symbol
         orderData.exchange    = self._exchange
         orderData.price       = self.roundToPriceTick(price) # 报单价格
@@ -323,60 +309,184 @@ class Account(object):
             order.offset = OFFSET_CLOSE     
 
         with self._lock :
-            self._account._dictOutgoingStopOrders[orderData.reqId] = order
+            self._account._dictOutgoingOrders[orderData.reqId] = order
         self.debug('placing stopOrder[%s] %s: %+dx%s' % (orderData.reqId, orderData.totalVolume, orderData.price))
-        self._dvrBroker.placeStopOrder(orderData)
+        self._broker_placeOrder(orderData)
 
         return orderData.reqId
 
     @abstractmethod
-    def onStopOrderPlaced(self, orderData):
+    def batchCancel(self, brokerOrderIds):
+        for o in brokerOrderIds:
+            self._broker_cancelOrder(o)
+    #----------------------------------------------------------------------
+
+    #----------------------------------------------------------------------
+    # Interactions with BrokerDriver
+    @abstractmethod
+    def _broker_placeOrder(self, orderData):
+        """发单"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def _broker_onStopPlaced(self, orderData):
         """委托回调"""
         # order placed, move it from _dictOutgoingLimitOrders to _dictOpenningLimitOrders
         with self._lock :
-            del self._account._dictOutgoingStopOrders[orderData.reqId]
-            self._account._dictOpeningStopOrders[orderData.brokerOrderId] = orderData
+            del self._account._dictOutgoingOrders[orderData.reqId]
+            if VtOrderData.STOPORDERPREFIX in orderData.reqId :
+                self._account._dictOpeningStopOrders[orderData.brokerOrderId] = orderData
+            else :
+                self._account._dictOpeningLimitOrders[orderData.brokerOrderId] = orderData
 
-        self.info('stopOrder[%s] has been placed, brokerOrderId[%s]', (orderData.reqId, orderData.brokerOrderId))
-
-    @abstractmethod
-    def cancelStopOrder(self, brokerOrderId):
-        if self._dvrBroker == None:
-            raise NotImplementedError
-        self.debug('cancelling stopOrder[%s]' % brokerOrderId)
-        self._dvrBroker.cancelStopOrder(brokerOrderId)
+        self.info('order[%s] has been placed, brokerOrderId[%s]', (orderData.reqId, orderData.brokerOrderId))
+        self.postEvent_Order(orderData)
 
     @abstractmethod
-    def onStopOrderCancelled(self, brokerOrderId, reqId=None):
+    def _broker_cancelOrder(brokerOrderId) :
+        """撤单"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def _broker_onCancelled(self, orderData):
         """撤单回调"""
+        orderData.status = STATUS_CANCELLED
+        if len(orderData.cancelTime) <=0:
+            orderData.cancelTime = self.datetimeAsof.strftime('%H:%M:%S.%f')[:3]
+
         with self._lock :
-            del self._account._dictOpeningStopOrders[brokerOrderId]
-            if reqId :
-                del self._account._dictOutgoingStopOrders[reqId]
-        self.info('stoporder.brokerOrderId[%s] canceled' % brokerOrderId)
+            if VtOrderData.STOPORDERPREFIX in orderData.reqId :
+                del self._account._dictOpenningLimitOrders[brokerOrderId]
+            else :
+                del self._account._dictOpenningStopOrders[brokerOrderId]
+
+            del self._account._dictOutgoingLimitOrders[reqId]
+
+            if orderData.direction == DIRECTION_LONG:
+                turnover, commission, slippage = self.calcAmountOfTrade(s, orderData.price, orderData.volume)
+                self._cashChange(turnover + commission + slippage)
+
+        self.info('order.brokerOrderId[%s] canceled' % brokerOrderId)
+        self.postEvent_Order(orderData)
 
     @abstractmethod
-    def batchCancel(self, brokerOrderIds):
-        if self._dvrBroker == None:
-            raise NotImplementedError
+    def _broker_onOrderDone(self, orderData):
+        """委托被执行"""
+        if orderData.direction == DIRECTION_LONG:
+            turnover, commission, slippage = self.calcAmountOfTrade(s, orderData.price, orderData.volume)
+            self._cashChange(turnover + commission + slippage)
 
-        for o in brokerOrderIds:
-            self._dvrBroker.cancelOrder(o)
+        self.postEvent_Order(orderData)
 
     @abstractmethod
-    def onTraded(self, trade):
+    def _broker_onTrade(self, trade):
         """交易成功回调"""
-        pass
+        if trade.vtTradeID in self._dictTrades:
+            return
+
+        trade.tradeID = "T" +trade.vtTradeID +"@" + self.ident # to make the tradeID global unique
+        with self._lock :
+            self._dictTrades[trade.vtTradeID] = trade
+
+            # update the current postion, this may overwrite during the sync by BrokerDriver
+            s = trade.symbol
+            if not s in self._dictPositions :
+                self._dictPositions[s] = VtPositionData()
+                pos = self._dictPositions[s]
+                pos.symbol = s
+                pos.vtSymbol = trade.vtSymbol
+                pos.exchange = trade.exchange
+            else:
+                pos = self._dictPositions[s]
+            
+            # 持仓相关
+            pos.price      = trade.price
+            pos.direction  = trade.direction      # 持仓方向
+            # pos.frozen =  # 冻结数量
+
+            # update the position of symbol and its average cost
+            if trade.direction != DIRECTION_LONG:
+                turnover, commission, slippage = self.calcAmountOfTrade(s, trade.price, -trade.volume)
+                tradeAmount = turnover - commission - slippage
+                # sold, increase both cash aval/total
+                self._cashChange(tradeAmount, tradeAmount)
+
+                pos.position -= trade.volume
+                pos.avalPos  -= trade.volume
+            else :
+                turnover, commission, slippage = self.calcAmountOfTrade(s, trade.price, trade.volume)
+                tradeAmount = turnover + commission + slippage
+                self._cashChange(-tradeAmount, -tradeAmount)
+                # calclulate pos.avgPrice
+                cost = pos.position * pos.avgPrice
+                cost += tradeAmount
+                pos.position += trade.volume
+                if pos.position >0:
+                    pos.avgPrice = cost / pos.position
+                else: pos.avgPrice =0
+                # TODO: T+0 also need to increase pos.avalPos
+                
+            pos.stampByTrader = trade.dt  # the current position is calculated based on trade
+
+        eventstr =""
+        if self._eventCh :
+            event = Event(type= Account.EVENT_TRADE)
+            event.dict_['data'] = copy(trade)
+            self._eventCh.put(event)
+            eventstr =  '%s[%s]' % (event.type_, event.dict_['data'].tradeID)
+
+        self.info('OnTrade(%s) posted %s' % (trade.tradeID, eventstr))
+
+    @abstractmethod
+    def _broker_datetimeAsOf(self):
+        return datetime.now()
 
     # end with BrokerDriver
     #----------------------------------------------------------------------
+
+    @abstractmethod
+    def _cashChange(self, dAvail=0, dTotal=0): # thread unsafe
+        pos = self._dictPositions[Account.SYMBOL_CASH]
+        volprice = pos.price * self.size
+        if pos.price <=0 :   # if cache.price not initialized
+            volprice = pos.price =1
+            if self.size >0:
+                pos.price /=self.size
+        tmp1, tmp2 = pos.posAvail + dAvail / volprice, pos.position + dTotal / volprice
+        if tmp1<0 or tmp2 <0:
+            return False
+
+        pos.posAvail += tmp1
+        pos.position += tmp2
+        pos.stampByTrader = self.datetimeAsof()
+        return True
+
 
     @abstractmethod
     def calcAmountOfTrade(self, symbol, price, volume): raise NotImplementedError
 
     # return volume, commission, slippage
     @abstractmethod
-    def maxBuyVolume(self, vtSymbol, price): raise NotImplementedError
+    #----------------------------------------------------------------------
+    # determine buy ability according to the available cash
+    # return buy-volume-capabitilty, sell-volumes
+    def maxOrderVolume(self, symbol, price):
+        # calculate max buy volumes
+        volume =0
+        if price > 0 :
+            cash, _  = self.cashAmount()
+            volume   = int(cash / price / self.size)
+            turnOver, commission, slippage = self.calcAmountOfTrade(vtSymbol, price, volume)
+            if cash < (turnOver + commission + slippage) :
+                volume -= int((commission + slippage) / price / self.size) +1
+            if volume <=0:
+                volume =0
+        
+        with self._lock :
+            if symobl in  self._dictPositions :
+                return volume, self._dictPositions[symbol].availPos
+
+        return volume, 0
 
     def roundToPriceTick(self, price):
         """取整价格到合约最小价格变动"""
@@ -385,12 +495,6 @@ class Account(object):
         
         newPrice = round(price/self._priceTick, 0) * self._priceTick
         return newPrice    
-
-    @abstractmethod
-    def datetimeAsof(self):
-        if self._dvrBroker:
-            return self._dvrBroker.getBrokerTime()
-        return datetime.now()
 
     #----------------------------------------------------------------------
     # callbacks about timing
@@ -440,17 +544,18 @@ class Account(object):
             # 调用server_info查询服务器状态，防止服务器异常并未连接成功
             self._dbConn.server_info()
 
-        # part 1. the confirmed trades
-        tblName = "trades." + self.ident
-        for t in self._dictTrades.values():
-            if self._trader:
-                self._trader.insertData(self._trader.dbName, tblName, t)
-            elif self._dbConn :
-                db = self._dbConn['Account']
-                collection = db[tblName]
-                collection.ensure_index([('vtTradeID', ASCENDING)], unique=True) #TODO this should init ONCE
-                collection = db[tblName]
-                collection.update({'vtTradeID':t.vtTradeID}, t.__dict__, True)
+        with self._lock :
+            # part 1. the confirmed trades
+            tblName = "trades." + self.ident
+            for t in self._dictTrades.values():
+                if self._trader:
+                    self._trader.insertData(self._trader.dbName, tblName, t)
+                elif self._dbConn :
+                    db = self._dbConn['Account']
+                    collection = db[tblName]
+                    collection.ensure_index([('vtTradeID', ASCENDING)], unique=True) #TODO this should init ONCE
+                    collection = db[tblName]
+                    collection.update({'vtTradeID':t.vtTradeID}, t.__dict__, True)
 
         # part 2. the daily position
         tblName = "dPos." + self.ident
@@ -476,16 +581,17 @@ class Account(object):
         """今日交易的结果"""
 
         tradesOfSymbol = { Account.SYMBOL_CASH:[] }        # 成交列表
-        for t in self._dictTrades.values():
-            if len(t.vtSymbol) <=0:
-                t.vtSymbol='$' #default symbol
+        with self._lock :
+            for t in self._dictTrades.values():
+                if len(t.vtSymbol) <=0:
+                    t.vtSymbol='$' #default symbol
 
-            if not t.vtSymbol in tradesOfSymbol:
-                tradesOfSymbol[t.vtSymbol] = []
-            tradesOfSymbol[t.vtSymbol].append(t)
+                if not t.vtSymbol in tradesOfSymbol:
+                    tradesOfSymbol[t.vtSymbol] = []
+                tradesOfSymbol[t.vtSymbol].append(t)
 
         result = []
-        currentPositions = self._dvrBroker.getAllPositions()
+        currentPositions = self._broker_getAllPositions() # this is a duplicated copy, so thread-safe
         for s in tradesOfSymbol.keys():
             if not s in currentPositions:
                 continue
@@ -580,38 +686,6 @@ class Account(object):
             result.append(dstat)
 
         return result, tradesOfSymbol
-
-        # update the position mean cost
-    #----------------------------------------------------------------------
-    def calculatePrice(self, trade):
-        """计算持仓均价（基于成交数据）"""
-        # 只有开仓会影响持仓均价
-        if trade.offset == OFFSET_OPEN:
-            if trade.direction == DIRECTION_LONG:
-                cost = self.longPrice * self.longPos
-                cost += trade.volume * trade.price
-                newPos = self.longPos + trade.volume
-                if newPos:
-                    self.longPrice = cost / newPos
-                else:
-                    self.longPrice = 0
-            else:
-                cost = self.shortPrice * self.shortPos
-                cost += trade.volume * trade.price
-                newPos = self.shortPos + trade.volume
-                if newPos:
-                    self.shortPrice = cost / newPos
-                else:
-                    self.shortPrice = 0
-
-
-        # update the cashTotal
-        turnover, commission, slippage = self.calcAmountOfTrade(s, trade.price, tdvol)
-        tradeAmount = -(turnover + commission + slippage)
-        if trade.direction != DIRECTION_LONG:
-            tradeAmount = turnover - commission - slippage
-
-        self.cashChange(0, tradeAmount)
 
     @abstractmethod
     def onTradeError(self, msg, reqid):
@@ -866,7 +940,7 @@ class Account(object):
         self._statDaily = DailyResult(date, price)
 
         # 将成交添加到每日交易结果中
-        for trade in self._dvrBroker.tradeDict.values():
+        for trade in self._broker_tradeDict.values():
             self._statDaily.addTrade(trade)
             
     def evaluateDailyStat(self, startdate, enddate):
@@ -932,26 +1006,6 @@ class Account_AShare(Account):
 
         return turnOver, tax + transfer + commission, volumeX1 * self.slippage
 
-    #----------------------------------------------------------------------
-    # determine buy ability according to the available cash
-    # return volume, commission, slippage
-    def maxBuyVolume(self, vtSymbol, price):
-        if price <=0 :
-            return 0, 0, 0
-
-        cash, _  = self.cashAmount()
-        volume   = int(cash / price / self.size)
-        turnOver, commission, slippage = self.calcAmountOfTrade(vtSymbol, price, volume)
-        if cash >= (turnOver + commission + slippage) :
-            return volume, commission, slippage
-
-        volume -= int((commission + slippage) / price / self.size) +1
-        if volume <=0:
-            return 0, 0, 0
-
-        turnOver, commission, slippage = self.calcAmountOfTrade(vtSymbol, price, volume)
-        return volume, commission, slippage
-
     @abstractmethod
     def onDayOpen(self, newDate):
         super(Account_AShare, self).onDayOpen(newDate)
@@ -960,18 +1014,33 @@ class Account_AShare(Account):
                 continue
             pos.posAvail = pos.position
 
+    @abstractmethod # from Account_AShare
+    def onTrade(self, trade):
+        super(Account_AShare, self).onTrade(trade)
+
+        if trade.direction == DIRECTION_LONG:
+            return
+
+        with self._lock :
+            if trade.symbol in self._dictPositions :
+                self._dictPositions[trade.symbol].posAvail -= trade.volume
 
 ########################################################################
-class VtOrderData(VtBaseData):
+class VtOrderData(object):
     """订单数据类"""
+    # 本地停止单前缀
+    STOPORDERPREFIX = 'SO#'
 
     #----------------------------------------------------------------------
     def __init__(self, account):
         """Constructor"""
-        super(VtOrderData, self).__init__()
+        super(VtOrderData, self).__init__(stopOrder=False)
         
         # 代码编号相关
         self.reqId   = account.nextOrderReqId # 订单编号
+        if stopOrder:
+            self.reqId  = STOPORDERPREFIX +self.reqId
+
         self.brokerOrderId = EMPTY_STRING   # 订单在vt系统中的唯一编号，通常是 Gateway名.订单编号
 
         self.symbol   = EMPTY_STRING    # 合约代码

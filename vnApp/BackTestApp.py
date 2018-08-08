@@ -1153,7 +1153,7 @@ class tdBacktestWrapper(BrokerDriver):
             if not self._account.cashChange(-dCashDeduct) :
                 self._account.error('placeOrder(%s) beyong available cash, order request cancelled' % orderData.reqId)
                 orderData.status = STATUS_REJECTED
-                self._account.onOrderCancelled(orderData.brokerOrderId, orderData.reqId)
+                self._account.onOrderCancelled(orderData)
                 return []
 
         self._account.onOrderPlaced(self.orderData)
@@ -1176,7 +1176,6 @@ class tdBacktestWrapper(BrokerDriver):
                 # self._account._cashAvail += turnoverO + commissionO + slippageO
                 self._account.cashChange(turnoverO + commissionO + slippageO)
 
-            self._backtest.onOrder(order)
             self._account.onOrderCancelled(brokerOrderId)
         
     #----------------------------------------------------------------------

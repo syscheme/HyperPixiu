@@ -191,7 +191,7 @@ class stgBBand(StrategyOfSymbol):
         posDesc ='%s/%s,ca%.2f' % (self._posAvail, self.pos, cash)
         barDesc = '%.2f,%.2f,%.2f,%.2f' % (bar.open, bar.close, bar.high, bar.low)
         measureDesc = 'bband[%.2f~%.2f] cci[%d->%d] atr:%.2f' % (self.bollDown, self.bollUp, self._lastCCI, self.cciValue, self.atrValue)
-        maxBuy, _, _ = self.account.maxBuyVolume(bar.vtSymbol, bar.close)
+        maxBuy, maxSell = self.account.maxOrderVolume(bar.vtSymbol, bar.close)
 
         # determining
         toBuy=0

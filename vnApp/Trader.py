@@ -55,7 +55,7 @@ class Trader(BaseApplication):
         self._dictLatestKline1min = {}    #SSS the latest kline1min of each symbol
         self._dictLatestContract = {}
         self._dictLatestOrder = {}
-        self._dictWorkingOrder = {} # 可撤销委托
+
         # inside of Account self._dictTrade = {}
         self._dictAccounts = {}
         self._defaultAccId = None
@@ -433,7 +433,7 @@ class Trader(BaseApplication):
 
         self.debug('eventHdl_Tick(%s) done' % tick.vtSymbol)
 
-    ### eventTick from Account ----------------
+    ### eventOrder from Account ----------------
     @abstractmethod
     def eventHdl_Order(self, event):
         """处理委托事件"""

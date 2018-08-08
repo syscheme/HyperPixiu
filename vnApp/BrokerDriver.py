@@ -5,7 +5,8 @@ from .Account import *
 ########################################################################
 from abc import ABCMeta, abstractmethod
 class BrokerDriver(object):
-    """交易API"""
+    """交易API
+    BrokerDriver appears as an API and it keeps the data of the broker in its account object"""
     SYNC_MODE = 'sync'
     ASYNC_MODE = 'async'
 
@@ -28,7 +29,12 @@ class BrokerDriver(object):
 
         self._active = False         # API工作状态   
         self._reqid = 0              # 请求编号
+
         
+    @property
+    def className(self) :
+        return self.__class__.__name__
+
     @property
     def size(self) : return self._account.size
 
@@ -132,7 +138,7 @@ class BrokerDriver(object):
         
     #----------------------------------------------------------------------
     @abstractmethod
-    def placeOrder(self, volume, symbol, type_, price=None, source=None):
+    def placeOrder(vtOrder):
         """下单"""
         raise NotImplementedError
 

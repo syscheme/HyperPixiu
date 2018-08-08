@@ -49,7 +49,7 @@ STOPORDER_CANCELLED = u'CANCELLED' #u'已撤销'
 STOPORDER_TRIGGERED = u'TRIGGERED' #u'已触发'
 
 # 本地停止单前缀
-STOPORDERPREFIX = 'vnStopOrder.'
+STOPORDERPREFIX = 'SO#'
 
 # 数据库名称
 SETTING_DB_NAME = 'vnDB_Setting'
@@ -81,9 +81,12 @@ def loadSettings(filepath):
 
 ########################################################################
 from abc import ABCMeta, abstractmethod
+import threading
 class Account(object):
     """
     Basic Account
+
+    Account must be thread-protected
     """
     __lastId__ =10000
 
@@ -94,8 +97,10 @@ class Account(object):
     SYMBOL_CASH = '.RMB.' # the dummy symbol in order to represent cache in _dictPositions
 
     #----------------------------------------------------------------------
-    def __init__(self, trader, dvrBrokerClass, settings):
+    def __init__(self, dbConn, eventCh, dvrBrokerClass, settings):
         """Constructor"""
+
+        self._lock = lock = threading.Lock()
 
         # the app instance Id
         self._id = settings.id("")
@@ -104,8 +109,8 @@ class Account(object):
             self._id = 'A%d' % Account.__lastId__
 
         self._settings     = settings
-        self._trader       = trader
-        self._dbConn       = None # TO CLEAN
+        self._dbConn       = dbConn
+        self._eventCh      = eventCh
         self._state        = Account.STATE_CLOSE
 
         # trader executer
@@ -117,7 +122,9 @@ class Account(object):
         self._dictPositions = { # dict from symbol to latest VtPositionData
             Account.SYMBOL_CASH : VtPositionData()
         }
+
         self._dictTrades = {} # dict from tradeId to trade confirmed during today
+        self._dictWorkingOrder = {} # 可撤销委托
 
         # self.capital = 0        # 起始本金（默认10万）
         # self._cashAvail =0
@@ -126,6 +133,7 @@ class Account(object):
         # key为策略名称，value为策略实例，注意策略名称不允许重复
         self._strategyDict = {}
 
+        self._dbName   = self._settings.dbName(self.ident)           # 假设的滑点
         self.slippage  = self._settings.slippage(0)           # 假设的滑点
         self.rate      = self._settings.ratePer10K(30)/10000  # 假设的佣金比例（适用于百分比佣金）
         self.size      = self._settings.size(1)               # 合约大小，默认为1    
@@ -157,46 +165,54 @@ class Account(object):
 
     @property
     def dbName(self):
-        if not self._trader:
-            return 'dbAccount'
-        return self._trader.dbName
-
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def loadSettings(filename) :
-        self._settings = jsoncfg.load_config(filename)
+        return self._dbName
 
     @property
     def ident(self) :
         if not self._dvrBroker:
             return self.__class__.__name__ +"." + self._id
-        return self._dvrBroker.__class__.__name__ +"." + self._id
+        return self._dvrBroker.className +"." + self._id
 
+    @property
+    def nextOrderReqId(self):
+        with self._lock :
+            if not self._orderId:
+                self._orderId = int(EventChannel.datetime2float(datetime.now())) %1000000 # start with a big number
+            self._orderId +=1
+            return '%s@%s' % (self._orderId, self.ident)
+
+    #----------------------------------------------------------------------
     @abstractmethod
     def getPosition(self, symbol): # returns VtPositionData
-        if not symbol in self._dictPositions:
-            return VtPositionData()
-        return copy(self._dictPositions[symbol])
+        with self._lock :
+            if not symbol in self._dictPositions:
+                return VtPositionData()
+            return copy(self._dictPositions[symbol])
 
     @abstractmethod
     def cashAmount(self): # returns (avail, total)
-        pos = self._dictPositions[Account.SYMBOL_CASH]
-        volprice = pos.price * self.size
-        return (pos.posAvail * volprice), (pos.position * volprice)
+        with self._lock :
+            pos = self._dictPositions[Account.SYMBOL_CASH]
+            volprice = pos.price * self.size
+            return (pos.posAvail * volprice), (pos.position * volprice)
 
     @abstractmethod
     def cashChange(self, dAvail=0, dTotal=0):
-        pos = self._dictPositions[Account.SYMBOL_CASH]
-        volprice = pos.price * self.size
-        if pos.price <=0 :   # if cache.price not initialized
-            volprice = pos.price =1
-            if self.size >0:
-                pos.price /=self.size
+        with self._lock :
+            pos = self._dictPositions[Account.SYMBOL_CASH]
+            volprice = pos.price * self.size
+            if pos.price <=0 :   # if cache.price not initialized
+                volprice = pos.price =1
+                if self.size >0:
+                    pos.price /=self.size
+            tmp1, tmp2 = pos.posAvail + dAvail / volprice, pos.position + dTotal / volprice
+            if tmp1<0 or tmp2 <0:
+                return False
 
-        pos.posAvail += dAvail / volprice
-        pos.position += dTotal / volprice
-        pos.stampByTrader = self.now()
-        return (pos.posAvail * volprice), (pos.position * volprice)
+            pos.posAvail += tmp1
+            pos.position += tmp2
+            pos.stampByTrader = self.datetimeAsof()
+            return True
 
     def setCapital(self, capital, resetAvail=False):
         """设置资本金"""
@@ -207,18 +223,6 @@ class Account(object):
             dAvail = capital-cachAvail
 
         self.cashChange(dAvail, dCap)
-
-    @abstractmethod
-    def cancelOrder(self, vtOrderID):
-        if self._dvrBroker == None:
-            raise NotImplementedError
-        self._dvrBroker.cancelOrder(vtOrderID)
-
-    @abstractmethod
-    def batchCancel(self, orderids):
-        if self._dvrBroker == None:
-            raise NotImplementedError
-        self._dvrBroker.batchCancel(orderids)
 
     @abstractmethod
     def cancelStopOrder(self, stopOrderID): raise NotImplementedError
@@ -237,6 +241,8 @@ class Account(object):
         pass
 
     #----------------------------------------------------------------------
+    # Interactions with BrokerDriver
+
     @abstractmethod
     def sendOrder(self, vtSymbol, orderType, price, volume, strategy):
         """发单"""
@@ -247,9 +253,70 @@ class Account(object):
         if strategy:
             source = strategy.name
 
-        self._dvrBroker.placeOrder(volume, vtSymbol, orderType, price, source)
+        orderData = VtOrderData(self)
+        # 代码编号相关
+        orderData.symbol      = symbol
+        orderData.exchange    = self._exchange
+        orderData.price       = self.roundToPriceTick(price) # 报单价格
+        orderData.totalVolume = volume    # 报单总数量
 
-    #----------------------------------------------------------------------
+        # 报单方向
+        if orderType == ORDER_BUY:
+            order.direction = DIRECTION_LONG
+            order.offset = OFFSET_OPEN
+        elif orderType == ORDER_SELL:
+            order.direction = DIRECTION_SHORT
+            order.offset = OFFSET_CLOSE
+        elif orderType == ORDER_SHORT:
+            order.direction = DIRECTION_SHORT
+            order.offset = OFFSET_OPEN
+        elif orderType == ORDER_COVER:
+            order.direction = DIRECTION_LONG
+            order.offset = OFFSET_CLOSE     
+
+        with self._lock :
+            self._account._dictOutgoingLimitOrders[orderData.reqId] = order
+        self.debug('placing order[%s] %s: %+dx%s' % (orderData.reqId, orderData.totalVolume, orderData.price))
+        self._dvrBroker.placeOrder(orderData)
+
+        return orderData.reqId
+
+    @abstractmethod
+    def onOrderPlaced(self, orderData):
+        """委托回调"""
+        # order placed, move it from _dictOutgoingLimitOrders to _dictOpenningLimitOrders
+        with self._lock :
+            del self._account._dictOutgoingLimitOrders[orderData.reqId]
+            self._account._dictOpenningLimitOrders[orderData.brokerOrderId] = orderData
+
+        self.info('order[%s] has been placed, brokerOrderId[%s]', (orderData.reqId, orderData.brokerOrderId))
+        self..postEvent_Order(orderData)
+
+    def postEvent_Order(self, orderData):
+        if self._eventCh ==None:
+            return
+
+        event = Event(type= Account.EVENT_ORDER)
+        event.dict_['data'] = copy(orderData)
+        self._eventCh.put(event)
+        self.info('posted %s%s' % (event.type_, event.dict_['data'].brokerOrderId))
+
+    @abstractmethod
+    def cancelOrder(self, brokerOrderId):
+        if self._dvrBroker == None:
+            raise NotImplementedError
+        self.debug('cancelling order[%s]' % brokerOrderId)
+        self._dvrBroker.cancelOrder(brokerOrderId)
+
+    @abstractmethod
+    def onOrderCancelled(self, brokerOrderId, reqId=None):
+        """撤单回调"""
+        with self._lock :
+            del self._account._dictOpenningLimitOrders[brokerOrderId]
+            if reqId :
+                del self._account._dictOutgoingLimitOrders[reqId]
+        self.info('order.brokerOrderId[%s] canceled' % brokerOrderId)
+
     @abstractmethod
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy):
         if self._dvrBroker == None:
@@ -259,7 +326,109 @@ class Account(object):
         if strategy:
             source = strategy.name
 
-        self._dvrBroker.placeStopOrder(volume, vtSymbol, orderType, price, source)
+        orderData = VtOrderData(self)
+        # 代码编号相关
+        orderData.reqId       = VtOrderData.STOPORDERPREFIX + orderData.reqId
+        orderData.symbol      = symbol
+        orderData.exchange    = self._exchange
+        orderData.price       = self.roundToPriceTick(price) # 报单价格
+        orderData.totalVolume = volume    # 报单总数量
+        # 报单方向
+        if orderType == ORDER_BUY:
+            order.direction = DIRECTION_LONG
+            order.offset = OFFSET_OPEN
+        elif orderType == ORDER_SELL:
+            order.direction = DIRECTION_SHORT
+            order.offset = OFFSET_CLOSE
+        elif orderType == ORDER_SHORT:
+            order.direction = DIRECTION_SHORT
+            order.offset = OFFSET_OPEN
+        elif orderType == ORDER_COVER:
+            order.direction = DIRECTION_LONG
+            order.offset = OFFSET_CLOSE     
+
+        with self._lock :
+            self._account._dictOutgoingStopOrders[orderData.reqId] = order
+        self.debug('placing stopOrder[%s] %s: %+dx%s' % (orderData.reqId, orderData.totalVolume, orderData.price))
+        self._dvrBroker.placeStopOrder(orderData)
+
+        return orderData.reqId
+
+    @abstractmethod
+    def onStopOrderPlaced(self, orderData):
+        """委托回调"""
+        # order placed, move it from _dictOutgoingLimitOrders to _dictOpenningLimitOrders
+        with self._lock :
+            del self._account._dictOutgoingStopOrders[orderData.reqId]
+            self._account._dictOpeningStopOrders[orderData.brokerOrderId] = orderData
+
+        self.info('stopOrder[%s] has been placed, brokerOrderId[%s]', (orderData.reqId, orderData.brokerOrderId))
+
+    @abstractmethod
+    def cancelStopOrder(self, brokerOrderId):
+        if self._dvrBroker == None:
+            raise NotImplementedError
+        self.debug('cancelling stopOrder[%s]' % brokerOrderId)
+        self._dvrBroker.cancelStopOrder(brokerOrderId)
+
+    @abstractmethod
+    def onStopOrderCancelled(self, brokerOrderId, reqId=None):
+        """撤单回调"""
+        with self._lock :
+            del self._account._dictOpeningStopOrders[brokerOrderId]
+            if reqId :
+                del self._account._dictOutgoingStopOrders[reqId]
+        self.info('stoporder.brokerOrderId[%s] canceled' % brokerOrderId)
+
+    @abstractmethod
+    def batchCancel(self, brokerOrderIds):
+        if self._dvrBroker == None:
+            raise NotImplementedError
+
+        for o in brokerOrderIds:
+            self._dvrBroker.cancelOrder(o)
+
+    @abstractmethod
+    def onTrade(self, trade):
+        """交易成功回调"""
+        if trade.vtTradeID in self._dictTrades:
+            return
+
+        self._dictTrades[trade.vtTradeID] = trade
+
+        # update the current postion, this may overwrite during the sync by BrokerDriver
+        s = trade.symbol
+        if not s in self._dictPositions :
+            self._dictPositions[s] = VtPositionData()
+            pos = self._dictPositions[s]
+            pos.symbol = s
+            pos.vtSymbol = trade.vtSymbol
+            pos.exchange = trade.exchange
+        else:
+            pos = self._dictPositions[s]
+
+        # 持仓相关
+        pos.price      = trade.price
+        pos.direction  = trade.direction      # 持仓方向
+        # pos.frozen =  # 冻结数量
+
+        # update the position of symbol and its average cost
+        tdvol = trade.volume
+        if trade.direction != DIRECTION_LONG:
+            tdvol = -tdvol 
+        else: 
+            # pos.price
+            cost = pos.position * pos.avgPrice
+            cost += trade.volume * trade.price
+            newPos = pos.position + trade.volume
+            if newPos:
+                pos.avgPrice = cost / newPos
+
+        pos.position += tdvol
+        pos.stampByTrader = trade.dt
+
+    # end with BrokerDriver
+    #----------------------------------------------------------------------
 
     @abstractmethod
     def calcAmountOfTrade(self, symbol, price, volume): raise NotImplementedError
@@ -277,7 +446,9 @@ class Account(object):
         return newPrice    
 
     @abstractmethod
-    def now(self): # BT may simuate a older datetime eairlier than the real clock
+    def datetimeAsof(self):
+        if self._dvrBroker:
+            return self._dvrBroker.getBrokerTime()
         return datetime.now()
 
     #----------------------------------------------------------------------
@@ -471,58 +642,6 @@ class Account(object):
 
         return result, tradesOfSymbol
 
-    #----------------------------------------------------------------------
-    # callbacks from BrokerDriver
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def onCancelOrder(self, data, reqid):
-        """撤单回调"""
-        pass
-
-    @abstractmethod
-    def onBatchCancel(self, data, reqid):
-        """批量撤单回调"""
-        pass
-
-    @abstractmethod
-    def onTrade(self, trade):
-        """交易成功回调"""
-        if trade.vtTradeID in self._dictTrades:
-            return
-
-        self._dictTrades[trade.vtTradeID] = trade
-
-        # update the current postion, this may overwrite during the sync by BrokerDriver
-        s = trade.symbol
-        if not s in self._dictPositions :
-            self._dictPositions[s] = VtPositionData()
-            pos = self._dictPositions[s]
-            pos.symbol = s
-            pos.vtSymbol = trade.vtSymbol
-            pos.exchange = trade.exchange
-        else:
-            pos = self._dictPositions[s]
-
-        # 持仓相关
-        pos.price      = trade.price
-        pos.direction  = trade.direction      # 持仓方向
-        # pos.frozen =  # 冻结数量
-
-        # update the position of symbol and its average cost
-        tdvol = trade.volume
-        if trade.direction != DIRECTION_LONG:
-            tdvol = -tdvol 
-        else: 
-            # pos.price
-            cost = pos.position * pos.avgPrice
-            cost += trade.volume * trade.price
-            newPos = pos.position + trade.volume
-            if newPos:
-                pos.avgPrice = cost / newPos
-
-        pos.position += tdvol
-        pos.stampByTrader = trade.dt
-
         # update the position mean cost
     #----------------------------------------------------------------------
     def calculatePrice(self, trade):
@@ -582,16 +701,6 @@ class Account(object):
     @abstractmethod
     def onGetMatchResult(self, data, reqid):
         """查询单一成交回调"""
-        pass
-
-    @abstractmethod
-    def onPlaceOrder(self, data, reqid):
-        """委托回调"""
-        pass
-
-    @abstractmethod
-    def onStopOrder(self, data, reqid):
-        """委托回调"""
         pass
 
     @abstractmethod
@@ -733,9 +842,9 @@ class Account(object):
                 self.callStrategyFunc(strategy, strategy.onStop)
                 
                 # 对该策略发出的所有限价单进行撤单
-                for vtOrderID, s in self.orderStrategyDict.items():
+                for brokerOrderId, s in self.orderStrategyDict.items():
                     if s is strategy:
-                        self.cancelOrder(vtOrderID)
+                        self.cancelOrder(brokerOrderId)
                 
                 # 对该策略发出的所有本地停止单撤单
                 for stopOrderID, so in self.workingStopOrderDict.items():
@@ -852,29 +961,6 @@ class Account(object):
         return resultDf
 
 
-
-
-
-
-
-########################################################################
-class StopOrder(object):
-    """本地停止单"""
-
-    #----------------------------------------------------------------------
-    def __init__(self):
-        """Constructor"""
-        self.vtSymbol = EMPTY_STRING
-        self.orderType = EMPTY_UNICODE
-        self.direction = EMPTY_UNICODE
-        self.offset = EMPTY_UNICODE
-        self.price = EMPTY_FLOAT
-        self.volume = EMPTY_INT
-        
-        self.strategy = None             # 下停止单的策略对象
-        self.stopOrderID = EMPTY_STRING  # 停止单的本地编号 
-        self.status = EMPTY_STRING       # 停止单状态
-
 ########################################################################
 class Account_AShare(Account):
     """
@@ -942,6 +1028,54 @@ class Account_AShare(Account):
         if trade.direction != DIRECTION_LONG:
             pos = self._dictPositions[trade.symbol]
             pos.posAvail -= trade.volume
+
+
+########################################################################
+class VtOrderData(VtBaseData):
+    """订单数据类"""
+
+    #----------------------------------------------------------------------
+    def __init__(self, account):
+        """Constructor"""
+        super(VtOrderData, self).__init__()
+        
+        # 代码编号相关
+        self.reqId   = account.nextOrderReqId # 订单编号
+        self.brokerOrderId = EMPTY_STRING   # 订单在vt系统中的唯一编号，通常是 Gateway名.订单编号
+
+        self.symbol   = EMPTY_STRING    # 合约代码
+        self.exchange = EMPTY_STRING    # 交易所代码
+        self.vtSymbol = EMPTY_STRING    # 合约在vt系统中的唯一代码，通常是 合约代码.交易所代码
+        
+        # 报单相关
+        self.direction = EMPTY_UNICODE  # 报单方向
+        self.offset = EMPTY_UNICODE     # 报单开平仓
+        self.price = EMPTY_FLOAT        # 报单价格
+        self.totalVolume = EMPTY_INT    # 报单总数量
+        self.tradedVolume = EMPTY_INT   # 报单成交数量
+        self.status = EMPTY_UNICODE     # 报单状态
+        
+        self.orderTime  = account.datetimeAsof.strftime('%H:%M:%S.%f')[:-3] # 发单时间
+        self.cancelTime = EMPTY_STRING  # 撤单时间
+
+# ########################################################################
+# take the same as VtOrderData
+# class StopOrder(object):
+#     """本地停止单"""
+
+#     #----------------------------------------------------------------------
+#     def __init__(self):
+#         """Constructor"""
+#         self.vtSymbol = EMPTY_STRING
+#         self.orderType = EMPTY_UNICODE
+#         self.direction = EMPTY_UNICODE
+#         self.offset = EMPTY_UNICODE
+#         self.price = EMPTY_FLOAT
+#         self.volume = EMPTY_INT
+        
+#         self.strategy = None             # 下停止单的策略对象
+#         self.stopOrderID = EMPTY_STRING  # 停止单的本地编号 
+#         self.status = EMPTY_STRING       # 停止单状态
 
 ########################################################################
 class VtPositionData(object): # (VtBaseData):

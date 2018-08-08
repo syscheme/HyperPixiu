@@ -36,7 +36,10 @@ class BrokerDriver(object):
         self._active = False         # API工作状态   
         self._reqid = 0              # 请求编号
 
-        
+        self._dictPositions = { # dict from symbol to latest VtPositionData
+            Account.SYMBOL_CASH : VtPositionData()
+        }
+
     @property
     def className(self) :
         return self.__class__.__name__
@@ -81,6 +84,18 @@ class BrokerDriver(object):
         _account.onTradeError(self, msg, reqid)
 
     #----------------------------------------------------------------------
+    @abstractmethod
+    def getAllPositions(self):
+        with self._lock :
+            return copy.deepcopy(self._dictPositions)
+
+    @abstractmethod
+    def getPositions(self, symbol):
+        with self._lock :
+            if not symbol in self._dictPositions:
+                return VtPositionData()
+            return copy(self._dictPositions[symbol])
+
     @abstractmethod
     def getAccountBalance(self, accountid):
         """查询余额"""
@@ -152,7 +167,7 @@ class BrokerDriver(object):
     @abstractmethod
     def onPlaceOrder(self, data, reqid):
         """委托回调"""
-        _account.onPlaceOrder(self, data, reqid)
+        self._account.onPlaceOrder(self, data, reqid)
 
     #----------------------------------------------------------------------
     @abstractmethod
@@ -173,8 +188,73 @@ class BrokerDriver(object):
         raise NotImplementedError
     
     #----------------------------------------------------------------------
-    @abstractmethod
     def onGetTimestamp(self, data, reqid):
         """查询时间回调"""
-        _account.onGetTimestamp(self, data, reqid)
+        self._account.onGetTimestamp(self, data, reqid)
+
+    ##############################################################
+    # moved from Account
+    def onTraded(self, trade):
+        """交易成功回调"""
+        if trade.vtTradeID in self._dictTrades:
+            return
+
+        self._dictTrades[trade.vtTradeID] = trade
+
+        # update the current postion, this may overwrite during the sync by BrokerDriver
+        s = trade.symbol
+        if not s in currentPositions :
+            self._dictPositions[s] = VtPositionData()
+            pos = self._dictPositions[s]
+            pos.symbol = s
+            pos.vtSymbol = trade.vtSymbol
+            pos.exchange = trade.exchange
+        else:
+            pos = self._dictPositions[s]
+
+        # 持仓相关
+        pos.price      = trade.price
+        pos.direction  = trade.direction      # 持仓方向
+        # pos.frozen =  # 冻结数量
+
+        # update the position of symbol and its average cost
+        tdvol = trade.volume
+        if trade.direction != DIRECTION_LONG:
+            tdvol = -tdvol 
+        else: 
+            # pos.price
+            cost = pos.position * pos.avgPrice
+            cost += trade.volume * trade.price
+            newPos = pos.position + trade.volume
+            if newPos:
+                pos.avgPrice = cost / newPos
+
+        pos.position += tdvol
+        pos.stampByTrader = trade.dt
+
         
+    @abstractmethod
+    def cashChange(self, dAvail=0, dTotal=0):
+        with self._lock :
+            pos = self._dictPositions[Account.SYMBOL_CASH]
+            volprice = pos.price * self.size
+            if pos.price <=0 :   # if cache.price not initialized
+                volprice = pos.price =1
+                if self.size >0:
+                    pos.price /=self.size
+            tmp1, tmp2 = pos.posAvail + dAvail / volprice, pos.position + dTotal / volprice
+            if tmp1<0 or tmp2 <0:
+                return False
+
+            pos.posAvail += tmp1
+            pos.position += tmp2
+            pos.stampByTrader = self.datetimeAsof()
+            return True
+
+    @abstractmethod # from Account_AShare
+    def onTrade(self, trade):
+        super(Account_AShare, self).onTrade(trade)
+
+        if trade.direction != DIRECTION_LONG:
+            pos = self._dictPositions[trade.symbol]
+            pos.posAvail -= trade.volume

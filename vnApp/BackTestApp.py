@@ -1228,27 +1228,6 @@ class tdBacktestWrapper(BrokerDriver):
     def insertData(self, dbName, collectionName, data):
         """考虑到回测中不允许向数据库插入数据，防止实盘交易中的一些代码出错"""
         pass
-    
-    #----------------------------------------------------------------------
-    def cancelAll(self, name):
-        """全部撤单"""
-        # 撤销限价单
-        for orderID in self.workingLimitOrderDict.keys():
-            self.cancelOrder(orderID)
-        
-        # 撤销停止单
-        for stopOrderID in self.workingStopOrderDict.keys():
-            self.cancelStopOrder(stopOrderID)
-
-    #----------------------------------------------------------------------
-    def saveSyncData(self, strategy):
-        """保存同步数据（无效）"""
-        pass
-    
-    #----------------------------------------------------------------------
-    def getPriceTick(self, strategy):
-        """获取最小价格变动"""
-        return self.priceTick
 
     #----------------------------------------------------------------------
     def crossLimitOrder(self, symbol, dt, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume=-1):

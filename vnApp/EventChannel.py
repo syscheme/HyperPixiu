@@ -34,7 +34,7 @@ class EventLoop(object): # non-thread
         
         # 计时器，用于触发计时器事件
         self.__timerActive = False     # 计时器工作状态
-        self.__timerStep = 1           # 计时器触发间隔（默认1秒）
+        self.__timerStep = 60           # 计时器触发间隔（默认1秒）
         self.__stampTimerLast = None
         
         # 这里的__handlers是一个字典，用来保存对应的事件调用关系
@@ -146,7 +146,7 @@ class EventLoop(object): # non-thread
     #----------------------------------------------------------------------
     @property
     def pendingSize(self):
-        return len(self.__queue)
+        return self.__queue.qsize()
 
     #----------------------------------------------------------------------
     def registerGeneralHandler(self, handler):

@@ -222,7 +222,7 @@ class ThreadedApplication(object):
             try :
                 nextSleep = - self._app.step()
                 if nextSleep >0:
-                    sleep(nextSleep)
+                    sleep(min(2, nextSleep))
             except Exception as ex:
                 self._app.error('ThreadedApplication::step() excepton: %s' % ex)
         self._app.info('ThreadedApplication exit')
@@ -412,7 +412,8 @@ class MainRoutine(object):
 
         self.info(u'MainRoutine start looping')
         c=0
-        sec2sleep =0
+        
+        busy = True
         while True:
             if not self.threadless :
                 try :
@@ -423,27 +424,34 @@ class MainRoutine(object):
 
                 continue
 
-            if sec2sleep >0:
-                sleep(sec2sleep)
             # loop mode as below
+            if not busy:
+                sleep(0.5)
+
+            busy = False
             for (k, ds) in self._dictMarketDatas.items():
                 try :
                     if ds == None:
                         continue
-                    sec2sleep -= ds.step()
+                    ds.step()
                 except Exception as ex:
-                    self.logexception(ex)
+                    print("eventCH exception %s %s" % (ex, traceback.format_exc()))
 
-            try :
-                sec2sleep -= self._eventChannel.step()
-                c+=1
+            pending = self._eventChannel.pendingSize
+            busy =  pending >0
 
-                if c % 10 ==0:
-                    self.debug(u'MainThread heartbeat')
-            except KeyboardInterrupt as ki:
-                break
-            except Exception, ex:
-                print("eventCH exception %s %s" % (ex, traceback.format_exc()))
+            pending = min(20, pending)
+            for i in range(0, pending) :
+                try :
+                    self._eventChannel.step()
+                    c+=1
+                except KeyboardInterrupt as ki:
+                    exit(-1)
+                except Exception, ex:
+                    print("eventCH exception %s %s" % (ex, traceback.format_exc()))
+
+            # if c % 10 ==0:
+            #     self.debug(u'MainThread heartbeat')
 
         self.info(u'MainRoutine finish looping')
 

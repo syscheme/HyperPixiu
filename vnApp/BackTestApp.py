@@ -168,8 +168,10 @@ class BackTestApp(Trader):
         """收到行情后，在启动策略前的处理
         通常处理本地停止单（检查是否要立即发出）"""
 
-        if tick.datetime > datetime.now() :
+        if tick.datetime > (datetime.now() + timedelta(days=7)):
+            self.info('End-of-BackTest received, generating report')
             # TODO: BackTest finished, composing the report
+
             exit(0)
 
         if self._execStart ==None:

@@ -108,7 +108,7 @@ class Account(object):
         self._id = settings.id("")
         if len(self._id)<=0 :
             Account.__lastId__ +=1
-            self._id = 'A%d' % Account.__lastId__
+            self._id = 'ACNT%d' % Account.__lastId__
 
         self._orderId = int(datetime2float(datetime.now())) %100000000 # start with a big number
         self._exchange = settings.exchange("")
@@ -135,7 +135,7 @@ class Account(object):
         # self.capital = 0        # 起始本金（默认10万）
         # self._cashAvail =0
         
-        self._dbName   = self._settings.dbName(self.ident)           # 假设的滑点
+        self._dbName   = self._settings.dbName(self._id)           # 假设的滑点
         self.slippage  = self._settings.slippage(0)           # 假设的滑点
         self.rate      = self._settings.ratePer10K(30)/10000  # 假设的佣金比例（适用于百分比佣金）
         self.size      = self._settings.size(1)               # 合约大小，默认为1    
@@ -203,7 +203,8 @@ class Account(object):
             return self._cashChange(dAvail, dTotal)
 
     @abstractmethod
-    def insertData(self, dbName, collectionName, data): raise NotImplementedError
+    def insertData(self, collectionName, data) :
+        self._trader.dbInsert(self._dbName, collectionName, d)
 
     def postEvent_Order(self, orderData):
         self._trader.postEvent(Account.EVENT_ORDER, copy.copy(orderData))
@@ -568,7 +569,7 @@ class Account(object):
         tblName = "dPos." + self.ident
         result, _ = self.calcDailyPositions()
         for l in result:
-            self._trader.insertData(self._trader.dbName, tblName, l)
+            self.insertData(tblName, l)
                 # db = self._dbConn['Account']
                 # collection = db[tblName]
                 # collection.ensure_index([('date', ASCENDING), ('symbol', ASCENDING)], unique=True) #TODO this should init ONCE

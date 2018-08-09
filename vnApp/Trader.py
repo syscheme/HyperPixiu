@@ -319,7 +319,6 @@ class Trader(BaseApplication):
             self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = kline.date
 
         # step 1. cache into the latest, lnf DataEngine
-        self.debug('eventHdl_KLine1min(%s)' % kline.desc)
         self._dictLatestKline1min[symbol] = kline
 
         # step 2. 收到行情后，在启动策略前的处理
@@ -367,7 +366,6 @@ class Trader(BaseApplication):
             self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = tick.date
             self.onDayOpen(symbol, tick.date)
 
-        self.debug('eventHdl_Tick(%s)' % tick.desc)
         # step 1. cache into the latest, lnf DataEngine
         self._dictLatestTick[symbol] = tick
 

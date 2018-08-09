@@ -142,7 +142,7 @@ class MarketData(object):
             return
 
         self._eventCh.put(event)
-        self.info('posted %s%s' % (event.type_, event.dict_['data'].desc))
+        self.debug('posted %s%s' % (event.type_, event.dict_['data'].desc))
 
     #---logging -----------------------
     def debug(self, msg):
@@ -268,7 +268,7 @@ class mdTickData(EventData):
 
     @property
     def desc(self) :
-        return 'tick[%s]@%s' % (self.vtSymbol, self.datetime.strftime('%Y%m%dT%H%M%S'))
+        return 'tick.%s@%s_%dx%s' % (self.vtSymbol, self.datetime.strftime('%Y%m%dT%H%M%S'),self.volume,round(self.lastPrice,2))
 
 ########################################################################
 class mdKLineData(EventData):

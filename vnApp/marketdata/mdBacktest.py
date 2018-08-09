@@ -150,6 +150,7 @@ class mdBacktest(MarketData):
         while nleft >0 and len(self._dictCursors) >0:
             # scan the _dictCursors for the eariest data
             cursorsEnd = []
+            focusContainer = []
             for d in self._dictCursors.values():
 
                 if not d['cursor']: # ignore those collection disconnected
@@ -162,18 +163,21 @@ class mdBacktest(MarketData):
                     cursorsEnd.append(d)
                     continue
                 
-                value = d['currentData']
-                if not value['datetime']:
-                    dtstr = ' '.join([value['date'], value['time']])
-                    value['datetime'] = datetime.strptime(dtstr, '%Y%m%d %H:%M:%S.')
+                # value = d['currentData']
+                if not d['currentData']['datetime']:
+                    dtstr = ' '.join([d['currentData']['date'], d['currentData']['time']])
+                    d['currentData']['datetime'] = datetime.strptime(dtstr, '%Y%m%d %H:%M:%S.')
 
-                if not cursorFocus or not cursorFocus['currentData'] or cursorFocus['currentData']['datetime'] > value['datetime']:
-                    cursorFocus =d
+                # if not cursorFocus or not cursorFocus['currentData'] or cursorFocus['currentData']['datetime'] > d['currentData']['datetime']:
+                #     cursorFocus = d
+                if len(focusContainer)<=0 or not focusContainer[0]['currentData'] or focusContainer[0]['currentData']['datetime'] > d['currentData']['datetime']:
+                    focusContainer = [d]
+                    cursorFocus = focusContainer[0]
             
-            symbol = d['collectionName'].split('.')[0]
-            newSymbol = '%s.%s' % (symbol, self.exchange)
             for d in cursorsEnd:
                 #fill a dummy END event into the event channel
+                symbol = d['collectionName'].split('.')[0]
+                newSymbol = '%s.%s' % (symbol, self.exchange)
                 if self.TICK_MODE == self._mode:
                     edata = mdTickData(self, symbol)
                     event = Event(MarketData.EVENT_TICK)
@@ -205,6 +209,7 @@ class mdBacktest(MarketData):
             # cursorFocus['currentData'] is the most earilest record
             event = None
             symbol = cursorFocus['collectionName'].split('.')[0]
+            newSymbol = '%s.%s' % (symbol, self.exchange)
             if self._mode == self.TICK_MODE :
                 edata = mdTickData(self, symbol)
                 edata.__dict__ = copy.copy(cursorFocus['currentData'])

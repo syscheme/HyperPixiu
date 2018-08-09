@@ -696,9 +696,11 @@ class MainRoutine(object):
             self.writeLog(text.DATA_INSERT_FAILED)
             return
 
+        self.debug('dbInsert() %s.%s: %s' % (dbName, collectionName, d))
         db = self._dbConn[dbName]
         collection = db[collectionName]
         collection.insert_one(d)
+        self.debug('dbInsert() %s.%s added: %s' % (dbName, collectionName, d))
 
     #----------------------------------------------------------------------
     def dbLogging(self, event):

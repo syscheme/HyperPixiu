@@ -117,14 +117,14 @@ class Trader(BaseApplication):
         #   part 1. those specified in the configuration
         for s in jsoncfg.expect_array(self._settings.objectives):
             try :
-                symbol = s.symbol('')
-                dsTick = s.dsTick('')
-                ds1min = s.ds1min('')
+                symbol   = s.symbol('')
+                dsTick   = s.dsTick('')
+                ds1min   = s.ds1min('')
                 if len(symbol) <=0 or (len(dsTick) <=0 and len(ds1min) <=0):
                     continue
                 d = {
-                    "dsTick" : dsTick,
-                    "ds1min" : ds1min,
+                    "dsTick"  : dsTick,
+                    "ds1min"  : ds1min,
                     Trader.RUNTIME_TAG_TODAY : None,
                 }
 

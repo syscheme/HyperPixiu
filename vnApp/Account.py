@@ -33,7 +33,6 @@ from pymongo.errors import ConnectionFailure
 from vnpy.trader.vtGlobal import globalSetting
 from vnpy.trader.vtObject import VtTickData, VtBarData
 from vnpy.trader.vtConstant import *
-from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 
 ########################################################################
 # 常量定义
@@ -87,6 +86,9 @@ class Account(object):
     """
     __lastId__ =10000
 
+    EVENT_ORDER = 'eOrder.'                 # 报单回报事件
+    EVENT_TRADE = 'eTrade.'                 # 报单回报事件
+
     # state of Account
     STATE_OPEN  = 'open'   # during trading hours
     STATE_CLOSE = 'close'  # during market close
@@ -99,6 +101,9 @@ class Account(object):
 
         self._lock = threading.Lock()
 
+        self._settings     = settings
+        self._trader       = trader
+
         # the app instance Id
         self._id = settings.id("")
         if len(self._id)<=0 :
@@ -106,11 +111,8 @@ class Account(object):
             self._id = 'A%d' % Account.__lastId__
 
         self._orderId = int(datetime2float(datetime.now())) %100000000 # start with a big number
-        self._settings     = settings
-        self._trader       = trader
+        self._exchange = settings.exchange("")
 
-        # self._dbConn       = dbConn
-        # self._eventCh      = eventCh
         self._state        = Account.STATE_CLOSE
 
         # trader executer
@@ -123,15 +125,17 @@ class Account(object):
             Account.SYMBOL_CASH : VtPositionData()
         }
 
+        self._dictOutgoingOrders = {} # the outgoing orders dict from reqId to OrderData that has not been confirmed with broker's orderId
+        # cached data from broker
         self._dictTrades = {} # dict from tradeId to trade confirmed during today
+        self._dictPositions = {} # dict from symbol to VtPosition
+        self._dictStopOrders = {} # dict from broker's orderId to OrderData that has been submitted but not yet traded
+        self._dictLimitOrders = {} # dict from broker's orderId to OrderData that has been submitted but not yet traded
+
 
         # self.capital = 0        # 起始本金（默认10万）
         # self._cashAvail =0
         
-        # 保存策略实例的字典
-        # key为策略名称，value为策略实例，注意策略名称不允许重复
-        self._strategyDict = {}
-
         self._dbName   = self._settings.dbName(self.ident)           # 假设的滑点
         self.slippage  = self._settings.slippage(0)           # 假设的滑点
         self.rate      = self._settings.ratePer10K(30)/10000  # 假设的佣金比例（适用于百分比佣金）
@@ -203,22 +207,19 @@ class Account(object):
     def insertData(self, dbName, collectionName, data): raise NotImplementedError
 
     def postEvent_Order(self, orderData):
-        if self._eventCh ==None:
-            return
-
         self._trader.postEvent(Account.EVENT_ORDER, copy.copy(orderData))
-        self.info('posted %s[%s]' % (event.type_, event.dict_['data'].brokerOrderId))
+        self.debug('posted %s[%s]' % (Account.EVENT_ORDER, orderData.brokerOrderId))
 
     #----------------------------------------------------------------------
     # Account operations
     @abstractmethod
-    def sendOrder(self, vtSymbol, orderType, price, volume, strategy):
+    def sendOrder(self, symbol, orderType, price, volume, strategy):
         """发单"""
         source = 'ACCOUNT'
         if strategy:
             source = strategy.name
 
-        orderData = VtOrderData(self)
+        orderData = OrderData(self)
         # 代码编号相关
         orderData.symbol      = symbol
         orderData.exchange    = self._exchange
@@ -227,21 +228,21 @@ class Account(object):
 
         # 报单方向
         if orderType == ORDER_BUY:
-            order.direction = DIRECTION_LONG
-            order.offset = OFFSET_OPEN
+            orderData.direction = DIRECTION_LONG
+            orderData.offset = OFFSET_OPEN
         elif orderType == ORDER_SELL:
-            order.direction = DIRECTION_SHORT
-            order.offset = OFFSET_CLOSE
+            orderData.direction = DIRECTION_SHORT
+            orderData.offset = OFFSET_CLOSE
         elif orderType == ORDER_SHORT:
-            order.direction = DIRECTION_SHORT
-            order.offset = OFFSET_OPEN
+            orderData.direction = DIRECTION_SHORT
+            orderData.offset = OFFSET_OPEN
         elif orderType == ORDER_COVER:
-            order.direction = DIRECTION_LONG
-            order.offset = OFFSET_CLOSE     
+            orderData.direction = DIRECTION_LONG
+            orderData.offset = OFFSET_CLOSE     
 
         with self._lock :
-            self._account._dictOutgoingLimitOrders[orderData.reqId] = order
-        self.debug('placing order[%s] %s: %+dx%s' % (orderData.reqId, orderData.totalVolume, orderData.price))
+            self._dictOutgoingOrders[orderData.reqId] = orderData
+        self.debug('placing order[%s]' % orderData.desc)
         self._broker_placeOrder(orderData)
 
         return orderData.reqId
@@ -252,35 +253,36 @@ class Account(object):
         self._broker_cancelOrder(brokerOrderId)
 
     @abstractmethod
-    def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy):
+    def sendStopOrder(self, symbol, orderType, price, volume, strategy):
 
         source = 'ACCOUNT'
         if strategy:
             source = strategy.name
 
-        orderData = VtOrderData(self, stopOrder=True)
+        orderData = OrderData(self, True)
         # 代码编号相关
         orderData.symbol      = symbol
         orderData.exchange    = self._exchange
         orderData.price       = self.roundToPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
+        
         # 报单方向
         if orderType == ORDER_BUY:
-            order.direction = DIRECTION_LONG
-            order.offset = OFFSET_OPEN
+            orderData.direction = DIRECTION_LONG
+            orderData.offset = OFFSET_OPEN
         elif orderType == ORDER_SELL:
-            order.direction = DIRECTION_SHORT
-            order.offset = OFFSET_CLOSE
+            orderData.direction = DIRECTION_SHORT
+            orderData.offset = OFFSET_CLOSE
         elif orderType == ORDER_SHORT:
-            order.direction = DIRECTION_SHORT
-            order.offset = OFFSET_OPEN
+            orderData.direction = DIRECTION_SHORT
+            orderData.offset = OFFSET_OPEN
         elif orderType == ORDER_COVER:
-            order.direction = DIRECTION_LONG
-            order.offset = OFFSET_CLOSE     
+            orderData.direction = DIRECTION_LONG
+            orderData.offset = OFFSET_CLOSE     
 
         with self._lock :
-            self._account._dictOutgoingOrders[orderData.reqId] = order
-        self.debug('placing stopOrder[%s] %s: %+dx%s' % (orderData.reqId, orderData.totalVolume, orderData.price))
+            self._dictOutgoingOrders[orderData.reqId] = orderData
+        self.debug('placing stopOrder[%s]' % orderData.desc)
         self._broker_placeOrder(orderData)
 
         return orderData.reqId
@@ -301,24 +303,24 @@ class Account(object):
     @abstractmethod
     def _broker_onOrderPlaced(self, orderData):
         """委托回调"""
-        # order placed, move it from _dictOutgoingLimitOrders to _dictOpenningLimitOrders
+        # order placed, move it from _dictOutgoingOrders to _dictLimitOrders
         with self._lock :
             del self._dictOutgoingOrders[orderData.reqId]
-            if VtOrderData.STOPORDERPREFIX in orderData.reqId :
-                self._dictOpeningStopOrders[orderData.brokerOrderId] = orderData
+            if OrderData.STOPORDERPREFIX in orderData.reqId :
+                self._dictStopOrders[orderData.brokerOrderId] = orderData
             else :
-                self._dictOpeningLimitOrders[orderData.brokerOrderId] = orderData
+                self._dictLimitOrders[orderData.brokerOrderId] = orderData
 
-        self.info('order[%s] has been placed, brokerOrderId[%s]', (orderData.reqId, orderData.brokerOrderId))
+        self.info('order[%s] has been placed, brokerOrderId[%s]' % (orderData.desc, orderData.brokerOrderId))
 
         if orderData.direction == DIRECTION_LONG:
-            turnover, commission, slippage = self.calcAmountOfTrade(s, orderData.price, orderData.volume)
+            turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.volume)
             self._cashChange(-(turnover + commission + slippage))
 
         self.postEvent_Order(orderData)
 
     @abstractmethod
-    def _broker_cancelOrder(brokerOrderId):
+    def _broker_cancelOrder(self, brokerOrderId):
         """撤单"""
         raise NotImplementedError
 
@@ -327,28 +329,28 @@ class Account(object):
         """撤单回调"""
         orderData.status = STATUS_CANCELLED
         if len(orderData.cancelTime) <=0:
-            orderData.cancelTime = self.datetimeAsof.strftime('%H:%M:%S.%f')[:3]
+            orderData.cancelTime = self._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:3]
 
         with self._lock :
-            if VtOrderData.STOPORDERPREFIX in orderData.reqId :
-                del self._dictOpenningLimitOrders[orderData.rokerOrderId]
+            if OrderData.STOPORDERPREFIX in orderData.reqId :
+                del self._dictLimitOrders[orderData.rokerOrderId]
             else :
-                del self._dictOpenningStopOrders[orderData.brokerOrderId]
+                del self._dictStopOrders[orderData.brokerOrderId]
 
-            del self._dictOutgoingLimitOrders[orderData.reqId]
+            del self._dictOutgoingOrders[orderData.reqId]
 
             if orderData.direction == DIRECTION_LONG:
-                turnover, commission, slippage = self.calcAmountOfTrade(s, orderData.price, orderData.volume)
+                turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.volume)
                 self._cashChange(turnover + commission + slippage)
 
-        self.info('order.brokerOrderId[%s] canceled' % brokerOrderId)
+        self.info('order.brokerOrderId[%s] canceled' % orderData.brokerOrderId)
         self.postEvent_Order(orderData)
 
     @abstractmethod
     def _broker_onOrderDone(self, orderData):
         """委托被执行"""
         if orderData.direction == DIRECTION_LONG:
-            turnover, commission, slippage = self.calcAmountOfTrade(s, orderData.price, orderData.volume)
+            turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.volume)
             self._cashChange(turnover + commission + slippage)
 
         self.postEvent_Order(orderData)
@@ -403,10 +405,9 @@ class Account(object):
                 
             pos.stampByTrader = trade.dt  # the current position is calculated based on trade
 
-        eventstr =  '%s[%s]' % (event.type_, event.dict_['data'].tradeID)
         self._trader.postEvent(Account.EVENT_TRADE, copy.copy(trade))
 
-        self.info('OnTrade(%s) posted %s' % (trade.tradeID, eventstr))
+        self.info('OnTrade(%s) done' % (trade.tradeID))
 
     @abstractmethod
     def _broker_datetimeAsOf(self):
@@ -458,7 +459,7 @@ class Account(object):
 
         pos.posAvail += tmp1
         pos.position += tmp2
-        pos.stampByTrader = self.datetimeAsof()
+        pos.stampByTrader = self._broker_datetimeAsOf()
         return True
 
 
@@ -476,14 +477,14 @@ class Account(object):
         if price > 0 :
             cash, _  = self.cashAmount()
             volume   = int(cash / price / self.size)
-            turnOver, commission, slippage = self.calcAmountOfTrade(vtSymbol, price, volume)
+            turnOver, commission, slippage = self.calcAmountOfTrade(symbol, price, volume)
             if cash < (turnOver + commission + slippage) :
                 volume -= int((commission + slippage) / price / self.size) +1
             if volume <=0:
                 volume =0
         
         with self._lock :
-            if symobl in  self._dictPositions :
+            if symbol in  self._dictPositions :
                 return volume, self._dictPositions[symbol].availPos
 
         return volume, 0
@@ -535,39 +536,29 @@ class Account(object):
         1) trades that confirmed
         2) 
         '''
-
-        # TO CLEARN _dbConn
-        if not self._trader and not self._dbConn:
-            # 设置MongoDB操作的超时时间为0.5秒
-            self._dbConn = MongoClient('mongo-vnpy', 27017, connectTimeoutMS=500)
-                
-            # 调用server_info查询服务器状态，防止服务器异常并未连接成功
-            self._dbConn.server_info()
+        if not self._trader:
+            return
 
         with self._lock :
             # part 1. the confirmed trades
             tblName = "trades." + self.ident
             for t in self._dictTrades.values():
-                if self._trader:
-                    self._trader.insertData(self._trader.dbName, tblName, t)
-                elif self._dbConn :
-                    db = self._dbConn['Account']
-                    collection = db[tblName]
-                    collection.ensure_index([('vtTradeID', ASCENDING)], unique=True) #TODO this should init ONCE
-                    collection = db[tblName]
-                    collection.update({'vtTradeID':t.vtTradeID}, t.__dict__, True)
+                self._trader.insertData(self._trader.dbName, tblName, t)
+                    # db = self._dbConn['Account']
+                    # collection = db[tblName]
+                    # collection.ensure_index([('vtTradeID', ASCENDING)], unique=True) #TODO this should init ONCE
+                    # collection = db[tblName]
+                    # collection.update({'vtTradeID':t.vtTradeID}, t.__dict__, True)
 
         # part 2. the daily position
         tblName = "dPos." + self.ident
         result, _ = self.calcDailyPositions()
         for l in result:
-            if self._trader:
-                self._trader.insertData(self._trader.dbName, tblName, l)
-            elif self._dbConn :
-                db = self._dbConn['Account']
-                collection = db[tblName]
-                collection.ensure_index([('date', ASCENDING), ('symbol', ASCENDING)], unique=True) #TODO this should init ONCE
-                collection.update({'date':l['date'], 'symbol':l['symbol']}, l, True)
+            self._trader.insertData(self._trader.dbName, tblName, l)
+                # db = self._dbConn['Account']
+                # collection = db[tblName]
+                # collection.ensure_index([('date', ASCENDING), ('symbol', ASCENDING)], unique=True) #TODO this should init ONCE
+                # collection.update({'date':l['date'], 'symbol':l['symbol']}, l, True)
 
     @abstractmethod
     def loadDB(self, since =None):
@@ -591,7 +582,7 @@ class Account(object):
                 tradesOfSymbol[t.vtSymbol].append(t)
 
         result = []
-        currentPositions = self._broker_getAllPositions() # this is a duplicated copy, so thread-safe
+        currentPositions = self.getAllPositions() # this is a duplicated copy, so thread-safe
         for s in tradesOfSymbol.keys():
             if not s in currentPositions:
                 continue
@@ -689,15 +680,24 @@ class Account(object):
 
     #----------------------------------------------------------------------
     @abstractmethod
-    def log(self, message):
-        """记录日志"""
-        self._lstLogs.append(message)
-        self.stdout(message)
-
-    @abstractmethod
     def stdout(self, message):
         """输出内容"""
-        print str(self.now()) + " ACC[" + self.ident + "] " + message
+        print str(self._broker_datetimeAsOf()) + " ACC[" + self.ident + "] " + message
+
+    def debug(self, msg):
+        self._trader._engine.debug('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
+        
+    def info(self, msg):
+        """正常输出"""
+        self._trader._engine.info('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
+
+    def warn(self, msg):
+        """警告信息"""
+        self._trader._engine.warn('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
+        
+    def error(self, msg):
+        """报错输出"""
+        self._trader._engine.error('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
 
     # #----------------------------------------------------------------------
     # def loadStrategy(self, setting):
@@ -707,18 +707,18 @@ class Account(object):
     #         className = setting['className']
     #     except Exception:
     #         msg = traceback.format_exc()
-    #         self.log(u'错误策略配置：%s' %msg)
+    #         self.debug(u'错误策略配置：%s' %msg)
     #         return
         
     #     # 获取策略类
     #     strategyClass = STRATEGY_CLASS.get(className, None)
     #     if not strategyClass:
-    #         self.log(u'找不到策略类：%s' %className)
+    #         self.debug(u'找不到策略类：%s' %className)
     #         return
         
     #     # 防止策略重名
     #     if name in self._strategyDict:
-    #         self.log(u'策略实例重名：%s' %name)
+    #         self.debug(u'策略实例重名：%s' %name)
     #     else:
     #         # 创建策略实例
     #         strategy = strategyClass(self, setting)  
@@ -752,7 +752,7 @@ class Account(object):
             
     #         return varDict
     #     else:
-    #         self.log(u'策略实例不存在：' + name)    
+    #         self.debug(u'策略实例不存在：' + name)    
     #         return None
     
     # #----------------------------------------------------------------------
@@ -767,7 +767,7 @@ class Account(object):
             
     #         return paramDict
     #     else:
-    #         self.log(u'策略实例不存在：' + name)    
+    #         self.debug(u'策略实例不存在：' + name)    
     #         return None
     
     # #----------------------------------------------------------------------
@@ -775,11 +775,11 @@ class Account(object):
     #     """初始化策略"""
     #     if not name in self._strategyDict:
     #         strategy = self._strategyDict[name]
-    #         self.log(u'策略实例不存在：%s' %name)
+    #         self.debug(u'策略实例不存在：%s' %name)
     #         return
             
     #     if strategy and strategy.inited:
-    #         self.log(u'请勿重复初始化策略实例：%s' %name)
+    #         self.debug(u'请勿重复初始化策略实例：%s' %name)
     #         return
 
     #     strategy.inited = True
@@ -797,7 +797,7 @@ class Account(object):
     #             strategy.trading = True
     #             self.callStrategyFunc(strategy, strategy.onStart)
     #     else:
-    #         self.log(u'策略实例不存在：%s' %name)
+    #         self.debug(u'策略实例不存在：%s' %name)
     
     # #----------------------------------------------------------------------
     # def stopStrategy(self, name):
@@ -819,7 +819,7 @@ class Account(object):
     #                 if so.strategy is strategy:
     #                     self.cancelStopOrder(stopOrderID)   
     #     else:
-    #         self.log(u'策略实例不存在：%s' %name)    
+    #         self.debug(u'策略实例不存在：%s' %name)    
             
     # #----------------------------------------------------------------------
     # def callStrategyFunc(self, strategy, func, params=None):
@@ -837,7 +837,7 @@ class Account(object):
     #         # 发出日志
     #         content = '\n'.join([u'策略%s触发异常已停止' %strategy.name,
     #                             traceback.format_exc()])
-    #         self.log(content)
+    #         self.debug(content)
             
     # #----------------------------------------------------------------------
     # def initAll(self):
@@ -886,7 +886,7 @@ class Account(object):
         self._statDaily = DailyResult(date, price)
 
         # 将成交添加到每日交易结果中
-        for trade in self._broker_tradeDict.values():
+        for trade in self._dictTrades.values():
             self._statDaily.addTrade(trade)
             
     def evaluateDailyStat(self, startdate, enddate):
@@ -972,7 +972,7 @@ class Account_AShare(Account):
                 self._dictPositions[trade.symbol].posAvail -= trade.volume
 
 ########################################################################
-class VtOrderData(object):
+class OrderData(object):
     """订单数据类"""
     # 本地停止单前缀
     STOPORDERPREFIX = 'SO#'
@@ -980,7 +980,7 @@ class VtOrderData(object):
     #----------------------------------------------------------------------
     def __init__(self, account):
         """Constructor"""
-        super(VtOrderData, self).__init__(stopOrder=False)
+        super(OrderData, self).__init__(account, stopOrder=False)
         
         # 代码编号相关
         self.reqId   = account.nextOrderReqId # 订单编号
@@ -988,10 +988,10 @@ class VtOrderData(object):
             self.reqId  = STOPORDERPREFIX +self.reqId
 
         self.brokerOrderId = EMPTY_STRING   # 订单在vt系统中的唯一编号，通常是 Gateway名.订单编号
+        self.accountId = account.ident          # 成交归属的帐号
+        self.exchange = account._exchange    # 交易所代码
 
-        self.symbol   = EMPTY_STRING    # 合约代码
-        self.exchange = EMPTY_STRING    # 交易所代码
-        self.vtSymbol = EMPTY_STRING    # 合约在vt系统中的唯一代码，通常是 合约代码.交易所代码
+        self.symbol   = EMPTY_STRING         # 合约代码
         
         # 报单相关
         self.direction = EMPTY_UNICODE  # 报单方向
@@ -1001,11 +1001,15 @@ class VtOrderData(object):
         self.tradedVolume = EMPTY_INT   # 报单成交数量
         self.status = EMPTY_UNICODE     # 报单状态
         
-        self.orderTime  = account.datetimeAsof.strftime('%H:%M:%S.%f')[:-3] # 发单时间
+        self.orderTime  = account._broker_datetimeAsOf.strftime('%H:%M:%S.%f')[:-3] # 发单时间
         self.cancelTime = EMPTY_STRING  # 撤单时间
 
+    @property
+    def desc(self) :
+        return '%s(%s)-%s: %dx%s' % (self.direction, self.symbol, self.reqId, self.totalVolume, self.price)
+
 # ########################################################################
-# take the same as VtOrderData
+# take the same as OrderData
 # class StopOrder(object):
 #     """本地停止单"""
 
@@ -1022,6 +1026,37 @@ class VtOrderData(object):
 #         self.strategy = None             # 下停止单的策略对象
 #         self.stopOrderID = EMPTY_STRING  # 停止单的本地编号 
 #         self.status = EMPTY_STRING       # 停止单状态
+
+########################################################################
+class TradeData(object):
+    """成交数据类"""
+
+    #----------------------------------------------------------------------
+    def __init__(self):
+        """Constructor"""
+        super(TradeData, self).__init__(account)
+        
+        self.tradeID   = EMPTY_STRING           # 成交编号
+        self.vtTradeID = EMPTY_STRING           # 成交在vt系统中的唯一编号，通常是 Gateway名.成交编号
+        self.accountId = account.ident          # 成交归属的帐号
+        self.exchange = account._exchange       # 交易所代码
+
+        # 代码编号相关
+        self.symbol = EMPTY_STRING              # 合约代码
+        
+        self.orderID = EMPTY_STRING             # 订单编号
+        self.vtOrderID = EMPTY_STRING           # 订单在vt系统中的唯一编号，通常是 Gateway名.订单编号
+        
+        # 成交相关
+        self.direction = EMPTY_UNICODE          # 成交方向
+        self.offset = EMPTY_UNICODE             # 成交开平仓
+        self.price = EMPTY_FLOAT                # 成交价格
+        self.volume = EMPTY_INT                 # 成交数量
+        self.tradeTime = EMPTY_STRING           # 成交时间
+   
+    @property
+    def desc(self) :
+        return '%s(%s)-%s: %dx%s' % (self.direction, self.symbol, self.tradeID, self.volume, self.price)
 
 ########################################################################
 class VtPositionData(object): # (VtBaseData):

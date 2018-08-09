@@ -57,7 +57,7 @@ class BackTestApp(Trader):
         tmpstr = settings.endDate('')
         if len(tmpstr) >8:
             self._btEndDate = datetime.strptime(tmpstr, '%Y-%m-%d')
-        self._startCapitial = settings.startCapitial(100000)
+        self._startBalance = settings.startBalance(100000)
 
         # self.mode   = settings.mode(self.BAR_MODE)    # 引擎类型为回测
         self.strategyStartDate = None   # 策略启动日期（即前面的数据用于初始化），datetime对象
@@ -72,15 +72,19 @@ class BackTestApp(Trader):
         for obj in self._dictObjectives.values() :
             if len(obj["dsTick"]) >0 :
                 obj["dsTick"] += mdBacktest.BT_TAG
+            if len(obj["ds1min"]) >0 :
+                obj["ds1min"] += mdBacktest.BT_TAG
 
         # ADJ_2. wrapper the broker drivers of the accounts
-        for acc in self._dictAccounts.values() :
-            wrapper = AccountWrapper(self, acc)
-            self._dictBTBrokerDrivers[tdId] = wrapper
+        for ak in self._dictAccounts.keys() :
+            wrapper = AccountWrapper(self, self._dictAccounts[ak])
+            self._dictAccounts[ak] = wrapper
 
         # end of adjust the Trader
         #---------------------------------------------
-        self._dtData = _btStartDate
+        self._dtData = self._btStartDate
+        self._execStart = None
+        self._execStartClose = 0
 
         self.initData = []          # 初始化用的数据
 
@@ -102,11 +106,11 @@ class BackTestApp(Trader):
 
     #----------------------------------------------------------------------
     def resetTest(self) :
-        self._account = self._accountClass(None, tdBackTest, self._settings.account)
-        self._account._dvrBroker._backtest= self
-#        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
+#        self.account = self._accountClass(None, tdBackTest, self._settings.account)
+#        self.account._dvrBroker._backtest= self
+#        self.account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
         
-        self._account.setCapital(self._startBalance, True) # 回测时的起始本金（默认10万）
+        self.account.setCapital(self._startBalance, True) # 回测时的起始本金（默认10万）
 
         self._execStart = ''
         self._execEnd = ''
@@ -124,21 +128,17 @@ class BackTestApp(Trader):
 
         # TODO check if received the END signal of backtest data
 
-        # shift the trade date and notify dayOpen if date changes
-        if self._dateToday != bar.date :
-            self.onDayOpen(bar.date)
-            self.strategy._posAvail = self.strategy.pos
-            self.strategy.onDayOpen(bar.date)
+        # if self.mode != self.BAR_MODE:
+        #     return
 
-        if self.bar ==None:
-            self._execStartClose = bar.close
-            self._execStart = bar.date
+        # # shift the trade date and notify dayOpen if date changes
+        # if self._dateToday != kline.date :
+        #     self.onDayOpen(kline.date)
+        #     self.strategy._posAvail = self.strategy.pos
+        #     self.strategy.onDayOpen(bar.date)
 
-        if self.mode != self.BAR_MODE:
-            return
-
-        if self.bar ==None:
-            self._execStartClose = kline.priceTick
+        if self._execStart ==None:
+            self._execStartClose = kline.close
             self._execStart = kline.date
 
         # 先确定会撮合成交的价格
@@ -152,42 +152,40 @@ class BackTestApp(Trader):
         sellBestCrossPrice = bestPrice       # 在当前时间点前发出的卖出委托可能的最优成交价
         
         # 张跌停封板
-        if buyCrossPrice <=self.bar.open*0.9 :
+        if buyCrossPrice <= kline.open*0.9 :
             buyCrossPrice =0
-        if sellCrossPrice >= self.bar.open*1.1 :
+        if sellCrossPrice >= kline.open*1.1 :
             sellCrossPrice =0
 
-        for bd in self._dictBTBrokerDrivers.values():
-            # 先撮合限价单
-            bd.crossLimitOrder(kline.symbol, kline.datetime, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)
-            # 再撮合停止单
-            bd.crossStopOrder(kline.symbol, kline.datetime, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)
+        # 先撮合限价单
+        self.account.crossLimitOrder(kline.symbol, kline.datetime, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)
+        # 再撮合停止单
+        self.account.crossStopOrder(kline.symbol, kline.datetime, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)
 
     @abstractmethod    # usually back test will overwrite this
     def preStrategyByTick(self, tick):
         """收到行情后，在启动策略前的处理
         通常处理本地停止单（检查是否要立即发出）"""
 
-        if self.mode != self.BAR_TICK:
-            return
+        # if self.mode != self.BAR_TICK:
+        #     return
 
-        if self.tick ==None:
-            self._execStartClose = tick.priceTick
+        if self._execStart ==None:
             self._execStart = tick.date
+            self._execStartClose = tick.priceTick
+#        self.tick = tick
 
-        self.tick = tick
         self._dtData = tick.datetime
         
-        buyCrossPrice      = self.tick.askPrice1
-        sellCrossPrice     = self.tick.bidPrice1
-        buyBestCrossPrice  = self.tick.askPrice1
-        sellBestCrossPrice = self.tick.bidPrice1
+        buyCrossPrice      = tick.askPrice1
+        sellCrossPrice     = tick.bidPrice1
+        buyBestCrossPrice  = tick.askPrice1
+        sellBestCrossPrice = tick.bidPrice1
 
-        for bd in self._dictBTBrokerDrivers.values():
-            # 先撮合限价单
-            bd.crossLimitOrder(buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)
-            # 再撮合停止单
-            bd.crossStopOrder(buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)
+        # 先撮合限价单
+        self.account.crossLimitOrder(buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)
+        # 再撮合停止单
+        self.account.crossStopOrder(buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)
 
     @abstractmethod    # usually back test will overwrite this
     def postStrategy(self, symbol) :
@@ -213,18 +211,18 @@ class BackTestApp(Trader):
     def stdout(self, message):
         """输出内容"""
         message = str(self._dtData) + ' ' + message
-        self._account.stdout(message)
+        self._engine.stdout(message)
     
     def log(self, message):
         """输出内容"""
         message = str(self._dtData) + ' ' + message
-        self._account.log(message)
+        self._engine.log(message)
 
     #----------------------------------------------------------------------
     def runBacktesting(self):
         """运行回测"""
 
-        self._account.setCapital(self._startBalance, True) # init 10W
+        self.account.setCapital(self._startBalance, True) # init 10W
 
         self.stdout(u'开始回测')
         
@@ -296,7 +294,7 @@ class BackTestApp(Trader):
                     closedVolume = min(exitTrade.volume, entryTrade.volume)
                     result = TradingResult(entryTrade.price, entryTrade.dt, 
                                            exitTrade.price, exitTrade.dt,
-                                           -closedVolume, self.rate, self.slippage, self._account.size)
+                                           -closedVolume, self.rate, self.slippage, self.account.size)
 
                     self.resultList.append(result)
                     
@@ -345,7 +343,7 @@ class BackTestApp(Trader):
                 closedVolume = min(exitTrade.volume, entryTrade.volume)
                 result = TradingResult(entryTrade.price, entryTrade.dt, 
                                        exitTrade.price, exitTrade.dt,
-                                       closedVolume, self.rate, self.slippage, self._account.size)
+                                       closedVolume, self.rate, self.slippage, self.account.size)
 
                 self.resultList.append(result)
                 self.posList.extend([1,0])
@@ -386,13 +384,13 @@ class BackTestApp(Trader):
         # 到最后交易日尚未平仓的交易，则以最后价格平仓
         for trade in buyTrades:
             result = TradingResult(trade.price, trade.dt, self._execEndClose, self._dtData, 
-                                   trade.volume, self.rate, self.slippage, self._account.size)
+                                   trade.volume, self.rate, self.slippage, self.account.size)
             self.resultList.append(result)
             txnstr += '%+dx%.2f' % (trade.volume, trade.price)
             
         for trade in sellTrades:
             result = TradingResult(trade.price, trade.dt, self._execEndClose, self._dtData, 
-                                   -trade.volume, self.rate, self.slippage, self._account.size)
+                                   -trade.volume, self.rate, self.slippage, self.account.size)
             self.resultList.append(result)
             txnstr += '%-dx%.2f' % (trade.volume, trade.price)
 
@@ -686,7 +684,7 @@ class BackTestApp(Trader):
             dailyResult.previousClose = previousClose
             previousClose = dailyResult.closePrice
             
-            dailyResult.calculatePnl(self._account, openPosition)
+            dailyResult.calculatePnl(self.account, openPosition)
             openPosition = dailyResult.closePosition
             
         # 生成DataFrame
@@ -795,7 +793,7 @@ class BackTestApp(Trader):
             df = self.calculateDailyResult()
             df, result = self.calculateDailyStatistics(df)
 
-        df.to_csv(self._account._id+'.csv')
+        df.to_csv(self.account._id+'.csv')
             
         originGain = 0.0
         if self._execStartClose >0 :
@@ -857,7 +855,7 @@ class BackTestApp(Trader):
         pKDE.set_title('Daily Pnl Distribution')
         df['netPnl'].hist(bins=50)
         
-        plt.savefig('DR-%s.png' % self._account._id, dpi=400, bbox_inches='tight')
+        plt.savefig('DR-%s.png' % self.account._id, dpi=400, bbox_inches='tight')
         plt.show()
         plt.close()
        
@@ -1196,7 +1194,7 @@ class AccountWrapper(object):
 
         # orderData found
         orderData.status = STATUS_CANCELLED
-        orderData.cancelTime = self._account.datetimeAsof.strftime('%H:%M:%S.%f')[:3]
+        orderData.cancelTime = self.account.datetimeAsof.strftime('%H:%M:%S.%f')[:3]
         self._broker_onCancelled(orderData)
 
 
@@ -1272,9 +1270,9 @@ class AccountWrapper(object):
             (turnoverO, commissionO, slippageO) =(0,0,0)
             (turnoverT, commissionT, slippageT) =(0,0,0)
             
-            cashAvail, _ = self._account.cashAmount()
+            cashAvail, _ = self.account.cashAmount()
             if buyCross:
-                turnoverO, commissionO, slippageO = self._account.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
+                turnoverO, commissionO, slippageO = self.account.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
                 trade.volume = order.totalVolume
 #                if (turnoverO + commissionO + slippageO) > cashAvail : # the volume should depends on available cache
 #                    trade.volume =0
@@ -1282,7 +1280,7 @@ class AccountWrapper(object):
                 trade.price = min(order.price, buyBestCrossPrice)
                 self.strategy.pos += trade.volume
             elif self.strategy.pos >0:
-                turnoverO, commissionO, slippageO = self._account.calcAmountOfTrade(order.symbol, order.price, -order.totalVolume)
+                turnoverO, commissionO, slippageO = self.account.calcAmountOfTrade(order.symbol, order.price, -order.totalVolume)
                 orderVolume = -order.totalVolume
                 trade.volume = min(self.strategy.pos, order.totalVolume)
                 trade.price = max(order.price, sellBestCrossPrice)
@@ -1293,7 +1291,7 @@ class AccountWrapper(object):
                 if not buyCross:
                     tvolume = -trade.volume
                 
-                turnoverT, commissionT, slippageT = self._account.calcAmountOfTrade(trade.symbol, trade.price, tvolume)
+                turnoverT, commissionT, slippageT = self.account.calcAmountOfTrade(trade.symbol, trade.price, tvolume)
                 if buyCross:
                     tradeAmount = turnoverT + commissionT + slippageT
                 else :
@@ -1321,13 +1319,13 @@ class AccountWrapper(object):
 
             # update avail cash per order has been executed
             if buyCross: #this was a buy
-                # self._account._cashAvail += turnoverO + commissionO + slippageO
-                # self._account._cashAvail -= tradeAmount
+                # self.account._cashAvail += turnoverO + commissionO + slippageO
+                # self.account._cashAvail -= tradeAmount
                 dCacheAval = (turnoverO + commissionO + slippageO) -tradeAmount
-                self._account.cashChange(dCacheAval)
+                self.account.cashChange(dCacheAval)
             else :
-                # self._account._cashAvail += tradeAmount
-                self._account.cashChange(tradeAmount)
+                # self.account._cashAvail += tradeAmount
+                self.account.cashChange(tradeAmount)
             
             # 从字典中删除该限价单
             if orderID in self.tdDriver.workingLimitOrderDict:
@@ -1403,7 +1401,7 @@ class AccountWrapper(object):
                 
             self.tdDriver.limitOrderDict[orderID] = order
                 
-            self._account.onTrade(trade)
+            self.account.onTrade(trade)
 
             # 按照顺序推送数据
             self.strategy.onStopOrder(so)

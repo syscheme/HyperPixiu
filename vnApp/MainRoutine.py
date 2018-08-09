@@ -310,21 +310,20 @@ class MainRoutine(object):
     #----------------------------------------------------------------------
     def addMarketData(self, dsModule, settings):
         """添加底层接口"""
-        clsName = dsModule.className
-        id = settings.id(clsName)
 
         # 创建接口实例
-        self._dictMarketDatas[id] = dsModule(self, settings)
-        
+        clsName = dsModule.className
+        md = dsModule(self, settings)
         # 保存接口详细信息
         d = {
-            'id': id,
+            'id': md.id,
             'dsDisplayName': settings.displayName(id),
-            'dsType': clsName
+            'dsType': clsName,
         }
-        
+
+        self._dictMarketDatas[md.exchange] = md
         self._dlstMarketDatas.append(d)
-        self.info('md[%s] added: %s' %(id, d))
+        self.info('md[%s] added: %s' %(md.exchange, d))
     #----------------------------------------------------------------------
     def addApp(self, appModule, settings):
         """添加上层应用"""
@@ -351,7 +350,7 @@ class MainRoutine(object):
         self.info('app[%s] added: %s' %(id, d))
         
     #----------------------------------------------------------------------
-    def getMarketData(self, dsName):
+    def getMarketData(self, dsName, exchange=None):
         """获取接口"""
         if dsName in self._dictMarketDatas:
             return self._dictMarketDatas[dsName]
@@ -443,8 +442,8 @@ class MainRoutine(object):
                     self.debug(u'MainThread heartbeat')
             except KeyboardInterrupt as ki:
                 break
-            except Exception as ex:
-                self.logexception(ex)
+            except Exception, ex:
+                print("eventCH exception %s %s" % (ex, traceback.format_exc()))
 
         self.info(u'MainRoutine finish looping')
 

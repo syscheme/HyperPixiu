@@ -65,7 +65,6 @@ class mdBacktest(MarketData):
         # self._btApp = btApp
         self._main = mainRoutine
         self._dbPreffix = settings.sourceDBPreffix('')    # Prefix + "Tick or 1min"
-        self._exchange =  settings.exchange('')
         self._timerStep =  settings.timerStep(0)
         self._dateStart = '20000101'
         self._dateEnd   = None
@@ -85,6 +84,12 @@ class mdBacktest(MarketData):
         self._timerStep = 10
         self._dictCursors = {} # symbol to dbCusor
         # self._dictCollectionNames = {} # symbol to CollectionNames
+
+    @property
+    def exchange(self) :
+        # for Backtest, we take self._exchange as the source exchange to read
+        # and (self._exchange + mdBacktest.BT_TAG) as output exhcnage to post into eventChannel
+        return self._exchange + mdBacktest.BT_TAG
 
     #----------------------------------------------------------------------
     def subscribe(self, symbol, eventType=None) :
@@ -159,9 +164,10 @@ class mdBacktest(MarketData):
                 if not cursorFocus or not cursorFocus['currentData'] or cursorFocus['currentData']['datetime'] > value['datetime']:
                     cursorFocus =d
             
+            symbol = d['collectionName'].split('.')[0]
+            newSymbol = '%s.%s' % (symbol, self.exchange)
             for d in cursorsEnd:
                 #fill a dummy END event into the event channel
-                symbol = d['collectionName'].split('.')[0]
                 if self.TICK_MODE == self._mode:
                     edata = mdTickData(self, symbol)
                     event = Event(MarketData.EVENT_TICK)
@@ -170,7 +176,8 @@ class mdBacktest(MarketData):
                     event = Event(MarketData.EVENT_1MIN)
                 
                 edata.date ='39991231'
-                edata.vtSymbol  = d['collectionName'] + mdBacktest.BT_TAG
+                edata.exchange  = self.exchange # output exchange name 
+                edata.vtSymbol  = newSymbol
                 event.dict_['data'] = edata
                 # event['data'].sourceType = MarketData.DATA_SRCTYPE_BACKTEST  # 数据来源类型
                 self.postMarketEvent(event); c+=1
@@ -189,7 +196,7 @@ class mdBacktest(MarketData):
             if self._mode == self.TICK_MODE :
                 edata = mdTickData(self, symbol)
                 edata.__dict__ = copy.copy(cursorFocus['currentData'])
-                edata.vtSymbol  = cursorFocus['collectionName'] + mdBacktest.BT_TAG
+                edata.vtSymbol  = newSymbol
                 event = Event(MarketData.EVENT_TICK)
                 event.dict_['data'] = edata
                 if self._t2k1min :
@@ -198,7 +205,7 @@ class mdBacktest(MarketData):
             else: # as Kline
                 edata = mdKLineData(self, symbol)
                 edata.__dict__ = copy.copy(cursorFocus['currentData'])
-                edata.vtSymbol  = cursorFocus['collectionName'] + mdBacktest.BT_TAG
+                edata.vtSymbol  = newSymbol
                 event = Event(MarketData.EVENT_1MIN)
                 event.dict_['data'] = edata
 
@@ -215,7 +222,7 @@ class mdBacktest(MarketData):
             # 向队列中模拟计时器事件
             stampData = datetime2float(dtData)
             if self._timerStep >0 and (self._stampLastTimer + self._timerStep) < stampData:
-                edata = edTimer(dtData, mdBacktest.BT_TAG)
+                edata = edTimer(dtData, self.exchange)
                 event = Event(type_= EventChannel.EVENT_TIMER)
                 event.dict_['data'] = edata
                 self._stampLastTimer = stampData

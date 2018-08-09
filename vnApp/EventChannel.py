@@ -6,6 +6,7 @@ from threading import Thread
 from time import sleep
 from collections import defaultdict
 from datetime import datetime
+import traceback
 
 # 第三方模块
 from qtpy.QtCore import QTimer
@@ -49,27 +50,32 @@ class EventLoop(object): # non-thread
         dt = datetime.now()
         stampNow = datetime2float(datetime.now())
         c =0
-        try:
-            if not self.__stampTimerLast :
-                self.__stampTimerLast = stampNow
+        if not self.__stampTimerLast :
+            self.__stampTimerLast = stampNow
 
-            #while self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
-            #    self.__stampTimerLast += self.__timerStep
-            if self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
-                self.__stampTimerLast = stampNow
-                    
-                # 向队列中存入计时器事件
-                edata = edTimer(dt)
-                event = Event(type_= EventChannel.EVENT_TIMER)
-                event.dict_['data'] = edata
-                self.put(event)
+        #while self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
+        #    self.__stampTimerLast += self.__timerStep
+        if self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
+            self.__stampTimerLast = stampNow
+                
+            # 向队列中存入计时器事件
+            edata = edTimer(dt)
+            event = Event(type_= EventChannel.EVENT_TIMER)
+            event.dict_['data'] = edata
+            self.put(event)
 
-            # pop the event to dispatch
+        # pop the event to dispatch
+        event = None
+        try :
             event = self.__queue.get(block = True, timeout = 0.5)  # 获取事件的阻塞时间设为1秒
+        except Empty:
+            pass
+
+        try:
             if event :
                 self.__process(event)
                 c+=1
-        except Exception as ex:
+        except Exception, ex:
             print("eventCH exception %s %s" % (ex, traceback.format_exc()))
 
         if c<=0:

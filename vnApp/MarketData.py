@@ -5,6 +5,7 @@ from __future__ import division
 from vnpy.trader.vtConstant import *
 from vnpy.trader.vtObject import VtBarData, VtTickData
 
+import traceback
 from abc import ABCMeta, abstractmethod
 
 ########################################################################
@@ -37,11 +38,11 @@ class MarketData(object):
         self._id = settings.id("")
         if len(self._id)<=0 :
             MarketData.__lastId__ +=1
-            self._id = 'M%d' % BaseApplication.__lastId__
+            self._id = 'MD%d' % MarketData.__lastId__
 
         self._mr = mainRoutine
-        self._eventCh = mainRoutine._eventChannel
-        self._sourceType = srcType
+        self._eventCh  = mainRoutine._eventChannel
+        self._exchange = settings.exchange(self._id)
 
         self._active = False
         self.subDict = {}
@@ -50,8 +51,12 @@ class MarketData(object):
     
     #----------------------------------------------------------------------
     @property
-    def ident(self) :
-        return self.__class__.__name__ +":" + self._id
+    def id(self) :
+        return self._id
+
+    @property
+    def exchange(self) :
+        return self._exchange
 
     @property
     def active(self):
@@ -141,25 +146,28 @@ class MarketData(object):
 
     #---logging -----------------------
     def debug(self, msg):
-        self._mr.debug('MD['+self.ident +'] ' + msg)
+        self._mr.debug('MD['+self.id +'] ' + msg)
         
     def info(self, msg):
         """正常输出"""
-        self._mr.info('MD['+self.ident +'] ' + msg)
+        self._mr.info('MD['+self.id +'] ' + msg)
 
     def warn(self, msg):
         """警告信息"""
-        self._mr.warn('MD['+self.ident +'] ' + msg)
+        self._mr.warn('MD['+self.id +'] ' + msg)
         
     def error(self, msg):
         """报错输出"""
-        self._mr.error('MD['+self.ident +'] ' + msg)
+        self._mr.error('MD['+self.id +'] ' + msg)
         
     def logexception(self, ex):
         """报错输出+记录异常信息"""
-        self._mr.logexception('MD['+self.ident +'] %s: %s' % (ex, traceback.format_exc()))
+        self._mr.logexception('MD['+self.id +'] %s: %s' % (ex, traceback.format_exc()))
     
- ########################################################################
+########################################################################
+from threading import Thread
+from time import sleep
+
 class ThreadedMd(object):
     #----------------------------------------------------------------------
     def __init__(self, marketData):
@@ -204,8 +212,8 @@ class mdTickData(VtTickData):
         """Constructor"""
         super(mdTickData, self).__init__()
         
-        self.exchange   = md._exchange
-        self.sourceType = md._sourceType          # 数据来源类型
+        self.exchange   = md.exchange
+        # self.sourceType = md._sourceType          # 数据来源类型
         if symbol:
             self.symbol = symbol
             self.vtSymbol = '.'.join([self.symbol, self.exchange])

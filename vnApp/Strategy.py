@@ -165,9 +165,9 @@ class Strategy(object):
             self.account.cancelOrder(vtOrderID)
             
     #----------------------------------------------------------------------
-    def cancelAll(self, symbol):
+    def cancelAll(self, symbol=None):
         """全部撤单"""
-        l = self._trader.ordersOfStrategy(self._id, symbol)
+        l = self.account.ordersOfStrategy(self._id, symbol)
 
         orderIdList = []
         for o in l:

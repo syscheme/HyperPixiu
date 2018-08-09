@@ -1030,6 +1030,13 @@ class OrderData(object):
 ########################################################################
 class TradeData(object):
     """成交数据类"""
+    # # 状态常量
+    # STATUS_NOTTRADED  = u'NOTTRADED' # u'未成交'
+    # STATUS_PARTTRADED = u'PARTTRADED' # u'部分成交'
+    # STATUS_ALLTRADED  = u'ALLTRADED' # u'全部成交'
+    # STATUS_CANCELLED  = u'CANCELLED' # u'已撤销'
+    # STATUS_REJECTED   = u'REJECTED' # u'拒单'
+    # STATUS_UNKNOWN    = u'UNKNOWN' # u'未知'
 
     #----------------------------------------------------------------------
     def __init__(self):
@@ -1084,3 +1091,52 @@ class VtPositionData(object): # (VtBaseData):
         self.stampByTrader   = EMPTY_INT         # 该持仓数是基于Trader的计算
         self.stampByBroker = EMPTY_INT        # 该持仓数是基于与broker的数据同步
 
+
+########################################################################
+class PositionDetail(object):
+    """本地维护的持仓信息"""
+    WORKING_STATUS = [STATUS_UNKNOWN, STATUS_NOTTRADED, STATUS_PARTTRADED]
+    
+    MODE_NORMAL = 'normal'          # 普通模式
+    MODE_SHFE = 'shfe'              # 上期所今昨分别平仓
+    MODE_TDPENALTY = 'tdpenalty'    # 平今惩罚
+
+    #----------------------------------------------------------------------
+    def __init__(self, vtSymbol, contract=None):
+        """Constructor"""
+        self.vtSymbol = vtSymbol
+        self.symbol = EMPTY_STRING
+        self.exchange = EMPTY_STRING
+        self.name = EMPTY_UNICODE    
+        self.size = 1
+        
+        if contract:
+            self.symbol = contract.symbol
+            self.exchange = contract.exchange
+            self.name = contract.name
+            self.size = contract.size
+        
+        self.longPos = EMPTY_INT
+        self.longYd = EMPTY_INT
+        self.longTd = EMPTY_INT
+        self.longPosFrozen = EMPTY_INT
+        self.longYdFrozen = EMPTY_INT
+        self.longTdFrozen = EMPTY_INT
+        self.longPnl = EMPTY_FLOAT
+        self.longPrice = EMPTY_FLOAT
+        
+        self.shortPos = EMPTY_INT
+        self.shortYd = EMPTY_INT
+        self.shortTd = EMPTY_INT
+        self.shortPosFrozen = EMPTY_INT
+        self.shortYdFrozen = EMPTY_INT
+        self.shortTdFrozen = EMPTY_INT
+        self.shortPnl = EMPTY_FLOAT
+        self.shortPrice = EMPTY_FLOAT
+        
+        self.lastPrice = EMPTY_FLOAT
+        
+        self.mode = self.MODE_NORMAL
+        self.exchange = EMPTY_STRING
+        
+        self._dictWorkingOrder = {}

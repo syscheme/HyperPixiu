@@ -240,6 +240,23 @@ def test():
     app.exec_()
 
 ########################################################################
+from vnpy.trader.vtConstant import *
+
+class EventData(object):
+    """回调函数推送数据的基础类，其他数据类继承于此"""
+
+    #----------------------------------------------------------------------
+    def __init__(self):
+        """Constructor"""
+        self.gatewayName = EMPTY_STRING         # Gateway名称        
+        self.rawData = None                     # 原始数据
+
+    @property
+    def desc(self) :
+        return self.__class__.__name__
+
+
+########################################################################
 from vnpy.trader.vtObject import VtBaseData
 class edTimer(VtBaseData):
     """K线数据"""

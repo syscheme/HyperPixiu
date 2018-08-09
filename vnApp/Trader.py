@@ -75,6 +75,7 @@ class Trader(BaseApplication):
         self._riskMgm = None
 
         #------from old ctaEngine--------------
+        self._pathContracts = settings.pathContracts('./contracts')
         # 保存策略实例的字典
         # key为策略名称，value为策略实例，注意策略名称不允许重复
         self._dictStrategies = {}
@@ -105,7 +106,7 @@ class Trader(BaseApplication):
 
         # test hardcoding
         self.debug('adopting account')
-        accountClass = self._settings.account.type('Account')
+        # TODO: instantiaze different account by type: accountClass = self._settings.account.type('Account')
         account = Account(self, self._settings.account)
         if account:
             self.adoptAccount(account)
@@ -201,13 +202,13 @@ class Trader(BaseApplication):
     
     def saveContracts(self):
         """保存所有合约对象到硬盘"""
-        f = shelve.open(self.contractFilePath)
+        f = shelve.open(self._pathContracts)
         f['data'] = self._dictLatestContract
         f.close()
     
     def loadContracts(self):
         """从硬盘读取合约对象"""
-        f = shelve.open(self.contractFilePath)
+        f = shelve.open(self._pathContracts)
         if 'data' in f:
             d = f['data']
             for key, value in d.items():
@@ -226,68 +227,48 @@ class Trader(BaseApplication):
     
     def getAllWorkingOrders(self):
         """查询所有活动委托（返回列表）"""
-        return self._dictWorkingOrder.values()
+        orders = []
+        for acc in self._dictAccounts.values():
+            orders.append(acc.getAllWorkingOrders())
+        return orders
 
     def getAllOrders(self):
         """获取所有委托"""
-        return self._dictLatestOrder.values()
+        orders = []
+        for acc in self._dictAccounts.values():
+            orders.append(acc.getAllOrders())
+        return orders
     
     def getAllTrades(self):
         """获取所有成交"""
-        return self._dictTrade.values()
+        traders = []
+        for acc in self._dictAccounts.values():
+            traders.append(acc.getAllTrades())
+        return traders
     
     #----------------------------------------------------------------------
-    def convertOrderReq(self, req):
-        """根据规则转换委托请求"""
-        detail = self._dictDetails.get(req.vtSymbol, None)
-        if not detail:
-            return [req]
-        else:
-            return detail.convertOrderReq(req)
-
-    #----------------------------------------------------------------------
-    # about the position
+    # about the positions
     #----------------------------------------------------------------------
     def getAllPositions(self):
         """获取所有持仓"""
-        return self._dictPositions.values()
+        poslist = []
+        for acc in self._dictAccounts.values():
+            poslist.append(acc.getAllPositions())
+        return poslist
 
-    def getPositionDetail(self, vtSymbol):
+    def getPositionDetail(self, symbol):
         """查询持仓细节"""
-        if vtSymbol in self._dictDetails:
-            detail = self._dictDetails[vtSymbol]
-        else:
-            contract = self.getContract(vtSymbol)
-            detail = PositionDetail(vtSymbol, contract)
-            self._dictDetails[vtSymbol] = detail
-            
-            # 设置持仓细节的委托转换模式
-            contract = self.getContract(vtSymbol)
-            
-            if contract:
-                detail.exchange = contract.exchange
-                
-                # 上期所合约
-                if contract.exchange == EXCHANGE_SHFE:
-                    detail.mode = detail.MODE_SHFE
-                
-                # 检查是否有平今惩罚
-                for productID in self._lstTdPenalty:
-                    if str(productID) in contract.symbol:
-                        detail.mode = detail.MODE_TDPENALTY
-                
-        return detail
-    
+        poslist = []
+        for acc in self._dictAccounts.values():
+            poslist.append(acc.getPositionDetail(symbol))
+        return poslist
+
     def getAllPositionDetails(self):
         """查询所有本地持仓缓存细节"""
-        return self._dictDetails.values()
-    
-    def updateOrderReq(self, req, vtOrderID):
-        """委托请求更新"""
-        vtSymbol = req.vtSymbol
-            
-        detail = self.getPositionDetail(vtSymbol)
-        detail.updateOrderReq(req, vtOrderID)
+        poslist = []
+        for acc in self._dictAccounts.values():
+            poslist.append(acc.getAllPositionDetails())
+        return poslist
     
     #----------------------------------------------------------------------
     # logging
@@ -439,19 +420,6 @@ class Trader(BaseApplication):
     def eventHdl_Order(self, event):
         """处理委托事件"""
         order = event.dict_['data']        
-        self._dictLatestOrder[order.vtOrderID] = order
-        
-        # step 1. 如果订单的状态是全部成交或者撤销，则需要从workingOrderDict中移除  lnf DataEngine
-        if order.status in self.FINISHED_STATUS:
-            if order.vtOrderID in self._dictWorkingOrder:
-                del self._dictWorkingOrder[order.vtOrderID]
-        # 否则则更新字典中的数据        
-        else:
-            self._dictWorkingOrder[order.vtOrderID] = order
-            
-        # step 2. 更新到持仓细节中 lnf DataEngine
-        detail = self.getPositionDetail(order.vtSymbol)
-        detail.updateOrder(order)            
 
         # step 3. 逐个推送到策略实例中 lnf DataEngine
         if vtOrderID in self._idxOrderToStategy:
@@ -483,13 +451,6 @@ class Trader(BaseApplication):
         # step 3. 将成交推送到策略对象中 lnf ctaEngine
         if trade.vtOrderID in self._idxOrderToStategy:
             strategy = self._idxOrderToStategy[trade.vtOrderID]
-            
-            # 计算策略持仓
-            if trade.direction == DIRECTION_LONG:
-                strategy.pos += trade.volume
-            else:
-                strategy.pos -= trade.volume
-            
             self._stg_call(strategy, strategy.onTrade, trade)
             
             # 保存策略持仓到数据库
@@ -621,7 +582,7 @@ class Trader(BaseApplication):
         if not strategy.inited:
             strategy.inited = True
             self._stg_call(strategy, strategy.onInit)
-            self._stg_loadPos(strategy)                             # 初始化完成后加载同步数据
+            self._stg_load(strategy)                             # 初始化完成后加载同步数据
             self.subscribeMarketData(strategy)                      # 加载同步数据后再订阅行情
 
     def _stg_start(self, name):
@@ -644,16 +605,7 @@ class Trader(BaseApplication):
         if strategy.trading:
             strategy.trading = False
             self._stg_call(strategy, strategy.onStop)
-                
-            # 对该策略发出的所有限价单进行撤单
-            for vtOrderID, s in self.orderStrategyDict.items():
-                if s is strategy:
-                    self.cancelOrder(vtOrderID)
-                
-            # 对该策略发出的所有本地停止单撤单
-            for stopOrderID, so in self.workingStopOrderDict.items():
-                if so.strategy is strategy:
-                    self.cancelStopOrder(stopOrderID)   
+            self._stg_call(strategy, strategy.cancellAll)
 
     def _stg_load(self, setting):
         """载入策略, setting schema:
@@ -769,58 +721,6 @@ class Trader(BaseApplication):
                 ret.append(o)
         return ret
 
-
-
-
-########################################################################
-class PositionDetail(object):
-    """本地维护的持仓信息"""
-    WORKING_STATUS = [STATUS_UNKNOWN, STATUS_NOTTRADED, STATUS_PARTTRADED]
-    
-    MODE_NORMAL = 'normal'          # 普通模式
-    MODE_SHFE = 'shfe'              # 上期所今昨分别平仓
-    MODE_TDPENALTY = 'tdpenalty'    # 平今惩罚
-
-    #----------------------------------------------------------------------
-    def __init__(self, vtSymbol, contract=None):
-        """Constructor"""
-        self.vtSymbol = vtSymbol
-        self.symbol = EMPTY_STRING
-        self.exchange = EMPTY_STRING
-        self.name = EMPTY_UNICODE    
-        self.size = 1
-        
-        if contract:
-            self.symbol = contract.symbol
-            self.exchange = contract.exchange
-            self.name = contract.name
-            self.size = contract.size
-        
-        self.longPos = EMPTY_INT
-        self.longYd = EMPTY_INT
-        self.longTd = EMPTY_INT
-        self.longPosFrozen = EMPTY_INT
-        self.longYdFrozen = EMPTY_INT
-        self.longTdFrozen = EMPTY_INT
-        self.longPnl = EMPTY_FLOAT
-        self.longPrice = EMPTY_FLOAT
-        
-        self.shortPos = EMPTY_INT
-        self.shortYd = EMPTY_INT
-        self.shortTd = EMPTY_INT
-        self.shortPosFrozen = EMPTY_INT
-        self.shortYdFrozen = EMPTY_INT
-        self.shortTdFrozen = EMPTY_INT
-        self.shortPnl = EMPTY_FLOAT
-        self.shortPrice = EMPTY_FLOAT
-        
-        self.lastPrice = EMPTY_FLOAT
-        
-        self.mode = self.MODE_NORMAL
-        self.exchange = EMPTY_STRING
-        
-        self._dictWorkingOrder = {}
-        
     #----------------------------------------------------------------------
     def updateTrade(self, trade):
         """成交更新"""
@@ -875,21 +775,6 @@ class PositionDetail(object):
         self.calculatePrice(trade)
         self.calculatePosition()
         self.calculatePnl()
-    
-    #----------------------------------------------------------------------
-    def updateOrder(self, order):
-        """委托更新"""
-        # 将活动委托缓存下来
-        if order.status in self.WORKING_STATUS:
-            self._dictWorkingOrder[order.vtOrderID] = order
-            
-        # 移除缓存中已经完成的委托
-        else:
-            if order.vtOrderID in self._dictWorkingOrder:
-                del self._dictWorkingOrder[order.vtOrderID]
-                
-        # 计算冻结
-        self.calculateFrozen()
     
     #----------------------------------------------------------------------
     def updatePosition(self, pos):

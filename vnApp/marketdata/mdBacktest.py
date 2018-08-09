@@ -14,6 +14,7 @@ from threading import Thread
 from Queue import Queue, Empty
 from multiprocessing.dummy import Pool
 from time import sleep
+from datetime import datetime
 
 import json
 
@@ -42,6 +43,10 @@ class mdBacktest(MarketData):
     className = 'Backtest'
     displayName = 'Playback history data as MarketData'
     typeName = 'Market data subscriber from HHistDB'
+
+    DUMMY_DT_EOS = datetime(2999, 12, 31, 23,59,59)
+    DUMMY_DATE_EOS = DUMMY_DT_EOS.strftime('%Y%m%d')
+    DUMMY_TIME_EOS = DUMMY_DT_EOS.strftime('%H%M%S')
 
     #----------------------------------------------------------------------
     def __init__(self, mainRoutine, settings):
@@ -84,6 +89,8 @@ class mdBacktest(MarketData):
         self._timerStep = 10
         self._dictCursors = {} # symbol to dbCusor
         # self._dictCollectionNames = {} # symbol to CollectionNames
+
+        self._eventEndOfData = []
 
     @property
     def exchange(self) :
@@ -175,18 +182,24 @@ class mdBacktest(MarketData):
                     edata = mdKLineData(self, symbol)
                     event = Event(MarketData.EVENT_1MIN)
                 
-                edata.date ='39991231'
+                edata.date = self.DUMMY_DATE_EOS
+                edata.time = self.DUMMY_TIME_EOS
+                edate.datetime = self.DUMMY_DT_EOS
                 edata.exchange  = self.exchange # output exchange name 
                 edata.vtSymbol  = newSymbol
+
                 event.dict_['data'] = edata
-                # event['data'].sourceType = MarketData.DATA_SRCTYPE_BACKTEST  # 数据来源类型
-                self.postMarketEvent(event); c+=1
+                self._eventEndOfData.append(event)
+                self.info('%s reached end, queued dummy Event(End), deleting from _dictCursors' % d['collectionName'])
+                del self._dictCursors[d['collectionName']]
                 nleft -=1
 
-                self.info('%s reached end, issued dummy Event(End), deleting from _dictCursors' % d['collectionName'])
-                del self._dictCursors[d['collectionName']]
-
             if not cursorFocus or not cursorFocus['currentData'] : # none of the read found
+                self.info('all data sequence reached end, flushing %d Event(End) to event channel' % len(self._eventEndOfData))
+                for eos in self._eventEndOfData :
+                    self.postMarketEvent(event); c+=1
+
+                self._eventEndOfData = []
                 self._active = False
                 break
 

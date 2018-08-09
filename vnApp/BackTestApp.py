@@ -141,8 +141,9 @@ class BackTestApp(Trader):
             self._execStartClose = kline.close
             self._execStart = kline.date
 
+        self._dtData = kline.datetime
+
         # 先确定会撮合成交的价格
-        symbol = bar.symbol
         bestPrice          = round(((kline.open + kline.close) *4 + kline.high + kline.low) /10, 2)
 
         buyCrossPrice      = kline.low        # 若买入方向限价单价格高于该价格，则会成交
@@ -167,25 +168,22 @@ class BackTestApp(Trader):
         """收到行情后，在启动策略前的处理
         通常处理本地停止单（检查是否要立即发出）"""
 
-        # if self.mode != self.BAR_TICK:
-        #     return
-
         if self._execStart ==None:
             self._execStart = tick.date
             self._execStartClose = tick.priceTick
-#        self.tick = tick
 
         self._dtData = tick.datetime
-        
+
+        # 先确定会撮合成交的价格
         buyCrossPrice      = tick.askPrice1
         sellCrossPrice     = tick.bidPrice1
         buyBestCrossPrice  = tick.askPrice1
         sellBestCrossPrice = tick.bidPrice1
 
         # 先撮合限价单
-        self.account.crossLimitOrder(buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)
+        self.account.crossLimitOrder(tick.symbol, self._dtData, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice) # to determine maxCrossVolume from Tick, maxCrossVolume)
         # 再撮合停止单
-        self.account.crossStopOrder(buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)
+        self.account.crossStopOrder(tick.symbol, self._dtData, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice) # to determine maxCrossVolume from Tick, maxCrossVolume)
 
     @abstractmethod    # usually back test will overwrite this
     def postStrategy(self, symbol) :
@@ -555,12 +553,12 @@ class BackTestApp(Trader):
         # 清空限价单相关
         self.tdDriver.limitOrderCount = 0
         self.tdDriver.limitOrderDict.clear()
-        self.tdDriver.workingLimitOrderDict.clear()        
+        self._dictLimitOrders.clear()        
         
         # 清空停止单相关
         self.tdDriver.stopOrderCount = 0
         self.tdDriver.stopOrderDict.clear()
-        self.tdDriver.workingStopOrderDict.clear()
+        self._dictStopOrders.clear()
         
         # 清空成交相关
         self.tdDriver.tradeCount = 0
@@ -1226,7 +1224,7 @@ class AccountWrapper(object):
         during the period of time in which the order is left open.
         """
         # 遍历限价单字典中的所有限价单
-        for orderID, order in self.tdDriver.workingLimitOrderDict.items():
+        for orderID, order in self._dictLimitOrders.items():
             if order.symbol != symbol:
                 continue
 
@@ -1251,7 +1249,7 @@ class AccountWrapper(object):
             # 推送成交数据
             self.tdDriver.tradeCount += 1            # 成交编号自增1
             tradeID = str(self.tdDriver.tradeCount)
-            trade = VtTradeData()
+            trade = TradeData()
             trade.vtSymbol = order.vtSymbol
             trade.tradeID = tradeID
             trade.vtTradeID = tradeID
@@ -1270,9 +1268,9 @@ class AccountWrapper(object):
             (turnoverO, commissionO, slippageO) =(0,0,0)
             (turnoverT, commissionT, slippageT) =(0,0,0)
             
-            cashAvail, _ = self.account.cashAmount()
+            cashAvail, _ = self.cashAmount()
             if buyCross:
-                turnoverO, commissionO, slippageO = self.account.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
+                turnoverO, commissionO, slippageO = self.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
                 trade.volume = order.totalVolume
 #                if (turnoverO + commissionO + slippageO) > cashAvail : # the volume should depends on available cache
 #                    trade.volume =0
@@ -1328,8 +1326,8 @@ class AccountWrapper(object):
                 self.account.cashChange(tradeAmount)
             
             # 从字典中删除该限价单
-            if orderID in self.tdDriver.workingLimitOrderDict:
-                del self.tdDriver.workingLimitOrderDict[orderID]
+            if orderID in self._dictLimitOrders:
+                del self._dictLimitOrders[orderID]
 
     #----------------------------------------------------------------------
     def crossStopOrder(self, symbol, dt, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume=-1): 
@@ -1341,7 +1339,7 @@ class AccountWrapper(object):
             market order.
         """
         # 遍历停止单字典中的所有停止单
-        for stopOrderID, so in self.tdDriver.workingStopOrderDict.items():
+        for stopOrderID, so in self._dictStopOrders.items():
             if order.symbol != symbol:
                 continue
 
@@ -1355,8 +1353,8 @@ class AccountWrapper(object):
 
             # 更新停止单状态，并从字典中删除该停止单
             so.status = STOPORDER_TRIGGERED
-            if stopOrderID in self.tdDriver.workingStopOrderDict:
-                del self.tdDriver.workingStopOrderDict[stopOrderID]                        
+            if stopOrderID in self._dictStopOrders:
+                del self._dictStopOrders[stopOrderID]                        
 
             # 推送成交数据
             self.tdDriver.tradeCount += 1            # 成交编号自增1

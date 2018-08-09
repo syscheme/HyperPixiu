@@ -53,6 +53,7 @@ class BackTestApp(Trader):
         # -----------------------------------------
         tmpstr = settings.startDate('2000-01-01')
         self._btStartDate = datetime.strptime(tmpstr, '%Y-%m-%d') # 回测数据开始日期，datetime对象
+        self._dtData = self._btStartDate
         self._btEndDate   = None         # 回测数据结束日期，datetime对象, None to today or late data
         tmpstr = settings.endDate('')
         if len(tmpstr) >8:
@@ -60,7 +61,7 @@ class BackTestApp(Trader):
         self._startBalance = settings.startBalance(100000)
 
         # self.mode   = settings.mode(self.BAR_MODE)    # 引擎类型为回测
-        self.strategyStartDate = None   # 策略启动日期（即前面的数据用于初始化），datetime对象
+        # self.strategyStartDate = None   # 策略启动日期（即前面的数据用于初始化），datetime对象
 
 #        self.setStartDate(settings.startDate("2010-01-01"), settings.initDays(10)) 
 #        self.setEndDate(settings.endDate("")) 
@@ -78,11 +79,11 @@ class BackTestApp(Trader):
         # ADJ_2. wrapper the broker drivers of the accounts
         for ak in self._dictAccounts.keys() :
             wrapper = AccountWrapper(self, self._dictAccounts[ak])
+            wrapper.setCapital(self._startBalance, True)
             self._dictAccounts[ak] = wrapper
 
         # end of adjust the Trader
         #---------------------------------------------
-        self._dtData = self._btStartDate
         self._execStart = None
         self._execStartClose = 0
 
@@ -194,7 +195,7 @@ class BackTestApp(Trader):
     @abstractmethod    # usually back test will overwrite this
     def postStrategy(self, symbol) :
         """执行完策略后的的处理，通常为综合决策"""
-        self.updateDailyClose(symbol)
+        self.updateDailyClose(self._dtData, symbol)
 
     #------------------------------------------------
     # 通用功能
@@ -217,10 +218,9 @@ class BackTestApp(Trader):
         message = str(self._dtData) + ' ' + message
         self._engine.stdout(message)
     
-    def log(self, message):
-        """输出内容"""
-        message = str(self._dtData) + ' ' + message
-        self._engine.log(message)
+    @abstractmethod
+    def btlog(self, level, msg):
+        super(BackTestApp, self).log(level, str(self._dtData) + ' ' + msg)
 
     #----------------------------------------------------------------------
     def runBacktesting(self):
@@ -1122,7 +1122,7 @@ class AccountWrapper(object):
     def getPosition(self, symbol): return self._nest.getPosition(symbol) # returns VtPositionData
     def getAllPositions(self): return self._nest.getAllPositions() # returns VtPositionData
     def cashAmount(self): return self._nest.cashAmount() # returns (avail, total)
-    def cashChange(self, dAvail=0, dTotal=0): return self._nest.cashChange(dAvail=0, dTotal=0)
+    def cashChange(self, dAvail=0, dTotal=0): return self._nest.cashChange(dAvail, dTotal)
     def insertData(self, dbName, collectionName, data): return self._nest.insertData(dbName, collectionName, data)
     def postEvent_Order(self, orderData): return self._nest.postEvent_Order(orderData)
     def sendOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendOrder(vtSymbol, orderType, price, volume, strategy)
@@ -1159,7 +1159,7 @@ class AccountWrapper(object):
     def initStrategy(self, name): return self._nest.initStrategy(name)
     def startStrategy(self, name): return self._nest.startStrategy(name)
     def stopStrategy(self, name): return self._nest.stopStrategy(name)
-    def callStrategyFunc(self, strategy, func, params=None): return self._nest.callStrategyFunc(strategy, func, params=None)
+    def callStrategyFunc(self, strategy, func, params=None): return self._nest.callStrategyFunc(strategy, func, params)
     def initAll(self): return self._nest.initAll()
     def startAll(self): return self._nest.startAll()
     def stop(self): return self._nest.stop()
@@ -1308,7 +1308,7 @@ class AccountWrapper(object):
                     self.strategy.onTrade(trade)
                 
                     self._dictTrades[tradeID] = trade
-                    self.log('limCrossed:pos(%s) %s[%s,%s,%s=%dx%s] per order:%s[%sx%s], cash[%s/%s]' %
+                    self.btlog(LOGLEVEL_INFO, 'limCrossed:pos(%s) %s[%s,%s,%s=%dx%s] per order:%s[%sx%s], cash[%s/%s]' %
                         (self.strategy.pos, tradeID, trade.direction, trade.vtSymbol, tradeAmount, trade.volume, trade.price, orderID, order.totalVolume, order.price, scashAvail, 'na'))
                 
                     # 推送委托数据

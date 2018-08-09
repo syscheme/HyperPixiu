@@ -271,31 +271,6 @@ class Trader(BaseApplication):
         return poslist
     
     #----------------------------------------------------------------------
-    # logging
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def logEvent(self, event):
-        """记录交易日志事件"""
-        data = event.dict_['data']
-        self._lstLogs.append(event)
-        self._engine.logEvent(EVENT_LOG, data)
-
-    @abstractmethod
-    def logError(self, event):
-        """处理错误事件"""
-        error = event.dict_['data']
-        self._lstErrors.append(error)
-        self._engine.logError(data)
-
-    def getLog(self):
-        """获取日志"""
-        return self._lstLogs
-    
-    def getError(self):
-        """获取错误"""
-        return self._lstErrors
-
-    #----------------------------------------------------------------------
     # Interested Events from EventChannel
     #----------------------------------------------------------------------
     def subscribeSymbols(self) :

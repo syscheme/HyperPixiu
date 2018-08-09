@@ -534,6 +534,7 @@ class MainRoutine(object):
         self._logger.setLevel(level)
         self._loglevel = level
     
+    @abstractmethod
     def log(self, level, msg):
         if not level in self._loglevelFunctionDict : 
             return
@@ -541,6 +542,7 @@ class MainRoutine(object):
         function = self._loglevelFunctionDict[level] # 获取日志级别对应的处理函数
         function(msg)
 
+    @abstractmethod
     def debug(self, msg):
         """开发时用"""
         if self._logger ==None:
@@ -548,6 +550,7 @@ class MainRoutine(object):
 
         self._logger.debug(msg)
         
+    @abstractmethod
     def info(self, msg):
         """正常输出"""
         if self._logger ==None:
@@ -555,6 +558,7 @@ class MainRoutine(object):
 
         self._logger.info(msg)
 
+    @abstractmethod
     def warn(self, msg):
         """警告信息"""
         if self._logger ==None:
@@ -562,6 +566,7 @@ class MainRoutine(object):
 
         self._logger.warn(msg)
         
+    @abstractmethod
     def error(self, msg):
         """报错输出"""
         if self._logger ==None:
@@ -569,6 +574,7 @@ class MainRoutine(object):
 
         self._logger.error(msg)
         
+    @abstractmethod
     def critical(self, msg):
         """影响程序运行的严重错误"""
         if self._logger ==None:

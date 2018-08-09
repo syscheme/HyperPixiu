@@ -121,14 +121,13 @@ class Account(object):
         self._dateToday      = None # date of previous close
         self._datePrevClose  = None # date of previous close
         self._prevPositions = {} # dict from symbol to previous VtPositionData
-        self._dictPositions = { # dict from symbol to latest VtPositionData
-            Account.SYMBOL_CASH : VtPositionData()
-        }
 
         self._dictOutgoingOrders = {} # the outgoing orders dict from reqId to OrderData that has not been confirmed with broker's orderId
         # cached data from broker
+        self._dictPositions = { # dict from symbol to latest VtPositionData
+            Account.SYMBOL_CASH : VtPositionData()
+        }
         self._dictTrades = {} # dict from tradeId to trade confirmed during today
-        self._dictPositions = {} # dict from symbol to VtPosition
         self._dictStopOrders = {} # dict from broker's orderId to OrderData that has been submitted but not yet traded
         self._dictLimitOrders = {} # dict from broker's orderId to OrderData that has been submitted but not yet traded
 
@@ -333,7 +332,7 @@ class Account(object):
 
         with self._lock :
             if OrderData.STOPORDERPREFIX in orderData.reqId :
-                del self._dictLimitOrders[orderData.rokerOrderId]
+                del self._dictLimitOrders[orderData.brokerOrderId]
             else :
                 del self._dictStopOrders[orderData.brokerOrderId]
 
@@ -345,6 +344,20 @@ class Account(object):
 
         self.info('order.brokerOrderId[%s] canceled' % orderData.brokerOrderId)
         self.postEvent_Order(orderData)
+
+    def findOrdersOfStrategy(self, strategyId, symbol=None):
+        ret = []
+        for o in self._dictLimitOrders.values():
+            if o.source == strategyId:
+                ret.append(o)
+        for o in self._dictStopOrders.values():
+            if o.source == strategyId:
+                ret.append(o)
+        for o in self._dictOutgoingOrders.values():
+            if o.source == strategyId:
+                ret.append(o)
+
+        return ret
 
     @abstractmethod
     def _broker_onOrderDone(self, orderData):
@@ -462,6 +475,7 @@ class Account(object):
         pos.stampByTrader = self._broker_datetimeAsOf()
         return True
 
+    #----------------------------------------------------------------------
 
     @abstractmethod
     def calcAmountOfTrade(self, symbol, price, volume): raise NotImplementedError

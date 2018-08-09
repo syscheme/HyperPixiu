@@ -344,27 +344,27 @@ class Trader(BaseApplication):
             self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = kline.date
 
         # step 1. cache into the latest, lnf DataEngine
-        self.debug('eventHdl_KLine1min(%s)' % kline.vtSymbol)
+        self.debug('eventHdl_KLine1min(%s)' % kline.desc)
         self._dictLatestKline1min[symbol] = kline
 
         # step 2. 收到行情后，在启动策略前的处理
         # 先处理本地停止单（检查是否要立即发出） lnf ctaEngine
-        self.debug('eventHdl_KLine1min(%s) pre-strategy processing' % kline.vtSymbol)
+        self.debug('eventHdl_KLine1min(%s) pre-strategy processing' % kline.desc)
         self.preStrategyByKLine(kline)
 
         # step 3. 推送tick到对应的策略实例进行处理 lnf ctaEngine
         if symbol in self._idxSymbolToStrategy:
             # 逐个推送到策略实例中
             l = self._idxSymbolToStrategy[symbol]
-            self.debug('eventHdl_KLine1min(%s) dispatching to %d strategies' % (kline.vtSymbol, len(l)))
+            self.debug('eventHdl_KLine1min(%s) dispatching to %d strategies' % (kline.desc, len(l)))
             for strategy in l:
                 self._stg_call(strategy, strategy.onKline, kline)
 
         # step 4. 执行完策略后的的处理，通常为综合决策
-        self.debug('eventHdl_KLine1min(%s) post-strategy processing' % kline.vtSymbol)
+        self.debug('eventHdl_KLine1min(%s) post-strategy processing' % kline.vtdescSymbol)
         self.postStrategy(symbol)
 
-        self.debug('eventHdl_KLine1min(%s) done' % kline.vtSymbol)
+        self.debug('eventHdl_KLine1min(%s) done' % kline.desc)
 
     @abstractmethod
     def eventHdl_Tick(self, event):
@@ -392,28 +392,28 @@ class Trader(BaseApplication):
             self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = tick.date
             self.onDayOpen(symbol, tick.date)
 
-        self.debug('eventHdl_Tick(%s)' % tick.vtSymbol)
+        self.debug('eventHdl_Tick(%s)' % tick.desc)
         # step 1. cache into the latest, lnf DataEngine
         self._dictLatestTick[symbol] = tick
 
         # step 2. 收到行情后，在启动策略前的处理
         # 先处理本地停止单（检查是否要立即发出） lnf ctaEngine
-        self.debug('eventHdl_Tick(%s) pre-strategy processing' % tick.vtSymbol)
+        self.debug('eventHdl_Tick(%s) pre-strategy processing' % tick.desc)
         self.preStrategyByTick(tick)
 
         # step 3. 推送tick到对应的策略实例进行处理 lnf ctaEngine
         if symbol in self._idxSymbolToStrategy:
             # 逐个推送到策略实例中
             l = self._idxSymbolToStrategy[symbol]
-            self.debug('eventHdl_Tick(%s) dispatching to %d strategies' % (tick.vtSymbol, len(l)))
+            self.debug('eventHdl_Tick(%s) dispatching to %d strategies' % (tick.desc, len(l)))
             for strategy in l:
                 self._stg_call(strategy, strategy.onTick, tick)
     
         # step 4. 执行完策略后的的处理，通常为综合决策
-        self.debug('eventHdl_Tick(%s) post-strategy processing' % tick.vtSymbol)
+        self.debug('eventHdl_Tick(%s) post-strategy processing' % tick.desc)
         self.postStrategy(symbol)
 
-        self.debug('eventHdl_Tick(%s) done' % tick.vtSymbol)
+        self.debug('eventHdl_Tick(%s) done' % tick.desc)
 
     ### eventOrder from Account ----------------
     @abstractmethod

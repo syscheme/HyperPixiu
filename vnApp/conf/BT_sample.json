@@ -1,30 +1,79 @@
-// configuration of a BackTest
 {
-    "mode": "bar",
-    "symbols": ["A601005"],
-    "database": {
-        "datadb":  "VnTrader_1Min_Db",
-        "dataset": "${SYMBOL}",
-        "url": "mongo-vnpy",
+    "logger": {
+        // "level": "99",
+        // "console": "False",
+        // "file": "True",
+        // "event": { "log": "True", "error": "True" } // whether to post the log into event channel
     },
 
-    "startDate": "2012-01-01", // %Y-%m-%d
-    "endDate": "2012-09-06",   // %Y-%m-%d
+    "database": {
+        "host": "mongo-vnpy",
+        // "console": "False",
+        // "file": "True",
+        // "event": { "log": "True", "error": "True" } // whether to post the log into event channel
+    },
 
-    "account" : {
-        "accountId" : "12345556",
-        "type" : "12345556",
-        "slippage" : 0,       // 假设的滑点
-        "ratePer10K" : 30,    // 佣金比例（per 10K）
-        "size" : 100,         // 合约大小，默认为1
-        "priceTick" : 0,      // 价格最小变动 
+    "marketdata": [
+        {
+            "id": "backtest",
+            "source": "Backtest",
 
-        "strategies" : {
-            "BBand": {
+            // the following is up to the MarketData class
+            "sourceDBPreffix": "dr",
+            "exchange": "huobi", // the original exchange
+            "mode": "tick,t2k1min",
+            "startDate": "20121201", // %Y-%m-%d
+            "endDate": "20181230",   // %Y-%m-%d
+            "timerStep": "30", // 30sec
+        },
+    ],
 
+    "backtest": { // the configuration schema is extending "trader"
+
+        "startCapitial": 100000,
+    
+
+        // the following are same as "trader"
+        "dbNamePrefixHist" : "dr", // the preffix of DB name where to read history data from: <dbNamePrefixHist>Tick, <dbNamePrefixHist>K1min
+        "objectives": [
+            { 
+                "symbol": "btcusdt", 
+                "dsTick": "huobi", 
+                "ds1min": "huobi",  // sample "ds1min":"hadax:t2k1", in the case that we don't subscribe Kline directly from the market but take those merged from ticks
+            }, 
+            { 
+                "symbol": "ethusdt", 
+                "dsTick": "huobi", 
+                "ds1min": "huobi", // empty at ds1min means the trader only replies on ticks for this symbol
+            }, 
+        ],
+
+        "account": { // account settings
+            "id": "blah",
+            "broker": "huobi",
+
+            "slippage" : 0,       // 假设的滑点
+            "ratePer10K" : 30,    // 佣金比例（per 10K）
+            "size" : 100,         // 合约大小，默认为1
+            "priceTick" : 0,      // 价格最小变动 
+    
+            // the following is up to the broker driver
+            "httpproxy": "localhost:8118",
+            "accessKey": "blah",
+            "secretKey": "blah",
+        },
+
+        "strategies": [
+            {
+                "name" : "BBand", // strategy name equals to class name
+                "symbols": ["ethusdt"],
+                "weights": { // weights to affect decisions, in range of [0-100] each
+                    "long" : 100, // optimisti
+                    "short": 100, // pessimistic
+                },
+
+                // TODO: the following is up to the stategy class
             },
-            "KK": {
-            }
-        }
+        ],
     },
 }

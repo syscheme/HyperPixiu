@@ -71,8 +71,8 @@ class mdBacktest(MarketData):
         self._main = mainRoutine
         self._dbPreffix = settings.sourceDBPreffix('')    # Prefix + "Tick or 1min"
         self._timerStep =  settings.timerStep(0)
-        self._dateStart = '20000101'
-        self._dateEnd   = None
+        self._dateStart = settings.startDate('2000-01-01')
+        self._dateEnd   = settings.endDate('2999-12-31')
         
         self._mode        = self.TICK_MODE
         self._dbName      = self._dbPreffix + 'Tick'
@@ -124,15 +124,14 @@ class mdBacktest(MarketData):
         """载入历史数据"""
         flt = {'date':{'$gte':self._dateStart}}   # 数据过滤条件
         if self._dateEnd:
-            flt = {'date':{'$gte':self._dateStart,
-                              '$lte':self._dateEnd}}  
+            flt = {'date':{'$gte':self._dateStart, '$lte':self._dateEnd}}  
 
         for c in self._dictCursors.values() :
             if c['cursor']:
                 continue # already connected
 
             collection = self._main.dbConn[self._dbName][c['collectionName']]
-            self.debug('reading %s from %s' % (c['collectionName'], self._dbName))
+            self.debug('reading %s from %s with %s' % (c['collectionName'], self._dbName, flt))
             c['cursor'] = collection.find(flt).sort('datetime')
 
     #----------------------------------------------------------------------
@@ -184,7 +183,7 @@ class mdBacktest(MarketData):
                 
                 edata.date = self.DUMMY_DATE_EOS
                 edata.time = self.DUMMY_TIME_EOS
-                edate.datetime = self.DUMMY_DT_EOS
+                edata.datetime = self.DUMMY_DT_EOS
                 edata.exchange  = self.exchange # output exchange name 
                 edata.vtSymbol  = newSymbol
 

@@ -170,10 +170,10 @@ class BackTestApp(Trader):
         通常处理本地停止单（检查是否要立即发出）"""
 
         if tick.datetime > (datetime.now() + timedelta(days=7)):
-            self.info('End-of-BackTest received, generating report')
-            # TODO: BackTest finished, composing the report
-
-            exit(0)
+            self.info('End-of-BackTest received, sell all positions to cash')
+            self.account.onTestEnd()
+            self.finishTest() # usualy exit() would be called in it to quit the program
+            return
 
         if self._execStart ==None:
             self._execStart = tick.date
@@ -198,8 +198,10 @@ class BackTestApp(Trader):
         self.updateDailyClose(self._dtData, symbol)
 
     #------------------------------------------------
-    # 通用功能
-    #------------------------------------------------    
+    # 数据回放结果计算相关
+    #------------------------------------------------
+
+
 
     #----------------------------------------------------------------------
     def clearResult(self):
@@ -222,41 +224,12 @@ class BackTestApp(Trader):
     def btlog(self, level, msg):
         super(BackTestApp, self).log(level, str(self._dtData) + ' ' + msg)
 
-    #----------------------------------------------------------------------
-    def runBacktesting(self):
-        """运行回测"""
-
-        self.account.setCapital(self._startBalance, True) # init 10W
-
-        self.stdout(u'开始回测')
-        
-        self.strategy.inited = True
-        self.strategy.onInit()
-        self.stdout(u'策略初始化完成')
-        
-        self.strategy.trading = True
-        self.strategy.onStart()
-        self.stdout(u'策略启动完成')
-        
-        self.stdout(u'开始回放数据')
-
-        for d in self.dbCursor:
-            data = dataClass()
-            data.__dict__ = d
-            func(data)     
-            
-        if self.mode == self.BAR_MODE:
-            self._execEndClose = self.bar.close
-            self._execEnd      = self.bar.date
-        else:
-            self._execEndClose = self.tick.priceTick
-            self._execEnd      = self.tick.date
-
-        self.stdout(u'数据回放结束')
-        
     #------------------------------------------------
     # 结果计算相关
-    #------------------------------------------------      
+    #------------------------------------------------
+    def finishTest(self) :
+        self.debug('finishTest() generating test reports')
+        exit(0)
     
     #----------------------------------------------------------------------
     def calculateTransactions(self):
@@ -1414,3 +1387,34 @@ class AccountWrapper(object):
                 self.strategy.onStopOrder(so)
                 self.strategy.onOrder(order)
                 self.strategy.onTrade(trade)
+
+    def onTestEnd(self) :
+        # ---------------------------
+        # 结算日
+        # ---------------------------
+        # step 1 到最后交易日尚未平仓的交易，则以最后价格平仓
+        self.debug('onTestEnd() faking trade to flush out all positions')
+        currentPositions = self.getAllPositions()
+        for symbol, pos in currentPositions :
+            if symbol == Account.SYMBOL_CASH:
+                continue
+            
+            # fake a sold-succ trade into self._dictTrades
+            self.tdDriver.tradeCount += 1            # 成交编号自增1
+            trade = TradeData(self)
+            trade.symbol = symbol
+            trade.vtSymbol = symbol
+            trade.orderID = self.nextOrderReqId +"$BTEND"
+            trade.vtOrderID = trade.orderID
+            trade.tradeID = trade.orderID
+            trade.vtTradeID = trade.orderID
+            trade.direction = DIRECTION_SHORT
+            trade.offset = OFFSET_CLOSE
+            trade.volume = pos.position
+
+            self._broker_onTrade(trade)
+            self.debug('onTestEnd() faked trade: %s' % trade.desc)
+
+        # step 2 enforce a day-close
+        self.debug('onTestEnd() enforcing a day-close')
+        self.onDayClose()

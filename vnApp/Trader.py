@@ -163,16 +163,19 @@ class Trader(BaseApplication):
     # impl of BaseApplication
     #----------------------------------------------------------------------
     def start(self):
-        # TODO: subscribe all interested market data
+        # step 1. subscribe all interested market data
         self.subscribeSymbols()
 
-        # subscribe account events
+        # step 2. subscribe account events
         self.subscribeEvent(BrokerDriver.EVENT_ORDER, self.eventHdl_Order)
         self.subscribeEvent(BrokerDriver.EVENT_TRADE, self.eventHdl_Trade)
 
         self.subscribeEvent(EventChannel.EVENT_TIMER, self.eventHdl_OnTimer)
 
-        """注册事件监听"""
+        # step 3. call allstrategy.onStart()
+        if stg in self._dictStrategies.values() :
+            stg.trading = True
+            self._stg_call(stg, stg.onInit)
 
     def stop(self):
         """退出程序前调用，保证正常退出"""        
@@ -635,6 +638,9 @@ class Trader(BaseApplication):
                 l = []
                 self._idxSymbolToStrategy[s] = l
             l.append(strategy)
+
+            self._stg_call(strategy, strategy.onInit)
+            self.info('initialized strategy[%s]' %strategy.id)
 
     def _stg_allVars(self, name):
         """获取策略当前的变量字典"""

@@ -137,7 +137,6 @@ class Trader(BaseApplication):
 
         self.debug('collected %s interested symbols, adopting strategies' % len(self._dictObjectives))
 
-        self.strategies_LoadAll(self._settings.strategies)
         
     #----------------------------------------------------------------------
     # access to the Account
@@ -168,8 +167,12 @@ class Trader(BaseApplication):
 
     @abstractmethod
     def start(self):
+        self.strategies_LoadAll(self._settings.strategies)
+
         # step 1. subscribe all interested market data
         self.subscribeSymbols()
+
+        self.account.onStart()
 
         # step 2. subscribe account events
         self.subscribeEvent(BrokerDriver.EVENT_ORDER, self.eventHdl_Order)
@@ -294,6 +297,8 @@ class Trader(BaseApplication):
                 if ds:
                     self.debug('calling local subcribers for EVENT_TICK: %s' % s)
                     ds.subscribe(k, MarketData.EVENT_TICK)
+                
+            if len(s['ds1min']) >0:
                 ds = self._engine.getMarketData(s['ds1min'])
                 if ds:
                     self.debug('calling local subcribers for EVENT_KLINE_1MIN: %s' % s)
@@ -316,10 +321,10 @@ class Trader(BaseApplication):
         kline = copy.copy(d)
         try:
             # 添加datetime字段
-            if not tick.datetime:
-                tmpstr = ' '.join([tick.date, tick.time])
-                tick.datetime = datetime.strptime(tmpstr, '%Y%m%d %H:%M:%S')
-                tick.datetime = datetime.strptime(tmpstr, '%Y%m%d %H:%M:%S.%f')
+            if not kline.datetime:
+                tmpstr = ' '.join([kline.date, kline.time])
+                kline.datetime = datetime.strptime(tmpstr, '%Y%m%d %H:%M:%S')
+                kline.datetime = datetime.strptime(tmpstr, '%Y%m%d %H:%M:%S.%f')
         except ValueError:
             self.error(traceback.format_exc())
 
@@ -341,10 +346,10 @@ class Trader(BaseApplication):
             l = self._idxSymbolToStrategy[symbol]
             self.debug('eventHdl_KLine1min(%s) dispatching to %d strategies' % (kline.desc, len(l)))
             for strategy in l:
-                self._stg_call(strategy, strategy.onKline, kline)
+                self._stg_call(strategy, strategy.onBar, kline)
 
         # step 4. 执行完策略后的的处理，通常为综合决策
-        self.debug('eventHdl_KLine1min(%s) post-strategy processing' % kline.vtdescSymbol)
+        self.debug('eventHdl_KLine1min(%s) post-strategy processing' % kline.desc)
         self.postStrategy(symbol)
 
         self.debug('eventHdl_KLine1min(%s) done' % kline.desc)

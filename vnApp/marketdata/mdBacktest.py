@@ -75,12 +75,10 @@ class mdBacktest(MarketData):
         self._dateEnd   = settings.endDate('2999-12-31')
         
         self._mode        = self.TICK_MODE
-        self._dbName      = self._dbPreffix + 'Tick'
         self._t2k1min     = False
         mode = settings.mode('') # "mode": "tick,t2k1min"
         if 'kl1min' == mode[:4] :
             self._mode        = self.BAR_MODE
-            self._dbName      = self._dbPreffix + '1min'
         elif 't2k1min' in mode:
             self._t2k1min = True
                 
@@ -102,17 +100,25 @@ class mdBacktest(MarketData):
     def subscribe(self, symbol, eventType=None) :
         """订阅成交细节"""
 
+        dataCategory = 'Tick'
+        if len(eventType) >len(EVENT_NAME_PREFIX):
+            dataCategory = eventType[len(EVENT_NAME_PREFIX):]
+
         collectionName = symbol +'.' + self._exchange
-        if collectionName in self._dictCursors:
-            self.warn('subscribe() %s already exists' % symbol)
+        key = dataCategory + '/' +collectionName
+        if key in self._dictCursors:
+            self.warn('subscribe() %s already exists' % key)
             return
 
         d = {
             'collectionName' : collectionName,
+            'category': dataCategory,
             'cursor': None,
             'currentData': None
         }
-        self._dictCursors[collectionName] =d
+
+        self._dictCursors[key] =d
+        self.info('subscribe() %s added' % key)
 
     #----------------------------------------------------------------------
     def connect(self):
@@ -130,8 +136,11 @@ class mdBacktest(MarketData):
             if c['cursor']:
                 continue # already connected
 
-            collection = self._main.dbConn[self._dbName][c['collectionName']]
-            self.debug('reading %s from %s with %s' % (c['collectionName'], self._dbName, flt))
+            dbName = self._dbPreffix + c['category']
+            cltName = c['collectionName']
+
+            collection = self._main.dbConn[dbName][cltName]
+            self.debug('reading %s from %s with %s' % (cltName, dbName, flt))
             c['cursor'] = collection.find(flt).sort('datetime')
 
     #----------------------------------------------------------------------
@@ -193,8 +202,9 @@ class mdBacktest(MarketData):
 
                 event.dict_['data'] = edata
                 self._eventEndOfData.append(event)
-                self.info('%s reached end, queued dummy Event(End), deleting from _dictCursors' % d['collectionName'])
-                del self._dictCursors[d['collectionName']]
+                cusrKey = d['category'] + '/' + d['collectionName']
+                self.info('%s reached end, queued dummy Event(End), deleting from _dictCursors' % cusrKey)
+                del self._dictCursors[cusrKey]
                 nleft -=1
 
             if not cursorFocus or not cursorFocus['currentData'] : # none of the read found
@@ -210,7 +220,7 @@ class mdBacktest(MarketData):
             event = None
             symbol = cursorFocus['collectionName'].split('.')[0]
             newSymbol = '%s.%s' % (symbol, self.exchange)
-            if self._mode == self.TICK_MODE :
+            if cursorFocus['category'] == 'Tick' :
                 edata = mdTickData(self, symbol)
                 edata.__dict__ = copy.copy(cursorFocus['currentData'])
                 edata.vtSymbol  = newSymbol
@@ -223,7 +233,7 @@ class mdBacktest(MarketData):
                 edata = mdKLineData(self, symbol)
                 edata.__dict__ = copy.copy(cursorFocus['currentData'])
                 edata.vtSymbol  = newSymbol
-                event = Event(MarketData.EVENT_1MIN)
+                event = Event(EVENT_NAME_PREFIX +cursorFocus['category'])
                 event.dict_['data'] = edata
 
             # cursorFocus['currentData'] sent, force to None to read next

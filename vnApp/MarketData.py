@@ -3,7 +3,7 @@
 from __future__ import division
 
 from vnpy.trader.vtConstant import *
-from .EventChannel import EventData, Event
+from .EventChannel import EventData, Event, EVENT_NAME_PREFIX
 
 import traceback
 from abc import ABCMeta, abstractmethod
@@ -11,16 +11,18 @@ from abc import ABCMeta, abstractmethod
 ########################################################################
 class MarketData(object):
     # Market相关events
-    EVENT_TICK = 'eTick.'                   # TICK行情事件，可后接具体的vtSymbol
-    EVENT_MARKET_DEPTH0 = 'eMD0.'           # Market depth0
-    EVENT_MARKET_DEPTH2 = 'eMD2.'           # Market depth2
-    EVENT_KLINE_1MIN    = 'eKL1m.'
-    EVENT_KLINE_5MIN    = 'eKL5m.'
-    EVENT_KLINE_15MIN   = 'eKL15m.'
-    EVENT_KLINE_30MIN   = 'eKL30m.'
-    EVENT_KLINE_1HOUR   = 'eKL1h.'
-    EVENT_KLINE_4HOUR   = 'eKL4h.'
-    EVENT_KLINE_1DAY    = 'eKL1d.'
+    EVENT_TICK          = EVENT_NAME_PREFIX + 'Tick'                   # TICK行情事件，可后接具体的vtSymbol
+    EVENT_MARKET_DEPTH0 = EVENT_NAME_PREFIX + 'MD0'           # Market depth0
+    EVENT_MARKET_DEPTH2 = EVENT_NAME_PREFIX + 'MD2'           # Market depth2
+    EVENT_KLINE_1MIN    = EVENT_NAME_PREFIX + 'KL1m'
+    EVENT_KLINE_5MIN    = EVENT_NAME_PREFIX + 'KL5m'
+    EVENT_KLINE_15MIN   = EVENT_NAME_PREFIX + 'KL15m'
+    EVENT_KLINE_30MIN   = EVENT_NAME_PREFIX + 'KL30m'
+    EVENT_KLINE_1HOUR   = EVENT_NAME_PREFIX + 'KL1h'
+    EVENT_KLINE_4HOUR   = EVENT_NAME_PREFIX + 'KL4h'
+    EVENT_KLINE_1DAY    = EVENT_NAME_PREFIX + 'KL1d'
+
+    EVENT_T2KLINE_1MIN  = EVENT_NAME_PREFIX + 'T2K1m'
 
     DATA_SRCTYPE_REALTIME   = 'market'
     DATA_SRCTYPE_IMPORT     = 'import'
@@ -280,7 +282,7 @@ class mdKLineData(EventData):
         super(mdKLineData, self).__init__()
         
         self.exchange   = md._exchange
-        self.sourceType = md._sourceType          # 数据来源类型
+        # self.sourceType = md._sourceType          # 数据来源类型
         if symbol:
             self.symbol = symbol
             self.vtSymbol = '.'.join([self.symbol, self.exchange])

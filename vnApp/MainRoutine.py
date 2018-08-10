@@ -157,20 +157,29 @@ class BaseApplication(object):
 
     #----------------------------------------------------------------------
     @abstractmethod
-    def dbInsert(self, dbName, collectionName, d):
+    def dbEnsureIndex(self, collectionName, definition, unique=False):
         """向MongoDB中插入数据，d是具体数据"""
         if self._engine:
-            self._engine.dbInsert(dbName, collectionName, d)
-    
-    #----------------------------------------------------------------------
+            self._engine.dbEnsureIndex(self._id, collectionName, definition, unique)
+                    # db = self._dbConn['Account']
+                    # collection = db[tblName]
+                    # collection.ensure_index([('vtTradeID', ASCENDING)], unique=True) #TODO this should init ONCE
+                    # collection = db[tblName]
+                    # collection.update({'vtTradeID':t.vtTradeID}, t.__dict__, True)
     @abstractmethod
-    def dbQuery(self, dbName, collectionName, d, sortKey='', sortDirection=ASCENDING):
+    def dbInsert(self, collectionName, d):
+        """向MongoDB中插入数据，d是具体数据"""
+        if self._engine:
+            self._engine.dbInsert(self._id, collectionName, d)
+    
+    @abstractmethod
+    def dbQuery(self, collectionName, d, sortKey='', sortDirection=ASCENDING):
         """从MongoDB中读取数据，d是查询要求，返回的是数据库查询的指针"""
         if not self._dbConn:
             self.writeLog(text.DATA_QUERY_FAILED)   
             return []
 
-        db = self._dbConn[dbName]
+        db = self._dbConn[self._id]
         collection = db[collectionName]
             
         if sortKey:
@@ -183,15 +192,14 @@ class BaseApplication(object):
 
         return []
         
-    #----------------------------------------------------------------------
     @abstractmethod
-    def dbUpdate(self, dbName, collectionName, d, flt, upsert=False):
+    def dbUpdate(self, collectionName, d, flt, upsert=True):
         """向MongoDB中更新数据，d是具体数据，flt是过滤条件，upsert代表若无是否要插入"""
         if not self._dbConn:
             self.writeLog(text.DATA_UPDATE_FAILED)        
             return
 
-        db = self._dbConn[dbName]
+        db = self._dbConn[self._id]
         collection = db[collectionName]
         collection.replace_one(flt, d, upsert)
             
@@ -391,7 +399,7 @@ class MainRoutine(object):
             
             self.debug('staring app[%s]' % k)
             app.start()
-            self.info('started app[%s]' % k)
+            self.info('started app[%shows]' % k)
 
         self.info('main-routine started')
 
@@ -693,6 +701,18 @@ class MainRoutine(object):
                 self.error('failed to connect DB[%s :%s]' %(dbhost, dbport))
     
     #----------------------------------------------------------------------
+    @abstractmethod
+    def dbEnsureIndex(self, dbName, collectionName, definition, unique=False):
+        """向MongoDB中定义index"""
+        if not self._dbConn:
+            self.writeLog(text.DATA_INSERT_FAILED)
+            return
+
+        db = self._dbConn[dbName]
+        collection = db[collectionName]
+        collection.ensure_index(definition, unique)
+        self.debug('dbEnsureIndex() %s.%s added: %s' % (dbName, collectionName, definition))
+
     @abstractmethod
     def dbInsert(self, dbName, collectionName, d):
         """向MongoDB中插入数据，d是具体数据"""

@@ -1117,6 +1117,7 @@ class AccountWrapper(object):
     def calcAmountOfTrade(self, symbol, price, volume): return self._nest.calcAmountOfTrade(symbol, price, volume)
     def maxOrderVolume(self, symbol, price): return self._nest.maxOrderVolume(symbol, price)
     def roundToPriceTick(self, price): return self._nest.roundToPriceTick(price)
+    def onStart(self): return self._nest.onStart()
     def onDayClose(self): return self._nest.onDayClose()
     def onDayOpen(self, newDate): return self._nest.onDayOpen(newDate)
     def onTimer(self, dt): return self._nest.onTimer(dt)
@@ -1393,9 +1394,9 @@ class AccountWrapper(object):
         # 结算日
         # ---------------------------
         # step 1 到最后交易日尚未平仓的交易，则以最后价格平仓
-        self.debug('onTestEnd() faking trade to flush out all positions')
+        self._btTrader.debug('onTestEnd() faking trade to flush out all positions')
         currentPositions = self.getAllPositions()
-        for symbol, pos in currentPositions :
+        for symbol, pos in currentPositions.items() :
             if symbol == Account.SYMBOL_CASH:
                 continue
             
@@ -1413,8 +1414,8 @@ class AccountWrapper(object):
             trade.volume = pos.position
 
             self._broker_onTrade(trade)
-            self.debug('onTestEnd() faked trade: %s' % trade.desc)
+            self._btTrader.debug('onTestEnd() faked trade: %s' % trade.desc)
 
         # step 2 enforce a day-close
-        self.debug('onTestEnd() enforcing a day-close')
+        self._btTrader.debug('onTestEnd() enforcing a day-close')
         self.onDayClose()

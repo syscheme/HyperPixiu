@@ -161,11 +161,13 @@ class EventLoop(object): # non-thread
             self.__generalHandlers.remove(handler)
 
 ########################################################################
+EVENT_NAME_PREFIX = 'ev'                # 事件名字前缀
+
 class EventChannel(EventLoop):
     # 系统相关
-    EVENT_TIMER = 'eTimer'                  # 计时器事件，每隔1秒发送一次
-    EVENT_LOG   = 'eLog'                    # 日志事件，全局通用
-    EVENT_ERROR = 'eError.'                 # 错误回报事件
+    EVENT_TIMER = EVENT_NAME_PREFIX + 'Timer'   # 计时器事件，每隔1秒发送一次
+    EVENT_LOG   = EVENT_NAME_PREFIX + 'Log'     # 日志事件，全局通用
+    EVENT_ERROR = EVENT_NAME_PREFIX + 'Error'   # 错误回报事件
 
     #----------------------------------------------------------------------
     def __init__(self):

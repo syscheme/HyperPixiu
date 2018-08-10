@@ -303,7 +303,7 @@ class TraderAccount(Account):
     #----------------------------------------------------------------------
     def insertData(self, dbName, collectionName, data):
         """插入数据到数据库（这里的data可以是VtTickData或者VtBarData）"""
-        self._mainRoutine.dbInsert(dbName, collectionName, data.__dict__)
+        self._mainRoutine.dbInsert(dbName, collectionName, data)
     
     #----------------------------------------------------------------------
     def loadBar(self, dbName, collectionName, days):

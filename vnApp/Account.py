@@ -179,6 +179,11 @@ class Account(object):
             self._orderId +=1
             return '%s@%s' % (self._orderId, self.ident)
 
+    @property
+    def collectionName_dpos(self):   return "dPos." + self.ident
+    @property
+    def collectionName_trade(self): return "dPos." + self.ident
+
     #----------------------------------------------------------------------
     @abstractmethod
     def getPosition(self, symbol): # returns VtPositionData
@@ -204,7 +209,7 @@ class Account(object):
 
     @abstractmethod
     def insertData(self, collectionName, data) :
-        self._trader.dbInsert(self._dbName, collectionName, d)
+        self._trader.dbInsert(self._dbName, collectionName, data)
 
     def postEvent_Order(self, orderData):
         self._trader.postEvent(Account.EVENT_ORDER, copy.copy(orderData))
@@ -516,8 +521,14 @@ class Account(object):
     # callbacks about timing
     #----------------------------------------------------------------------
     @abstractmethod
+    def onStart(self):
+        # ensure the DB collection has the index applied
+        self._trader.dbEnsureIndex(self.collectionName_trade, [('vtTradeID', ASCENDING)], True)
+        self._trader.dbEnsureIndex(self.collectionName_dpos,  [('date', ASCENDING), ('symbol', ASCENDING)], True)
+
+    @abstractmethod
     def onDayClose(self):
-        self.saveDB() # save the account data into DB
+        self.dbSaveDataOfDay() # save the account data into DB
         
         self._datePrevClose = self._dateToday
         self._dateToday = None
@@ -546,7 +557,7 @@ class Account(object):
     # method to access Account DB
     #----------------------------------------------------------------------
     @abstractmethod
-    def saveDB(self):
+    def dbSaveDataOfDay(self):
         ''' save the account data into DB 
         1) trades that confirmed
         2) 
@@ -556,9 +567,8 @@ class Account(object):
 
         with self._lock :
             # part 1. the confirmed trades
-            tblName = "trades." + self.ident
             for t in self._dictTrades.values():
-                self._trader.insertData(self._trader.dbName, tblName, t)
+                self._trader.dbUpdate(self.collectionName_trade, t, {'vtTradeID': t.vtTradeID})
                     # db = self._dbConn['Account']
                     # collection = db[tblName]
                     # collection.ensure_index([('vtTradeID', ASCENDING)], unique=True) #TODO this should init ONCE
@@ -566,10 +576,9 @@ class Account(object):
                     # collection.update({'vtTradeID':t.vtTradeID}, t.__dict__, True)
 
         # part 2. the daily position
-        tblName = "dPos." + self.ident
         result, _ = self.calcDailyPositions()
         for l in result:
-            self.insertData(tblName, l)
+            self._trader.dbUpdate(self.collectionName_dpos, l, {'date':l['date'], 'symbol':l['symbol']})
                 # db = self._dbConn['Account']
                 # collection = db[tblName]
                 # collection.ensure_index([('date', ASCENDING), ('symbol', ASCENDING)], unique=True) #TODO this should init ONCE
@@ -686,7 +695,7 @@ class Account(object):
                 'cBuy'        : tcBuy,             # 成交数量
                 'cSell'       : tcSell,            # 成交数量
                 'txnHist'     : txnHist,
-                'timestamps'  : [ currentPos.stampByTrader, currentPos.stampByBroker ]
+                'asof'        : [ currentPos.stampByTrader, currentPos.stampByBroker ]
                 }
 
             result.append(dstat)

@@ -162,6 +162,11 @@ class Trader(BaseApplication):
     #----------------------------------------------------------------------
     # impl of BaseApplication
     #----------------------------------------------------------------------
+    @abstractmethod
+    def init(self): # return True if succ
+        return super(Trader, self).init()
+
+    @abstractmethod
     def start(self):
         # step 1. subscribe all interested market data
         self.subscribeSymbols()
@@ -172,14 +177,15 @@ class Trader(BaseApplication):
 
         self.subscribeEvent(EventChannel.EVENT_TIMER, self.eventHdl_OnTimer)
 
-        # step 3. call allstrategy.onStart()
-        if stg in self._dictStrategies.values() :
-            stg.trading = True
-            self._stg_call(stg, stg.onInit)
+        # step 3. call allstrategy.onInit()
+        self.strategies_Start()
 
+    @abstractmethod
     def stop(self):
         """退出程序前调用，保证正常退出"""        
         # TODO: subscribe all interested market data
+
+        self.strategies_Stop()
         pass
     
     #----------------------------------------------------------------------
@@ -525,15 +531,15 @@ class Trader(BaseApplication):
         """查询所有策略名称"""
         return self._dictStrategies.keys()        
 
-    def strategies_Init(self):
+    def strategies_Start(self):
         """全部初始化"""
-        for name in self._dictStrategies.keys():
-            self._stg_init(name)    
+        for n in self._dictStrategies.values():
+            self._stg_start(n['strategy'])    
 
     def strategies_Stop(self):
         """全部停止"""
-        for name in self._dictStrategies.keys():
-            self._stg_stop(name)
+        for n in self._dictStrategies.values():
+            self._stg_stop(n['strategy'])
 
     def strategies_Save(self):
         """保存策略配置"""
@@ -549,39 +555,18 @@ class Trader(BaseApplication):
             jsonL = json.dumps(l, indent=4)
             f.write(jsonL)
 
-    def _stg_init(self, name):
-        """初始化策略"""
-        if name in self._dictStrategies:
-            self.error(u'策略实例不存在：%s' %name)    
-
-        strategy = self._dictStrategies[name]
-        if not strategy.inited:
-            strategy.inited = True
-            self._stg_call(strategy, strategy.onInit)
-            self._stg_load(strategy)                             # 初始化完成后加载同步数据
-            self.subscribeMarketData(strategy)                      # 加载同步数据后再订阅行情
-
-    def _stg_start(self, name):
+    def _stg_start(self, strategy):
         """启动策略"""
-        if name in self._dictStrategies:
-            self.error(u'策略实例不存在：%s' %name)    
-
-        strategy = self._dictStrategies[name]
         if strategy.inited and not strategy.trading:
-            strategy.trading = True
             self._stg_call(strategy, strategy.onStart)
+            strategy.trading = True
     
-    def _stg_stop(self, name):
+    def _stg_stop(self, strategy):
         """停止策略"""
-        if name in self._dictStrategies:
-            self.error(u'策略实例不存在：%s' %name)    
-
-        strategy = self._dictStrategies[name]
-            
         if strategy.trading:
-            strategy.trading = False
             self._stg_call(strategy, strategy.onStop)
             self._stg_call(strategy, strategy.cancellAll)
+            strategy.trading = False
 
     def _stg_load(self, setting):
         """载入策略, setting schema:
@@ -596,7 +581,6 @@ class Trader(BaseApplication):
                 // the following is up to the stategy class
             },
         """
-
         className = setting.name()
 
         # 获取策略类
@@ -640,6 +624,7 @@ class Trader(BaseApplication):
             l.append(strategy)
 
             self._stg_call(strategy, strategy.onInit)
+            strategy.inited = True
             self.info('initialized strategy[%s]' %strategy.id)
 
     def _stg_allVars(self, name):

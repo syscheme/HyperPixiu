@@ -135,6 +135,10 @@ class BaseApplication(object):
 
     #----------------------------------------------------------------------
     @abstractmethod
+    def init(self): # return True if succ
+        return True
+
+    @abstractmethod
     def start(self):
         # TODO:
         self._active = True

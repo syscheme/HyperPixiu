@@ -89,7 +89,7 @@ class BackTest(object):
     #----------------------------------------------------------------------
     def resetTest(self) :
         self._account = self._accountClass(None, tdBackTest, self._settings.account)
-        self._account._dvrBroker._backtest= self
+        self._account._backtest= self
 #        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
         
         self._startBalance = self._settings.capital(100000)

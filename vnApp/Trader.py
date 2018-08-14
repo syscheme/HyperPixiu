@@ -107,7 +107,7 @@ class Trader(BaseApplication):
         # test hardcoding
         self.debug('adopting account')
         # TODO: instantiaze different account by type: accountClass = self._settings.account.type('Account')
-        account = Account(self, self._settings.account)
+        account = Account_AShare(self, self._settings.account)
         if account:
             self.adoptAccount(account)
 
@@ -137,6 +137,7 @@ class Trader(BaseApplication):
 
         self.debug('collected %s interested symbols, adopting strategies' % len(self._dictObjectives))
 
+        self.strategies_LoadAll(self._settings.strategies)
         
     #----------------------------------------------------------------------
     # access to the Account
@@ -167,8 +168,6 @@ class Trader(BaseApplication):
 
     @abstractmethod
     def start(self):
-        self.strategies_LoadAll(self._settings.strategies)
-
         # step 1. subscribe all interested market data
         self.subscribeSymbols()
 
@@ -190,6 +189,11 @@ class Trader(BaseApplication):
 
         self.strategies_Stop()
         pass
+
+    @abstractmethod
+    def step(self):
+        for a in self._dictAccounts.values():
+            a.step()
     
     #----------------------------------------------------------------------
     # local the recent data by symbol
@@ -308,7 +312,6 @@ class Trader(BaseApplication):
     @abstractmethod
     def eventHdl_KLine1min(self, event):
         """TODO: 处理行情推送"""
-        self.debug('eventHdl_KLine1min')
         d = event.dict_['data']
         tokens = (d.vtSymbol.split('.'))
         symbol = tokens[0]
@@ -689,6 +692,9 @@ class Trader(BaseApplication):
             if o.symbol == symbol:
                 ret.append(o)
         return ret
+
+    def postStrategyEvent(self, strategyId) :
+        pass
 
     #----------------------------------------------------------------------
     def updateTrade(self, trade):

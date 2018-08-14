@@ -449,6 +449,12 @@ class MainRoutine(object):
                 except Exception as ex:
                     print("eventCH exception %s %s" % (ex, traceback.format_exc()))
 
+            for app in self._dictApps.values() :
+                try :
+                    app.step()
+                except Exception as ex:
+                    print("eventCH exception %s %s" % (ex, traceback.format_exc()))
+
             pending = self._eventChannel.pendingSize
             busy =  pending >0
 

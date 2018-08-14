@@ -182,7 +182,7 @@ class Account(object):
     @property
     def collectionName_dpos(self):   return "dPos." + self.ident
     @property
-    def collectionName_trade(self): return "dPos." + self.ident
+    def collectionName_trade(self): return "trade." + self.ident
 
     #----------------------------------------------------------------------
     @abstractmethod
@@ -222,7 +222,7 @@ class Account(object):
         """发单"""
         source = 'ACCOUNT'
         if strategy:
-            source = strategy.name
+            source = strategy.id
 
         orderData = OrderData(self)
         # 代码编号相关
@@ -230,6 +230,7 @@ class Account(object):
         orderData.exchange    = self._exchange
         orderData.price       = self.roundToPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
+        orderData.source      = source
 
         # 报单方向
         if orderType == ORDER_BUY:
@@ -247,8 +248,7 @@ class Account(object):
 
         with self._lock :
             self._dictOutgoingOrders[orderData.reqId] = orderData
-        self.debug('placing order[%s]' % orderData.desc)
-        self._broker_placeOrder(orderData)
+            self.debug('enqueued order[%s]' % orderData.desc)
 
         return orderData.reqId
 
@@ -270,6 +270,7 @@ class Account(object):
         orderData.exchange    = self._exchange
         orderData.price       = self.roundToPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
+        orderData.source      = source
         
         # 报单方向
         if orderType == ORDER_BUY:
@@ -287,8 +288,7 @@ class Account(object):
 
         with self._lock :
             self._dictOutgoingOrders[orderData.reqId] = orderData
-        self.debug('placing stopOrder[%s]' % orderData.desc)
-        self._broker_placeOrder(orderData)
+            self.debug('enqueued stopOrder[%s]' % orderData.desc)
 
         return orderData.reqId
 
@@ -319,7 +319,7 @@ class Account(object):
         self.info('order[%s] has been placed, brokerOrderId[%s]' % (orderData.desc, orderData.brokerOrderId))
 
         if orderData.direction == DIRECTION_LONG:
-            turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.volume)
+            turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.totalVolume)
             self._cashChange(-(turnover + commission + slippage))
 
         self.postEvent_Order(orderData)
@@ -337,12 +337,18 @@ class Account(object):
             orderData.cancelTime = self._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:3]
 
         with self._lock :
-            if OrderData.STOPORDERPREFIX in orderData.reqId :
-                del self._dictLimitOrders[orderData.brokerOrderId]
-            else :
-                del self._dictStopOrders[orderData.brokerOrderId]
+            try :
+                if not OrderData.STOPORDERPREFIX in orderData.reqId :
+                    del self._dictLimitOrders[orderData.brokerOrderId]
+                else :
+                    del self._dictStopOrders[orderData.brokerOrderId]
+            except:
+                pass
 
-            del self._dictOutgoingOrders[orderData.reqId]
+            try :
+                del self._dictOutgoingOrders[orderData.reqId]
+            except:
+                pass
 
             if orderData.direction == DIRECTION_LONG:
                 turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.volume)
@@ -368,21 +374,30 @@ class Account(object):
     @abstractmethod
     def _broker_onOrderDone(self, orderData):
         """委托被执行"""
-        if orderData.direction == DIRECTION_LONG:
-            turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.volume)
-            self._cashChange(turnover + commission + slippage)
+        with self._lock :
+            try :
+                if not OrderData.STOPORDERPREFIX in orderData.reqId :
+                    del self._dictLimitOrders[orderData.brokerOrderId]
+                else :
+                    del self._dictStopOrders[orderData.brokerOrderId]
+            except:
+                pass
+
+            if orderData.direction == DIRECTION_LONG:
+                turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.volume)
+                self._cashChange(turnover + commission + slippage)
 
         self.postEvent_Order(orderData)
 
     @abstractmethod
     def _broker_onTrade(self, trade):
         """交易成功回调"""
-        if trade.vtTradeID in self._dictTrades:
+        if trade.brokerTradeId in self._dictTrades:
             return
 
-        trade.tradeID = "T" +trade.vtTradeID +"@" + self.ident # to make the tradeID global unique
+        trade.tradeID = "T" +trade.brokerTradeId +"@" + self.ident # to make the tradeID global unique
         with self._lock :
-            self._dictTrades[trade.vtTradeID] = trade
+            self._dictTrades[trade.brokerTradeId] = trade
 
             # update the current postion, this may overwrite during the sync by BrokerDriver
             s = trade.symbol
@@ -390,7 +405,7 @@ class Account(object):
                 self._dictPositions[s] = VtPositionData()
                 pos = self._dictPositions[s]
                 pos.symbol = s
-                pos.vtSymbol = trade.vtSymbol
+#                pos.vtSymbol = trade.vtSymbol
                 pos.exchange = trade.exchange
             else:
                 pos = self._dictPositions[s]
@@ -464,6 +479,14 @@ class Account(object):
     # end with BrokerDriver
     #----------------------------------------------------------------------
 
+    #----------------------------------------------------------------------
+    # Application routine
+    def step(self) :
+        pass
+
+    # end of App routine
+    #----------------------------------------------------------------------
+
     @abstractmethod
     def _cashChange(self, dAvail=0, dTotal=0): # thread unsafe
         pos = self._dictPositions[Account.SYMBOL_CASH]
@@ -523,7 +546,7 @@ class Account(object):
     @abstractmethod
     def onStart(self):
         # ensure the DB collection has the index applied
-        self._trader.dbEnsureIndex(self.collectionName_trade, [('vtTradeID', ASCENDING)], True)
+        self._trader.dbEnsureIndex(self.collectionName_trade, [('brokerTradeId', ASCENDING)], True)
         self._trader.dbEnsureIndex(self.collectionName_dpos,  [('date', ASCENDING), ('symbol', ASCENDING)], True)
 
     @abstractmethod
@@ -568,12 +591,12 @@ class Account(object):
         with self._lock :
             # part 1. the confirmed trades
             for t in self._dictTrades.values():
-                self._trader.dbUpdate(self.collectionName_trade, t, {'vtTradeID': t.vtTradeID})
+                self._trader.dbUpdate(self.collectionName_trade, t.__dict__, {'brokerTradeId': t.brokerTradeId})
                     # db = self._dbConn['Account']
                     # collection = db[tblName]
-                    # collection.ensure_index([('vtTradeID', ASCENDING)], unique=True) #TODO this should init ONCE
+                    # collection.ensure_index([('brokerTradeId', ASCENDING)], unique=True) #TODO this should init ONCE
                     # collection = db[tblName]
-                    # collection.update({'vtTradeID':t.vtTradeID}, t.__dict__, True)
+                    # collection.update({'brokerTradeId':t.brokerTradeId}, t.__dict__, True)
 
         # part 2. the daily position
         result, _ = self.calcDailyPositions()
@@ -598,12 +621,12 @@ class Account(object):
         tradesOfSymbol = { Account.SYMBOL_CASH:[] }        # 成交列表
         with self._lock :
             for t in self._dictTrades.values():
-                if len(t.vtSymbol) <=0:
-                    t.vtSymbol='$' #default symbol
+                if len(t.symbol) <=0:
+                    t.symbol='$' #default symbol
 
-                if not t.vtSymbol in tradesOfSymbol:
-                    tradesOfSymbol[t.vtSymbol] = []
-                tradesOfSymbol[t.vtSymbol].append(t)
+                if not t.symbol in tradesOfSymbol:
+                    tradesOfSymbol[t.symbol] = []
+                tradesOfSymbol[t.symbol].append(t)
 
         result = []
         currentPositions = self.getAllPositions() # this is a duplicated copy, so thread-safe
@@ -951,9 +974,9 @@ class Account_AShare(Account):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self, trader, dvrBrokerClass, settings=None):
+    def __init__(self, trader, settings=None):
         """Constructor"""
-        super(Account_AShare, self).__init__(trader, dvrBrokerClass, settings)
+        super(Account_AShare, self).__init__(trader, settings)
 
     #----------------------------------------------------------------------
     def calcAmountOfTrade(self, symbol, price, volume):
@@ -1002,9 +1025,9 @@ class OrderData(object):
     STOPORDERPREFIX = 'SO#'
 
     #----------------------------------------------------------------------
-    def __init__(self, account):
+    def __init__(self, account, stopOrder=False):
         """Constructor"""
-        super(OrderData, self).__init__(account, stopOrder=False)
+        super(OrderData, self).__init__()
         
         # 代码编号相关
         self.reqId   = account.nextOrderReqId # 订单编号
@@ -1025,8 +1048,9 @@ class OrderData(object):
         self.tradedVolume = EMPTY_INT   # 报单成交数量
         self.status = EMPTY_UNICODE     # 报单状态
         
-        self.orderTime  = account._broker_datetimeAsOf.strftime('%H:%M:%S.%f')[:-3] # 发单时间
+        self.orderTime  = account._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:-3] # 发单时间
         self.cancelTime = EMPTY_STRING  # 撤单时间
+        self.source     = EMPTY_STRING  # trigger source
 
     @property
     def desc(self) :
@@ -1063,12 +1087,12 @@ class TradeData(object):
     # STATUS_UNKNOWN    = u'UNKNOWN' # u'未知'
 
     #----------------------------------------------------------------------
-    def __init__(self):
+    def __init__(self, account):
         """Constructor"""
-        super(TradeData, self).__init__(account)
+        super(TradeData, self).__init__()
         
         self.tradeID   = EMPTY_STRING           # 成交编号
-        self.vtTradeID = EMPTY_STRING           # 成交在vt系统中的唯一编号，通常是 Gateway名.成交编号
+        self.brokerTradeId = EMPTY_STRING           # 成交在vt系统中的唯一编号，通常是 Gateway名.成交编号
         self.accountId = account.ident          # 成交归属的帐号
         self.exchange = account._exchange       # 交易所代码
 
@@ -1076,18 +1100,18 @@ class TradeData(object):
         self.symbol = EMPTY_STRING              # 合约代码
         
         self.orderID = EMPTY_STRING             # 订单编号
-        self.vtOrderID = EMPTY_STRING           # 订单在vt系统中的唯一编号，通常是 Gateway名.订单编号
+        # self.vtOrderID = EMPTY_STRING           # 订单在vt系统中的唯一编号，通常是 Gateway名.订单编号
         
         # 成交相关
         self.direction = EMPTY_UNICODE          # 成交方向
         self.offset = EMPTY_UNICODE             # 成交开平仓
         self.price = EMPTY_FLOAT                # 成交价格
         self.volume = EMPTY_INT                 # 成交数量
-        self.tradeTime = EMPTY_STRING           # 成交时间
+        self.dt     = None                      # 成交时间 datetime
    
     @property
     def desc(self) :
-        return '%s(%s)-%s: %dx%s' % (self.direction, self.symbol, self.tradeID, self.volume, self.price)
+        return '%s(%s)-%s: %dx%s' % (self.direction, self.symbol, self.brokerTradeId, self.volume, self.price)
 
 ########################################################################
 class VtPositionData(object): # (VtBaseData):

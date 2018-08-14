@@ -186,7 +186,7 @@ class Strategy(object):
     #----------------------------------------------------------------------
     def putEvent(self):
         """发出策略状态变化事件"""
-        self.account.putStrategyEvent(self.name)
+        self._trader.postStrategyEvent(self.name)
         
     #----------------------------------------------------------------------
     def getEngineType(self):

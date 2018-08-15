@@ -438,7 +438,7 @@ class Account(object):
                 # TODO: T+0 also need to increase pos.avalPos
                 
             pos.stampByTrader = trade.dt  # the current position is calculated based on trade
-            self.info('broker_onTrade() processed: %s=>pos:%s' % (trade.desc, pos.desc))
+            self.info('broker_onTrade() processed: %s=>pos' % (trade.desc))#, pos.desc))
 
         self._trader.postEvent(Account.EVENT_TRADE, copy.copy(trade))
 

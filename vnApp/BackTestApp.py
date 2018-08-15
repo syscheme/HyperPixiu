@@ -1191,7 +1191,7 @@ class AccountWrapper(object):
         for o in outgoingOrders:
             self._broker_placeOrder(o)
         
-        self.debug('step() issued %d orders'% len(outgoingOrders))
+        self._nest.debug('step() issued %d orders'% len(outgoingOrders))
 
 
     #----------------------------------------------------------------------
@@ -1275,7 +1275,7 @@ class AccountWrapper(object):
                     order.status = STATUS_PARTTRADED
                 finishedOrders.append(order)
 
-                self.info('crossLimitOrder() crossed order[%s] to trade[%s]'% (order.desc, trade.desc))
+                self._nest.info('crossLimitOrder() crossed order[%s] to trade[%s]'% (order.desc, trade.desc))
 
         for t in trades:
             self._broker_onTrade(t)

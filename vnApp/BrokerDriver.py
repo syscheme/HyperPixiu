@@ -1,11 +1,16 @@
 # encoding: UTF-8
 
 from .Account import *
+import threading
 
 ########################################################################
 from abc import ABCMeta, abstractmethod
 class BrokerDriver(object):
-    """交易API"""
+    """交易API
+    BrokerDriver appears as an API and it interacts with the broker
+    BrokerDriver most likely will have a background thread the keep sync-ed with
+    the broker, so that its member datat should be thread-safe
+    """
     SYNC_MODE = 'sync'
     ASYNC_MODE = 'async'
 
@@ -19,6 +24,8 @@ class BrokerDriver(object):
     def __init__(self, account, settings, mode=None):
 
         """Constructor"""
+        self._lock = threading.Lock()
+
         self._account  = account
         self._settings = settings
 
@@ -28,7 +35,15 @@ class BrokerDriver(object):
 
         self._active = False         # API工作状态   
         self._reqid = 0              # 请求编号
-        
+
+        self._dictPositions = { # dict from symbol to latest PositionData
+            Account.SYMBOL_CASH : PositionData()
+        }
+
+    @property
+    def className(self) :
+        return self.__class__.__name__
+
     @property
     def size(self) : return self._account.size
 
@@ -64,11 +79,17 @@ class BrokerDriver(object):
 
     #----------------------------------------------------------------------
     @abstractmethod
-    def onError(self, msg, reqid):
-        """错误回调"""
-        _account.onTradeError(self, msg, reqid)
+    def getAllPositions(self):
+        with self._lock :
+            return copy.deepcopy(self._dictPositions)
 
-    #----------------------------------------------------------------------
+    @abstractmethod
+    def getPositions(self, symbol):
+        with self._lock :
+            if not symbol in self._dictPositions:
+                return PositionData()
+            return copy(self._dictPositions[symbol])
+
     @abstractmethod
     def getAccountBalance(self, accountid):
         """查询余额"""
@@ -132,7 +153,7 @@ class BrokerDriver(object):
         
     #----------------------------------------------------------------------
     @abstractmethod
-    def placeOrder(self, volume, symbol, type_, price=None, source=None):
+    def placeOrder(vtOrder):
         """下单"""
         raise NotImplementedError
 
@@ -140,7 +161,7 @@ class BrokerDriver(object):
     @abstractmethod
     def onPlaceOrder(self, data, reqid):
         """委托回调"""
-        _account.onPlaceOrder(self, data, reqid)
+        self._account.onPlaceOrder(self, data, reqid)
 
     #----------------------------------------------------------------------
     @abstractmethod
@@ -161,8 +182,54 @@ class BrokerDriver(object):
         raise NotImplementedError
     
     #----------------------------------------------------------------------
-    @abstractmethod
     def onGetTimestamp(self, data, reqid):
         """查询时间回调"""
-        _account.onGetTimestamp(self, data, reqid)
-        
+        self._account.onGetTimestamp(self, data, reqid)
+
+    ##############################################################
+    # moved from Account
+    def onTraded(self, trade):
+        """交易成功回调"""
+        if trade.vtTradeID in self._dictTrades:
+            return
+
+        self._dictTrades[trade.vtTradeID] = trade
+
+        # update the current postion, this may overwrite during the sync by BrokerDriver
+        s = trade.symbol
+        if not s in currentPositions :
+            self._dictPositions[s] = PositionData()
+            pos = self._dictPositions[s]
+            pos.symbol = s
+            pos.vtSymbol = trade.vtSymbol
+            pos.exchange = trade.exchange
+        else:
+            pos = self._dictPositions[s]
+
+        # 持仓相关
+        pos.price      = trade.price
+        pos.direction  = trade.direction      # 持仓方向
+        # pos.frozen =  # 冻结数量
+
+        # update the position of symbol and its average cost
+        tdvol = trade.volume
+        if trade.direction != OrderData.DIRECTION_LONG:
+            tdvol = -tdvol 
+        else: 
+            # pos.price
+            cost = pos.position * pos.avgPrice
+            cost += trade.volume * trade.price
+            newPos = pos.position + trade.volume
+            if newPos:
+                pos.avgPrice = cost / newPos
+
+        pos.position += tdvol
+        pos.stampByTrader = trade.dt
+
+    @abstractmethod # from Account_AShare
+    def onTrade(self, trade):
+        super(Account_AShare, self).onTrade(trade)
+
+        if trade.direction != OrderData.DIRECTION_LONG:
+            pos = self._dictPositions[trade.symbol]
+            pos.posAvail -= trade.volume

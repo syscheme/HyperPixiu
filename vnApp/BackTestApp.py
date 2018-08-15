@@ -25,13 +25,14 @@ except ImportError:
     pass
 
 from vnpy.trader.vtGlobal import globalSetting
-from vnpy.trader.vtObject import VtTickData, VtBarData
-from vnpy.trader.vtConstant import *
-from vnpy.trader.vtGateway import VtOrderData, VtTradeData
+# from vnpy.trader.vtObject import VtTickData, KLineData
+# from vnpy.trader.vtConstant import *
+# from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 
 from .MainRoutine import *
 from .Account import *
 from .Trader import *
+from .marketdata.mdBacktest import *
 
 ########################################################################
 class BackTestApp(Trader):
@@ -46,23 +47,24 @@ class BackTestApp(Trader):
 
         super(BackTestApp, self).__init__(mainRoutine, settings)
 
-        self.resetTest()
+        # self.resetTest()
 
         # 回测相关属性
         # -----------------------------------------
-        self.mode   = settings.mode(self.BAR_MODE)    # 引擎类型为回测
-        self.dbName = settings.database.datadb(MINUTE_DB_NAME) # 回测数据库名
-        self.dbHost = settings.database.url('localhost')    # 回测数据库server
-        self.dbDataSet = settings.database.dataset('${SYMBOL}')    # 回测数据库collection
+        tmpstr = settings.startDate('2000-01-01')
+        self._btStartDate = datetime.strptime(tmpstr, '%Y-%m-%d') # 回测数据开始日期，datetime对象
+        self._dtData = self._btStartDate
+        self._btEndDate   = None         # 回测数据结束日期，datetime对象, None to today or late data
+        tmpstr = settings.endDate('')
+        if len(tmpstr) >8:
+            self._btEndDate = datetime.strptime(tmpstr, '%Y-%m-%d')
+        self._startBalance = settings.startBalance(100000)
 
-        self.symbol = settings.symbols[0]("")            # 回测集合名
+        # self.mode   = settings.mode(self.BAR_MODE)    # 引擎类型为回测
+        # self.strategyStartDate = None   # 策略启动日期（即前面的数据用于初始化），datetime对象
 
-        self.dataStartDate = None       # 回测数据开始日期，datetime对象
-        self.dataEndDate = None         # 回测数据结束日期，datetime对象
-        self.strategyStartDate = None   # 策略启动日期（即前面的数据用于初始化），datetime对象
-
-        self.setStartDate(settings.startDate("2010-01-01"), settings.initDays(10)) 
-        self.setEndDate(settings.endDate("")) 
+#        self.setStartDate(settings.startDate("2010-01-01"), settings.initDays(10)) 
+#        self.setEndDate(settings.endDate("")) 
 
         #---------------------------------------------
         # adjust the Trader
@@ -71,20 +73,26 @@ class BackTestApp(Trader):
         for obj in self._dictObjectives.values() :
             if len(obj["dsTick"]) >0 :
                 obj["dsTick"] += mdBacktest.BT_TAG
+            if len(obj["ds1min"]) >0 :
+                obj["ds1min"] += mdBacktest.BT_TAG
 
         # ADJ_2. wrapper the broker drivers of the accounts
-        for acc in self._dictAccounts.values() :
-            acc._dvrBroker = tdBacktestWrapper(acc._dvrBroker)
+        for ak in self._dictAccounts.keys() :
+            wrapper = AccountWrapper(self, self._dictAccounts[ak])
+            wrapper.setCapital(self._startBalance, True)
+            self._dictAccounts[ak] = wrapper
 
         # end of adjust the Trader
         #---------------------------------------------
+        self._execStart = None
+        self._execStartClose = 0
 
         self.initData = []          # 初始化用的数据
 
         # 当前最新数据，用于模拟成交用
         self.tick = None
         self.bar  = None
-        self.dtData   = None      # 最新数据的时间
+        self._dtData   = None      # 最新数据的时间
 
         # 日线回测结果计算用
         self.dailyResultDict = OrderedDict()
@@ -99,11 +107,11 @@ class BackTestApp(Trader):
 
     #----------------------------------------------------------------------
     def resetTest(self) :
-        self._account = self._accountClass(None, tdBackTest, self._settings.account)
-        self._account._dvrBroker._backtest= self
-#        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
+#        self.account = self._accountClass(None, tdBackTest, self._settings.account)
+#        self.account._dvrBroker._backtest= self
+#        self.account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
         
-        self._account.setCapital(self._startBalance, True) # 回测时的起始本金（默认10万）
+        self.account.setCapital(self._startBalance, True) # 回测时的起始本金（默认10万）
 
         self._execStart = ''
         self._execEnd = ''
@@ -119,60 +127,75 @@ class BackTestApp(Trader):
     def preStrategyByKLine(self, kline):
         """收到行情后处理本地停止单（检查是否要立即发出）"""
 
-        # shift the trade date and notify dayOpen if date changes
-        if self._dateToday != bar.date :
-            self.onDayOpen(bar.date)
-            self.strategy._posAvail = self.strategy.pos
-            self.strategy.onDayOpen(bar.date)
+        # TODO check if received the END signal of backtest data
 
-        if self.bar ==None:
-            self._execStartClose = bar.close
-            self._execStart = bar.date
+        # if self.mode != self.BAR_MODE:
+        #     return
 
-        if self.mode != self.BAR_MODE:
-            return
-
-        if self.bar ==None:
-            self._execStartClose = kline.priceTick
+        if self._execStart ==None:
+            self._execStartClose = kline.close
             self._execStart = kline.date
 
-        self.bar = kline
-        self.dtData  = kline.datetime
+        self._dtData = kline.datetime
+
+        # 先确定会撮合成交的价格
+        bestPrice          = round(((kline.open + kline.close) *4 + kline.high + kline.low) /10, 2)
+
+        buyCrossPrice      = kline.low        # 若买入方向限价单价格高于该价格，则会成交
+        sellCrossPrice     = kline.high      # 若卖出方向限价单价格低于该价格，则会成交
+        maxCrossVolume     = kline.volume
+        buyBestCrossPrice  = bestPrice       # 在当前时间点前发出的买入委托可能的最优成交价
+        sellBestCrossPrice = bestPrice       # 在当前时间点前发出的卖出委托可能的最优成交价
         
-        self._account._dvrBroker.crossbyKLine(kline)
-        #self.crossLimitOrder()      # 先撮合限价单
-        #self.crossStopOrder()       # 再撮合停止单
+        # 张跌停封板
+        if buyCrossPrice <= kline.open*0.9 :
+            buyCrossPrice =0
+        if sellCrossPrice >= kline.open*1.1 :
+            sellCrossPrice =0
+
+        # 先撮合限价单
+        self.account.crossLimitOrder(kline.symbol, kline.datetime, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
+        # 再撮合停止单
+        self.account.crossStopOrder(kline.symbol, kline.datetime, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
 
     @abstractmethod    # usually back test will overwrite this
     def preStrategyByTick(self, tick):
         """收到行情后，在启动策略前的处理
         通常处理本地停止单（检查是否要立即发出）"""
 
-        if self.mode != self.BAR_TICK:
-            return
-
-        if self.tick ==None:
-            self._execStartClose = tick.priceTick
+        if self._execStart ==None:
             self._execStart = tick.date
+            self._execStartClose = tick.priceTick
 
-        self.tick = tick
-        self.dtData = tick.datetime
-        
-        self._account._dvrBroker.crossbyTick(tick)
-        #self.crossLimitOrder()
-        #self.crossStopOrder()
+        self._dtData = tick.datetime
+
+        # 先确定会撮合成交的价格
+        buyCrossPrice      = tick.askPrice1
+        sellCrossPrice     = tick.bidPrice1
+        buyBestCrossPrice  = tick.askPrice1
+        sellBestCrossPrice = tick.bidPrice1
+
+        # 先撮合限价单
+        self.account.crossLimitOrder(tick.symbol, self._dtData, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3)) # to determine maxCrossVolume from Tick, maxCrossVolume)
+        # 再撮合停止单
+        self.account.crossStopOrder(tick.symbol, self._dtData, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3)) # to determine maxCrossVolume from Tick, maxCrossVolume)
 
     @abstractmethod    # usually back test will overwrite this
     def postStrategy(self, symbol) :
         """执行完策略后的的处理，通常为综合决策"""
-        self.updateDailyClose(symbol)
+        self.updateDailyClose(self._dtData, symbol)
+
+    def eventHdl_TradeEnd(self, event):
+        self.info('eventHdl_TradeEnd() sell all positions to cash')
+        self.account.onTestEnd()
+        self.finishTest() # usualy exit() would be called in it to quit the program
+        super(BackTestApp, self).eventHdl_TradeEnd(event)
 
     #------------------------------------------------
-    # 通用功能
-    #------------------------------------------------    
-    @property
-    def tdDriver(self):
-        return self.account._dvrBroker
+    # 数据回放结果计算相关
+    #------------------------------------------------
+
+
 
     #----------------------------------------------------------------------
     def clearResult(self):
@@ -188,69 +211,19 @@ class BackTestApp(Trader):
     #------------------------------------------------    
     def stdout(self, message):
         """输出内容"""
-        message = str(self.dtData) + ' ' + message
-        self._account.stdout(message)
+        message = str(self._dtData) + ' ' + message
+        self._engine.stdout(message)
     
-    def log(self, message):
-        """输出内容"""
-        message = str(self.dtData) + ' ' + message
-        self._account.log(message)
+    @abstractmethod
+    def btlog(self, level, msg):
+        super(BackTestApp, self).log(level, str(self._dtData) + ' ' + msg)
 
-    #----------------------------------------------------------------------
-    def runBacktesting(self):
-        """运行回测"""
-
-        self._account._id = "BT.%s.%s" % (self.symbol, self.strategy.className)
-
-        # 载入历史数据
-        if self.loadHistoryData() <=0 :
-            self.stdout(u'Quit testing due to empty data')
-            return
-        
-        # 首先根据回测模式，确认要使用的数据类
-        if self.mode == self.BAR_MODE:
-            dataClass = VtBarData
-            func = self.OnNewBar
-        else:
-            dataClass = VtTickData
-            func = self.OnNewTick
-
-        self._account.setCapital(self._startBalance, True) # init 10W
-
-        self.stdout(u'开始回测')
-        
-        self.strategy.inited = True
-        self.strategy.onInit()
-        self.stdout(u'策略初始化完成')
-        
-        self.strategy.trading = True
-        self.strategy.onStart()
-        self.stdout(u'策略启动完成')
-        
-        self.stdout(u'开始回放数据')
-
-        for d in self.dbCursor:
-            data = dataClass()
-            data.__dict__ = d
-            func(data)     
-            
-        if self.mode == self.BAR_MODE:
-            self._execEndClose = self.bar.close
-            self._execEnd      = self.bar.date
-        else:
-            self._execEndClose = self.tick.priceTick
-            self._execEnd      = self.tick.date
-
-        self.stdout(u'数据回放结束')
-        
-    #----------------------------------------------------------------------
-    def bestBarCrossPrice(self, bar): 
-        return round(((bar.open + bar.close) *4 + bar.high + bar.low) /10, 2)
-
-    
     #------------------------------------------------
     # 结果计算相关
-    #------------------------------------------------      
+    #------------------------------------------------
+    def finishTest(self) :
+        self.debug('finishTest() generating test reports')
+        exit(0)
     
     #----------------------------------------------------------------------
     def calculateTransactions(self):
@@ -276,7 +249,7 @@ class BackTestApp(Trader):
             
             # buy交易
             # ---------------------------
-            if trade.direction == DIRECTION_LONG:
+            if trade.direction == OrderData.DIRECTION_LONG:
 
                 if not sellTrades:
                     # 如果尚无空头交易
@@ -292,7 +265,7 @@ class BackTestApp(Trader):
                     closedVolume = min(exitTrade.volume, entryTrade.volume)
                     result = TradingResult(entryTrade.price, entryTrade.dt, 
                                            exitTrade.price, exitTrade.dt,
-                                           -closedVolume, self.rate, self.slippage, self._account.size)
+                                           -closedVolume, self.rate, self.slippage, self.account.size)
 
                     self.resultList.append(result)
                     
@@ -341,7 +314,7 @@ class BackTestApp(Trader):
                 closedVolume = min(exitTrade.volume, entryTrade.volume)
                 result = TradingResult(entryTrade.price, entryTrade.dt, 
                                        exitTrade.price, exitTrade.dt,
-                                       closedVolume, self.rate, self.slippage, self._account.size)
+                                       closedVolume, self.rate, self.slippage, self.account.size)
 
                 self.resultList.append(result)
                 self.posList.extend([1,0])
@@ -381,14 +354,14 @@ class BackTestApp(Trader):
         # ---------------------------
         # 到最后交易日尚未平仓的交易，则以最后价格平仓
         for trade in buyTrades:
-            result = TradingResult(trade.price, trade.dt, self._execEndClose, self.dtData, 
-                                   trade.volume, self.rate, self.slippage, self._account.size)
+            result = TradingResult(trade.price, trade.dt, self._execEndClose, self._dtData, 
+                                   trade.volume, self.rate, self.slippage, self.account.size)
             self.resultList.append(result)
             txnstr += '%+dx%.2f' % (trade.volume, trade.price)
             
         for trade in sellTrades:
-            result = TradingResult(trade.price, trade.dt, self._execEndClose, self.dtData, 
-                                   -trade.volume, self.rate, self.slippage, self._account.size)
+            result = TradingResult(trade.price, trade.dt, self._execEndClose, self._dtData, 
+                                   -trade.volume, self.rate, self.slippage, self.account.size)
             self.resultList.append(result)
             txnstr += '%-dx%.2f' % (trade.volume, trade.price)
 
@@ -553,12 +526,12 @@ class BackTestApp(Trader):
         # 清空限价单相关
         self.tdDriver.limitOrderCount = 0
         self.tdDriver.limitOrderDict.clear()
-        self.tdDriver.workingLimitOrderDict.clear()        
+        self._dictLimitOrders.clear()        
         
         # 清空停止单相关
         self.tdDriver.stopOrderCount = 0
         self.tdDriver.stopOrderDict.clear()
-        self.tdDriver.workingStopOrderDict.clear()
+        self._dictStopOrders.clear()
         
         # 清空成交相关
         self.tdDriver.tradeCount = 0
@@ -682,7 +655,7 @@ class BackTestApp(Trader):
             dailyResult.previousClose = previousClose
             previousClose = dailyResult.closePrice
             
-            dailyResult.calculatePnl(self._account, openPosition)
+            dailyResult.calculatePnl(self.account, openPosition)
             openPosition = dailyResult.closePosition
             
         # 生成DataFrame
@@ -791,7 +764,7 @@ class BackTestApp(Trader):
             df = self.calculateDailyResult()
             df, result = self.calculateDailyStatistics(df)
 
-        df.to_csv(self._account._id+'.csv')
+        df.to_csv(self.account._id+'.csv')
             
         originGain = 0.0
         if self._execStartClose >0 :
@@ -853,7 +826,7 @@ class BackTestApp(Trader):
         pKDE.set_title('Daily Pnl Distribution')
         df['netPnl'].hist(bins=50)
         
-        plt.savefig('DR-%s.png' % self._account._id, dpi=400, bbox_inches='tight')
+        plt.savefig('DR-%s.png' % self.account._id, dpi=400, bbox_inches='tight')
         plt.show()
         plt.close()
        
@@ -942,7 +915,7 @@ class DailyResult(object):
         self.tcSell = 0
         
         for trade in self.tradeList:
-            if trade.direction == DIRECTION_LONG:
+            if trade.direction == OrderData.DIRECTION_LONG:
                 posChange = trade.volume
                 self.tcBuy += 1
             else:
@@ -1091,7 +1064,7 @@ hs300s= [
 ########################################################################
 from .BrokerDriver import *
 
-class tdBacktestWrapper(BrokerDriver):
+class AccountWrapper(object):
     """
     回测BrokerDriver
     函数接口和BrokerDriver保持一样，
@@ -1099,168 +1072,148 @@ class tdBacktestWrapper(BrokerDriver):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self, account, settings, mode=None):
+    def __init__(self, btTrader, account):
         """Constructor"""
 
-        super(tdBackTest, self).__init__(account, settings, mode)
+        super(AccountWrapper, self).__init__()
 
-        self._backtest = None             # refer to the BackTest engine
+        self._btTrader = btTrader             # refer to the BackTest engine
+        self._nest  = account
+        self._tradeCount = 0
 
-        self.limitOrderCount = 0                    # 限价单编号
-        self.limitOrderDict = OrderedDict()         # 限价单字典
-        self.workingLimitOrderDict = OrderedDict()  # 活动限价单字典，用于进行撮合用
-        
-        # 本地停止单字典, key为stopOrderID，value为stopOrder对象
-        self.stopOrderDict = {}             # 停止单撤销后不会从本字典中删除
-        self.workingStopOrderDict = {}      # 停止单撤销后会从本字典中删除
-        # 本地停止单编号计数
-        self.stopOrderCount = 0
-        # stopOrderID = STOPORDERPREFIX + str(stopOrderCount)
+    #----------------------------------------------------------------------
+    # most of the methods are just forward to the self.nest
+    @property
+    def priceTick(self): return self._nest.priceTick
+    @property
+    def dbName(self): return self._nest.dbName
+    @property
+    def ident(self) : return self._nest.ident
+    @property
+    def nextOrderReqId(self): return self._nest.nextOrderReqId
+    @property
+    def collectionName_dpos(self): return self._nest.collectionName_dpos
+    @property
+    def collectionName_trade(self): return self._nest.collectionName_dpos
+    def getPosition(self, symbol): return self._nest.getPosition(symbol) # returns PositionData
+    def getAllPositions(self): return self._nest.getAllPositions() # returns PositionData
+    def cashAmount(self): return self._nest.cashAmount() # returns (avail, total)
+    def cashChange(self, dAvail=0, dTotal=0): return self._nest.cashChange(dAvail, dTotal)
+    def insertData(self, dbName, collectionName, data): return self._nest.insertData(dbName, collectionName, data)
+    def postEvent_Order(self, orderData): return self._nest.postEvent_Order(orderData)
+    def sendOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendOrder(vtSymbol, orderType, price, volume, strategy)
+    def cancelOrder(self, brokerOrderId): return self._nest.cancelOrder(brokerOrderId)
+    def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendStopOrder(vtSymbol, orderType, price, volume, strategy)
+    def findOrdersOfStrategy(self, strategyId, symbol=None): return self._nest.findOrdersOfStrategy(strategyId, symbol)
+    
+    def _broker_onOrderPlaced(self, orderData): return self._nest._broker_onOrderPlaced(orderData)
+    def _broker_onCancelled(self, orderData): return self._nest._broker_onCancelled(orderData)
+    def _broker_onOrderDone(self, orderData): return self._nest._broker_onOrderDone(orderData)
+    def _broker_onTrade(self, trade): return self._nest._broker_onTrade(trade)
+    def _broker_onGetAccountBalance(self, data, reqid): return self._nest._broker_onGetAccountBalance(data, reqid)
+    def _broker_onGetOrder(self, data, reqid): return self._nest._broker_onGetOrder(data, reqid)
+    def _broker_onGetOrders(self, data, reqid): return self._nest._broker_onGetOrders(data, reqid)
+    def _broker_onGetMatchResults(self, data, reqid): return self._nest._broker_onGetMatchResults(data, reqid)
+    def _broker_onGetMatchResult(self, data, reqid): return self._nest._broker_onGetMatchResult(data, reqid)
+    def _broker_onGetTimestamp(self, data, reqid): return self._nest._broker_onGetTimestamp(data, reqid)
 
-        self.tradeCount = 0             # 成交编号
-        self.tradeDict = OrderedDict()  # 成交字典
+    def calcAmountOfTrade(self, symbol, price, volume): return self._nest.calcAmountOfTrade(symbol, price, volume)
+    def maxOrderVolume(self, symbol, price): return self._nest.maxOrderVolume(symbol, price)
+    def roundToPriceTick(self, price): return self._nest.roundToPriceTick(price)
+    def onStart(self): return self._nest.onStart()
+    def onDayClose(self): return self._nest.onDayClose()
+    def onDayOpen(self, newDate): return self._nest.onDayOpen(newDate)
+    def onTimer(self, dt): return self._nest.onTimer(dt)
+    def saveDB(self): return self._nest.saveDB()
+    def loadDB(self, since =None): return self._nest.loadDB(since =None)
+    def calcDailyPositions(self): return self._nest.calcDailyPositions()
+    def log(self, message): return self._nest.log(message)
+    def stdout(self, message): return self._nest.stdout(message)
+    def loadStrategy(self, setting): return self._nest.loadStrategy(setting)
+    def getStrategyNames(self): return self._nest.getStrategyNames()
+    def getStrategyVar(self, name): return self._nest.getStrategyVar(name)
+    def getStrategyParam(self, name): return self._nest.getStrategyParam(name)
+    def initStrategy(self, name): return self._nest.initStrategy(name)
+    def startStrategy(self, name): return self._nest.startStrategy(name)
+    def stopStrategy(self, name): return self._nest.stopStrategy(name)
+    def callStrategyFunc(self, strategy, func, params=None): return self._nest.callStrategyFunc(strategy, func, params)
+    def initAll(self): return self._nest.initAll()
+    def startAll(self): return self._nest.startAll()
+    def stop(self): return self._nest.stop()
+    def stopAll(self): return self._nest.stopAll()
+    def saveSetting(self): return self._nest.saveSetting()
+    def updateDailyStat(self, dt, price): return self._nest.updateDailyStat(dt, price)
+    def evaluateDailyStat(self, startdate, enddate): return self._nest.evaluateDailyStat(startdate, enddate)
 
     #------------------------------------------------
-    # Impl of BrokerDriver
+    # overwrite of Account
     #------------------------------------------------    
-    def placeOrder(self, volume, symbol, type_, price=None, source=None):
+    def _broker_datetimeAsOf(self):
+        return self._btTrader._dtData
+
+    def _broker_placeOrder(self, orderData):
         """发单"""
-        self.limitOrderCount += 1
-        orderID = str(self.limitOrderCount)
-        
-        order = VtOrderData()
-        order.vtSymbol = symbol
-        order.price = self._account.roundToPriceTick(price)
-        order.totalVolume = volume
-        order.orderID = orderID
-        order.vtOrderID = orderID
-        order.orderTime = self._backtest.dtData.strftime('%H:%M:%S')
-        
-        # 委托类型映射
-        if type_ == ORDER_BUY:
-            order.direction = DIRECTION_LONG
-            order.offset = OFFSET_OPEN
-        elif type_ == ORDER_SELL:
-            order.direction = DIRECTION_SHORT
-            order.offset = OFFSET_CLOSE
-        elif type_ == ORDER_SHORT:
-            order.direction = DIRECTION_SHORT
-            order.offset = OFFSET_OPEN
-        elif type_ == ORDER_COVER:
-            order.direction = DIRECTION_LONG
-            order.offset = OFFSET_CLOSE     
-        
-        # 保存到限价单字典中
-        self.workingLimitOrderDict[orderID] = order
-        self.limitOrderDict[orderID] = order
+        orderData.brokerOrderId = "$" + orderData.reqId
+        orderData.status = OrderData.STATUS_NOTTRADED
 
-        # reduce available cash
-        if order.direction == DIRECTION_LONG :
-            turnoverO, commissionO, slippageO = self._account.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
-            dCashDeduct = turnoverO + commissionO + slippageO
-            self._account.cashChange(-dCashDeduct)
-        
-        return [orderID]
-    
-    #----------------------------------------------------------------------
-    def cancelOrder(self, vtOrderID):
-        """撤单"""
-        if vtOrderID in self.workingLimitOrderDict:
-            order = self.workingLimitOrderDict[vtOrderID]
-            
-            order.status = STATUS_CANCELLED
-            order.cancelTime = self._backtest.dtData.strftime('%H:%M:%S')
-            
-            # restore available cash
-            if order.direction == DIRECTION_LONG :
-                turnoverO, commissionO, slippageO = self._account.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
-                self._account._cashAvail += turnoverO + commissionO + slippageO
-                # self._account._cashAvail += turnoverO + commissionO + slippageO
-                self._account.cashChange(turnoverO + commissionO + slippageO)
+        # redirectly simulate a place ok
+        self._broker_onOrderPlaced(orderData)
 
-            self._backtest.strategy.onOrder(order)
-            
-            del self.workingLimitOrderDict[vtOrderID]
+    def _broker_cancelOrder(self, brokerOrderId) :
+        orderData = None
+
+        # find out he orderData by brokerOrderId
+        with self._nest._lock :
+            try :
+                if OrderData.STOPORDERPREFIX in brokerOrderId :
+                    orderData = self._nest._dictStopOrders[brokerOrderId]
+                else :
+                    orderData = self._nest._dictLimitOrders[brokerOrderId]
+            except KeyError:
+                pass
+
+            if not orderData :
+                return
+
+            orderData = copy.copy(orderData)
+
+        # orderData found
+        orderData.status = OrderData.STATUS_CANCELLED
+        orderData.cancelTime = self._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:3]
+        self._broker_onCancelled(orderData)
+
+    def batchCancel(self, brokerOrderIds): # MUST overwrite to call self._broker_cancelOrder()
+        for o in brokerOrderIds:
+            self._broker_cancelOrder(o)
+        self._nest.debug('batchCancel() orders:%s'% brokerOrderIds)
+
+    def step(self) :
+        outgoingOrders = []
+        with self._nest._lock:
+            outgoingOrders = copy.deepcopy(self._nest._dictOutgoingOrders.values())
+        for o in outgoingOrders:
+            self._broker_placeOrder(o)
         
+        self._nest.debug('step() issued %d orders'% len(outgoingOrders))
+
     #----------------------------------------------------------------------
-    def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy):
-        """发停止单（本地实现）"""
-        self.stopOrderCount += 1
-        stopOrderID = STOPORDERPREFIX + str(self.stopOrderCount)
-        
-        so = StopOrder()
-        so.vtSymbol = vtSymbol
-        so.price = self._account.roundToPriceTick(price)
-        so.volume = volume
-        so.strategy = strategy
-        so.status = STOPORDER_WAITING
-        so.stopOrderID = stopOrderID
-        
-        if orderType == ORDER_BUY:
-            so.direction = DIRECTION_LONG
-            so.offset = OFFSET_OPEN
-        elif orderType == ORDER_SELL:
-            so.direction = DIRECTION_SHORT
-            so.offset = OFFSET_CLOSE
-        elif orderType == ORDER_SHORT:
-            so.direction = DIRECTION_SHORT
-            so.offset = OFFSET_OPEN
-        elif orderType == ORDER_COVER:
-            so.direction = DIRECTION_LONG
-            so.offset = OFFSET_CLOSE           
-        
-        # 保存stopOrder对象到字典中
-        self.stopOrderDict[stopOrderID] = so
-        self.workingStopOrderDict[stopOrderID] = so
-        
-        # 推送停止单初始更新
-        self._backtest.strategy.onStopOrder(so)        
-        
-        return [stopOrderID]
-    
-    #----------------------------------------------------------------------
-    def cancelStopOrder(self, stopOrderID):
-        """撤销停止单"""
-        # 检查停止单是否存在
-        if stopOrderID in self.workingStopOrderDict:
-            so = self.workingStopOrderDict[stopOrderID]
-            so.status = STOPORDER_CANCELLED
-            del self.workingStopOrderDict[stopOrderID]
-            self._backtest.strategy.onStopOrder(so)
-    
-    #----------------------------------------------------------------------
-    def putStrategyEvent(self, name):
-        """发送策略更新事件，回测中忽略"""
-        pass
+    def setCapital(self, capital, resetAvail=False):
+        """设置资本金"""
+        cachAvail, cashTotal = self.cashAmount()
+        dCap = capital-cashTotal
+        dAvail = dCap
+        if resetAvail :
+            dAvail = capital-cachAvail
+
+        self.cashChange(dAvail, dCap)
      
     #----------------------------------------------------------------------
     def insertData(self, dbName, collectionName, data):
         """考虑到回测中不允许向数据库插入数据，防止实盘交易中的一些代码出错"""
         pass
-    
-    #----------------------------------------------------------------------
-    def cancelAll(self, name):
-        """全部撤单"""
-        # 撤销限价单
-        for orderID in self.workingLimitOrderDict.keys():
-            self.cancelOrder(orderID)
-        
-        # 撤销停止单
-        for stopOrderID in self.workingStopOrderDict.keys():
-            self.cancelStopOrder(stopOrderID)
 
     #----------------------------------------------------------------------
-    def saveSyncData(self, strategy):
-        """保存同步数据（无效）"""
-        pass
-    
-    #----------------------------------------------------------------------
-    def getPriceTick(self, strategy):
-        """获取最小价格变动"""
-        return self.priceTick
-
-    #----------------------------------------------------------------------
-    def crossLimitOrder(self, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice):
+    def crossLimitOrder(self, symbol, dt, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume=-1):
         """基于最新数据撮合限价单
         A limit order is an order placed with a brokerage to execute a buy or 
         sell transaction at a set number of shares and at a specified limit
@@ -1270,142 +1223,139 @@ class tdBacktestWrapper(BrokerDriver):
         it may not be executed if the price set by the investor cannot be met
         during the period of time in which the order is left open.
         """
+        # 遍历限价单字典中的所有限价单vtTradeID
 
-        # 遍历限价单字典中的所有限价单
-        for orderID, order in self.tdDriver.workingLimitOrderDict.items():
-            # 推送委托进入队列（未成交）的状态更新
-            if not order.status:
-                order.status = STATUS_NOTTRADED
-                self.strategy.onOrder(order)
+        trades = []
+        finishedOrders = []
 
-            # 判断是否会成交
-            buyCross = (order.direction==DIRECTION_LONG and 
-                        order.price>=buyCrossPrice and
-                        buyCrossPrice > 0)      # 国内的tick行情在涨停时askPrice1为0，此时买无法成交
-            
-            sellCross = (order.direction==DIRECTION_SHORT and 
-                         order.price<=sellCrossPrice and
-                         sellCrossPrice > 0)    # 国内的tick行情在跌停时bidPrice1为0，此时卖无法成交
-            
-            # 如果发生了成交
-            if not buyCross and not sellCross:
-                continue
+        with self._nest._lock:
+            for orderID, order in self._nest._dictLimitOrders.items():
+                if order.symbol != symbol:
+                    continue
 
-            # 推送成交数据
-            self.tdDriver.tradeCount += 1            # 成交编号自增1
-            tradeID = str(self.tdDriver.tradeCount)
-            trade = VtTradeData()
-            trade.vtSymbol = order.vtSymbol
-            trade.tradeID = tradeID
-            trade.vtTradeID = tradeID
-            trade.orderID = order.orderID
-            trade.vtOrderID = order.orderID
-            trade.direction = order.direction
-            trade.offset = order.offset
-            trade.symbol = order.symbol
+                # 推送委托进入队列（未成交）的状态更新
+                if not order.status:
+                    order.status = OrderData.STATUS_NOTTRADED
 
-            # 以买入为例：
-            # 1. 假设当根K线的OHLC分别为：100, 125, 90, 110
-            # 2. 假设在上一根K线结束(也是当前K线开始)的时刻，策略发出的委托为限价105
-            # 3. 则在实际中的成交价会是100而不是105，因为委托发出时市场的最优价格是100
-            trade.volume = 0
-            tradeAmount =0
-            (turnoverO, commissionO, slippageO) =(0,0,0)
-            (turnoverT, commissionT, slippageT) =(0,0,0)
-            
-            cashAvail, _ = self._account.cashAmount()
-            if buyCross:
-                turnoverO, commissionO, slippageO = self._account.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
-                trade.volume = order.totalVolume
-#                if (turnoverO + commissionO + slippageO) > cashAvail : # the volume should depends on available cache
-#                    trade.volume =0
-
-                trade.price = min(order.price, buyBestCrossPrice)
-                self.strategy.pos += trade.volume
-            elif self.strategy.pos >0:
-                turnoverO, commissionO, slippageO = self._account.calcAmountOfTrade(order.symbol, order.price, -order.totalVolume)
-                orderVolume = -order.totalVolume
-                trade.volume = min(self.strategy.pos, order.totalVolume)
-                trade.price = max(order.price, sellBestCrossPrice)
-                self.strategy.pos -= trade.volume
-            
-            if trade.volume >0:
-                tvolume = trade.volume
-                if not buyCross:
-                    tvolume = -trade.volume
+                # 判断是否会成交
+                buyCross = (order.direction == OrderData.DIRECTION_LONG and 
+                            order.price>=buyCrossPrice and
+                            buyCrossPrice > 0)      # 国内的tick行情在涨停时askPrice1为0，此时买无法成交
                 
-                turnoverT, commissionT, slippageT = self._account.calcAmountOfTrade(trade.symbol, trade.price, tvolume)
+                sellCross = (order.direction == OrderData.DIRECTION_SHORT and 
+                            order.price<=sellCrossPrice and
+                            sellCrossPrice > 0)    # 国内的tick行情在跌停时bidPrice1为0，此时卖无法成交
+                
+                # 如果发生了成交
+                if not buyCross and not sellCross:
+                    continue
+
+                # 推送成交数据
+                self._tradeCount += 1            # 成交编号自增1
+                tradeID = str(self._tradeCount)
+                trade = TradeData(self._nest)
+                trade.brokerTradeId = tradeID
+                # tradeID will be generated in Account: trade.tradeID = tradeID
+                trade.symbol = order.symbol
+                trade.orderReq = order.reqId
+                trade.direction = order.direction
+                trade.offset    = order.offset
+                trade.volume    = order.totalVolume
+                trade.dt        = self._btTrader._dtData
+                # trade.tradeTime = self._btTrader._dtData.strftime('%H:%M:%S')
+                # trade.dt = self._dtData
                 if buyCross:
-                    tradeAmount = turnoverT + commissionT + slippageT
-                else :
-                    tradeAmount = turnoverT - commissionT - slippageT
+                    trade.price = min(order.price, buyBestCrossPrice)
+                else:
+                    trade.price  = max(order.price, sellBestCrossPrice)
 
-                trade.tradeTime = self.dtData.strftime('%H:%M:%S')
-                trade.dt = self.dtData
-                self.strategy.onTrade(trade)
-            
-                self._dictTrades[tradeID] = trade
-                self.log('limCrossed:pos(%s) %s[%s,%s,%s=%dx%s] per order:%s[%sx%s], cash[%s/%s]' %
-                    (self.strategy.pos, tradeID, trade.direction, trade.vtSymbol, tradeAmount, trade.volume, trade.price, orderID, order.totalVolume, order.price, scashAvail, 'na'))
-            
-                # 推送委托数据
-                order.tradedVolume = trade.tradeTime
-                order.status = STATUS_ALLTRADED
+                trades.append(trade)
+
+                order.tradedVolume = trade.volume
+                order.status = OrderData.STATUS_ALLTRADED
                 if order.tradedVolume < order.totalVolume :
-                    order.status = STATUS_PARTTRADED
-                self.strategy.onOrder(order)
-            else :
-                # 推送委托数据
-                order.tradedVolume = 0
-                order.status = STATUS_CANCELLED
-                self.strategy.onOrder(order)
+                    order.status = OrderData.STATUS_PARTTRADED
+                finishedOrders.append(order)
 
-            # update avail cash per order has been executed
-            if buyCross: #this was a buy
-                # self._account._cashAvail += turnoverO + commissionO + slippageO
-                # self._account._cashAvail -= tradeAmount
-                dCacheAval = (turnoverO + commissionO + slippageO) -tradeAmount
-                self._account.cashChange(dCacheAval)
-            else :
-                # self._account._cashAvail += tradeAmount
-                self._account.cashChange(tradeAmount)
-            
-            # 从字典中删除该限价单
-            if orderID in self.tdDriver.workingLimitOrderDict:
-                del self.tdDriver.workingLimitOrderDict[orderID]
+                self._nest.info('crossLimitOrder() crossed order[%s] to trade[%s]'% (order.desc, trade.desc))
 
-    def crossLimitOrder(self):
-        """基于最新数据撮合限价单
-        A limit order is an order placed with a brokerage to execute a buy or 
-        sell transaction at a set number of shares and at a specified limit
-        price or better. It is a take-profit order placed with a bank or
-        brokerage to buy or sell a set amount of a financial instrument at a
-        specified price or better; because a limit order is not a market order,
-        it may not be executed if the price set by the investor cannot be met
-        during the period of time in which the order is left open.
-        """
-        # 先确定会撮合成交的价格
-        if self.mode == self.BAR_MODE:
-            buyCrossPrice = self.bar.low        # 若买入方向限价单价格高于该价格，则会成交
-            sellCrossPrice = self.bar.high      # 若卖出方向限价单价格低于该价格，则会成交
-            buyBestCrossPrice = self.bestBarCrossPrice(self.bar)   # 在当前时间点前发出的买入委托可能的最优成交价
-            sellBestCrossPrice = self.bestBarCrossPrice(self.bar)  # 在当前时间点前发出的卖出委托可能的最优成交价
-            
-            # 张跌停封板
-            if buyCrossPrice <=self.bar.open*0.9 :
-                buyCrossPrice =0
-            if sellCrossPrice >= self.bar.open*1.1 :
-                sellCrossPrice =0
-        else:
-            buyCrossPrice = self.tick.askPrice1
-            sellCrossPrice = self.tick.bidPrice1
-            buyBestCrossPrice = self.tick.askPrice1
-            sellBestCrossPrice = self.tick.bidPrice1
-        
-        self.crossLimitOrder(self, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice)
+        for t in trades:
+            self._broker_onTrade(t)
+
+        for o in finishedOrders:
+            self._broker_onOrderDone(o)
+    #             # 以买入为例：
+    #             # 1. 假设当根K线的OHLC分别为：100, 125, 90, 110
+    #             # 2. 假设在上一根K线结束(也是当前K线开始)的时刻，策略发出的委托为限价105
+    #             # 3. 则在实际中的成交价会是100而不是105，因为委托发出时市场的最优价格是100
+    #             trade.volume = 0
+    #             tradeAmount =0
+    #             (turnoverO, commissionO, slippageO) =(0,0,0)
+    #             (turnoverT, commissionT, slippageT) =(0,0,0)
                 
+    #             cashAvail, _ = self.cashAmount()
+    #             if buyCross:
+    #                 turnoverO, commissionO, slippageO = self.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
+    #                 trade.volume = order.totalVolume
+    # #                if (turnoverO + commissionO + slippageO) > cashAvail : # the volume should depends on available cache
+    # #                    trade.volume =0
+
+    #                 trade.price = min(order.price, buyBestCrossPrice)
+    #                 self.strategy.pos += trade.volume
+    #             elif self.strategy.pos >0:
+    #                 turnoverO, commissionO, slippageO = self.account.calcAmountOfTrade(order.symbol, order.price, -order.totalVolume)
+    #                 orderVolume = -order.totalVolume
+    #                 trade.volume = min(self.strategy.pos, order.totalVolume)
+    #                 trade.price = max(order.price, sellBestCrossPrice)
+    #                 self.strategy.pos -= trade.volume
+                
+    #             if trade.volume >0:
+    #                 tvolume = trade.volume
+    #                 if not buyCross:
+    #                     tvolume = -trade.volume
+                    
+    #                 turnoverT, commissionT, slippageT = self.account.calcAmountOfTrade(trade.symbol, trade.price, tvolume)
+    #                 if buyCross:
+    #                     tradeAmount = turnoverT + commissionT + slippageT
+    #                 else :
+    #                     tradeAmount = turnoverT - commissionT - slippageT
+
+    #                 trade.tradeTime = self._dtData.strftime('%H:%M:%S')
+    #                 trade.dt = self._dtData
+    #                 self.strategy.onTrade(trade)
+                
+    #                 self._dictTrades[tradeID] = trade
+    #                 self.btlog(LOGLEVEL_INFO, 'limCrossed:pos(%s) %s[%s,%s,%s=%dx%s] per order:%s[%sx%s], cash[%s/%s]' %
+    #                     (self.strategy.pos, tradeID, trade.direction, trade.vtSymbol, tradeAmount, trade.volume, trade.price, orderID, order.totalVolume, order.price, scashAvail, 'na'))
+                
+    #                 # 推送委托数据
+    #                 order.tradedVolume = trade.tradeTime
+    #                 order.status = OrderData.STATUS_ALLTRADED
+    #                 if order.tradedVolume < order.totalVolume :
+    #                     order.status = OrderData.STATUS_PARTTRADED
+    #                 self._broker_onOrderDone(order)
+    #             else :
+    #                 # 推送委托数据
+    #                 order.tradedVolume = 0
+    #                 order.status = OrderData.STATUS_CANCELLED
+    #                 self._broker_onOrderDone(order)
+
+    #             # update avail cash per order has been executed
+    #             if buyCross: #this was a buy
+    #                 # self.account._cashAvail += turnoverO + commissionO + slippageO
+    #                 # self.account._cashAvail -= tradeAmount
+    #                 dCacheAval = (turnoverO + commissionO + slippageO) -tradeAmount
+    #                 self.account.cashChange(dCacheAval)
+    #             else :
+    #                 # self.account._cashAvail += tradeAmount
+    #                 self.account.cashChange(tradeAmount)
+                
+    #             # 从字典中删除该限价单
+    #             if orderID in self._dictLimitOrders:
+    #                 del self._dictLimitOrders[orderID]
+
     #----------------------------------------------------------------------
-    def crossStopOrder(self): 
+    def crossStopOrder(self, symbol, dt, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume=-1): 
         """基于最新数据撮合停止单
             A stop order is an order to buy or sell a security when its price moves past
             a particular point, ensuring a higher probability of achieving a predetermined 
@@ -1413,79 +1363,103 @@ class tdBacktestWrapper(BrokerDriver):
             the price crosses the predefined entry/exit point, the stop order becomes a
             market order.
         """
-        # 先确定会撮合成交的价格，这里和限价单规则相反
-        if self.mode == self.BAR_MODE:
-            buyCrossPrice  = self.bar.high   # 若买入方向停止单价格低于该价格，则会成交
-            sellCrossPrice = self.bar.low    # 若卖出方向限价单价格高于该价格，则会成交
-            bestCrossPrice = self.bestBarCrossPrice(self.bar)  # 最优成交价，买入停止单不能低于，卖出停止单不能高于
-            maxVolumeCross = self.bar.volume
-        else:
-            buyCrossPrice  = self.tick.lastPrice
-            sellCrossPrice = self.tick.lastPrice
-            bestCrossPrice = self.tick.lastPrice
-            topVolumeCross = self.tick.volume
-        
         # 遍历停止单字典中的所有停止单
-        for stopOrderID, so in self.tdDriver.workingStopOrderDict.items():
-            # 判断是否会成交
-            buyCross  = (so.direction==DIRECTION_LONG)  and so.price<=buyCrossPrice
-            sellCross = (so.direction==DIRECTION_SHORT) and so.price>=sellCrossPrice
+        with self._nest. _lock:
+            for stopOrderID, so in self._nest._dictStopOrders.items():
+                if order.symbol != symbol:
+                    continue
+
+                # 判断是否会成交
+                buyCross  = (so.direction==OrderData.DIRECTION_LONG)  and so.price<=buyCrossPrice
+                sellCross = (so.direction==OrderData.DIRECTION_SHORT) and so.price>=sellCrossPrice
+                
+                # 忽略未发生成交
+                if not buyCross and not sellCross : # and (so.volume < maxCrossVolume):
+                    continue;
+
+                # 更新停止单状态，并从字典中删除该停止单
+                so.status = OrderData.STOPORDER_TRIGGERED
+                if stopOrderID in self._dictStopOrders:
+                    del self._dictStopOrders[stopOrderID]                        
+
+                # 推送成交数据
+                self.tdDriver.tradeCount += 1            # 成交编号自增1
+                tradeID = str(self.tdDriver.tradeCount)
+                trade = VtTradeData()
+                trade.vtSymbol = so.vtSymbol
+                trade.tradeID = tradeID
+                trade.vtTradeID = tradeID
+                    
+                if buyCross:
+                    self.strategy.pos += so.volume
+                    trade.price = max(bestCrossPrice, so.price)
+                else:
+                    self.strategy.pos -= so.volume
+                    trade.price = min(bestCrossPrice, so.price)                
+                    
+                self.tdDriver.limitOrderCount += 1
+                orderID = str(self.tdDriver.limitOrderCount)
+                trade.orderID = orderID
+                trade.vtOrderID = orderID
+                trade.direction = so.direction
+                trade.offset = so.offset
+                trade.volume = so.volume
+                trade.tradeTime = self._dtData.strftime('%H:%M:%S')
+                trade.dt = self._dtData
+                    
+                self._dictTrades[tradeID] = trade
+                    
+                # 推送委托数据
+                order = VtOrderData()
+                order.vtSymbol = so.vtSymbol
+                order.symbol = so.vtSymbol
+                order.orderID = orderID
+                order.vtOrderID = orderID
+                order.direction = so.direction
+                order.offset = so.offset
+                order.price = so.price
+                order.totalVolume = so.volume
+                order.tradedVolume = so.volume
+                order.status = OrderData.STATUS_ALLTRADED
+                order.orderTime = trade.tradeTime
+                    
+                self.tdDriver.limitOrderDict[orderID] = order
+                    
+                self.account.onTrade(trade)
+
+                # 按照顺序推送数据
+                self.strategy.onStopOrder(so)
+                self.strategy.onOrder(order)
+                self.strategy.onTrade(trade)
+
+    def onTestEnd(self) :
+        # ---------------------------
+        # 结算日
+        # ---------------------------
+        # step 1 到最后交易日尚未平仓的交易，则以最后价格平仓
+        self._btTrader.debug('onTestEnd() faking trade to flush out all positions')
+        currentPositions = self.getAllPositions()
+        for symbol, pos in currentPositions.items() :
+            if symbol == Account.SYMBOL_CASH:
+                continue
             
-            # 忽略未发生成交
-            if not buyCross and not sellCross : # and (so.volume < maxVolumeCross):
-                continue;
+            # fake a sold-succ trade into self._dictTrades
+            self._tradeCount += 1            # 成交编号自增1
+            trade = TradeData(self._nest)
+            trade.brokerTradeId = str(self._tradeCount)
+            trade.symbol = symbol
+            trade.orderReq = self.nextOrderReqId +"$BTEND"
+            trade.orderID = 'O' + trade.orderReq
+            trade.tradeID = 'S' + trade.brokerTradeId
+            trade.direction = OrderData.DIRECTION_SHORT
+            trade.offset = OrderData.OFFSET_CLOSE
+            trade.price  = self._btTrader.latestPrice(trade.symbol)
+            trade.volume = pos.position
+            trade.dt     = self._btTrader._dtData
 
-            # 更新停止单状态，并从字典中删除该停止单
-            so.status = STOPORDER_TRIGGERED
-            if stopOrderID in self.tdDriver.workingStopOrderDict:
-                del self.tdDriver.workingStopOrderDict[stopOrderID]                        
+            self._broker_onTrade(trade)
+            self._btTrader.debug('onTestEnd() faked trade: %s' % trade.desc)
 
-            # 推送成交数据
-            self.tdDriver.tradeCount += 1            # 成交编号自增1
-            tradeID = str(self.tdDriver.tradeCount)
-            trade = VtTradeData()
-            trade.vtSymbol = so.vtSymbol
-            trade.tradeID = tradeID
-            trade.vtTradeID = tradeID
-                
-            if buyCross:
-                self.strategy.pos += so.volume
-                trade.price = max(bestCrossPrice, so.price)
-            else:
-                self.strategy.pos -= so.volume
-                trade.price = min(bestCrossPrice, so.price)                
-                
-            self.tdDriver.limitOrderCount += 1
-            orderID = str(self.tdDriver.limitOrderCount)
-            trade.orderID = orderID
-            trade.vtOrderID = orderID
-            trade.direction = so.direction
-            trade.offset = so.offset
-            trade.volume = so.volume
-            trade.tradeTime = self.dtData.strftime('%H:%M:%S')
-            trade.dt = self.dtData
-                
-            self._dictTrades[tradeID] = trade
-                
-            # 推送委托数据
-            order = VtOrderData()
-            order.vtSymbol = so.vtSymbol
-            order.symbol = so.vtSymbol
-            order.orderID = orderID
-            order.vtOrderID = orderID
-            order.direction = so.direction
-            order.offset = so.offset
-            order.price = so.price
-            order.totalVolume = so.volume
-            order.tradedVolume = so.volume
-            order.status = STATUS_ALLTRADED
-            order.orderTime = trade.tradeTime
-                
-            self.tdDriver.limitOrderDict[orderID] = order
-                
-            self._account.onTrade(trade)
-
-            # 按照顺序推送数据
-            self.strategy.onStopOrder(so)
-            self.strategy.onOrder(order)
-            self.strategy.onTrade(trade)
+        # step 2 enforce a day-close
+        self._btTrader.debug('onTestEnd() enforcing a day-close')
+        self.onDayClose()

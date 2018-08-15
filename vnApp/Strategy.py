@@ -7,27 +7,29 @@
 import numpy as np
 import talib
 
-from vnpy.trader.vtConstant import *
-from vnpy.trader.vtObject import VtBarData
+# from vnpy.trader.vtConstant import *
+# from vnpy.trader.vtObject import KLineData
 
-from Account import *
-from MainRoutine import *
+from .Account import *
+from .MainRoutine import *
+from .MarketData import TickData, KLineData, TickToKLineMerger, KlineToXminMerger
+from .EventChannel import EventChannel, EventData, datetime2float
 
 
 ########################################################################
 class Strategy(object):
     # 策略类的名称和作者
     className = 'Strategy'
-    author = EMPTY_UNICODE
+    author = EventData.EMPTY_UNICODE
     
     # MongoDB数据库的名称，K线数据库默认为1分钟
     tickDbName = TICK_DB_NAME
     barDbName = MINUTE_DB_NAME
     
     # 策略的基本参数
-    name = EMPTY_UNICODE           # 策略实例名称
-    productClass = EMPTY_STRING    # 产品类型（只有IB接口需要）
-    currency = EMPTY_STRING        # 货币（只有IB接口需要）
+    name = EventData.EMPTY_UNICODE           # 策略实例名称
+    productClass = EventData.EMPTY_STRING    # 产品类型（只有IB接口需要）
+    currency = EventData.EMPTY_STRING        # 货币（只有IB接口需要）
     
     # 策略的基本变量，由引擎管理
     inited = False                 # 是否进行了初始化
@@ -119,22 +121,22 @@ class Strategy(object):
     #----------------------------------------------------------------------
     def _buy(self, symbol, price, volume, stop=False):
         """买开"""
-        return self.sendOrder(ORDER_BUY, symbol, price, volume, stop)
+        return self.sendOrder(OrderData.ORDER_BUY, symbol, price, volume, stop)
     
     #----------------------------------------------------------------------
     def _sell(self, symbol, price, volume, stop=False):
         """卖平"""
-        return self.sendOrder(ORDER_SELL, symbol, price, volume, stop)       
+        return self.sendOrder(OrderData.ORDER_SELL, symbol, price, volume, stop)       
 
     #----------------------------------------------------------------------
     def _short(self, symbol, price, volume, stop=False):
         """卖开"""
-        return self.sendOrder(ORDER_SHORT, symbol, price, volume, stop)          
+        return self.sendOrder(OrderData.ORDER_SHORT, symbol, price, volume, stop)          
  
     #----------------------------------------------------------------------
     def _cover(self, symbol, price, volume, stop=False):
         """买平"""
-        return self.sendOrder(ORDER_COVER, symbol, price, volume, stop)
+        return self.sendOrder(OrderData.ORDER_COVER, symbol, price, volume, stop)
         
     #----------------------------------------------------------------------
     def sendOrder(self, orderType, symbol, price, volume, stop=False):
@@ -159,25 +161,29 @@ class Strategy(object):
         if not vtOrderID:
             return
         
-        if STOPORDERPREFIX in vtOrderID:
+        if OrderData.STOPORDERPREFIX in vtOrderID:
             self.account.cancelStopOrder(vtOrderID)
         else:
             self.account.cancelOrder(vtOrderID)
             
     #----------------------------------------------------------------------
-    def cancelAll(self, symbol):
+    def cancelAll(self, symbol=None):
         """全部撤单"""
-        l = self._trader.ordersOfStrategy(self._id, symbol)
+        l = self.account.findOrdersOfStrategy(self._id, symbol)
 
         orderIdList = []
         for o in l:
-            orderIdList.append(o.vtOrderID)
-        self.account.batchCancel(self, orderIdList)
+            orderIdList.append(o.brokerOrderId)
+        if len(orderIdList) <=0:
+            return
+            
+        self.account.batchCancel(orderIdList)
         self.log2(LOGLEVEL_INFO, 'cancelAll() symbol[%s] order-batch: %s' %(symbol, orderIdList))
     
     #----------------------------------------------------------------------
-    def log2(self, level, msg):
-        self._trader.log(level, 'stg[%s] %s' %(self._id, msg))
+    def log2(self, loglevel, content):
+        """记录CTA日志"""
+        self._trader.log(loglevel, 'stg[%s] %s' %(self._id, content))
 
     def log(self, content):
         """记录CTA日志"""
@@ -186,7 +192,7 @@ class Strategy(object):
     #----------------------------------------------------------------------
     def putEvent(self):
         """发出策略状态变化事件"""
-        self.account.putStrategyEvent(self.name)
+        self._trader.postStrategyEvent(self.name)
         
     #----------------------------------------------------------------------
     def getEngineType(self):
@@ -270,7 +276,7 @@ class StrategyOfSymbol(Strategy):
         return super(StrategyOfSymbol, self)._cover(self._symbol, price, volume, stop)
         
     def cancelAll(self):
-        return super(StrategyOfSymbol, self).cancelAll(self._symbol, price, volume, stop)
+        return super(StrategyOfSymbol, self).cancelAll(self._symbol)
 
     #----------------------------------------------------------------------
     def insertTick(self, tick):
@@ -317,7 +323,7 @@ class TargetPosTemplate(Strategy):
     tickAdd = 1             # 委托时相对基准价格的超价
     lastTick = None         # 最新tick数据
     lastBar = None          # 最新bar数据
-    targetPos = EMPTY_INT   # 目标持仓
+    targetPos = EventData.EMPTY_INT   # 目标持仓
     orderList = []          # 委托号列表
 
     # 变量列表，保存了变量的名称
@@ -348,7 +354,7 @@ class TargetPosTemplate(Strategy):
     #----------------------------------------------------------------------
     def onOrder(self, order):
         """收到委托推送"""
-        if order.status == STATUS_ALLTRADED or order.status == STATUS_CANCELLED:
+        if order.status == OrderData.STATUS_ALLTRADED or order.status == OrderData.STATUS_CANCELLED:
             if order.vtOrderID in self.orderList:
                 self.orderList.remove(order.vtOrderID)
     
@@ -416,7 +422,7 @@ class TargetPosTemplate(Strategy):
                         l = self.cover(longPrice, abs(self.pos))
                 # 若没有空头持仓，则执行开仓操作
                 else:
-                    l = self.buy(symbol, ongPrice, abs(posChange))
+                    l = self.buy(symbol, longPrice, abs(posChange))
             # 卖出和以上相反
             else:
                 if self.pos > 0:
@@ -428,115 +434,6 @@ class TargetPosTemplate(Strategy):
                     l = self.short(shortPrice, abs(posChange))
             self.orderList.extend(l)
     
-    
-########################################################################
-class BarGenerator(object):
-    """
-    K线合成器，支持：
-    1. 基于Tick合成1分钟K线
-    2. 基于1分钟K线合成X分钟K线（X可以是2、3、5、10、15、30	）
-    """
-
-    #----------------------------------------------------------------------
-    def __init__(self, onBar, xmin=0, onXminBar=None):
-        """Constructor"""
-        self.bar = None             # 1分钟K线对象
-        self.onBar = onBar          # 1分钟K线回调函数
-        
-        self.xminBar = None         # X分钟K线对象
-        self.xmin = xmin            # X的值
-        self.onXminBar = onXminBar  # X分钟K线的回调函数
-        
-        self.lastTick = None        # 上一TICK缓存对象
-        
-    #----------------------------------------------------------------------
-    def updateTick(self, tick):
-        """TICK更新"""
-        newMinute = False   # 默认不是新的一分钟
-        
-        # 尚未创建对象
-        if not self.bar:
-            self.bar = VtBarData()
-            newMinute = True
-        # 新的一分钟
-        elif self.bar.datetime.minute != tick.datetime.minute:
-            # 生成上一分钟K线的时间戳
-            self.bar.datetime = self.bar.datetime.replace(second=0, microsecond=0)  # 将秒和微秒设为0
-            self.bar.date = self.bar.datetime.strftime('%Y%m%d')
-            self.bar.time = self.bar.datetime.strftime('%H:%M:%S.%f')
-            
-            # 推送已经结束的上一分钟K线
-            self.onBar(self.bar)
-            
-            # 创建新的K线对象
-            self.bar = VtBarData()
-            newMinute = True
-            
-        # 初始化新一分钟的K线数据
-        if newMinute:
-            self.bar.vtSymbol = tick.vtSymbol
-            self.bar.symbol = tick.symbol
-            self.bar.exchange = tick.exchange
-
-            self.bar.open = tick.lastPrice
-            self.bar.high = tick.lastPrice
-            self.bar.low = tick.lastPrice
-        # 累加更新老一分钟的K线数据
-        else:                                   
-            self.bar.high = max(self.bar.high, tick.lastPrice)
-            self.bar.low = min(self.bar.low, tick.lastPrice)
-
-        # 通用更新部分
-        self.bar.close = tick.lastPrice        
-        self.bar.datetime = tick.datetime  
-        self.bar.openInterest = tick.openInterest
-   
-        if self.lastTick:
-            volumeChange = tick.volume - self.lastTick.volume   # 当前K线内的成交量
-            self.bar.volume += max(volumeChange, 0)             # 避免夜盘开盘lastTick.volume为昨日收盘数据，导致成交量变化为负的情况
-            
-        # 缓存Tick
-        self.lastTick = tick
-
-    #----------------------------------------------------------------------
-    def updateBar(self, bar):
-        """1分钟K线更新"""
-        # 尚未创建对象
-        if not self.xminBar:
-            self.xminBar = VtBarData()
-            
-            self.xminBar.vtSymbol = bar.vtSymbol
-            self.xminBar.symbol = bar.symbol
-            self.xminBar.exchange = bar.exchange
-        
-            self.xminBar.open = bar.open
-            self.xminBar.high = bar.high
-            self.xminBar.low = bar.low            
-            
-            self.xminBar.datetime = bar.datetime    # 以第一根分钟K线的开始时间戳作为X分钟线的时间戳
-        # 累加老K线
-        else:
-            self.xminBar.high = max(self.xminBar.high, bar.high)
-            self.xminBar.low = min(self.xminBar.low, bar.low)
-    
-        # 通用部分
-        self.xminBar.close = bar.close        
-        self.xminBar.openInterest = bar.openInterest
-        self.xminBar.volume += int(bar.volume)                
-            
-        # X分钟已经走完
-        if not (bar.datetime.minute + 1) % self.xmin:   # 可以用X整除
-            # 生成上一X分钟K线的时间戳
-            self.xminBar.datetime = self.xminBar.datetime.replace(second=0, microsecond=0)  # 将秒和微秒设为0
-            self.xminBar.date = self.xminBar.datetime.strftime('%Y%m%d')
-            self.xminBar.time = self.xminBar.datetime.strftime('%H:%M:%S.%f')
-            
-            # 推送, X分钟策略计算和决策
-            self.onXminBar(self.xminBar)
-            
-            # 清空老K线缓存对象
-            self.xminBar = None
-
 
 ########################################################################
 class ArrayManager(object):

@@ -6,6 +6,7 @@ from threading import Thread
 from time import sleep
 from collections import defaultdict
 from datetime import datetime
+import traceback
 
 # 第三方模块
 from qtpy.QtCore import QTimer
@@ -15,6 +16,24 @@ def datetime2float(dt):
     total_seconds =  (dt - __dtEpoch).total_seconds()
     # total_seconds will be in decimals (millisecond precision)
     return total_seconds
+
+########################################################################
+class EventData(object):
+    """回调函数推送数据的基础类，其他数据类继承于此"""
+    EMPTY_STRING = ''
+    EMPTY_UNICODE = u''
+    EMPTY_INT = 0
+    EMPTY_FLOAT = 0.0
+
+    #----------------------------------------------------------------------
+    def __init__(self):
+        """Constructor"""
+        self.gatewayName = EventData.EMPTY_STRING         # Gateway名称        
+        self.rawData = None                     # 原始数据
+
+    @property
+    def desc(self) :
+        return self.__class__.__name__
 
 ########################################################################
 class EventLoop(object): # non-thread
@@ -33,7 +52,7 @@ class EventLoop(object): # non-thread
         
         # 计时器，用于触发计时器事件
         self.__timerActive = False     # 计时器工作状态
-        self.__timerStep = 1           # 计时器触发间隔（默认1秒）
+        self.__timerStep = 60           # 计时器触发间隔（默认1秒）
         self.__stampTimerLast = None
         
         # 这里的__handlers是一个字典，用来保存对应的事件调用关系
@@ -49,27 +68,32 @@ class EventLoop(object): # non-thread
         dt = datetime.now()
         stampNow = datetime2float(datetime.now())
         c =0
-        try:
-            if not self.__stampTimerLast :
-                self.__stampTimerLast = stampNow
+        if not self.__stampTimerLast :
+            self.__stampTimerLast = stampNow
 
-            #while self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
-            #    self.__stampTimerLast += self.__timerStep
-            if self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
-                self.__stampTimerLast = stampNow
-                    
-                # 向队列中存入计时器事件
-                edata = edTimer(dt)
-                event = Event(type_= EventChannel.EVENT_TIMER)
-                event.dict_['data'] = edata
-                self.put(event)
+        #while self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
+        #    self.__stampTimerLast += self.__timerStep
+        if self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
+            self.__stampTimerLast = stampNow
+                
+            # 向队列中存入计时器事件
+            edata = edTimer(dt)
+            event = Event(type_= EventChannel.EVENT_TIMER)
+            event.dict_['data'] = edata
+            self.put(event)
 
-            # pop the event to dispatch
+        # pop the event to dispatch
+        event = None
+        try :
             event = self.__queue.get(block = True, timeout = 0.5)  # 获取事件的阻塞时间设为1秒
+        except Empty:
+            pass
+
+        try:
             if event :
                 self.__process(event)
                 c+=1
-        except Exception as ex:
+        except Exception, ex:
             print("eventCH exception %s %s" % (ex, traceback.format_exc()))
 
         if c<=0:
@@ -140,7 +164,7 @@ class EventLoop(object): # non-thread
     #----------------------------------------------------------------------
     @property
     def pendingSize(self):
-        return len(self.__queue)
+        return self.__queue.qsize()
 
     #----------------------------------------------------------------------
     def registerGeneralHandler(self, handler):
@@ -155,11 +179,13 @@ class EventLoop(object): # non-thread
             self.__generalHandlers.remove(handler)
 
 ########################################################################
+EVENT_NAME_PREFIX = 'ev'                # 事件名字前缀
+
 class EventChannel(EventLoop):
     # 系统相关
-    EVENT_TIMER = 'eTimer'                  # 计时器事件，每隔1秒发送一次
-    EVENT_LOG   = 'eLog'                    # 日志事件，全局通用
-    EVENT_ERROR = 'eError.'                 # 错误回报事件
+    EVENT_TIMER = EVENT_NAME_PREFIX + 'Timer'   # 计时器事件，每隔1秒发送一次
+    EVENT_LOG   = EVENT_NAME_PREFIX + 'Log'     # 日志事件，全局通用
+    EVENT_ERROR = EVENT_NAME_PREFIX + 'Error'   # 错误回报事件
 
     #----------------------------------------------------------------------
     def __init__(self):
@@ -234,8 +260,7 @@ def test():
     app.exec_()
 
 ########################################################################
-from vnpy.trader.vtObject import VtBaseData
-class edTimer(VtBaseData):
+class edTimer(EventData):
     """K线数据"""
 
     #----------------------------------------------------------------------

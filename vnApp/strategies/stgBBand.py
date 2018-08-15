@@ -31,9 +31,8 @@ from __future__ import division
 
 from vnpy.trader.vtObject import VtBarData
 from vnpy.trader.vtConstant import *
-from ..Strategy import (StrategyOfSymbol, 
-                                                     BarGenerator, 
-                                                     ArrayManager)
+from ..Strategy import (StrategyOfSymbol, ArrayManager)
+from ..MarketData import TickToKLineMerger, KlineToXminMerger
 
 
 ########################################################################
@@ -98,10 +97,13 @@ class stgBBand(StrategyOfSymbol):
     def __init__(self, trader, symbol, account, setting):
         """Constructor"""
         super(stgBBand, self).__init__(trader, symbol, account, setting)
-        
-        self.bg    = BarGenerator(self.onBar, 15, self.onXminBar)        # 创建K线合成器对象
-        self.bg_L2 = BarGenerator(self.onBar, 60, self.onBar_L2)
-        self.am = ArrayManager()
+
+        # 创建K线合成器对象
+        self._tick2kline = TickToKLineMerger(self.onBar)
+        self._klineTo15min = KlineToXminMerger(self.onXminBar, 15)
+#        self._klineToL2 = KlineToXminMerger(self.onBar_L2, 60)
+
+        self._am = ArrayManager()
         
     #----------------------------------------------------------------------
     def onBar_L2(self, bar):
@@ -110,12 +112,15 @@ class stgBBand(StrategyOfSymbol):
     #----------------------------------------------------------------------
     def onInit(self):
         """初始化策略（必须由用户继承实现）"""
-        self.log(u'%s策略初始化' %self.name)
+        self.log(u'%s策略初始化, perloading %ddays' %(self.name, self.initDays))
         
         # 载入历史数据，并采用回放计算的方式初始化策略数值
-        initData = self.loadBar(self.initDays)
-        for bar in initData:
-            self.onBar(bar)
+        try :
+            initData = self.loadBar(self.initDays)
+            for bar in initData:
+                self.onBar(bar)
+        except:
+            pass
 
         self.putEvent()
 
@@ -134,12 +139,13 @@ class stgBBand(StrategyOfSymbol):
     #----------------------------------------------------------------------
     def onTick(self, tick):
         """收到行情TICK推送（必须由用户继承实现）""" 
+        self._tick2kline.pushTick(tick)
         self.bg.updateTick(tick)
 
     #----------------------------------------------------------------------
     def onBar(self, bar):
         """收到Bar推送（必须由用户继承实现）"""
-        self.bg.updateBar(bar)
+        self._klineTo15min.pushKLine(bar)
     
     #----------------------------------------------------------------------
     def onXminBar(self, bar):
@@ -149,21 +155,19 @@ class stgBBand(StrategyOfSymbol):
         self.log(u'onXminBar() cancelling all previous orders')
         self.cancelAll()
 
-        cash, cashTotal = self.account.cashAmount()
-
-        if cashTotal <0:
-            return
-    
         # 保存K线数据
         self.log(u'onXminBar() caching K lines')
-        am = self.am
-        am.updateBar(bar)
+        self._am.updateBar(bar)
         
-        if not am.inited:
+        if not self._am.inited:
             return
 
         # 计算指标数值
-        self.log(u'onXminBar() evaluating factors')
+        cash, cashTotal = self.account.cashAmount()
+        self.log('onXminBar() evaluating factors with cash[%s/%s]' % (cash, cashTotal))
+        if cashTotal <0:
+            return
+
         self._lastCCI, self._lastATR = self.cciValue, self.atrValue
 
         if self.pos ==0:
@@ -175,15 +179,15 @@ class stgBBand(StrategyOfSymbol):
             else:
                 self.intraTradeLow = min(bar.low, self.intraTradeLow)
 
-        (bollUp, bollDown) = am.boll(self.bollWindow, self.bollDev)
+        (bollUp, bollDown) = self._am.boll(self.bollWindow, self.bollDev)
         bollMean = (bollUp + bollDown) /2
         dBBandUp   = bollUp - self.bollUp
         dBBandDown = bollDown - self.bollDown
         BBwidth = bollUp -bollDown
         (self.bollUp, self.bollDown) = (bollUp, bollDown)
         
-        self.cciValue = am.cci(self.cciWindow)
-        self.atrValue = am.atr(self.atrWindow)
+        self.cciValue = self._am.cci(self.cciWindow)
+        self.atrValue = self._am.atr(self.atrWindow)
 
         dCCI = self.cciValue - self._lastCCI
         dATR = self.atrValue - self._lastATR
@@ -191,7 +195,7 @@ class stgBBand(StrategyOfSymbol):
         posDesc ='%s/%s,ca%.2f' % (self._posAvail, self.pos, cash)
         barDesc = '%.2f,%.2f,%.2f,%.2f' % (bar.open, bar.close, bar.high, bar.low)
         measureDesc = 'bband[%.2f~%.2f] cci[%d->%d] atr:%.2f' % (self.bollDown, self.bollUp, self._lastCCI, self.cciValue, self.atrValue)
-        maxBuy, _, _ = self.account.maxBuyVolume(bar.vtSymbol, bar.close)
+        maxBuy, maxSell = self.account.maxOrderVolume(bar.symbol, bar.close)
 
         # determining
         toBuy=0
@@ -238,8 +242,8 @@ class stgBBand(StrategyOfSymbol):
             self.log(u'onXminBar() pos[%s] bar[%s] %s =>BUY(%d)' %(posDesc, barDesc, measureDesc, vol))
             self.buy(bar.close+0.01, vol, False)
 
-        elif self._posAvail >0 and (toSell - toBuy) >0 :
-            vol = min(self._posAvail, self.fixedSize*toSell*10)
+        elif maxSell >0 and (toSell - toBuy) >0 :
+            vol = min(maxSell, self.fixedSize*toSell*10)
             
             self.log(u'onXminBar() pos[%s] bar[%s] %s =>SELL(%d)' %(posDesc, barDesc, measureDesc, vol))
             self.sell(bar.close-0.01, vol, False) # abs(self.pos), False)
@@ -266,7 +270,7 @@ class stgBBand(StrategyOfSymbol):
         #         self.sell(bar.close-0.01, abs(self.pos), False)
     
         # 同步数据到数据库
-        self.log(u'onXminBar() saving the issue events')
+        self.log('onXminBar() saving the issue events')
         self.saveSyncData()        
     
         # 发出状态更新事件

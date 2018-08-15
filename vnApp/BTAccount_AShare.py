@@ -25,7 +25,7 @@ except ImportError:
     pass
 
 from vnpy.trader.vtGlobal import globalSetting
-from vnpy.trader.vtObject import VtTickData, VtBarData
+from vnpy.trader.vtObject import VtTickData, KLineData
 from vnpy.trader.vtConstant import *
 from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 
@@ -178,7 +178,7 @@ class BTAccount_AShare(Account_AShare):
       
         # 首先根据回测模式，确认要使用的数据类
         if self.mode == self.BAR_MODE:
-            dataClass = VtBarData
+            dataClass = KLineData
             func = self.OnNewBar
         else:
             dataClass = VtTickData
@@ -221,7 +221,7 @@ class BTAccount_AShare(Account_AShare):
         
         # 首先根据回测模式，确认要使用的数据类
         if self.mode == self.BAR_MODE:
-            dataClass = VtBarData
+            dataClass = KLineData
             func = self.OnNewBar
         else:
             dataClass = VtTickData
@@ -355,15 +355,15 @@ class BTAccount_AShare(Account_AShare):
         for orderID, order in self.workingLimitOrderDict.items():
             # 推送委托进入队列（未成交）的状态更新
             if not order.status:
-                order.status = STATUS_NOTTRADED
+                order.status = OrderData.STATUS_NOTTRADED
                 self.strategy.onOrder(order)
 
             # 判断是否会成交
-            buyCross = (order.direction==DIRECTION_LONG and 
+            buyCross = OrderData.DIRECTION_LONG and 
                         order.price>=buyCrossPrice and
                         buyCrossPrice > 0)      # 国内的tick行情在涨停时askPrice1为0，此时买无法成交
             
-            sellCross = (order.direction==DIRECTION_SHORT and 
+            sellCross = OrderData.DIRECTION_SHORT and 
                          order.price<=sellCrossPrice and
                          sellCrossPrice > 0)    # 国内的tick行情在跌停时bidPrice1为0，此时卖无法成交
             
@@ -430,14 +430,14 @@ class BTAccount_AShare(Account_AShare):
             
                 # 推送委托数据
                 order.tradedVolume = trade.tradeTime
-                order.status = STATUS_ALLTRADED
+                order.status = OrderData.STATUS_ALLTRADED
                 if order.tradedVolume < order.totalVolume :
-                    order.status = STATUS_PARTTRADED
+                    order.status = OrderData.STATUS_PARTTRADED
                 self.strategy.onOrder(order)
             else :
                 # 推送委托数据
                 order.tradedVolume = 0
-                order.status = STATUS_CANCELLED
+                order.status = OrderData.STATUS_CANCELLED
                 self.strategy.onOrder(order)
 
             # update avail cache
@@ -478,15 +478,15 @@ class BTAccount_AShare(Account_AShare):
         # 遍历停止单字典中的所有停止单
         for stopOrderID, so in self.workingStopOrderDict.items():
             # 判断是否会成交
-            buyCross  = (so.direction==DIRECTION_LONG)  and so.price<=buyCrossPrice
-            sellCross = (so.direction==DIRECTION_SHORT) and so.price>=sellCrossPrice
+            buyCross  = OrderData.DIRECTION_LONG)  and so.price<=buyCrossPrice
+            sellCross = OrderData.DIRECTION_SHORT) and so.price>=sellCrossPrice
             
             # 忽略未发生成交
             if not buyCross and not sellCross : # and (so.volume < maxVolumeCross):
                 continue;
 
             # 更新停止单状态，并从字典中删除该停止单
-            so.status = STOPORDER_TRIGGERED
+            so.status = OrderData.ORDER_TRIGGERED
             if stopOrderID in self.workingStopOrderDict:
                 del self.workingStopOrderDict[stopOrderID]                        
 
@@ -528,7 +528,7 @@ class BTAccount_AShare(Account_AShare):
             order.price = so.price
             order.totalVolume = so.volume
             order.tradedVolume = so.volume
-            order.status = STATUS_ALLTRADED
+            order.status = OrderData.STATUS_ALLTRADED
             order.orderTime = trade.tradeTime
                 
             self.limitOrderDict[orderID] = order
@@ -557,25 +557,25 @@ class BTAccount_AShare(Account_AShare):
         order.orderTime = self.dt.strftime('%H:%M:%S')
         
         # 委托类型映射
-        if orderType == ORDER_BUY:
-            order.direction = DIRECTION_LONG
-            order.offset = OFFSET_OPEN
-        elif orderType == ORDER_SELL:
-            order.direction = DIRECTION_SHORT
-            order.offset = OFFSET_CLOSE
-        elif orderType == ORDER_SHORT:
-            order.direction = DIRECTION_SHORT
-            order.offset = OFFSET_OPEN
-        elif orderType == ORDER_COVER:
-            order.direction = DIRECTION_LONG
-            order.offset = OFFSET_CLOSE     
+        if orderType = OrderData.ORDER_BUY:
+            order.direction = OrderData.DIRECTION_LONG
+            order.offset = OrderData.OFFSET_OPEN
+        elif orderType = OrderData.ORDER_SELL:
+            order.direction = OrderData.DIRECTION_SHORT
+            order.offset = OrderData.OFFSET_CLOSE
+        elif orderType = OrderData.ORDER_SHORT:
+            order.direction = OrderData.DIRECTION_SHORT
+            order.offset = OrderData.OFFSET_OPEN
+        elif orderType = OrderData.ORDER_COVER:
+            order.direction = OrderData.DIRECTION_LONG
+            order.offset = OrderData.OFFSET_CLOSE     
         
         # 保存到限价单字典中
         self.workingLimitOrderDict[orderID] = order
         self.limitOrderDict[orderID] = order
 
         # reduce available cash
-        if order.direction == DIRECTION_LONG :
+        if order.direction = OrderData.DIRECTION_LONG :
             turnoverO, commissionO, slippageO = self.calcAmountOfTrade(order.symbol, order.price, order.totalVolume)
             # self._cashAvail -= turnoverO + commissionO + slippageO
             self.cashChange(-(turnoverO + commissionO + slippageO))
@@ -588,11 +588,11 @@ class BTAccount_AShare(Account_AShare):
         if vtOrderID in self.workingLimitOrderDict:
             order = self.workingLimitOrderDict[vtOrderID]
             
-            order.status = STATUS_CANCELLED
+            order.status = OrderData.STATUS_CANCELLED
             order.cancelTime = self.dt.strftime('%H:%M:%S')
             
             # restore available cash
-            if order.direction == DIRECTION_LONG :
+            if order.direction = OrderData.DIRECTION_LONG :
                 # self._cashAvail += order.price * order.totalVolume * self.size # TODO: I have ignored the commission here
                 self.cashChange(order.price * order.totalVolume)
 
@@ -611,21 +611,21 @@ class BTAccount_AShare(Account_AShare):
         so.price = self.roundToPriceTick(price)
         so.volume = volume
         so.strategy = strategy
-        so.status = STOPORDER_WAITING
+        so.status = OrderData.ORDER_WAITING
         so.stopOrderID = stopOrderID
         
-        if orderType == ORDER_BUY:
-            so.direction = DIRECTION_LONG
-            so.offset = OFFSET_OPEN
-        elif orderType == ORDER_SELL:
-            so.direction = DIRECTION_SHORT
-            so.offset = OFFSET_CLOSE
-        elif orderType == ORDER_SHORT:
-            so.direction = DIRECTION_SHORT
-            so.offset = OFFSET_OPEN
-        elif orderType == ORDER_COVER:
-            so.direction = DIRECTION_LONG
-            so.offset = OFFSET_CLOSE           
+        if orderType = OrderData.ORDER_BUY:
+            so.direction = OrderData.DIRECTION_LONG
+            so.offset = OrderData.OFFSET_OPEN
+        elif orderType = OrderData.ORDER_SELL:
+            so.direction = OrderData.DIRECTION_SHORT
+            so.offset = OrderData.OFFSET_CLOSE
+        elif orderType = OrderData.ORDER_SHORT:
+            so.direction = OrderData.DIRECTION_SHORT
+            so.offset = OrderData.OFFSET_OPEN
+        elif orderType = OrderData.ORDER_COVER:
+            so.direction = OrderData.DIRECTION_LONG
+            so.offset = OrderData.OFFSET_CLOSE           
         
         # 保存stopOrder对象到字典中
         self.stopOrderDict[stopOrderID] = so
@@ -642,7 +642,7 @@ class BTAccount_AShare(Account_AShare):
         # 检查停止单是否存在
         if stopOrderID in self.workingStopOrderDict:
             so = self.workingStopOrderDict[stopOrderID]
-            so.status = STOPORDER_CANCELLED
+            so.status = OrderData.ORDER_CANCELLED
             del self.workingStopOrderDict[stopOrderID]
             self.strategy.onStopOrder(so)
     
@@ -715,7 +715,7 @@ class BTAccount_AShare(Account_AShare):
             
             # buy交易
             # ---------------------------
-            if trade.direction == DIRECTION_LONG:
+            if trade.direction = OrderData.DIRECTION_LONG:
 
                 if not sellTrades:
                     # 如果尚无空头交易
@@ -1387,7 +1387,7 @@ class DailyResult(object):
         self.tradeCountSell = 0
         
         for trade in self.tradeList:
-            if trade.direction == DIRECTION_LONG:
+            if trade.direction = OrderData.DIRECTION_LONG:
                 posChange = trade.volume
                 self.tradeCountBuy += 1
             else:

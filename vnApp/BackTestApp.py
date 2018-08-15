@@ -1089,10 +1089,18 @@ class AccountWrapper(object):
 
     #----------------------------------------------------------------------
     # most of the methods are just forward to the self.nest
-    def priceTick(self): return self._nest.priceTick()
-    def dbName(self): return self._nest.dbName()
-    def ident(self) : return self._nest.ident() 
-    def nextOrderReqId(self): return self._nest.nextOrderReqId()
+    @property
+    def priceTick(self): return self._nest.priceTick
+    @property
+    def dbName(self): return self._nest.dbName
+    @property
+    def ident(self) : return self._nest.ident
+    @property
+    def nextOrderReqId(self): return self._nest.nextOrderReqId
+    @property
+    def collectionName_dpos(self): return self._nest.collectionName_dpos
+    @property
+    def collectionName_trade(self): return self._nest.collectionName_dpos
     def getPosition(self, symbol): return self._nest.getPosition(symbol) # returns VtPositionData
     def getAllPositions(self): return self._nest.getAllPositions() # returns VtPositionData
     def cashAmount(self): return self._nest.cashAmount() # returns (avail, total)
@@ -1429,17 +1437,17 @@ class AccountWrapper(object):
                 continue
             
             # fake a sold-succ trade into self._dictTrades
-            self.tdDriver.tradeCount += 1            # 成交编号自增1
-            trade = TradeData(self)
+            self._tradeCount += 1            # 成交编号自增1
+            trade = TradeData(self._nest)
+            trade.brokerTradeId = str(self._tradeCount)
             trade.symbol = symbol
-            trade.vtSymbol = symbol
-            trade.orderID = self.nextOrderReqId +"$BTEND"
-            trade.vtOrderID = trade.orderID
-            trade.tradeID = trade.orderID
-            trade.vtTradeID = trade.orderID
+            trade.orderReq = self.nextOrderReqId +"$BTEND"
+            trade.orderID = 'O' + trade.orderReq
+            trade.tradeID = 'S' + trade.brokerTradeId
             trade.direction = DIRECTION_SHORT
             trade.offset = OFFSET_CLOSE
             trade.volume = pos.position
+            trade.dt     = self._btTrader._dtData
 
             self._broker_onTrade(trade)
             self._btTrader.debug('onTestEnd() faked trade: %s' % trade.desc)

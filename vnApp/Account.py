@@ -423,7 +423,7 @@ class Account(object):
                 self._cashChange(tradeAmount, tradeAmount)
 
                 pos.position -= trade.volume
-                pos.avalPos  -= trade.volume
+                pos.posAvail  -= trade.volume
             else :
                 turnover, commission, slippage = self.calcAmountOfTrade(s, trade.price, trade.volume)
                 tradeAmount = turnover + commission + slippage

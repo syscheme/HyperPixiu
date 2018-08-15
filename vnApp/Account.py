@@ -438,10 +438,9 @@ class Account(object):
                 # TODO: T+0 also need to increase pos.avalPos
                 
             pos.stampByTrader = trade.dt  # the current position is calculated based on trade
+            self.info('broker_onTrade() processed: %s=>pos:%s' % (trade.desc, pos.desc))
 
         self._trader.postEvent(Account.EVENT_TRADE, copy.copy(trade))
-
-        self.info('OnTrade(%s) done' % (trade.tradeID))
 
     @abstractmethod
     def _broker_datetimeAsOf(self):
@@ -1007,16 +1006,16 @@ class Account_AShare(Account):
                 continue
             pos.posAvail = pos.position
 
-    @abstractmethod # from Account_AShare
-    def onTrade(self, trade):
-        super(Account_AShare, self).onTrade(trade)
+    # @abstractmethod # from Account_AShare
+    # def onTrade(self, trade):
+    #     super(Account_AShare, self).onTrade(trade)
 
-        if trade.direction == DIRECTION_LONG:
-            return
+    #     if trade.direction == DIRECTION_LONG:
+    #         return
 
-        with self._lock :
-            if trade.symbol in self._dictPositions :
-                self._dictPositions[trade.symbol].posAvail -= trade.volume
+    #     with self._lock :
+    #         if trade.symbol in self._dictPositions :
+    #             self._dictPositions[trade.symbol].posAvail -= trade.volume
 
 ########################################################################
 class OrderData(object):

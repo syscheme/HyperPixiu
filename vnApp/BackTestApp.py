@@ -1190,6 +1190,9 @@ class AccountWrapper(object):
             outgoingOrders = copy.deepcopy(self._nest._dictOutgoingOrders.values())
         for o in outgoingOrders:
             self._broker_placeOrder(o)
+        
+        self.debug('step() issued %d orders'% len(outgoingOrders))
+
 
     #----------------------------------------------------------------------
     def setCapital(self, capital, resetAvail=False):
@@ -1271,6 +1274,8 @@ class AccountWrapper(object):
                 if order.tradedVolume < order.totalVolume :
                     order.status = STATUS_PARTTRADED
                 finishedOrders.append(order)
+
+                self.info('crossLimitOrder() crossed order[%s] to trade[%s]'% (order.desc, trade.desc))
 
         for t in trades:
             self._broker_onTrade(t)

@@ -4,8 +4,8 @@ from __future__ import division
 
 from vnApp.MarketData import *
 
-from vnpy.trader.vtConstant import *
-from vnpy.event import Event
+# from vnpy.trader.vtConstant import *
+# from vnpy.event import Event
 
 import urllib
 import hmac
@@ -229,30 +229,31 @@ class mdHuobi(MarketData):
         """订阅K线数据"""
 
         eventType = MarketData.EVENT_KLINE_1MIN
+        topic = 'market.%s.kline.1min' % symbol
 
         minutes /=5
         if minutes >0:
-            eventType = MarketData.EVENT_KLINE_5MIN
+            topic = 'market.%s.kline.5min' % symbol
 
         minutes /=3
         if minutes >0:
-            eventType = MarketData.EVENT_KLINE_15MIN
+            topic = 'market.%s.kline.15min' % symbol
 
         minutes /=2
         if minutes >0:
-            eventType = MarketData.EVENT_KLINE_30MIN
+            topic = 'market.%s.kline.30min' % symbol
 
         minutes /=2
         if minutes >0:
-            eventType = MarketData.EVENT_KLINE_1HOUR
+            topic = 'market.%s.kline.60min' % symbol
 
         minutes /=4
         if minutes >0:
-            eventType = MarketData.EVENT_KLINE_4HOUR
+            topic = 'market.%s.kline.4hour' % symbol
 
         minutes /=6
         if minutes >0:
-            eventType = MarketData.EVENT_KLINE_1DAY
+            topic = 'market.%s.kline.1day' % symbol            
 
         # minutes /=7
         # if minutes >0:
@@ -266,7 +267,7 @@ class mdHuobi(MarketData):
         # if minutes >0:
         #     eventType = MarketData.EVENT_KLINE_1Year
 
-        self._subTopic(symbol, eventType)
+        self._subTopic(topic)
 
     #----------------------------------------------------------------------
     def pong(self, data):

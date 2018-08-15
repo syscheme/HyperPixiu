@@ -2,7 +2,7 @@
 
 from __future__ import division
 
-from vnpy.trader.vtConstant import *
+# from vnpy.trader.vtConstant import *
 from .EventChannel import EventData, Event, EVENT_NAME_PREFIX
 
 import traceback
@@ -57,6 +57,10 @@ class MarketData(object):
         return self._id
 
     @property
+    def ident(self) :
+        return self.__class__.__name__ +"." + self._id
+
+    @property
     def exchange(self) :
         return self._exchange
 
@@ -75,7 +79,7 @@ class MarketData(object):
     def connect(self):
         """连接"""
         raise NotImplementedError
-        return self.active
+#        return self.active
 
     @abstractmethod
     def close(self):

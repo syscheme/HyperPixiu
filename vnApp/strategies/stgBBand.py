@@ -112,12 +112,15 @@ class stgBBand(StrategyOfSymbol):
     #----------------------------------------------------------------------
     def onInit(self):
         """初始化策略（必须由用户继承实现）"""
-        self.log(u'%s策略初始化' %self.name)
+        self.log(u'%s策略初始化, perloading %ddays' %(self.name, self.initDays))
         
         # 载入历史数据，并采用回放计算的方式初始化策略数值
-        initData = self.loadBar(self.initDays)
-        for bar in initData:
-            self.onBar(bar)
+        try :
+            initData = self.loadBar(self.initDays)
+            for bar in initData:
+                self.onBar(bar)
+        except:
+            pass
 
         self.putEvent()
 

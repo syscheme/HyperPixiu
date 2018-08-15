@@ -210,13 +210,13 @@ class ThreadedMd(object):
     
 
 ########################################################################
-class mdTickData(EventData):
+class TickData(EventData):
     """Tick行情数据类"""
 
     #----------------------------------------------------------------------
     def __init__(self, md, symbol =None):
         """Constructor"""
-        super(mdTickData, self).__init__()
+        super(TickData, self).__init__()
         
         self.exchange   = md.exchange
         # self.sourceType = md._sourceType          # 数据来源类型
@@ -277,13 +277,13 @@ class mdTickData(EventData):
         return 'tick.%s@%s_%dx%s' % (self.vtSymbol, self.datetime.strftime('%Y%m%dT%H%M%S'),self.volume,round(self.lastPrice,2))
 
 ########################################################################
-class mdKLineData(EventData):
+class KLineData(EventData):
     """K线数据"""
 
     #----------------------------------------------------------------------
     def __init__(self, md, symbol =None):
         """Constructor"""
-        super(mdKLineData, self).__init__()
+        super(KLineData, self).__init__()
         
         self.exchange   = md._exchange
         # self.sourceType = md._sourceType          # 数据来源类型

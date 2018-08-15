@@ -191,10 +191,10 @@ class mdBacktest(MarketData):
                 symbol = d['collectionName'].split('.')[0]
                 newSymbol = '%s.%s' % (symbol, self.exchange)
                 if self.TICK_MODE == self._mode:
-                    edata = mdTickData(self, symbol)
+                    edata = TickData(self, symbol)
                     event = Event(MarketData.EVENT_TICK)
                 else: # as Kline
-                    edata = mdKLineData(self, symbol)
+                    edata = KLineData(self, symbol)
                     event = Event(MarketData.EVENT_1MIN)
                 
                 edata.date = self.DUMMY_DATE_EOS
@@ -224,7 +224,7 @@ class mdBacktest(MarketData):
             symbol = cursorFocus['collectionName'].split('.')[0]
             newSymbol = '%s.%s' % (symbol, self.exchange)
             if cursorFocus['category'] == 'Tick' :
-                edata = mdTickData(self, symbol)
+                edata = TickData(self, symbol)
                 edata.__dict__ = copy.copy(cursorFocus['currentData'])
                 edata.vtSymbol  = newSymbol
                 event = Event(MarketData.EVENT_TICK)
@@ -233,7 +233,7 @@ class mdBacktest(MarketData):
                     pass # TODO: ...
 
             else: # as Kline
-                edata = mdKLineData(self, symbol)
+                edata = KLineData(self, symbol)
                 edata.__dict__ = copy.copy(cursorFocus['currentData'])
                 edata.vtSymbol  = newSymbol
                 event = Event(EVENT_NAME_PREFIX +cursorFocus['category'])

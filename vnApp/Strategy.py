@@ -120,22 +120,22 @@ class Strategy(object):
     #----------------------------------------------------------------------
     def _buy(self, symbol, price, volume, stop=False):
         """买开"""
-        return self.sendOrder(ORDER_BUY, symbol, price, volume, stop)
+        return self.sendOrder(OrderData.ORDER_BUY, symbol, price, volume, stop)
     
     #----------------------------------------------------------------------
     def _sell(self, symbol, price, volume, stop=False):
         """卖平"""
-        return self.sendOrder(ORDER_SELL, symbol, price, volume, stop)       
+        return self.sendOrder(OrderData.ORDER_SELL, symbol, price, volume, stop)       
 
     #----------------------------------------------------------------------
     def _short(self, symbol, price, volume, stop=False):
         """卖开"""
-        return self.sendOrder(ORDER_SHORT, symbol, price, volume, stop)          
+        return self.sendOrder(OrderData.ORDER_SHORT, symbol, price, volume, stop)          
  
     #----------------------------------------------------------------------
     def _cover(self, symbol, price, volume, stop=False):
         """买平"""
-        return self.sendOrder(ORDER_COVER, symbol, price, volume, stop)
+        return self.sendOrder(OrderData.ORDER_COVER, symbol, price, volume, stop)
         
     #----------------------------------------------------------------------
     def sendOrder(self, orderType, symbol, price, volume, stop=False):

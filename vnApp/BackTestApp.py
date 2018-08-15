@@ -255,7 +255,7 @@ class BackTestApp(Trader):
             
             # buy交易
             # ---------------------------
-            if trade.direction == DIRECTION_LONG:
+            if trade.direction == OrderData.DIRECTION_LONG:
 
                 if not sellTrades:
                     # 如果尚无空头交易
@@ -921,7 +921,7 @@ class DailyResult(object):
         self.tcSell = 0
         
         for trade in self.tradeList:
-            if trade.direction == DIRECTION_LONG:
+            if trade.direction == OrderData.DIRECTION_LONG:
                 posChange = trade.volume
                 self.tcBuy += 1
             else:
@@ -1101,8 +1101,8 @@ class AccountWrapper(object):
     def collectionName_dpos(self): return self._nest.collectionName_dpos
     @property
     def collectionName_trade(self): return self._nest.collectionName_dpos
-    def getPosition(self, symbol): return self._nest.getPosition(symbol) # returns VtPositionData
-    def getAllPositions(self): return self._nest.getAllPositions() # returns VtPositionData
+    def getPosition(self, symbol): return self._nest.getPosition(symbol) # returns PositionData
+    def getAllPositions(self): return self._nest.getAllPositions() # returns PositionData
     def cashAmount(self): return self._nest.cashAmount() # returns (avail, total)
     def cashChange(self, dAvail=0, dTotal=0): return self._nest.cashChange(dAvail, dTotal)
     def insertData(self, dbName, collectionName, data): return self._nest.insertData(dbName, collectionName, data)
@@ -1236,11 +1236,11 @@ class AccountWrapper(object):
                     order.status = STATUS_NOTTRADED
 
                 # 判断是否会成交
-                buyCross = (order.direction==DIRECTION_LONG and 
+                buyCross = (order.direction == OrderData.DIRECTION_LONG and 
                             order.price>=buyCrossPrice and
                             buyCrossPrice > 0)      # 国内的tick行情在涨停时askPrice1为0，此时买无法成交
                 
-                sellCross = (order.direction==DIRECTION_SHORT and 
+                sellCross = (order.direction == OrderData.DIRECTION_SHORT and 
                             order.price<=sellCrossPrice and
                             sellCrossPrice > 0)    # 国内的tick行情在跌停时bidPrice1为0，此时卖无法成交
                 
@@ -1368,15 +1368,15 @@ class AccountWrapper(object):
                     continue
 
                 # 判断是否会成交
-                buyCross  = (so.direction==DIRECTION_LONG)  and so.price<=buyCrossPrice
-                sellCross = (so.direction==DIRECTION_SHORT) and so.price>=sellCrossPrice
+                buyCross  = (so.direction==OrderData.DIRECTION_LONG)  and so.price<=buyCrossPrice
+                sellCross = (so.direction==OrderData.DIRECTION_SHORT) and so.price>=sellCrossPrice
                 
                 # 忽略未发生成交
                 if not buyCross and not sellCross : # and (so.volume < maxCrossVolume):
                     continue;
 
                 # 更新停止单状态，并从字典中删除该停止单
-                so.status = STOPORDER_TRIGGERED
+                so.status = OrderData.STOPORDER_TRIGGERED
                 if stopOrderID in self._dictStopOrders:
                     del self._dictStopOrders[stopOrderID]                        
 
@@ -1449,8 +1449,8 @@ class AccountWrapper(object):
             trade.orderReq = self.nextOrderReqId +"$BTEND"
             trade.orderID = 'O' + trade.orderReq
             trade.tradeID = 'S' + trade.brokerTradeId
-            trade.direction = DIRECTION_SHORT
-            trade.offset = OFFSET_CLOSE
+            trade.direction = OrderData.DIRECTION_SHORT
+            trade.offset = OrderData.OFFSET_CLOSE
             trade.volume = pos.position
             trade.dt     = self._btTrader._dtData
 

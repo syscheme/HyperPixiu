@@ -18,6 +18,24 @@ def datetime2float(dt):
     return total_seconds
 
 ########################################################################
+class EventData(object):
+    """回调函数推送数据的基础类，其他数据类继承于此"""
+    EMPTY_STRING = ''
+    EMPTY_UNICODE = u''
+    EMPTY_INT = 0
+    EMPTY_FLOAT = 0.0
+
+    #----------------------------------------------------------------------
+    def __init__(self):
+        """Constructor"""
+        self.gatewayName = EventData.EMPTY_STRING         # Gateway名称        
+        self.rawData = None                     # 原始数据
+
+    @property
+    def desc(self) :
+        return self.__class__.__name__
+
+########################################################################
 class EventLoop(object): # non-thread
     """
     非线程的事件驱动引擎        
@@ -242,25 +260,7 @@ def test():
     app.exec_()
 
 ########################################################################
-from vnpy.trader.vtConstant import *
-
-class EventData(object):
-    """回调函数推送数据的基础类，其他数据类继承于此"""
-
-    #----------------------------------------------------------------------
-    def __init__(self):
-        """Constructor"""
-        self.gatewayName = EMPTY_STRING         # Gateway名称        
-        self.rawData = None                     # 原始数据
-
-    @property
-    def desc(self) :
-        return self.__class__.__name__
-
-
-########################################################################
-from vnpy.trader.vtObject import VtBaseData
-class edTimer(VtBaseData):
+class edTimer(EventData):
     """K线数据"""
 
     #----------------------------------------------------------------------

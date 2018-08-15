@@ -11,3 +11,6 @@ displayName = u'A股策略'
 #appEngine = TraderAccount
 #appWidget = EngineManager
 appIco = 'ash.ico'
+
+# 默认设置
+from .language.chinese import text #, constant

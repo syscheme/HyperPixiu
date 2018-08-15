@@ -12,22 +12,23 @@ from vnpy.trader.vtObject import VtBarData
 
 from .Account import *
 from .MainRoutine import *
+from .EventChannel import EventChannel, EventData, datetime2float
 
 
 ########################################################################
 class Strategy(object):
     # 策略类的名称和作者
     className = 'Strategy'
-    author = EMPTY_UNICODE
+    author = EventData.EMPTY_UNICODE
     
     # MongoDB数据库的名称，K线数据库默认为1分钟
     tickDbName = TICK_DB_NAME
     barDbName = MINUTE_DB_NAME
     
     # 策略的基本参数
-    name = EMPTY_UNICODE           # 策略实例名称
-    productClass = EMPTY_STRING    # 产品类型（只有IB接口需要）
-    currency = EMPTY_STRING        # 货币（只有IB接口需要）
+    name = EventData.EMPTY_UNICODE           # 策略实例名称
+    productClass = EventData.EMPTY_STRING    # 产品类型（只有IB接口需要）
+    currency = EventData.EMPTY_STRING        # 货币（只有IB接口需要）
     
     # 策略的基本变量，由引擎管理
     inited = False                 # 是否进行了初始化
@@ -317,7 +318,7 @@ class TargetPosTemplate(Strategy):
     tickAdd = 1             # 委托时相对基准价格的超价
     lastTick = None         # 最新tick数据
     lastBar = None          # 最新bar数据
-    targetPos = EMPTY_INT   # 目标持仓
+    targetPos = EventData.EMPTY_INT   # 目标持仓
     orderList = []          # 委托号列表
 
     # 变量列表，保存了变量的名称

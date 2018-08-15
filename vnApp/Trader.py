@@ -13,6 +13,7 @@ from abc import ABCMeta, abstractmethod
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
 
+from vnApp.EventChannel import EventChannel, EventData, datetime2float
 from vnApp.MainRoutine import BaseApplication
 from vnApp.MarketData import MarketData
 from vnApp.Account import *
@@ -37,7 +38,7 @@ TRADER_TYPE_TRADING = 'trading'          # 实盘
 class Trader(BaseApplication):
     """Trader Application"""
 
-    FINISHED_STATUS = [STATUS_ALLTRADED, STATUS_REJECTED, STATUS_CANCELLED]
+    FINISHED_STATUS = [OrderData.STATUS_ALLTRADED, OrderData.STATUS_REJECTED, OrderData.STATUS_CANCELLED]
 
     RUNTIME_TAG_TODAY = '$today'
 
@@ -813,8 +814,8 @@ class Trader(BaseApplication):
     # def calculatePrice(self, trade):
     #     """计算持仓均价（基于成交数据）"""
     #     # 只有开仓会影响持仓均价
-    #     if trade.offset == OFFSET_OPEN:
-    #         if trade.direction == DIRECTION_LONG:
+    #     if trade.offset = OrderData.OFFSET_OPEN:
+    #         if trade.direction = OrderData.DIRECTION_LONG:
     #             cost = self.longPrice * self.longPos
     #             cost += trade.volume * trade.price
     #             newPos = self.longPos + trade.volume
@@ -841,12 +842,12 @@ class Trader(BaseApplication):
     # def calculateFrozen(self):
     #     """计算冻结情况"""
     #     # 清空冻结数据
-    #     self.longPosFrozen = EMPTY_INT
-    #     self.longYdFrozen = EMPTY_INT
-    #     self.longTdFrozen = EMPTY_INT
-    #     self.shortPosFrozen = EMPTY_INT
-    #     self.shortYdFrozen = EMPTY_INT
-    #     self.shortTdFrozen = EMPTY_INT     
+    #     self.longPosFrozen = EventData.EMPTY_INT
+    #     self.longYdFrozen = EventData.EMPTY_INT
+    #     self.longTdFrozen = EventData.EMPTY_INT
+    #     self.shortPosFrozen = EventData.EMPTY_INT
+    #     self.shortYdFrozen = EventData.EMPTY_INT
+    #     self.shortTdFrozen = EventData.EMPTY_INT     
         
     #     # 遍历统计
     #     for order in self._dictWorkingOrder.values():
@@ -926,7 +927,7 @@ class Trader(BaseApplication):
     #             return []
     #         # 平仓量小于今可用，全部平今
     #         elif req.volume <= tdAvailable:
-    #             req.offset = OFFSET_CLOSETODAY
+    #             req.offset = OrderData.OFFSET_CLOSETODAY
     #             return [req]
     #         # 平仓量大于今可用，平今再平昨
     #         else:
@@ -934,12 +935,12 @@ class Trader(BaseApplication):
                 
     #             if tdAvailable > 0:
     #                 reqTd = copy.copy(req)
-    #                 reqTd.offset = OFFSET_CLOSETODAY
+    #                 reqTd.offset = OrderData.OFFSET_CLOSETODAY
     #                 reqTd.volume = tdAvailable
     #                 l.append(reqTd)
                     
     #             reqYd = copy.copy(req)
-    #             reqYd.offset = OFFSET_CLOSEYESTERDAY
+    #             reqYd.offset = OrderData.OFFSET_CLOSEYESTERDAY
     #             reqYd.volume = req.volume - tdAvailable
     #             l.append(reqYd)
                 
@@ -960,14 +961,14 @@ class Trader(BaseApplication):
             
     #         # 如果有今仓，则只能开仓（或锁仓）
     #         if td:
-    #             req.offset = OFFSET_OPEN
+    #             req.offset = OrderData.OFFSET_OPEN
     #             return [req]
     #         # 如果平仓量小于昨可用，全部平昨
     #         elif req.volume <= ydAvailable:
     #             if self.exchange is EXCHANGE_SHFE:
-    #                 req.offset = OFFSET_CLOSEYESTERDAY
+    #                 req.offset = OrderData.OFFSET_CLOSEYESTERDAY
     #             else:
-    #                 req.offset = OFFSET_CLOSE
+    #                 req.offset = OrderData.OFFSET_CLOSE
     #             return [req]
     #         # 平仓量大于昨可用，平仓再反向开仓
     #         else:
@@ -976,15 +977,15 @@ class Trader(BaseApplication):
     #             if ydAvailable > 0:
     #                 reqClose = copy.copy(req)
     #                 if self.exchange is EXCHANGE_SHFE:
-    #                     reqClose.offset = OFFSET_CLOSEYESTERDAY
+    #                     reqClose.offset = OrderData.OFFSET_CLOSEYESTERDAY
     #                 else:
-    #                     reqClose.offset = OFFSET_CLOSE
+    #                     reqClose.offset = OrderData.OFFSET_CLOSE
     #                 reqClose.volume = ydAvailable
                     
     #                 l.append(reqClose)
                     
     #             reqOpen = copy.copy(req)
-    #             reqOpen.offset = OFFSET_OPEN
+    #             reqOpen.offset = OrderData.OFFSET_OPEN
     #             reqOpen.volume = req.volume - ydAvailable
     #             l.append(reqOpen)
                 

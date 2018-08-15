@@ -36,8 +36,8 @@ class BrokerDriver(object):
         self._active = False         # API工作状态   
         self._reqid = 0              # 请求编号
 
-        self._dictPositions = { # dict from symbol to latest VtPositionData
-            Account.SYMBOL_CASH : VtPositionData()
+        self._dictPositions = { # dict from symbol to latest PositionData
+            Account.SYMBOL_CASH : PositionData()
         }
 
     @property
@@ -87,7 +87,7 @@ class BrokerDriver(object):
     def getPositions(self, symbol):
         with self._lock :
             if not symbol in self._dictPositions:
-                return VtPositionData()
+                return PositionData()
             return copy(self._dictPositions[symbol])
 
     @abstractmethod
@@ -198,7 +198,7 @@ class BrokerDriver(object):
         # update the current postion, this may overwrite during the sync by BrokerDriver
         s = trade.symbol
         if not s in currentPositions :
-            self._dictPositions[s] = VtPositionData()
+            self._dictPositions[s] = PositionData()
             pos = self._dictPositions[s]
             pos.symbol = s
             pos.vtSymbol = trade.vtSymbol
@@ -213,7 +213,7 @@ class BrokerDriver(object):
 
         # update the position of symbol and its average cost
         tdvol = trade.volume
-        if trade.direction != DIRECTION_LONG:
+        if trade.direction != OrderData.DIRECTION_LONG:
             tdvol = -tdvol 
         else: 
             # pos.price
@@ -230,6 +230,6 @@ class BrokerDriver(object):
     def onTrade(self, trade):
         super(Account_AShare, self).onTrade(trade)
 
-        if trade.direction != DIRECTION_LONG:
+        if trade.direction != OrderData.DIRECTION_LONG:
             pos = self._dictPositions[trade.symbol]
             pos.posAvail -= trade.volume

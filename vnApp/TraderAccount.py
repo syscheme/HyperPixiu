@@ -74,21 +74,21 @@ class TraderAccount(Account):
         req.priceType = PRICETYPE_LIMITPRICE    
         
         # CTA委托类型映射
-        if orderType == CTAORDER_BUY:
-            req.direction = DIRECTION_LONG
-            req.offset = OFFSET_OPEN
+        if orderType == OrderData.ORDER_BUY:
+            req.direction = OrderData.DIRECTION_LONG
+            req.offset = OrderData.OFFSET_OPEN
             
-        elif orderType == CTAORDER_SELL:
-            req.direction = DIRECTION_SHORT
-            req.offset = OFFSET_CLOSE
+        elif orderType = OrderData.ORDER_SELL:
+            req.direction = OrderData.DIRECTION_SHORT
+            req.offset = OrderData.OFFSET_CLOSE
                 
-        elif orderType == CTAORDER_SHORT:
-            req.direction = DIRECTION_SHORT
-            req.offset = OFFSET_OPEN
+        elif orderType = OrderData.ORDER_SHORT:
+            req.direction = OrderData.DIRECTION_SHORT
+            req.offset = OrderData.OFFSET_OPEN
             
-        elif orderType == CTAORDER_COVER:
-            req.direction = DIRECTION_LONG
-            req.offset = OFFSET_CLOSE
+        elif orderType = OrderData.ORDER_COVER:
+            req.direction = OrderData.DIRECTION_LONG
+            req.offset = OrderData.OFFSET_CLOSE
             
         # 委托转换
         reqList = self._mainRoutine.convertOrderReq(req)
@@ -140,20 +140,20 @@ class TraderAccount(Account):
         so.volume = volume
         so.strategy = strategy
         so.stopOrderID = stopOrderID
-        so.status = STOPORDER_WAITING
+        so.status = OrderData.ORDER_WAITING
         
-        if orderType == CTAORDER_BUY:
-            so.direction = DIRECTION_LONG
-            so.offset = OFFSET_OPEN
-        elif orderType == CTAORDER_SELL:
-            so.direction = DIRECTION_SHORT
-            so.offset = OFFSET_CLOSE
-        elif orderType == CTAORDER_SHORT:
-            so.direction = DIRECTION_SHORT
-            so.offset = OFFSET_OPEN
-        elif orderType == CTAORDER_COVER:
-            so.direction = DIRECTION_LONG
-            so.offset = OFFSET_CLOSE           
+        if orderType == OrderData.ORDER_BUY:
+            so.direction = OrderData.DIRECTION_LONG
+            so.offset = OrderData.OFFSET_OPEN
+        elif orderType = OrderData.ORDER_SELL:
+            so.direction = OrderData.DIRECTION_SHORT
+            so.offset = OrderData.OFFSET_CLOSE
+        elif orderType = OrderData.ORDER_SHORT:
+            so.direction = OrderData.DIRECTION_SHORT
+            so.offset = OrderData.OFFSET_OPEN
+        elif orderType = OrderData.ORDER_COVER:
+            so.direction = OrderData.DIRECTION_LONG
+            so.offset = OrderData.OFFSET_CLOSE           
         
         # 保存stopOrder对象到字典中
         self.stopOrderDict[stopOrderID] = so
@@ -176,7 +176,7 @@ class TraderAccount(Account):
             strategy = so.strategy
             
             # 更改停止单状态为已撤销
-            so.status = STOPORDER_CANCELLED
+            so.status = OrderData.ORDER_CANCELLED
             
             # 从活动停止单字典中移除
             del self.workingStopOrderDict[stopOrderID]
@@ -199,12 +199,12 @@ class TraderAccount(Account):
             # 遍历等待中的停止单，检查是否会被触发
             for so in self.workingStopOrderDict.values():
                 if so.vtSymbol == vtSymbol:
-                    longTriggered = so.direction==DIRECTION_LONG and tick.lastPrice>=so.price        # 多头停止单被触发
-                    shortTriggered = so.direction==DIRECTION_SHORT and tick.lastPrice<=so.price     # 空头停止单被触发
+                    longTriggered = OrderData.DIRECTION_LONG and tick.lastPrice>=so.price        # 多头停止单被触发
+                    shortTriggered = OrderData.DIRECTION_SHORT and tick.lastPrice<=so.price     # 空头停止单被触发
                     
                     if longTriggered or shortTriggered:
                         # 买入和卖出分别以涨停跌停价发单（模拟市价单）
-                        if so.direction==DIRECTION_LONG:
+                        if so.direction= OrderData.DIRECTION_LONG:
                             price = tick.upperLimit
                         else:
                             price = tick.lowerLimit
@@ -221,7 +221,7 @@ class TraderAccount(Account):
                             s.remove(so.stopOrderID)
                         
                         # 更新停止单状态，并通知策略
-                        so.status = STOPORDER_TRIGGERED
+                        so.status = OrderData.ORDER_TRIGGERED
                         so.strategy.onStopOrder(so)
 
     #----------------------------------------------------------------------
@@ -283,7 +283,7 @@ class TraderAccount(Account):
             strategy = self.orderStrategyDict[trade.vtOrderID]
             
             # 计算策略持仓
-            if trade.direction == DIRECTION_LONG:
+            if trade.direction = OrderData.DIRECTION_LONG:
                 strategy.pos += trade.volume
             else:
                 strategy.pos -= trade.volume

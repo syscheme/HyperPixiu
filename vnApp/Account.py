@@ -7,48 +7,32 @@ from __future__ import division
 
 from datetime import datetime, timedelta
 from collections import OrderedDict
-from itertools import product
+# from itertools import product
 import multiprocessing
 import copy
 import threading
+import traceback
 
 import jsoncfg # pip install json-cfg
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
+# import pandas as pd
+# import numpy as np
+# import matplotlib.pyplot as plt
 
-from vnApp.EventChannel import *
+from .EventChannel import EventChannel, EventData, datetime2float
 
 # 如果安装了seaborn则设置为白色风格
-try:
-    import seaborn as sns       
-    sns.set_style('whitegrid')  
-except ImportError:
-    pass
+# try:
+#     import seaborn as sns       
+#     sns.set_style('whitegrid')  
+# except ImportError:
+#     pass
 
-from pymongo import MongoClient, ASCENDING
-from pymongo.errors import ConnectionFailure
-
-from vnpy.trader.vtGlobal import globalSetting
-from vnpy.trader.vtObject import VtTickData, VtBarData
-from vnpy.trader.vtConstant import *
+from pymongo import ASCENDING
 
 ########################################################################
 # 常量定义
 ########################################################################
-from vnpy.trader.app.ctaStrategy import ctaBase
-
-# 涉及到的交易方向类型
-ORDER_BUY   = ctaBase.CTAORDER_BUY    # u'买开' 是指投资者对未来价格趋势看涨而采取的交易手段，买进持有看涨合约，意味着帐户资金买进合约而冻结
-ORDER_SELL  = ctaBase.CTAORDER_SELL   # u'卖平' 是指投资者对未来价格趋势不看好而采取的交易手段，而将原来买进的看涨合约卖出，投资者资金帐户解冻
-ORDER_SHORT = ctaBase.CTAORDER_SHORT  # u'卖开' 是指投资者对未来价格趋势看跌而采取的交易手段，卖出看跌合约。卖出开仓，帐户资金冻结
-ORDER_COVER = ctaBase.CTAORDER_COVER  # u'买平' 是指投资者将持有的卖出合约对未来行情不再看跌而补回以前卖出合约，与原来的卖出合约对冲抵消退出市场，帐户资金解冻
-
-# 本地停止单状态
-STOPORDER_WAITING   = u'WAITING'   #u'等待中'
-STOPORDER_CANCELLED = u'CANCELLED' #u'已撤销'
-STOPORDER_TRIGGERED = u'TRIGGERED' #u'已触发'
 
 # 数据库名称
 SETTING_DB_NAME = 'vnDB_Setting'
@@ -120,12 +104,12 @@ class Account(object):
 
         self._dateToday      = None # date of previous close
         self._datePrevClose  = None # date of previous close
-        self._prevPositions = {} # dict from symbol to previous VtPositionData
+        self._prevPositions = {} # dict from symbol to previous PositionData
 
         self._dictOutgoingOrders = {} # the outgoing orders dict from reqId to OrderData that has not been confirmed with broker's orderId
         # cached data from broker
-        self._dictPositions = { # dict from symbol to latest VtPositionData
-            Account.SYMBOL_CASH : VtPositionData()
+        self._dictPositions = { # dict from symbol to latest PositionData
+            Account.SYMBOL_CASH : PositionData()
         }
         self._dictTrades = {} # dict from tradeId to trade confirmed during today
         self._dictStopOrders = {} # dict from broker's orderId to OrderData that has been submitted but not yet traded
@@ -141,7 +125,7 @@ class Account(object):
         self.size      = self._settings.size(1)               # 合约大小，默认为1    
         self._priceTick = self._settings.priceTick(0)      # 价格最小变动 
         
-        self.initData = []          # 初始化用的数据
+        # self.initData = []          # 初始化用的数据
         
         # # 保存vtSymbol和策略实例映射的字典（用于推送tick数据）
         # # 由于可能多个strategy交易同一个vtSymbol，因此key为vtSymbol
@@ -156,7 +140,7 @@ class Account(object):
         # # key为name，value为保存orderID（限价+本地停止）的集合
         # self.strategyOrderDict = {}
 
-        self._lstLogs = []               # 日志记录
+        # self._lstLogs = []               # 日志记录
 
     #----------------------------------------------------------------------
     #  properties
@@ -186,13 +170,13 @@ class Account(object):
 
     #----------------------------------------------------------------------
     @abstractmethod
-    def getPosition(self, symbol): # returns VtPositionData
+    def getPosition(self, symbol): # returns PositionData
         with self._lock :
             if not symbol in self._dictPositions:
-                return VtPositionData()
-            return copy(self._dictPositions[symbol])
+                return PositionData()
+            return copy.copy(self._dictPositions[symbol])
 
-    def getAllPositions(self): # returns VtPositionData
+    def getAllPositions(self): # returns PositionData
         with self._lock :
             return copy.deepcopy(self._dictPositions)
 
@@ -233,18 +217,18 @@ class Account(object):
         orderData.source      = source
 
         # 报单方向
-        if orderType == ORDER_BUY:
-            orderData.direction = DIRECTION_LONG
-            orderData.offset = OFFSET_OPEN
-        elif orderType == ORDER_SELL:
-            orderData.direction = DIRECTION_SHORT
-            orderData.offset = OFFSET_CLOSE
-        elif orderType == ORDER_SHORT:
-            orderData.direction = DIRECTION_SHORT
-            orderData.offset = OFFSET_OPEN
-        elif orderType == ORDER_COVER:
-            orderData.direction = DIRECTION_LONG
-            orderData.offset = OFFSET_CLOSE     
+        if orderType == OrderData.ORDER_BUY:
+            orderData.direction = OrderData.DIRECTION_LONG
+            orderData.offset = OrderData.OFFSET_OPEN
+        elif orderType == OrderData.ORDER_SELL:
+            orderData.direction = OrderData.DIRECTION_SHORT
+            orderData.offset = OrderData.OFFSET_CLOSE
+        elif orderType == OrderData.ORDER_SHORT:
+            orderData.direction = OrderData.DIRECTION_SHORT
+            orderData.offset = OrderData.OFFSET_OPEN
+        elif orderType == OrderData.ORDER_COVER:
+            orderData.direction = OrderData.DIRECTION_LONG
+            orderData.offset = OrderData.OFFSET_CLOSE     
 
         with self._lock :
             self._dictOutgoingOrders[orderData.reqId] = orderData
@@ -273,18 +257,18 @@ class Account(object):
         orderData.source      = source
         
         # 报单方向
-        if orderType == ORDER_BUY:
-            orderData.direction = DIRECTION_LONG
-            orderData.offset = OFFSET_OPEN
-        elif orderType == ORDER_SELL:
-            orderData.direction = DIRECTION_SHORT
-            orderData.offset = OFFSET_CLOSE
-        elif orderType == ORDER_SHORT:
-            orderData.direction = DIRECTION_SHORT
-            orderData.offset = OFFSET_OPEN
-        elif orderType == ORDER_COVER:
-            orderData.direction = DIRECTION_LONG
-            orderData.offset = OFFSET_CLOSE     
+        if orderType == OrderData.ORDER_BUY:
+            orderData.direction = OrderData.DIRECTION_LONG
+            orderData.offset = OrderData.OFFSET_OPEN
+        elif orderType == OrderData.ORDER_SELL:
+            orderData.direction = OrderData.DIRECTION_SHORT
+            orderData.offset = OrderData.OFFSET_CLOSE
+        elif orderType == OrderData.ORDER_SHORT:
+            orderData.direction = OrderData.DIRECTION_SHORT
+            orderData.offset = OrderData.OFFSET_OPEN
+        elif orderType == OrderData.ORDER_COVER:
+            orderData.direction = OrderData.DIRECTION_LONG
+            orderData.offset = OrderData.OFFSET_CLOSE     
 
         with self._lock :
             self._dictOutgoingOrders[orderData.reqId] = orderData
@@ -318,7 +302,7 @@ class Account(object):
 
         self.info('order[%s] has been placed, brokerOrderId[%s]' % (orderData.desc, orderData.brokerOrderId))
 
-        if orderData.direction == DIRECTION_LONG:
+        if orderData.direction == OrderData.DIRECTION_LONG:
             turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.totalVolume)
             self._cashChange(-(turnover + commission + slippage))
 
@@ -332,7 +316,7 @@ class Account(object):
     @abstractmethod
     def _broker_onCancelled(self, orderData):
         """撤单回调"""
-        orderData.status = STATUS_CANCELLED
+        orderData.status = OrderData.STATUS_CANCELLED
         if len(orderData.cancelTime) <=0:
             orderData.cancelTime = self._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:3]
 
@@ -350,7 +334,7 @@ class Account(object):
             except:
                 pass
 
-            if orderData.direction == DIRECTION_LONG:
+            if orderData.direction == OrderData.DIRECTION_LONG:
                 turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.volume)
                 self._cashChange(turnover + commission + slippage)
 
@@ -383,8 +367,8 @@ class Account(object):
             except:
                 pass
 
-            if orderData.direction == DIRECTION_LONG:
-                turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.volume)
+            if orderData.direction == OrderData.DIRECTION_LONG:
+                turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.totalVolume)
                 self._cashChange(turnover + commission + slippage)
 
         self.postEvent_Order(orderData)
@@ -402,7 +386,7 @@ class Account(object):
             # update the current postion, this may overwrite during the sync by BrokerDriver
             s = trade.symbol
             if not s in self._dictPositions :
-                self._dictPositions[s] = VtPositionData()
+                self._dictPositions[s] = PositionData()
                 pos = self._dictPositions[s]
                 pos.symbol = s
 #                pos.vtSymbol = trade.vtSymbol
@@ -416,7 +400,7 @@ class Account(object):
             # pos.frozen =  # 冻结数量
 
             # update the position of symbol and its average cost
-            if trade.direction != DIRECTION_LONG:
+            if trade.direction != OrderData.DIRECTION_LONG:
                 turnover, commission, slippage = self.calcAmountOfTrade(s, trade.price, -trade.volume)
                 tradeAmount = turnover - commission - slippage
                 # sold, increase both cash aval/total
@@ -566,7 +550,7 @@ class Account(object):
 
         self._dateToday = newDate
         self._dictTrades.clear() # clean the trade list
-        # shift the positions, must do copy each VtPositionData
+        # shift the positions, must do copy each PositionData
         self._prevPositions = self.getAllPositions()
         self._state = Account.STATE_OPEN
     
@@ -592,21 +576,12 @@ class Account(object):
             tl = self._dictTrades.values()
             for t in tl:
                 self._trader.dbUpdate(self.collectionName_trade, t.__dict__, {'brokerTradeId': t.brokerTradeId})
-                    # db = self._dbConn['Account']
-                    # collection = db[tblName]
-                    # collection.ensure_index([('brokerTradeId', ASCENDING)], unique=True) #TODO this should init ONCE
-                    # collection = db[tblName]
-                    # collection.update({'brokerTradeId':t.brokerTradeId}, t.__dict__, True)
             self.info('saveDataOfDay() saved %s trades' % len(tl))
 
         # part 2. the daily position
         result, _ = self.calcDailyPositions()
         for l in result:
             self._trader.dbUpdate(self.collectionName_dpos, l, {'date':l['date'], 'symbol':l['symbol']})
-                # db = self._dbConn['Account']
-                # collection = db[tblName]
-                # collection.ensure_index([('date', ASCENDING), ('symbol', ASCENDING)], unique=True) #TODO this should init ONCE
-                # collection.update({'date':l['date'], 'symbol':l['symbol']}, l, True)
         self.info('saveDataOfDay() saved positions: %s' % result)
 
     @abstractmethod
@@ -616,6 +591,35 @@ class Account(object):
             since = self._datePrevClose
         pass
 
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def stdout(self, message):
+        """输出内容"""
+        print str(self._broker_datetimeAsOf()) + " ACC[" + self.ident + "] " + message
+
+    def debug(self, msg):
+        self._trader._engine.debug('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
+        
+    def info(self, msg):
+        """正常输出"""
+        self._trader._engine.info('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
+
+    def warn(self, msg):
+        """警告信息"""
+        self._trader._engine.warn('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
+        
+    def error(self, msg):
+        """报错输出"""
+        self._trader._engine.error('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
+
+    #----------------------------------------------------------------------
+    def stop(self):
+        """停止"""
+        pass
+
+    #----------------------------------------------------------------------
+    #  account daily statistics methods
+    #----------------------------------------------------------------------
     @abstractmethod
     def calcDailyPositions(self):
         """今日交易的结果"""
@@ -641,7 +645,7 @@ class Account(object):
             if s in self._prevPositions:
                 prevPos = self._prevPositions[s]
             else:
-                prevPos = VtPositionData()
+                prevPos = PositionData()
             
             tcBuy      = 0
             tcSell     = 0
@@ -667,7 +671,7 @@ class Account(object):
             calcPosition = prevPos.position
 
             for trade in tradesOfSymbol[s]:
-                if trade.direction == DIRECTION_LONG:
+                if trade.direction == OrderData.DIRECTION_LONG:
                     posChange = trade.volume
                     tcBuy += 1
                 else:
@@ -727,246 +731,44 @@ class Account(object):
 
         return result, tradesOfSymbol
 
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def stdout(self, message):
-        """输出内容"""
-        print str(self._broker_datetimeAsOf()) + " ACC[" + self.ident + "] " + message
+    # def updateDailyStat(self, dt, price):
+    #     """更新每日收盘价"""
+    #     date = dt.date()
+    #     self._statDaily = DailyResult(date, price)
 
-    def debug(self, msg):
-        self._trader._engine.debug('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
-        
-    def info(self, msg):
-        """正常输出"""
-        self._trader._engine.info('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
+    #     # 将成交添加到每日交易结果中
+    #     for trade in self._dictTrades.values():
+    #         self._statDaily.addTrade(trade)
+            
+    # def evaluateDailyStat(self, startdate, enddate):
+    #     previousClose = 0
+    #     openPosition = 0
+    #     # TODO: read the statDaily from the DB
+    #     # for dailyResult in self.dailyResultDict.values():
+    #     #     dailyResult.previousClose = previousClose
+    #     #     previousClose = dailyResult.closePrice
+            
+    #     #     dailyResult.calculatePnl(self._account, openPosition)
+    #     #     openPosition = dailyResult.closePosition
+            
+    #     # 生成DataFrame
+    #     resultDict ={}
+    #     for k in dailyResult.__dict__.keys() :
+    #         if k == 'tradeList' : # to exclude some columns
+    #             continue
+    #         resultDict[k] =[]
 
-    def warn(self, msg):
-        """警告信息"""
-        self._trader._engine.warn('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
-        
-    def error(self, msg):
-        """报错输出"""
-        self._trader._engine.error('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
-
-    # #----------------------------------------------------------------------
-    # def loadStrategy(self, setting):
-    #     """载入策略"""
-    #     try:
-    #         name = setting['name']
-    #         className = setting['className']
-    #     except Exception:
-    #         msg = traceback.format_exc()
-    #         self.debug(u'错误策略配置：%s' %msg)
-    #         return
-        
-    #     # 获取策略类
-    #     strategyClass = STRATEGY_CLASS.get(className, None)
-    #     if not strategyClass:
-    #         self.debug(u'找不到策略类：%s' %className)
-    #         return
-        
-    #     # 防止策略重名
-    #     if name in self._strategyDict:
-    #         self.debug(u'策略实例重名：%s' %name)
-    #     else:
-    #         # 创建策略实例
-    #         strategy = strategyClass(self, setting)  
-    #         self._strategyDict[name] = strategy
-            
-    #         # 创建委托号列表
-    #         self.strategyOrderDict[name] = set()
-            
-    #         # 保存Tick映射关系
-    #         if strategy.vtSymbol in self._idxTickToStrategy:
-    #             l = self._idxTickToStrategy[strategy.vtSymbol]
-    #         else:
-    #             l = []
-    #             self._idxTickToStrategy[strategy.vtSymbol] = l
-    #         l.append(strategy)
-            
-    # #----------------------------------------------------------------------
-    # def getStrategyNames(self):
-    #     """查询所有策略名称"""
-    #     return self._strategyDict.keys()        
-        
-    # #----------------------------------------------------------------------
-    # def getStrategyVar(self, name):
-    #     """获取策略当前的变量字典"""
-    #     if name in self._strategyDict:
-    #         strategy = self._strategyDict[name]
-    #         varDict = OrderedDict()
-            
-    #         for key in strategy.varList:
-    #             varDict[key] = strategy.__getattribute__(key)
-            
-    #         return varDict
-    #     else:
-    #         self.debug(u'策略实例不存在：' + name)    
-    #         return None
-    
-    # #----------------------------------------------------------------------
-    # def getStrategyParam(self, name):
-    #     """获取策略的参数字典"""
-    #     if name in self._strategyDict:
-    #         strategy = self._strategyDict[name]
-    #         paramDict = OrderedDict()
-            
-    #         for key in strategy.paramList:  
-    #             paramDict[key] = strategy.__getattribute__(key)
-            
-    #         return paramDict
-    #     else:
-    #         self.debug(u'策略实例不存在：' + name)    
-    #         return None
-    
-    # #----------------------------------------------------------------------
-    # def initStrategy(self, name):
-    #     """初始化策略"""
-    #     if not name in self._strategyDict:
-    #         strategy = self._strategyDict[name]
-    #         self.debug(u'策略实例不存在：%s' %name)
-    #         return
-            
-    #     if strategy and strategy.inited:
-    #         self.debug(u'请勿重复初始化策略实例：%s' %name)
-    #         return
-
-    #     strategy.inited = True
-    #     self.callStrategyFunc(strategy, strategy.onInit)
-    #     self.loadSyncData(strategy)                             # 初始化完成后加载同步数据
-    #     self.subscribeMarketData(strategy)                      # 加载同步数据后再订阅行情
-
-    # #---------------------------------------------------------------------
-    # def startStrategy(self, name):
-    #     """启动策略"""
-    #     if name in self._strategyDict:
-    #         strategy = self._strategyDict[name]
-            
-    #         if strategy.inited and not strategy.trading:
-    #             strategy.trading = True
-    #             self.callStrategyFunc(strategy, strategy.onStart)
-    #     else:
-    #         self.debug(u'策略实例不存在：%s' %name)
-    
-    # #----------------------------------------------------------------------
-    # def stopStrategy(self, name):
-    #     """停止策略"""
-    #     if name in self._strategyDict:
-    #         strategy = self._strategyDict[name]
-            
-    #         if strategy.trading:
-    #             strategy.trading = False
-    #             self.callStrategyFunc(strategy, strategy.onStop)
+    #     for dailyResult in self.dailyResultDict.values():
+    #         for k, v in dailyResult.__dict__.items() :
+    #             if k in resultDict :
+    #                 resultDict[k].append(v)
                 
-    #             # 对该策略发出的所有限价单进行撤单
-    #             for brokerOrderId, s in self.orderStrategyDict.items():
-    #                 if s is strategy:
-    #                     self.cancelOrder(brokerOrderId)
-                
-    #             # 对该策略发出的所有本地停止单撤单
-    #             for stopOrderID, so in self.workingStopOrderDict.items():
-    #                 if so.strategy is strategy:
-    #                     self.cancelStopOrder(stopOrderID)   
-    #     else:
-    #         self.debug(u'策略实例不存在：%s' %name)    
-            
-    # #----------------------------------------------------------------------
-    # def callStrategyFunc(self, strategy, func, params=None):
-    #     """调用策略的函数，若触发异常则捕捉"""
-    #     try:
-    #         if params:
-    #             func(params)
-    #         else:
-    #             func()
-    #     except Exception:
-    #         # 停止策略，修改状态为未初始化
-    #         strategy.trading = False
-    #         strategy.inited = False
-            
-    #         # 发出日志
-    #         content = '\n'.join([u'策略%s触发异常已停止' %strategy.name,
-    #                             traceback.format_exc()])
-    #         self.debug(content)
-            
-    # #----------------------------------------------------------------------
-    # def initAll(self):
-    #     """全部初始化"""
-    #     for name in self._strategyDict.keys():
-    #         self.initStrategy(name)    
-            
-    # #----------------------------------------------------------------------
-    # def startAll(self):
-    #     """全部启动"""
-    #     for name in self._strategyDict.keys():
-    #         self.startStrategy(name)
-            
-    #----------------------------------------------------------------------
-    def stop(self):
-        """停止"""
-        pass
-
-    # #----------------------------------------------------------------------
-    # def stopAll(self):
-    #     """全部停止"""
-    #     for name in self._strategyDict.keys():
-    #         self.stopStrategy(name)    
-    
-    # #----------------------------------------------------------------------
-    # def saveSetting(self):
-    #     """保存策略配置"""
-    #     with open(self.settingfilePath, 'w') as f:
-    #         l = []
-            
-    #         for strategy in self._strategyDict.values():
-    #             setting = {}
-    #             for param in strategy.paramList:
-    #                 setting[param] = strategy.__getattribute__(param)
-    #             l.append(setting)
-            
-    #         jsonL = json.dumps(l, indent=4)
-    #         f.write(jsonL)
-    
-    #----------------------------------------------------------------------
-    #  account daily statistics methods
-    #----------------------------------------------------------------------
-    def updateDailyStat(self, dt, price):
-        """更新每日收盘价"""
-        date = dt.date()
-        self._statDaily = DailyResult(date, price)
-
-        # 将成交添加到每日交易结果中
-        for trade in self._dictTrades.values():
-            self._statDaily.addTrade(trade)
-            
-    def evaluateDailyStat(self, startdate, enddate):
-        previousClose = 0
-        openPosition = 0
-        # TODO: read the statDaily from the DB
-        # for dailyResult in self.dailyResultDict.values():
-        #     dailyResult.previousClose = previousClose
-        #     previousClose = dailyResult.closePrice
-            
-        #     dailyResult.calculatePnl(self._account, openPosition)
-        #     openPosition = dailyResult.closePosition
-            
-        # 生成DataFrame
-        resultDict ={}
-        for k in dailyResult.__dict__.keys() :
-            if k == 'tradeList' : # to exclude some columns
-                continue
-            resultDict[k] =[]
-
-        for dailyResult in self.dailyResultDict.values():
-            for k, v in dailyResult.__dict__.items() :
-                if k in resultDict :
-                    resultDict[k].append(v)
-                
-        resultDf = pd.DataFrame.from_dict(resultDict)
+    #     resultDf = pd.DataFrame.from_dict(resultDict)
         
-        # 计算衍生数据
-        resultDf = resultDf.set_index('date')
+    #     # 计算衍生数据
+    #     resultDf = resultDf.set_index('date')
 
-        return resultDf
+    #     return resultDf
 
 
 ########################################################################
@@ -1013,7 +815,7 @@ class Account_AShare(Account):
     # def onTrade(self, trade):
     #     super(Account_AShare, self).onTrade(trade)
 
-    #     if trade.direction == DIRECTION_LONG:
+    #     if trade.direction = OrderData.DIRECTION_LONG:
     #         return
 
     #     with self._lock :
@@ -1021,10 +823,46 @@ class Account_AShare(Account):
     #             self._dictPositions[trade.symbol].posAvail -= trade.volume
 
 ########################################################################
-class OrderData(object):
+class OrderData(EventData):
     """订单数据类"""
     # 本地停止单前缀
     STOPORDERPREFIX = 'SO#'
+
+    # 涉及到的交易方向类型
+    ORDER_BUY   = u'BUY'   # u'买开' 是指投资者对未来价格趋势看涨而采取的交易手段，买进持有看涨合约，意味着帐户资金买进合约而冻结
+    ORDER_SELL  = u'SELL'  # u'卖平' 是指投资者对未来价格趋势不看好而采取的交易手段，而将原来买进的看涨合约卖出，投资者资金帐户解冻
+    ORDER_SHORT = u'SHORT' # u'卖开' 是指投资者对未来价格趋势看跌而采取的交易手段，卖出看跌合约。卖出开仓，帐户资金冻结
+    ORDER_COVER = u'COVER' # u'买平' 是指投资者将持有的卖出合约对未来行情不再看跌而补回以前卖出合约，与原来的卖出合约对冲抵消退出市场，帐户资金解冻
+
+    # 本地停止单状态
+    STOPORDER_WAITING   = u'WAITING'   #u'等待中'
+    STOPORDER_CANCELLED = u'CANCELLED' #u'已撤销'
+    STOPORDER_TRIGGERED = u'TRIGGERED' #u'已触发'
+
+    # 方向常量
+    DIRECTION_NONE = u'none'
+    DIRECTION_LONG = u'long'
+    DIRECTION_SHORT = u'short'
+    DIRECTION_UNKNOWN = u'unknown'
+    DIRECTION_NET = u'net'
+    DIRECTION_SELL = u'sell'      # IB接口
+    DIRECTION_COVEREDSHORT = u'covered short'    # 证券期权
+
+    # 开平常量
+    OFFSET_NONE = u'none'
+    OFFSET_OPEN = u'open'
+    OFFSET_CLOSE = u'close'
+    OFFSET_CLOSETODAY = u'close today'
+    OFFSET_CLOSEYESTERDAY = u'close yesterday'
+    OFFSET_UNKNOWN = u'unknown'
+
+    # 状态常量
+    STATUS_NOTTRADED = u'pending'
+    STATUS_PARTTRADED = u'partial filled'
+    STATUS_ALLTRADED = u'filled'
+    STATUS_CANCELLED = u'cancelled'
+    STATUS_REJECTED = u'rejected'
+    STATUS_UNKNOWN = u'unknown'
 
     #----------------------------------------------------------------------
     def __init__(self, account, stopOrder=False):
@@ -1034,25 +872,25 @@ class OrderData(object):
         # 代码编号相关
         self.reqId   = account.nextOrderReqId # 订单编号
         if stopOrder:
-            self.reqId  = STOPORDERPREFIX +self.reqId
+            self.reqId  = OrderData.STOPORDERPREFIX +self.reqId
 
-        self.brokerOrderId = EMPTY_STRING   # 订单在vt系统中的唯一编号，通常是 Gateway名.订单编号
+        self.brokerOrderId = EventData.EMPTY_STRING   # 订单在vt系统中的唯一编号，通常是 Gateway名.订单编号
         self.accountId = account.ident          # 成交归属的帐号
         self.exchange = account._exchange    # 交易所代码
 
-        self.symbol   = EMPTY_STRING         # 合约代码
+        self.symbol   = EventData.EMPTY_STRING         # 合约代码
         
         # 报单相关
-        self.direction = EMPTY_UNICODE  # 报单方向
-        self.offset = EMPTY_UNICODE     # 报单开平仓
-        self.price = EMPTY_FLOAT        # 报单价格
-        self.totalVolume = EMPTY_INT    # 报单总数量
-        self.tradedVolume = EMPTY_INT   # 报单成交数量
-        self.status = EMPTY_UNICODE     # 报单状态
+        self.direction = EventData.EMPTY_UNICODE  # 报单方向
+        self.offset = EventData.EMPTY_UNICODE     # 报单开平仓
+        self.price = EventData.EMPTY_FLOAT        # 报单价格
+        self.totalVolume = EventData.EMPTY_INT    # 报单总数量
+        self.tradedVolume = EventData.EMPTY_INT   # 报单成交数量
+        self.status = EventData.EMPTY_UNICODE     # 报单状态
         
         self.orderTime  = account._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:-3] # 发单时间
-        self.cancelTime = EMPTY_STRING  # 撤单时间
-        self.source     = EMPTY_STRING  # trigger source
+        self.cancelTime = EventData.EMPTY_STRING  # 撤单时间
+        self.source     = EventData.EMPTY_STRING  # trigger source
 
     @property
     def desc(self) :
@@ -1066,19 +904,19 @@ class OrderData(object):
 #     #----------------------------------------------------------------------
 #     def __init__(self):
 #         """Constructor"""
-#         self.vtSymbol = EMPTY_STRING
-#         self.orderType = EMPTY_UNICODE
-#         self.direction = EMPTY_UNICODE
-#         self.offset = EMPTY_UNICODE
-#         self.price = EMPTY_FLOAT
-#         self.volume = EMPTY_INT
+#         self.vtSymbol = EventData.EMPTY_STRING
+#         self.orderType = EventData.EMPTY_UNICODE
+#         self.direction = EventData.EMPTY_UNICODE
+#         self.offset = EventData.EMPTY_UNICODE
+#         self.price = EventData.EMPTY_FLOAT
+#         self.volume = EventData.EMPTY_INT
         
 #         self.strategy = None             # 下停止单的策略对象
-#         self.stopOrderID = EMPTY_STRING  # 停止单的本地编号 
-#         self.status = EMPTY_STRING       # 停止单状态
+#         self.stopOrderID = EventData.EMPTY_STRING  # 停止单的本地编号 
+#         self.status = EventData.EMPTY_STRING       # 停止单状态
 
 ########################################################################
-class TradeData(object):
+class TradeData(EventData):
     """成交数据类"""
     # # 状态常量
     # STATUS_NOTTRADED  = u'NOTTRADED' # u'未成交'
@@ -1093,22 +931,22 @@ class TradeData(object):
         """Constructor"""
         super(TradeData, self).__init__()
         
-        self.tradeID   = EMPTY_STRING           # 成交编号
-        self.brokerTradeId = EMPTY_STRING           # 成交在vt系统中的唯一编号，通常是 Gateway名.成交编号
+        self.tradeID   = EventData.EMPTY_STRING           # 成交编号
+        self.brokerTradeId = EventData.EMPTY_STRING           # 成交在vt系统中的唯一编号，通常是 Gateway名.成交编号
         self.accountId = account.ident          # 成交归属的帐号
         self.exchange = account._exchange       # 交易所代码
 
         # 代码编号相关
-        self.symbol = EMPTY_STRING              # 合约代码
+        self.symbol = EventData.EMPTY_STRING              # 合约代码
         
-        self.orderID = EMPTY_STRING             # 订单编号
-        # self.vtOrderID = EMPTY_STRING           # 订单在vt系统中的唯一编号，通常是 Gateway名.订单编号
+        self.orderID = EventData.EMPTY_STRING             # 订单编号
+        # self.vtOrderID = EventData.EMPTY_STRING           # 订单在vt系统中的唯一编号，通常是 Gateway名.订单编号
         
         # 成交相关
-        self.direction = EMPTY_UNICODE          # 成交方向
-        self.offset = EMPTY_UNICODE             # 成交开平仓
-        self.price = EMPTY_FLOAT                # 成交价格
-        self.volume = EMPTY_INT                 # 成交数量
+        self.direction = EventData.EMPTY_UNICODE          # 成交方向
+        self.offset = EventData.EMPTY_UNICODE             # 成交开平仓
+        self.price = EventData.EMPTY_FLOAT                # 成交价格
+        self.volume = EventData.EMPTY_INT                 # 成交数量
         self.dt     = None                      # 成交时间 datetime
    
     @property
@@ -1116,36 +954,36 @@ class TradeData(object):
         return '%s(%s)-%s: %dx%s' % (self.direction, self.symbol, self.brokerTradeId, self.volume, self.price)
 
 ########################################################################
-class VtPositionData(object): # (VtBaseData):
+class PositionData(EventData):
     """持仓数据类"""
 
     #----------------------------------------------------------------------
     def __init__(self):
         """Constructor"""
-        super(VtPositionData, self).__init__()
+        super(PositionData, self).__init__()
         
         # 代码编号相关
-        self.symbol   = EMPTY_STRING            # 合约代码
-        self.exchange = EMPTY_STRING            # 交易所代码
-        self.vtSymbol = EMPTY_STRING            # 合约在vt系统中的唯一代码，合约代码.交易所代码  
+        self.symbol   = EventData.EMPTY_STRING            # 合约代码
+        self.exchange = EventData.EMPTY_STRING            # 交易所代码
+        self.vtSymbol = EventData.EMPTY_STRING            # 合约在vt系统中的唯一代码，合约代码.交易所代码  
         
         # 持仓相关
-        self.direction      = EMPTY_STRING      # 持仓方向
-        self.position       = EMPTY_INT         # 持仓量
-        self.posAvail       = EMPTY_INT         # 冻结数量
-        self.price          = EMPTY_FLOAT       # 持仓最新交易价
-        self.avgPrice       = EMPTY_FLOAT       # 持仓均价
-        self.vtPositionName = EMPTY_STRING      # 持仓在vt系统中的唯一代码，通常是vtSymbol.方向
-        # self.ydPosition     = EMPTY_INT         # 昨持仓
-        # self.positionProfit = EMPTY_FLOAT       # 持仓盈亏
-        self.stampByTrader   = EMPTY_INT         # 该持仓数是基于Trader的计算
-        self.stampByBroker = EMPTY_INT        # 该持仓数是基于与broker的数据同步
+        self.direction      = EventData.EMPTY_STRING      # 持仓方向
+        self.position       = EventData.EMPTY_INT         # 持仓量
+        self.posAvail       = EventData.EMPTY_INT         # 冻结数量
+        self.price          = EventData.EMPTY_FLOAT       # 持仓最新交易价
+        self.avgPrice       = EventData.EMPTY_FLOAT       # 持仓均价
+        self.vtPositionName = EventData.EMPTY_STRING      # 持仓在vt系统中的唯一代码，通常是vtSymbol.方向
+        # self.ydPosition     = EventData.EMPTY_INT         # 昨持仓
+        # self.positionProfit = EventData.EMPTY_FLOAT       # 持仓盈亏
+        self.stampByTrader   = EventData.EMPTY_INT         # 该持仓数是基于Trader的计算
+        self.stampByBroker = EventData.EMPTY_INT        # 该持仓数是基于与broker的数据同步
 
 
 ########################################################################
 class PositionDetail(object):
     """本地维护的持仓信息"""
-    WORKING_STATUS = [STATUS_UNKNOWN, STATUS_NOTTRADED, STATUS_PARTTRADED]
+    WORKING_STATUS = [OrderData.STATUS_UNKNOWN, OrderData.STATUS_NOTTRADED, OrderData.STATUS_PARTTRADED]
     
     MODE_NORMAL = 'normal'          # 普通模式
     MODE_SHFE = 'shfe'              # 上期所今昨分别平仓
@@ -1155,9 +993,9 @@ class PositionDetail(object):
     def __init__(self, vtSymbol, contract=None):
         """Constructor"""
         self.vtSymbol = vtSymbol
-        self.symbol = EMPTY_STRING
-        self.exchange = EMPTY_STRING
-        self.name = EMPTY_UNICODE    
+        self.symbol = EventData.EMPTY_STRING
+        self.exchange = EventData.EMPTY_STRING
+        self.name = EventData.EMPTY_UNICODE    
         self.size = 1
         
         if contract:
@@ -1166,27 +1004,28 @@ class PositionDetail(object):
             self.name = contract.name
             self.size = contract.size
         
-        self.longPos = EMPTY_INT
-        self.longYd = EMPTY_INT
-        self.longTd = EMPTY_INT
-        self.longPosFrozen = EMPTY_INT
-        self.longYdFrozen = EMPTY_INT
-        self.longTdFrozen = EMPTY_INT
-        self.longPnl = EMPTY_FLOAT
-        self.longPrice = EMPTY_FLOAT
+        self.longPos = EventData.EMPTY_INT
+        self.longYd = EventData.EMPTY_INT
+        self.longTd = EventData.EMPTY_INT
+        self.longPosFrozen = EventData.EMPTY_INT
+        self.longYdFrozen = EventData.EMPTY_INT
+        self.longTdFrozen = EventData.EMPTY_INT
+        self.longPnl = EventData.EMPTY_FLOAT
+        self.longPrice = EventData.EMPTY_FLOAT
         
-        self.shortPos = EMPTY_INT
-        self.shortYd = EMPTY_INT
-        self.shortTd = EMPTY_INT
-        self.shortPosFrozen = EMPTY_INT
-        self.shortYdFrozen = EMPTY_INT
-        self.shortTdFrozen = EMPTY_INT
-        self.shortPnl = EMPTY_FLOAT
-        self.shortPrice = EMPTY_FLOAT
+        self.shortPos = EventData.EMPTY_INT
+        self.shortYd = EventData.EMPTY_INT
+        self.shortTd = EventData.EMPTY_INT
+        self.shortPosFrozen = EventData.EMPTY_INT
+        self.shortYdFrozen = EventData.EMPTY_INT
+        self.shortTdFrozen = EventData.EMPTY_INT
+        self.shortPnl = EventData.EMPTY_FLOAT
+        self.shortPrice = EventData.EMPTY_FLOAT
         
-        self.lastPrice = EMPTY_FLOAT
+        self.lastPrice = EventData.EMPTY_FLOAT
         
         self.mode = self.MODE_NORMAL
-        self.exchange = EMPTY_STRING
+        self.exchange = EventData.EMPTY_STRING
         
         self._dictWorkingOrder = {}
+

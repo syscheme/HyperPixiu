@@ -378,7 +378,7 @@ class BackTest(object):
         for orderID, order in self.tdDriver.workingLimitOrderDict.items():
             # 推送委托进入队列（未成交）的状态更新
             if not order.status:
-                order.status = STATUS_NOTTRADED
+                order.status = OrderData.STATUS_NOTTRADED
                 self.strategy.onOrder(order)
 
             # 判断是否会成交
@@ -453,14 +453,14 @@ class BackTest(object):
             
                 # 推送委托数据
                 order.tradedVolume = trade.tradeTime
-                order.status = STATUS_ALLTRADED
+                order.status = OrderData.STATUS_ALLTRADED
                 if order.tradedVolume < order.totalVolume :
-                    order.status = STATUS_PARTTRADED
+                    order.status = OrderData.STATUS_PARTTRADED
                 self.strategy.onOrder(order)
             else :
                 # 推送委托数据
                 order.tradedVolume = 0
-                order.status = STATUS_CANCELLED
+                order.status = OrderData.STATUS_CANCELLED
                 self.strategy.onOrder(order)
 
             # update avail cache per order has been executed
@@ -551,7 +551,7 @@ class BackTest(object):
             order.price = so.price
             order.totalVolume = so.volume
             order.tradedVolume = so.volume
-            order.status = STATUS_ALLTRADED
+            order.status = OrderData.STATUS_ALLTRADED
             order.orderTime = trade.tradeTime
                 
             self.tdDriver.limitOrderDict[orderID] = order
@@ -1485,7 +1485,7 @@ class tdBackTest(BrokerDriver):
         if vtOrderID in self.workingLimitOrderDict:
             order = self.workingLimitOrderDict[vtOrderID]
             
-            order.status = STATUS_CANCELLED
+            order.status = OrderData.STATUS_CANCELLED
             order.cancelTime = self._backtest.dtData.strftime('%H:%M:%S')
             
             # restore available cash

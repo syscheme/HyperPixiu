@@ -29,7 +29,7 @@ class TraderAccount(Account):
     settingFileName = 'CTA_setting.json'
     settingfilePath = getJsonPath(settingFileName, __file__)
     
-    STATUS_FINISHED = set([STATUS_REJECTED, STATUS_CANCELLED, STATUS_ALLTRADED])
+    STATUS_FINISHED = set([OrderData.STATUS_REJECTED, OrderData.STATUS_CANCELLED, OrderData.STATUS_ALLTRADED])
 
     #----------------------------------------------------------------------
     def __init__(self, mainRoutine, eventChannel):
@@ -117,7 +117,7 @@ class TraderAccount(Account):
         # 如果查询成功
         if order:
             # 检查是否报单还有效，只有有效时才发出撤单指令
-            orderFinished = (order.status==STATUS_ALLTRADED or order.status==STATUS_CANCELLED)
+            orderFinished = (order.status==OrderData.STATUS_ALLTRADED or order.status==OrderData.STATUS_CANCELLED)
             if not orderFinished:
                 req = VtCancelOrderReq()
                 req.symbol = order.symbol

@@ -140,9 +140,6 @@ class Trader(BaseApplication):
         
         # TODO part 2. scan those in the positions of Accounts, and also put into _dictObjectives
 
-        self.debug('collected %s interested symbols, adopting strategies' % len(self._dictObjectives))
-
-        self.strategies_LoadAll(self._settings.strategies)
         
     #----------------------------------------------------------------------
     # access to the Account
@@ -173,6 +170,10 @@ class Trader(BaseApplication):
 
     @abstractmethod
     def start(self):
+
+        self.debug('collected %s interested symbols, adopting strategies' % len(self._dictObjectives))
+        self.strategies_LoadAll(self._settings.strategies)
+
         # step 1. subscribe all interested market data
         self.subscribeSymbols()
 

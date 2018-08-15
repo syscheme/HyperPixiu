@@ -335,7 +335,7 @@ class Account(object):
                 pass
 
             if orderData.direction == OrderData.DIRECTION_LONG:
-                turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.volume)
+                turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.totalVolume)
                 self._cashChange(turnover + commission + slippage)
 
         self.info('order.brokerOrderId[%s] canceled' % orderData.brokerOrderId)

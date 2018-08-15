@@ -132,11 +132,11 @@ class BackTestApp(Trader):
         # if self.mode != self.BAR_MODE:
         #     return
 
-        # # shift the trade date and notify dayOpen if date changes
-        # if self._dateToday != kline.date :
-        #     self.onDayOpen(kline.date)
-        #     self.strategy._posAvail = self.strategy.pos
-        #     self.strategy.onDayOpen(bar.date)
+        if kline.datetime > (datetime.now() + timedelta(days=7)):
+            self.info('End-of-BackTest received, sell all positions to cash')
+            self.account.onTestEnd()
+            self.finishTest() # usualy exit() would be called in it to quit the program
+            return
 
         if self._execStart ==None:
             self._execStartClose = kline.close
@@ -1110,7 +1110,7 @@ class AccountWrapper(object):
     def sendOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendOrder(vtSymbol, orderType, price, volume, strategy)
     def cancelOrder(self, brokerOrderId): return self._nest.cancelOrder(brokerOrderId)
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendStopOrder(vtSymbol, orderType, price, volume, strategy)
-    def batchCancel(self, brokerOrderIds): return self._nest.batchCancel(brokerOrderIds)
+    def findOrdersOfStrategy(self, strategyId, symbol=None): return self._nest.findOrdersOfStrategy(strategyId, symbol)
     
     def _broker_onOrderPlaced(self, orderData): return self._nest._broker_onOrderPlaced(orderData)
     def _broker_onCancelled(self, orderData): return self._nest._broker_onCancelled(orderData)
@@ -1160,29 +1160,37 @@ class AccountWrapper(object):
     def _broker_placeOrder(self, orderData):
         """发单"""
         orderData.brokerOrderId = "$" + orderData.reqId
-        orderData.status = STATUS_NOTTRADED
+        orderData.status = OrderData.STATUS_NOTTRADED
 
         # redirectly simulate a place ok
         self._broker_onOrderPlaced(orderData)
 
-    def _broker_cancelOrder(brokerOrderId) :
+    def _broker_cancelOrder(self, brokerOrderId) :
         orderData = None
 
         # find out he orderData by brokerOrderId
-        with self._lock :
-            if VtOrderData.STOPORDERPREFIX in brokerOrderId :
-                orderData = self._dictOpenningLimitOrders[brokerOrderId]
-            else :
-                orderData = self._dictOpenningStopOrders[brokerOrderId]
+        with self._nest._lock :
+            try :
+                if OrderData.STOPORDERPREFIX in brokerOrderId :
+                    orderData = self._nest._dictStopOrders[brokerOrderId]
+                else :
+                    orderData = self._nest._dictLimitOrders[brokerOrderId]
+            except KeyError:
+                pass
+
             if not orderData :
                 return
 
             orderData = copy.copy(orderData)
 
         # orderData found
-        orderData.status = STATUS_CANCELLED
-        orderData.cancelTime = self.account.datetimeAsof.strftime('%H:%M:%S.%f')[:3]
+        orderData.status = OrderData.STATUS_CANCELLED
+        orderData.cancelTime = self._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:3]
         self._broker_onCancelled(orderData)
+
+    def batchCancel(self, brokerOrderIds): # MUST overwrite to call self._broker_cancelOrder()
+        for o in brokerOrderIds:
+            self._broker_cancelOrder(o)
 
     def step(self) :
         outgoingOrders = []
@@ -1233,7 +1241,7 @@ class AccountWrapper(object):
 
                 # 推送委托进入队列（未成交）的状态更新
                 if not order.status:
-                    order.status = STATUS_NOTTRADED
+                    order.status = OrderData.STATUS_NOTTRADED
 
                 # 判断是否会成交
                 buyCross = (order.direction == OrderData.DIRECTION_LONG and 
@@ -1270,9 +1278,9 @@ class AccountWrapper(object):
                 trades.append(trade)
 
                 order.tradedVolume = trade.volume
-                order.status = STATUS_ALLTRADED
+                order.status = OrderData.STATUS_ALLTRADED
                 if order.tradedVolume < order.totalVolume :
-                    order.status = STATUS_PARTTRADED
+                    order.status = OrderData.STATUS_PARTTRADED
                 finishedOrders.append(order)
 
                 self._nest.info('crossLimitOrder() crossed order[%s] to trade[%s]'% (order.desc, trade.desc))
@@ -1328,14 +1336,14 @@ class AccountWrapper(object):
                 
     #                 # 推送委托数据
     #                 order.tradedVolume = trade.tradeTime
-    #                 order.status = STATUS_ALLTRADED
+    #                 order.status = OrderData.STATUS_ALLTRADED
     #                 if order.tradedVolume < order.totalVolume :
-    #                     order.status = STATUS_PARTTRADED
+    #                     order.status = OrderData.STATUS_PARTTRADED
     #                 self._broker_onOrderDone(order)
     #             else :
     #                 # 推送委托数据
     #                 order.tradedVolume = 0
-    #                 order.status = STATUS_CANCELLED
+    #                 order.status = OrderData.STATUS_CANCELLED
     #                 self._broker_onOrderDone(order)
 
     #             # update avail cash per order has been executed
@@ -1418,7 +1426,7 @@ class AccountWrapper(object):
                 order.price = so.price
                 order.totalVolume = so.volume
                 order.tradedVolume = so.volume
-                order.status = STATUS_ALLTRADED
+                order.status = OrderData.STATUS_ALLTRADED
                 order.orderTime = trade.tradeTime
                     
                 self.tdDriver.limitOrderDict[orderID] = order

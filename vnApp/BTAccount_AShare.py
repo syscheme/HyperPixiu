@@ -355,7 +355,7 @@ class BTAccount_AShare(Account_AShare):
         for orderID, order in self.workingLimitOrderDict.items():
             # 推送委托进入队列（未成交）的状态更新
             if not order.status:
-                order.status = STATUS_NOTTRADED
+                order.status = OrderData.STATUS_NOTTRADED
                 self.strategy.onOrder(order)
 
             # 判断是否会成交
@@ -430,14 +430,14 @@ class BTAccount_AShare(Account_AShare):
             
                 # 推送委托数据
                 order.tradedVolume = trade.tradeTime
-                order.status = STATUS_ALLTRADED
+                order.status = OrderData.STATUS_ALLTRADED
                 if order.tradedVolume < order.totalVolume :
-                    order.status = STATUS_PARTTRADED
+                    order.status = OrderData.STATUS_PARTTRADED
                 self.strategy.onOrder(order)
             else :
                 # 推送委托数据
                 order.tradedVolume = 0
-                order.status = STATUS_CANCELLED
+                order.status = OrderData.STATUS_CANCELLED
                 self.strategy.onOrder(order)
 
             # update avail cache
@@ -528,7 +528,7 @@ class BTAccount_AShare(Account_AShare):
             order.price = so.price
             order.totalVolume = so.volume
             order.tradedVolume = so.volume
-            order.status = STATUS_ALLTRADED
+            order.status = OrderData.STATUS_ALLTRADED
             order.orderTime = trade.tradeTime
                 
             self.limitOrderDict[orderID] = order
@@ -588,7 +588,7 @@ class BTAccount_AShare(Account_AShare):
         if vtOrderID in self.workingLimitOrderDict:
             order = self.workingLimitOrderDict[vtOrderID]
             
-            order.status = STATUS_CANCELLED
+            order.status = OrderData.STATUS_CANCELLED
             order.cancelTime = self.dt.strftime('%H:%M:%S')
             
             # restore available cash

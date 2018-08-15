@@ -181,9 +181,13 @@ class Strategy(object):
         self.log2(LOGLEVEL_INFO, 'cancelAll() symbol[%s] order-batch: %s' %(symbol, orderIdList))
     
     #----------------------------------------------------------------------
+    def log2(self, loglevel, content):
+        """记录CTA日志"""
+        self._trader.log(loglevel, 'stg[%s] %s' %(self._id, content))
+
     def log(self, content):
         """记录CTA日志"""
-        self._trader.log(LOGLEVEL_DEBUG, 'stg[%s] %s' %(self._id, content))
+        self.log2(LOGLEVEL_DEBUG, content)
         
     #----------------------------------------------------------------------
     def putEvent(self):

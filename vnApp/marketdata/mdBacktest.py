@@ -165,8 +165,11 @@ class mdBacktest(MarketData):
                 if not d['cursor']: # ignore those collection disconnected
                     continue
 
-                if not d['currentData'] :
-                    d['currentData'] = next(d['cursor'], None)
+                try :
+                    if not d['currentData'] :
+                        d['currentData'] = next(d['cursor'], None)
+                except :
+                    pass
                 
                 if not d['currentData']: # end of cursor
                     cursorsEnd.append(d)

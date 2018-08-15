@@ -589,13 +589,15 @@ class Account(object):
 
         with self._lock :
             # part 1. the confirmed trades
-            for t in self._dictTrades.values():
+            tl = self._dictTrades.values()
+            for t in tl:
                 self._trader.dbUpdate(self.collectionName_trade, t.__dict__, {'brokerTradeId': t.brokerTradeId})
                     # db = self._dbConn['Account']
                     # collection = db[tblName]
                     # collection.ensure_index([('brokerTradeId', ASCENDING)], unique=True) #TODO this should init ONCE
                     # collection = db[tblName]
                     # collection.update({'brokerTradeId':t.brokerTradeId}, t.__dict__, True)
+            self.info('saveDataOfDay() saved %s trades' % len(tl))
 
         # part 2. the daily position
         result, _ = self.calcDailyPositions()
@@ -605,6 +607,7 @@ class Account(object):
                 # collection = db[tblName]
                 # collection.ensure_index([('date', ASCENDING), ('symbol', ASCENDING)], unique=True) #TODO this should init ONCE
                 # collection.update({'date':l['date'], 'symbol':l['symbol']}, l, True)
+        self.info('saveDataOfDay() saved positions: %s' % result)
 
     @abstractmethod
     def loadDB(self, since =None):

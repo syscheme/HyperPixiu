@@ -570,7 +570,7 @@ class DataToEvent(object):
                 if d['stamp']['id'] > latest['stamp']['id'] :
                     t = latest['tick']
 
-                    edata = KLineData(self, symbol)
+                    edata = KLineData(self.exchange, symbol)
                     edata.open = t['open']
                     edata.close = t['close']
                     edata.high = t['high']
@@ -598,7 +598,7 @@ class DataToEvent(object):
             symbol = topic.split('.')[1]
             tick = self._dictTicks.get(symbol, None)
             if not tick:
-                tick = TickData(self, symbol)
+                tick = TickData(self.exchange, symbol)
                 self._dictTicks[symbol] = tick
                 
             tick.datetime = datetime.fromtimestamp(line['ts']/1000)

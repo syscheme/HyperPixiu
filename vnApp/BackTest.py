@@ -28,7 +28,7 @@ except ImportError:
     pass
 
 from vnpy.trader.vtGlobal import globalSetting
-from vnpy.trader.vtObject import VtTickData, VtBarData
+from vnpy.trader.vtObject import VtTickData, KLineData
 from vnpy.trader.vtConstant import *
 from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 
@@ -206,7 +206,7 @@ class BackTest(object):
       
         # 首先根据回测模式，确认要使用的数据类
         if self.mode == self.BAR_MODE:
-            dataClass = VtBarData
+            dataClass = KLineData
             func = self.OnNewBar
         else:
             dataClass = VtTickData
@@ -249,7 +249,7 @@ class BackTest(object):
         
         # 首先根据回测模式，确认要使用的数据类
         if self.mode == self.BAR_MODE:
-            dataClass = VtBarData
+            dataClass = KLineData
             func = self.OnNewBar
         else:
             dataClass = VtTickData

@@ -16,7 +16,7 @@ from copy import copy
 from vnpy.event import Event
 from vnpy.trader.vtEvent import *
 from vnpy.trader.vtConstant import *
-from vnpy.trader.vtObject import VtTickData, VtBarData
+from vnpy.trader.vtObject import VtTickData, KLineData
 from vnpy.trader.vtGateway import VtSubscribeReq, VtOrderReq, VtCancelOrderReq, VtLogData
 from vnpy.trader.vtFunction import todayDate, getJsonPath
 
@@ -315,7 +315,7 @@ class TraderAccount(Account):
         
         l = []
         for d in barData:
-            bar = VtBarData()
+            bar = KLineData()
             bar.__dict__ = d
             l.append(bar)
         return l

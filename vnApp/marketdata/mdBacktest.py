@@ -2,11 +2,11 @@
 
 from __future__ import division
 
-from vnApp.MarketData import *
-from vnApp.EventChannel import *
+from ..MainRoutine import *
+from ..Account import *
+from ..MarketData import *
+from ..EventChannel import *
 
-from vnpy.trader.vtConstant import *
-from vnpy.event import Event
 
 from copy import copy
 from datetime import datetime
@@ -19,19 +19,19 @@ from datetime import datetime
 import json
 
 # 如果安装了seaborn则设置为白色风格
-try:
-    import seaborn as sns       
-    sns.set_style('whitegrid')  
-except ImportError:
-    pass
+# try:
+#     import seaborn as sns       
+#    sns.set_style('whitegrid')  
+# except ImportError:
+#    pass
 
-from vnpy.trader.vtGlobal import globalSetting
-from vnpy.trader.vtObject import VtTickData, VtBarData
-from vnpy.trader.vtConstant import *
-from vnpy.trader.vtGateway import VtOrderData, VtTradeData
+# from vnpy.trader.vtConstant import *
+# from vnpy.event import Event
+# from vnpy.trader.vtGlobal import globalSetting
+# from vnpy.trader.vtObject import VtTickData, VtBarData
+# from vnpy.trader.vtConstant import *
+# from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 
-from ..MainRoutine import *
-from ..Account import *
 
 ########################################################################
 class mdBacktest(MarketData):
@@ -190,12 +190,12 @@ class mdBacktest(MarketData):
                 #fill a dummy END event into the event channel
                 symbol = d['collectionName'].split('.')[0]
                 newSymbol = '%s.%s' % (symbol, self.exchange)
-                if self.TICK_MODE == self._mode:
-                    edata = TickData(self, symbol)
+                if d['category'] == 'Tick' :
+                    edata = TickData(self.exchange, symbol)
                     event = Event(MarketData.EVENT_TICK)
                 else: # as Kline
-                    edata = KLineData(self, symbol)
-                    event = Event(MarketData.EVENT_1MIN)
+                    edata = KLineData(self.exchange, symbol)
+                    event = Event(EVENT_NAME_PREFIX +d['category'])
                 
                 edata.date = self.DUMMY_DATE_EOS
                 edata.time = self.DUMMY_TIME_EOS
@@ -213,7 +213,7 @@ class mdBacktest(MarketData):
             if not cursorFocus or not cursorFocus['currentData'] : # none of the read found
                 self.info('all data sequence reached end, flushing %d Event(End) to event channel' % len(self._eventEndOfData))
                 for eos in self._eventEndOfData :
-                    self.postMarketEvent(event); c+=1
+                    self.postMarketEvent(eos); c+=1
 
                 self._eventEndOfData = []
                 self._active = False
@@ -224,8 +224,8 @@ class mdBacktest(MarketData):
             symbol = cursorFocus['collectionName'].split('.')[0]
             newSymbol = '%s.%s' % (symbol, self.exchange)
             if cursorFocus['category'] == 'Tick' :
-                edata = TickData(self, symbol)
-                edata.__dict__ = copy.copy(cursorFocus['currentData'])
+                edata = TickData(self.exchange, symbol)
+                edata.__dict__ = copy(cursorFocus['currentData'])
                 edata.vtSymbol  = newSymbol
                 event = Event(MarketData.EVENT_TICK)
                 event.dict_['data'] = edata
@@ -233,8 +233,8 @@ class mdBacktest(MarketData):
                     pass # TODO: ...
 
             else: # as Kline
-                edata = KLineData(self, symbol)
-                edata.__dict__ = copy.copy(cursorFocus['currentData'])
+                edata = KLineData(self.exchange, symbol)
+                edata.__dict__ = copy(cursorFocus['currentData'])
                 edata.vtSymbol  = newSymbol
                 event = Event(EVENT_NAME_PREFIX +cursorFocus['category'])
                 event.dict_['data'] = edata

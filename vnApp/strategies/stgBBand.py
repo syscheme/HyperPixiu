@@ -31,9 +31,8 @@ from __future__ import division
 
 from vnpy.trader.vtObject import VtBarData
 from vnpy.trader.vtConstant import *
-from ..Strategy import (StrategyOfSymbol, 
-                                                     BarGenerator, 
-                                                     ArrayManager)
+from ..Strategy import (StrategyOfSymbol, ArrayManager)
+from ..MarketData import TickToKLineMerger, KlineToXminMerger
 
 
 ########################################################################
@@ -98,9 +97,12 @@ class stgBBand(StrategyOfSymbol):
     def __init__(self, trader, symbol, account, setting):
         """Constructor"""
         super(stgBBand, self).__init__(trader, symbol, account, setting)
-        
-        self.bg    = BarGenerator(self.onBar, 15, self.onXminBar)        # 创建K线合成器对象
-        self.bg_L2 = BarGenerator(self.onBar, 60, self.onBar_L2)
+
+        # 创建K线合成器对象
+        self._tick2kline = TickToKLineMerger(self.onBar)
+        self._klineTo15min = KlineToXminMerger(self.onXminBar, 15)
+#        self._klineToL2 = KlineToXminMerger(self.onBar_L2, 60)
+
         self.am = ArrayManager()
         
     #----------------------------------------------------------------------
@@ -134,12 +136,13 @@ class stgBBand(StrategyOfSymbol):
     #----------------------------------------------------------------------
     def onTick(self, tick):
         """收到行情TICK推送（必须由用户继承实现）""" 
+        self._tick2kline.pushTick(tick)
         self.bg.updateTick(tick)
 
     #----------------------------------------------------------------------
     def onBar(self, bar):
         """收到Bar推送（必须由用户继承实现）"""
-        self.bg.updateBar(bar)
+        self._klineTo15min.pushKLine(bar)
     
     #----------------------------------------------------------------------
     def onXminBar(self, bar):

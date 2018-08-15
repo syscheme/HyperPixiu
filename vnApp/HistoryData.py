@@ -16,7 +16,7 @@ import pymongo
 
 from vnpy.trader.vtGlobal import globalSetting
 from vnpy.trader.vtConstant import *
-from vnpy.trader.vtObject import VtBarData
+from vnpy.trader.vtObject import KLineData
 from .Account import SETTING_DB_NAME, TICK_DB_NAME, MINUTE_DB_NAME, DAILY_DB_NAME
 
 
@@ -47,7 +47,7 @@ def downloadEquityDailyBarts(self, symbol):
         self._dbConn[DAILY_DB_NAME][symbol].ensure_index([('datetime', pymongo.ASCENDING)], unique=True)
         
         for index, d in data.iterrows():
-            bar = VtBarData()
+            bar = KLineData()
             bar.vtSymbol = symbol
             bar.symbol = symbol
             try:
@@ -92,7 +92,7 @@ def _loadCsvStream(csvStream, dbName, symbol, funcCvsToBar, fields=None):
     print u'插入完毕，耗时：%s' % (time()-start)
 
 def cvsMcToBar(csvrow, symbol):
-    bar = VtBarData()
+    bar = KLineData()
     bar.vtSymbol = symbol
     bar.symbol = symbol
     bar.open = float(csvrow['Open'])
@@ -130,7 +130,7 @@ def cvsTaobaoToBar(csvrow, symbol):
     2012/07/02,09:42,5.17,5.17,5.16,5.16,566.00,292550.00
     2012/07/02,09:43,5.16,5.17,5.16,5.17,32.00,16772.00
     '''
-    bar = VtBarData()
+    bar = KLineData()
     bar.vtSymbol = symbol
     bar.symbol = symbol
     bar.date = datetime.strptime(csvrow['date'], '%Y/%m/%d').strftime('%Y%m%d')
@@ -169,7 +169,7 @@ def loadTbCsv(fileName, dbName, symbol):
     # 读取数据和插入到数据库
     reader = csv.reader(file(fileName, 'r'))
     for d in reader:
-        bar = VtBarData()
+        bar = KLineData()
         bar.vtSymbol = symbol
         bar.symbol = symbol
         bar.open = float(d[1])
@@ -204,7 +204,7 @@ def loadTbPlusCsv(fileName, dbName, symbol):
     # 读取数据和插入到数据库
     reader = csv.reader(file(fileName, 'r'))
     for d in reader:
-        bar = VtBarData()
+        bar = KLineData()
         bar.vtSymbol = symbol
         bar.symbol = symbol
         bar.open = float(d[2])
@@ -252,7 +252,7 @@ def loadTdxCsv(fileName, dbName, symbol):
     # 读取数据和插入到数据库
     reader = csv.reader(file(fileName, 'r'))
     for d in reader:
-        bar = VtBarData()
+        bar = KLineData()
         bar.vtSymbol = symbol
         bar.symbol = symbol
         bar.open = float(d[1])
@@ -310,7 +310,7 @@ def loadTdxLc1(fileName, dbName, symbol):
         a=unpack('hhfffffii',buf[b:e])
         b=b+32
         e=e+32
-        bar = VtBarData()
+        bar = KLineData()
         bar.vtSymbol = symbol
         bar.symbol = symbol
         bar.open = a[2]
@@ -342,7 +342,7 @@ def loadOKEXCsv(fileName, dbName, symbol):
     reader = csv.reader(open(fileName,"r"))
     for d in reader:
         if len(d[1]) > 10:
-            bar = VtBarData()
+            bar = KLineData()
             bar.vtSymbol = symbol
             bar.symbol = symbol
 

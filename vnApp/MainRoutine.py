@@ -25,7 +25,7 @@ from pymongo.errors import ConnectionFailure
 # from vnpy.trader.vtGlobal import globalSetting
 # from vnpy.trader.vtEvent import *
 # from vnpy.trader.vtGateway import *
-# from vnpy.trader.language import text
+from vnpy.trader.language import text
 # from vnpy.trader.vtFunction import getTempPath
 
 # 日志级别
@@ -711,9 +711,9 @@ class MainRoutine(object):
                     
                 self.info('connecting DB[%s :%s] %s'%(dbhost, dbport, text.DATABASE_CONNECTING_COMPLETED))
             except ConnectionFailure:
-                self.error('failed to connect DB[%s :%s] %s' %(dbhost, dbport, text.DATABASE_CONNECTING_FAILED))
+                self.error('failed to connect to DB[%s :%s] %s' %(dbhost, dbport, text.DATABASE_CONNECTING_FAILED))
             except:
-                self.error('failed to connect DB[%s :%s]' %(dbhost, dbport))
+                self.error('failed to connect to DB[%s :%s]' %(dbhost, dbport))
     
     #----------------------------------------------------------------------
     @abstractmethod

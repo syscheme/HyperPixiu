@@ -25,9 +25,9 @@ except ImportError:
     pass
 
 from vnpy.trader.vtGlobal import globalSetting
-from vnpy.trader.vtObject import VtTickData, VtBarData
-from vnpy.trader.vtConstant import *
-from vnpy.trader.vtGateway import VtOrderData, VtTradeData
+# from vnpy.trader.vtObject import VtTickData, KLineData
+# from vnpy.trader.vtConstant import *
+# from vnpy.trader.vtGateway import VtOrderData, VtTradeData
 
 from .MainRoutine import *
 from .Account import *

@@ -19,11 +19,11 @@ from threading import Thread
 from pymongo.errors import DuplicateKeyError
 
 from .MainRoutine import *
-
 from .MarketData import *
-from vnpy.trader.vtEvent import *
-from vnpy.trader.vtFunction import todayDate, getJsonPath
-from vnpy.trader.vtObject import VtSubscribeReq, VtLogData, VtBarData, VtTickData
+
+# from vnpy.trader.vtEvent import *
+# from vnpy.trader.vtFunction import todayDate, getJsonPath
+# from vnpy.trader.vtObject import VtSubscribeReq, VtLogData, KLineData, VtTickData
 
 # DB names for recording
 SETTING_DB_NAME = 'vnRec_Db'

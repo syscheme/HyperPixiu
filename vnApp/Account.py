@@ -178,6 +178,10 @@ class Account(object):
 
     def getAllPositions(self): # returns PositionData
         with self._lock :
+            for pos in self._dictPositions.values() :
+                price = self._trader.latestPrice(pos.symbol)
+                if price >0:
+                    pos.price = price
             return copy.deepcopy(self._dictPositions)
 
     @abstractmethod
@@ -413,12 +417,15 @@ class Account(object):
                 tradeAmount = turnover + commission + slippage
                 self._cashChange(-tradeAmount, -tradeAmount)
                 # calclulate pos.avgPrice
-                cost = pos.position * pos.avgPrice
+                if self.size <=0:
+                    self.size =1
+                cost = pos.position * pos.avgPrice *self.size
                 cost += tradeAmount
                 pos.position += trade.volume
                 if pos.position >0:
-                    pos.avgPrice = cost / pos.position
+                    pos.avgPrice = cost / pos.position /self.size
                 else: pos.avgPrice =0
+
                 # TODO: T+0 also need to increase pos.avalPos
                 
             pos.stampByTrader = trade.dt  # the current position is calculated based on trade
@@ -478,12 +485,14 @@ class Account(object):
             volprice = pos.price =1
             if self.size >0:
                 pos.price /=self.size
-        tmp1, tmp2 = pos.posAvail + dAvail / volprice, pos.position + dTotal / volprice
-        if tmp1<0 or tmp2 <0:
-            return False
+        
+        # double check if the cash account goes to negative
+        # tmp1, tmp2 = pos.posAvail + dAvail / volprice, pos.position + dTotal / volprice
+        # if tmp1<0 or tmp2 <0:
+        #     return False
 
-        pos.posAvail += tmp1
-        pos.position += tmp2
+        pos.posAvail += dAvail / volprice
+        pos.position += dTotal / volprice
         pos.stampByTrader = self._broker_datetimeAsOf()
         return True
 
@@ -502,7 +511,7 @@ class Account(object):
         volume =0
         if price > 0 :
             cash, _  = self.cashAmount()
-            volume   = int(cash / price / self.size)
+            volume   = round(cash / price / self.size -0.999,0)
             turnOver, commission, slippage = self.calcAmountOfTrade(symbol, price, volume)
             if cash < (turnOver + commission + slippage) :
                 volume -= int((commission + slippage) / price / self.size) +1
@@ -511,7 +520,7 @@ class Account(object):
         
         with self._lock :
             if symbol in  self._dictPositions :
-                return volume, self._dictPositions[symbol].availPos
+                return volume, self._dictPositions[symbol].posAvail
 
         return volume, 0
 
@@ -636,14 +645,17 @@ class Account(object):
 
         result = []
         currentPositions = self.getAllPositions() # this is a duplicated copy, so thread-safe
+        for s in currentPositions.keys():
+            if not s in tradesOfSymbol.keys():
+                tradesOfSymbol[s] = [] # fill a dummy trade list
+
         for s in tradesOfSymbol.keys():
-            if not s in currentPositions:
-                continue
 
             currentPos = currentPositions[s]
 
             if s in self._prevPositions:
-                prevPos = self._prevPositions[s]
+                with self._lock :
+                    prevPos = self._prevPositions[s]
             else:
                 prevPos = PositionData()
             
@@ -657,6 +669,22 @@ class Account(object):
             slippage   = 0               # 滑点
             netPnl     = 0                 # 净盈亏
             txnHist    = ""
+
+            # DayX brought some:
+            # {'recentPos': 200.0, 'cBuy': 2, 'recentPrice': 3.35, 'prevPos': 160.0, 'symbol': 'A601005', 'posAvail': 160.0, 'calcPos': 200.0, 
+            # 'commission': 43.96, 'netPnl': -1472.74, 'avgPrice': 3.444, 'prevClose': 3.48, 'calcMValue': 67000.0, 'positionPnl': -1508.78, 
+            # 'dailyPnl': -1428.78, 'cSell': 0, 'slippage': 0.0, 'date': u'20121219', 'tradingPnl': 80.0, 'asof': [datetime.datetime(2012, 12, 19, 14, 48), 0],
+            # 'txnHist': '+20x3.31+20x3.35', 'turnover': 13320.0}
+            # DayY no trade：
+            # {'recentPos': 292.0, 'cBuy': 0, 'recentPrice': 3.26, 'prevPos': 292.0, 'symbol': 'A601005', 'posAvail': 292.0, 'calcPos': 292.0, 
+            # 'commission': 0.0, 'netPnl': -4383.74, 'avgPrice': 3.41, 'prevClose': 3.27, 'calcMValue': 95192.0, 'positionPnl': -4383.74, 
+            # 'dailyPnl': -4383.74, 'cSell': 0, 'slippage': 0.0, 'date': u'20121226', 'tradingPnl': 0.0, 'asof': [datetime.datetime(2012, 12, 24, 10, 20), 0],
+            # 'txnHist': '', 'turnover': 0.0}
+            # sold-all at last day
+            # {'recentPos': 0.0, 'cBuy': 0, 'recentPrice': 3.94, 'prevPos': 292.0, 'symbol': 'A601005', 'posAvail': 0.0, 'calcPos': 0.0, 
+            # 'commission': 375.14, 'netPnl': 15097.11, 'avgPrice': 3.41, 'prevClose': 3.59, 'calcMValue': 0.0, 'positionPnl': 15472.26, 
+            # 'dailyPnl': 15472.26, 'cSell': 1, 'slippage': 0.0, 'date': u'20121228', 'tradingPnl': 0.0, 'asof': [datetime.datetime(2012, 12, 28, 15, 0), 0],
+            #  'txnHist': '-292x3.94', 'turnover': 115048.0}]            
 
             # 持仓部分
             # TODO get from currentPos:  openPosition = openPosition

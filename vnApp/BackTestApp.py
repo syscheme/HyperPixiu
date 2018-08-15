@@ -132,12 +132,6 @@ class BackTestApp(Trader):
         # if self.mode != self.BAR_MODE:
         #     return
 
-        if kline.datetime > (datetime.now() + timedelta(days=7)):
-            self.info('End-of-BackTest received, sell all positions to cash')
-            self.account.onTestEnd()
-            self.finishTest() # usualy exit() would be called in it to quit the program
-            return
-
         if self._execStart ==None:
             self._execStartClose = kline.close
             self._execStart = kline.date
@@ -169,12 +163,6 @@ class BackTestApp(Trader):
         """收到行情后，在启动策略前的处理
         通常处理本地停止单（检查是否要立即发出）"""
 
-        if tick.datetime > (datetime.now() + timedelta(days=7)):
-            self.info('End-of-BackTest received, sell all positions to cash')
-            self.account.onTestEnd()
-            self.finishTest() # usualy exit() would be called in it to quit the program
-            return
-
         if self._execStart ==None:
             self._execStart = tick.date
             self._execStartClose = tick.priceTick
@@ -196,6 +184,12 @@ class BackTestApp(Trader):
     def postStrategy(self, symbol) :
         """执行完策略后的的处理，通常为综合决策"""
         self.updateDailyClose(self._dtData, symbol)
+
+    def eventHdl_TradeEnd(self, event):
+        self.info('eventHdl_TradeEnd() sell all positions to cash')
+        self.account.onTestEnd()
+        self.finishTest() # usualy exit() would be called in it to quit the program
+        super(BackTestApp, self).eventHdl_TradeEnd(event)
 
     #------------------------------------------------
     # 数据回放结果计算相关
@@ -1191,6 +1185,7 @@ class AccountWrapper(object):
     def batchCancel(self, brokerOrderIds): # MUST overwrite to call self._broker_cancelOrder()
         for o in brokerOrderIds:
             self._broker_cancelOrder(o)
+        self._nest.debug('batchCancel() orders:%s'% brokerOrderIds)
 
     def step(self) :
         outgoingOrders = []
@@ -1200,7 +1195,6 @@ class AccountWrapper(object):
             self._broker_placeOrder(o)
         
         self._nest.debug('step() issued %d orders'% len(outgoingOrders))
-
 
     #----------------------------------------------------------------------
     def setCapital(self, capital, resetAvail=False):
@@ -1459,6 +1453,7 @@ class AccountWrapper(object):
             trade.tradeID = 'S' + trade.brokerTradeId
             trade.direction = OrderData.DIRECTION_SHORT
             trade.offset = OrderData.OFFSET_CLOSE
+            trade.price  = self._btTrader.latestPrice(trade.symbol)
             trade.volume = pos.position
             trade.dt     = self._btTrader._dtData
 

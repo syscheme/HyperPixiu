@@ -338,6 +338,11 @@ class Trader(BaseApplication):
             self.error(traceback.format_exc())
             return
 
+        if kline.datetime > (datetime.now() + timedelta(days=7)):
+            self.warn('Trade-End signal kline(%s) received' % kline.desc)
+            self.eventHdl_TradeEnd(event)
+            return
+
         if self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] != kline.date:
             self.onDayOpen(symbol, kline.date)
             self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = kline.date
@@ -395,6 +400,11 @@ class Trader(BaseApplication):
         except ValueError:
             self.error(traceback.format_exc())
 
+        if tick.datetime > (datetime.now() + timedelta(days=7)):
+            self.warn('Trade-End signal tick(%s) received' % tick.desc)
+            self.eventHdl_TradeEnd(event)
+            return
+
         if self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] != tick.date:
             self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = tick.date
             self.onDayOpen(symbol, tick.date)
@@ -420,6 +430,27 @@ class Trader(BaseApplication):
         self.postStrategy(symbol)
 
         self.debug('eventHdl_Tick(%s) done' % tick.desc)
+
+    def latestPrice(self, symbol) :
+        kline = self._dictLatestKline1min.get(symbol, None)
+        tick  = self._dictLatestTick.get(symbol, None)
+
+        if kline and tick:
+            if kline.datetime > tick.datetime:
+                return kline.close
+            else:
+                return tick.lastPrice
+        elif kline:
+            return kline.close
+        elif tick:
+            return tick.lastPrice
+        return 0
+
+    @abstractmethod
+    def eventHdl_TradeEnd(self, event):
+        self.info('eventHdl_TradeEnd() quitting')
+        self.mainRoutine.stop()
+        # exit(0) # usualy exit() would be called in it to quit the program
 
     ### eventOrder from Account ----------------
     @abstractmethod
@@ -458,7 +489,7 @@ class Trader(BaseApplication):
     ### generic events ??? ----------------
     def eventHdl_OnTimer(self, event):
         edata = event.dict_['data']
-        self.debug('OnTimer() src[%s] %s' % (edata.sourceType, edata.datetime.strftime('%Y%m%dT%H:%M:%S.%f')))
+        self.debug('OnTimer() src[%s] %s' % (edata.sourceType, edata.datetime.strftime('%Y%m%dT%H:%M:%S')))
         # TODO: forward to account.onTimer()
         pass                      
 

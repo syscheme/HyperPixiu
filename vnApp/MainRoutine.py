@@ -302,6 +302,8 @@ class MainRoutine(object):
         # 日志引擎实例
         self._logger = None
         self.initLogger()
+
+        self._bRun = True
         
         #----------------------------------------------------------------------
         # from old 数据引擎
@@ -422,6 +424,8 @@ class MainRoutine(object):
 
     def stop(self):
         """退出程序前调用，保证正常退出"""        
+        self._bRun = False
+
         # 安全关闭所有接口
         for ds in self._dictMarketDatas.values():        
             ds.close()
@@ -443,7 +447,7 @@ class MainRoutine(object):
         c=0
         
         busy = True
-        while True:
+        while self._bRun:
             if not self.threadless :
                 try :
                     time.sleep(1)

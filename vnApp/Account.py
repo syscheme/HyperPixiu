@@ -485,14 +485,19 @@ class Account(object):
             volprice = pos.price =1
             if self.size >0:
                 pos.price /=self.size
-        
-        # double check if the cash account goes to negative
-        # tmp1, tmp2 = pos.posAvail + dAvail / volprice, pos.position + dTotal / volprice
-        # if tmp1<0 or tmp2 <0:
-        #     return False
 
-        pos.posAvail += dAvail / volprice
-        pos.position += dTotal / volprice
+        dAvail /= volprice
+        dTotal /= volprice
+        
+        self.debug('_cashChange() avail[%s%+.3f] total[%s%+.3f]' % (pos.posAvail, dAvail, pos.position, dTotal))#, pos.desc))
+        # double check if the cash account goes to negative
+        newAvail, newTotal = pos.posAvail + dAvail, pos.position + dTotal
+        if newAvail<0 or newTotal <0 or newAvail>newTotal:
+            self.error('_cashChange() something wrong: newAvail[%s] newTotal[%s]' % (newAvail, newTotal)) #, pos.desc))
+            exit(-1)
+
+        pos.posAvail = newTotal
+        pos.position = newTotal
         pos.stampByTrader = self._broker_datetimeAsOf()
         return True
 
@@ -961,8 +966,8 @@ class TradeData(EventData):
         
         self.tradeID   = EventData.EMPTY_STRING           # 成交编号
         self.brokerTradeId = EventData.EMPTY_STRING           # 成交在vt系统中的唯一编号，通常是 Gateway名.成交编号
-        self.accountId = account.ident          # 成交归属的帐号
-        self.exchange = account._exchange       # 交易所代码
+        self.accountId = account.ident                    # 成交归属的帐号
+        self.exchange = account._exchange                 # 交易所代码
 
         # 代码编号相关
         self.symbol = EventData.EMPTY_STRING              # 合约代码

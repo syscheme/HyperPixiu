@@ -156,9 +156,7 @@ class stgBBand(StrategyOfSymbol):
         self.cancelAll()
 
         # 保存K线数据
-        self.log(u'onXminBar() caching K lines')
         self._am.updateBar(bar)
-        
         if not self._am.inited:
             return
 

@@ -1257,7 +1257,9 @@ class AccountWrapper(object):
                 trade.brokerTradeId = tradeID
                 # tradeID will be generated in Account: trade.tradeID = tradeID
                 trade.symbol = order.symbol
+                trade.exchange = order.exchange
                 trade.orderReq = order.reqId
+                trade.orderID  = order.brokerOrderId
                 trade.direction = order.direction
                 trade.offset    = order.offset
                 trade.volume    = order.totalVolume
@@ -1448,9 +1450,9 @@ class AccountWrapper(object):
             trade = TradeData(self._nest)
             trade.brokerTradeId = str(self._tradeCount)
             trade.symbol = symbol
+            # trade.exchange = self._nest.exchange
             trade.orderReq = self.nextOrderReqId +"$BTEND"
             trade.orderID = 'O' + trade.orderReq
-            trade.tradeID = 'S' + trade.brokerTradeId
             trade.direction = OrderData.DIRECTION_SHORT
             trade.offset = OrderData.OFFSET_CLOSE
             trade.price  = self._btTrader.latestPrice(trade.symbol)

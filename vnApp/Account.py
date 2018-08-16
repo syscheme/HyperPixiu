@@ -636,107 +636,34 @@ class Account(object):
 
             if s in self._prevPositions:
                 with self._lock :
-                    prevPos = self._prevPositions[s]
+                    prevPos = copy.copy(self._prevPositions[s])
             else:
                 prevPos = PositionData()
             
-            tcBuy      = 0
-            tcSell     = 0
-            tradingPnl = 0             # 交易盈亏
-            totalPnl   = 0               # 总盈亏
+            dpos = DailyPosition()
+            dpos.initPositions(self, s, currentPos, prevPos)
             
-            turnover   = 0               # 成交量
-            commission = 0             # 手续费
-            slippage   = 0               # 滑点
-            netPnl     = 0                 # 净盈亏
-            txnHist    = ""
-
             # DayX brought some:
             # {'recentPos': 200.0, 'cBuy': 2, 'recentPrice': 3.35, 'prevPos': 160.0, 'symbol': 'A601005', 'posAvail': 160.0, 'calcPos': 200.0, 
             # 'commission': 43.96, 'netPnl': -1472.74, 'avgPrice': 3.444, 'prevClose': 3.48, 'calcMValue': 67000.0, 'positionPnl': -1508.78, 
             # 'dailyPnl': -1428.78, 'cSell': 0, 'slippage': 0.0, 'date': u'20121219', 'tradingPnl': 80.0, 'asof': [datetime.datetime(2012, 12, 19, 14, 48), 0],
-            # 'txnHist': '+20x3.31+20x3.35', 'turnover': 13320.0}
+            # 'txns': '+20x3.31+20x3.35', 'turnover': 13320.0}
             # DayY no trade：
             # {'recentPos': 292.0, 'cBuy': 0, 'recentPrice': 3.26, 'prevPos': 292.0, 'symbol': 'A601005', 'posAvail': 292.0, 'calcPos': 292.0, 
             # 'commission': 0.0, 'netPnl': -4383.74, 'avgPrice': 3.41, 'prevClose': 3.27, 'calcMValue': 95192.0, 'positionPnl': -4383.74, 
             # 'dailyPnl': -4383.74, 'cSell': 0, 'slippage': 0.0, 'date': u'20121226', 'tradingPnl': 0.0, 'asof': [datetime.datetime(2012, 12, 24, 10, 20), 0],
-            # 'txnHist': '', 'turnover': 0.0}
+            # 'txns': '', 'turnover': 0.0}
             # sold-all at last day
             # {'recentPos': 0.0, 'cBuy': 0, 'recentPrice': 3.94, 'prevPos': 292.0, 'symbol': 'A601005', 'posAvail': 0.0, 'calcPos': 0.0, 
             # 'commission': 375.14, 'netPnl': 15097.11, 'avgPrice': 3.41, 'prevClose': 3.59, 'calcMValue': 0.0, 'positionPnl': 15472.26, 
             # 'dailyPnl': 15472.26, 'cSell': 1, 'slippage': 0.0, 'date': u'20121228', 'tradingPnl': 0.0, 'asof': [datetime.datetime(2012, 12, 28, 15, 0), 0],
-            #  'txnHist': '-292x3.94', 'turnover': 115048.0}]            
-
-            # 持仓部分
-            # TODO get from currentPos:  openPosition = openPosition
-            positionPnl = round(prevPos.position * (currentPos.price - currentPos.avgPrice) * self.size, 3)
-            """
-            计算盈亏
-            size: 合约乘数
-            rate：手续费率
-            slippage：滑点点数
-            """
-            posChange = 0
-            calcPosition = prevPos.position
+            #  'txns': '-292x3.94', 'turnover': 115048.0}]            
 
             for trade in tradesOfSymbol[s]:
-                if trade.direction == OrderData.DIRECTION_LONG:
-                    posChange = trade.volume
-                    tcBuy += 1
-                else:
-                    posChange = -trade.volume
-                    tcSell += 1
-
-                txnHist += "%+dx%s" % (posChange, trade.price)
-
-                tradingPnl += posChange * (currentPos.price - trade.price) * self.size
-                calcPosition += posChange
-                tover, comis, slpfee = self.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
-                turnover += tover
-                commission += comis
-                slippage += slpfee
-
-            if Account.SYMBOL_CASH == s: # cash dosn't need to sum trades
-                calcPosition = currentPos.position
-            elif calcPosition != currentPos.position:
-                self.stdout("%s WARN: %s.calcDailyPositions() calcPos[%s] mismatch currentPos[%s]" %(self._dateToday, s, calcPosition, currentPos.position))
-
-            # 汇总
-            totalPnl = tradingPnl + positionPnl
-            netPnl   = totalPnl - commission - slippage
-            # stampstr = ''
-            # if currentPos.stampByTrader :
-            #     stampstr += currentPos.stampByTrader
-            # [ currentPos.stampByTrader, currentPos.stampByBroker ]
+                dpos.pushTrade(self, trade) 
             
-            dstat = {
-                'symbol'      : s,
-                'date'        : self._dateToday,   # 日期
-                'recentPrice' : round(currentPos.price, 3),     # 当日收盘
-                'avgPrice'    : round(currentPos.avgPrice, 3),  # 持仓均价
-                'recentPos'   : round(currentPos.position, 3),  # 当日收盘
-                'posAvail'    : round(currentPos.posAvail, 3),  # the rest avail pos
-                'calcPos'     : round(calcPosition, 3),     # MarketValue
-                'calcMValue'  : round(calcPosition*currentPos.price*self.size , 2),     # 昨日收盘
-                'prevClose'   : round(prevPos.price, 3),     # 昨日收盘
-                'prevPos'     : round(prevPos.position, 3),     # 昨日收盘
-                
-                'turnover'    : round(turnover, 2),          # 成交量
-                'commission'  : round(commission, 2),        # 手续费
-                'slippage'    : round(slippage, 2),          # 滑点
-
-                'tradingPnl'  : round(tradingPnl, 2),        # 交易盈亏
-                'positionPnl' : round(positionPnl, 2),      # 持仓盈亏
-                'dailyPnl'    : round(tradingPnl + positionPnl, 2), # 总盈亏
-                'netPnl'      : round(netPnl, 2),           # 净盈亏
-                
-                'cBuy'        : tcBuy,             # 成交数量
-                'cSell'       : tcSell,            # 成交数量
-                'txnHist'     : txnHist,
-                'asof'        : [ currentPos.stampByTrader, currentPos.stampByBroker ]
-                }
-
-            result.append(dstat)
+            dpos.close()
+            result.append(dpos.__dict__)
 
         return result, tradesOfSymbol
 
@@ -779,6 +706,81 @@ class Account(object):
 
     #     return resultDf
 
+########################################################################
+class DailyPosition(object):
+    """每日交易的结果"""
+
+    def __init__(self):
+        """Constructor"""
+        self.symbol      = EventData.EMPTY_STRING
+        self.date        = EventData.EMPTY_STRING   # 日期
+        self.recentPrice = EventData.EMPTY_FLOAT     # 当日收盘
+        self.avgPrice    = EventData.EMPTY_FLOAT  # 持仓均价
+        self.recentPos   = EventData.EMPTY_FLOAT  # 当日收盘
+        self.posAvail    = EventData.EMPTY_FLOAT  # the rest avail pos
+        self.calcPos     = EventData.EMPTY_FLOAT     # 
+        self.calcMValue  = EventData.EMPTY_FLOAT # MarketValue
+        self.prevClose   = EventData.EMPTY_FLOAT     # 昨日收盘
+        self.prevPos     = EventData.EMPTY_FLOAT    # 昨日收盘
+                
+        self.turnover    = EventData.EMPTY_FLOAT        # 成交量
+        self.commission  = EventData.EMPTY_FLOAT       # 手续费
+        self.slippage    = EventData.EMPTY_FLOAT         # 滑点
+
+        self.tradingPnl  = EventData.EMPTY_FLOAT    # 交易盈亏
+        self.positionPnl = EventData.EMPTY_FLOAT     # 持仓盈亏
+        self.dailyPnl    = EventData.EMPTY_FLOAT # 总盈亏
+        self.netPnl      = EventData.EMPTY_FLOAT          # 净盈亏
+                
+        self.cBuy        = EventData.EMPTY_INT   # 成交数量
+        self.cSell       = EventData.EMPTY_INT  # 成交数量
+        self.txns        = EventData.EMPTY_STRING
+        self.asof        = []
+
+    def initPositions(self, account, symbol, currentPos, prevPos):
+        """Constructor"""
+
+        self.symbol      = symbol
+        self.date        = account._dateToday,   # 日期
+        self.recentPrice = round(currentPos.price, 3)     # 当日收盘
+        self.avgPrice    = round(currentPos.avgPrice, 3)  # 持仓均价
+        self.recentPos   = round(currentPos.position, 3)  # 当日收盘
+        self.posAvail    = round(currentPos.posAvail, 3)  # the rest avail pos
+        self.calcPos     = round(prevPos.position, 3)     # 
+        self.prevClose   = round(prevPos.price, 3)     # 昨日收盘
+        self.prevPos     = round(prevPos.position, 3)     # 昨日收盘
+        self.asof        =[ currentPos.stampByTrader, currentPos.stampByBroker ]
+        # 持仓部分
+        self.positionPnl = round(prevPos.position * (currentPos.price - currentPos.avgPrice) * account.size, 3)
+                
+        # self.calcMValue  = round(calcPosition*currentPos.price*self.size , 2),     # 昨日收盘
+    def pushTrade(self, account, trade) :
+        posChange =0
+        if trade.direction == OrderData.DIRECTION_LONG:
+            posChange = trade.volume
+            self.cBuy += 1
+        else:
+            posChange = -trade.volume
+            self.cSell += 1
+
+        self.txns += "%+dx%s" % (posChange, trade.price)
+
+        self.tradingPnl += posChange * (self.recentPrice - trade.price) * account.size
+        self.calcPos += posChange
+
+        tover, comis, slpfee = account.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
+        self.turnover += tover
+        self.commission += comis
+        self.slippage += slpfee
+
+    def close(self) :
+        # 汇总
+        self.totalPnl = self.tradingPnl + self.positionPnl
+        self.netPnl   = self.totalPnl - self.commission - self.slippage
+        # stampstr = ''
+        # if currentPos.stampByTrader :
+        #     stampstr += currentPos.stampByTrader
+        # [ currentPos.stampByTrader, currentPos.stampByBroker ]
 
 ########################################################################
 class Account_AShare(Account):
@@ -989,54 +991,4 @@ class PositionData(EventData):
         # self.positionProfit = EventData.EMPTY_FLOAT       # 持仓盈亏
         self.stampByTrader   = EventData.EMPTY_INT         # 该持仓数是基于Trader的计算
         self.stampByBroker = EventData.EMPTY_INT        # 该持仓数是基于与broker的数据同步
-
-
-########################################################################
-class PositionDetail(object):
-    """本地维护的持仓信息"""
-    WORKING_STATUS = [OrderData.STATUS_UNKNOWN, OrderData.STATUS_NOTTRADED, OrderData.STATUS_PARTTRADED]
-    
-    MODE_NORMAL = 'normal'          # 普通模式
-    MODE_SHFE = 'shfe'              # 上期所今昨分别平仓
-    MODE_TDPENALTY = 'tdpenalty'    # 平今惩罚
-
-    #----------------------------------------------------------------------
-    def __init__(self, vtSymbol, contract=None):
-        """Constructor"""
-        self.vtSymbol = vtSymbol
-        self.symbol = EventData.EMPTY_STRING
-        self.exchange = EventData.EMPTY_STRING
-        self.name = EventData.EMPTY_UNICODE    
-        self.size = 1
-        
-        if contract:
-            self.symbol = contract.symbol
-            self.exchange = contract.exchange
-            self.name = contract.name
-            self.size = contract.size
-        
-        self.longPos = EventData.EMPTY_INT
-        self.longYd = EventData.EMPTY_INT
-        self.longTd = EventData.EMPTY_INT
-        self.longPosFrozen = EventData.EMPTY_INT
-        self.longYdFrozen = EventData.EMPTY_INT
-        self.longTdFrozen = EventData.EMPTY_INT
-        self.longPnl = EventData.EMPTY_FLOAT
-        self.longPrice = EventData.EMPTY_FLOAT
-        
-        self.shortPos = EventData.EMPTY_INT
-        self.shortYd = EventData.EMPTY_INT
-        self.shortTd = EventData.EMPTY_INT
-        self.shortPosFrozen = EventData.EMPTY_INT
-        self.shortYdFrozen = EventData.EMPTY_INT
-        self.shortTdFrozen = EventData.EMPTY_INT
-        self.shortPnl = EventData.EMPTY_FLOAT
-        self.shortPrice = EventData.EMPTY_FLOAT
-        
-        self.lastPrice = EventData.EMPTY_FLOAT
-        
-        self.mode = self.MODE_NORMAL
-        self.exchange = EventData.EMPTY_STRING
-        
-        self._dictWorkingOrder = {}
 

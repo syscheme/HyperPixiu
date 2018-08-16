@@ -30,37 +30,6 @@ from .EventChannel import EventChannel, EventData, datetime2float
 
 from pymongo import ASCENDING
 
-########################################################################
-# 常量定义
-########################################################################
-
-# 数据库名称
-SETTING_DB_NAME = 'vnDB_Setting'
-POSITION_DB_NAME = 'vnDB_Position'
-
-TICK_DB_NAME   = 'vnDB_Tick'
-DAILY_DB_NAME  = 'vnDB_Daily'
-MINUTE_DB_NAME = 'vnDB_1Min'
-
-# CTA模块事件
-EVENT_LOG      = 'eVNLog'          # 相关的日志事件
-EVENT_STRATEGY = 'eVNStrategy.'    # 策略状态变化事件
-
-########################################################################
-def loadSettings(filepath):
-    """读取配置"""
-    try :
-        return jsoncfg.load_config(filepath)
-    except Exception as e :
-        print('failed to load configure[%s] :%s' % (filepath, e))
-        return None
-
-    # with open(filepath) as f:
-    #     l = json.load(f)
-            
-    #     for setting in l:
-    #         self.loadStrategy(setting)
-    # return settings
 
 ########################################################################
 from abc import ABCMeta, abstractmethod
@@ -107,6 +76,7 @@ class Account(object):
         self._prevPositions = {} # dict from symbol to previous PositionData
 
         self._dictOutgoingOrders = {} # the outgoing orders dict from reqId to OrderData that has not been confirmed with broker's orderId
+        self._lstOrdersToCancel = []
         # cached data from broker
         self._dictPositions = { # dict from symbol to latest PositionData
             Account.SYMBOL_CASH : PositionData()
@@ -242,8 +212,11 @@ class Account(object):
 
     @abstractmethod
     def cancelOrder(self, brokerOrderId):
-        self.debug('cancelling order[%s]' % brokerOrderId)
-        self._broker_cancelOrder(brokerOrderId)
+        with self._lock :
+            self._lstOrdersToCancel.append(brokerOrderId)
+
+        self.debug('enqueued order[%s]' % brokerOrderId)
+        # self._broker_cancelOrder(brokerOrderId)
 
     @abstractmethod
     def sendStopOrder(self, symbol, orderType, price, volume, strategy):
@@ -283,7 +256,7 @@ class Account(object):
     @abstractmethod
     def batchCancel(self, brokerOrderIds):
         for o in brokerOrderIds:
-            self._broker_cancelOrder(o)
+            self.cancelOrder(o)
     #----------------------------------------------------------------------
 
     #----------------------------------------------------------------------
@@ -347,15 +320,16 @@ class Account(object):
 
     def findOrdersOfStrategy(self, strategyId, symbol=None):
         ret = []
-        for o in self._dictLimitOrders.values():
-            if o.source == strategyId:
-                ret.append(o)
-        for o in self._dictStopOrders.values():
-            if o.source == strategyId:
-                ret.append(o)
-        for o in self._dictOutgoingOrders.values():
-            if o.source == strategyId:
-                ret.append(o)
+        with self._lock :
+            for o in self._dictLimitOrders.values():
+                if o.source == strategyId:
+                    ret.append(o)
+            for o in self._dictStopOrders.values():
+                if o.source == strategyId:
+                    ret.append(o)
+            for o in self._dictOutgoingOrders.values():
+                if o.source == strategyId:
+                    ret.append(o)
 
         return ret
 
@@ -435,7 +409,7 @@ class Account(object):
 
     @abstractmethod
     def _broker_datetimeAsOf(self):
-        return datetime.now()
+        return self._trader._dtData
 
     @abstractmethod
     def _broker_onGetAccountBalance(self, data, reqid):
@@ -485,14 +459,19 @@ class Account(object):
             volprice = pos.price =1
             if self.size >0:
                 pos.price /=self.size
-        
-        # double check if the cash account goes to negative
-        # tmp1, tmp2 = pos.posAvail + dAvail / volprice, pos.position + dTotal / volprice
-        # if tmp1<0 or tmp2 <0:
-        #     return False
 
-        pos.posAvail += dAvail / volprice
-        pos.position += dTotal / volprice
+        dAvail /= volprice
+        dTotal /= volprice
+        
+        self.debug('cashChange() avail[%s%+.3f] total[%s%+.3f]' % (pos.posAvail, dAvail, pos.position, dTotal))#, pos.desc))
+        # double check if the cash account goes to negative
+        newAvail, newTotal = pos.posAvail + dAvail, pos.position + dTotal
+        if newAvail<0 or newTotal <0 or newAvail >(newTotal*1.05):
+            self.error('cashChange() something wrong: newAvail[%s] newTotal[%s]' % (newAvail, newTotal)) #, pos.desc))
+            exit(-1)
+
+        pos.posAvail = newAvail
+        pos.position = newTotal
         pos.stampByTrader = self._broker_datetimeAsOf()
         return True
 
@@ -549,6 +528,7 @@ class Account(object):
         self._dateToday = None
         
         self._state = Account.STATE_CLOSE
+        self.debug('onDayClose() saved positions, updated state')
 
     @abstractmethod
     def onDayOpen(self, newDate):
@@ -562,6 +542,7 @@ class Account(object):
         # shift the positions, must do copy each PositionData
         self._prevPositions = self.getAllPositions()
         self._state = Account.STATE_OPEN
+        self.debug('onDayOpen() shift pos to dict _prevPositions, updated state')
     
     @abstractmethod
     def onTimer(self, dt):
@@ -834,21 +815,23 @@ class Account_AShare(Account):
     @abstractmethod
     def onDayOpen(self, newDate):
         super(Account_AShare, self).onDayOpen(newDate)
-        for pos in self._dictPositions.values():
-            if Account.SYMBOL_CASH == pos.symbol:
-                continue
-            pos.posAvail = pos.position
+        with self._lock :
+            # A-share will not keep yesterday's order alive
+            # all the out-standing order will be cancelled
+            self._dictOutgoingOrders.clear()
+            
+            self._lstOrdersToCancel =[]
+            self._dictLimitOrders.clear()
+            self._dictStopOrders.clear()
 
-    # @abstractmethod # from Account_AShare
-    # def onTrade(self, trade):
-    #     super(Account_AShare, self).onTrade(trade)
+            # shift yesterday's position as available
+            for pos in self._dictPositions.values():
+                if Account.SYMBOL_CASH == pos.symbol:
+                    continue
+                self.debug('onDayOpen() shifting pos[%s] %s to avail %s' % (pos.symbol, pos.position, pos.posAvail))
+                pos.posAvail = pos.position
 
-    #     if trade.direction = OrderData.DIRECTION_LONG:
-    #         return
-
-    #     with self._lock :
-    #         if trade.symbol in self._dictPositions :
-    #             self._dictPositions[trade.symbol].posAvail -= trade.volume
+        #TODO: sync with broker
 
 ########################################################################
 class OrderData(EventData):
@@ -961,8 +944,8 @@ class TradeData(EventData):
         
         self.tradeID   = EventData.EMPTY_STRING           # 成交编号
         self.brokerTradeId = EventData.EMPTY_STRING           # 成交在vt系统中的唯一编号，通常是 Gateway名.成交编号
-        self.accountId = account.ident          # 成交归属的帐号
-        self.exchange = account._exchange       # 交易所代码
+        self.accountId = account.ident                    # 成交归属的帐号
+        self.exchange = account._exchange                 # 交易所代码
 
         # 代码编号相关
         self.symbol = EventData.EMPTY_STRING              # 合约代码

@@ -28,6 +28,18 @@ from pymongo.errors import ConnectionFailure
 from vnpy.trader.language import text
 # from vnpy.trader.vtFunction import getTempPath
 
+########################################################################
+# 常量定义
+########################################################################
+
+# 数据库名称
+SETTING_DB_NAME = 'vnDB_Setting'
+POSITION_DB_NAME = 'vnDB_Position'
+
+TICK_DB_NAME   = 'vnDB_Tick'
+DAILY_DB_NAME  = 'vnDB_Daily'
+MINUTE_DB_NAME = 'vnDB_1Min'
+
 # 日志级别
 LOGLEVEL_DEBUG    = logging.DEBUG
 LOGLEVEL_INFO     = logging.INFO
@@ -39,6 +51,14 @@ LOGLEVEL_CRITICAL = logging.CRITICAL
 LOG_DB_NAME = 'vnDB_Log'
 
 import jsoncfg # pip install json-cfg
+
+# def loadSettings(filepath):
+#     """读取配置"""
+#     try :
+#         return jsoncfg.load_config(filepath)
+#     except Exception as e :
+#         print('failed to load configure[%s] :%s' % (filepath, e))
+#         return None
 
 ########################################################################
 class BaseApplication(object):
@@ -71,7 +91,7 @@ class BaseApplication(object):
     #----------------------------------------------------------------------
     @property
     def ident(self) :
-        return self.__class__.__name__ +":" + self._id
+        return self.__class__.__name__ + self._id
 
     @property
     def app(self) : # for the thread wrapper

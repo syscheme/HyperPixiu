@@ -5,19 +5,21 @@ from __future__ import division
 import os
 import shelve
 import logging
+import json   # to save params
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timedelta
 from copy import copy
 from abc import ABCMeta, abstractmethod
+import traceback
 
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
 
-from vnApp.EventChannel import EventChannel, EventData, datetime2float
-from vnApp.MainRoutine import BaseApplication
-from vnApp.MarketData import MarketData
-from vnApp.Account import *
-import vnApp.strategies as tg
+from   .EventChannel import EventChannel, EventData, datetime2float
+from   .MainRoutine  import BaseApplication
+from   .MarketData   import MarketData
+from   .Account   import Account, Account_AShare, PositionData, TradeData, OrderData
+import strategies as tg
 # from vnApp.BrokerDriver import *
 # from vnApp.brokerdrivers import tdHuobi as td
 
@@ -64,6 +66,7 @@ class Trader(BaseApplication):
         # inside of Account self._dictTrade = {}
         self._dictAccounts = {}
         self._defaultAccId = None
+        self._dtData = None # datetime of data
         # inside of Account self._dictPositions= {}
         self._lstErrors = []
 
@@ -327,7 +330,7 @@ class Trader(BaseApplication):
         if not symbol in self._dictObjectives or ds != self._dictObjectives[symbol]['ds1min']:
             return # ignore those not interested
 
-        kline = copy.copy(d)
+        kline = copy(d)
         try:
             # 添加datetime字段
             if not kline.datetime:
@@ -348,6 +351,7 @@ class Trader(BaseApplication):
             self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = kline.date
 
         # step 1. cache into the latest, lnf DataEngine
+        self._dtData = kline.datetime # datetime of data
         self._dictLatestKline1min[symbol] = kline
 
         # step 2. 收到行情后，在启动策略前的处理
@@ -390,7 +394,7 @@ class Trader(BaseApplication):
         if not symbol in self._dictObjectives or ds != self._dictObjectives[symbol]['ds1min']:
             return # ignore those not interested
 
-        tick = copy.copy(d)
+        tick = copy(d)
         try:
             # 添加datetime字段
             if not tick.datetime:
@@ -410,6 +414,7 @@ class Trader(BaseApplication):
             self.onDayOpen(symbol, tick.date)
 
         # step 1. cache into the latest, lnf DataEngine
+        self._dtData = tick.datetime # datetime of data
         self._dictLatestTick[symbol] = tick
 
         # step 2. 收到行情后，在启动策略前的处理
@@ -465,7 +470,7 @@ class Trader(BaseApplication):
         strategy = self._idxOrderToStategy[order.brokerOrderId]            
             
         # 如果委托已经完成（拒单、撤销、全成），则从活动委托集合中移除
-        if order.status == self.STATUS_FINISHED:
+        if order.status == self.FINISHED_STATUS:
             s = self._idxStrategyToOrder[strategy.id]
             if order.brokerOrderId in s:
                 s.remove(order.brokerOrderId)
@@ -482,14 +487,13 @@ class Trader(BaseApplication):
         if trade.orderID in self._idxOrderToStategy:
             strategy = self._idxOrderToStategy[trade.orderID]
             self._stg_call(strategy, strategy.onTrade, trade)
-            
             # 保存策略持仓到数据库
-            self._stg_flushPos(strategy)
+            # goes to Account now : self._stg_flushPos(strategy)
 
     ### generic events ??? ----------------
     def eventHdl_OnTimer(self, event):
-        edata = event.dict_['data']
-        self.debug('OnTimer() src[%s] %s' % (edata.sourceType, edata.datetime.strftime('%Y%m%dT%H:%M:%S')))
+        # edata = event.dict_['data']
+        # self.debug('OnTimer() src[%s] %s' % (edata.sourceType, edata.datetime.strftime('%Y%m%dT%H:%M:%S')))
         # TODO: forward to account.onTimer()
         pass                      
 
@@ -521,7 +525,11 @@ class Trader(BaseApplication):
         # step1. notify accounts
         # TODO: to support multiaccount: for acc in self._dictAccounts.values():
         self.debug('onDayOpen(%s) dispatching to account' % symbol)
-        self.account.onDayOpen(date)
+        for acc in self._dictAccounts.values():
+            try :
+                acc.onDayOpen(date)
+            except Exception as ex:
+                self.logexception(ex)
 
         # step1. notify stategies
         if symbol in self._idxSymbolToStrategy:

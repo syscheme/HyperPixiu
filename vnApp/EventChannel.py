@@ -28,8 +28,8 @@ class EventData(object):
     #----------------------------------------------------------------------
     def __init__(self):
         """Constructor"""
-        self.gatewayName = EventData.EMPTY_STRING         # Gateway名称        
-        self.rawData = None                     # 原始数据
+        # self.gatewayName = EventData.EMPTY_STRING         # Gateway名称        
+        # self.rawData = None                     # 原始数据
 
     @property
     def desc(self) :

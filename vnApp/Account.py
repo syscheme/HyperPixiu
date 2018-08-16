@@ -243,12 +243,11 @@ class Account(object):
 
     @abstractmethod
     def cancelOrder(self, brokerOrderId):
-        self.debug('cancelling order[%s]' % brokerOrderId)
         with self._lock :
             self._lstOrdersToCancel.append(brokerOrderId)
-            self.debug('enqueued order[%s]' % orderData.desc)
 
-        self._broker_cancelOrder(brokerOrderId)
+        self.debug('enqueued order[%s]' % brokerOrderId)
+        # self._broker_cancelOrder(brokerOrderId)
 
     @abstractmethod
     def sendStopOrder(self, symbol, orderType, price, volume, strategy):
@@ -560,6 +559,7 @@ class Account(object):
         self._dateToday = None
         
         self._state = Account.STATE_CLOSE
+        self.debug('onDayClose() saved positions, updated state')
 
     @abstractmethod
     def onDayOpen(self, newDate):
@@ -573,6 +573,7 @@ class Account(object):
         # shift the positions, must do copy each PositionData
         self._prevPositions = self.getAllPositions()
         self._state = Account.STATE_OPEN
+        self.debug('onDayOpen() shift pos to dict _prevPositions, updated state')
     
     @abstractmethod
     def onTimer(self, dt):
@@ -850,7 +851,7 @@ class Account_AShare(Account):
             # all the out-standing order will be cancelled
             self._dictOutgoingOrders.clear()
             
-            self._lstOrdersToCancel.clear()
+            self._lstOrdersToCancel =[]
             self._dictLimitOrders.clear()
             self._dictStopOrders.clear()
 
@@ -858,6 +859,7 @@ class Account_AShare(Account):
             for pos in self._dictPositions.values():
                 if Account.SYMBOL_CASH == pos.symbol:
                     continue
+                self.debug('onDayOpen() shifting pos[%s] %s to avail %s' % (pos.symbol, pos.position, pos.posAvail))
                 pos.posAvail = pos.position
 
         #TODO: sync with broker

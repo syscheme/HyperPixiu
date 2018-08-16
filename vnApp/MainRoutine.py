@@ -71,7 +71,7 @@ class BaseApplication(object):
     #----------------------------------------------------------------------
     @property
     def ident(self) :
-        return self.__class__.__name__ +":" + self._id
+        return self.__class__.__name__ + self._id
 
     @property
     def app(self) : # for the thread wrapper

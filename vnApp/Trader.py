@@ -465,7 +465,7 @@ class Trader(BaseApplication):
         strategy = self._idxOrderToStategy[order.brokerOrderId]            
             
         # 如果委托已经完成（拒单、撤销、全成），则从活动委托集合中移除
-        if order.status == self.STATUS_FINISHED:
+        if order.status == self.FINISHED_STATUS:
             s = self._idxStrategyToOrder[strategy.id]
             if order.brokerOrderId in s:
                 s.remove(order.brokerOrderId)
@@ -482,9 +482,8 @@ class Trader(BaseApplication):
         if trade.orderID in self._idxOrderToStategy:
             strategy = self._idxOrderToStategy[trade.orderID]
             self._stg_call(strategy, strategy.onTrade, trade)
-            
             # 保存策略持仓到数据库
-            self._stg_flushPos(strategy)
+            # goes to Account now : self._stg_flushPos(strategy)
 
     ### generic events ??? ----------------
     def eventHdl_OnTimer(self, event):
@@ -593,6 +592,7 @@ class Trader(BaseApplication):
         for n in self._dictStrategies.values():
             self._stg_stop(n['strategy'])
 
+    import json
     def strategies_Save(self):
         """保存策略配置"""
         with open(self._settingfilePath, 'w') as f:

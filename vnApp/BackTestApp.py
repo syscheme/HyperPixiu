@@ -1107,6 +1107,7 @@ class AccountWrapper(object):
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendStopOrder(vtSymbol, orderType, price, volume, strategy)
     def findOrdersOfStrategy(self, strategyId, symbol=None): return self._nest.findOrdersOfStrategy(strategyId, symbol)
     
+    def _broker_datetimeAsOf(self): return self._nest._broker_datetimeAsOf()
     def _broker_onOrderPlaced(self, orderData): return self._nest._broker_onOrderPlaced(orderData)
     def _broker_onCancelled(self, orderData): return self._nest._broker_onCancelled(orderData)
     def _broker_onOrderDone(self, orderData): return self._nest._broker_onOrderDone(orderData)
@@ -1148,9 +1149,6 @@ class AccountWrapper(object):
     #------------------------------------------------
     # overwrite of Account
     #------------------------------------------------    
-    def _broker_datetimeAsOf(self):
-        return self._btTrader._dtData
-
     def _broker_placeOrder(self, orderData):
         """发单"""
         orderData.brokerOrderId = "$" + orderData.reqId
@@ -1196,7 +1194,8 @@ class AccountWrapper(object):
         for o in outgoingOrders:
             self._broker_placeOrder(o)
 
-        self._nest.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
+        if (len(ordersToCancel) + len(outgoingOrders)) >0:
+            self._nest.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
 
     def onDayOpen(self, newDate):
         # instead that the true Account is able to sync with broker,

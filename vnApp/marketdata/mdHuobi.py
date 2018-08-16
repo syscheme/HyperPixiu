@@ -2,7 +2,8 @@
 
 from __future__ import division
 
-from ..MarketData import *
+from ..MarketData import MarketData, KLineData, TickData
+from ..EventChannel import Event
 
 # from vnpy.trader.vtConstant import *
 # from vnpy.event import Event
@@ -363,6 +364,7 @@ class mdHuobi(MarketData):
         self.error(msg)
 
     def onMarketEvent(self, event) :
+        event.dict_['data'].exchange = self.exchange
         self.postMarketEvent(event)
         
     #----------------------------------------------------------------------
@@ -570,7 +572,7 @@ class DataToEvent(object):
                 if d['stamp']['id'] > latest['stamp']['id'] :
                     t = latest['tick']
 
-                    edata = KLineData(self.exchange, symbol)
+                    edata = KLineData("", symbol)
                     edata.open = t['open']
                     edata.close = t['close']
                     edata.high = t['high']
@@ -598,7 +600,7 @@ class DataToEvent(object):
             symbol = topic.split('.')[1]
             tick = self._dictTicks.get(symbol, None)
             if not tick:
-                tick = TickData(self.exchange, symbol)
+                tick = TickData('', symbol)
                 self._dictTicks[symbol] = tick
                 
             tick.datetime = datetime.fromtimestamp(line['ts']/1000)
@@ -659,3 +661,24 @@ class DataToEvent(object):
             self._sink(event)
 
 
+# if __name__ == '__main__':
+# 	#root, dirs, files = os.walk('.', False)
+# 	files = os.listdir('.')
+# 	tess = OCR()
+# 	for fn in files:
+# 		if fn[-3:]!='png' and fn[-3:]!='jpg' :
+# 			continue
+# 		print 'file[%s]: %s' % (fn, tess.doOCR(fn))
+
+
+#     api = DataApi()
+#     api.init(api.HUOBI, 'localhost', 8118)
+#     api.connect()
+#     api.subscribeMarketDepth('btcusdt',2)
+#     api.subscribeMarketDepth('eosbtc',2)
+#     api.subscribeMarketDepth('eosusdt',2)
+#     api.subscribeMarketDepth('ethusdt',2)
+#     api.subscribeMarketDepth('eoseth',2)
+#     # not available api.subscribeMarketDepth('btceth',2)
+#     api.subscribeTradeDetail('eosusdt')
+#     api.subscribeKline('eosusdt', 1)

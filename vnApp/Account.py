@@ -30,37 +30,6 @@ from .EventChannel import EventChannel, EventData, datetime2float
 
 from pymongo import ASCENDING
 
-########################################################################
-# 常量定义
-########################################################################
-
-# 数据库名称
-SETTING_DB_NAME = 'vnDB_Setting'
-POSITION_DB_NAME = 'vnDB_Position'
-
-TICK_DB_NAME   = 'vnDB_Tick'
-DAILY_DB_NAME  = 'vnDB_Daily'
-MINUTE_DB_NAME = 'vnDB_1Min'
-
-# CTA模块事件
-EVENT_LOG      = 'eVNLog'          # 相关的日志事件
-EVENT_STRATEGY = 'eVNStrategy.'    # 策略状态变化事件
-
-########################################################################
-def loadSettings(filepath):
-    """读取配置"""
-    try :
-        return jsoncfg.load_config(filepath)
-    except Exception as e :
-        print('failed to load configure[%s] :%s' % (filepath, e))
-        return None
-
-    # with open(filepath) as f:
-    #     l = json.load(f)
-            
-    #     for setting in l:
-    #         self.loadStrategy(setting)
-    # return settings
 
 ########################################################################
 from abc import ABCMeta, abstractmethod
@@ -440,7 +409,7 @@ class Account(object):
 
     @abstractmethod
     def _broker_datetimeAsOf(self):
-        return datetime.now()
+        return self._trader._dtData
 
     @abstractmethod
     def _broker_onGetAccountBalance(self, data, reqid):

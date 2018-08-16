@@ -107,6 +107,7 @@ class Account(object):
         self._prevPositions = {} # dict from symbol to previous PositionData
 
         self._dictOutgoingOrders = {} # the outgoing orders dict from reqId to OrderData that has not been confirmed with broker's orderId
+        self._lstOrdersToCancel = []
         # cached data from broker
         self._dictPositions = { # dict from symbol to latest PositionData
             Account.SYMBOL_CASH : PositionData()
@@ -243,6 +244,10 @@ class Account(object):
     @abstractmethod
     def cancelOrder(self, brokerOrderId):
         self.debug('cancelling order[%s]' % brokerOrderId)
+        with self._lock :
+            self._lstOrdersToCancel.append(brokerOrderId)
+            self.debug('enqueued order[%s]' % orderData.desc)
+
         self._broker_cancelOrder(brokerOrderId)
 
     @abstractmethod
@@ -283,7 +288,7 @@ class Account(object):
     @abstractmethod
     def batchCancel(self, brokerOrderIds):
         for o in brokerOrderIds:
-            self._broker_cancelOrder(o)
+            self.cancelOrder(o)
     #----------------------------------------------------------------------
 
     #----------------------------------------------------------------------
@@ -347,15 +352,16 @@ class Account(object):
 
     def findOrdersOfStrategy(self, strategyId, symbol=None):
         ret = []
-        for o in self._dictLimitOrders.values():
-            if o.source == strategyId:
-                ret.append(o)
-        for o in self._dictStopOrders.values():
-            if o.source == strategyId:
-                ret.append(o)
-        for o in self._dictOutgoingOrders.values():
-            if o.source == strategyId:
-                ret.append(o)
+        with self._lock :
+            for o in self._dictLimitOrders.values():
+                if o.source == strategyId:
+                    ret.append(o)
+            for o in self._dictStopOrders.values():
+                if o.source == strategyId:
+                    ret.append(o)
+            for o in self._dictOutgoingOrders.values():
+                if o.source == strategyId:
+                    ret.append(o)
 
         return ret
 
@@ -489,14 +495,14 @@ class Account(object):
         dAvail /= volprice
         dTotal /= volprice
         
-        self.debug('_cashChange() avail[%s%+.3f] total[%s%+.3f]' % (pos.posAvail, dAvail, pos.position, dTotal))#, pos.desc))
+        self.debug('cashChange() avail[%s%+.3f] total[%s%+.3f]' % (pos.posAvail, dAvail, pos.position, dTotal))#, pos.desc))
         # double check if the cash account goes to negative
         newAvail, newTotal = pos.posAvail + dAvail, pos.position + dTotal
-        if newAvail<0 or newTotal <0 or newAvail>newTotal:
-            self.error('_cashChange() something wrong: newAvail[%s] newTotal[%s]' % (newAvail, newTotal)) #, pos.desc))
+        if newAvail<0 or newTotal <0 or newAvail >(newTotal*1.05):
+            self.error('cashChange() something wrong: newAvail[%s] newTotal[%s]' % (newAvail, newTotal)) #, pos.desc))
             exit(-1)
 
-        pos.posAvail = newTotal
+        pos.posAvail = newAvail
         pos.position = newTotal
         pos.stampByTrader = self._broker_datetimeAsOf()
         return True
@@ -839,21 +845,22 @@ class Account_AShare(Account):
     @abstractmethod
     def onDayOpen(self, newDate):
         super(Account_AShare, self).onDayOpen(newDate)
-        for pos in self._dictPositions.values():
-            if Account.SYMBOL_CASH == pos.symbol:
-                continue
-            pos.posAvail = pos.position
+        with self._lock :
+            # A-share will not keep yesterday's order alive
+            # all the out-standing order will be cancelled
+            self._dictOutgoingOrders.clear()
+            
+            self._lstOrdersToCancel.clear()
+            self._dictLimitOrders.clear()
+            self._dictStopOrders.clear()
 
-    # @abstractmethod # from Account_AShare
-    # def onTrade(self, trade):
-    #     super(Account_AShare, self).onTrade(trade)
+            # shift yesterday's position as available
+            for pos in self._dictPositions.values():
+                if Account.SYMBOL_CASH == pos.symbol:
+                    continue
+                pos.posAvail = pos.position
 
-    #     if trade.direction = OrderData.DIRECTION_LONG:
-    #         return
-
-    #     with self._lock :
-    #         if trade.symbol in self._dictPositions :
-    #             self._dictPositions[trade.symbol].posAvail -= trade.volume
+        #TODO: sync with broker
 
 ########################################################################
 class OrderData(EventData):

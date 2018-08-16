@@ -521,7 +521,11 @@ class Trader(BaseApplication):
         # step1. notify accounts
         # TODO: to support multiaccount: for acc in self._dictAccounts.values():
         self.debug('onDayOpen(%s) dispatching to account' % symbol)
-        self.account.onDayOpen(date)
+        for acc in self._dictAccounts.values():
+            try :
+                acc.onDayOpen(date)
+            except Exception as ex:
+                self.logexception(ex)
 
         # step1. notify stategies
         if symbol in self._idxSymbolToStrategy:

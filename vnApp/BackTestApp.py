@@ -1103,6 +1103,7 @@ class AccountWrapper(object):
     def postEvent_Order(self, orderData): return self._nest.postEvent_Order(orderData)
     def sendOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendOrder(vtSymbol, orderType, price, volume, strategy)
     def cancelOrder(self, brokerOrderId): return self._nest.cancelOrder(brokerOrderId)
+    def batchCancel(self, brokerOrderIds): return self._nest.batchCancel(brokerOrderIds)
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendStopOrder(vtSymbol, orderType, price, volume, strategy)
     def findOrdersOfStrategy(self, strategyId, symbol=None): return self._nest.findOrdersOfStrategy(strategyId, symbol)
     
@@ -1182,19 +1183,36 @@ class AccountWrapper(object):
         orderData.cancelTime = self._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:3]
         self._broker_onCancelled(orderData)
 
-    def batchCancel(self, brokerOrderIds): # MUST overwrite to call self._broker_cancelOrder()
-        for o in brokerOrderIds:
-            self._broker_cancelOrder(o)
-        self._nest.debug('batchCancel() orders:%s'% brokerOrderIds)
-
     def step(self) :
         outgoingOrders = []
+        ordersToCancel = []
+
         with self._nest._lock:
             outgoingOrders = copy.deepcopy(self._nest._dictOutgoingOrders.values())
+            ordersToCancel = copy.copy(self._nest._lstOrdersToCancel)
+            self._nest._lstOrdersToCancel = []
+
+        for boid in ordersToCancel:
+            self._broker_cancelOrder(boid)
         for o in outgoingOrders:
             self._broker_placeOrder(o)
-        
-        self._nest.debug('step() issued %d orders'% len(outgoingOrders))
+
+        self._nest.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
+
+    def onDayOpen(self, newDate):
+        # instead that the true Account is able to sync with broker,
+        # Backtest should perform cancel to restore available/frozen positions
+        ret = []
+        with self._nest._lock :
+            # A share will not keep yesterday's order alive
+            self._nest._dictOutgoingOrders.clear()
+            for o in self._nest._dictLimitOrders.values():
+                ret.append(o.brokerOrderId)
+            for o in self._nest._dictStopOrders.values():
+                ret.append(o.brokerOrderId)
+
+        self.batchCancel(ret)
+        self._nest.onDayOpen(newDate)
 
     #----------------------------------------------------------------------
     def setCapital(self, capital, resetAvail=False):
@@ -1281,11 +1299,12 @@ class AccountWrapper(object):
 
                 self._nest.info('crossLimitOrder() crossed order[%s] to trade[%s]'% (order.desc, trade.desc))
 
+        for o in finishedOrders:
+            self._broker_onOrderDone(o)
+
         for t in trades:
             self._broker_onTrade(t)
 
-        for o in finishedOrders:
-            self._broker_onOrderDone(o)
     #             # 以买入为例：
     #             # 1. 假设当根K线的OHLC分别为：100, 125, 90, 110
     #             # 2. 假设在上一根K线结束(也是当前K线开始)的时刻，策略发出的委托为限价105

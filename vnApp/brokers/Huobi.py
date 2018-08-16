@@ -1,9 +1,9 @@
 # encoding: UTF-8
 
-from ..BrokerDriver import *
+from ..Account import *
 
 ########################################################################
-class tdHuobi(BrokerDriver):
+class Huobi(Account):
     """交易API"""
     # 常量定义
 
@@ -15,28 +15,31 @@ class tdHuobi(BrokerDriver):
     TIMEOUT = 5
     
     #----------------------------------------------------------------------
-    def __init__(self, account, settings, mode=None):
+    def __init__(self, trader, settings):
         """Constructor"""
-        super(tdHuobi, self).__init__(account, settings, mode)
+        super(Account_AShare, self).__init__(trader, settings)
 
-#        self.queue = Queue()        # 请求队列
-#        self.pool = None            # 线程池
+        self._queRequests = Queue()        # queue of request ids
+        self._dictRequests = {}            # dict from request Id to request
+        
+        # self.pool = None            # 线程池
 
         # about the proxy
         self._proxies = {}
-        prx = self._settings.httpproxy('')
+        prx = settings.httpproxy('')
         if prx != '' :
             self._proxies['http']  = prx
             self._proxies['https'] = prx
 
         # about the exchange
-        if self._settings.exchange('') == self.HADAX:
+        if self._exchange == self.HADAX:
             self._hostname = self.HADAX_API_HOST
         else:
+            self._exchange = self.HUOBI
             self._hostname = self.HUOBI_API_HOST
             
         self._hosturl = 'https://%s' %self._hostname
-
+        
     @property
     def accessKey(self) :
         return self._settings.accessKey('')
@@ -45,9 +48,160 @@ class tdHuobi(BrokerDriver):
     def secretKey(self) :
         return self._settings.secretKey('')
 
-    @property
-    def accountId(self) :
-        return self._account._id
+    #----------------------------------------------------------------------
+    # most of the methods are just forward to the self._nest
+    # def _broker_datetimeAsOf(self): return self._nest._broker_datetimeAsOf()
+    # def _broker_onOrderPlaced(self, orderData): return self._nest._broker_onOrderPlaced(orderData)
+    # def _broker_onCancelled(self, orderData): return self._nest._broker_onCancelled(orderData)
+    # def _broker_onOrderDone(self, orderData): return self._nest._broker_onOrderDone(orderData)
+    # def _broker_onTrade(self, trade): return self._nest._broker_onTrade(trade)
+    # def _broker_onGetAccountBalance(self, data, reqid): return self._nest._broker_onGetAccountBalance(data, reqid)
+    # def _broker_onGetOrder(self, data, reqid): return self._nest._broker_onGetOrder(data, reqid)
+    # def _broker_onGetOrders(self, data, reqid): return self._nest._broker_onGetOrders(data, reqid)
+    # def _broker_onGetMatchResults(self, data, reqid): return self._nest._broker_onGetMatchResults(data, reqid)
+    # def _broker_onGetMatchResult(self, data, reqid): return self._nest._broker_onGetMatchResult(data, reqid)
+    # def _broker_onGetTimestamp(self, data, reqid): return self._nest._broker_onGetTimestamp(data, reqid)
+
+    # def calcAmountOfTrade(self, symbol, price, volume): return self._nest.calcAmountOfTrade(symbol, price, volume)
+    # def maxOrderVolume(self, symbol, price): return self._nest.maxOrderVolume(symbol, price)
+    # def roundToPriceTick(self, price): return self._nest.roundToPriceTick(price)
+    # def onStart(self): return self._nest.onStart()
+    # def onDayClose(self): return self._nest.onDayClose()
+    # def onTimer(self, dt): return self._nest.onTimer(dt)
+    # def saveDB(self): return self._nest.saveDB()
+    # def loadDB(self, since =None): return self._nest.loadDB(since =None)
+    # def calcDailyPositions(self): return self._nest.calcDailyPositions()
+    # def log(self, message): return self._nest.log(message)
+    # def stdout(self, message): return self._nest.stdout(message)
+    # def loadStrategy(self, setting): return self._nest.loadStrategy(setting)
+    # def getStrategyNames(self): return self._nest.getStrategyNames()
+    # def getStrategyVar(self, name): return self._nest.getStrategyVar(name)
+    # def getStrategyParam(self, name): return self._nest.getStrategyParam(name)
+    # def initStrategy(self, name): return self._nest.initStrategy(name)
+    # def startStrategy(self, name): return self._nest.startStrategy(name)
+    # def stopStrategy(self, name): return self._nest.stopStrategy(name)
+    # def callStrategyFunc(self, strategy, func, params=None): return self._nest.callStrategyFunc(strategy, func, params)
+    # def initAll(self): return self._nest.initAll()
+    # def startAll(self): return self._nest.startAll()
+    # def stop(self): return self._nest.stop()
+    # def stopAll(self): return self._nest.stopAll()
+    # def saveSetting(self): return self._nest.saveSetting()
+    # def updateDailyStat(self, dt, price): return self._nest.updateDailyStat(dt, price)
+    # def evaluateDailyStat(self, startdate, enddate): return self._nest.evaluateDailyStat(startdate, enddate)
+    #----------------------------------------------------------------------
+    def pushRequest(self, path, reqId, httpParams, data, funcMethod, callbackResp):
+        """添加请求"""       
+        # 同步模式
+        if self.mode != self.ASYNC_MODE:
+            return funcMethod(path, params)
+
+        # 异步模式
+        req = {
+                'reqId': reqId,
+                'path': path, 
+                'httpparams': httpParams, 
+                'reqData': data, 
+                'apiFunc': funcMethod, 
+                'callback': callback
+            }
+
+        with self._lock
+            self._dictRequests[reqId] = req
+            self._queRequests.append(reqId)
+
+        return reqId
+
+    #------------------------------------------------
+    # overwrite of Account
+    #------------------------------------------------    
+    def _broker_placeOrder(self, orderData):
+        """下单"""
+        if self._hostname == HUOBI_API_HOST:
+            path = '/v1/order/orders/place'
+        else:
+            path = '/v1/hadax/order/orders/place'
+
+        params = {
+            'account-id': self._id,
+            'amount': orderData.volume * self.size,
+            'symbol': orderData.symbol,
+            'type'  : orderData.direction
+        }
+        
+        if price:
+            params['price'] = price
+        if source:
+            params['source'] = source
+
+        return self.pushRequest(path, orderData.reqId, params, orderData, onResp_placeOrder)
+
+    def onResp_placeOrder(self, req, resp):
+        """下单的response"""
+        orderData = req['reqData']
+
+        #TODO fill response data into orderData
+
+        self._broker_onOrderPlaced(orderData) # if succ, else _broker_onCancelled() ??
+
+    def _broker_cancelOrder(self, brokerOrderId) :
+        orderData = None
+
+        # find out he orderData by brokerOrderId
+        with self._nest._lock :
+            try :
+                if OrderData.STOPORDERPREFIX in brokerOrderId :
+                    orderData = self._nest._dictStopOrders[brokerOrderId]
+                else :
+                    orderData = self._nest._dictLimitOrders[brokerOrderId]
+            except KeyError:
+                pass
+
+            if not orderData :
+                return
+
+            orderData = copy.copy(orderData)
+
+        # orderData found
+        orderData.status = OrderData.STATUS_CANCELLED
+        orderData.cancelTime = self._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:3]
+        self._broker_onCancelled(orderData)
+
+    def step(self) :
+        outgoingOrders = []
+        ordersToCancel = []
+
+        with self._nest._lock:
+            outgoingOrders = copy.deepcopy(self._nest._dictOutgoingOrders.values())
+            ordersToCancel = copy.copy(self._nest._lstOrdersToCancel)
+            self._nest._lstOrdersToCancel = []
+
+        for boid in ordersToCancel:
+            self._broker_cancelOrder(boid)
+        for o in outgoingOrders:
+            self._broker_placeOrder(o)
+
+        if (len(ordersToCancel) + len(outgoingOrders)) >0:
+            self._nest.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
+
+    def onDayOpen(self, newDate):
+        # instead that the true Account is able to sync with broker,
+        # Backtest should perform cancel to restore available/frozen positions
+        clist = []
+        with self._nest._lock :
+            # A share will not keep yesterday's order alive
+            self._nest._dictOutgoingOrders.clear()
+            for o in self._nest._dictLimitOrders.values():
+                clist.append(o.brokerOrderId)
+            for o in self._nest._dictStopOrders.values():
+                clist.append(o.brokerOrderId)
+
+        if len(clist) >0:
+            self.batchCancel(clist)
+            self._nest.debug('BT.onDayOpen() batchCancelled: %s' % clist)
+        self._nest.onDayOpen(newDate)
+
+
+########################################################################################################
 
     #----------------------------------------------------------------------
     def start(self, n=10):

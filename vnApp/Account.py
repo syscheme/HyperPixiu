@@ -643,22 +643,6 @@ class Account(object):
             dpos = DailyPosition()
             dpos.initPositions(self, s, currentPos, prevPos)
             
-            # DayX brought some:
-            # {'recentPos': 200.0, 'cBuy': 2, 'recentPrice': 3.35, 'prevPos': 160.0, 'symbol': 'A601005', 'posAvail': 160.0, 'calcPos': 200.0, 
-            # 'commission': 43.96, 'netPnl': -1472.74, 'avgPrice': 3.444, 'prevClose': 3.48, 'calcMValue': 67000.0, 'positionPnl': -1508.78, 
-            # 'dailyPnl': -1428.78, 'cSell': 0, 'slippage': 0.0, 'date': u'20121219', 'tradingPnl': 80.0, 'asof': [datetime.datetime(2012, 12, 19, 14, 48), 0],
-            # 'txns': '+20x3.31+20x3.35', 'turnover': 13320.0}
-            # DayY no trade：
-            # {'recentPos': 292.0, 'cBuy': 0, 'recentPrice': 3.26, 'prevPos': 292.0, 'symbol': 'A601005', 'posAvail': 292.0, 'calcPos': 292.0, 
-            # 'commission': 0.0, 'netPnl': -4383.74, 'avgPrice': 3.41, 'prevClose': 3.27, 'calcMValue': 95192.0, 'positionPnl': -4383.74, 
-            # 'dailyPnl': -4383.74, 'cSell': 0, 'slippage': 0.0, 'date': u'20121226', 'tradingPnl': 0.0, 'asof': [datetime.datetime(2012, 12, 24, 10, 20), 0],
-            # 'txns': '', 'turnover': 0.0}
-            # sold-all at last day
-            # {'recentPos': 0.0, 'cBuy': 0, 'recentPrice': 3.94, 'prevPos': 292.0, 'symbol': 'A601005', 'posAvail': 0.0, 'calcPos': 0.0, 
-            # 'commission': 375.14, 'netPnl': 15097.11, 'avgPrice': 3.41, 'prevClose': 3.59, 'calcMValue': 0.0, 'positionPnl': 15472.26, 
-            # 'dailyPnl': 15472.26, 'cSell': 1, 'slippage': 0.0, 'date': u'20121228', 'tradingPnl': 0.0, 'asof': [datetime.datetime(2012, 12, 28, 15, 0), 0],
-            #  'txns': '-292x3.94', 'turnover': 115048.0}]            
-
             for trade in tradesOfSymbol[s]:
                 dpos.pushTrade(self, trade) 
             
@@ -666,45 +650,6 @@ class Account(object):
             result.append(dpos.__dict__)
 
         return result, tradesOfSymbol
-
-    # def updateDailyStat(self, dt, price):
-    #     """更新每日收盘价"""
-    #     date = dt.date()
-    #     self._statDaily = DailyResult(date, price)
-
-    #     # 将成交添加到每日交易结果中
-    #     for trade in self._dictTrades.values():
-    #         self._statDaily.addTrade(trade)
-            
-    # def evaluateDailyStat(self, startdate, enddate):
-    #     previousClose = 0
-    #     openPosition = 0
-    #     # TODO: read the statDaily from the DB
-    #     # for dailyResult in self.dailyResultDict.values():
-    #     #     dailyResult.previousClose = previousClose
-    #     #     previousClose = dailyResult.closePrice
-            
-    #     #     dailyResult.calculatePnl(self._account, openPosition)
-    #     #     openPosition = dailyResult.closePosition
-            
-    #     # 生成DataFrame
-    #     resultDict ={}
-    #     for k in dailyResult.__dict__.keys() :
-    #         if k == 'tradeList' : # to exclude some columns
-    #             continue
-    #         resultDict[k] =[]
-
-    #     for dailyResult in self.dailyResultDict.values():
-    #         for k, v in dailyResult.__dict__.items() :
-    #             if k in resultDict :
-    #                 resultDict[k].append(v)
-                
-    #     resultDf = pd.DataFrame.from_dict(resultDict)
-        
-    #     # 计算衍生数据
-    #     resultDf = resultDf.set_index('date')
-
-    #     return resultDf
 
 ########################################################################
 class DailyPosition(object):
@@ -755,6 +700,26 @@ class DailyPosition(object):
                 
         # self.calcMValue  = round(calcPosition*currentPos.price*self.size , 2),     # 昨日收盘
     def pushTrade(self, account, trade) :
+        '''
+        DayX bought some:
+        {'recentPos': 200.0, 'cBuy': 2, 'recentPrice': 3.35, 'prevPos': 160.0, 'symbol': 'A601005', 'posAvail': 160.0, 'calcPos': 200.0, 
+        'commission': 43.96, 'netPnl': -1472.74, 'avgPrice': 3.444, 'prevClose': 3.48, 'calcMValue': 67000.0, 'positionPnl': -1508.78, 
+        'dailyPnl': -1428.78, 'cSell': 0, 'slippage': 0.0, 'date': u'20121219', 'tradingPnl': 80.0, 'asof': [datetime.datetime(2012, 12, 19, 14, 48), 0],
+        'txns': '+20x3.31+20x3.35', 'turnover': 13320.0}
+
+        DayY no trade：
+        {'recentPos': 292.0, 'cBuy': 0, 'recentPrice': 3.26, 'prevPos': 292.0, 'symbol': 'A601005', 'posAvail': 292.0, 'calcPos': 292.0, 
+        'commission': 0.0, 'netPnl': -4383.74, 'avgPrice': 3.41, 'prevClose': 3.27, 'calcMValue': 95192.0, 'positionPnl': -4383.74, 
+        'dailyPnl': -4383.74, 'cSell': 0, 'slippage': 0.0, 'date': u'20121226', 'tradingPnl': 0.0, 'asof': [datetime.datetime(2012, 12, 24, 10, 20), 0],
+        'txns': '', 'turnover': 0.0}
+
+        sold-all at last day
+        {'recentPos': 0.0, 'cBuy': 0, 'recentPrice': 3.94, 'prevPos': 292.0, 'symbol': 'A601005', 'posAvail': 0.0, 'calcPos': 0.0, 
+        'commission': 375.14, 'netPnl': 15097.11, 'avgPrice': 3.41, 'prevClose': 3.59, 'calcMValue': 0.0, 'positionPnl': 15472.26, 
+        'dailyPnl': 15472.26, 'cSell': 1, 'slippage': 0.0, 'date': u'20121228', 'tradingPnl': 0.0, 'asof': [datetime.datetime(2012, 12, 28, 15, 0), 0],
+         'txns': '-292x3.94', 'turnover': 115048.0}]            
+        '''
+
         posChange =0
         if trade.direction == OrderData.DIRECTION_LONG:
             posChange = trade.volume
@@ -769,12 +734,15 @@ class DailyPosition(object):
         self.calcPos += posChange
 
         tover, comis, slpfee = account.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
-        self.turnover += tover
-        self.commission += comis
-        self.slippage += slpfee
+        self.turnover += round(tover, 3)
+        self.commission += round(comis, 3)
+        self.slippage += round(slpfee, 3)
 
     def close(self) :
         # 汇总
+        self.dailyPnl = round(self.dailyPnl, 3)
+        self.tradingPnl = round(self.tradingPnl, 3)
+
         self.totalPnl = self.tradingPnl + self.positionPnl
         self.netPnl   = self.totalPnl - self.commission - self.slippage
         # stampstr = ''

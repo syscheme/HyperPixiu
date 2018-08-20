@@ -122,6 +122,7 @@ class DateRange(object):
 
             sdf = pd.DataFrame(self._dictDailyPos[symbol])
             del sdf['symbol']
+            del sdf['calcMValue']
             for k in sdf.columns: # append the column name with symbol
                 if k in ['date']:
                     continue

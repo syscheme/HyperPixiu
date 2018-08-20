@@ -1,24 +1,75 @@
 # encoding: UTF-8
 
-from ..Account import *
+from vnApp.Account import *
+from vnApp.Trader import *
+
+from Queue import Queue, Empty
+from datetime import datetime
+from threading import Thread
+from multiprocessing.dummy import Pool
+import traceback
+from copy import copy
+
+import urllib
+import hmac
+import base64
+import hashlib
+import requests 
+import json
+import zlib
+# retrieve package: sudo pip install websocket websocket-client pathlib
+from websocket import create_connection, _exceptions
+
 
 ########################################################################
 class Huobi(Account):
     """交易API"""
     # 常量定义
-
     HUOBI = 'huobi'
     HADAX = 'hadax'
     HUOBI_API_HOST = "api.huobi.pro"
     HADAX_API_HOST = "api.hadax.com"
     LANG = 'zh-CN'
     TIMEOUT = 5
-    
+
+    DEFAULT_GET_HEADERS = {
+        "Content-type": "application/x-www-form-urlencoded",
+        'Accept': 'application/json',
+        'Accept-Language': LANG,
+        'User-Agent':'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:53.0) Gecko/20100101 Firefox/53.0'
+    }
+
+    DEFAULT_POST_HEADERS = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Accept-Language': LANG,
+        'User-Agent':'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:53.0) Gecko/20100101 Firefox/53.0'    
+    }
+
+    #----------------------------------------------------------------------
+    def createSign(self, params, method, host, path, secretKey):
+        """创建签名"""
+        sortedParams = sorted(params.items(), key=lambda d: d[0], reverse=False)
+        encodeParams = urllib.urlencode(sortedParams)
+        
+        payload = [method, host, path, encodeParams]
+        payload = '\n'.join(payload)
+        payload = payload.encode(encoding='UTF8')
+
+        secretKey = secretKey.encode(encoding='UTF8')
+
+        digest = hmac.new(secretKey, payload, digestmod=hashlib.sha256).digest()
+
+        signature = base64.b64encode(digest)
+        signature = signature.decode()
+        return signature    
+
     #----------------------------------------------------------------------
     def __init__(self, trader, settings):
         """Constructor"""
-        super(Account_AShare, self).__init__(trader, settings)
+        super(Huobi, self).__init__(trader, settings)
 
+        self._mode        = Account.BROKER_API_ASYNC
         self._queRequests = Queue()        # queue of request ids
         self._dictRequests = {}            # dict from request Id to request
         
@@ -89,34 +140,67 @@ class Huobi(Account):
     # def updateDailyStat(self, dt, price): return self._nest.updateDailyStat(dt, price)
     # def evaluateDailyStat(self, startdate, enddate): return self._nest.evaluateDailyStat(startdate, enddate)
     #----------------------------------------------------------------------
-    def pushRequest(self, path, reqId, httpParams, data, funcMethod, callbackResp):
+    def enqueue(self, reqId, req):
+        with self._lock :
+            self._dictRequests[reqId] = req
+        self._queRequests.put(reqId)
+
+    def dequeue(self, secTimeout=3):
+        try :
+            reqId = self._queRequests.get(timeout=secTimeout)
+            with self._lock :
+                if reqId in self._dictRequests.keys():
+                    req = self._dictRequests[reqId]
+                    req = copy(req)
+                    del self._dictRequests[reqId]
+                    return req
+        except Empty:
+            pass
+
+        return None
+
+    def pushRequest(self, path, reqId, httpParams, reqData, funcMethod, callbackResp):
         """添加请求"""       
         # 同步模式
-        if self.mode != self.ASYNC_MODE:
-            return funcMethod(path, params)
+        if self._mode != Account.BROKER_API_ASYNC:
+            return funcMethod(path, httpParams)
 
         # 异步模式
-        req = {
-                'reqId': reqId,
-                'path': path, 
-                'httpparams': httpParams, 
-                'reqData': data, 
-                'apiFunc': funcMethod, 
-                'callback': callback
-            }
+        if not reqId:
+            reqId = self.nextOrderReqId
 
-        with self._lock
-            self._dictRequests[reqId] = req
-            self._queRequests.append(reqId)
+        req = (reqId, path, httpParams, reqData, funcMethod, callbackResp)
 
+        self.enqueue(reqId, req)
         return reqId
 
+    def procRequest(self, secTimeout):
+        """处理请求"""
+        req = self.dequeue(secTimeout)
+        if not req:
+            return
+
+        (reqId, path, httpParams, reqData, funcMethod, callbackResp) = req
+
+        result, resp = funcMethod(path, httpParams)
+        
+        if result:
+            if resp['status'] == 'ok':
+                callbackResp(reqData, resp['data'])
+            else:
+                msg = u'错误代码：%s，错误信息：%s' %(resp['err-code'], resp['err-msg'])
+                self.onError(msg, reqData)
+        else:
+            self.onError(resp, reqData)
+            # 失败的请求重新放回队列，等待下次处理
+            self.enqueue(reqId, req)
+    
     #------------------------------------------------
     # overwrite of Account
     #------------------------------------------------    
     def _broker_placeOrder(self, orderData):
         """下单"""
-        if self._hostname == HUOBI_API_HOST:
+        if self._hostname == self.HUOBI_API_HOST:
             path = '/v1/order/orders/place'
         else:
             path = '/v1/hadax/order/orders/place'
@@ -128,12 +212,12 @@ class Huobi(Account):
             'type'  : orderData.direction
         }
         
-        if price:
-            params['price'] = price
-        if source:
-            params['source'] = source
+        if orderData.price >0:
+            params['price'] = orderData.price
+        if len(orderData.source) >0:
+            params['source'] = orderData.source
 
-        return self.pushRequest(path, orderData.reqId, params, orderData, onResp_placeOrder)
+        return self.pushRequest(path, orderData.reqId, params, orderData, self.onResp_placeOrder)
 
     def onResp_placeOrder(self, req, resp):
         """下单的response"""
@@ -143,112 +227,38 @@ class Huobi(Account):
 
         self._broker_onOrderPlaced(orderData) # if succ, else _broker_onCancelled() ??
 
-    def _broker_cancelOrder(self, brokerOrderId) :
-        orderData = None
+    def _broker_cancelOrder(self, orderData) :
+        """撤单"""
+        path = '/v1/order/orders/%s/submitcancel' % orderData.brokerOrderId
+        
+        params = {}
+        return self.pushRequest(path, orderData.reqId, {}, orderData, self.onResp_cancelOrder)
+        
+    def onResp_cancelOrder(self, req, resp):
+        """撤单的response"""
+        orderData = req['reqData']
 
-        # find out he orderData by brokerOrderId
-        with self._nest._lock :
-            try :
-                if OrderData.STOPORDERPREFIX in brokerOrderId :
-                    orderData = self._nest._dictStopOrders[brokerOrderId]
-                else :
-                    orderData = self._nest._dictLimitOrders[brokerOrderId]
-            except KeyError:
-                pass
+        #TODO fill response data into orderData
 
-            if not orderData :
-                return
-
-            orderData = copy.copy(orderData)
-
-        # orderData found
-        orderData.status = OrderData.STATUS_CANCELLED
-        orderData.cancelTime = self._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:3]
-        self._broker_onCancelled(orderData)
+        self._broker_onCancelled(orderData) # if succ, else _broker_onCancelled() ??
 
     def step(self) :
-        outgoingOrders = []
-        ordersToCancel = []
 
-        with self._nest._lock:
-            outgoingOrders = copy.deepcopy(self._nest._dictOutgoingOrders.values())
-            ordersToCancel = copy.copy(self._nest._lstOrdersToCancel)
-            self._nest._lstOrdersToCancel = []
+        try :
+            nextSleep = super(Huobi, self).step()
+            if nextSleep <0:
+                nextSleep = 0.01
+        except Exception as ex:
+            self.error('ThreadedHuobi::step() excepton: %s' % ex)
 
-        for boid in ordersToCancel:
-            self._broker_cancelOrder(boid)
-        for o in outgoingOrders:
-            self._broker_placeOrder(o)
-
-        if (len(ordersToCancel) + len(outgoingOrders)) >0:
-            self._nest.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
+        try :
+            self.procRequest(nextSleep)
+        except Exception as ex:
+            self.error('ThreadedHuobi::step() proc excepton: %s' % ex)
 
     def onDayOpen(self, newDate):
-        # instead that the true Account is able to sync with broker,
-        # Backtest should perform cancel to restore available/frozen positions
-        clist = []
-        with self._nest._lock :
-            # A share will not keep yesterday's order alive
-            self._nest._dictOutgoingOrders.clear()
-            for o in self._nest._dictLimitOrders.values():
-                clist.append(o.brokerOrderId)
-            for o in self._nest._dictStopOrders.values():
-                clist.append(o.brokerOrderId)
+        return super(Huobi, self).onDayOpen(newDate)
 
-        if len(clist) >0:
-            self.batchCancel(clist)
-            self._nest.debug('BT.onDayOpen() batchCancelled: %s' % clist)
-        self._nest.onDayOpen(newDate)
-
-
-########################################################################################################
-
-    #----------------------------------------------------------------------
-    def start(self, n=10):
-        """启动"""
-        self.active = True
-        
-        if self.mode == self.ASYNC_MODE:
-            self.pool = Pool(n)
-            self.pool.map_async(self.run, range(n))
-        
-    #----------------------------------------------------------------------
-    def close(self):
-        """停止"""
-        self.active = False
-        self.pool.close()
-        self.pool.join()
-        
-    #----------------------------------------------------------------------
-    def httpGet(self, url, params):
-        """HTTP GET"""        
-        headers = copy(DEFAULT_GET_HEADERS)
-        postdata = urllib.urlencode(params)
-        
-        try:
-            response = requests.get(url, postdata, headers=headers, proxies=self._proxies, timeout=TIMEOUT)
-            if response.status_code == 200:
-                return True, response.json()
-            else:
-                return False, u'GET请求失败，状态代码：%s' %response.status_code
-        except Exception as e:
-            return False, u'GET请求触发异常，原因：%s' %e
-    
-    #----------------------------------------------------------------------    
-    def httpPost(self, url, params, add_to_headers=None):
-        """HTTP POST"""       
-        headers = copy(DEFAULT_POST_HEADERS)
-        postdata = json.dumps(params)
-        
-        try:
-            response = requests.post(url, postdata, headers=headers, proxies=self._proxies, timeout=TIMEOUT)
-            if response.status_code == 200:
-                return True, response.json()
-            else:
-                return False, u'POST请求失败，返回信息：%s' %response.json()
-        except Exception as e:
-            return False, u'POST请求触发异常，原因：%s' %e
-        
     #----------------------------------------------------------------------
     def generateSignParams(self):
         """生成签名参数"""
@@ -261,134 +271,89 @@ class Huobi(Account):
         }    
         
         return d
-        
-    #----------------------------------------------------------------------
+
     def apiGet(self, path, params):
         """API GET"""
         method = 'GET'
         
         params.update(self.generateSignParams())
-        params['Signature'] = createSign(params, method, self._hostname, path, self.secretKey)
+        params['Signature'] = self.createSign(params, method, self._hostname, path, self.secretKey)
         
         url = self._hosturl + path
         #print("url=%s, param:%s" % (url, params))
         
-        return self.httpGet(url, params)
-    
-    #----------------------------------------------------------------------
-    def apiPost(self, path, params):
+        headers = copy(self.DEFAULT_GET_HEADERS)
+        postdata = urllib.urlencode(params)
+        
+        try:
+            response = requests.get(url, postdata, headers=headers, proxies=self._proxies, timeout=self.TIMEOUT)
+            if response.status_code == 200:
+                return True, response.json()
+            else:
+                return False, u'GET请求失败，状态代码：%s' %response.status_code
+        except Exception as e:
+            return False, u'GET请求触发异常，原因：%s' %e
+
+    def apiPost(self, path, params, add_to_headers=None):
         """API POST"""
         method = 'POST'
         
         signParams = self.generateSignParams()
-        signParams['Signature'] = createSign(signParams, method, self._hostname, path, self.secretKey)
+        signParams['Signature'] = self.createSign(signParams, method, self._hostname, path, self.secretKey)
         
         url = self._hosturl + path + '?' + urllib.urlencode(signParams)
 
-        return self.httpPost(url, params)
-    
-    #----------------------------------------------------------------------
-    def addReq(self, path, params, func, callback):
-        """添加请求"""       
-        # 异步模式
-        if self.mode != self.ASYNC_MODE:
-            return func(path, params)
-
-        # 同步模式
-        self.reqid += 1
-        req = (path, params, func, callback, self.reqid)
-        self.queue.put(req)
-        return self.reqid
-    
-    #----------------------------------------------------------------------
-    def processReq(self, req):
-        """处理请求"""
-        path, params, func, callback, reqid = req
-        result, data = func(path, params)
+        headers = copy(self.DEFAULT_POST_HEADERS)
+        postdata = json.dumps(params)
         
-        if result:
-            if data['status'] == 'ok':
-                callback(data['data'], reqid)
+        try:
+            response = requests.post(url, postdata, headers=headers, proxies=self._proxies, timeout=self.TIMEOUT)
+            if response.status_code == 200:
+                return True, response.json()
             else:
-                msg = u'错误代码：%s，错误信息：%s' %(data['err-code'], data['err-msg'])
-                self.onError(msg, reqid)
-        else:
-            self.onError(data, reqid)
-            
-            # 失败的请求重新放回队列，等待下次处理
-            self.queue.put(req)
-    
-    #----------------------------------------------------------------------
-    def run(self, n):
-        """连续运行"""
-        while self.active:    
-            try:
-                req = self.queue.get(timeout=1)
-                self.processReq(req)
-            except Empty:
-                pass
+                return False, u'POST请求失败，返回信息：%s' %response.json()
+        except Exception as e:
+            return False, u'POST请求触发异常，原因：%s' %e
     
     #----------------------------------------------------------------------
     def getSymbols(self):
         """查询合约代码"""
-        if self._hostname == HUOBI_API_HOST:
+        if self._hostname == self.HUOBI_API_HOST:
             path = '/v1/common/symbols'
         else:
             path = '/v1/hadax/common/symbols'
 
-        params = {}
-        func = self.apiGet
-        callback = self.onGetSymbols
-        
-        return self.addReq(path, params, func, callback)
+        return self.pushRequest(path, None, {}, None, self.apiGet, self.onGetSymbols)
     
     #----------------------------------------------------------------------
     def getCurrencys(self):
         """查询支持货币"""
-        if self._hostname == HUOBI_API_HOST:
+        if self._hostname == self.HUOBI_API_HOST:
             path = '/v1/common/currencys'
         else:
             path = '/v1/hadax/common/currencys'
 
-        params = {}
-        func = self.apiGet
-        callback = self.onGetCurrencys
-        
-        return self.addReq(path, params, func, callback)   
+        return self.pushRequest(path, None, {}, None, self.apiGet, self.onGetCurrencys)
     
     #----------------------------------------------------------------------
     def getTimestamp(self):
         """查询系统时间"""
-        path = '/v1/common/timestamp'
-        params = {}
-        func = self.apiGet
-        callback = self.onGetTimestamp
-        
-        return self.addReq(path, params, func, callback) 
+        return self.pushRequest('/v1/common/timestamp', None, {}, None, self.apiGet, self.onGetTimestamp)
     
     #----------------------------------------------------------------------
     def getAccounts(self):
         """查询账户"""
-        path = '/v1/account/accounts'
-        params = {}
-        func = self.apiGet
-        callback = self.onGetAccounts
-    
-        return self.addReq(path, params, func, callback)         
+        return self.pushRequest('/v1/account/accounts', None, {}, None, self.apiGet, self.onGetAccounts)
     
     #----------------------------------------------------------------------
-    def getAccountBalance(self, accountid):
+    def getBalance(self):
         """查询余额"""
-        if self._hostname == HUOBI_API_HOST:
-            path = '/v1/account/accounts/%s/balance' %accountid
+        if self._hostname == self.HUOBI_API_HOST:
+            path = '/v1/account/accounts/%s/balance' % self._id
         else:
             path = '/v1/hadax/account/accounts/%s/balance' %accountid
             
-        params = {}
-        func = self.apiGet
-        callback = self.onGetAccountBalance
-    
-        return self.addReq(path, params, func, callback) 
+        return self.pushRequest(path, None, {}, None, self.apiGet, self.onGetAccountBalance)
     
     #----------------------------------------------------------------------
     def getOrders(self, symbol, states, types=None, startDate=None, 
@@ -414,10 +379,7 @@ class Huobi(Account):
         if size:
             params['size'] = size        
     
-        func = self.apiGet
-        callback = self.onGetOrders
-    
-        return self.addReq(path, params, func, callback)     
+        return self.pushRequest(path, None, params, None, self.apiGet, self.onGetOrders)
 
     #----------------------------------------------------------------------
     def getOpenOrders(self, accountId=None, symbol=None, side=None, size=None):
@@ -441,10 +403,7 @@ class Huobi(Account):
         if size:
             params['size'] = size        
     
-        func = self.apiGet
-        callback = self.onGetOrders
-    
-        return self.addReq(path, params, func, callback)     
+        return self.pushRequest(path, None, params, None, self.apiGet, self.onGetOrders)
     
     #----------------------------------------------------------------------
     def getMatchResults(self, symbol, types=None, startDate=None, 
@@ -472,68 +431,19 @@ class Huobi(Account):
         func = self.apiGet
         callback = self.onGetMatchResults
 
-        return self.addReq(path, params, func, callback)   
+        return self.pushRequest(path, None, params, None, self.apiGet, self.onGetMatchResults)
     
     #----------------------------------------------------------------------
     def getOrder(self, orderid):
         """查询某一委托"""
         path = '/v1/order/orders/%s' %orderid
-    
-        params = {}
-    
-        func = self.apiGet
-        callback = self.onGetOrder
-    
-        return self.addReq(path, params, func, callback)             
+        return self.pushRequest(path, None, {}, None, self.apiGet, self.onGetOrder)
     
     #----------------------------------------------------------------------
     def getMatchResult(self, orderid):
         """查询某一委托"""
         path = '/v1/order/orders/%s/matchresults' %orderid
-    
-        params = {}
-    
-        func = self.apiGet
-        callback = self.onGetMatchResult
-    
-        return self.addReq(path, params, func, callback)     
-    
-    #----------------------------------------------------------------------
-    def placeOrder(self, amount, symbol, type_, price=None, source=None):
-        """下单"""
-        if self._hostname == HUOBI_API_HOST:
-            path = '/v1/order/orders/place'
-        else:
-            path = '/v1/hadax/order/orders/place'
-        
-        params = {
-            'account-id': accountid,
-            'amount': amount,
-            'symbol': symbol,
-            'type': type_
-        }
-        
-        if price:
-            params['price'] = price
-        if source:
-            params['source'] = source     
-
-        func = self.apiPost
-        callback = self.onPlaceOrder
-
-        return self.addReq(path, params, func, callback)           
-    
-    #----------------------------------------------------------------------
-    def cancelOrder(self, orderid):
-        """撤单"""
-        path = '/v1/order/orders/%s/submitcancel' %orderid
-        
-        params = {}
-        
-        func = self.apiPost
-        callback = self.onCancelOrder
-
-        return self.addReq(path, params, func, callback)          
+        return self.pushRequest(path, None, {}, None, self.apiGet, self.onGetMatchResult)
     
     #----------------------------------------------------------------------
     def batchCancel(self, orderids):
@@ -547,6 +457,7 @@ class Huobi(Account):
         func = self.apiPost
         callback = self.onBatchCancel
     
+        return self.pushRequest(path, None, params, None, self.apiPost, self.onPlaceOrder)
         return self.addReq(path, params, func, callback)     
         
     #----------------------------------------------------------------------
@@ -618,172 +529,273 @@ class Huobi(Account):
         """批量撤单回调"""
         print (reqid, data)
 
+########################################################################
+class ThreadedHuobi(Huobi):
+    #----------------------------------------------------------------------
+    def __init__(self, trader, settings):
+        """Constructor"""
+        super(ThreadedHuobi, self).__init__(trader, settings)
+        self.thread = Thread(target=self._run)
+
+    #----------------------------------------------------------------------
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def start(self, n=10):
+        """启动"""
+        ret = self.onStart()
+        
+        if ret and self._mode == self.BROKER_API_ASYNC:
+            self.pool = Pool(n)
+            self.pool.map_async(self._run, range(n))
+        
+        self.debug('ThreadedHuobi starts')
+        return ret
+
+    def _run(self):
+        """执行连接 and receive"""
+        while self._trader._active:
+            self.step()
+                
+        self.info('ThreadedHuobi exit')
+
+    @abstractmethod
+    def stop(self):
+        self._trader.stop()
+        self.pool.close()
+        self.pool.join()
+        self.info('ThreadedHuobi stopped')
+
+
+# ########################################################################
+# class tdHuobi_sim(tdHuobi):
+#     ''' 
+#     simulate the account ordres
+#     '''
+#     #----------------------------------------------------------------------
+#     def __init__(self, account, settings, mode=None):
+#         """Constructor"""
+#         super(tdHuobi_virtual, self).__init__(account, settings, mode)
+
+#     #----------------------------------------------------------------------
+#     def getOrders(self, symbol, states, types=None, startDate=None, 
+#                   endDate=None, from_=None, direct=None, size=None):
+#         """查询委托"""
+#         path = '/v1/order/orders'
+        
+#         params = {
+#             'symbol': symbol,
+#             'states': states
+#         }
+        
+#         if types:
+#             params['types'] = types
+#         if startDate:
+#             params['start-date'] = startDate
+#         if endDate:
+#             params['end-date'] = endDate        
+#         if from_:
+#             params['from'] = from_
+#         if direct:
+#             params['direct'] = direct
+#         if size:
+#             params['size'] = size        
+    
+#         func = self.apiGet
+#         callback = self.onGetOrders
+    
+#         return self.addReq(path, params, func, callback)     
+
+#     #----------------------------------------------------------------------
+#     def getOpenOrders(self, accountId=None, symbol=None, side=None, size=None):
+#         """查询当前帐号下未成交订单
+#             “account_id” 和 “symbol” 需同时指定或者二者都不指定。如果二者都不指定，返回最多500条尚未成交订单，按订单号降序排列。
+#         """
+#         path = '/v1/order/openOrders'
+        
+#         params = { # initial with default required params
+#             #'account_id': accountId,
+#             #'symbol': symbol,
+#         }
+        
+#         if symbol:
+#             params['symbol'] = symbol
+#             params['account_id'] = accountId
+
+#         if side:
+#             params['side'] = side
+
+#         if size:
+#             params['size'] = size        
+    
+#         func = self.apiGet
+#         callback = self.onGetOrders
+    
+#         return self.addReq(path, params, func, callback)     
+    
+#     #----------------------------------------------------------------------
+#     def getMatchResults(self, symbol, types=None, startDate=None, 
+#                   endDate=None, from_=None, direct=None, size=None):
+#         """查询委托"""
+#         path = '/v1/order/matchresults'
+
+#         params = {
+#             'symbol': symbol
+#         }
+
+#         if types:
+#             params['types'] = types
+#         if startDate:
+#             params['start-date'] = startDate
+#         if endDate:
+#             params['end-date'] = endDate        
+#         if from_:
+#             params['from'] = from_
+#         if direct:
+#             params['direct'] = direct
+#         if size:
+#             params['size'] = size        
+
+#         func = self.apiGet
+#         callback = self.onGetMatchResults
+
+#         return self.addReq(path, params, func, callback)   
+    
+#     #----------------------------------------------------------------------
+#     def getOrder(self, orderid):
+#         """查询某一委托"""
+#         path = '/v1/order/orders/%s' %orderid
+    
+#         params = {}
+    
+#         func = self.apiGet
+#         callback = self.onGetOrder
+    
+#         return self.addReq(path, params, func, callback)             
+    
+#     #----------------------------------------------------------------------
+#     def getMatchResult(self, orderid):
+#         """查询某一委托"""
+#         path = '/v1/order/orders/%s/matchresults' %orderid
+    
+#         params = {}
+    
+#         func = self.apiGet
+#         callback = self.onGetMatchResult
+    
+#         return self.addReq(path, params, func, callback)     
+    
+#     #----------------------------------------------------------------------
+#     def placeOrder(self, amount, symbol, type_, price=None, source=None):
+#         """下单"""
+#         if self._hostname == self.HUOBI_API_HOST:
+#             path = '/v1/order/orders/place'
+#         else:
+#             path = '/v1/hadax/order/orders/place'
+        
+#         params = {
+#             'account-id': accountid,
+#             'amount': amount,
+#             'symbol': symbol,
+#             'type': type_
+#         }
+        
+#         if price:
+#             params['price'] = price
+#         if source:
+#             params['source'] = source     
+
+#         func = self.apiPost
+#         callback = self.onPlaceOrder
+
+#         return self.addReq(path, params, func, callback)           
+    
+#     #----------------------------------------------------------------------
+#     def cancelOrder(self, orderid):
+#         """撤单"""
+#         path = '/v1/order/orders/%s/submitcancel' %orderid
+        
+#         params = {}
+        
+#         func = self.apiPost
+#         callback = self.onCancelOrder
+
+#         return self.addReq(path, params, func, callback)          
+    
+#     #----------------------------------------------------------------------
+#     def batchCancel(self, orderids):
+#         """批量撤单"""
+#         path = '/v1/order/orders/batchcancel'
+    
+#         params = {
+#             'order-ids': orderids
+#         }
+    
+#         func = self.apiPost
+#         callback = self.onBatchCancel
+    
+#         return self.addReq(path, params, func, callback)     
+
 
 ########################################################################
-class tdHuobi_sim(tdHuobi):
-    ''' 
-    simulate the account ordres
-    '''
-    #----------------------------------------------------------------------
-    def __init__(self, account, settings, mode=None):
+# API测试程序    
+########################################################################
+
+#----------------------------------------------------------------------
+class TestTrader(Trader):
+   
+    def __init__(self, mainRoutine, settings):
         """Constructor"""
-        super(tdHuobi_virtual, self).__init__(account, settings, mode)
 
-    #----------------------------------------------------------------------
-    def getOrders(self, symbol, states, types=None, startDate=None, 
-                  endDate=None, from_=None, direct=None, size=None):
-        """查询委托"""
-        path = '/v1/order/orders'
-        
-        params = {
-            'symbol': symbol,
-            'states': states
-        }
-        
-        if types:
-            params['types'] = types
-        if startDate:
-            params['start-date'] = startDate
-        if endDate:
-            params['end-date'] = endDate        
-        if from_:
-            params['from'] = from_
-        if direct:
-            params['direct'] = direct
-        if size:
-            params['size'] = size        
-    
-        func = self.apiGet
-        callback = self.onGetOrders
-    
-        return self.addReq(path, params, func, callback)     
+        super(TestTrader, self).__init__(mainRoutine, settings)
 
-    #----------------------------------------------------------------------
-    def getOpenOrders(self, accountId=None, symbol=None, side=None, size=None):
-        """查询当前帐号下未成交订单
-            “account_id” 和 “symbol” 需同时指定或者二者都不指定。如果二者都不指定，返回最多500条尚未成交订单，按订单号降序排列。
-        """
-        path = '/v1/order/openOrders'
-        
-        params = { # initial with default required params
-            #'account_id': accountId,
-            #'symbol': symbol,
-        }
-        
-        if symbol:
-            params['symbol'] = symbol
-            params['account_id'] = accountId
+        for ak in self._dictAccounts.keys() :
+            account = Huobi(self, settings.account)
+            self._dictAccounts[self._defaultAccId] = account
 
-        if side:
-            params['side'] = side
 
-        if size:
-            params['size'] = size        
-    
-        func = self.apiGet
-        callback = self.onGetOrders
-    
-        return self.addReq(path, params, func, callback)     
-    
-    #----------------------------------------------------------------------
-    def getMatchResults(self, symbol, types=None, startDate=None, 
-                  endDate=None, from_=None, direct=None, size=None):
-        """查询委托"""
-        path = '/v1/order/matchresults'
+if __name__ == '__main__':
+    import os
+    import jsoncfg # pip install json-cfg
+    from vnApp.MainRoutine import *
 
-        params = {
-            'symbol': symbol
-        }
+    """测试交易"""
 
-        if types:
-            params['types'] = types
-        if startDate:
-            params['start-date'] = startDate
-        if endDate:
-            params['end-date'] = endDate        
-        if from_:
-            params['from'] = from_
-        if direct:
-            params['direct'] = direct
-        if size:
-            params['size'] = size        
+    settings= None
+    try :
+        conf_fn = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/TD_huobi.json'
+        settings= jsoncfg.load_config(conf_fn)
+    except Exception as e :
+        print('failed to load configure[%s]: %s' % (conf_fn, e))
+        exit(-1)
 
-        func = self.apiGet
-        callback = self.onGetMatchResults
+    me = MainRoutine(settings)
 
-        return self.addReq(path, params, func, callback)   
-    
-    #----------------------------------------------------------------------
-    def getOrder(self, orderid):
-        """查询某一委托"""
-        path = '/v1/order/orders/%s' %orderid
-    
-        params = {}
-    
-        func = self.apiGet
-        callback = self.onGetOrder
-    
-        return self.addReq(path, params, func, callback)             
-    
-    #----------------------------------------------------------------------
-    def getMatchResult(self, orderid):
-        """查询某一委托"""
-        path = '/v1/order/orders/%s/matchresults' %orderid
-    
-        params = {}
-    
-        func = self.apiGet
-        callback = self.onGetMatchResult
-    
-        return self.addReq(path, params, func, callback)     
-    
-    #----------------------------------------------------------------------
-    def placeOrder(self, amount, symbol, type_, price=None, source=None):
-        """下单"""
-        if self._hostname == HUOBI_API_HOST:
-            path = '/v1/order/orders/place'
-        else:
-            path = '/v1/hadax/order/orders/place'
-        
-        params = {
-            'account-id': accountid,
-            'amount': amount,
-            'symbol': symbol,
-            'type': type_
-        }
-        
-        if price:
-            params['price'] = price
-        if source:
-            params['source'] = source     
+    trader = me.addApp(TestTrader, settings['trader'])
+    acc = trader.account
+    # acc.start()
 
-        func = self.apiPost
-        callback = self.onPlaceOrder
+    # 查询
+    # print (acc.getSymbols())
+    print (acc.getCurrencys())
+    print (acc.getTimestamp())
+    print (acc.getAccounts())
+    print (acc.getBalance())
+    print (acc.getOpenOrders('eosusdt', 'sell'))
+    me.loop()
 
-        return self.addReq(path, params, func, callback)           
-    
-    #----------------------------------------------------------------------
-    def cancelOrder(self, orderid):
-        """撤单"""
-        path = '/v1/order/orders/%s/submitcancel' %orderid
-        
-        params = {}
-        
-        func = self.apiPost
-        callback = self.onCancelOrder
+    #online unicode converter
+    # symbol = str(setting['symbols'][0])
+    # symbol = str(symbols[0]) # 'eop':eos to udtc
 
-        return self.addReq(path, params, func, callback)          
+    input()
+    exit(0)
     
-    #----------------------------------------------------------------------
-    def batchCancel(self, orderids):
-        """批量撤单"""
-        path = '/v1/order/orders/batchcancel'
+    print (acc.getAccounts())
+    print (acc.getOpenOrders(accountId, symbol, 'sell'))
+#    print (acc.getOrders(symbol, 'pre-submitted,submitted,partial-filled,partial-canceled,filled,canceled'))
+#    print (acc.getOrders(symbol, 'filled'))
+    print (acc.getMatchResults(symbol))
     
-        params = {
-            'order-ids': orderids
-        }
-    
-        func = self.apiPost
-        callback = self.onBatchCancel
-    
-        return self.addReq(path, params, func, callback)     
+    print (acc.getOrder('2440401255'))
+
+

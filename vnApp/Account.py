@@ -48,6 +48,9 @@ class Account(object):
 
     SYMBOL_CASH = '.RMB.' # the dummy symbol in order to represent cache in _dictPositions
 
+    BROKER_API_SYNC  = 'brocker.sync'  # sync API to call broker
+    BROKER_API_ASYNC = 'brocker.async' # async API to call broker
+
     #----------------------------------------------------------------------
     def __init__(self, trader, settings):
         """Constructor"""
@@ -67,6 +70,7 @@ class Account(object):
         self._exchange = settings.exchange("")
 
         self._state        = Account.STATE_CLOSE
+        self._mode         = Account.BROKER_API_ASYNC
 
         # trader executer
         # self._dvrBroker = dvrBrokerClass(self, self._settings)
@@ -204,19 +208,38 @@ class Account(object):
             orderData.direction = OrderData.DIRECTION_LONG
             orderData.offset = OrderData.OFFSET_CLOSE     
 
-        with self._lock :
-            self._dictOutgoingOrders[orderData.reqId] = orderData
-            self.debug('enqueued order[%s]' % orderData.desc)
+        if self._mode == Account.BROKER_API_ASYNC :
+            with self._lock :
+                self._dictOutgoingOrders[orderData.reqId] = orderData
+                self.debug('enqueued order[%s]' % orderData.desc)
+        else :
+            self._broker_placeOrder(o)
 
         return orderData.reqId
 
     @abstractmethod
     def cancelOrder(self, brokerOrderId):
-        with self._lock :
-            self._lstOrdersToCancel.append(brokerOrderId)
 
-        self.debug('enqueued order[%s]' % brokerOrderId)
-        # self._broker_cancelOrder(brokerOrderId)
+        if self._mode == Account.BROKER_API_ASYNC :
+            with self._lock:
+                if self._mode == Account.BROKER_API_ASYNC :
+                    self._lstOrdersToCancel.append(brokerOrderId)
+                    self.debug('enqueued order[%s]' % brokerOrderId)
+                    return
+
+            # self._mode == Account.BROKER_API_SYNC
+        orderData = None
+        with self._lock:
+            try :
+                if OrderData.STOPORDERPREFIX in brokerOrderId :
+                    orderData = self._nest._dictStopOrders[brokerOrderId]
+                else :
+                    orderData = self._nest._dictLimitOrders[brokerOrderId]
+            except KeyError:
+                pass
+
+        if orderData :
+            self._broker_cancelOrder(orderData)
 
     @abstractmethod
     def sendStopOrder(self, symbol, orderType, price, volume, strategy):
@@ -409,7 +432,9 @@ class Account(object):
 
     @abstractmethod
     def _broker_datetimeAsOf(self):
-        return self._trader._dtData
+        if self._trader._dtData:
+            return self._trader._dtData
+        return datetime.now()
 
     @abstractmethod
     def _broker_onGetAccountBalance(self, data, reqid):
@@ -446,7 +471,36 @@ class Account(object):
     #----------------------------------------------------------------------
     # Application routine
     def step(self) :
-        pass
+        outgoingOrders = []
+        ordersToCancel = []
+
+        with self._lock:
+            outgoingOrders = copy.deepcopy(self._dictOutgoingOrders.values())
+
+            # find out he orderData by brokerOrderId
+            for odid in self._lstOrdersToCancel :
+                orderData = None
+                try :
+                    if OrderData.STOPORDERPREFIX in odid :
+                        orderData = self._dictStopOrders[odid]
+                    else :
+                        orderData = self._dictLimitOrders[odid]
+                except KeyError:
+                    pass
+
+                if orderData :
+                    ordersToCancel.append(copy.copy(orderData))
+
+            self._lstOrdersToCancel = []
+
+        for co in ordersToCancel:
+            self._broker_cancelOrder(co)
+
+        for no in outgoingOrders:
+            self._broker_placeOrder(no)
+
+        if (len(ordersToCancel) + len(outgoingOrders)) >0:
+            self.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
 
     # end of App routine
     #----------------------------------------------------------------------
@@ -519,6 +573,7 @@ class Account(object):
         # ensure the DB collection has the index applied
         self._trader.dbEnsureIndex(self.collectionName_trade, [('brokerTradeId', ASCENDING)], True)
         self._trader.dbEnsureIndex(self.collectionName_dpos,  [('date', ASCENDING), ('symbol', ASCENDING)], True)
+        return True
 
     @abstractmethod
     def onDayClose(self):

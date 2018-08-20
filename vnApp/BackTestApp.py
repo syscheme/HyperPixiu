@@ -1123,6 +1123,7 @@ class AccountWrapper(object):
     def maxOrderVolume(self, symbol, price): return self._nest.maxOrderVolume(symbol, price)
     def roundToPriceTick(self, price): return self._nest.roundToPriceTick(price)
     def onStart(self): return self._nest.onStart()
+    # must be duplicated other than forwarding to _nest def step(self) : return self._nest.step()
     def onDayClose(self): return self._nest.onDayClose()
     def onTimer(self, dt): return self._nest.onTimer(dt)
     def saveDB(self): return self._nest.saveDB()
@@ -1157,45 +1158,47 @@ class AccountWrapper(object):
         # redirectly simulate a place ok
         self._broker_onOrderPlaced(orderData)
 
-    def _broker_cancelOrder(self, brokerOrderId) :
-        orderData = None
-
-        # find out he orderData by brokerOrderId
-        with self._nest._lock :
-            try :
-                if OrderData.STOPORDERPREFIX in brokerOrderId :
-                    orderData = self._nest._dictStopOrders[brokerOrderId]
-                else :
-                    orderData = self._nest._dictLimitOrders[brokerOrderId]
-            except KeyError:
-                pass
-
-            if not orderData :
-                return
-
-            orderData = copy.copy(orderData)
-
-        # orderData found
+    def _broker_cancelOrder(self, orderData) :
+        # simuate a cancel by orderData
         orderData.status = OrderData.STATUS_CANCELLED
         orderData.cancelTime = self._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:3]
         self._broker_onCancelled(orderData)
 
-    def step(self) :
+    def step(self) : 
+        ''' 
+        this is a 'duplicated' impl of Account in order to call BackTestAcc._broker_xxxx() 
+        instead of those of Account
+        '''
         outgoingOrders = []
         ordersToCancel = []
 
         with self._nest._lock:
             outgoingOrders = copy.deepcopy(self._nest._dictOutgoingOrders.values())
-            ordersToCancel = copy.copy(self._nest._lstOrdersToCancel)
+
+            # find out he orderData by brokerOrderId
+            for odid in self._nest._lstOrdersToCancel :
+                orderData = None
+                try :
+                    if OrderData.STOPORDERPREFIX in odid :
+                        orderData = self._nest._dictStopOrders[odid]
+                    else :
+                        orderData = self._nest._dictLimitOrders[odid]
+                except KeyError:
+                    pass
+
+                if orderData :
+                    ordersToCancel.append(copy.copy(orderData))
+
             self._nest._lstOrdersToCancel = []
 
-        for boid in ordersToCancel:
-            self._broker_cancelOrder(boid)
-        for o in outgoingOrders:
-            self._broker_placeOrder(o)
+        for co in ordersToCancel:
+            self._broker_cancelOrder(co)
+
+        for no in outgoingOrders:
+            self._broker_placeOrder(no)
 
         if (len(ordersToCancel) + len(outgoingOrders)) >0:
-            self._nest.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
+            self.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
 
     def onDayOpen(self, newDate):
         # instead that the true Account is able to sync with broker,

@@ -99,22 +99,8 @@ class Account(object):
         self.size      = self._settings.size(1)               # 合约大小，默认为1    
         self._priceTick = self._settings.priceTick(0)      # 价格最小变动 
         
-        # self.initData = []          # 初始化用的数据
-        
-        # # 保存vtSymbol和策略实例映射的字典（用于推送tick数据）
-        # # 由于可能多个strategy交易同一个vtSymbol，因此key为vtSymbol
-        # # value为包含所有相关strategy对象的list
-        # self._idxTickToStrategy = {}
-        
-        # # 保存vtOrderID和strategy对象映射的字典（用于推送order和trade数据）
-        # # key为vtOrderID，value为strategy对象
-        # self.orderStrategyDict = {}     
-        
-        # # 保存策略名称和委托号列表的字典
-        # # key为name，value为保存orderID（限价+本地停止）的集合
-        # self.strategyOrderDict = {}
-
-        # self._lstLogs = []               # 日志记录
+        self._stampLastSync =0
+        self._syncInterval  = 10
 
     #----------------------------------------------------------------------
     #  properties
@@ -519,12 +505,22 @@ class Account(object):
         """查询时间回调"""
         pass
 
+    @abstractmethod
+    def _brocker_procSyncData(self):
+        pass
+
+    @abstractmethod
+    def _brocker_triggerSync(self):
+        pass
+
     # end with BrokerDriver
     #----------------------------------------------------------------------
 
     #----------------------------------------------------------------------
     # Application routine
     def step(self) :
+
+        # step 1. flush out-going orders and cancels to the broker
         outgoingOrders = []
         ordersToCancel = []
 
@@ -555,6 +551,14 @@ class Account(object):
 
         if (len(ordersToCancel) + len(outgoingOrders)) >0:
             self.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
+
+        # step 2. sync positions and order with the broker
+        self._brocker_procSyncData()
+        stampNow = datetime2float(datetime.now())
+        if self._stampLastSync + self._syncInterval < stampNow :
+            self._stampLastSync = stampNow
+            self._brocker_triggerSync()
+
 
     # end of App routine
     #----------------------------------------------------------------------

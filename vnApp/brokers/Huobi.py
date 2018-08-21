@@ -20,7 +20,6 @@ import zlib
 # retrieve package: sudo pip install websocket websocket-client pathlib
 from websocket import create_connection, _exceptions
 
-
 ########################################################################
 class Huobi(Account):
     """交易API"""
@@ -35,6 +34,10 @@ class Huobi(Account):
         self._mode        = Account.BROKER_API_ASYNC
         self._queRequests = Queue()        # queue of request ids
         self._dictRequests = {}            # dict from request Id to request
+
+        # cash of broker data before merge into Account
+        self._dictHbOrders = {}
+        self._dictHbPositions = {}
         
         # self.pool = None            # 线程池
 
@@ -88,7 +91,7 @@ class Huobi(Account):
         if len(orderData.source) >0 and 'margin' in orderData.source:
             params['source'] = 'margin-api'
 
-        return self.pushRequest(path, orderData.reqId, params, orderData, self.apiPost, self.brokerCBplaceOrder)
+        return self.pushRequest(path, orderData.reqId, params, orderData, self.apiPOST, self.brokerCBplaceOrder)
 
     def brokerCBplaceOrder(self, reqData, resp):
         """
@@ -104,8 +107,7 @@ class Huobi(Account):
         """撤单"""
         path = '/v1/order/orders/%s/submitcancel' % orderData.brokerOrderId
         
-        params = {}
-        return self.pushRequest(path, orderData.reqId, {}, orderData, self.apiPost, self.brokerCBcancelOrder)
+        return self.pushRequest(path, orderData.reqId, {}, orderData, self.apiPOST, self.brokerCBcancelOrder)
         
     def brokerCBcancelOrder(self, reqData, resp):
         """ 撤单的response
@@ -135,7 +137,7 @@ class Huobi(Account):
         if size:
             params['size'] = size        
     
-        return self.pushRequest(path, None, params, None, self.apiGet, self.brokerCBlistOpenOrders)
+        return self.pushRequest(path, None, params, None, self.apiGET, self.brokerCBlistOpenOrders)
 
     def brokerCBlistOpenOrders(self, reqData, resp):
         """ 查询当前帐号下未成交订单的response
@@ -161,69 +163,9 @@ class Huobi(Account):
         # double check: if orderData.brokerOrderId == str(resp)
         self._broker_onOpenOrders(dictOrders) # if succ, else _broker_onCancelled() ??
 
-    def _broker_listTradedOrders(self, symbol, latestDays=1, size=None):
-        """查询当前帐号下未成交订单
-        """
-        path = '/v1/order/orders'
-        
-        params = { # initial with default required params
-            'symbol': symbol,
-            'states': ['filled', 'partial-canceled'] # partial-filled 部分成交, partial-canceled 部分成交撤销, filled 完全成交
-        }
-
-        if not latestDays or latestDays <1:
-            latestDays = 1
-        params['start-date'] = (self._broker_datetimeAsOf() - datetime.timedelta(days=latestDays)).strftime('%Y-%m-%d')
-
-        if size:
-            params['size'] = size        
-    
-        return self.pushRequest(path, None, params, None, self.apiGet, self.brokerCBlistOpenOrders)
-
-    def brokerCBlistTradedOrders(self, reqData, resp):
-        """ 查询当前帐号下已成交订单的response
-            {
-            "status": "ok",
-            "data": [
-                {
-                "id": 59378,
-                "symbol": "ethusdt",
-                "account-id": 100009,
-                "amount": "10.1000000000",
-                "price": "100.1000000000",
-                "created-at": 1494901162595,
-                "type": "buy-limit",
-                "field-amount": "10.1000000000",
-                "field-cash-amount": "1011.0100000000",
-                "field-fees": "0.0202000000",
-                "finished-at": 1494901400468,
-                "user-id": 1000,
-                "source": "api",
-                "state": "filled",
-                "canceled-at": 0,
-                "exchange": "huobi",
-                "batch": ""
-                }
-            ]
-            }
-        """
-        dictOrders = {}
-        for o in resp :
-            order = OrderData(self)
-            order.reqid= ''
-            if o['account-id'] != self._id:
-                continue
-            order.brokerOrderId = o['id']
-            order.totalVolume = o['amount']
-            order.price = o['price']
-            order.status = o['state']
-            dictOrders[order.brokerOrderId] =order
-
-        # double check: if orderData.brokerOrderId == str(resp)
-        self._broker_onTradedOrders(dictOrders) # if succ, else _broker_onCancelled() ??
 
     def step(self) :
-
+        nextSleep = 5.0
         try :
             nextSleep = super(Huobi, self).step()
             if nextSleep <0:
@@ -239,6 +181,38 @@ class Huobi(Account):
     def onDayOpen(self, newDate):
         return super(Huobi, self).onDayOpen(newDate)
 
+    @abstractmethod
+    def _brocker_procSyncData(self):
+        with self._lock :
+            if len(self._dictHbOrders) >0:
+                #TODO
+                self._dictHbOrders = {}
+            
+            if len(self._dictHbPositions) >0:
+                #TODO
+                for pos in self._dictHbPositions.values() :
+                    if not pos.symbol in self._dictPositions.keys():
+                        self._dictPositions[pos.symbol] =pos
+                    else :
+                        self._dictPositions[pos.symbol].posAval = pos.posAvail
+                        self._dictPositions[pos.symbol].position = pos.position
+                        self._dictPositions[pos.symbol].stampByBroker = pos.stampByBroker
+                    print(self._dictPositions[pos.symbol].__dict__)
+                self._dictHbPositions = {}
+
+    @abstractmethod
+    def _brocker_triggerSync(self):
+        self.getBalance()  # 查询余额 and positions
+
+        symbols = []
+        with self._lock:
+            symbols = self._dictPositions.keys()
+
+        # 查询最近2day的order
+        ORDERSTATES_TO_SYNC = ['filled', 'partial-canceled']
+        dateStart= (self._broker_datetimeAsOf() - timedelta(days=2)).strftime('%Y-%m-%d')
+        for s in symbols:
+            self.listOrders(symbol=s, states = ORDERSTATES_TO_SYNC, startDate=dateStart)
 
 
     #----------------------------------------------------------------------
@@ -283,22 +257,6 @@ class Huobi(Account):
     }
 
     #----------------------------------------------------------------------
-    def createSign(self, params, method, host, path, secretKey):
-        """创建签名"""
-        sortedParams = sorted(params.items(), key=lambda d: d[0], reverse=False)
-        encodeParams = urllib.urlencode(sortedParams)
-        
-        payload = [method, host, path, encodeParams]
-        payload = '\n'.join(payload)
-        payload = payload.encode(encoding='UTF8')
-
-        secretKey = secretKey.encode(encoding='UTF8')
-
-        digest = hmac.new(secretKey, payload, digestmod=hashlib.sha256).digest()
-
-        signature = base64.b64encode(digest)
-        signature = signature.decode()
-        return signature    
 
     def enqueue(self, reqId, req):
         with self._lock :
@@ -356,33 +314,42 @@ class Huobi(Account):
             self.enqueue(reqId, req)
     
     #----------------------------------------------------------------------
-    def generateSignParams(self):
-        """生成签名参数"""
-        timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
+    def signParams(self, method, params, path):
+        """创建签名"""
+
         d = {
             'AccessKeyId': self.accessKey,
             'SignatureMethod': 'HmacSHA256',
             'SignatureVersion': '2',
-            'Timestamp': timestamp
-        }    
+            'Timestamp': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
+        }
         
-        return d
+        params.update(d)
 
-    def apiGet(self, path, params):
+        sortedParams = sorted(params.items(), key=lambda d: d[0], reverse=False)
+        encodeParams = urllib.urlencode(sortedParams)
+        
+        payload = [method, self._hostname, path, encodeParams]
+        payload = '\n'.join(payload)
+        payload = payload.encode(encoding='UTF8')
+
+        secretKey = self.secretKey.encode(encoding='UTF8')
+        digest = hmac.new(secretKey, payload, digestmod=hashlib.sha256).digest()
+
+        signature = base64.b64encode(digest)
+        signature = signature.decode()
+        params['Signature'] = signature
+
+        return params    
+
+    def apiGET(self, path, params):
         """API GET"""
-        method = 'GET'
-        
-        params.update(self.generateSignParams())
-        params['Signature'] = self.createSign(params, method, self._hostname, path, self.secretKey)
-        
-        url = self._hosturl + path
-        #print("url=%s, param:%s" % (url, params))
-        
-        headers = copy(self.DEFAULT_GET_HEADERS)
-        postdata = urllib.urlencode(params)
+
+        params = self.signParams('GET', params, path)
+        url = self._hosturl + path # + '?' + urllib.urlencode(params)
         
         try:
-            response = requests.get(url, postdata, headers=headers, proxies=self._proxies, timeout=self.TIMEOUT)
+            response = requests.get(url, urllib.urlencode(params), headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
             if response.status_code == 200:
                 return True, response.json()
             else:
@@ -390,20 +357,14 @@ class Huobi(Account):
         except Exception as e:
             return False, u'GET请求触发异常，原因：%s' %e
 
-    def apiPost(self, path, params, add_to_headers=None):
+    def apiPOST(self, path, params, add_to_headers=None):
         """API POST"""
-        method = 'POST'
-        
-        signParams = self.generateSignParams()
-        signParams['Signature'] = self.createSign(signParams, method, self._hostname, path, self.secretKey)
-        
-        url = self._hosturl + path + '?' + urllib.urlencode(signParams)
 
-        headers = copy(self.DEFAULT_POST_HEADERS)
-        postdata = json.dumps(params)
-        
+        params = self.signParams('POST', params, path)
+        url = self._hosturl + path + '?' + urllib.urlencode(params) # look like Huobi server has a bug that require param to be present on a POST url
+
         try:
-            response = requests.post(url, postdata, headers=headers, proxies=self._proxies, timeout=self.TIMEOUT)
+            response = requests.post(url, json.dumps(params), headers=copy(self.DEFAULT_POST_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
             if response.status_code == 200:
                 return True, response.json()
             else:
@@ -419,7 +380,7 @@ class Huobi(Account):
         else:
             path = '/v1/hadax/common/symbols'
 
-        return self.pushRequest(path, None, {}, None, self.apiGet, self.onGetSymbols)
+        return self.pushRequest(path, None, {}, None, self.apiGET, self.onGetSymbols)
     
     #----------------------------------------------------------------------
     def getCurrencys(self):
@@ -431,23 +392,33 @@ class Huobi(Account):
         else:
             path = '/v1/hadax/common/currencys'
 
-        return self.pushRequest(path, None, {}, None, self.apiGet, self.onGetCurrencys)
+        return self.pushRequest(path, None, {}, None, self.apiGET, self.onGetCurrencys)
     
     #----------------------------------------------------------------------
     def getTimestamp(self):
         """查询系统时间
         2018-08-21 08:16:40,811 (1534810600660, None)
         """
-        return self.pushRequest('/v1/common/timestamp', None, {}, None, self.apiGet, self.onGetTimestamp)
+        return self.pushRequest('/v1/common/timestamp', None, {}, None, self.apiGET, self.onGetTimestamp)
     
     #----------------------------------------------------------------------
     def getAccounts(self):
         """查询账户"""
-        return self.pushRequest('/v1/account/accounts', None, {}, None, self.apiGet, self.onGetAccounts)
+        return self.pushRequest('/v1/account/accounts', None, {}, None, self.apiGET, self.onGetAccounts)
     
     #----------------------------------------------------------------------
     def getBalance(self):
         """查询余额
+        """
+        if self._hostname == self.HUOBI_API_HOST:
+            path = '/v1/account/accounts/%s/balance' % self._id
+        else:
+            path = '/v1/hadax/account/accounts/%s/balance' % self._id
+            
+        return self.pushRequest(path, None, {}, None, self.apiGET, self.hbCbBalance)
+
+    def hbCbBalance(self, reqData, resp):
+        """查询余额回调
         {u'list': [
             ...
             {u'currency': u'usdt', u'balance': u'0.000572974', u'type': u'trade'},
@@ -468,15 +439,31 @@ class Huobi(Account):
             ...
         ], u'state': u'working', u'type': u'spot', u'id': nnnnnn}
         """
-        if self._hostname == self.HUOBI_API_HOST:
-            path = '/v1/account/accounts/%s/balance' % self._id
-        else:
-            path = '/v1/hadax/account/accounts/%s/balance' %accountid
-            
-        return self.pushRequest(path, None, {}, None, self.apiGet, self.onGetAccountBalance)
-    
+        with self._lock :
+            stampNow = self._broker_datetimeAsOf()
+            for b in resp['list']:
+                symbol = b[u'currency'].encode('utf-8')
+                bal = float(b[u'balance'])
+                if bal <=0:
+                    continue
+                if symbol in self._dictHbPositions.keys() :
+                    pos = self._dictHbPositions[symbol]
+                else :
+                    pos = PositionData()
+                    pos.symbol = symbol
+                    pos.exchange = self._exchange
+                    pos.vtSymbol = '%s.%s' % (symbol, self._exchange)
+
+                if b[u'type'] == u'trade' :
+                    pos.posAvail = bal
+                else :
+                    pos.position = pos.posAvail + bal
+                
+                pos.stampByBroker = stampNow
+                self._dictHbPositions[symbol] = pos
+
     #----------------------------------------------------------------------
-    def getOrders(self, symbol, states, types=None, startDate=None, 
+    def listOrders(self, symbol, states, types=None, startDate=None, 
                   endDate=None, from_=None, direct=None, size=None):
         """查询委托"""
         path = '/v1/order/orders'
@@ -499,7 +486,47 @@ class Huobi(Account):
         if size:
             params['size'] = size        
     
-        return self.pushRequest(path, None, params, None, self.apiGet, self.onGetOrders)
+        return self.pushRequest(path, None, params, None, self.apiGET, self.hbCblistOrders)
+
+    def hbCblistOrders(self, reqData, resp):
+        """ 查询当前帐号下已成交订单的response
+            {
+            "status": "ok",
+            "data": [
+                {
+                "id": 59378,
+                "symbol": "ethusdt",
+                "account-id": 100009,
+                "amount": "10.1000000000",
+                "price": "100.1000000000",
+                "created-at": 1494901162595,
+                "type": "buy-limit",
+                "field-amount": "10.1000000000",
+                "field-cash-amount": "1011.0100000000",
+                "field-fees": "0.0202000000",
+                "finished-at": 1494901400468,
+                "user-id": 1000,
+                "source": "api",
+                "state": "filled",
+                "canceled-at": 0,
+                "exchange": "huobi",
+                "batch": ""
+                }
+            ]
+            }
+        """
+        with self._lock :
+            for o in resp :
+                order = OrderData(self)
+                order.reqid= ''
+                if o['account-id'] != self._id:
+                    continue
+                order.brokerOrderId = o['id']
+                order.totalVolume = o['amount']
+                order.price = o['price']
+                order.status = o['state']
+                # double check: if orderData.brokerOrderId == str(resp)
+                self._dictHbOrders[order.brokerOrderId] =order
 
     #----------------------------------------------------------------------
     
@@ -526,22 +553,22 @@ class Huobi(Account):
         if size:
             params['size'] = size        
 
-        func = self.apiGet
+        func = self.apiGET
         callback = self.onGetMatchResults
 
-        return self.pushRequest(path, None, params, None, self.apiGet, self.onGetMatchResults)
+        return self.pushRequest(path, None, params, None, self.apiGET, self.onGetMatchResults)
     
     #----------------------------------------------------------------------
     def getOrder(self, orderid):
         """查询某一委托"""
         path = '/v1/order/orders/%s' %orderid
-        return self.pushRequest(path, None, {}, None, self.apiGet, self.onGetOrder)
+        return self.pushRequest(path, None, {}, None, self.apiGET, self.onGetOrder)
     
     #----------------------------------------------------------------------
     def getMatchResult(self, orderid):
         """查询某一委托"""
         path = '/v1/order/orders/%s/matchresults' %orderid
-        return self.pushRequest(path, None, {}, None, self.apiGet, self.onGetMatchResult)
+        return self.pushRequest(path, None, {}, None, self.apiGET, self.onGetMatchResult)
     
     #----------------------------------------------------------------------
     def batchCancel(self, orderids):
@@ -552,10 +579,10 @@ class Huobi(Account):
             'order-ids': orderids
         }
     
-        func = self.apiPost
+        func = self.apiPOST
         callback = self.onBatchCancel
     
-        return self.pushRequest(path, None, params, None, self.apiPost, self.onPlaceOrder)
+        return self.pushRequest(path, None, params, None, self.apiPOST, self.onPlaceOrder)
         
     #----------------------------------------------------------------------
     def onError(self, msg, reqid):
@@ -584,13 +611,6 @@ class Huobi(Account):
         """查询账户回调"""
         print (reqid, data)
     
-    #----------------------------------------------------------------------
-    def onGetAccountBalance(self, data, reqid):
-        """查询余额回调"""
-        print (reqid, data)
-        for d in data['data']['list']:
-            print (d)
-        
     #----------------------------------------------------------------------
     def onGetOrders(self, data, reqid):
         """查询委托回调"""
@@ -697,7 +717,7 @@ class ThreadedHuobi(Huobi):
 #         if size:
 #             params['size'] = size        
     
-#         func = self.apiGet
+#         func = self.apiGET
 #         callback = self.onGetOrders
     
 #         return self.addReq(path, params, func, callback)     
@@ -724,7 +744,7 @@ class ThreadedHuobi(Huobi):
 #         if size:
 #             params['size'] = size        
     
-#         func = self.apiGet
+#         func = self.apiGET
 #         callback = self.onGetOrders
     
 #         return self.addReq(path, params, func, callback)     
@@ -752,7 +772,7 @@ class ThreadedHuobi(Huobi):
 #         if size:
 #             params['size'] = size        
 
-#         func = self.apiGet
+#         func = self.apiGET
 #         callback = self.onGetMatchResults
 
 #         return self.addReq(path, params, func, callback)   
@@ -764,7 +784,7 @@ class ThreadedHuobi(Huobi):
     
 #         params = {}
     
-#         func = self.apiGet
+#         func = self.apiGET
 #         callback = self.onGetOrder
     
 #         return self.addReq(path, params, func, callback)             
@@ -776,7 +796,7 @@ class ThreadedHuobi(Huobi):
     
 #         params = {}
     
-#         func = self.apiGet
+#         func = self.apiGET
 #         callback = self.onGetMatchResult
     
 #         return self.addReq(path, params, func, callback)     
@@ -801,7 +821,7 @@ class ThreadedHuobi(Huobi):
 #         if source:
 #             params['source'] = source     
 
-#         func = self.apiPost
+#         func = self.apiPOST
 #         callback = self.onPlaceOrder
 
 #         return self.addReq(path, params, func, callback)           
@@ -813,7 +833,7 @@ class ThreadedHuobi(Huobi):
         
 #         params = {}
         
-#         func = self.apiPost
+#         func = self.apiPOST
 #         callback = self.onCancelOrder
 
 #         return self.addReq(path, params, func, callback)          
@@ -827,7 +847,7 @@ class ThreadedHuobi(Huobi):
 #             'order-ids': orderids
 #         }
     
-#         func = self.apiPost
+#         func = self.apiPOST
 #         callback = self.onBatchCancel
     
 #         return self.addReq(path, params, func, callback)     
@@ -877,7 +897,11 @@ if __name__ == '__main__':
     print (acc.getTimestamp())
     print (acc.getAccounts())
     print (acc.getBalance())
+    od = OrderData(acc)
+    od.brokerOrderId='1234445'
+    print (acc._broker_cancelOrder(od))
     print (acc._broker_listOpenOrders('eosusdt', 'sell'))
+
     me.loop()
 
     #online unicode converter

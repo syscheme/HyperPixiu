@@ -1153,7 +1153,7 @@ class AccountWrapper(object):
     def _broker_placeOrder(self, orderData):
         """发单"""
         orderData.brokerOrderId = "$" + orderData.reqId
-        orderData.status = OrderData.STATUS_NOTTRADED
+        orderData.status = OrderData.STATUS_SUBMITTED
 
         # redirectly simulate a place ok
         self._broker_onOrderPlaced(orderData)
@@ -1256,7 +1256,7 @@ class AccountWrapper(object):
 
                 # 推送委托进入队列（未成交）的状态更新
                 if not order.status:
-                    order.status = OrderData.STATUS_NOTTRADED
+                    order.status = OrderData.STATUS_SUBMITTED
 
                 # 判断是否会成交
                 buyCross = (order.direction == OrderData.DIRECTION_LONG and 

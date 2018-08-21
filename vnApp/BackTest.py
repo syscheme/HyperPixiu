@@ -378,7 +378,7 @@ class BackTest(object):
         for orderID, order in self.tdDriver.workingLimitOrderDict.items():
             # 推送委托进入队列（未成交）的状态更新
             if not order.status:
-                order.status = OrderData.STATUS_NOTTRADED
+                order.status = OrderData.STATUS_SUBMITTED
                 self.strategy.onOrder(order)
 
             # 判断是否会成交

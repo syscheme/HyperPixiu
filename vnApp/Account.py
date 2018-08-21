@@ -437,6 +437,60 @@ class Account(object):
         return datetime.now()
 
     @abstractmethod
+    def _broker_onOpenOrders(self, dictOrders):
+        """枚举订单回调"""
+        orderIds = dictOrders.keys()
+        newlist = []
+        gonelist = []
+        with self._lock :
+            for o in orderIds :
+                if o in self._dictLimitOrders.keys() :
+                    self._dictLimitOrders[o].status = o.status
+                elif o in self._dictStopOrders.keys() :
+                    self._dictStopOrders[o].status = o.status
+                else: # new
+                    newlist.append(o)
+            
+            for o in self._dictLimitOrders.keys() :
+                if not o in orderIds:
+                    gonelist.append(self._dictLimitOrders[o])
+                
+            for o in self._dictStopOrders.keys() :
+                if not o in orderIds:
+                    gonelist.append(self._dictStopOrders[o])
+
+    @abstractmethod
+    def _broker_onTradedOrders(self, dictOrders):
+        """枚举订单回调"""
+        orderIds = dictOrders.keys()
+        newlist = []
+        gonelist = []
+        with self._lock :
+            for o in orderIds :
+                if o in self._dictLimitOrders.keys() :
+                    self._dictLimitOrders[o].status = o.status
+                elif o in self._dictStopOrders.keys() :
+                    self._dictStopOrders[o].status = o.status
+                else: # new
+                    newlist.append(o)
+            
+            for o in self._dictLimitOrders.keys() :
+                if not o in orderIds:
+                    gonelist.append(self._dictLimitOrders[o])
+                
+            for o in self._dictStopOrders.keys() :
+                if not o in orderIds:
+                    gonelist.append(self._dictStopOrders[o])
+
+
+        self.warn('unrecognized open orders, force to cancel: %s' % newlist)
+        self.batchCancel(newlist)
+
+        for o in gonelist:
+            self.warn('gone orders, force to perform onCancel: %s' % newlist)
+            self._broker_cancelOrder(o)
+
+    @abstractmethod
     def _broker_onGetAccountBalance(self, data, reqid):
         """查询余额回调"""
         pass
@@ -923,7 +977,8 @@ class OrderData(EventData):
     OFFSET_UNKNOWN = u'unknown'
 
     # 状态常量
-    STATUS_NOTTRADED = u'pending'
+    STATUS_CREATED   = u'created'
+    STATUS_SUBMITTED = u'submitted'
     STATUS_PARTTRADED = u'partial filled'
     STATUS_ALLTRADED = u'filled'
     STATUS_CANCELLED = u'cancelled'
@@ -952,7 +1007,7 @@ class OrderData(EventData):
         self.price = EventData.EMPTY_FLOAT        # 报单价格
         self.totalVolume = EventData.EMPTY_INT    # 报单总数量
         self.tradedVolume = EventData.EMPTY_INT   # 报单成交数量
-        self.status = EventData.EMPTY_UNICODE     # 报单状态
+        self.status = OrderData.STATUS_CREATED     # 报单状态
         
         self.orderTime  = account._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:-3] # 发单时间
         self.cancelTime = EventData.EMPTY_STRING  # 撤单时间
@@ -985,7 +1040,7 @@ class OrderData(EventData):
 class TradeData(EventData):
     """成交数据类"""
     # # 状态常量
-    # STATUS_NOTTRADED  = u'NOTTRADED' # u'未成交'
+    # STATUS_SUBMITTED  = u'NOTTRADED' # u'未成交'
     # STATUS_PARTTRADED = u'PARTTRADED' # u'部分成交'
     # STATUS_ALLTRADED  = u'ALLTRADED' # u'全部成交'
     # STATUS_CANCELLED  = u'CANCELLED' # u'已撤销'
@@ -1049,7 +1104,7 @@ class PositionData(EventData):
 ########################################################################
 class PositionDetail(object):
     """本地维护的持仓信息"""
-    WORKING_STATUS = [OrderData.STATUS_UNKNOWN, OrderData.STATUS_NOTTRADED, OrderData.STATUS_PARTTRADED]
+    WORKING_STATUS = [OrderData.STATUS_UNKNOWN, OrderData.STATUS_SUBMITTED, OrderData.STATUS_PARTTRADED]
     
     MODE_NORMAL = 'normal'          # 普通模式
     MODE_SHFE = 'shfe'              # 上期所今昨分别平仓

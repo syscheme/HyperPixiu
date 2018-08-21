@@ -27,6 +27,242 @@ class Huobi(Account):
     # 常量定义
     HUOBI = 'huobi'
     HADAX = 'hadax'
+    #----------------------------------------------------------------------
+    def __init__(self, trader, settings):
+        """Constructor"""
+        super(Huobi, self).__init__(trader, settings)
+
+        self._mode        = Account.BROKER_API_ASYNC
+        self._queRequests = Queue()        # queue of request ids
+        self._dictRequests = {}            # dict from request Id to request
+        
+        # self.pool = None            # 线程池
+
+        # about the proxy
+        self._proxies = {}
+        prx = settings.httpproxy('')
+        if prx != '' :
+            self._proxies['http']  = prx
+            self._proxies['https'] = prx
+
+        # about the exchange
+        if self._exchange == self.HADAX:
+            self._hostname = self.HADAX_API_HOST
+        else:
+            self._exchange = self.HUOBI
+            self._hostname = self.HUOBI_API_HOST
+            
+        self._hosturl = 'https://%s' %self._hostname
+        
+    @property
+    def accessKey(self) :
+        return self._settings.accessKey('')
+
+    @property
+    def secretKey(self) :
+        return self._settings.secretKey('')
+
+    #------------------------------------------------
+    # overwrite of Account
+    #------------------------------------------------    
+    def _broker_placeOrder(self, orderData):
+        """下单"""
+        if self._hostname == self.HUOBI_API_HOST:
+            path = '/v1/order/orders/place'
+        else:
+            path = '/v1/hadax/order/orders/place'
+
+        params = {
+            'account-id': self._id,
+            'amount': orderData.volume * self.size,
+            'symbol': orderData.symbol,
+        }
+        
+        if orderData.price >0:
+            params['price'] = orderData.price
+            params['type'] = 'buy-limit' if order.direction == OrderData.DIRECTION_LONG else 'sell-limit' #限价
+        else :
+            params['type'] = 'buy-market' if order.direction == OrderData.DIRECTION_LONG else 'buy-market' #市价
+            #TODO buy-ioc：IOC买单, sell-ioc：IOC卖单, buy-limit-maker, sell-limit-maker
+
+        if len(orderData.source) >0 and 'margin' in orderData.source:
+            params['source'] = 'margin-api'
+
+        return self.pushRequest(path, orderData.reqId, params, orderData, self.apiPost, self.brokerCBplaceOrder)
+
+    def brokerCBplaceOrder(self, reqData, resp):
+        """
+        下单的response
+        i.e. { "status": "ok", "data": "59378" }
+        """
+        orderData = reqData
+        orderData.brokerOrderId = str(resp)
+
+        self._broker_onOrderPlaced(orderData) # if succ, else _broker_onCancelled() ??
+
+    def _broker_cancelOrder(self, orderData) :
+        """撤单"""
+        path = '/v1/order/orders/%s/submitcancel' % orderData.brokerOrderId
+        
+        params = {}
+        return self.pushRequest(path, orderData.reqId, {}, orderData, self.apiPost, self.brokerCBcancelOrder)
+        
+    def brokerCBcancelOrder(self, reqData, resp):
+        """ 撤单的response
+        ie. { "status": "ok", "data": "59378" }
+        """
+        orderData = reqData
+        # double check: if orderData.brokerOrderId == str(resp)
+        self._broker_onCancelled(orderData) # if succ, else _broker_onCancelled() ??
+
+    def _broker_listOpenOrders(self, symbol=None, side=None, size=None):
+        """查询当前帐号下未成交订单
+        """
+        path = '/v1/order/openOrders'
+        
+        params = { # initial with default required params
+            #'account_id': accountId,
+            #'symbol': symbol,
+        }
+        
+        if symbol: # “account_id” 和 “symbol” 需同时指定或者二者都不指定。如果二者都不指定，返回最多500条尚未成交订单，按订单号降序排列。
+            params['symbol'] = symbol
+            params['account_id'] = self._id
+
+        if side:
+            params['side'] = side
+
+        if size:
+            params['size'] = size        
+    
+        return self.pushRequest(path, None, params, None, self.apiGet, self.brokerCBlistOpenOrders)
+
+    def brokerCBlistOpenOrders(self, reqData, resp):
+        """ 查询当前帐号下未成交订单的response
+        ie. { "status": "ok", "data": [
+             { "id": 5454937, "symbol": "ethusdt", "account-id": 30925, "amount": "1.000000000000000000", 
+               "price": "0.453000000000000000", "created-at": 1530604762277, "type": "sell-limit",  
+               "filled-amount": "0.0", "filled-cash-amount": "0.0",  "filled-fees": "0.0", "source": "web",
+               "state": "submitted" }
+            ] }
+        """
+        dictOrders = {}
+        for o in resp :
+            order = OrderData(self)
+            order.reqid= ''
+            if o['account-id'] != self._id:
+                continue
+            order.brokerOrderId = o['id']
+            order.totalVolume = o['amount']
+            order.price = o['price']
+            order.status = o['state']
+            dictOrders[order.brokerOrderId] =order
+
+        # double check: if orderData.brokerOrderId == str(resp)
+        self._broker_onOpenOrders(dictOrders) # if succ, else _broker_onCancelled() ??
+
+    def _broker_listTradedOrders(self, symbol, latestDays=1, size=None):
+        """查询当前帐号下未成交订单
+        """
+        path = '/v1/order/orders'
+        
+        params = { # initial with default required params
+            'symbol': symbol,
+            'states': ['filled', 'partial-canceled'] # partial-filled 部分成交, partial-canceled 部分成交撤销, filled 完全成交
+        }
+
+        if not latestDays or latestDays <1:
+            latestDays = 1
+        params['start-date'] = (self._broker_datetimeAsOf() - datetime.timedelta(days=latestDays)).strftime('%Y-%m-%d')
+
+        if size:
+            params['size'] = size        
+    
+        return self.pushRequest(path, None, params, None, self.apiGet, self.brokerCBlistOpenOrders)
+
+    def brokerCBlistTradedOrders(self, reqData, resp):
+        """ 查询当前帐号下已成交订单的response
+            {
+            "status": "ok",
+            "data": [
+                {
+                "id": 59378,
+                "symbol": "ethusdt",
+                "account-id": 100009,
+                "amount": "10.1000000000",
+                "price": "100.1000000000",
+                "created-at": 1494901162595,
+                "type": "buy-limit",
+                "field-amount": "10.1000000000",
+                "field-cash-amount": "1011.0100000000",
+                "field-fees": "0.0202000000",
+                "finished-at": 1494901400468,
+                "user-id": 1000,
+                "source": "api",
+                "state": "filled",
+                "canceled-at": 0,
+                "exchange": "huobi",
+                "batch": ""
+                }
+            ]
+            }
+        """
+        dictOrders = {}
+        for o in resp :
+            order = OrderData(self)
+            order.reqid= ''
+            if o['account-id'] != self._id:
+                continue
+            order.brokerOrderId = o['id']
+            order.totalVolume = o['amount']
+            order.price = o['price']
+            order.status = o['state']
+            dictOrders[order.brokerOrderId] =order
+
+        # double check: if orderData.brokerOrderId == str(resp)
+        self._broker_onTradedOrders(dictOrders) # if succ, else _broker_onCancelled() ??
+
+    def step(self) :
+
+        try :
+            nextSleep = super(Huobi, self).step()
+            if nextSleep <0:
+                nextSleep = 0.01
+        except Exception as ex:
+            self.error('ThreadedHuobi::step() excepton: %s' % ex)
+
+        try :
+            self.procRequest(nextSleep)
+        except Exception as ex:
+            self.error('ThreadedHuobi::step() proc excepton: %s' % ex)
+
+    def onDayOpen(self, newDate):
+        return super(Huobi, self).onDayOpen(newDate)
+
+
+
+    #----------------------------------------------------------------------
+    # most of the methods are just forward to the self._nest
+    # def _broker_datetimeAsOf(self): return self._nest._broker_datetimeAsOf()
+    # def _broker_onGetAccountBalance(self, data, reqid): return self._nest._broker_onGetAccountBalance(data, reqid)
+    # def _broker_onGetOrder(self, data, reqid): return self._nest._broker_onGetOrder(data, reqid)
+    # def _broker_onGetOrders(self, data, reqid): return self._nest._broker_onGetOrders(data, reqid)
+    # def _broker_onGetMatchResults(self, data, reqid): return self._nest._broker_onGetMatchResults(data, reqid)
+    # def _broker_onGetMatchResult(self, data, reqid): return self._nest._broker_onGetMatchResult(data, reqid)
+    # def _broker_onGetTimestamp(self, data, reqid): return self._nest._broker_onGetTimestamp(data, reqid)
+
+    # def calcAmountOfTrade(self, symbol, price, volume): return self._nest.calcAmountOfTrade(symbol, price, volume)
+    # def maxOrderVolume(self, symbol, price): return self._nest.maxOrderVolume(symbol, price)
+    # def roundToPriceTick(self, price): return self._nest.roundToPriceTick(price)
+    # def onStart(self): return self._nest.onStart()
+    # def onDayClose(self): return self._nest.onDayClose()
+    # def onTimer(self, dt): return self._nest.onTimer(dt)
+    # def calcDailyPositions(self): return self._nest.calcDailyPositions()
+    # def log(self, message): return self._nest.log(message)
+    #----------------------------------------------------------------------
+    '''
+    reference: https://github.com/huobiapi/API_Docs/wiki/REST_api_reference
+    '''
     HUOBI_API_HOST = "api.huobi.pro"
     HADAX_API_HOST = "api.hadax.com"
     LANG = 'zh-CN'
@@ -64,82 +300,6 @@ class Huobi(Account):
         signature = signature.decode()
         return signature    
 
-    #----------------------------------------------------------------------
-    def __init__(self, trader, settings):
-        """Constructor"""
-        super(Huobi, self).__init__(trader, settings)
-
-        self._mode        = Account.BROKER_API_ASYNC
-        self._queRequests = Queue()        # queue of request ids
-        self._dictRequests = {}            # dict from request Id to request
-        
-        # self.pool = None            # 线程池
-
-        # about the proxy
-        self._proxies = {}
-        prx = settings.httpproxy('')
-        if prx != '' :
-            self._proxies['http']  = prx
-            self._proxies['https'] = prx
-
-        # about the exchange
-        if self._exchange == self.HADAX:
-            self._hostname = self.HADAX_API_HOST
-        else:
-            self._exchange = self.HUOBI
-            self._hostname = self.HUOBI_API_HOST
-            
-        self._hosturl = 'https://%s' %self._hostname
-        
-    @property
-    def accessKey(self) :
-        return self._settings.accessKey('')
-
-    @property
-    def secretKey(self) :
-        return self._settings.secretKey('')
-
-    #----------------------------------------------------------------------
-    # most of the methods are just forward to the self._nest
-    # def _broker_datetimeAsOf(self): return self._nest._broker_datetimeAsOf()
-    # def _broker_onOrderPlaced(self, orderData): return self._nest._broker_onOrderPlaced(orderData)
-    # def _broker_onCancelled(self, orderData): return self._nest._broker_onCancelled(orderData)
-    # def _broker_onOrderDone(self, orderData): return self._nest._broker_onOrderDone(orderData)
-    # def _broker_onTrade(self, trade): return self._nest._broker_onTrade(trade)
-    # def _broker_onGetAccountBalance(self, data, reqid): return self._nest._broker_onGetAccountBalance(data, reqid)
-    # def _broker_onGetOrder(self, data, reqid): return self._nest._broker_onGetOrder(data, reqid)
-    # def _broker_onGetOrders(self, data, reqid): return self._nest._broker_onGetOrders(data, reqid)
-    # def _broker_onGetMatchResults(self, data, reqid): return self._nest._broker_onGetMatchResults(data, reqid)
-    # def _broker_onGetMatchResult(self, data, reqid): return self._nest._broker_onGetMatchResult(data, reqid)
-    # def _broker_onGetTimestamp(self, data, reqid): return self._nest._broker_onGetTimestamp(data, reqid)
-
-    # def calcAmountOfTrade(self, symbol, price, volume): return self._nest.calcAmountOfTrade(symbol, price, volume)
-    # def maxOrderVolume(self, symbol, price): return self._nest.maxOrderVolume(symbol, price)
-    # def roundToPriceTick(self, price): return self._nest.roundToPriceTick(price)
-    # def onStart(self): return self._nest.onStart()
-    # def onDayClose(self): return self._nest.onDayClose()
-    # def onTimer(self, dt): return self._nest.onTimer(dt)
-    # def saveDB(self): return self._nest.saveDB()
-    # def loadDB(self, since =None): return self._nest.loadDB(since =None)
-    # def calcDailyPositions(self): return self._nest.calcDailyPositions()
-    # def log(self, message): return self._nest.log(message)
-    # def stdout(self, message): return self._nest.stdout(message)
-    # def loadStrategy(self, setting): return self._nest.loadStrategy(setting)
-    # def getStrategyNames(self): return self._nest.getStrategyNames()
-    # def getStrategyVar(self, name): return self._nest.getStrategyVar(name)
-    # def getStrategyParam(self, name): return self._nest.getStrategyParam(name)
-    # def initStrategy(self, name): return self._nest.initStrategy(name)
-    # def startStrategy(self, name): return self._nest.startStrategy(name)
-    # def stopStrategy(self, name): return self._nest.stopStrategy(name)
-    # def callStrategyFunc(self, strategy, func, params=None): return self._nest.callStrategyFunc(strategy, func, params)
-    # def initAll(self): return self._nest.initAll()
-    # def startAll(self): return self._nest.startAll()
-    # def stop(self): return self._nest.stop()
-    # def stopAll(self): return self._nest.stopAll()
-    # def saveSetting(self): return self._nest.saveSetting()
-    # def updateDailyStat(self, dt, price): return self._nest.updateDailyStat(dt, price)
-    # def evaluateDailyStat(self, startdate, enddate): return self._nest.evaluateDailyStat(startdate, enddate)
-    #----------------------------------------------------------------------
     def enqueue(self, reqId, req):
         with self._lock :
             self._dictRequests[reqId] = req
@@ -195,70 +355,6 @@ class Huobi(Account):
             # 失败的请求重新放回队列，等待下次处理
             self.enqueue(reqId, req)
     
-    #------------------------------------------------
-    # overwrite of Account
-    #------------------------------------------------    
-    def _broker_placeOrder(self, orderData):
-        """下单"""
-        if self._hostname == self.HUOBI_API_HOST:
-            path = '/v1/order/orders/place'
-        else:
-            path = '/v1/hadax/order/orders/place'
-
-        params = {
-            'account-id': self._id,
-            'amount': orderData.volume * self.size,
-            'symbol': orderData.symbol,
-            'type'  : orderData.direction
-        }
-        
-        if orderData.price >0:
-            params['price'] = orderData.price
-        if len(orderData.source) >0:
-            params['source'] = orderData.source
-
-        return self.pushRequest(path, orderData.reqId, params, orderData, self.onResp_placeOrder)
-
-    def onResp_placeOrder(self, req, resp):
-        """下单的response"""
-        orderData = req['reqData']
-
-        #TODO fill response data into orderData
-
-        self._broker_onOrderPlaced(orderData) # if succ, else _broker_onCancelled() ??
-
-    def _broker_cancelOrder(self, orderData) :
-        """撤单"""
-        path = '/v1/order/orders/%s/submitcancel' % orderData.brokerOrderId
-        
-        params = {}
-        return self.pushRequest(path, orderData.reqId, {}, orderData, self.onResp_cancelOrder)
-        
-    def onResp_cancelOrder(self, req, resp):
-        """撤单的response"""
-        orderData = req['reqData']
-
-        #TODO fill response data into orderData
-
-        self._broker_onCancelled(orderData) # if succ, else _broker_onCancelled() ??
-
-    def step(self) :
-
-        try :
-            nextSleep = super(Huobi, self).step()
-            if nextSleep <0:
-                nextSleep = 0.01
-        except Exception as ex:
-            self.error('ThreadedHuobi::step() excepton: %s' % ex)
-
-        try :
-            self.procRequest(nextSleep)
-        except Exception as ex:
-            self.error('ThreadedHuobi::step() proc excepton: %s' % ex)
-
-    def onDayOpen(self, newDate):
-        return super(Huobi, self).onDayOpen(newDate)
-
     #----------------------------------------------------------------------
     def generateSignParams(self):
         """生成签名参数"""
@@ -327,7 +423,9 @@ class Huobi(Account):
     
     #----------------------------------------------------------------------
     def getCurrencys(self):
-        """查询支持货币"""
+        """查询支持货币
+        ([u'hb10', u'usdt', u'btc', u'bch', u'eth', u'xrp', u'ltc', u'ht', u'ada', u'eos', u'iota', u'xem', u'xmr', u'dash', u'neo', u'trx', u'icx', u'lsk', u'qtum', u'etc', u'btg', u'omg', u'hsr', u'zec', u'dcr', u'steem', u'bts', u'waves', u'snt', u'salt', u'gnt', u'cmt', u'btm', u'pay', u'knc', u'powr', u'bat', u'dgd', u'ven', u'qash', u'zrx', u'gas', u'mana', u'eng', u'cvc', u'mco', u'mtl', u'rdn', u'storj', u'chat', u'srn', u'link', u'act', u'tnb', u'qsp', u'req', u'rpx', u'appc', u'rcn', u'smt', u'adx', u'tnt', u'ost', u'itc', u'lun', u'gnx', u'ast', u'evx', u'mds', u'snc', u'propy', u'eko', u'nas', u'bcd', u'wax', u'wicc',u'topc', u'swftc', u'dbc', u'elf', u'aidoc', u'qun', u'iost', u'yee', u'dat', u'theta', u'let', u'dta', u'utk', u'meet', u'zil', u'soc', u'ruff', u'ocn', u'ela', u'bcx', u'sbtc', u'etf', u'bifi', u'zla', u'stk', u'wpr', u'mtn', u'mtx', u'edu', u'blz', u'abt', u'ont', u'ctxc', u'bft', u'wan', u'kan', u'lba', u'poly', u'pai', u'wtc', u'box', u'dgb', u'gxs', u'bix', u'xlm', u'xvg', u'hit', u'bt1', u'bt2', u'a5b5', u'x5z5', u'xzc', u'vet'], None)
+        """
         if self._hostname == self.HUOBI_API_HOST:
             path = '/v1/common/currencys'
         else:
@@ -337,7 +435,9 @@ class Huobi(Account):
     
     #----------------------------------------------------------------------
     def getTimestamp(self):
-        """查询系统时间"""
+        """查询系统时间
+        2018-08-21 08:16:40,811 (1534810600660, None)
+        """
         return self.pushRequest('/v1/common/timestamp', None, {}, None, self.apiGet, self.onGetTimestamp)
     
     #----------------------------------------------------------------------
@@ -347,7 +447,27 @@ class Huobi(Account):
     
     #----------------------------------------------------------------------
     def getBalance(self):
-        """查询余额"""
+        """查询余额
+        {u'list': [
+            ...
+            {u'currency': u'usdt', u'balance': u'0.000572974', u'type': u'trade'},
+            {u'currency': u'usdt', u'balance': u'0', u'type': u'frozen'},
+            {u'currency': u'btc', u'balance': u'0', u'type': u'trade'},
+            {u'currency': u'btc', u'balance': u'0', u'type': u'frozen'},
+            {u'currency': u'eth', u'balance': u'0', u'type': u'trade'},
+            {u'currency': u'eth', u'balance': u'0', u'type': u'frozen'},
+            ...
+            {u'currency': u'eos', u'balance': u'8.763676', u'type': u'trade'}, 
+            {u'currency': u'eos', u'balance': u'0', u'type': u'frozen'}, 
+            ...
+            {u'currency': u'theta', u'balance': u'516.76', u'type': u'trade'},
+            {u'currency': u'theta', u'balance': u'100', u'type': u'frozen'},
+            ...
+            {u'currency': u'ctxc', u'balance': u'49.7', u'type': u'trade'},
+            {u'currency': u'ctxc', u'balance': u'0', u'type': u'frozen'},
+            ...
+        ], u'state': u'working', u'type': u'spot', u'id': nnnnnn}
+        """
         if self._hostname == self.HUOBI_API_HOST:
             path = '/v1/account/accounts/%s/balance' % self._id
         else:
@@ -382,28 +502,6 @@ class Huobi(Account):
         return self.pushRequest(path, None, params, None, self.apiGet, self.onGetOrders)
 
     #----------------------------------------------------------------------
-    def getOpenOrders(self, accountId=None, symbol=None, side=None, size=None):
-        """查询当前帐号下未成交订单
-            “account_id” 和 “symbol” 需同时指定或者二者都不指定。如果二者都不指定，返回最多500条尚未成交订单，按订单号降序排列。
-        """
-        path = '/v1/order/openOrders'
-        
-        params = { # initial with default required params
-            #'account_id': accountId,
-            #'symbol': symbol,
-        }
-        
-        if symbol:
-            params['symbol'] = symbol
-            params['account_id'] = accountId
-
-        if side:
-            params['side'] = side
-
-        if size:
-            params['size'] = size        
-    
-        return self.pushRequest(path, None, params, None, self.apiGet, self.onGetOrders)
     
     #----------------------------------------------------------------------
     def getMatchResults(self, symbol, types=None, startDate=None, 
@@ -458,7 +556,6 @@ class Huobi(Account):
         callback = self.onBatchCancel
     
         return self.pushRequest(path, None, params, None, self.apiPost, self.onPlaceOrder)
-        return self.addReq(path, params, func, callback)     
         
     #----------------------------------------------------------------------
     def onError(self, msg, reqid):
@@ -606,7 +703,7 @@ class ThreadedHuobi(Huobi):
 #         return self.addReq(path, params, func, callback)     
 
 #     #----------------------------------------------------------------------
-#     def getOpenOrders(self, accountId=None, symbol=None, side=None, size=None):
+#     def _broker_listOpenOrders(self, accountId=None, symbol=None, side=None, size=None):
 #         """查询当前帐号下未成交订单
 #             “account_id” 和 “symbol” 需同时指定或者二者都不指定。如果二者都不指定，返回最多500条尚未成交订单，按订单号降序排列。
 #         """
@@ -780,7 +877,7 @@ if __name__ == '__main__':
     print (acc.getTimestamp())
     print (acc.getAccounts())
     print (acc.getBalance())
-    print (acc.getOpenOrders('eosusdt', 'sell'))
+    print (acc._broker_listOpenOrders('eosusdt', 'sell'))
     me.loop()
 
     #online unicode converter
@@ -791,7 +888,7 @@ if __name__ == '__main__':
     exit(0)
     
     print (acc.getAccounts())
-    print (acc.getOpenOrders(accountId, symbol, 'sell'))
+    print (acc._broker_listOpenOrders(accountId, symbol, 'sell'))
 #    print (acc.getOrders(symbol, 'pre-submitted,submitted,partial-filled,partial-canceled,filled,canceled'))
 #    print (acc.getOrders(symbol, 'filled'))
     print (acc.getMatchResults(symbol))

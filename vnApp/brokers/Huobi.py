@@ -227,7 +227,7 @@ class Huobi(Account):
                     if not pos.symbol in self._dictPositions.keys():
                         self._dictPositions[pos.symbol] =pos
                     else :
-                        self._dictPositions[pos.symbol].posAval = pos.posAvail
+                        self._dictPositions[pos.symbol].posAvail = pos.posAvail
                         self._dictPositions[pos.symbol].position = pos.position
                         self._dictPositions[pos.symbol].stampByBroker = pos.stampByBroker
                     print(self._dictPositions[pos.symbol].__dict__)
@@ -495,28 +495,41 @@ class Huobi(Account):
             ...
         ], u'state': u'working', u'type': u'spot', u'id': nnnnnn}
         """
-        with self._lock :
-            stampNow = self._broker_datetimeAsOf()
-            for b in resp['list']:
-                symbol = b[u'currency'].encode('utf-8')
-                bal = float(b[u'balance'])
-                if bal <=0:
-                    continue
-                if symbol in self._dictHbPositions.keys() :
-                    pos = self._dictHbPositions[symbol]
-                else :
-                    pos = PositionData()
-                    pos.symbol = symbol
-                    pos.exchange = self._exchange
-                    pos.vtSymbol = '%s.%s' % (symbol, self._exchange)
+        stampNow = self._broker_datetimeAsOf()
+        posDict ={}
+        for b in resp['list']:
+            symbol = b[u'currency'].encode('utf-8')
+            bal = float(b[u'balance'])
+            if bal <=0:
+                continue
+            
+            if symbol in posDict.keys() :
+                pos = posDict[symbol]
+            else :
+                pos = PositionData()
+                pos.symbol = symbol
+                pos.exchange = self._exchange
+                pos.vtSymbol = '%s.%s' % (symbol, self._exchange)
 
-                if b[u'type'] == u'trade' :
-                    pos.posAvail = bal
-                else :
-                    pos.position = pos.posAvail + bal
-                
-                pos.stampByBroker = stampNow
-                self._dictHbPositions[symbol] = pos
+            if b[u'type'] == u'trade' :
+                pos.posAvail = bal
+            else:
+                pos.position = bal # we temporarily put frozen amount in poistion
+
+            posDict[symbol] = pos
+
+        for pos in posDict.values():
+            pos.position += pos.posAvail
+            pos.stampByBroker = stampNow
+
+        with self._lock :
+
+            for seen in posDict.values():
+                pos = seen if not seen.symbol in self._dictHbPositions.keys() else self._dictHbPositions[seen.symbol]
+                pos.posAvail = seen.posAvail
+                pos.position = seen.position
+                pos.stampByBroker = seen.stampByBroker
+                self._dictHbPositions[seen.symbol] = pos
 
     #----------------------------------------------------------------------
     def listOrders(self, symbol, states, types=None, startDate=None, 

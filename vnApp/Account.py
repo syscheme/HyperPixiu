@@ -82,8 +82,10 @@ class Account(object):
         self._dictOutgoingOrders = {} # the outgoing orders dict from reqId to OrderData that has not been confirmed with broker's orderId
         self._lstOrdersToCancel = []
         # cached data from broker
+        cashpos = PositionData()
+        cashpos.symbol = self.cashSymbol
         self._dictPositions = { # dict from symbol to latest PositionData
-            self.cashSymbol : PositionData()
+            self.cashSymbol : cashpos
         }
         self._dictTrades = {} # dict from tradeId to trade confirmed during today
         self._dictStopOrders = {} # dict from broker's orderId to OrderData that has been submitted but not yet traded
@@ -1109,7 +1111,7 @@ class PositionData(EventData):
         self.posAvail       = EventData.EMPTY_INT         # 冻结数量
         self.price          = EventData.EMPTY_FLOAT       # 持仓最新交易价
         self.avgPrice       = EventData.EMPTY_FLOAT       # 持仓均价
-        self.vtPositionName = EventData.EMPTY_STRING      # 持仓在vt系统中的唯一代码，通常是vtSymbol.方向
+        # self.vtPositionName = EventData.EMPTY_STRING      # 持仓在vt系统中的唯一代码，通常是vtSymbol.方向
         # self.ydPosition     = EventData.EMPTY_INT         # 昨持仓
         # self.positionProfit = EventData.EMPTY_FLOAT       # 持仓盈亏
         self.stampByTrader   = EventData.EMPTY_INT         # 该持仓数是基于Trader的计算

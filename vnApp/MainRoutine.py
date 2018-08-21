@@ -377,6 +377,9 @@ class MainRoutine(object):
         self._dictMarketDatas[md.exchange] = md
         self._dlstMarketDatas.append(d)
         self.info('md[%s] added: %s' %(md.exchange, d))
+
+        return md
+
     #----------------------------------------------------------------------
     def addApp(self, appModule, settings):
         """添加上层应用"""
@@ -399,6 +402,8 @@ class MainRoutine(object):
         }
         self._dlstApps.append(d)
         self.info('app[%s] added: %s' %(id, d))
+
+        return app
         
     #----------------------------------------------------------------------
     def getMarketData(self, dsName, exchange=None):

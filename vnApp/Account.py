@@ -48,6 +48,9 @@ class Account(object):
 
     SYMBOL_CASH = '.RMB.' # the dummy symbol in order to represent cache in _dictPositions
 
+    BROKER_API_SYNC  = 'brocker.sync'  # sync API to call broker
+    BROKER_API_ASYNC = 'brocker.async' # async API to call broker
+
     #----------------------------------------------------------------------
     def __init__(self, trader, settings):
         """Constructor"""
@@ -67,6 +70,7 @@ class Account(object):
         self._exchange = settings.exchange("")
 
         self._state        = Account.STATE_CLOSE
+        self._mode         = Account.BROKER_API_ASYNC
 
         # trader executer
         # self._dvrBroker = dvrBrokerClass(self, self._settings)
@@ -78,8 +82,10 @@ class Account(object):
         self._dictOutgoingOrders = {} # the outgoing orders dict from reqId to OrderData that has not been confirmed with broker's orderId
         self._lstOrdersToCancel = []
         # cached data from broker
+        cashpos = PositionData()
+        cashpos.symbol = self.cashSymbol
         self._dictPositions = { # dict from symbol to latest PositionData
-            Account.SYMBOL_CASH : PositionData()
+            self.cashSymbol : cashpos
         }
         self._dictTrades = {} # dict from tradeId to trade confirmed during today
         self._dictStopOrders = {} # dict from broker's orderId to OrderData that has been submitted but not yet traded
@@ -95,26 +101,17 @@ class Account(object):
         self.size      = self._settings.size(1)               # 合约大小，默认为1    
         self._priceTick = self._settings.priceTick(0)      # 价格最小变动 
         
-        # self.initData = []          # 初始化用的数据
-        
-        # # 保存vtSymbol和策略实例映射的字典（用于推送tick数据）
-        # # 由于可能多个strategy交易同一个vtSymbol，因此key为vtSymbol
-        # # value为包含所有相关strategy对象的list
-        # self._idxTickToStrategy = {}
-        
-        # # 保存vtOrderID和strategy对象映射的字典（用于推送order和trade数据）
-        # # key为vtOrderID，value为strategy对象
-        # self.orderStrategyDict = {}     
-        
-        # # 保存策略名称和委托号列表的字典
-        # # key为name，value为保存orderID（限价+本地停止）的集合
-        # self.strategyOrderDict = {}
-
-        # self._lstLogs = []               # 日志记录
+        self._stampLastSync =0
+        self._syncInterval  = 10
 
     #----------------------------------------------------------------------
     #  properties
     #----------------------------------------------------------------------
+    # @abstractmethod
+    @property
+    def cashSymbol(self):
+        return '.RMB.' # the dummy symbol in order to represent cache in _dictPositions
+
     @property
     def priceTick(self):
         return self._priceTick
@@ -157,7 +154,7 @@ class Account(object):
     @abstractmethod
     def cashAmount(self): # returns (avail, total)
         with self._lock :
-            pos = self._dictPositions[Account.SYMBOL_CASH]
+            pos = self._dictPositions[self.cashSymbol]
             volprice = pos.price * self.size
             return (pos.posAvail * volprice), (pos.position * volprice)
 
@@ -204,19 +201,38 @@ class Account(object):
             orderData.direction = OrderData.DIRECTION_LONG
             orderData.offset = OrderData.OFFSET_CLOSE     
 
-        with self._lock :
-            self._dictOutgoingOrders[orderData.reqId] = orderData
-            self.debug('enqueued order[%s]' % orderData.desc)
+        if self._mode == Account.BROKER_API_ASYNC :
+            with self._lock :
+                self._dictOutgoingOrders[orderData.reqId] = orderData
+                self.debug('enqueued order[%s]' % orderData.desc)
+        else :
+            self._broker_placeOrder(o)
 
         return orderData.reqId
 
     @abstractmethod
     def cancelOrder(self, brokerOrderId):
-        with self._lock :
-            self._lstOrdersToCancel.append(brokerOrderId)
 
-        self.debug('enqueued order[%s]' % brokerOrderId)
-        # self._broker_cancelOrder(brokerOrderId)
+        if self._mode == Account.BROKER_API_ASYNC :
+            with self._lock:
+                if self._mode == Account.BROKER_API_ASYNC :
+                    self._lstOrdersToCancel.append(brokerOrderId)
+                    self.debug('enqueued order[%s]' % brokerOrderId)
+                    return
+
+            # self._mode == Account.BROKER_API_SYNC
+        orderData = None
+        with self._lock:
+            try :
+                if OrderData.STOPORDERPREFIX in brokerOrderId :
+                    orderData = self._nest._dictStopOrders[brokerOrderId]
+                else :
+                    orderData = self._nest._dictLimitOrders[brokerOrderId]
+            except KeyError:
+                pass
+
+        if orderData :
+            self._broker_cancelOrder(orderData)
 
     @abstractmethod
     def sendStopOrder(self, symbol, orderType, price, volume, strategy):
@@ -409,7 +425,63 @@ class Account(object):
 
     @abstractmethod
     def _broker_datetimeAsOf(self):
-        return self._trader._dtData
+        if self._trader._dtData:
+            return self._trader._dtData
+        return datetime.now()
+
+    @abstractmethod
+    def _broker_onOpenOrders(self, dictOrders):
+        """枚举订单回调"""
+        orderIds = dictOrders.keys()
+        newlist = []
+        gonelist = []
+        with self._lock :
+            for o in orderIds :
+                if o in self._dictLimitOrders.keys() :
+                    self._dictLimitOrders[o].status = o.status
+                elif o in self._dictStopOrders.keys() :
+                    self._dictStopOrders[o].status = o.status
+                else: # new
+                    newlist.append(o)
+            
+            for o in self._dictLimitOrders.keys() :
+                if not o in orderIds:
+                    gonelist.append(self._dictLimitOrders[o])
+                
+            for o in self._dictStopOrders.keys() :
+                if not o in orderIds:
+                    gonelist.append(self._dictStopOrders[o])
+
+    @abstractmethod
+    def _broker_onTradedOrders(self, dictOrders):
+        """枚举订单回调"""
+        orderIds = dictOrders.keys()
+        newlist = []
+        gonelist = []
+        with self._lock :
+            for o in orderIds :
+                if o in self._dictLimitOrders.keys() :
+                    self._dictLimitOrders[o].status = o.status
+                elif o in self._dictStopOrders.keys() :
+                    self._dictStopOrders[o].status = o.status
+                else: # new
+                    newlist.append(o)
+            
+            for o in self._dictLimitOrders.keys() :
+                if not o in orderIds:
+                    gonelist.append(self._dictLimitOrders[o])
+                
+            for o in self._dictStopOrders.keys() :
+                if not o in orderIds:
+                    gonelist.append(self._dictStopOrders[o])
+
+
+        self.warn('unrecognized open orders, force to cancel: %s' % newlist)
+        self.batchCancel(newlist)
+
+        for o in gonelist:
+            self.warn('gone orders, force to perform onCancel: %s' % newlist)
+            self._broker_cancelOrder(o)
 
     @abstractmethod
     def _broker_onGetAccountBalance(self, data, reqid):
@@ -440,20 +512,67 @@ class Account(object):
         """查询时间回调"""
         pass
 
+    @abstractmethod
+    def _brocker_procSyncData(self):
+        pass
+
+    @abstractmethod
+    def _brocker_triggerSync(self):
+        pass
+
     # end with BrokerDriver
     #----------------------------------------------------------------------
 
     #----------------------------------------------------------------------
     # Application routine
     def step(self) :
-        pass
+
+        # step 1. flush out-going orders and cancels to the broker
+        outgoingOrders = []
+        ordersToCancel = []
+
+        with self._lock:
+            outgoingOrders = copy.deepcopy(self._dictOutgoingOrders.values())
+
+            # find out he orderData by brokerOrderId
+            for odid in self._lstOrdersToCancel :
+                orderData = None
+                try :
+                    if OrderData.STOPORDERPREFIX in odid :
+                        orderData = self._dictStopOrders[odid]
+                    else :
+                        orderData = self._dictLimitOrders[odid]
+                except KeyError:
+                    pass
+
+                if orderData :
+                    ordersToCancel.append(copy.copy(orderData))
+
+            self._lstOrdersToCancel = []
+
+        for co in ordersToCancel:
+            self._broker_cancelOrder(co)
+
+        for no in outgoingOrders:
+            self._broker_placeOrder(no)
+
+        if (len(ordersToCancel) + len(outgoingOrders)) >0:
+            self.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
+
+        # step 2. sync positions and order with the broker
+        self._brocker_procSyncData()
+        stampNow = datetime2float(datetime.now())
+        if self._stampLastSync + self._syncInterval < stampNow :
+            self._stampLastSync = stampNow
+            self._brocker_triggerSync()
+
 
     # end of App routine
     #----------------------------------------------------------------------
 
     @abstractmethod
     def _cashChange(self, dAvail=0, dTotal=0): # thread unsafe
-        pos = self._dictPositions[Account.SYMBOL_CASH]
+        pos = self._dictPositions[self.cashSymbol]
         volprice = pos.price * self.size
         if pos.price <=0 :   # if cache.price not initialized
             volprice = pos.price =1
@@ -519,6 +638,7 @@ class Account(object):
         # ensure the DB collection has the index applied
         self._trader.dbEnsureIndex(self.collectionName_trade, [('brokerTradeId', ASCENDING)], True)
         self._trader.dbEnsureIndex(self.collectionName_dpos,  [('date', ASCENDING), ('symbol', ASCENDING)], True)
+        return True
 
     @abstractmethod
     def onDayClose(self):
@@ -614,7 +734,7 @@ class Account(object):
     def calcDailyPositions(self):
         """今日交易的结果"""
 
-        tradesOfSymbol = { Account.SYMBOL_CASH:[] }        # 成交列表
+        tradesOfSymbol = { self.cashSymbol:[] }        # 成交列表
         with self._lock :
             for t in self._dictTrades.values():
                 if len(t.symbol) <=0:
@@ -796,7 +916,7 @@ class Account_AShare(Account):
 
             # shift yesterday's position as available
             for pos in self._dictPositions.values():
-                if Account.SYMBOL_CASH == pos.symbol:
+                if self.cashSymbol == pos.symbol:
                     continue
                 self.debug('onDayOpen() shifting pos[%s] %s to avail %s' % (pos.symbol, pos.position, pos.posAvail))
                 pos.posAvail = pos.position
@@ -838,20 +958,26 @@ class OrderData(EventData):
     OFFSET_UNKNOWN = u'unknown'
 
     # 状态常量
-    STATUS_NOTTRADED = u'pending'
-    STATUS_PARTTRADED = u'partial filled'
-    STATUS_ALLTRADED = u'filled'
-    STATUS_CANCELLED = u'cancelled'
-    STATUS_REJECTED = u'rejected'
-    STATUS_UNKNOWN = u'unknown'
+    STATUS_CREATED    = 'created'
+    STATUS_SUBMITTED  = 'submitted'
+    STATUS_PARTTRADED = 'partial-filled'
+    STATUS_ALLTRADED  = 'filled'
+    STATUS_PARTCANCEL = 'partial-canceled'
+    STATUS_CANCELLED  = 'canceled'
+    STATUS_REJECTED   = 'rejected'
+    STATUS_UNKNOWN    = 'unknown'
+
+    STATUS_OPENNING   = [STATUS_SUBMITTED, STATUS_PARTTRADED]
+    STATUS_FINISHED   = [STATUS_ALLTRADED, STATUS_PARTCANCEL]
+    STATUS_CLOSED     = STATUS_FINISHED + [STATUS_CANCELLED]
 
     #----------------------------------------------------------------------
-    def __init__(self, account, stopOrder=False):
+    def __init__(self, account, stopOrder=False, reqId = None):
         """Constructor"""
         super(OrderData, self).__init__()
         
         # 代码编号相关
-        self.reqId   = account.nextOrderReqId # 订单编号
+        self.reqId   = reqId if reqId else account.nextOrderReqId # 订单编号
         if stopOrder:
             self.reqId  = OrderData.STOPORDERPREFIX +self.reqId
 
@@ -867,11 +993,12 @@ class OrderData(EventData):
         self.price = EventData.EMPTY_FLOAT        # 报单价格
         self.totalVolume = EventData.EMPTY_INT    # 报单总数量
         self.tradedVolume = EventData.EMPTY_INT   # 报单成交数量
-        self.status = EventData.EMPTY_UNICODE     # 报单状态
+        self.status = OrderData.STATUS_CREATED     # 报单状态
+        self.source   = EventData.EMPTY_STRING  # trigger source
         
-        self.orderTime  = account._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:-3] # 发单时间
-        self.cancelTime = EventData.EMPTY_STRING  # 撤单时间
-        self.source     = EventData.EMPTY_STRING  # trigger source
+        self.stampSubmitted  = EventData.EMPTY_STRING # 发单时间
+        self.stampCanceled   = EventData.EMPTY_STRING  # 撤单时间
+        self.stampFinished   = EventData.EMPTY_STRING  # 撤单时间
 
     @property
     def desc(self) :
@@ -900,7 +1027,7 @@ class OrderData(EventData):
 class TradeData(EventData):
     """成交数据类"""
     # # 状态常量
-    # STATUS_NOTTRADED  = u'NOTTRADED' # u'未成交'
+    # STATUS_SUBMITTED  = u'NOTTRADED' # u'未成交'
     # STATUS_PARTTRADED = u'PARTTRADED' # u'部分成交'
     # STATUS_ALLTRADED  = u'ALLTRADED' # u'全部成交'
     # STATUS_CANCELLED  = u'CANCELLED' # u'已撤销'
@@ -954,7 +1081,7 @@ class PositionData(EventData):
         self.posAvail       = EventData.EMPTY_INT         # 冻结数量
         self.price          = EventData.EMPTY_FLOAT       # 持仓最新交易价
         self.avgPrice       = EventData.EMPTY_FLOAT       # 持仓均价
-        self.vtPositionName = EventData.EMPTY_STRING      # 持仓在vt系统中的唯一代码，通常是vtSymbol.方向
+        # self.vtPositionName = EventData.EMPTY_STRING      # 持仓在vt系统中的唯一代码，通常是vtSymbol.方向
         # self.ydPosition     = EventData.EMPTY_INT         # 昨持仓
         # self.positionProfit = EventData.EMPTY_FLOAT       # 持仓盈亏
         self.stampByTrader   = EventData.EMPTY_INT         # 该持仓数是基于Trader的计算

@@ -1086,6 +1086,8 @@ class AccountWrapper(object):
     @property
     def priceTick(self): return self._nest.priceTick
     @property
+    def cashSymbol(self): return self._nest.cashSymbol
+    @property
     def dbName(self): return self._nest.dbName
     @property
     def ident(self) : return self._nest.ident
@@ -1396,7 +1398,7 @@ class AccountWrapper(object):
         self._btTrader.debug('onTestEnd() faking trade to flush out all positions')
         currentPositions = self.getAllPositions()
         for symbol, pos in currentPositions.items() :
-            if symbol == Account.SYMBOL_CASH:
+            if symbol == self.cashSymbol:
                 continue
             
             # fake a sold-succ trade into self._dictTrades

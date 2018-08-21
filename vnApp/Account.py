@@ -83,7 +83,7 @@ class Account(object):
         self._lstOrdersToCancel = []
         # cached data from broker
         self._dictPositions = { # dict from symbol to latest PositionData
-            Account.SYMBOL_CASH : PositionData()
+            self.cashSymbol : PositionData()
         }
         self._dictTrades = {} # dict from tradeId to trade confirmed during today
         self._dictStopOrders = {} # dict from broker's orderId to OrderData that has been submitted but not yet traded
@@ -105,6 +105,11 @@ class Account(object):
     #----------------------------------------------------------------------
     #  properties
     #----------------------------------------------------------------------
+    # @abstractmethod
+    @property
+    def cashSymbol(self):
+        return '.RMB.' # the dummy symbol in order to represent cache in _dictPositions
+
     @property
     def priceTick(self):
         return self._priceTick
@@ -147,7 +152,7 @@ class Account(object):
     @abstractmethod
     def cashAmount(self): # returns (avail, total)
         with self._lock :
-            pos = self._dictPositions[Account.SYMBOL_CASH]
+            pos = self._dictPositions[self.cashSymbol]
             volprice = pos.price * self.size
             return (pos.posAvail * volprice), (pos.position * volprice)
 
@@ -565,7 +570,7 @@ class Account(object):
 
     @abstractmethod
     def _cashChange(self, dAvail=0, dTotal=0): # thread unsafe
-        pos = self._dictPositions[Account.SYMBOL_CASH]
+        pos = self._dictPositions[self.cashSymbol]
         volprice = pos.price * self.size
         if pos.price <=0 :   # if cache.price not initialized
             volprice = pos.price =1
@@ -727,7 +732,7 @@ class Account(object):
     def calcDailyPositions(self):
         """今日交易的结果"""
 
-        tradesOfSymbol = { Account.SYMBOL_CASH:[] }        # 成交列表
+        tradesOfSymbol = { self.cashSymbol:[] }        # 成交列表
         with self._lock :
             for t in self._dictTrades.values():
                 if len(t.symbol) <=0:
@@ -809,7 +814,7 @@ class Account(object):
                 commission += comis
                 slippage += slpfee
 
-            if Account.SYMBOL_CASH == s: # cash dosn't need to sum trades
+            if self.cashSymbol == s: # cash dosn't need to sum trades
                 calcPosition = currentPos.position
             elif calcPosition != currentPos.position:
                 self.stdout("%s WARN: %s.calcDailyPositions() calcPos[%s] mismatch currentPos[%s]" %(self._dateToday, s, calcPosition, currentPos.position))
@@ -939,7 +944,7 @@ class Account_AShare(Account):
 
             # shift yesterday's position as available
             for pos in self._dictPositions.values():
-                if Account.SYMBOL_CASH == pos.symbol:
+                if self.cashSymbol == pos.symbol:
                     continue
                 self.debug('onDayOpen() shifting pos[%s] %s to avail %s' % (pos.symbol, pos.position, pos.posAvail))
                 pos.posAvail = pos.position
@@ -981,21 +986,26 @@ class OrderData(EventData):
     OFFSET_UNKNOWN = u'unknown'
 
     # 状态常量
-    STATUS_CREATED   = u'created'
-    STATUS_SUBMITTED = u'submitted'
-    STATUS_PARTTRADED = u'partial filled'
-    STATUS_ALLTRADED = u'filled'
-    STATUS_CANCELLED = u'cancelled'
-    STATUS_REJECTED = u'rejected'
-    STATUS_UNKNOWN = u'unknown'
+    STATUS_CREATED    = 'created'
+    STATUS_SUBMITTED  = 'submitted'
+    STATUS_PARTTRADED = 'partial-filled'
+    STATUS_ALLTRADED  = 'filled'
+    STATUS_PARTCANCEL = 'partial-canceled'
+    STATUS_CANCELLED  = 'canceled'
+    STATUS_REJECTED   = 'rejected'
+    STATUS_UNKNOWN    = 'unknown'
+
+    STATUS_OPENNING   = [STATUS_SUBMITTED, STATUS_PARTTRADED]
+    STATUS_FINISHED   = [STATUS_ALLTRADED, STATUS_PARTCANCEL]
+    STATUS_CLOSED     = STATUS_FINISHED + [STATUS_CANCELLED]
 
     #----------------------------------------------------------------------
-    def __init__(self, account, stopOrder=False):
+    def __init__(self, account, stopOrder=False, reqId = None):
         """Constructor"""
         super(OrderData, self).__init__()
         
         # 代码编号相关
-        self.reqId   = account.nextOrderReqId # 订单编号
+        self.reqId   = reqId if reqId else account.nextOrderReqId # 订单编号
         if stopOrder:
             self.reqId  = OrderData.STOPORDERPREFIX +self.reqId
 
@@ -1012,10 +1022,11 @@ class OrderData(EventData):
         self.totalVolume = EventData.EMPTY_INT    # 报单总数量
         self.tradedVolume = EventData.EMPTY_INT   # 报单成交数量
         self.status = OrderData.STATUS_CREATED     # 报单状态
+        self.source   = EventData.EMPTY_STRING  # trigger source
         
-        self.orderTime  = account._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:-3] # 发单时间
-        self.cancelTime = EventData.EMPTY_STRING  # 撤单时间
-        self.source     = EventData.EMPTY_STRING  # trigger source
+        self.stampSubmitted  = EventData.EMPTY_STRING # 发单时间
+        self.stampCanceled   = EventData.EMPTY_STRING  # 撤单时间
+        self.stampFinished   = EventData.EMPTY_STRING  # 撤单时间
 
     @property
     def desc(self) :

@@ -1,105 +1,129 @@
 # encoding: UTF-8
 
-"""
-展示如何执行策略回测。
-cd ${workspaceFolder} ; env "PYTHONPATH=${workspaceFolder}:${workspaceFolder}/kits/vnpy" "PYTHONIOENCODING=UTF-8" "PYTHONUNBUFFERED=1" /usr/bin/python2.7 vnApp/BackTest/runBacktesting.py
-"""
-from __future__ import division
+from __future__ import print_function
 
-import vnApp.BackTest as bt
-import vnApp.strategies as tg
-import vnApp.Account as acnt
+
+import multiprocessing
+from time import sleep
+from datetime import datetime, time
+
+from vnApp.MainRoutine import MainRoutine
+from vnApp.marketdata.mdHuobi import mdHuobi
+from vnApp.marketdata.mdBacktest import mdBacktest
+from vnApp.DataRecorder import *
+from vnApp.EventChannel import EventChannel
+from vnApp.BackTest import *
+
+from vnpy.trader.vtEvent import EVENT_LOG, EVENT_ERROR
 
 import os
 import jsoncfg # pip install json-cfg
-import gc
-from time import sleep
 
-# symbols= ["601000", "601001", "601002", "601003", "601005", "601006", "601007", "601008", "601009", "601010", "601011", "601012", "601018", "601028", "601038", "601058", "601088", "601098", "601099", "601100", "601101", "601106", "601107", "601111", "601113", "601116", "601117", "601118", "601126", "601137", "601139", "601158", "601166", "601168", "601169", "601177", "601179", "601186", "601188", "601199", "601208", "601216", "601218", "601222", "601231", "601233", "601238", "601258", "601268", "601288", "601299", "601311", "601313", "601318", "601328", "601333", "601336", "601339", "601369", "601377", "601388", "601390", "601398", "601515", "601518", "601555", "601558", "601566", "601567", "601588", "601599", "601600", "601601", "601607", "601608", "601616", "601618", "601628", "601633", "601636", "601666", "601668", "601669", "601677", "601678", "601688", "601699", "601700", "601717", "601718", "601727", "601766", "601777", "601788", "601789", "601798", "601799", "601800", "601801", "601808", "601818", "601857", "601866", "601872", "601877", "601880", "601886", "601888", "601890", "601898", "601899", "601901", "601908", "601918", "601919", "601928", "601929", "601933", "601939", "601958", "601965", "601988", "601989", "601991", "601992", "601996", "601998", "601999"]
-# symbols= ["601188", "601199", "601208", "601216", "601218", "601222", "601231", "601233", "601238", "601258", "601268", "601288", "601299", "601311", "601313", "601318", "601328", "601333", "601336", "601339", "601369", "601377", "601388", "601390", "601398", "601515", "601518", "601555", "601558", "601566", "601567", "601588", "601599", "601600", "601601", "601607", "601608", "601616", "601618", "601628", "601633", "601636", "601666", "601668", "601669", "601677", "601678", "601688", "601699", "601700", "601717", "601718", "601727", "601766", "601777", "601788", "601789", "601798", "601799", "601800", "601801", "601808", "601818", "601857", "601866", "601872", "601877", "601880", "601886", "601888", "601890", "601898", "601899", "601901", "601908", "601918", "601919", "601928", "601929", "601933", "601939", "601958", "601965", "601988", "601989", "601991", "601992", "601996", "601998", "601999"]
-symbols= ["601000"]
+#----------------------------------------------------------------------
+def processErrorEvent(event):
+    """
+    处理错误事件
+    错误信息在每次登陆后，会将当日所有已产生的均推送一遍，所以不适合写入日志
+    """
+    error = event.dict_['data']
+    print(u'错误代码：%s，错误信息：%s' %(error.errorID, error.errorMsg))
 
-#---------------------------------------------------------------------
-def backTestSymbol(symbol, startDate, endDate=''):
-    """将Multicharts导出的csv格式的历史数据插入到Mongo数据库中"""
-    # from vnApp.strategies.stgKingKeltner import stgKingKeltner
-    from vnApp.strategies.stgBBand import stgBBand
+#----------------------------------------------------------------------
+def runChildProcess():
+    """子进程运行函数"""
+    print('-'*20)
 
+    # dirname(dirname(abspath(file)))
     settings= None
     try :
-        conf_fn = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/BT_AShare.json'
+        conf_fn = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/BT_app.json'
         settings= jsoncfg.load_config(conf_fn)
     except Exception as e :
         print('failed to load configure[%s]: %s' % (conf_fn, e))
         return
 
-    # 创建回测引擎
-    engine = bt.BackTest(acnt.Account_AShare, settings)
+    # 创建日志引擎
+    # logger = Logger()
+    # logger.setLogLevel(logger.LEVEL_INFO)
+    # logger.addConsoleHandler()
+    # logger.info(u'Huobi交易子进程')
     
-    # # 设置引擎的回测模式为K线
-    # engine.setBacktestingMode(engine.BAR_MODE)
+    # ee = EventChannel()
+    # logger.info(u'事件引擎创建成功')
+    
+    me = MainRoutine(settings)
 
-    # # 设置产品相关参数
-    # # account.setSlippage(0.2)     # 股指1跳
-    # engine.setRate(30/10000)   # 万30
-    # engine.setSize(100)         # 股指合约大小 
-    # engine.setPriceTick(0.2)    # 股指最小价格变动
-    
-    # # 设置回测用的数据起始日期
-    # engine.setStartDate(startDate)
-    # engine.setEndDate(endDate)
-    # engine.setDatabase('VnTrader_1Min_Db', symbol)
-    
-    # 在引擎中创建策略对象
-    d = {}
-    strategyList = [stgBBand] # , stgKingKeltner]
-    engine.batchBacktesting(strategyList, d)
-    # engine.initStrategy(KkStrategy, d)
-    
-    # # 开始跑回测
-    # engine.runBacktesting()
-    
-    # # 显示回测结果
-    # engine.showBacktestingResult()
+    # me.addMarketData(mdHuobi, settings['marketdata'][0])
+    me.addMarketData(mdBacktest, settings['marketdata'][0])
 
-# #----------------------------------------------------------------------
-# def backTestSymbolByAllStategy(symbol, startDate):
+    me.addApp(BackTestApp, settings['backtest'])
+    # logger.info(u'主引擎创建成功')
 
-#     # 创建回测引擎
-#     account = BTAccount_AShare()
-    
-#     # 设置引擎的回测模式为K线
-#     account.setBacktestingMode(account.BAR_MODE)
+    me.start()
+    # logger.info(u'MainRoutine starts')
 
-#     # 设置产品相关参数
-#     account.setSlippage(0.2)     # 股指1跳
-#     account.setRate(0.3/10000)   # 万0.3
-#     account.setSize(100)         # 股指合约大小 
-#     account.setPriceTick(0.2)    # 股指最小价格变动
+    # cta.loadSetting()
+    # logger.info(u'CTA策略载入成功')
     
-#     # 设置回测用的数据起始日期
-#     account.setStartDate(startDate)
-#     account.setDatabase(MINUTE_DB_NAME, symbol)
+    # cta.initAll()
+    # logger.info(u'CTA策略初始化成功')
     
-#     # 在引擎中创建策略对象
-#     strategyList = []
-#     for k in tg.STRATEGY_CLASS :
-#         strategyList.append(tg.STRATEGY_CLASS[k])
-
-#     d = {}
-#     account.batchBacktesting(strategyList, d)
+    # cta.startAll()
+    # logger.info(u'CTA策略启动成功')
+    
+    me.loop()
+    me.stop()
 
 #----------------------------------------------------------------------
+def runParentProcess():
+    """父进程运行函数"""
+    # 创建日志引擎
+    logger = Logger()
+    logger.setLogLevel(logger.LEVEL_INFO)
+    logger.addConsoleHandler()
+    logger.info(u'启动行情记录守护父进程')
+    
+    DAY_START = time(8, 57)         # 日盘启动和停止时间
+    DAY_END = time(15, 18)
+    NIGHT_START = time(20, 57)      # 夜盘启动和停止时间
+    NIGHT_END = time(2, 33)
+    
+    p = None        # 子进程句柄
 
-stoppedChilds = len(symbols)
+    while True:
+        currentTime = datetime.now().time()
+        recording = False
+
+        # 判断当前处于的时间段
+        if ((currentTime >= DAY_START and currentTime <= DAY_END) or
+            (currentTime >= NIGHT_START) or
+            (currentTime <= NIGHT_END)):
+            recording = True
+            
+        # 过滤周末时间段：周六全天，周五夜盘，周日日盘
+        if ((datetime.today().weekday() == 6) or 
+            (datetime.today().weekday() == 5 and currentTime > NIGHT_END) or 
+            (datetime.today().weekday() == 0 and currentTime < DAY_START)):
+            recording = False
+
+        # 记录时间则需要启动子进程
+        if recording and p is None:
+            logger.info(u'启动子进程')
+            p = multiprocessing.Process(target=runChildProcess)
+            p.start()
+            logger.info(u'子进程启动成功')
+
+        # 非记录时间则退出子进程
+        if not recording and p is not None:
+            logger.info(u'关闭子进程')
+            p.terminate()
+            p.join()
+            p = None
+            logger.info(u'子进程关闭成功')
+
+        sleep(5)
+
 
 if __name__ == '__main__':
-
-    for s in symbols :
-        try:
-            gc.collect()
-            backTestSymbol('A'+s, '2012-01-01','2012-09-06')
-#            backTestSymbolByAllStategy('A'+s, '2011-01-01')
-        except OSError, e:
-            pass
-
+    runChildProcess()
+    # runParentProcess()

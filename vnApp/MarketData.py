@@ -24,16 +24,14 @@ class MarketData(object):
 
     EVENT_T2KLINE_1MIN  = EVENT_NAME_PREFIX + 'T2K1m'
 
-    DATA_SRCTYPE_REALTIME   = 'market'
-    DATA_SRCTYPE_IMPORT     = 'import'
-    DATA_SRCTYPE_BACKTEST   = 'backtest'
+    TAG_BACKTEST = '$BT'
 
     __lastId__ =100
 
     from abc import ABCMeta, abstractmethod
 
     #----------------------------------------------------------------------
-    def __init__(self, mainRoutine, settings, srcType=DATA_SRCTYPE_REALTIME):
+    def __init__(self, mainRoutine, settings):
         """Constructor"""
 
         # the MarketData instance Id
@@ -308,7 +306,7 @@ class KLineData(EventData):
 
     @property
     def desc(self) :
-        return 'kline[%s]@%s' % (self.vtSymbol, self.datetime.strftime('%Y%m%dT%H%M%S'))
+        return 'kline[%s]@%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S') if self.datetime else '')
 
 
 ########################################################################

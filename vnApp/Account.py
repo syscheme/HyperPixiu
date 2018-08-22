@@ -206,7 +206,7 @@ class Account(object):
                 self._dictOutgoingOrders[orderData.reqId] = orderData
                 self.debug('enqueued order[%s]' % orderData.desc)
         else :
-            self._broker_placeOrder(o)
+            self._broker_placeOrder(orderData)
 
         return orderData.reqId
 
@@ -224,10 +224,8 @@ class Account(object):
         orderData = None
         with self._lock:
             try :
-                if OrderData.STOPORDERPREFIX in brokerOrderId :
-                    orderData = self._nest._dictStopOrders[brokerOrderId]
-                else :
-                    orderData = self._nest._dictLimitOrders[brokerOrderId]
+                dict = self._dictStopOrders if OrderData.STOPORDERPREFIX in brokerOrderId else self._dictLimitOrders
+                orderData = dict[brokerOrderId]
             except KeyError:
                 pass
 

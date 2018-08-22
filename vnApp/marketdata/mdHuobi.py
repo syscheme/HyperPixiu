@@ -71,7 +71,7 @@ class mdHuobi(MarketData):
     def __init__(self, mainRoutine, settings):
         """Constructor"""
 
-        super(mdHuobi, self).__init__(mainRoutine, settings, MarketData.DATA_SRCTYPE_REALTIME)
+        super(mdHuobi, self).__init__(mainRoutine, settings)
 
         self._merger = DataToEvent()
         self._merger.sink(self.onMarketEvent)
@@ -159,7 +159,7 @@ class mdHuobi(MarketData):
                 self._onData(data)
                 return 1
             except Exception as ex:
-                self.onError(u'数据分发错误：%s'  %ex)
+                self.onError(u'数据分发错误：%s: %s'  %(ex, data.__dict__))
 
         return c
 
@@ -372,7 +372,7 @@ class mdHuobi(MarketData):
 
     def _onData(self, data):
         """数据推送"""
-        self.debug('RECV:%s' % data)
+        # self.debug('RECV:%s' % data)S
         if 'ping' in data:
             self.pong(data)
             return
@@ -385,133 +385,6 @@ class mdHuobi(MarketData):
             return
 
         self._merger.push(data)
-
-        # event = None
-        # ch = data['ch']
-        # if '.kline.' in ch:
-        #     """K线数据
-        #     RECV:{u'tick': {u'count': 49, u'vol': 37120.18320073684, u'high': 8123.28, u'amount': 4.569773683996716, u'low': 8122.46, u'close': 8123.16, u'open': 8122.46, u'id': 1533014820}, u'ch': u'market.btcusdt.kline.1min', u'ts': 1533014873302}            """
-        #     pos = ch.find('.kline.')
-        #     symbol =ch[len('market.'): pos]
-        #     ch = ch[pos+7:]
-
-        #     eventType = MarketData.EVENT_KLINE_1MIN
-        #     if   '1min' == ch:
-        #         eventType = MarketData.EVENT_KLINE_1MIN
-        #     elif '5min' == ch:
-        #         eventType = MarketData.EVENT_KLINE_5MIN
-        #     elif '15min' == ch:
-        #         eventType = MarketData.EVENT_KLINE_15MIN
-        #     elif '30min' == ch:
-        #         eventType = MarketData.EVENT_KLINE_30MIN
-        #     elif '60min' == ch:
-        #         eventType = MarketData.EVENT_KLINE_1HOUR
-        #     elif '4hour' == ch:
-        #         eventType = MarketData.EVENT_KLINE_4HOUR
-        #     elif '1day' == ch:
-        #         eventType = MarketData.EVENT_KLINE_1DAY
-
-        #     tick = data['tick']
-        #     asof = datetime.fromtimestamp(tick['id'])
-
-        #     d =  {
-        #         'stamp' : {
-        #             'id' : asof,
-        #             'count' : int(tick['count'])
-        #             },
-        #         'tick' : tick
-        #     }
-
-        #     k = self.subscribeKey(symbol, eventType)
-
-        #     if k in self._dictKLineLatest:
-        #         latest = self._dictKLineLatest[k]
-        #         if d['stamp']['id'] > latest['stamp']['id'] :
-        #             t = latest['tick']
-
-        #             edata = KLineData(self, symbol)
-        #             edata.open = t['open']
-        #             edata.close = t['close']
-        #             edata.high = t['high']
-        #             edata.low = t['low']
-        #             edata.volume = t['vol']
-
-        #             ts = latest['stamp']['id']
-        #             edata.date = ts.date().strftime('%Y%m%d')
-        #             edata.time = ts.time().strftime('%H:%M:%S')
-
-        #             event = Event(type_=eventType)
-        #             event.dict_['data'] = edata
-
-        #     self._dictKLineLatest[k] = d
-        #     if event:
-        #         self.postMarketEvent(event)
-        #     return
-        # # end of Kline
-
-        # # now combine marketDepth and marketDetail into tick
-        # tick = None
-        # tickReady = False
-        # if 'depth.step' in ch:
-        #     symbol = data['ch'].split('.')[1]
-        #     tick = self._dictTicks.get(symbol, None)
-        #     if not tick:
-        #         return
-        #     tick.datetime = datetime.fromtimestamp(data['ts']/1000)
-        #     tick.date = tick.datetime.strftime('%Y%m%d')
-        #     tick.time = tick.datetime.strftime('%H:%M:%S.%f')
-
-        #     bids = data['tick']['bids']
-        #     for n in range(5):
-        #         l = bids[n]
-        #         tick.__setattr__('bidPrice' + str(n+1), l[0])
-        #         tick.__setattr__('bidVolume' + str(n+1), l[1])
-
-        #     asks = data['tick']['asks']
-        #     for n in range(5):
-        #         l = asks[n]
-        #         tick.__setattr__('askPrice' + str(n+1), l[0])
-        #         tick.__setattr__('askVolume' + str(n+1), l[1])
-
-        #     if tick.lastPrice:
-        #          tickReady = True
-
-        # elif 'trade.detail' in ch:
-        #     """成交细节推送
-        #     {u'tick': {u'data': [{u'price': 481.93, u'amount': 0.1499, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405480484L}, {u'price': 481.94, u'amount': 0.2475, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405466973L}, {u'price': 481.97, u'amount': 6.3635, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405475106L}, {u'price': 481.98, u'amount': 0.109, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405468495L}, {u'price': 481.98, u'amount': 0.109, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405468818L}, {u'price': 481.99, u'amount': 6.3844, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405471868L}, {u'price': 482.0, u'amount': 0.6367, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405439802L}], u'id': 11837877646, u'ts': 1531119914439}, u'ch': u'market.ethusdt.trade.detail', u'ts': 1531119914494}
-        #     {u'tick': {u'data': [{u'price': 481.96, u'amount': 0.109, u'direction': u'sell', u'ts': 1531119918505, u'id': 118378822907405482834L}], u'id': 11837882290, u'ts': 1531119918505}, u'ch': u'market.ethusdt.trade.detail', u'ts': 1531119918651}
-        #     """
-        #     pass
-        #     # event = Event(type_=MarketData.EVENT_TICK)
-        #     # event.dict_['data'] = data # TODO: covert the event format
-        # elif '.detail' in ch:
-        #     """市场细节推送, 最近24小时成交量、成交额、开盘价、收盘价、最高价、最低价、成交笔数等
-        #     RECV:{u'tick': {u'count': 124159, u'vol': 69271108.31560345, u'high': 465.03, u'amount': 151833.21684737998, u'version': 14324514537, u'low': 446.41, u'close': 451.07, u'open': 463.97, u'id': 14324514537}, u'ch': u'market.ethusdt.detail', u'ts': 1533015571033}
-        #     """
-        #     symbol = data['ch'].split('.')[1]
-        #     tick = self._dictTicks.get(symbol, None)
-        #     if not tick:
-        #         return
-
-        #     tick.datetime = datetime.fromtimestamp(data['ts']/1000)
-        #     tick.date = tick.datetime.strftime('%Y%m%d')
-        #     tick.time = tick.datetime.strftime('%H:%M:%S.%f')
-
-        #     t = data['tick']
-        #     tick.openPrice = t['open']
-        #     tick.highPrice = t['high']
-        #     tick.lowPrice = t['low']
-        #     tick.lastPrice = t['close']
-        #     tick.volume = t['vol']
-        #     tick.preClosePrice = tick.openPrice
-
-        #     if tick.bidPrice1:
-        #          tickReady = True
-
-        # if tick and tickReady :
-        #     event = Event(type_=MarketData.EVENT_TICK)
-        #     event.dict_['data'] = copy(tick)
-        #     self.postMarketEvent(event)
 
 ########################################################################
 class DataToEvent(object):
@@ -557,7 +430,7 @@ class DataToEvent(object):
                 eventType = MarketData.EVENT_KLINE_1DAY
 
             tick = line['tick']
-            asof = datetime.fromtimestamp(tick['id'])
+            asof = tick['id']
 
             d =  {
                 'stamp' : {
@@ -579,15 +452,15 @@ class DataToEvent(object):
                     edata.low = t['low']
                     edata.volume = t['vol']
 
-                    ts = latest['stamp']['id']
-                    edata.date = ts.date().strftime('%Y%m%d')
-                    edata.time = ts.time().strftime('%H:%M:%S')
+                    edata.datetime = datetime.fromtimestamp(t['id'])
+                    edata.date = edata.datetime.date().strftime('%Y%m%d')
+                    edata.time = edata.datetime.time().strftime('%H:%M:%S')
 
                     event = Event(type_=eventType)
                     event.dict_['data'] = edata
 
             self._dictKLineLatest[topic] = d
-            if self._sink:
+            if event and self._sink:
                self._sink(event)
 
             return
@@ -596,8 +469,8 @@ class DataToEvent(object):
         # now combine marketDepth and marketDetail into tick
         tick = None
         tickReady = False
+        symbol = topic.split('.')[1]
         if 'depth.step' in topic:
-            symbol = topic.split('.')[1]
             tick = self._dictTicks.get(symbol, None)
             if not tick:
                 tick = TickData('', symbol)
@@ -622,7 +495,7 @@ class DataToEvent(object):
             if tick.lastPrice:
                  tickReady = True
 
-        elif 'trade.detail' in ch:
+        elif 'trade.detail' in topic:
             """成交细节推送
             {u'tick': {u'data': [{u'price': 481.93, u'amount': 0.1499, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405480484L}, {u'price': 481.94, u'amount': 0.2475, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405466973L}, {u'price': 481.97, u'amount': 6.3635, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405475106L}, {u'price': 481.98, u'amount': 0.109, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405468495L}, {u'price': 481.98, u'amount': 0.109, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405468818L}, {u'price': 481.99, u'amount': 6.3844, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405471868L}, {u'price': 482.0, u'amount': 0.6367, u'direction': u'buy', u'ts': 1531119914439, u'id': 118378776467405439802L}], u'id': 11837877646, u'ts': 1531119914439}, u'ch': u'market.ethusdt.trade.detail', u'ts': 1531119914494}
             {u'tick': {u'data': [{u'price': 481.96, u'amount': 0.109, u'direction': u'sell', u'ts': 1531119918505, u'id': 118378822907405482834L}], u'id': 11837882290, u'ts': 1531119918505}, u'ch': u'market.ethusdt.trade.detail', u'ts': 1531119918651}
@@ -630,11 +503,10 @@ class DataToEvent(object):
             pass
             # event = Event(type_=MarketData.EVENT_TICK)
             # event.dict_['data'] = data # TODO: covert the event format
-        elif '.detail' in ch:
+        elif '.detail' in topic:
             """市场细节推送, 最近24小时成交量、成交额、开盘价、收盘价、最高价、最低价、成交笔数等
             RECV:{u'tick': {u'count': 124159, u'vol': 69271108.31560345, u'high': 465.03, u'amount': 151833.21684737998, u'version': 14324514537, u'low': 446.41, u'close': 451.07, u'open': 463.97, u'id': 14324514537}, u'ch': u'market.ethusdt.detail', u'ts': 1533015571033}
             """
-            symbol = topic.split('.')[1]
             tick = self._dictTicks.get(symbol, None)
             if not tick:
                 tick = TickData(self, symbol)

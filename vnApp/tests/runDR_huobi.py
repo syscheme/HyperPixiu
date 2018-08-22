@@ -47,6 +47,7 @@ def runChildProcess():
     me.info(u'主引擎创建成功')
 
     me.start()
+    me.loop()
 
     input()
 

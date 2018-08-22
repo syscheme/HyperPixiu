@@ -69,12 +69,12 @@ class BackTestApp(Trader):
         #---------------------------------------------
         # adjust the Trader
         #---------------------------------------------
-        # ADJ_1. adjust the Trader._dictObjectives to append suffix mdBacktest.BT_TAG
+        # ADJ_1. adjust the Trader._dictObjectives to append suffix MarketData.TAG_BACKTEST
         for obj in self._dictObjectives.values() :
             if len(obj["dsTick"]) >0 :
-                obj["dsTick"] += mdBacktest.BT_TAG
+                obj["dsTick"] += MarketData.TAG_BACKTEST
             if len(obj["ds1min"]) >0 :
-                obj["ds1min"] += mdBacktest.BT_TAG
+                obj["ds1min"] += MarketData.TAG_BACKTEST
 
         # ADJ_2. wrapper the broker drivers of the accounts
         for ak in self._dictAccounts.keys() :
@@ -225,148 +225,148 @@ class BackTestApp(Trader):
         self.debug('finishTest() generating test reports')
         exit(0)
     
-    #----------------------------------------------------------------------
-    def calculateTransactions(self):
-        """
-        计算回测结果
-        """
-        self.stdout(u'计算回测结果')
+    # #----------------------------------------------------------------------
+    # def calculateTransactions(self):
+    #     """
+    #     计算回测结果
+    #     """
+    #     self.stdout(u'计算回测结果')
         
-        # 首先基于回测后的成交记录，计算每笔交易的盈亏
-        self.clearResult()
+    #     # 首先基于回测后的成交记录，计算每笔交易的盈亏
+    #     self.clearResult()
 
-        buyTrades = []              # 未平仓的多头交易
-        sellTrades = []             # 未平仓的空头交易
+    #     buyTrades = []              # 未平仓的多头交易
+    #     sellTrades = []             # 未平仓的空头交易
 
-        # ---------------------------
-        # scan all 交易
-        # ---------------------------
-        # convert the trade records into result records then put them into resultList
-        for trade in self._dictTrades.values():
-            # 复制成交对象，因为下面的开平仓交易配对涉及到对成交数量的修改
-            # 若不进行复制直接操作，则计算完后所有成交的数量会变成0
-            trade = copy.copy(trade)
+    #     # ---------------------------
+    #     # scan all 交易
+    #     # ---------------------------
+    #     # convert the trade records into result records then put them into resultList
+    #     for trade in self._dictTrades.values():
+    #         # 复制成交对象，因为下面的开平仓交易配对涉及到对成交数量的修改
+    #         # 若不进行复制直接操作，则计算完后所有成交的数量会变成0
+    #         trade = copy.copy(trade)
             
-            # buy交易
-            # ---------------------------
-            if trade.direction == OrderData.DIRECTION_LONG:
+    #         # buy交易
+    #         # ---------------------------
+    #         if trade.direction == OrderData.DIRECTION_LONG:
 
-                if not sellTrades:
-                    # 如果尚无空头交易
-                    buyTrades.append(trade)
-                    continue
+    #             if not sellTrades:
+    #                 # 如果尚无空头交易
+    #                 buyTrades.append(trade)
+    #                 continue
 
-                # 当前多头交易为平空
-                while True:
-                    entryTrade = sellTrades[0]
-                    exitTrade = trade
+    #             # 当前多头交易为平空
+    #             while True:
+    #                 entryTrade = sellTrades[0]
+    #                 exitTrade = trade
                     
-                    # 清算开平仓交易
-                    closedVolume = min(exitTrade.volume, entryTrade.volume)
-                    result = TradingResult(entryTrade.price, entryTrade.dt, 
-                                           exitTrade.price, exitTrade.dt,
-                                           -closedVolume, self.rate, self.slippage, self.account.size)
+    #                 # 清算开平仓交易
+    #                 closedVolume = min(exitTrade.volume, entryTrade.volume)
+    #                 result = TradingResult(entryTrade.price, entryTrade.dt, 
+    #                                        exitTrade.price, exitTrade.dt,
+    #                                        -closedVolume, self.rate, self.slippage, self.account.size)
 
-                    self.resultList.append(result)
+    #                 self.resultList.append(result)
                     
-                    self.posList.extend([-1,0])
-                    self.tradeTimeList.extend([result.entryDt, result.exitDt])
+    #                 self.posList.extend([-1,0])
+    #                 self.tradeTimeList.extend([result.entryDt, result.exitDt])
                     
-                    # 计算未清算部分
-                    entryTrade.volume -= closedVolume
-                    exitTrade.volume -= closedVolume
+    #                 # 计算未清算部分
+    #                 entryTrade.volume -= closedVolume
+    #                 exitTrade.volume -= closedVolume
                     
-                    # 如果开仓交易已经全部清算，则从列表中移除
-                    if not entryTrade.volume:
-                        sellTrades.pop(0)
+    #                 # 如果开仓交易已经全部清算，则从列表中移除
+    #                 if not entryTrade.volume:
+    #                     sellTrades.pop(0)
                     
-                    # 如果平仓交易已经全部清算，则退出循环
-                    if not exitTrade.volume:
-                        break
+    #                 # 如果平仓交易已经全部清算，则退出循环
+    #                 if not exitTrade.volume:
+    #                     break
                     
-                    # 如果平仓交易未全部清算，
-                    if exitTrade.volume:
-                        # 且开仓交易已经全部清算完，则平仓交易剩余的部分
-                        # 等于新的反向开仓交易，添加到队列中
-                        if not sellTrades:
-                            buyTrades.append(exitTrade)
-                            break
-                        # 如果开仓交易还有剩余，则进入下一轮循环
-                        else:
-                            pass
+    #                 # 如果平仓交易未全部清算，
+    #                 if exitTrade.volume:
+    #                     # 且开仓交易已经全部清算完，则平仓交易剩余的部分
+    #                     # 等于新的反向开仓交易，添加到队列中
+    #                     if not sellTrades:
+    #                         buyTrades.append(exitTrade)
+    #                         break
+    #                     # 如果开仓交易还有剩余，则进入下一轮循环
+    #                     else:
+    #                         pass
 
-                continue 
-                # end of # 多头交易
+    #             continue 
+    #             # end of # 多头交易
 
-            # 空头交易        
-            # ---------------------------
-            if not buyTrades:
-                # 如果尚无多头交易
-                sellTrades.append(trade)
-                continue
+    #         # 空头交易        
+    #         # ---------------------------
+    #         if not buyTrades:
+    #             # 如果尚无多头交易
+    #             sellTrades.append(trade)
+    #             continue
 
-            # 当前空头交易为平多
-            while True:
-                entryTrade = buyTrades[0]
-                exitTrade = trade
+    #         # 当前空头交易为平多
+    #         while True:
+    #             entryTrade = buyTrades[0]
+    #             exitTrade = trade
                 
-                # 清算开平仓交易
-                closedVolume = min(exitTrade.volume, entryTrade.volume)
-                result = TradingResult(entryTrade.price, entryTrade.dt, 
-                                       exitTrade.price, exitTrade.dt,
-                                       closedVolume, self.rate, self.slippage, self.account.size)
+    #             # 清算开平仓交易
+    #             closedVolume = min(exitTrade.volume, entryTrade.volume)
+    #             result = TradingResult(entryTrade.price, entryTrade.dt, 
+    #                                    exitTrade.price, exitTrade.dt,
+    #                                    closedVolume, self.rate, self.slippage, self.account.size)
 
-                self.resultList.append(result)
-                self.posList.extend([1,0])
-                self.tradeTimeList.extend([result.entryDt, result.exitDt])
+    #             self.resultList.append(result)
+    #             self.posList.extend([1,0])
+    #             self.tradeTimeList.extend([result.entryDt, result.exitDt])
 
-                # 计算未清算部分
-                entryTrade.volume -= closedVolume
-                exitTrade.volume -= closedVolume
+    #             # 计算未清算部分
+    #             entryTrade.volume -= closedVolume
+    #             exitTrade.volume -= closedVolume
                 
-                # 如果开仓交易已经全部清算，则从列表中移除
-                if not entryTrade.volume:
-                    buyTrades.pop(0)
+    #             # 如果开仓交易已经全部清算，则从列表中移除
+    #             if not entryTrade.volume:
+    #                 buyTrades.pop(0)
                 
-                # 如果平仓交易已经全部清算，则退出循环
-                if not exitTrade.volume:
-                    break
+    #             # 如果平仓交易已经全部清算，则退出循环
+    #             if not exitTrade.volume:
+    #                 break
                 
-                # 如果平仓交易未全部清算，
-                if exitTrade.volume:
-                    # 且开仓交易已经全部清算完，则平仓交易剩余的部分
-                    # 等于新的反向开仓交易，添加到队列中
-                    if not buyTrades:
-                        sellTrades.append(exitTrade)
-                        txnstr += '%-dx%.2f' % (trade.volume, trade.price)
-                        break
-                    # 如果开仓交易还有剩余，则进入下一轮循环
-                    else:
-                        pass                    
+    #             # 如果平仓交易未全部清算，
+    #             if exitTrade.volume:
+    #                 # 且开仓交易已经全部清算完，则平仓交易剩余的部分
+    #                 # 等于新的反向开仓交易，添加到队列中
+    #                 if not buyTrades:
+    #                     sellTrades.append(exitTrade)
+    #                     txnstr += '%-dx%.2f' % (trade.volume, trade.price)
+    #                     break
+    #                 # 如果开仓交易还有剩余，则进入下一轮循环
+    #                 else:
+    #                     pass                    
 
-                continue 
-                # end of 空头交易
+    #             continue 
+    #             # end of 空头交易
 
-        # end of scanning tradeDict
+    #     # end of scanning tradeDict
         
-        # ---------------------------
-        # 结算日
-        # ---------------------------
-        # 到最后交易日尚未平仓的交易，则以最后价格平仓
-        for trade in buyTrades:
-            result = TradingResult(trade.price, trade.dt, self._execEndClose, self._dtData, 
-                                   trade.volume, self.rate, self.slippage, self.account.size)
-            self.resultList.append(result)
-            txnstr += '%+dx%.2f' % (trade.volume, trade.price)
+    #     # ---------------------------
+    #     # 结算日
+    #     # ---------------------------
+    #     # 到最后交易日尚未平仓的交易，则以最后价格平仓
+    #     for trade in buyTrades:
+    #         result = TradingResult(trade.price, trade.dt, self._execEndClose, self._dtData, 
+    #                                trade.volume, self.rate, self.slippage, self.account.size)
+    #         self.resultList.append(result)
+    #         txnstr += '%+dx%.2f' % (trade.volume, trade.price)
             
-        for trade in sellTrades:
-            result = TradingResult(trade.price, trade.dt, self._execEndClose, self._dtData, 
-                                   -trade.volume, self.rate, self.slippage, self.account.size)
-            self.resultList.append(result)
-            txnstr += '%-dx%.2f' % (trade.volume, trade.price)
+    #     for trade in sellTrades:
+    #         result = TradingResult(trade.price, trade.dt, self._execEndClose, self._dtData, 
+    #                                -trade.volume, self.rate, self.slippage, self.account.size)
+    #         self.resultList.append(result)
+    #         txnstr += '%-dx%.2f' % (trade.volume, trade.price)
 
-        # return resultList;
-        return self.settleResult()
+    #     # return resultList;
+    #     return self.settleResult()
         
     #----------------------------------------------------------------------
     def settleResult(self):

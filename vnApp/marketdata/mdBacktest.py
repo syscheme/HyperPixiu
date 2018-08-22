@@ -38,7 +38,6 @@ class mdBacktest(MarketData):
 
     TICK_MODE = 'tick'
     BAR_MODE = 'bar'
-    BT_TAG = '$BT'
 
     className = 'Backtest'
     displayName = 'Playback history data as MarketData'
@@ -65,7 +64,7 @@ class mdBacktest(MarketData):
                 },
         """
 
-        super(mdBacktest, self).__init__(mainRoutine, settings, MarketData.DATA_SRCTYPE_BACKTEST)
+        super(mdBacktest, self).__init__(mainRoutine, settings)
 
         # self._btApp = btApp
         self._main = mainRoutine
@@ -93,8 +92,8 @@ class mdBacktest(MarketData):
     @property
     def exchange(self) :
         # for Backtest, we take self._exchange as the source exchange to read
-        # and (self._exchange + mdBacktest.BT_TAG) as output exhcnage to post into eventChannel
-        return self._exchange + mdBacktest.BT_TAG
+        # and (self._exchange + MarketData.TAG_BACKTEST) as output exhcnage to post into eventChannel
+        return self._exchange + MarketData.TAG_BACKTEST
 
     #----------------------------------------------------------------------
     def subscribe(self, symbol, eventType=None) :

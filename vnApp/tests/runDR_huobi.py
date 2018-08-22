@@ -12,8 +12,6 @@ from vnApp.marketdata.mdHuobi import mdHuobi
 from vnApp.DataRecorder import *
 from vnApp.EventChannel import EventChannel
 
-from vnpy.trader.vtEvent import EVENT_LOG, EVENT_ERROR
-
 import os
 import jsoncfg # pip install json-cfg
 

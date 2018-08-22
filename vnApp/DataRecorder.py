@@ -19,20 +19,6 @@ from pymongo.errors import DuplicateKeyError
 
 from .MainRoutine import *
 from .MarketData import *
-from .MarketData import *
-
-# from vnpy.trader.vtEvent import *
-# from vnpy.trader.vtFunction import todayDate, getJsonPath
-# from vnpy.trader.vtObject import VtSubscribeReq, VtLogData, KLineData, VtTickData
-
-# DB names for recording
-SETTING_DB_NAME = 'vnRec_Db'
-TICK_DB_NAME   = 'drTick'
-DAILY_DB_NAME  = 'drDaily'
-MINUTE_DB_NAME = 'dr1min'
-
-from vnpy.trader.vtConstant import EMPTY_UNICODE, EMPTY_STRING, EMPTY_FLOAT, EMPTY_INT
-
 from .language import text
 
 ########################################################################

@@ -14,19 +14,10 @@ from abc import ABCMeta, abstractmethod
 import traceback
 
 from .EventChannel import Event, EventLoop, EventChannel, EventData
-# from .MarketData import *
-# from .Account import OrderData
+from .language import text
 
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
-
-
-# from vnpy.event import Event
-# from vnpy.trader.vtGlobal import globalSetting
-# from vnpy.trader.vtEvent import *
-# from vnpy.trader.vtGateway import *
-from .language import text
-# from vnpy.trader.vtFunction import getTempPath
 
 ########################################################################
 # 常量定义

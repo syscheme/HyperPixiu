@@ -7,7 +7,6 @@ from ..Account import *
 from ..MarketData import *
 from ..EventChannel import *
 
-
 from copy import copy
 from datetime import datetime
 from threading import Thread
@@ -17,21 +16,6 @@ from time import sleep
 from datetime import datetime
 
 import json
-
-# 如果安装了seaborn则设置为白色风格
-# try:
-#     import seaborn as sns       
-#    sns.set_style('whitegrid')  
-# except ImportError:
-#    pass
-
-# from vnpy.trader.vtConstant import *
-# from vnpy.event import Event
-# from vnpy.trader.vtGlobal import globalSetting
-# from vnpy.trader.vtObject import VtTickData, VtBarData
-# from vnpy.trader.vtConstant import *
-# from vnpy.trader.vtGateway import VtOrderData, VtTradeData
-
 
 ########################################################################
 class mdBacktest(MarketData):

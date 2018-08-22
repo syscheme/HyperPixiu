@@ -7,9 +7,6 @@
 import numpy as np
 import talib
 
-# from vnpy.trader.vtConstant import *
-# from vnpy.trader.vtObject import KLineData
-
 from .Account import *
 from .MainRoutine import *
 from .MarketData import TickData, KLineData, TickToKLineMerger, KlineToXminMerger

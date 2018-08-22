@@ -2,7 +2,6 @@
 
 from __future__ import division
 
-# from vnpy.trader.vtConstant import *
 from .EventChannel import EventData, Event, EVENT_NAME_PREFIX
 
 import traceback

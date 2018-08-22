@@ -7,6 +7,10 @@
 '''
 from __future__ import division
 
+from .MainRoutine import *
+from .MarketData import *
+from .language import text
+
 import json
 import csv
 import os
@@ -16,10 +20,6 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 from Queue import Queue, Empty
 from pymongo.errors import DuplicateKeyError
-
-from .MainRoutine import *
-from .MarketData import *
-from .language import text
 
 ########################################################################
 class DataRecorder(BaseApplication):

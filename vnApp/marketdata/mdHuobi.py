@@ -5,9 +5,6 @@ from __future__ import division
 from ..MarketData import MarketData, KLineData, TickData
 from ..EventChannel import Event
 
-# from vnpy.trader.vtConstant import *
-# from vnpy.event import Event
-
 import urllib
 import hmac
 import base64

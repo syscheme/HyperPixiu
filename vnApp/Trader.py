@@ -2,6 +2,13 @@
 
 from __future__ import division
 
+from .EventChannel import EventChannel, EventData, datetime2float
+from .MainRoutine  import BaseApplication
+from .MarketData   import MarketData
+from .Account      import Account, Account_AShare, PositionData, TradeData, OrderData
+from .strategies   import STRATEGY_CLASS
+from .language     import text
+
 import os
 import shelve
 import logging
@@ -11,27 +18,10 @@ from datetime import datetime, timedelta
 from copy import copy
 from abc import ABCMeta, abstractmethod
 import traceback
+import jsoncfg # pip install json-cfg
 
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
-
-from   .EventChannel import EventChannel, EventData, datetime2float
-from   .MainRoutine  import BaseApplication
-from   .MarketData   import MarketData
-from   .Account   import Account, Account_AShare, PositionData, TradeData, OrderData
-import .strategies as tg
-
-# from vnApp.BrokerDriver import *
-# from vnApp.brokerdrivers import tdHuobi as td
-
-# from vnpy.event import Event
-# from vnpy.trader.vtGlobal import globalSetting
-# from vnpy.trader.vtEvent import *
-# from vnpy.trader.vtGateway import *
-from vnpy.trader.language import text
-# from vnpy.trader.vtFunction import getTempPath
-
-import jsoncfg # pip install json-cfg
 
 # 引擎类型，用于区分当前策略的运行环境
 TRADER_TYPE_BACKTESTING = 'backtesting'  # 回测
@@ -630,7 +620,7 @@ class Trader(BaseApplication):
         className = setting.name()
 
         # 获取策略类
-        strategyClass = tg.STRATEGY_CLASS.get(className, None)
+        strategyClass = STRATEGY_CLASS.get(className, None)
         if not strategyClass:
             self.error(u'找不到策略类：%s' %className)
             return

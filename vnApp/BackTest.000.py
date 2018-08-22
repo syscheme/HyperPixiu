@@ -27,6 +27,10 @@ try:
 except ImportError:
     pass
 
+# 引擎类型，用于区分当前策略的运行环境
+TRADER_TYPE_BACKTESTING = 'backtesting'  # 回测
+TRADER_TYPE_TRADING = 'trading'          # 实盘
+
 from vnpy.trader.vtGlobal import globalSetting
 from vnpy.trader.vtObject import VtTickData, KLineData
 from vnpy.trader.vtConstant import *

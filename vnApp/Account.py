@@ -5,6 +5,8 @@ This module represent a basic account
 '''
 from __future__ import division
 
+from .EventChannel import EventChannel, EventData, datetime2float
+
 from datetime import datetime, timedelta
 from collections import OrderedDict
 # from itertools import product
@@ -12,24 +14,9 @@ import multiprocessing
 import copy
 import threading
 import traceback
-
 import jsoncfg # pip install json-cfg
 
-# import pandas as pd
-# import numpy as np
-# import matplotlib.pyplot as plt
-
-from .EventChannel import EventChannel, EventData, datetime2float
-
-# 如果安装了seaborn则设置为白色风格
-# try:
-#     import seaborn as sns       
-#     sns.set_style('whitegrid')  
-# except ImportError:
-#     pass
-
 from pymongo import ASCENDING
-
 
 ########################################################################
 from abc import ABCMeta, abstractmethod

@@ -29,10 +29,8 @@
 
 from __future__ import division
 
-from vnpy.trader.vtObject import VtBarData
-from vnpy.trader.vtConstant import *
-from ..Strategy import (StrategyOfSymbol, ArrayManager)
-from ..MarketData import TickToKLineMerger, KlineToXminMerger
+from ..Strategy import StrategyOfSymbol, ArrayManager
+from ..MarketData import TickData, KLineData, TickToKLineMerger, KlineToXminMerger
 
 
 ########################################################################

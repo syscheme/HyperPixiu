@@ -6,6 +6,11 @@
 '''
 from __future__ import division
 
+from .MainRoutine import *
+from .Account import *
+from .Trader import *
+from .marketdata.mdBacktest import *
+
 from datetime import datetime, timedelta
 from collections import OrderedDict
 from itertools import product
@@ -23,16 +28,6 @@ try:
     sns.set_style('whitegrid')  
 except ImportError:
     pass
-
-from vnpy.trader.vtGlobal import globalSetting
-# from vnpy.trader.vtObject import VtTickData, KLineData
-# from vnpy.trader.vtConstant import *
-# from vnpy.trader.vtGateway import VtOrderData, VtTradeData
-
-from .MainRoutine import *
-from .Account import *
-from .Trader import *
-from .marketdata.mdBacktest import *
 
 ########################################################################
 class BackTestApp(Trader):

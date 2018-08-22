@@ -145,7 +145,7 @@ class MarketData(object):
             return
 
         self._eventCh.put(event)
-        self.debug('posted %s%s' % (event.type_, event.dict_['data'].desc))
+        self.debug('posted %s' % event.dict_['data'].desc)
 
     #---logging -----------------------
     def debug(self, msg):
@@ -270,7 +270,7 @@ class TickData(EventData):
 
     @property
     def desc(self) :
-        return 'tick.%s@%s_%dx%s' % (self.vtSymbol, self.datetime.strftime('%Y%m%dT%H%M%S'),self.volume,round(self.lastPrice,2))
+        return 'tick.%s@%s_%dx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S'),self.volume,round(self.lastPrice,2))
 
 ########################################################################
 class KLineData(EventData):
@@ -305,7 +305,7 @@ class KLineData(EventData):
 
     @property
     def desc(self) :
-        return 'kline[%s]@%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S') if self.datetime else '')
+        return 'kline.%s@%s_%dx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.volume, round(self.close,2))
 
 
 ########################################################################

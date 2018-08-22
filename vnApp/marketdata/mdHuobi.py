@@ -156,7 +156,7 @@ class mdHuobi(MarketData):
                 self._onData(data)
                 return 1
             except Exception as ex:
-                self.onError(u'数据分发错误：%s: %s'  %(ex, data.__dict__))
+                self.onError(u'数据分发错误：%s: %s'  %(ex, data))
 
         return c
 

@@ -12,8 +12,6 @@ from vnApp.marketdata.mdHuobi import mdHuobi
 from vnApp.DataRecorder import *
 from vnApp.EventChannel import EventChannel
 
-from vnpy.trader.vtEvent import EVENT_LOG, EVENT_ERROR
-
 import os
 import jsoncfg # pip install json-cfg
 
@@ -47,6 +45,7 @@ def runChildProcess():
     me.info(u'主引擎创建成功')
 
     me.start()
+    me.loop()
 
     input()
 

@@ -14,19 +14,10 @@ from abc import ABCMeta, abstractmethod
 import traceback
 
 from .EventChannel import Event, EventLoop, EventChannel, EventData
-# from .MarketData import *
-# from .Account import OrderData
+from .language import text
 
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
-
-
-# from vnpy.event import Event
-# from vnpy.trader.vtGlobal import globalSetting
-# from vnpy.trader.vtEvent import *
-# from vnpy.trader.vtGateway import *
-from vnpy.trader.language import text
-# from vnpy.trader.vtFunction import getTempPath
 
 ########################################################################
 # 常量定义
@@ -182,20 +173,25 @@ class BaseApplication(object):
 
     #----------------------------------------------------------------------
     @abstractmethod
-    def dbEnsureIndex(self, collectionName, definition, unique=False):
+    def dbEnsureIndex(self, collectionName, definition, unique=False, dbName=None):
         """向MongoDB中插入数据，d是具体数据"""
+        if not dbName or len(dbName) <=0:
+            dbName = self._id
+
         if self._engine:
-            self._engine.dbEnsureIndex(self._id, collectionName, definition, unique)
+            self._engine.dbEnsureIndex(dbName, collectionName, definition, unique)
                     # db = self._dbConn['Account']
                     # collection = db[tblName]
                     # collection.ensure_index([('vtTradeID', ASCENDING)], unique=True) #TODO this should init ONCE
                     # collection = db[tblName]
                     # collection.update({'vtTradeID':t.vtTradeID}, t.__dict__, True)
     @abstractmethod
-    def dbInsert(self, collectionName, d):
+    def dbInsert(self, collectionName, d, dbName =None):
         """向MongoDB中插入数据，d是具体数据"""
+        if not dbName or len(dbName) <=0:
+            dbName = self._id
         if self._engine:
-            self._engine.dbInsert(self._id, collectionName, d)
+            self._engine.dbInsert(dbName, collectionName, d)
     
     @abstractmethod
     def dbQuery(self, collectionName, d, sortKey='', sortDirection=ASCENDING):
@@ -676,48 +672,6 @@ class MainRoutine(object):
         error = event.dict_['data']
         self.error(u'错误代码：%s，错误信息：%s' %(error.errorID, error.errorMsg))
 
-    # #----------------------------------------------------------------------
-    # def sendOrder(self, orderReq, dsName):
-    #     """对特定接口发单"""
-    #     # 如果创建了风控引擎，且风控检查失败则不发单
-    #     if self._riskMgm and not self._riskMgm.checkRisk(orderReq, dsName):
-    #         return ''
-
-    #     ds = self.getMarketData(dsName)
-        
-    #     if ds:
-    #         vtOrderID = ds.sendOrder(orderReq)
-    #         self.dataEngine.updateOrderReq(orderReq, vtOrderID)     # 更新发出的委托请求到数据引擎中
-    #         return vtOrderID
-    #     else:
-    #         return ''
-        
-    # #----------------------------------------------------------------------
-    # def cancelOrder(self, cancelOrderReq, dsName):
-    #     """对特定接口撤单"""
-    #     ds = self.getMarketData(dsName)
-        
-    #     if ds:
-    #         ds.cancelOrder(cancelOrderReq)   
-  
-    # #----------------------------------------------------------------------
-    # def qryAccount(self, dsName):
-    #     """查询特定接口的账户"""
-    #     ds = self.getMarketData(dsName)
-        
-    #     if ds:
-    #         ds.qryAccount()      
-        
-    # #----------------------------------------------------------------------
-    # def qryPosition(self, dsName):
-    #     """查询特定接口的持仓"""
-    #     ds = self.getMarketData(dsName)
-        
-    #     if ds:
-    #         ds.qryPosition()
-            
-    #----------------------------------------------------------------------
-
     #----------------------------------------------------------------------
     def dbConnect(self):
         """连接MongoDB数据库"""
@@ -764,11 +718,11 @@ class MainRoutine(object):
             self.error(text.DATA_INSERT_FAILED)
             return
 
-        self.debug('dbInsert() %s.%s: %s' % (dbName, collectionName, d))
+        self.debug('dbInsert() %s[%s] adding: %s' % (dbName, collectionName, d))
         db = self._dbConn[dbName]
         collection = db[collectionName]
         collection.insert_one(d)
-        self.debug('dbInsert() %s.%s added: %s' % (dbName, collectionName, d))
+        self.debug('dbInsert() %s[%s] added: %s' % (dbName, collectionName, d))
 
     #----------------------------------------------------------------------
     def dbLogging(self, event):
@@ -797,93 +751,6 @@ class MainRoutine(object):
         return self._dictApps[appName]
     
     #----------------------------------------------------------------------
-    
-    # #----------------------------------------------------------------------
-    # def convertOrderReq(self, req):
-    #     """转换委托请求"""
-    #     return self.dataEngine.convertOrderReq(req)
-
-    # #----------------------------------------------------------------------
-    # def getLog(self):
-    #     """查询日志"""
-    #     return self.dataEngine.getLog()
-    
-    # #----------------------------------------------------------------------
-    # def getError(self):
-    #     """查询错误"""
-    #     return self.dataEngine.getError()
-    
-    # #----------------------------------------------------------------------
-    # def processTickEvent(self, event):
-    #     """处理成交事件"""
-    #     tick = event.dict_['data']
-    #     self._dictLatestTick[tick.vtSymbol] = tick    
-    
-    # #----------------------------------------------------------------------
-    # def processContractEvent(self, event):
-    #     """处理合约事件"""
-    #     contract = event.dict_['data']
-    #     self._dictLatestContract[contract.vtSymbol] = contract
-    #     self._dictLatestContract[contract.symbol] = contract       # 使用常规代码（不包括交易所）可能导致重复
-    
-    # #----------------------------------------------------------------------
-    # def processOrderEvent(self, event):
-    #     """处理委托事件"""
-    #     order = event.dict_['data']        
-    #     self._dictLatestOrder[order.vtOrderID] = order
-        
-    #     # 如果订单的状态是全部成交或者撤销，则需要从workingOrderDict中移除
-    #     if order.status in self.FINISHED_STATUS:
-    #         if order.vtOrderID in self._dictWorkingOrder:
-    #             del self._dictWorkingOrder[order.vtOrderID]
-    #     # 否则则更新字典中的数据        
-    #     else:
-    #         self._dictWorkingOrder[order.vtOrderID] = order
-            
-    #     # 更新到持仓细节中
-    #     detail = self.getPositionDetail(order.vtSymbol)
-    #     detail.updateOrder(order)            
-            
-    # #----------------------------------------------------------------------
-    # def processTradeEvent(self, event):
-    #     """处理成交事件"""
-    #     trade = event.dict_['data']
-        
-    #     self._dictTrade[trade.vtTradeID] = trade
-    
-    #     # 更新到持仓细节中
-    #     detail = self.getPositionDetail(trade.vtSymbol)
-    #     detail.updateTrade(trade)        
-
-    # #----------------------------------------------------------------------
-    # def processPositionEvent(self, event):
-    #     """处理持仓事件"""
-    #     pos = event.dict_['data']
-        
-    #     self._dictPositions[pos.vtPositionName] = pos
-    
-    #     # 更新到持仓细节中
-    #     detail = self.getPositionDetail(pos.vtSymbol)
-    #     detail.updatePosition(pos)                
-        
-    # #----------------------------------------------------------------------
-    # def processAccountEvent(self, event):
-    #     """处理账户事件"""
-    #     account = event.dict_['data']
-    #     self._dictAccounts[account.vtAccountID] = account
-    
-    # #----------------------------------------------------------------------
-    # def eventHdlr_Log(self, event):
-    #     """处理日志事件"""
-    #     log = event.dict_['data']
-    #     self._lstLogs.append(log)
-    
-    # #----------------------------------------------------------------------
-    # def processErrorEvent(self, event):
-    #     """处理错误事件"""
-    #     error = event.dict_['data']
-    #     self._lstErrors.append(error)
-        
 
 
 ########################################################################

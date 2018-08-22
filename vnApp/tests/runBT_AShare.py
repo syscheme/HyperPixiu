@@ -14,8 +14,6 @@ from vnApp.DataRecorder import *
 from vnApp.EventChannel import EventChannel
 from vnApp.BackTest import *
 
-from vnpy.trader.vtEvent import EVENT_LOG, EVENT_ERROR
-
 import os
 import jsoncfg # pip install json-cfg
 

@@ -1,12 +1,15 @@
 # encoding: UTF-8
 
-from vnApp.Account import *
-from vnApp.Trader import *
+if __name__ != '__main__':
+    from ..Account import *
+    from ..Trader import *
+else:
+    from vnApp.Account import *
+    from vnApp.Trader import *
+    from vnApp.MainRoutine import *
 
-from Queue import Queue, Empty
 from datetime import datetime
-from threading import Thread
-from multiprocessing.dummy import Pool
+from Queue import Queue, Empty
 import traceback
 from copy import copy
 
@@ -87,9 +90,9 @@ class Huobi(Account):
         
         if orderData.price >0:
             params['price'] = orderData.price
-            params['type'] = 'buy-limit' if order.direction == OrderData.DIRECTION_LONG else 'sell-limit' #限价
+            params['type'] = 'buy-limit' if orderData.direction == OrderData.DIRECTION_LONG else 'sell-limit' #限价
         else :
-            params['type'] = 'buy-market' if order.direction == OrderData.DIRECTION_LONG else 'buy-market' #市价
+            params['type'] = 'buy-market' if orderData.direction == OrderData.DIRECTION_LONG else 'buy-market' #市价
             #TODO buy-ioc：IOC买单, sell-ioc：IOC卖单, buy-limit-maker, sell-limit-maker
 
         if len(orderData.source) >0 and 'margin' in orderData.source:
@@ -207,7 +210,7 @@ class Huobi(Account):
 
                     # sync the opening orders
                     localOrder = dict[hborder.brokerOrderId]
-                    localOrder.tradedVolume = hdorder.tradedVolume
+                    localOrder.tradedVolume = hborder.tradedVolume
                     localOrder.status = hborder.status
                     localOrder.stampByBroker = hborder.stampByBroker
 
@@ -611,15 +614,15 @@ class Huobi(Account):
             return None
         
         trade = TradeData(self)
-        trade.orderID = o.brokerOrderId
-        trade.brokerTradeId = 'T%s' % o.brokerOrderId
-        trade.symbol    = o.symbol
-        trade.orderReq  = o.reqId
-        trade.direction = o.direction
-        trade.offset    = o.offset
-        trade.price     = o.price
-        trade.volume    = o.tradedVolume
-        trade.dt        = o.stampFinished
+        trade.orderID = order.brokerOrderId
+        trade.brokerTradeId = 'T%s' % order.brokerOrderId
+        trade.symbol    = order.symbol
+        trade.orderReq  = order.reqId
+        trade.direction = order.direction
+        trade.offset    = order.offset
+        trade.price     = order.price
+        trade.volume    = order.tradedVolume
+        trade.dt        = order.stampFinished
 
     def stampToDatetime(self, stamp) :
         return datetime.fromtimestamp(float(stamp)/1000)
@@ -743,6 +746,9 @@ class Huobi(Account):
         print (reqid, data)
 
 ########################################################################
+from threading import Thread
+from multiprocessing import Pool
+
 class ThreadedHuobi(Huobi):
     #----------------------------------------------------------------------
     def __init__(self, trader, settings):
@@ -777,178 +783,6 @@ class ThreadedHuobi(Huobi):
         self.pool.close()
         self.pool.join()
         self.info('ThreadedHuobi stopped')
-
-
-# ########################################################################
-# class tdHuobi_sim(tdHuobi):
-#     ''' 
-#     simulate the account ordres
-#     '''
-#     #----------------------------------------------------------------------
-#     def __init__(self, account, settings, mode=None):
-#         """Constructor"""
-#         super(tdHuobi_virtual, self).__init__(account, settintotags, mode)
-
-#     #----------------------------------------------------------------------
-#     def getOrders(self, symbol, states, types=None, startDate=None, 
-#                   endDate=None, from_=None, direct=None, size=None):
-#         """查询委托"""
-#         uri = '/v1/order/orders'
-        
-#         params = {
-#             'symbol': symbol,
-#             'states': states
-#         }
-        
-#         if types:
-#             params['types'] = types
-#         if startDate:
-#             params['start-date'] = startDate
-#         if endDate:
-#             params['end-date'] = endDate        
-#         if from_:
-#             params['from'] = from_
-#         if direct:
-#             params['direct'] = direct
-#         if size:
-#             params['size'] = size        
-    
-#         func = self.apiGET
-#         callback = self.onGetOrders
-    
-#         return self.addReq(uri, params, func, callback)     
-
-#     #----------------------------------------------------------------------
-#     def _broker_listOpenOrders(self, accountId=None, symbol=None, side=None, size=None):
-#         """查询当前帐号下未成交订单
-#             “account_id” 和 “symbol” 需同时指定或者二者都不指定。如果二者都不指定，返回最多500条尚未成交订单，按订单号降序排列。
-#         """
-#         uri = '/v1/order/openOrders'
-        
-#         params = { # initial with default required params
-#             #'account_id': accountId,
-#             #'symbol': symbol,
-#         }
-        
-#         if symbol:
-#             params['symbol'] = symbol
-#             params['account_id'] = accountId
-
-#         if side:
-#             params['side'] = side
-
-#         if size:
-#             params['size'] = size        
-    
-#         func = self.apiGET
-#         callback = self.onGetOrders
-    
-#         return self.addReq(uri, params, func, callback)     
-    
-#     #----------------------------------------------------------------------
-#     def getMatchResults(self, symbol, types=None, startDate=None, 
-#                   endDate=None, from_=None, direct=None, size=None):
-#         """查询委托"""
-#         uri = '/v1/order/matchresults'
-
-#         params = {tota
-#             'symbol': symbol
-#         }
-
-#         if types:
-#             params['types'] = types
-#         if startDate:
-#             params['start-date'] = startDate
-#         if endDate:
-#             params['end-date'] = endDate        
-#         if from_:
-#             params['from'] = from_
-#         if direct:
-#             params['direct'] = direct
-#         if size:
-#             params['size'] = size        
-
-#         func = self.apiGET
-#         callback = self.onGetMatchResults
-
-#         return self.addReq(uri, params, func, callback)   
-    
-#     #----------------------------------------------------------------------
-#     def getOrder(self, orderid):
-#         """查询某一委托"""
-#         uri = '/v1/order/orders/%s' %orderid
-    
-#         params = {}
-    
-#         func = self.apiGET
-#         callback = self.onGetOrder
-    
-#         return self.addReq(uri, params, func, callback)             
-    
-#     #----------------------------------------------------------------------
-#     def getMatchResult(self, orderid):
-#         """查询某一委托"""
-#         uri = '/v1/order/orders/%s/matchresults' %orderid
-    
-#         params = {}
-    
-#         func = self.apiGET
-#         callback = self.onGetMatchResult
-    
-#         return self.addReq(uri, params, func, callback)     
-    
-#     #----------------------------------------------------------------------
-#     def placeOrder(self, amount, symbol, type_, price=None, source=None):
-#         """下单"""
-#         if self._hostname == self.HUOBI_API_HOST:
-#             uri = '/v1/order/orders/place'
-#         else:
-#             uri = '/v1/hadax/order/orders/place'
-        
-#         params = {
-#             'account-id': accountid,
-#             'amount': amount,
-#             'symbol': symbol,
-#             'type': type_
-#         }
-        
-#         if price:
-#             params['price'] = price
-#         if source:
-#             params['source'] = source     
-
-#         func = self.apiPOST
-#         callback = self.onPlaceOrder
-
-#         return self.addReq(uri, params, func, callback)           
-    
-#     #----------------------------------------------------------------------
-#     def cancelOrder(self, orderid):
-#         """撤单"""
-#         uri = '/v1/order/orders/%s/submitcancel' %orderid
-        
-#         params = {}
-        
-#         func = self.apiPOST
-#         callback = self.onCancelOrder
-
-#         return self.addReq(uri, params, func, callback)          
-    
-#     #----------------------------------------------------------------------
-#     def batchCancel(self, orderids):
-#         """批量撤单"""
-#         uri = '/v1/order/orders/batchcancel'
-    
-#         params = {
-#             'order-ids': orderids
-#         }
-    
-#         func = self.apiPOST
-#         callback = self.onBatchCancel
-    
-#         return self.addReq(uri, params, func, callback)     
-
-
 ########################################################################
 # API测试程序    
 ########################################################################
@@ -969,7 +803,6 @@ class TestTrader(Trader):
 if __name__ == '__main__':
     import os
     import jsoncfg # pip install json-cfg
-    from vnApp.MainRoutine import *
 
     """测试交易"""
 
@@ -997,22 +830,11 @@ if __name__ == '__main__':
     # od.brokerOrderId='1234445'
     # print (acc._broker_cancelOrder(od))
     # print (acc._broker_listOpenOrders('eosusdt', 'sell'))
+    # print (acc.getMatchResults(symbol))
+    # print (acc.getOrder('2440401255'))
 
     me.loop()
-
-    #online unicode converter
-    # symbol = str(setting['symbols'][0])
-    # symbol = str(symbols[0]) # 'eop':eos to udtc
 
     input()
     exit(0)
     
-    print (acc.getAccounts())
-    print (acc._broker_listOpenOrders(accountId, symbol, 'sell'))
-#    print (acc.getOrders(symbol, 'pre-submitted,submitted,partial-filled,partial-canceled,filled,canceled'))
-#    print (acc.getOrders(symbol, 'filled'))
-    print (acc.getMatchResults(symbol))
-    
-    print (acc.getOrder('2440401255'))
-
-

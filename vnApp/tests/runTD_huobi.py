@@ -2,19 +2,15 @@
 
 from __future__ import print_function
 
-
-import multiprocessing
-from time import sleep
-from datetime import datetime, time
-
 from vnApp.MainRoutine import MainRoutine
 from vnApp.marketdata.mdHuobi import mdHuobi
 from vnApp.DataRecorder import *
 from vnApp.EventChannel import EventChannel
 from vnApp.Trader import *
 
-from vnpy.trader.vtEvent import EVENT_LOG, EVENT_ERROR
-
+import multiprocessing
+from time import sleep
+from datetime import datetime, time
 import os
 import jsoncfg # pip install json-cfg
 

@@ -1,7 +1,12 @@
 # encoding: UTF-8
 
-from ..Account import *
-from ..Trader import *
+if __name__ != '__main__':
+    from ..Account import *
+    from ..Trader import *
+else:
+    from vnApp.Account import *
+    from vnApp.Trader import *
+    from vnApp.MainRoutine import *
 
 from datetime import datetime
 from Queue import Queue, Empty
@@ -798,7 +803,6 @@ class TestTrader(Trader):
 if __name__ == '__main__':
     import os
     import jsoncfg # pip install json-cfg
-    from vnApp.MainRoutine import *
 
     """测试交易"""
 

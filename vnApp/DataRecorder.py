@@ -152,7 +152,6 @@ class DataRecorder(BaseApplication):
         # 载入设置，订阅行情
         self.debug('start() subcribing')
         self.subscribe()
-
         for e in self._dictDR.keys() :
             dict = self._dictDR[e]
             for symbol in dict.keys() :
@@ -161,11 +160,12 @@ class DataRecorder(BaseApplication):
 
     @abstractmethod
     def step(self):
-        try:
-            collection, d = self.queue.get(block=True, timeout=1)
-            self.saveRow(collection, d)
-        except Empty:
-            pass
+        while True:
+            try:
+                collection, d = self.queue.get(block=True, timeout=0.2)
+                self.saveRow(collection, d)
+            except: # Empty:
+                break
     
 
 ########################################################################
@@ -177,6 +177,10 @@ class CsvRecorder(DataRecorder):
     def __init__(self, mainRoutine, settings):
         """Constructor"""
         super(CsvRecorder, self).__init__(mainRoutine, settings)
+        self._files2roll = set()                    # 队列
+        self._min2flush  = 0.3
+        self._days2roll = 2/60/24
+        self._days2zip   = 3/60/24
 
     @abstractmethod
     def saveRow(self, collection, row) :
@@ -184,57 +188,156 @@ class CsvRecorder(DataRecorder):
         if collection['c'] <=0:
             w.writeheader()
             collection['c'] +=1
+            self.debug('header[%s/%s] saved' % (collection['dir'], collection['name']))
         w.writerow(row)
         collection['c'] +=1
-        self.debug('row saved:: %s' % row)
+        self.debug('row[%s/%s] saved: %s' % (collection['dir'], collection['name'], row))
 
-        stampNow = datetime2float(datetime.now())
-        if collection['flush'] + 60 < stampNow : # minimal flush every 1min
-            try :
-                collection['flush'] = stampNow
+        self._checkAndRoll(collection)
+        # stampToZip = (datetime.now() - timedelta(days=7)).strftime('%Y%m%dT%H%M%S')
+        # if collection['flush'] + 60 < stampNow : # minimal flush every 1min
+        #     try :
+        #         collection['flush'] = stampNow
+        #         collection['f'].flush()
+        #     except:
+        #         pass
+    def _checkAndRoll(self, collection) :
+
+        dtNow = datetime.now()
+        if collection['f'] :
+            if not 'flush' in collection.keys() or (collection['flush']+timedelta(minutes=self._min2flush)) > dtNow:
                 collection['f'].flush()
-            except:
-                pass
-    
-    @abstractmethod
-    def openColloection(self, dbName, collectionName) :
+                collection['flush'] =dtNow
+                self.debug('flushed: %s/%s' % (collection['dir'], collection['name']))
+
+            if collection['o'] and (collection['o']+timedelta(hours=self._days2roll*24)) > dtNow :
+                return collection
+        
+        stampToZip = (dtNow - timedelta(hours=self._days2zip*24)).strftime('%Y%m%dT%H%M%S')
+        stampThis   = dtNow.strftime('%Y%m%dT%H%M%S')
         try :
-            os.makedirs('data/%s' % dbName)
+            os.makedirs(collection['dir'])
         except:
             pass
 
-        fname = 'data/%s/%s.csv' % (dbName, collectionName)
-        c=0
+        for _, _, files in os.walk(collection['dir']):
+            for name in files:
+                stk = name.split('.')
+                if stk[-1] !='csv' or collection['name'] != name[:len(collection['name'])]:
+                    continue
+                if stk[-2] <stampToZip:
+                    fn = '%s/%s' % (collection['dir'], name)
+                    self._files2roll.add(fn)
+                    self.debug('schedule to zip: %s' % fn)
+
+        fname = '%s/%s.%s.csv' % (collection['dir'], collection['name'], stampThis)
+        size =0
         try :
-            # with open(fname, 'r') as f:
-            with bz2.BZ2File(fname +'.bz2', 'r') as f:
-                # for c, l in enumerate(f):
-                #     pass
-                # c+=1
-                # for line in f:
-                #     c += 1
-                #     if c>10:
-                #         break
-                try :
-                    reader = csv.DictReader(f)
-                    for d in reader:
-                        c+=1
-                        if c>10:
-                            break
-                except:
-                    pass
-
-#            f = open(fname, 'ab') # Just use 'w' mode in 3.x
-            # f = bz2.BZ2File(fname +'.bz2', 'a')
-        except IOError:
+            size = os.stat(fname).st_size
+        except:
             pass
-        f = bz2.BZ2File(fname +'.bz2', 'w')
- #           f = open(fname, 'wb') # Just use 'w' mode in 3.x
+        
+        collection['f'] = open(fname, 'wb' if size <=0 else 'ab') # Just use 'w' mode in 3.x
+        collection['c'] = 0 if size <=0 else 1000 # just a dummy non-zeron
+        collection['o'] = dtNow
+        self.debug('file[%s] opened: size=%s' % (fname, size))
+        return collection
 
-        # f = open(fname, 'ab') # Just use 'w' mode in 3.x
-        f = bz2.BZ2File(fname +'.bz2', 'w')
-        return {
-            'f': f,
-            'c': c,
-            'flush' :0
+    @abstractmethod
+    def openColloection(self, dbName, collectionName) :
+        col = {
+            'dir' : 'data/%s' % dbName,
+            'name': collectionName,
+            'f': None,
+            'c': 0,
+            'o': None
         }
+
+        return self._checkAndRoll(col)
+
+        # try :
+        #     os.makedirs(dirname)
+        # except:
+        #     pass
+
+        # dtNow = datetime.now()
+        # stampToZip = (dtNow - timedelta(days=7)).strftime('%Y%m%dT%H%M%S')
+        # stampThis   = dtNow.strftime('%Y%m%dT%H%M%S')
+        
+        # for _, _, files in os.walk(dirname):
+        #     for name in files:
+        #         stk = name.split('.')
+        #         if stk[-1] !='csv' or collectionName != name[:len(collectionName)]:
+        #             continue
+        #         if stk[-2] <stampToZip:
+        #             self._files2roll.put('%s/%s' % (dirname, name))
+
+        # fname = '%s/%s.%s.csv' % (dirname, collectionName, stampThis)
+        # size =0
+        # try :
+        #     size = os.stat(fname).st_size
+        # except:
+        #     pass
+        
+        # if size <=0 :
+        #     f = open(fname, 'wb') # Just use 'w' mode in 3.x
+        #     c = 0
+        # else :
+        #     f = open(fname, 'ab') # Just use 'w' mode in 3.x
+        #     c =1000 # just a dummy non-zeron
+
+        # self.debug('file[%s] opened: size=%s' % (fname, size))
+        # return {
+        #     'n': fname,
+        #     'f': f,
+        #     'c': c,
+        #     'o': dtNow
+        # }
+
+    # def checkAndRollOpen(self) :
+
+    #     dtNow = datetime.now()
+    #     if self._dtLastOpen and self._dtLastOpen > (dtNow - timedelta(days=7)) :
+    #         return
+
+    #     self._dtLastOpen = dtNow
+
+    #     for e in self._dictDR.keys() :
+    #         dict = self._dictDR[e]
+    #         for symbol in dict.keys() :
+    #             collName = '%s.%s' %(symbol, dict[symbol]['ds'])
+    #             dict[symbol] = self.openColloection(self._dbNamePrefix +e, collName)
+
+#         try :
+#             # with open(fname, 'r') as f:
+#             with bz2.BZ2File(fname +'.bz2', 'r') as f:
+#                 # for c, l in enumerate(f):
+#                 #     pass
+#                 # c+=1
+#                 # for line in f:
+#                 #     c += 1
+#                 #     if c>10:
+#                 #         break
+#                 try :
+#                     reader = csv.DictReader(f)
+#                     for d in reader:
+#                         c+=1
+#                         if c>10:
+#                             break
+#                 except:
+#                     pass
+
+# #            f = open(fname, 'ab') # Just use 'w' mode in 3.x
+#             # f = bz2.BZ2File(fname +'.bz2', 'a')
+#         except IOError:
+#             pass
+#         f = bz2.BZ2File(fname +'.bz2', 'w')
+#  #           f = open(fname, 'wb') # Just use 'w' mode in 3.x
+
+#         # f = open(fname, 'ab') # Just use 'w' mode in 3.x
+#         f = bz2.BZ2File(fname +'.bz2', 'w')
+#         return {
+#             'f': f,
+#             'c': c,
+#             'flush' :0
+#         }

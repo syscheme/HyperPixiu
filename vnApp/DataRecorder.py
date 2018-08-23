@@ -22,6 +22,8 @@ from datetime import datetime, timedelta
 from Queue import Queue, Empty
 from pymongo.errors import DuplicateKeyError
 
+EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
+
 ########################################################################
 class DataRecorder(BaseApplication):
     """数据记录引擎"""
@@ -152,7 +154,6 @@ class DataRecorder(BaseApplication):
         # 载入设置，订阅行情
         self.debug('start() subcribing')
         self.subscribe()
-
         for e in self._dictDR.keys() :
             dict = self._dictDR[e]
             for symbol in dict.keys() :
@@ -161,22 +162,27 @@ class DataRecorder(BaseApplication):
 
     @abstractmethod
     def step(self):
-        try:
-            collection, d = self.queue.get(block=True, timeout=1)
-            self.saveRow(collection, d)
-        except Empty:
-            pass
-    
+        while True:
+            try:
+                collection, d = self.queue.get(block=True, timeout=0.2)
+                self.saveRow(collection, d)
+            except: # Empty:
+                break
 
 ########################################################################
 import csv
-import bz2
 
 class CsvRecorder(DataRecorder):
     """数据记录引擎"""
     def __init__(self, mainRoutine, settings):
         """Constructor"""
         super(CsvRecorder, self).__init__(mainRoutine, settings)
+        self._dbNamePrefix = settings.dbNamePrefix('dr')
+        self._min2flush  = settings.min2flush(1.0)
+        self._days2roll  = settings.days2roll(1.0)
+        self._days2zip   = settings.days2archive(7.0)
+        if self._days2zip < self._days2roll *2:
+            self._days2zip = self._days2roll *2
 
     @abstractmethod
     def saveRow(self, collection, row) :
@@ -184,57 +190,116 @@ class CsvRecorder(DataRecorder):
         if collection['c'] <=0:
             w.writeheader()
             collection['c'] +=1
+            self.debug('header[%s/%s] saved' % (collection['dir'], collection['name']))
         w.writerow(row)
         collection['c'] +=1
-        self.debug('row saved:: %s' % row)
+        self.debug('row[%s/%s] saved: %s' % (collection['dir'], collection['name'], row))
 
-        stampNow = datetime2float(datetime.now())
-        if collection['flush'] + 60 < stampNow : # minimal flush every 1min
-            try :
-                collection['flush'] = stampNow
+        self._checkAndRoll(collection)
+
+    def _checkAndRoll(self, collection) :
+
+        dtNow = datetime.now()
+        if collection['f'] :
+            if not 'flush' in collection.keys() or (collection['flush']+timedelta(minutes=self._min2flush)) > dtNow:
                 collection['f'].flush()
-            except:
-                pass
-    
-    @abstractmethod
-    def openColloection(self, dbName, collectionName) :
+                collection['flush'] =dtNow
+                self.debug('flushed: %s/%s' % (collection['dir'], collection['name']))
+
+            if collection['o'] :
+                dtToRoll = collection['o']+timedelta(hours=self._days2roll*24)
+                if self._days2roll >=1 and (self._days2roll-int(self._days2roll)) <1/24 : # make
+                    dtToRoll = datetime(dtToRoll.year, dtToRoll.month, dtToRoll.day, 23, 59, 59, 999999)
+
+                if dtToRoll > dtNow :
+                    return collection
+        
+        stampToZip = (dtNow - timedelta(hours=self._days2zip*24)).strftime('%Y%m%dT%H%M%S')
+        stampThis   = dtNow.strftime('%Y%m%dT%H%M%S')
         try :
-            os.makedirs('data/%s' % dbName)
+            os.makedirs(collection['dir'])
         except:
             pass
 
-        fname = 'data/%s/%s.csv' % (dbName, collectionName)
-        c=0
+        # check if there are any old data to archive
+        for _, _, files in os.walk(collection['dir']):
+            for name in files:
+                stk = name.split('.')
+                if stk[-1] !='csv' or collection['name'] != name[:len(collection['name'])]:
+                    continue
+                if stk[-2] <stampToZip:
+                    fn = '%s/%s' % (collection['dir'], name)
+                    self.postEvent(EVENT_TOARCHIVE, fn)
+                    self.debug('schedule to archive: %s' % fn)
+
+        fname = '%s/%s.%s.csv' % (collection['dir'], collection['name'], stampThis)
+        size =0
         try :
-            # with open(fname, 'r') as f:
-            with bz2.BZ2File(fname +'.bz2', 'r') as f:
-                # for c, l in enumerate(f):
-                #     pass
-                # c+=1
-                # for line in f:
-                #     c += 1
-                #     if c>10:
-                #         break
+            size = os.fstat(fname).st_size
+        except:
+            pass
+        
+        collection['f'] = open(fname, 'wb' if size <=0 else 'ab') # Just use 'w' mode in 3.x
+        collection['c'] = 0 if size <=0 else 1000 # just a dummy non-zeron
+        collection['o'] = dtNow
+        self.debug('file[%s] opened: size=%s' % (fname, size))
+        return collection
+
+    @abstractmethod
+    def openColloection(self, dbName, collectionName) :
+        col = {
+            'dir' : 'data/%s' % dbName,
+            'name': collectionName,
+            'f': None,
+            'c': 0,
+            'o': None
+        }
+
+        return self._checkAndRoll(col)
+
+########################################################################
+import bz2
+
+class Zipper(BaseApplication):
+    """数据记录引擎"""
+    def __init__(self, mainRoutine, settings):
+        super(Zipper, self).__init__(mainRoutine, settings)
+        self._queue = Queue()                    # 队列
+        self.subscribeEvent(EVENT_TOARCHIVE, self.onToArchive)
+
+    #----------------------------------------------------------------------
+    # impl of BaseApplication
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def step(self):
+        while True:
+            try:
+                fn = self._queue.get(block=True, timeout=0.2)
+                f = file(fn, 'rb')
+                ofn = fn + '.bz2'
                 try :
-                    reader = csv.DictReader(f)
-                    for d in reader:
-                        c+=1
-                        if c>10:
-                            break
+                    os.fstat(ofn)
+                    continue # output file exists, skip
                 except:
                     pass
 
-#            f = open(fname, 'ab') # Just use 'w' mode in 3.x
-            # f = bz2.BZ2File(fname +'.bz2', 'a')
-        except IOError:
-            pass
-        f = bz2.BZ2File(fname +'.bz2', 'w')
- #           f = open(fname, 'wb') # Just use 'w' mode in 3.x
+                self.debug('zipping: %s to %s' % (fn, ofn))
+                everGood = False
+                with f:
+                    with bz2.BZ2File(ofn, 'w') as z:
+                        while True:
+                            data = f.read(1024000)
+                            if not data: break
+                            z.write(data)
+                            everGood = True
 
-        # f = open(fname, 'ab') # Just use 'w' mode in 3.x
-        f = bz2.BZ2File(fname +'.bz2', 'w')
-        return {
-            'f': f,
-            'c': c,
-            'flush' :0
-        }
+                if everGood: os.remove(fn)
+            except: # Empty:
+                break
+
+    def onToArchive(self, event) :
+        self._push(event.dict_['data'])
+
+    def _push(self, filename) :
+        self._queue.put(filename)
+

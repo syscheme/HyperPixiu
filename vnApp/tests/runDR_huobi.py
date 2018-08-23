@@ -43,6 +43,7 @@ def runChildProcess():
     me.addMarketData(mdHuobi, settings['marketdata'][0])
     # me.addApp(DataRecorder, settings['datarecorder'])
     me.addApp(CsvRecorder, settings['datarecorder'])
+    me.addApp(Zipper, settings['datarecorder'])
     me.info(u'主引擎创建成功')
 
     me.start()

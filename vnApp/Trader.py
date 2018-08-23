@@ -10,7 +10,6 @@ from .strategies   import STRATEGY_CLASS
 from .language     import text
 
 import os
-import shelve
 import logging
 import json   # to save params
 from collections import OrderedDict
@@ -19,13 +18,10 @@ from copy import copy
 from abc import ABCMeta, abstractmethod
 import traceback
 import jsoncfg # pip install json-cfg
+import shelve
 
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
-
-# 引擎类型，用于区分当前策略的运行环境
-TRADER_TYPE_BACKTESTING = 'backtesting'  # 回测
-TRADER_TYPE_TRADING = 'trading'          # 实盘
 
 ########################################################################
 class Trader(BaseApplication):

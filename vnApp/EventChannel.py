@@ -8,9 +8,6 @@ from collections import defaultdict
 from datetime import datetime
 import traceback
 
-# 第三方模块
-from qtpy.QtCore import QTimer
-
 __dtEpoch = datetime.utcfromtimestamp(0)
 def datetime2float(dt):
     total_seconds =  (dt - __dtEpoch).total_seconds()

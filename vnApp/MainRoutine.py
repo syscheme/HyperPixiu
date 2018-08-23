@@ -3,7 +3,6 @@
 from __future__ import division
 
 import os
-# import shelve
 import logging
 from collections import OrderedDict
 from threading import Thread
@@ -679,8 +678,11 @@ class MainRoutine(object):
             # 读取MongoDB的设置
             dbhost = self._settings.database.host('localhost')
             dbport = self._settings.database.port(27017)
+            if len(dbhost) <=0:
+                return
+
             self.debug('connecting DB[%s :%s]'%(dbhost, dbport))
-            
+
             try:
                 # 设置MongoDB操作的超时时间为0.5秒
                 self._dbConn = MongoClient(dbhost, dbport, connectTimeoutMS=500)

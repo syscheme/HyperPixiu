@@ -24,6 +24,7 @@ import zlib
 
 # retrieve package: sudo pip install websocket websocket-client pathlib
 from websocket import create_connection, _exceptions
+import ssl
 
 # 常量定义
 TIMEOUT = 5
@@ -298,10 +299,10 @@ class mdHuobi(MarketData):
 
         try:
             if proxyHost :
-                self.ws = create_connection(self.url, http_proxy_host =proxyHost, http_proxy_port=proxyPort)
+                self.ws = create_connection(self.url, http_proxy_host =proxyHost, http_proxy_port=proxyPort, sslopt={"cert_reqs": ssl.CERT_NONE})
                 self.debug('CONN:%s thru {%s:%s}' % (self.url, proxyHost, proxyPort))
             else :
-                self.ws = create_connection(self.url)
+                self.ws = create_connection(self.url, sslopt={"cert_reqs": ssl.CERT_NONE})
                 self.debug('CONN:%s' % (self.url))
 
             return True

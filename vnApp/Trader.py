@@ -10,7 +10,6 @@ from .strategies   import STRATEGY_CLASS
 from .language     import text
 
 import os
-import shelve
 import logging
 import json   # to save params
 from collections import OrderedDict
@@ -19,6 +18,7 @@ from copy import copy
 from abc import ABCMeta, abstractmethod
 import traceback
 import jsoncfg # pip install json-cfg
+import shelve
 
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure

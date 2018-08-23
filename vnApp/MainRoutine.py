@@ -3,7 +3,7 @@
 from __future__ import division
 
 import os
-import shelve
+# import shelve
 import logging
 from collections import OrderedDict
 from threading import Thread

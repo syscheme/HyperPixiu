@@ -22,6 +22,8 @@ from datetime import datetime, timedelta
 from Queue import Queue, Empty
 from pymongo.errors import DuplicateKeyError
 
+EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
+
 ########################################################################
 class DataRecorder(BaseApplication):
     """数据记录引擎"""
@@ -166,21 +168,21 @@ class DataRecorder(BaseApplication):
                 self.saveRow(collection, d)
             except: # Empty:
                 break
-    
 
 ########################################################################
 import csv
-import bz2
 
 class CsvRecorder(DataRecorder):
     """数据记录引擎"""
     def __init__(self, mainRoutine, settings):
         """Constructor"""
         super(CsvRecorder, self).__init__(mainRoutine, settings)
-        self._files2roll = set()                    # 队列
-        self._min2flush  = 0.3
-        self._days2roll = 2/60/24
-        self._days2zip   = 3/60/24
+        self._dbNamePrefix = settings.dbNamePrefix('dr')
+        self._min2flush  = settings.min2flush(1.0)
+        self._days2roll  = settings.days2roll(1.0)
+        self._days2zip   = settings.days2archive(7.0)
+        if self._days2zip < self._days2roll *2:
+            self._days2zip = self._days2roll *2
 
     @abstractmethod
     def saveRow(self, collection, row) :
@@ -194,13 +196,7 @@ class CsvRecorder(DataRecorder):
         self.debug('row[%s/%s] saved: %s' % (collection['dir'], collection['name'], row))
 
         self._checkAndRoll(collection)
-        # stampToZip = (datetime.now() - timedelta(days=7)).strftime('%Y%m%dT%H%M%S')
-        # if collection['flush'] + 60 < stampNow : # minimal flush every 1min
-        #     try :
-        #         collection['flush'] = stampNow
-        #         collection['f'].flush()
-        #     except:
-        #         pass
+
     def _checkAndRoll(self, collection) :
 
         dtNow = datetime.now()
@@ -210,8 +206,13 @@ class CsvRecorder(DataRecorder):
                 collection['flush'] =dtNow
                 self.debug('flushed: %s/%s' % (collection['dir'], collection['name']))
 
-            if collection['o'] and (collection['o']+timedelta(hours=self._days2roll*24)) > dtNow :
-                return collection
+            if collection['o'] :
+                dtToRoll = collection['o']+timedelta(hours=self._days2roll*24)
+                if self._days2roll >=1 and (self._days2roll-int(self._days2roll)) <1/24 : # make
+                    dtToRoll = datetime(dtToRoll.year, dtToRoll.month, dtToRoll.day, 23, 59, 59, 999999)
+
+                if dtToRoll > dtNow :
+                    return collection
         
         stampToZip = (dtNow - timedelta(hours=self._days2zip*24)).strftime('%Y%m%dT%H%M%S')
         stampThis   = dtNow.strftime('%Y%m%dT%H%M%S')
@@ -220,6 +221,7 @@ class CsvRecorder(DataRecorder):
         except:
             pass
 
+        # check if there are any old data to archive
         for _, _, files in os.walk(collection['dir']):
             for name in files:
                 stk = name.split('.')
@@ -227,13 +229,13 @@ class CsvRecorder(DataRecorder):
                     continue
                 if stk[-2] <stampToZip:
                     fn = '%s/%s' % (collection['dir'], name)
-                    self._files2roll.add(fn)
-                    self.debug('schedule to zip: %s' % fn)
+                    self.postEvent(EVENT_TOARCHIVE, fn)
+                    self.debug('schedule to archive: %s' % fn)
 
         fname = '%s/%s.%s.csv' % (collection['dir'], collection['name'], stampThis)
         size =0
         try :
-            size = os.stat(fname).st_size
+            size = os.fstat(fname).st_size
         except:
             pass
         
@@ -255,89 +257,49 @@ class CsvRecorder(DataRecorder):
 
         return self._checkAndRoll(col)
 
-        # try :
-        #     os.makedirs(dirname)
-        # except:
-        #     pass
+########################################################################
+import bz2
 
-        # dtNow = datetime.now()
-        # stampToZip = (dtNow - timedelta(days=7)).strftime('%Y%m%dT%H%M%S')
-        # stampThis   = dtNow.strftime('%Y%m%dT%H%M%S')
-        
-        # for _, _, files in os.walk(dirname):
-        #     for name in files:
-        #         stk = name.split('.')
-        #         if stk[-1] !='csv' or collectionName != name[:len(collectionName)]:
-        #             continue
-        #         if stk[-2] <stampToZip:
-        #             self._files2roll.put('%s/%s' % (dirname, name))
+class Zipper(BaseApplication):
+    """数据记录引擎"""
+    def __init__(self, mainRoutine, settings):
+        super(Zipper, self).__init__(mainRoutine, settings)
+        self._queue = Queue()                    # 队列
+        self.subscribeEvent(EVENT_TOARCHIVE, self.onToArchive)
 
-        # fname = '%s/%s.%s.csv' % (dirname, collectionName, stampThis)
-        # size =0
-        # try :
-        #     size = os.stat(fname).st_size
-        # except:
-        #     pass
-        
-        # if size <=0 :
-        #     f = open(fname, 'wb') # Just use 'w' mode in 3.x
-        #     c = 0
-        # else :
-        #     f = open(fname, 'ab') # Just use 'w' mode in 3.x
-        #     c =1000 # just a dummy non-zeron
+    #----------------------------------------------------------------------
+    # impl of BaseApplication
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def step(self):
+        while True:
+            try:
+                fn = self._queue.get(block=True, timeout=0.2)
+                f = file(fn, 'rb')
+                ofn = fn + '.bz2'
+                try :
+                    os.fstat(ofn)
+                    continue # output file exists, skip
+                except:
+                    pass
 
-        # self.debug('file[%s] opened: size=%s' % (fname, size))
-        # return {
-        #     'n': fname,
-        #     'f': f,
-        #     'c': c,
-        #     'o': dtNow
-        # }
+                self.debug('zipping: %s to %s' % (fn, ofn))
+                everGood = False
+                with f:
+                    with bz2.BZ2File(ofn, 'w') as z:
+                        while True:
+                            data = f.read(1024000)
+                            if not data: break
+                            z.write(data)
+                            everGood = True
 
-    # def checkAndRollOpen(self) :
+                if everGood: os.remove(fn)
+            except: # Empty:
+                break
 
-    #     dtNow = datetime.now()
-    #     if self._dtLastOpen and self._dtLastOpen > (dtNow - timedelta(days=7)) :
-    #         return
+    def onToArchive(self, event) :
+        self._push(event.dict_['data'])
 
-    #     self._dtLastOpen = dtNow
+    def _push(self, filename) :
+        self._queue.put(filename)
 
-    #     for e in self._dictDR.keys() :
-    #         dict = self._dictDR[e]
-    #         for symbol in dict.keys() :
-    #             collName = '%s.%s' %(symbol, dict[symbol]['ds'])
-    #             dict[symbol] = self.openColloection(self._dbNamePrefix +e, collName)
-
-#         try :
-#             # with open(fname, 'r') as f:
-#             with bz2.BZ2File(fname +'.bz2', 'r') as f:
-#                 # for c, l in enumerate(f):
-#                 #     pass
-#                 # c+=1
-#                 # for line in f:
-#                 #     c += 1
-#                 #     if c>10:
-#                 #         break
-#                 try :
-#                     reader = csv.DictReader(f)
-#                     for d in reader:
-#                         c+=1
-#                         if c>10:
-#                             break
-#                 except:
-#                     pass
-
-# #            f = open(fname, 'ab') # Just use 'w' mode in 3.x
-#             # f = bz2.BZ2File(fname +'.bz2', 'a')
-#         except IOError:
-#             pass
-#         f = bz2.BZ2File(fname +'.bz2', 'w')
-#  #           f = open(fname, 'wb') # Just use 'w' mode in 3.x
-
-#         # f = open(fname, 'ab') # Just use 'w' mode in 3.x
-#         f = bz2.BZ2File(fname +'.bz2', 'w')
-#         return {
-#             'f': f,
-#             'c': c,
-#             'flush' :0
-#         }

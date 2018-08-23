@@ -165,10 +165,10 @@ class BackTestApp(Trader):
         self._dtData = tick.datetime
 
         # 先确定会撮合成交的价格
-        buyCrossPrice      = tick.askPrice1
-        sellCrossPrice     = tick.bidPrice1
-        buyBestCrossPrice  = tick.askPrice1
-        sellBestCrossPrice = tick.bidPrice1
+        buyCrossPrice      = tick.askP1
+        sellCrossPrice     = tick.bidP1
+        buyBestCrossPrice  = tick.askP1
+        sellBestCrossPrice = tick.bidP1
 
         # 先撮合限价单
         self.account.crossLimitOrder(tick.symbol, self._dtData, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3)) # to determine maxCrossVolume from Tick, maxCrossVolume)
@@ -1258,11 +1258,11 @@ class AccountWrapper(object):
                 # 判断是否会成交
                 buyCross = (order.direction == OrderData.DIRECTION_LONG and 
                             order.price>=buyCrossPrice and
-                            buyCrossPrice > 0)      # 国内的tick行情在涨停时askPrice1为0，此时买无法成交
+                            buyCrossPrice > 0)      # 国内的tick行情在涨停时askP1为0，此时买无法成交
                 
                 sellCross = (order.direction == OrderData.DIRECTION_SHORT and 
                             order.price<=sellCrossPrice and
-                            sellCrossPrice > 0)    # 国内的tick行情在跌停时bidPrice1为0，此时卖无法成交
+                            sellCrossPrice > 0)    # 国内的tick行情在跌停时bidP1为0，此时卖无法成交
                 
                 # 如果发生了成交
                 if not buyCross and not sellCross:

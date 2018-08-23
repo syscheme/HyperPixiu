@@ -373,10 +373,10 @@ class BackTest(object):
             if sellCrossPrice >= self.bar.open*1.1 :
                 sellCrossPrice =0
         else:
-            buyCrossPrice = self.tick.askPrice1
-            sellCrossPrice = self.tick.bidPrice1
-            buyBestCrossPrice = self.tick.askPrice1
-            sellBestCrossPrice = self.tick.bidPrice1
+            buyCrossPrice = self.tick.askP1
+            sellCrossPrice = self.tick.bidP1
+            buyBestCrossPrice = self.tick.askP1
+            sellBestCrossPrice = self.tick.bidP1
         
         # 遍历限价单字典中的所有限价单
         for orderID, order in self.tdDriver.workingLimitOrderDict.items():
@@ -388,11 +388,11 @@ class BackTest(object):
             # 判断是否会成交
             buyCross = OrderData.DIRECTION_LONG and 
                         order.price>=buyCrossPrice and
-                        buyCrossPrice > 0)      # 国内的tick行情在涨停时askPrice1为0，此时买无法成交
+                        buyCrossPrice > 0)      # 国内的tick行情在涨停时askP1为0，此时买无法成交
             
             sellCross = OrderData.DIRECTION_SHORT and 
                          order.price<=sellCrossPrice and
-                         sellCrossPrice > 0)    # 国内的tick行情在跌停时bidPrice1为0，此时卖无法成交
+                         sellCrossPrice > 0)    # 国内的tick行情在跌停时bidP1为0，此时卖无法成交
             
             # 如果发生了成交
             if not buyCross and not sellCross:

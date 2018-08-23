@@ -379,11 +379,11 @@ class TargetPosTemplate(Strategy):
         
         if self.lastTick:
             if posChange > 0:
-                longPrice = self.lastTick.askPrice1 + self.tickAdd
+                longPrice = self.lastTick.askP1 + self.tickAdd
                 if self.lastTick.upperLimit:
                     longPrice = min(longPrice, self.lastTick.upperLimit)         # 涨停价检查
             else:
-                shortPrice = self.lastTick.bidPrice1 - self.tickAdd
+                shortPrice = self.lastTick.bidP1 - self.tickAdd
                 if self.lastTick.lowerLimit:
                     shortPrice = max(shortPrice, self.lastTick.lowerLimit)       # 跌停价检查
         else:

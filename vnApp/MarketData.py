@@ -244,29 +244,29 @@ class TickData(EventData):
         self.lowerLimit = EventData.EMPTY_FLOAT           # 跌停价
         
         # 五档行情
-        self.bidPrice1 = EventData.EMPTY_FLOAT
-        self.bidPrice2 = EventData.EMPTY_FLOAT
-        self.bidPrice3 = EventData.EMPTY_FLOAT
-        self.bidPrice4 = EventData.EMPTY_FLOAT
-        self.bidPrice5 = EventData.EMPTY_FLOAT
+        self.bidP1 = EventData.EMPTY_FLOAT
+        self.bidP2 = EventData.EMPTY_FLOAT
+        self.bidP3 = EventData.EMPTY_FLOAT
+        self.bidP4 = EventData.EMPTY_FLOAT
+        self.bidP5 = EventData.EMPTY_FLOAT
         
-        self.askPrice1 = EventData.EMPTY_FLOAT
-        self.askPrice2 = EventData.EMPTY_FLOAT
-        self.askPrice3 = EventData.EMPTY_FLOAT
-        self.askPrice4 = EventData.EMPTY_FLOAT
-        self.askPrice5 = EventData.EMPTY_FLOAT        
+        self.askP1 = EventData.EMPTY_FLOAT
+        self.askP2 = EventData.EMPTY_FLOAT
+        self.askP3 = EventData.EMPTY_FLOAT
+        self.askP4 = EventData.EMPTY_FLOAT
+        self.askP5 = EventData.EMPTY_FLOAT        
         
-        self.bidVolume1 = EventData.EMPTY_INT
-        self.bidVolume2 = EventData.EMPTY_INT
-        self.bidVolume3 = EventData.EMPTY_INT
-        self.bidVolume4 = EventData.EMPTY_INT
-        self.bidVolume5 = EventData.EMPTY_INT
+        self.bidV1 = EventData.EMPTY_INT
+        self.bidV2 = EventData.EMPTY_INT
+        self.bidV3 = EventData.EMPTY_INT
+        self.bidV4 = EventData.EMPTY_INT
+        self.bidV5 = EventData.EMPTY_INT
         
-        self.askVolume1 = EventData.EMPTY_INT
-        self.askVolume2 = EventData.EMPTY_INT
-        self.askVolume3 = EventData.EMPTY_INT
-        self.askVolume4 = EventData.EMPTY_INT
-        self.askVolume5 = EventData.EMPTY_INT         
+        self.askV1 = EventData.EMPTY_INT
+        self.askV2 = EventData.EMPTY_INT
+        self.askV3 = EventData.EMPTY_INT
+        self.askV4 = EventData.EMPTY_INT
+        self.askV5 = EventData.EMPTY_INT         
 
     @property
     def desc(self) :

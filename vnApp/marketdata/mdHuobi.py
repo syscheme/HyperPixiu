@@ -481,14 +481,14 @@ class DataToEvent(object):
             bids = line['tick']['bids']
             for n in range(5):
                 l = bids[n]
-                tick.__setattr__('bidPrice' + str(n+1), l[0])
-                tick.__setattr__('bidVolume' + str(n+1), l[1])
+                tick.__setattr__('bidP' + str(n+1), l[0])
+                tick.__setattr__('bidV' + str(n+1), l[1])
 
             asks = line['tick']['asks']
             for n in range(5):
                 l = asks[n]
-                tick.__setattr__('askPrice' + str(n+1), l[0])
-                tick.__setattr__('askVolume' + str(n+1), l[1])
+                tick.__setattr__('askP' + str(n+1), l[0])
+                tick.__setattr__('askV' + str(n+1), l[1])
 
             if tick.lastPrice:
                  tickReady = True
@@ -522,7 +522,7 @@ class DataToEvent(object):
             tick.volume = t['vol']
             tick.preClosePrice = tick.openPrice
 
-            if tick.bidPrice1:
+            if tick.bidP1:
                  tickReady = True
 
         if tick and tickReady and self._sink:

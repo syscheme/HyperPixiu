@@ -38,7 +38,7 @@ class Trader(BaseApplication):
         super(Trader, self).__init__(mainRoutine, settings)
 
         # 引擎类型为实盘
-        self._tradeType = TRADER_TYPE_TRADING
+        # self._tradeType = TRADER_TYPE_TRADING
         self._settingfilePath = './temp/stgdata.dat'
         
         #--------------------

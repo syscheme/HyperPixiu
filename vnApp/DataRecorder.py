@@ -21,6 +21,7 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 from Queue import Queue, Empty
 from pymongo.errors import DuplicateKeyError
+import shelve
 
 EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
 
@@ -28,17 +29,15 @@ EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
 class DataRecorder(BaseApplication):
     """数据记录引擎"""
      
-    className = 'DataRecorder'
-    displayName = 'DataRecorder'
-    typeName = 'DataRecorder'
-    appIco  = 'aaa.ico'
+    DEFAULT_DBPrefix = 'dr'
 
     #----------------------------------------------------------------------
     def __init__(self, mainRoutine, settings):
         """Constructor"""
         super(DataRecorder, self).__init__(mainRoutine, settings)
 
-        self._dbNamePrefix = settings.dbNamePrefix('dr')
+        self._dbNamePrefix = settings.dbNamePrefix(self.DEFAULT_DBPrefix)
+        self._dataPath     = settings.dataPath('./data')
         
         # 配置字典
         self._dictDR = OrderedDict()
@@ -52,7 +51,7 @@ class DataRecorder(BaseApplication):
         if len(settingnode({})) <=0:
             return
 
-        mdEvent = eventType[len(EVENT_NAME_PREFIX):]
+        mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
         if not mdEvent in self._dictDR.keys() :
             self._dictDR[mdEvent] = OrderedDict()
         dict = self._dictDR[mdEvent]
@@ -95,10 +94,10 @@ class DataRecorder(BaseApplication):
         """处理行情事件"""
         eventType = event.type_
 
-        if  EVENT_NAME_PREFIX != eventType[:len(EVENT_NAME_PREFIX)] :
+        if  MARKETDATE_EVENT_PREFIX != eventType[:len(MARKETDATE_EVENT_PREFIX)] :
             return
 
-        mdEvent = eventType[len(EVENT_NAME_PREFIX):]
+        mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
         eData = event.dict_['data'] # this is a TickData or KLineData
         # if tick.sourceType != MarketData.DATA_SRCTYPE_REALTIME:
         if MarketData.TAG_BACKTEST in eData.exchange :
@@ -107,7 +106,10 @@ class DataRecorder(BaseApplication):
         if not mdEvent in self._dictDR or not eData.symbol in self._dictDR[mdEvent]:
             return
 
-        collection = self._dictDR[mdEvent][eData.symbol]
+        if not 'coll' in self._dictDR[mdEvent][eData.symbol].keys() :
+            return
+
+        collection = self._dictDR[mdEvent][eData.symbol]['coll']
 
         if not eData.datetime : # 生成datetime对象
             try :
@@ -133,7 +135,7 @@ class DataRecorder(BaseApplication):
             self.error('键值重复插入失败：%s' %traceback.format_exc())
 
     @abstractmethod
-    def openColloection(self, dbName, collectionName) :
+    def openCollection(self, dbName, collectionName) :
         collection = {
             'dbName': dbName,
             'collectionName' : collectionName
@@ -141,6 +143,32 @@ class DataRecorder(BaseApplication):
         self.dbEnsureIndex(collectionName, [('date', ASCENDING), ('time', ASCENDING)], True, dbName) #self._dbNamePrefix +e
 
         return collection
+
+    @abstractmethod
+    def saveObject(self, category, id, obj):
+        """保存对象到硬盘"""
+        try :
+            os.makedirs(self._dataPath + '/objects')
+        except:
+            pass
+
+        fn = '%s/objects/%s' % (self._dataPath, category)
+        f = shelve.open(fn)
+        f[id] = obj
+        f.close()
+
+    @abstractmethod
+    def loadObject(self, category, id):
+        """读取对象"""
+        try :
+            fn = '%s/objects/%s' % (self._dataPath, category)
+            f = shelve.open(fn)
+            if id in f :
+                return f[id].value
+        except Exception as ex:
+            print("loadObject() error: %s %s" % (ex, traceback.format_exc()))
+
+        return None
 
     #----------------------------------------------------------------------
     # impl of BaseApplication
@@ -158,7 +186,7 @@ class DataRecorder(BaseApplication):
             dict = self._dictDR[e]
             for symbol in dict.keys() :
                 collName = '%s.%s' %(symbol, dict[symbol]['ds'])
-                dict[symbol] = self.openColloection(self._dbNamePrefix +e, collName)
+                dict[symbol]['coll'] = self.openCollection(self._dbNamePrefix +e, collName)
 
     @abstractmethod
     def step(self):
@@ -168,6 +196,28 @@ class DataRecorder(BaseApplication):
                 self.saveRow(collection, d)
             except: # Empty:
                 break
+
+    @abstractmethod
+    def loadRecentMarketData(self, symbol, startDate, eventType =MarketData.EVENT_KLINE_1MIN):
+        """从数据库中读取Bar数据，startDate是datetime对象"""
+
+        mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
+        if not mdEvent in self._dictDR.keys() or not symbol in self._dictDR[mdEvent].keys():
+            return []
+
+        node = self._dictDR[mdEvent][symbol]
+        if not 'coll' in node.keys() :
+            return []
+            
+        flt = {'datetime':{'$gte':startDate}}
+        lst = self.dbQuery(node['coll']['collectionName'], flt, 'datetime', ASCENDING, node['coll']['dbName'])
+        
+        ret = []
+        for data in lst:
+            v = KLineData(node['ds'], symbol)
+            v.__dict__ = data
+            ret.append(v)
+        return ret
 
 ########################################################################
 import csv
@@ -246,9 +296,9 @@ class CsvRecorder(DataRecorder):
         return collection
 
     @abstractmethod
-    def openColloection(self, dbName, collectionName) :
+    def openCollection(self, dbName, collectionName) :
         col = {
-            'dir' : 'data/%s' % dbName,
+            'dir' : '%s/%s' % (self._dataPath, dbName),
             'name': collectionName,
             'f': None,
             'c': 0,
@@ -256,6 +306,51 @@ class CsvRecorder(DataRecorder):
         }
 
         return self._checkAndRoll(col)
+
+    @abstractmethod
+    def loadRecentMarketData(self, symbol, startDate, eventType =MarketData.EVENT_KLINE_1MIN):
+        """从数据库中读取Bar数据，startDate是datetime对象"""
+
+        mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
+        if not mdEvent in self._dictDR.keys() or not symbol in self._dictDR[mdEvent].keys():
+            return []
+
+        node = self._dictDR[mdEvent][symbol]
+        if not 'coll' in node.keys() :
+            return []
+
+        # filter the csv files
+        stampSince   = startDate.strftime('%Y%m%dT000000')
+        collection = node['coll']
+        csvfiles = []
+        prev = ""
+        for _, _, files in os.walk(collection['dir']):
+            files.sort()
+            for name in files:
+                stk = name.split('.')
+                if stk[-1] !='csv' or collection['name'] != name[:len(collection['name'])]:
+                    continue
+                fn = '%s/%s' % (collection['dir'], name)
+                if stk[-2] <stampSince:
+                    prev = fn
+                else :
+                    csvfiles.append(fn)
+        if len(prev) >0:
+            csvfiles = [prev] + csvfiles
+        
+        ret = []
+        DataClass = TickData if mdEvent == 'Tick' else KLineData
+
+        for fn in csvfiles :
+            with open(fn, 'rb') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if fn == prev and row['datetime'] <stampSince:
+                        continue
+                    data = DataClass('')
+                    data.__dict__  = row
+                    ret.append(data)
+        return ret
 
 ########################################################################
 import bz2

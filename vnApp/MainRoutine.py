@@ -193,35 +193,22 @@ class BaseApplication(object):
             self._engine.dbInsert(dbName, collectionName, d)
     
     @abstractmethod
-    def dbQuery(self, collectionName, d, sortKey='', sortDirection=ASCENDING):
+    def dbQuery(self, collectionName, d, sortKey='', sortDirection=ASCENDING, dbName =None):
         """从MongoDB中读取数据，d是查询要求，返回的是数据库查询的指针"""
-        if not self._dbConn:
-            self.error(text.DATA_QUERY_FAILED)   
-            return []
-
-        db = self._dbConn[self._id]
-        collection = db[collectionName]
-            
-        if sortKey:
-            cursor = collection.find(d).sort(sortKey, sortDirection)    # 对查询出来的数据进行排序
-        else:
-            cursor = collection.find(d)
-
-        if cursor:
-            return list(cursor)
+        if not dbName or len(dbName) <=0:
+            dbName = self._id
+        if self._engine:
+            return self._engine.dbQuery(dbName, collectionName, d, sortKey, sortDirection)
 
         return []
         
     @abstractmethod
-    def dbUpdate(self, collectionName, d, flt, upsert=True):
+    def dbUpdate(self, collectionName, d, flt, upsert=True,  dbName =None):
         """向MongoDB中更新数据，d是具体数据，flt是过滤条件，upsert代表若无是否要插入"""
-        if not self._dbConn:
-            self.error(text.DATA_UPDATE_FAILED)        
-            return
-
-        db = self._dbConn[self._id]
-        collection = db[collectionName]
-        collection.replace_one(flt, d, upsert)
+        if not dbName or len(dbName) <=0:
+            dbName = self._id
+        if self._engine:
+            self._engine.dbUpdate(dbName, collectionName, d, flt, upsert)
             
     #----------------------------------------------------------------------
     @abstractmethod
@@ -725,6 +712,38 @@ class MainRoutine(object):
         collection = db[collectionName]
         collection.insert_one(d)
         self.debug('dbInsert() %s[%s] added: %s' % (dbName, collectionName, d))
+
+    @abstractmethod
+    def dbQuery(self, dbName, collectionName, d, sortKey='', sortDirection=ASCENDING):
+        """从MongoDB中读取数据，d是查询要求，返回的是数据库查询的指针"""
+        if not self._dbConn:
+            self.error(text.DATA_QUERY_FAILED)   
+            return []
+
+        self.debug('dbQuery() %s[%s] flt: %s' % (dbName, collectionName, d))
+        db = self._dbConn[dbName]
+        collection = db[collectionName]
+            
+        if sortKey:
+            cursor = collection.find(d).sort(sortKey, sortDirection)    # 对查询出来的数据进行排序
+        else:
+            cursor = collection.find(d)
+
+        if cursor:
+            return list(cursor)
+
+        return []
+        
+    @abstractmethod
+    def dbUpdate(self, dbName, collectionName, d, flt, upsert=True):
+        """向MongoDB中更新数据，d是具体数据，flt是过滤条件，upsert代表若无是否要插入"""
+        if not self._dbConn:
+            self.error(text.DATA_UPDATE_FAILED)        
+            return
+
+        db = self._dbConn[dbName]
+        collection = db[collectionName]
+        collection.replace_one(flt, d, upsert)
 
     #----------------------------------------------------------------------
     def dbLogging(self, event):

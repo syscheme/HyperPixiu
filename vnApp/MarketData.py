@@ -7,21 +7,23 @@ from .EventChannel import EventData, Event, EVENT_NAME_PREFIX
 import traceback
 from abc import ABCMeta, abstractmethod
 
+MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
+
 ########################################################################
 class MarketData(object):
     # Market相关events
-    EVENT_TICK          = EVENT_NAME_PREFIX + 'Tick'                   # TICK行情事件，可后接具体的vtSymbol
-    EVENT_MARKET_DEPTH0 = EVENT_NAME_PREFIX + 'MD0'           # Market depth0
-    EVENT_MARKET_DEPTH2 = EVENT_NAME_PREFIX + 'MD2'           # Market depth2
-    EVENT_KLINE_1MIN    = EVENT_NAME_PREFIX + 'KL1m'
-    EVENT_KLINE_5MIN    = EVENT_NAME_PREFIX + 'KL5m'
-    EVENT_KLINE_15MIN   = EVENT_NAME_PREFIX + 'KL15m'
-    EVENT_KLINE_30MIN   = EVENT_NAME_PREFIX + 'KL30m'
-    EVENT_KLINE_1HOUR   = EVENT_NAME_PREFIX + 'KL1h'
-    EVENT_KLINE_4HOUR   = EVENT_NAME_PREFIX + 'KL4h'
-    EVENT_KLINE_1DAY    = EVENT_NAME_PREFIX + 'KL1d'
+    EVENT_TICK          = MARKETDATE_EVENT_PREFIX + 'Tick'                   # TICK行情事件，可后接具体的vtSymbol
+    EVENT_MARKET_DEPTH0 = MARKETDATE_EVENT_PREFIX + 'MD0'           # Market depth0
+    EVENT_MARKET_DEPTH2 = MARKETDATE_EVENT_PREFIX + 'MD2'           # Market depth2
+    EVENT_KLINE_1MIN    = MARKETDATE_EVENT_PREFIX + 'KL1m'
+    EVENT_KLINE_5MIN    = MARKETDATE_EVENT_PREFIX + 'KL5m'
+    EVENT_KLINE_15MIN   = MARKETDATE_EVENT_PREFIX + 'KL15m'
+    EVENT_KLINE_30MIN   = MARKETDATE_EVENT_PREFIX + 'KL30m'
+    EVENT_KLINE_1HOUR   = MARKETDATE_EVENT_PREFIX + 'KL1h'
+    EVENT_KLINE_4HOUR   = MARKETDATE_EVENT_PREFIX + 'KL4h'
+    EVENT_KLINE_1DAY    = MARKETDATE_EVENT_PREFIX + 'KL1d'
 
-    EVENT_T2KLINE_1MIN  = EVENT_NAME_PREFIX + 'T2K1m'
+    EVENT_T2KLINE_1MIN  = MARKETDATE_EVENT_PREFIX + 'T2K1m'
 
     TAG_BACKTEST = '$BT'
 

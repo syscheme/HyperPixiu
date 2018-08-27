@@ -121,7 +121,7 @@ class MarketData(object):
     @abstractmethod
     def subscribe(self, symbol, eventType =EVENT_TICK):
         """订阅成交细节"""
-        raise NotImplementedError
+        pass
 
     #----------------------------------------------------------------------
     def unsubscribe(self, symbol, eventType):
@@ -228,9 +228,10 @@ class TickData(EventData):
 
         self.exchange   = exchange
         # self.sourceType = md._sourceType          # 数据来源类型
-        if symbol:
-            self.symbol = symbol
-            self.vtSymbol = '.'.join([self.symbol, self.exchange])
+        if len(symbol)>0:
+            self.symbol = self.vtSymbol = symbol
+            if  len(exchange)>0 :
+                self.vtSymbol = '.'.join([self.symbol, self.exchange])
         
         # 成交数据
         self.lastPrice = EventData.EMPTY_FLOAT            # 最新成交价
@@ -293,10 +294,10 @@ class KLineData(EventData):
 
         self.exchange   = exchange
         # self.sourceType = md._sourceType          # 数据来源类型
-        if symbol:
-            self.symbol = symbol
-            self.vtSymbol = '.'.join([self.symbol, self.exchange])
-
+        if len(symbol)>0:
+            self.symbol = self.vtSymbol = symbol
+            if  len(exchange)>0 :
+                self.vtSymbol = '.'.join([self.symbol, self.exchange])
     
         self.open = EventData.EMPTY_FLOAT             # OHLC
         self.high = EventData.EMPTY_FLOAT
@@ -453,8 +454,8 @@ class DataToEvent(object):
         if eventType in self._dict.keys() and self._dict[eventType]['dataOf'] < dataOf:
             if self._sink and self._dict[eventType]['data']:
                 event = Event()
-                event.type_  = eventType
-                event.data_ = self._dict[eventType]['data']
+                event.type_ = eventType
+                event.dict_['data'] = self._dict[eventType]['data']
                 self._sink(event)
 
         d =  {

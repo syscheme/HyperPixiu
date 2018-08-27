@@ -251,7 +251,7 @@ class CsvRecorder(DataRecorder):
 
         dtNow = datetime.now()
         if collection['f'] :
-            if not 'flush' in collection.keys() or (collection['flush']+timedelta(minutes=self._min2flush)) > dtNow:
+            if not 'flush' in collection.keys() or (collection['flush']+timedelta(minutes=self._min2flush)) < dtNow:
                 collection['f'].flush()
                 collection['flush'] =dtNow
                 self.debug('flushed: %s/%s' % (collection['dir'], collection['name']))

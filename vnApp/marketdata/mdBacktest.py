@@ -84,8 +84,8 @@ class mdBacktest(MarketData):
         """订阅成交细节"""
 
         dataCategory = 'Tick'
-        if len(eventType) >len(EVENT_NAME_PREFIX):
-            dataCategory = eventType[len(EVENT_NAME_PREFIX):]
+        if len(eventType) >len(MARKETDATE_EVENT_PREFIX):
+            dataCategory = eventType[len(MARKETDATE_EVENT_PREFIX):]
 
         collectionName = symbol +'.' + self._exchange
         key = dataCategory + '/' +collectionName
@@ -178,7 +178,7 @@ class mdBacktest(MarketData):
                     event = Event(MarketData.EVENT_TICK)
                 else: # as Kline
                     edata = KLineData(self.exchange, symbol)
-                    event = Event(EVENT_NAME_PREFIX +d['category'])
+                    event = Event(MARKETDATE_EVENT_PREFIX +d['category'])
                 
                 edata.date = self.DUMMY_DATE_EOS
                 edata.time = self.DUMMY_TIME_EOS
@@ -219,7 +219,7 @@ class mdBacktest(MarketData):
                 edata = KLineData(self.exchange, symbol)
                 edata.__dict__ = copy(cursorFocus['currentData'])
                 edata.vtSymbol  = newSymbol
-                event = Event(EVENT_NAME_PREFIX +cursorFocus['category'])
+                event = Event(MARKETDATE_EVENT_PREFIX +cursorFocus['category'])
                 event.dict_['data'] = edata
 
             # cursorFocus['currentData'] sent, force to None to read next

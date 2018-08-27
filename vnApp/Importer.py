@@ -14,11 +14,89 @@ from time import time
 
 import pymongo
 
-from vnpy.trader.vtGlobal import globalSetting
-from vnpy.trader.vtConstant import *
-from vnpy.trader.vtObject import KLineData
+from .MarketData import KLineData
 from .Account import SETTING_DB_NAME, TICK_DB_NAME, MINUTE_DB_NAME, DAILY_DB_NAME
 
+
+########################################################################
+class DataToEvent(object):
+
+    def __init__(self):
+        """Constructor"""
+        super(DataToEvent, self).__init__(sink = None)
+        self._sink = sink
+
+        self._dictEvents = {}
+
+    def sink(self, callback) :
+        self._sink = callback
+
+    @abstractmethod
+    def push(self, line) :
+        pass
+
+    def _updateEvent(self, eventType, eventData, dataOf =None):
+        if eventType in self._dict[eventType]['dataOf'] < dataOf:
+            if self._sink and self._dict[eventType]['data']:
+                event = Event()
+                event.type_  = eventType
+                event.data_ = self._dict[eventType]['data']
+                self._sink(event)
+
+        d =  {
+            'dataOf' : dataOf if dataOf else eventData.datetime,
+            'data' : eventData
+            }
+
+        self._dict[event.type_] = d
+
+########################################################################
+class McCvsToEvent(object):
+
+    def __init__(self):
+        """Constructor"""
+        super(KLineCvsToEvent, self).__init__(sink = None)
+
+    @abstractmethod
+    def push(self, symbol, eventType, csvrow) :
+        if eventType == MarketData.EVENT_TICK :
+            eData = TickData(symbol)
+        else :
+            eData = KLineData(symbol)
+            eData.open = float(csvrow['Open'])
+            eData.high = float(csvrow['High'])
+            eData.low = float(csvrow['Low'])
+            eData.close = float(csvrow['Close'])
+            eData.volume = csvrow['TotalVolume']
+            eData.date = datetime.strptime(csvrow['Date'], '%Y-%m-%d').strftime('%Y%m%d')
+            eData.time = csvrow['Time']
+            eData.datetime = datetime.strptime(eData.date + ' ' + eData.time, '%Y%m%d %H:%M:%S')
+            dataOf = eData.datetime.strptime(eData.date + ' ' + eData.time, '%Y%m%d %H:%M:00')
+        self._updateEvent(self, eventType, eData, dataOf)
+
+########################################################################
+class TaobaoCvsToEvent(object):
+
+    def __init__(self, symbol):
+        """Constructor"""
+        super(KLineCvsToEvent, self).__init__(sink = None)
+        self._symbol = symbol
+
+    @abstractmethod
+    def push(self, csvrow) :
+        bar.vtSymbol = symbol
+        bar.symbol = symbol
+        bar.date = datetime.strptime(csvrow['date'], '%Y/%m/%d').strftime('%Y%m%d')
+        bar.time = csvrow['time']+":00"
+        bar.datetime = datetime.strptime(bar.date + ' ' + bar.time, '%Y%m%d %H:%M:%S')
+        bar.open = float(csvrow['open'])
+        bar.high = float(csvrow['high'])
+        bar.low = float(csvrow['low'])
+        bar.close = float(csvrow['close'])
+        bar.volume = int(float(csvrow['volume'])) *100 # yes, the source data formatted volume as float
+
+
+########################################################################
 
 #----------------------------------------------------------------------
 def downloadEquityDailyBarts(self, symbol):

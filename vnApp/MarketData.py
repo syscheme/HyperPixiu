@@ -5,6 +5,7 @@ from __future__ import division
 from .EventChannel import EventData, Event, EVENT_NAME_PREFIX
 
 import traceback
+from datetime import datetime
 from abc import ABCMeta, abstractmethod
 
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
@@ -26,6 +27,10 @@ class MarketData(object):
     EVENT_T2KLINE_1MIN  = MARKETDATE_EVENT_PREFIX + 'T2K1m'
 
     TAG_BACKTEST = '$BT'
+
+    DUMMY_DT_EOS = datetime(2999, 12, 31, 23,59,59)
+    DUMMY_DATE_EOS = DUMMY_DT_EOS.strftime('%Y%m%d')
+    DUMMY_TIME_EOS = DUMMY_DT_EOS.strftime('%H%M%S')
 
     __lastId__ =100
 
@@ -307,7 +312,7 @@ class KLineData(EventData):
 
     @property
     def desc(self) :
-        return 'kline.%s@%s_%dx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.volume, round(self.close,2))
+        return 'kline.%s@%s_%sx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.volume, round(self.close,2))
 
 
 ########################################################################
@@ -443,8 +448,9 @@ class DataToEvent(object):
     def push(self, csvrow, eventType =None, symbol =None) :
         raise NotImplementedError
 
-    def _updateEvent(self, eventType, eventData, dataOf =None):
-        if eventType in self._dict[eventType]['dataOf'] < dataOf:
+    @abstractmethod
+    def _cbMarketEvent(self, eventType, eventData, dataOf =None):
+        if eventType in self._dict.keys() and self._dict[eventType]['dataOf'] < dataOf:
             if self._sink and self._dict[eventType]['data']:
                 event = Event()
                 event.type_  = eventType
@@ -456,5 +462,5 @@ class DataToEvent(object):
             'data' : eventData
             }
 
-        self._dict[event.type_] = d
+        self._dict[eventType] = d
 

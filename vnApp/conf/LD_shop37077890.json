@@ -16,12 +16,15 @@
     "offlinedata": [ // in the case that marketdata is collected thru local subscribers
         {
             "id": "huobi",
-            "className": "huobi",
-            "exchange": "huobi",
-            "proxy": "localhost:8118",
+            "className": "shop37077890",
+            "exchange": "AShare",
+            "startDate": "2008-02-01",
+            "endDate": "2010-01-01",
+            "symbol": "SH600076", // ,"601727","601766","601788","601800","601808"],
 
             // the following are up to class mdOffline
-            "homeDir" : "./temp",
+            "homeDir" : "/bigdata/sourcedata/shop37077890.taobao/股票1分钟csv",
+            "event" : "KL1m",
 
         },
     ],

@@ -347,12 +347,12 @@ class MainRoutine(object):
         """添加底层接口"""
 
         # 创建接口实例
-        clsName = dsModule.className
+        clsName = dsModule.__class__.__name__
         md = dsModule(self, settings)
         # 保存接口详细信息
         d = {
             'id': md.id,
-            'dsDisplayName': settings.displayName(id),
+            'dsDisplayName': settings.displayName(md.id),
             'dsType': clsName,
         }
 

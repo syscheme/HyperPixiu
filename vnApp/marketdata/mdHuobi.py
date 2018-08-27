@@ -2,7 +2,7 @@
 
 from __future__ import division
 
-from ..MarketData import MarketData, KLineData, TickData
+from ..MarketData import MarketData, KLineData, TickData, DataToEvent
 from ..EventChannel import Event
 
 import urllib
@@ -71,8 +71,7 @@ class mdHuobi(MarketData):
 
         super(mdHuobi, self).__init__(mainRoutine, settings)
 
-        self._merger = DataToEvent()
-        self._merger.sink(self.onMarketEvent)
+        self._merger = HuobiToEvent(self.onMarketEvent)
 
         self.ws = None
         self.url = ''
@@ -118,7 +117,7 @@ class mdHuobi(MarketData):
                 if not stream or len(stream) <=0:
                     break
                 result = zlib.decompress(stream, 47).decode('utf-8')
-                data = json.loads(result)
+                data = json.loads(result) # .encode('utf-8')
                 c +=1
             except socket.timeout:
                 break
@@ -257,7 +256,7 @@ class mdHuobi(MarketData):
     #----------------------------------------------------------------------
     def _sendReq(self, req):
         """发送请求"""
-        stream = json.dumps(req)
+        stream = json.dumps(req, ensure_ascii=False)
         self.ws.send(stream)
         self.debug('SENT:%s' % stream)
         
@@ -363,24 +362,24 @@ class mdHuobi(MarketData):
         self._merger.push(data)
 
 ########################################################################
-class DataToEvent(object):
+# import yaml
+class HuobiToEvent(DataToEvent):
 
-    def __init__(self):
+    def __init__(self, sink):
         """Constructor"""
-        super(DataToEvent, self).__init__()
-
-        self._sink = None
+        super(HuobiToEvent, self).__init__(sink)
 
         self._dictTicks = {}
         # huobi will repeat message for a same KLine, so to merge and only post the last
         self._dictKLineLatest = {}
 
-    def sink(self, callback) :
-        self._sink = callback
-
-    def push(self, line) :
+    def push(self, line, eventType =None, symbol =None) :
 
         event = None
+        if line.__class__.__name__ == 'str' :
+            tmpstr = line.encode('utf-8')
+            tmpstr = tmpstr.replace("u'", "\"").replace("'", "\"").replace("L,", ",").replace("L}", "}").replace("L]", "]")
+            line = json.loads(tmpstr) # , encoding='utf-8')
         topic = line['ch']
         if '.kline.' in topic:
             """K线数据

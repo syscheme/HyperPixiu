@@ -425,3 +425,36 @@ class KlineToXminMerger(object):
         # 清空老K线缓存对象
         self._dictKlineXmin[kline.symbol] = klineXmin
         self._dictKlineIn[kline.symbol] = kline
+
+########################################################################
+class DataToEvent(object):
+
+    def __init__(self, sink):
+        """Constructor"""
+        super(DataToEvent, self).__init__()
+        self._sink = sink
+        self._dict = {}
+
+    @property
+    def fields(self) :
+        return None
+
+    @abstractmethod
+    def push(self, csvrow, eventType =None, symbol =None) :
+        raise NotImplementedError
+
+    def _updateEvent(self, eventType, eventData, dataOf =None):
+        if eventType in self._dict[eventType]['dataOf'] < dataOf:
+            if self._sink and self._dict[eventType]['data']:
+                event = Event()
+                event.type_  = eventType
+                event.data_ = self._dict[eventType]['data']
+                self._sink(event)
+
+        d =  {
+            'dataOf' : dataOf if dataOf else eventData.datetime,
+            'data' : eventData
+            }
+
+        self._dict[event.type_] = d
+

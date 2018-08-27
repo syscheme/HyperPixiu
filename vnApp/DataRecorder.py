@@ -383,10 +383,12 @@ class Zipper(BaseApplication):
                 with f:
                     with bz2.BZ2File(ofn, 'w') as z:
                         while True:
+                            data = None
                             data = f.read(1024000)
-                            if not data: break
+                            if data != None :
+                                everGood = True
+                            if len(data) <=0 : break
                             z.write(data)
-                            everGood = True
 
                 if everGood: os.remove(fn)
             except: # Empty:

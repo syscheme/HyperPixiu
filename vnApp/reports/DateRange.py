@@ -1061,7 +1061,7 @@ class AccountWrapper(object):
                 # 判断是否会成交
                 buyCross = (order.direction == OrderData.DIRECTION_LONG and 
                             order.price>=buyCrossPrice and
-                            buyCrossPrice > 0)      # 国内的tick行情在涨停时askP1为0，此时买无法成交
+                            buyCrossPrice > 0)      # 国内的tick行情在涨停时a1P为0，此时买无法成交
                 
                 sellCross = (order.direction == OrderData.DIRECTION_SHORT and 
                             order.price<=sellCrossPrice and

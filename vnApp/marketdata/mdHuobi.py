@@ -458,14 +458,14 @@ class HuobiToEvent(DataToEvent):
             bids = line['tick']['bids']
             for n in range(5):
                 l = bids[n]
-                tick.__setattr__('bidP' + str(n+1), l[0])
-                tick.__setattr__('bidV' + str(n+1), l[1])
+                tick.__setattr__('b%sP' % str(n+1), l[0])
+                tick.__setattr__('b%sV' % str(n+1), l[1])
 
             asks = line['tick']['asks']
             for n in range(5):
                 l = asks[n]
-                tick.__setattr__('askP' + str(n+1), l[0])
-                tick.__setattr__('askV' + str(n+1), l[1])
+                tick.__setattr__('a%sP' % str(n+1), l[0])
+                tick.__setattr__('a%sV' % str(n+1), l[1])
 
             if tick.lastPrice:
                  tickReady = True
@@ -499,7 +499,7 @@ class HuobiToEvent(DataToEvent):
             tick.volume = t['vol']
             tick.preClosePrice = tick.openPrice
 
-            if tick.bidP1:
+            if tick.b1P:
                  tickReady = True
 
         if tick and tickReady and self._sink:

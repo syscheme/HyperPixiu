@@ -246,29 +246,31 @@ class TickData(EventData):
         self.lowerLimit = EventData.EMPTY_FLOAT           # 跌停价
         
         # 五档行情
-        self.bidP1 = EventData.EMPTY_FLOAT
-        self.bidP2 = EventData.EMPTY_FLOAT
-        self.bidP3 = EventData.EMPTY_FLOAT
-        self.bidP4 = EventData.EMPTY_FLOAT
-        self.bidP5 = EventData.EMPTY_FLOAT
+        # bid to buy: price and volume
+        self.b1P = EventData.EMPTY_FLOAT 
+        self.b2P = EventData.EMPTY_FLOAT
+        self.b3P = EventData.EMPTY_FLOAT
+        self.b4P = EventData.EMPTY_FLOAT
+        self.b5P = EventData.EMPTY_FLOAT
+        self.b1V = EventData.EMPTY_INT
+        self.b2V = EventData.EMPTY_INT
+        self.b3V = EventData.EMPTY_INT
+        self.b4V = EventData.EMPTY_INT
+        self.b5V = EventData.EMPTY_INT
         
-        self.askP1 = EventData.EMPTY_FLOAT
-        self.askP2 = EventData.EMPTY_FLOAT
-        self.askP3 = EventData.EMPTY_FLOAT
-        self.askP4 = EventData.EMPTY_FLOAT
-        self.askP5 = EventData.EMPTY_FLOAT        
+        # ask to sell: price and volume
+        self.a1P = EventData.EMPTY_FLOAT
+        self.a2P = EventData.EMPTY_FLOAT
+        self.a3P = EventData.EMPTY_FLOAT
+        self.a4P = EventData.EMPTY_FLOAT
+        self.a5P = EventData.EMPTY_FLOAT        
         
-        self.bidV1 = EventData.EMPTY_INT
-        self.bidV2 = EventData.EMPTY_INT
-        self.bidV3 = EventData.EMPTY_INT
-        self.bidV4 = EventData.EMPTY_INT
-        self.bidV5 = EventData.EMPTY_INT
         
-        self.askV1 = EventData.EMPTY_INT
-        self.askV2 = EventData.EMPTY_INT
-        self.askV3 = EventData.EMPTY_INT
-        self.askV4 = EventData.EMPTY_INT
-        self.askV5 = EventData.EMPTY_INT         
+        self.a1V = EventData.EMPTY_INT
+        self.a2V = EventData.EMPTY_INT
+        self.a3V = EventData.EMPTY_INT
+        self.a4V = EventData.EMPTY_INT
+        self.a5V = EventData.EMPTY_INT         
 
     @property
     def desc(self) :

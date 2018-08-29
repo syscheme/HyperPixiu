@@ -236,7 +236,9 @@ class CsvRecorder(DataRecorder):
 
     @abstractmethod
     def saveRow(self, collection, row) :
-        w = csv.DictWriter(collection['f'], row.keys())
+        colnames = row.keys() # .sort()
+        colnames.sort()
+        w = csv.DictWriter(collection['f'], colnames)
         if collection['c'] <=0:
             w.writeheader()
             collection['c'] +=1

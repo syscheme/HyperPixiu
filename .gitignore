@@ -21,6 +21,7 @@ Huobi.json
 
 # 压缩文件
 *.zip
+*.bz2
 
 # API的.con文件
 *.con
@@ -51,6 +52,7 @@ logs/*
 *.tar.*
 *.zip
 Untitled*.*
+*.csv
 
 vn.ctp/build/*
 vn.lts/build/*

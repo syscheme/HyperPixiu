@@ -306,7 +306,10 @@ class CsvRecorder(DataRecorder):
         except:
             pass
         
-        del collection['w']
+        try :
+            del collection['w']
+        except:
+            pass
         collection['f'] = open(fname, 'wb' if size <=0 else 'ab') # Just use 'w' mode in 3.x
         collection['c'] = 0 if size <=0 else 1000 # just a dummy non-zeron
         collection['o'] = dtNow

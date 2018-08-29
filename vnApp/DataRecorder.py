@@ -128,6 +128,13 @@ class DataRecorder(BaseApplication):
             #flt = {'datetime': d['datetime']}
             #self._engine.dbUpdate(dbName, collectionName, d, flt, True)
         # 使用insert模式更新数据，可能存在时间戳重复的情况，需要用户自行清洗
+        try :
+            del row['exchange']
+            del row['symbol']
+            del row['vtSymbol']
+        except:
+            pass
+
         try:
             self.dbInsert(collection['collectionName'], row, collection['dbName'])
             self.debug('DB %s[%s] inserted: %s' % (collection['dbName'], collection['collectionName'], row))
@@ -192,7 +199,7 @@ class DataRecorder(BaseApplication):
     def step(self):
         while True:
             try:
-                collection, d = self.queue.get(block=True, timeout=0.2)
+                collection, d = self.queue.get(block=False, timeout=0.05)
                 self.saveRow(collection, d)
             except: # Empty:
                 break
@@ -236,9 +243,19 @@ class CsvRecorder(DataRecorder):
 
     @abstractmethod
     def saveRow(self, collection, row) :
-        colnames = row.keys() # .sort()
-        colnames.sort()
-        w = csv.DictWriter(collection['f'], colnames)
+        try :
+            del row['exchange']
+            del row['symbol']
+            del row['vtSymbol']
+        except:
+            pass
+
+        if not 'w' in collection.keys():
+            colnames = row.keys()
+            colnames.sort()
+            collection['w'] =csv.DictWriter(collection['f'], colnames)
+        w = collection['w']
+        
         if collection['c'] <=0:
             w.writeheader()
             collection['c'] +=1
@@ -291,6 +308,10 @@ class CsvRecorder(DataRecorder):
         except:
             pass
         
+        try :
+            del collection['w']
+        except:
+            pass
         collection['f'] = open(fname, 'wb' if size <=0 else 'ab') # Just use 'w' mode in 3.x
         collection['c'] = 0 if size <=0 else 1000 # just a dummy non-zeron
         collection['o'] = dtNow

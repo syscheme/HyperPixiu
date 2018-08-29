@@ -27,10 +27,6 @@ class mdBacktest(MarketData):
     displayName = 'Playback history data as MarketData'
     typeName = 'Market data subscriber from HHistDB'
 
-    DUMMY_DT_EOS = datetime(2999, 12, 31, 23,59,59)
-    DUMMY_DATE_EOS = DUMMY_DT_EOS.strftime('%Y%m%d')
-    DUMMY_TIME_EOS = DUMMY_DT_EOS.strftime('%H%M%S')
-
     #----------------------------------------------------------------------
     def __init__(self, mainRoutine, settings):
         """Constructor

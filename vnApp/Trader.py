@@ -431,11 +431,11 @@ class Trader(BaseApplication):
             if kline.datetime > tick.datetime:
                 return kline.close
             else:
-                return tick.lastPrice
+                return tick.price
         elif kline:
             return kline.close
         elif tick:
-            return tick.lastPrice
+            return tick.price
         return 0
 
     @abstractmethod

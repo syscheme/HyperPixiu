@@ -234,8 +234,8 @@ class TickData(EventData):
                 self.vtSymbol = '.'.join([self.symbol, self.exchange])
         
         # 成交数据
-        self.lastPrice = EventData.EMPTY_FLOAT            # 最新成交价
-        self.lastVolume = EventData.EMPTY_INT             # 最新成交量
+        self.price = EventData.EMPTY_FLOAT            # 最新成交价
+        self.volume = EventData.EMPTY_INT             # 最新成交量
         self.volume = EventData.EMPTY_INT                 # 今天总成交量
         self.openInterest = EventData.EMPTY_INT           # 持仓量
         self.time = EventData.EMPTY_STRING                # 时间 11:20:56.5
@@ -243,10 +243,10 @@ class TickData(EventData):
         self.datetime = None                    # python的datetime时间对象
         
         # 常规行情
-        self.openPrice = EventData.EMPTY_FLOAT            # 今日开盘价
-        self.highPrice = EventData.EMPTY_FLOAT            # 今日最高价
-        self.lowPrice = EventData.EMPTY_FLOAT             # 今日最低价
-        self.preClosePrice = EventData.EMPTY_FLOAT
+        self.open = EventData.EMPTY_FLOAT            # 今日开盘价
+        self.high = EventData.EMPTY_FLOAT            # 今日最高价
+        self.low = EventData.EMPTY_FLOAT             # 今日最低价
+        self.prevClose = EventData.EMPTY_FLOAT
         
         self.upperLimit = EventData.EMPTY_FLOAT           # 涨停价
         self.lowerLimit = EventData.EMPTY_FLOAT           # 跌停价
@@ -280,7 +280,7 @@ class TickData(EventData):
 
     @property
     def desc(self) :
-        return 'tick.%s@%s_%dx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S'),self.volume,round(self.lastPrice,2))
+        return 'tick.%s@%s_%dx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S'),self.volume,round(self.price,2))
 
 ########################################################################
 class KLineData(EventData):
@@ -356,16 +356,16 @@ class TickToKLineMerger(object):
         if not kline:
             # 创建新的K线对象
             kline = KLineData(tick.exchange + '_t2k', tick.exchasymbolnge)
-            kline.open = tick.lastPrice
-            kline.high = tick.lastPrice
-            kline.low = tick.lastPrice
+            kline.open = tick.price
+            kline.high = tick.price
+            kline.low = tick.price
         # 累加更新老一分钟的K线数据
         else:                                   
-            kline.high = max(kline.high, tick.lastPrice)
-            kline.low = min(kline.low, tick.lastPrice)
+            kline.high = max(kline.high, tick.price)
+            kline.low = min(kline.low, tick.price)
 
         # 通用更新部分
-        kline.close = tick.lastPrice        
+        kline.close = tick.price        
         kline.datetime = tick.datetime  
         kline.openInterest = tick.openInterest
         self._dictKline[tick.symbol] = kline

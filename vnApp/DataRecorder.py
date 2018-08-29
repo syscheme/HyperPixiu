@@ -43,7 +43,7 @@ class DataRecorder(BaseApplication):
         self._dictDR = OrderedDict()
 
         # 负责执行数据库插入的单独线程相关
-        self.queue = Queue()                    # 队列
+        self._queueMarketData = Queue()                    # 队列
         # self.thread = Thread(target=self.run)   # 线程
 
     #----------------------------------------------------------------------
@@ -119,10 +119,10 @@ class DataRecorder(BaseApplication):
                 pass
 
         self.debug('On%s: %s' % (mdEvent, eData.desc))
-        self.queue.put((collection, eData.__dict__))
+        self._queueMarketData.put((collection, eData.__dict__))
     
     @abstractmethod
-    def saveRow(self, collection, row) :
+    def saveMarketData(self, collection, row) :
             # 这里采用MongoDB的update模式更新数据，在记录tick数据时会由于查询
             # 过于频繁，导致CPU占用和硬盘读写过高后系统卡死，因此不建议使用
             #flt = {'datetime': d['datetime']}
@@ -199,8 +199,8 @@ class DataRecorder(BaseApplication):
     def step(self):
         while True:
             try:
-                collection, d = self.queue.get(block=False, timeout=0.05)
-                self.saveRow(collection, d)
+                collection, d = self._queueMarketData.get(block=False, timeout=0.05)
+                self.saveMarketData(collection, d)
             except: # Empty:
                 break
 
@@ -241,8 +241,12 @@ class CsvRecorder(DataRecorder):
         if self._days2zip < self._days2roll *2:
             self._days2zip = self._days2roll *2
 
+    #close,date,datetime,high,low,open,openInterest,time,volume
+    #,date,datetime,high,price,volume,low,lowerLimit,openInterest,open,prevClose,time,upperLimit,volume
+    SORT_KEYS=['datetime','price','close', 'volume', 'high','low','open']
+
     @abstractmethod
-    def saveRow(self, collection, row) :
+    def saveMarketData(self, collection, row) :
         try :
             del row['exchange']
             del row['symbol']
@@ -251,8 +255,14 @@ class CsvRecorder(DataRecorder):
             pass
 
         if not 'w' in collection.keys():
-            colnames = row.keys()
-            colnames.sort()
+            colnames = []
+            tmp = row.keys()
+            for i in self.SORT_KEYS:
+                if i in tmp:
+                    colnames.append(i)
+                    tmp.remove(i)
+            tmp.sort()
+            colnames += tmp
             collection['w'] =csv.DictWriter(collection['f'], colnames)
         w = collection['w']
         

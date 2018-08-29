@@ -333,7 +333,7 @@ class BackTest(object):
         self.crossStopOrder()
         self.strategy.onTick(tick)
         
-        self.updateDailyClose(self.dtData, tick.lastPrice)
+        self.updateDailyClose(self.dtData, tick.price)
         
     #----------------------------------------------------------------------
     def initStrategy(self, strategyClass, setting=None):
@@ -497,9 +497,9 @@ class BackTest(object):
             bestCrossPrice = self.bestBarCrossPrice(self.bar)  # 最优成交价，买入停止单不能低于，卖出停止单不能高于
             maxVolumeCross = self.bar.volume
         else:
-            buyCrossPrice  = self.tick.lastPrice
-            sellCrossPrice = self.tick.lastPrice
-            bestCrossPrice = self.tick.lastPrice
+            buyCrossPrice  = self.tick.price
+            sellCrossPrice = self.tick.price
+            bestCrossPrice = self.tick.price
             topVolumeCross = self.tick.volume
         
         # 遍历停止单字典中的所有停止单

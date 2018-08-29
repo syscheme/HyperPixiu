@@ -467,7 +467,7 @@ class HuobiToEvent(DataToEvent):
                 tick.__setattr__('a%sP' % str(n+1), l[0])
                 tick.__setattr__('a%sV' % str(n+1), l[1])
 
-            if tick.lastPrice:
+            if tick.price:
                  tickReady = True
 
         elif 'trade.detail' in topic:
@@ -492,12 +492,12 @@ class HuobiToEvent(DataToEvent):
             tick.time = tick.datetime.strftime('%H:%M:%S.%f')
 
             t = line['tick']
-            tick.openPrice = t['open']
-            tick.highPrice = t['high']
-            tick.lowPrice = t['low']
-            tick.lastPrice = t['close']
+            tick.open = t['open']
+            tick.high = t['high']
+            tick.low = t['low']
+            tick.price = t['close']
             tick.volume = t['vol']
-            tick.preClosePrice = tick.openPrice
+            tick.prevClose = tick.open
 
             if tick.b1P:
                  tickReady = True

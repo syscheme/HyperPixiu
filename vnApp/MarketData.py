@@ -5,25 +5,32 @@ from __future__ import division
 from .EventChannel import EventData, Event, EVENT_NAME_PREFIX
 
 import traceback
+from datetime import datetime
 from abc import ABCMeta, abstractmethod
+
+MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 
 ########################################################################
 class MarketData(object):
     # Market相关events
-    EVENT_TICK          = EVENT_NAME_PREFIX + 'Tick'                   # TICK行情事件，可后接具体的vtSymbol
-    EVENT_MARKET_DEPTH0 = EVENT_NAME_PREFIX + 'MD0'           # Market depth0
-    EVENT_MARKET_DEPTH2 = EVENT_NAME_PREFIX + 'MD2'           # Market depth2
-    EVENT_KLINE_1MIN    = EVENT_NAME_PREFIX + 'KL1m'
-    EVENT_KLINE_5MIN    = EVENT_NAME_PREFIX + 'KL5m'
-    EVENT_KLINE_15MIN   = EVENT_NAME_PREFIX + 'KL15m'
-    EVENT_KLINE_30MIN   = EVENT_NAME_PREFIX + 'KL30m'
-    EVENT_KLINE_1HOUR   = EVENT_NAME_PREFIX + 'KL1h'
-    EVENT_KLINE_4HOUR   = EVENT_NAME_PREFIX + 'KL4h'
-    EVENT_KLINE_1DAY    = EVENT_NAME_PREFIX + 'KL1d'
+    EVENT_TICK          = MARKETDATE_EVENT_PREFIX + 'Tick'                   # TICK行情事件，可后接具体的vtSymbol
+    EVENT_MARKET_DEPTH0 = MARKETDATE_EVENT_PREFIX + 'MD0'           # Market depth0
+    EVENT_MARKET_DEPTH2 = MARKETDATE_EVENT_PREFIX + 'MD2'           # Market depth2
+    EVENT_KLINE_1MIN    = MARKETDATE_EVENT_PREFIX + 'KL1m'
+    EVENT_KLINE_5MIN    = MARKETDATE_EVENT_PREFIX + 'KL5m'
+    EVENT_KLINE_15MIN   = MARKETDATE_EVENT_PREFIX + 'KL15m'
+    EVENT_KLINE_30MIN   = MARKETDATE_EVENT_PREFIX + 'KL30m'
+    EVENT_KLINE_1HOUR   = MARKETDATE_EVENT_PREFIX + 'KL1h'
+    EVENT_KLINE_4HOUR   = MARKETDATE_EVENT_PREFIX + 'KL4h'
+    EVENT_KLINE_1DAY    = MARKETDATE_EVENT_PREFIX + 'KL1d'
 
-    EVENT_T2KLINE_1MIN  = EVENT_NAME_PREFIX + 'T2K1m'
+    EVENT_T2KLINE_1MIN  = MARKETDATE_EVENT_PREFIX + 'T2K1m'
 
     TAG_BACKTEST = '$BT'
+
+    DUMMY_DT_EOS = datetime(2999, 12, 31, 23,59,59)
+    DUMMY_DATE_EOS = DUMMY_DT_EOS.strftime('%Y%m%d')
+    DUMMY_TIME_EOS = DUMMY_DT_EOS.strftime('%H%M%S')
 
     __lastId__ =100
 
@@ -114,7 +121,7 @@ class MarketData(object):
     @abstractmethod
     def subscribe(self, symbol, eventType =EVENT_TICK):
         """订阅成交细节"""
-        raise NotImplementedError
+        pass
 
     #----------------------------------------------------------------------
     def unsubscribe(self, symbol, eventType):
@@ -221,13 +228,14 @@ class TickData(EventData):
 
         self.exchange   = exchange
         # self.sourceType = md._sourceType          # 数据来源类型
-        if symbol:
-            self.symbol = symbol
-            self.vtSymbol = '.'.join([self.symbol, self.exchange])
+        if symbol and len(symbol)>0:
+            self.symbol = self.vtSymbol = symbol
+            if  len(exchange)>0 :
+                self.vtSymbol = '.'.join([self.symbol, self.exchange])
         
         # 成交数据
-        self.lastPrice = EventData.EMPTY_FLOAT            # 最新成交价
-        self.lastVolume = EventData.EMPTY_INT             # 最新成交量
+        self.price = EventData.EMPTY_FLOAT            # 最新成交价
+        self.volume = EventData.EMPTY_INT             # 最新成交量
         self.volume = EventData.EMPTY_INT                 # 今天总成交量
         self.openInterest = EventData.EMPTY_INT           # 持仓量
         self.time = EventData.EMPTY_STRING                # 时间 11:20:56.5
@@ -235,42 +243,44 @@ class TickData(EventData):
         self.datetime = None                    # python的datetime时间对象
         
         # 常规行情
-        self.openPrice = EventData.EMPTY_FLOAT            # 今日开盘价
-        self.highPrice = EventData.EMPTY_FLOAT            # 今日最高价
-        self.lowPrice = EventData.EMPTY_FLOAT             # 今日最低价
-        self.preClosePrice = EventData.EMPTY_FLOAT
+        self.open = EventData.EMPTY_FLOAT            # 今日开盘价
+        self.high = EventData.EMPTY_FLOAT            # 今日最高价
+        self.low = EventData.EMPTY_FLOAT             # 今日最低价
+        self.prevClose = EventData.EMPTY_FLOAT
         
         self.upperLimit = EventData.EMPTY_FLOAT           # 涨停价
         self.lowerLimit = EventData.EMPTY_FLOAT           # 跌停价
         
         # 五档行情
-        self.bidP1 = EventData.EMPTY_FLOAT
-        self.bidP2 = EventData.EMPTY_FLOAT
-        self.bidP3 = EventData.EMPTY_FLOAT
-        self.bidP4 = EventData.EMPTY_FLOAT
-        self.bidP5 = EventData.EMPTY_FLOAT
+        # bid to buy: price and volume
+        self.b1P = EventData.EMPTY_FLOAT 
+        self.b2P = EventData.EMPTY_FLOAT
+        self.b3P = EventData.EMPTY_FLOAT
+        self.b4P = EventData.EMPTY_FLOAT
+        self.b5P = EventData.EMPTY_FLOAT
+        self.b1V = EventData.EMPTY_INT
+        self.b2V = EventData.EMPTY_INT
+        self.b3V = EventData.EMPTY_INT
+        self.b4V = EventData.EMPTY_INT
+        self.b5V = EventData.EMPTY_INT
         
-        self.askP1 = EventData.EMPTY_FLOAT
-        self.askP2 = EventData.EMPTY_FLOAT
-        self.askP3 = EventData.EMPTY_FLOAT
-        self.askP4 = EventData.EMPTY_FLOAT
-        self.askP5 = EventData.EMPTY_FLOAT        
+        # ask to sell: price and volume
+        self.a1P = EventData.EMPTY_FLOAT
+        self.a2P = EventData.EMPTY_FLOAT
+        self.a3P = EventData.EMPTY_FLOAT
+        self.a4P = EventData.EMPTY_FLOAT
+        self.a5P = EventData.EMPTY_FLOAT        
         
-        self.bidV1 = EventData.EMPTY_INT
-        self.bidV2 = EventData.EMPTY_INT
-        self.bidV3 = EventData.EMPTY_INT
-        self.bidV4 = EventData.EMPTY_INT
-        self.bidV5 = EventData.EMPTY_INT
         
-        self.askV1 = EventData.EMPTY_INT
-        self.askV2 = EventData.EMPTY_INT
-        self.askV3 = EventData.EMPTY_INT
-        self.askV4 = EventData.EMPTY_INT
-        self.askV5 = EventData.EMPTY_INT         
+        self.a1V = EventData.EMPTY_INT
+        self.a2V = EventData.EMPTY_INT
+        self.a3V = EventData.EMPTY_INT
+        self.a4V = EventData.EMPTY_INT
+        self.a5V = EventData.EMPTY_INT         
 
     @property
     def desc(self) :
-        return 'tick.%s@%s_%dx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S'),self.volume,round(self.lastPrice,2))
+        return 'tick.%s@%s_%dx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S'),self.volume,round(self.price,2))
 
 ########################################################################
 class KLineData(EventData):
@@ -286,10 +296,10 @@ class KLineData(EventData):
 
         self.exchange   = exchange
         # self.sourceType = md._sourceType          # 数据来源类型
-        if symbol:
-            self.symbol = symbol
-            self.vtSymbol = '.'.join([self.symbol, self.exchange])
-
+        if symbol and len(symbol)>0:
+            self.symbol = self.vtSymbol = symbol
+            if  len(exchange)>0 :
+                self.vtSymbol = '.'.join([self.symbol, self.exchange])
     
         self.open = EventData.EMPTY_FLOAT             # OHLC
         self.high = EventData.EMPTY_FLOAT
@@ -305,7 +315,7 @@ class KLineData(EventData):
 
     @property
     def desc(self) :
-        return 'kline.%s@%s_%dx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.volume, round(self.close,2))
+        return 'kline.%s@%s_%sx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.volume, round(self.close,2))
 
 
 ########################################################################
@@ -346,16 +356,16 @@ class TickToKLineMerger(object):
         if not kline:
             # 创建新的K线对象
             kline = KLineData(tick.exchange + '_t2k', tick.exchasymbolnge)
-            kline.open = tick.lastPrice
-            kline.high = tick.lastPrice
-            kline.low = tick.lastPrice
+            kline.open = tick.price
+            kline.high = tick.price
+            kline.low = tick.price
         # 累加更新老一分钟的K线数据
         else:                                   
-            kline.high = max(kline.high, tick.lastPrice)
-            kline.low = min(kline.low, tick.lastPrice)
+            kline.high = max(kline.high, tick.price)
+            kline.low = min(kline.low, tick.price)
 
         # 通用更新部分
-        kline.close = tick.lastPrice        
+        kline.close = tick.price        
         kline.datetime = tick.datetime  
         kline.openInterest = tick.openInterest
         self._dictKline[tick.symbol] = kline
@@ -423,3 +433,37 @@ class KlineToXminMerger(object):
         # 清空老K线缓存对象
         self._dictKlineXmin[kline.symbol] = klineXmin
         self._dictKlineIn[kline.symbol] = kline
+
+########################################################################
+class DataToEvent(object):
+
+    def __init__(self, sink):
+        """Constructor"""
+        super(DataToEvent, self).__init__()
+        self._sink = sink
+        self._dict = {}
+
+    @property
+    def fields(self) :
+        return None
+
+    @abstractmethod
+    def push(self, csvrow, eventType =None, symbol =None) :
+        raise NotImplementedError
+
+    @abstractmethod
+    def _cbMarketEvent(self, eventType, eventData, dataOf =None):
+        if eventType in self._dict.keys() and self._dict[eventType]['dataOf'] < dataOf:
+            if self._sink and self._dict[eventType]['data']:
+                event = Event()
+                event.type_ = eventType
+                event.dict_['data'] = self._dict[eventType]['data']
+                self._sink(event)
+
+        d =  {
+            'dataOf' : dataOf if dataOf else eventData.datetime,
+            'data' : eventData
+            }
+
+        self._dict[eventType] = d
+

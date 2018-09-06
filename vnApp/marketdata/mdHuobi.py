@@ -2,7 +2,7 @@
 
 from __future__ import division
 
-from ..MarketData import MarketData, KLineData, TickData
+from ..MarketData import MarketData, KLineData, TickData, DataToEvent
 from ..EventChannel import Event
 
 import urllib
@@ -71,8 +71,7 @@ class mdHuobi(MarketData):
 
         super(mdHuobi, self).__init__(mainRoutine, settings)
 
-        self._merger = DataToEvent()
-        self._merger.sink(self.onMarketEvent)
+        self._merger = HuobiToEvent(self.onMarketEvent)
 
         self.ws = None
         self.url = ''
@@ -93,28 +92,6 @@ class mdHuobi(MarketData):
         
         self.url = 'wss://%s/ws' % hostname
         self._proxy = settings.proxy('')
-
-    # #----------------------------------------------------------------------
-    # def _run(self):
-    #     """执行连接 and receive"""
-    #     while self._active:
-    #         try :
-    #             if self.step() <0:
-    #                 self.onError(u'等待3秒后再次重连')
-    #                 sleep(3)
-    #         except Exception as ex:
-    #             self.onError(u'行情服务器step err: %s' % ex)
-
-    
-    # #----------------------------------------------------------------------
-    # def start(self):
-    #     """连接"""
-    #     self.connect()
-
-    #     self._active = True
-    #     self.thread.start()
-            
-    #     return self.active
 
     def connect(self):
         """连接"""
@@ -140,7 +117,7 @@ class mdHuobi(MarketData):
                 if not stream or len(stream) <=0:
                     break
                 result = zlib.decompress(stream, 47).decode('utf-8')
-                data = json.loads(result)
+                data = json.loads(result) # .encode('utf-8')
                 c +=1
             except socket.timeout:
                 break
@@ -279,7 +256,7 @@ class mdHuobi(MarketData):
     #----------------------------------------------------------------------
     def _sendReq(self, req):
         """发送请求"""
-        stream = json.dumps(req)
+        stream = json.dumps(req, ensure_ascii=False)
         self.ws.send(stream)
         self.debug('SENT:%s' % stream)
         
@@ -385,24 +362,24 @@ class mdHuobi(MarketData):
         self._merger.push(data)
 
 ########################################################################
-class DataToEvent(object):
+# import yaml
+class HuobiToEvent(DataToEvent):
 
-    def __init__(self):
+    def __init__(self, sink):
         """Constructor"""
-        super(DataToEvent, self).__init__()
-
-        self._sink = None
+        super(HuobiToEvent, self).__init__(sink)
 
         self._dictTicks = {}
         # huobi will repeat message for a same KLine, so to merge and only post the last
         self._dictKLineLatest = {}
 
-    def sink(self, callback) :
-        self._sink = callback
-
-    def push(self, line) :
+    def push(self, line, eventType =None, symbol =None) :
 
         event = None
+        if line.__class__.__name__ == 'str' :
+            tmpstr = line.encode('utf-8')
+            tmpstr = tmpstr.replace("u'", "\"").replace("'", "\"").replace("L,", ",").replace("L}", "}").replace("L]", "]")
+            line = json.loads(tmpstr) # , encoding='utf-8')
         topic = line['ch']
         if '.kline.' in topic:
             """K线数据
@@ -481,16 +458,16 @@ class DataToEvent(object):
             bids = line['tick']['bids']
             for n in range(5):
                 l = bids[n]
-                tick.__setattr__('bidP' + str(n+1), l[0])
-                tick.__setattr__('bidV' + str(n+1), l[1])
+                tick.__setattr__('b%sP' % str(n+1), l[0])
+                tick.__setattr__('b%sV' % str(n+1), l[1])
 
             asks = line['tick']['asks']
             for n in range(5):
                 l = asks[n]
-                tick.__setattr__('askP' + str(n+1), l[0])
-                tick.__setattr__('askV' + str(n+1), l[1])
+                tick.__setattr__('a%sP' % str(n+1), l[0])
+                tick.__setattr__('a%sV' % str(n+1), l[1])
 
-            if tick.lastPrice:
+            if tick.price:
                  tickReady = True
 
         elif 'trade.detail' in topic:
@@ -515,14 +492,14 @@ class DataToEvent(object):
             tick.time = tick.datetime.strftime('%H:%M:%S.%f')
 
             t = line['tick']
-            tick.openPrice = t['open']
-            tick.highPrice = t['high']
-            tick.lowPrice = t['low']
-            tick.lastPrice = t['close']
+            tick.open = t['open']
+            tick.high = t['high']
+            tick.low = t['low']
+            tick.price = t['close']
             tick.volume = t['vol']
-            tick.preClosePrice = tick.openPrice
+            tick.prevClose = tick.open
 
-            if tick.bidP1:
+            if tick.b1P:
                  tickReady = True
 
         if tick and tickReady and self._sink:

@@ -14,13 +14,13 @@
             "program": "vnApp/tests/runBT_AShare.py" // "vnApp/tests/runBT_AShare.py"
         },
         {
-            "name": "Python: bt2",
+            "name": "Python: ld",
             "env": {
                 "PYTHONPATH":"${workspaceFolder}:${PYTHONPATH}"
             },
             "type": "python",
             "request": "launch",
-            "program": "vnApp/tests/runBT_AShare_app.py" // "vnApp/tests/runBT_AShare_app.py"
+            "program": "vnApp/marketdata/mdOffline.py" // "vnApp/tests/runBT_AShare_app.py"
         },
         {
             "name": "Python: dr",

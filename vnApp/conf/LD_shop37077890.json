@@ -1,0 +1,63 @@
+{
+    "logger": {
+        // "level": "99",
+        // "console": "False",
+        // "file": "True",
+        // "event": { "log": "True", "error": "True" } // whether to post the log into event channel
+    },
+
+    "database": {
+        "host": "mongo-vnpy",
+        // "console": "False",
+        // "file": "True",
+        // "event": { "log": "True", "error": "True" } // whether to post the log into event channel
+    },
+
+    "offlinedata": [ // in the case that marketdata is collected thru local subscribers
+        {
+            "id": "shop37077890",
+            "className": "shop37077890",
+            "exchange": "AShare",
+            "startDate": "2008-01-01",
+            "endDate": "2010-12-29",
+            "symbol": "SH600076", // ,"601727","601766","601788","601800","601808"],
+
+            // the following are up to class mdOffline
+            "homeDir" : "/bigdata/sourcedata/shop37077890.taobao/股票1分钟csv",
+            "event" : "KL1m",
+
+        },
+    ],
+
+    "datarecorder": {
+        "dbNamePrefix": "dr", // the preffix of DB name to save: <dbNamePrefix>Tick, <dbNamePrefix>K1min
+
+        // the interested ticks to subscribe from the market, then save into DB <dbNamePrefix>Tick with collection name=<symbol>.<ds>
+        "ticks": [
+             {"symbol":"ethusdt", "ds": "huobi"}, 
+             {"symbol":"btcusdt", "ds": "huobi"}, 
+        ],
+
+        // the interested klines to subscribe from the market, then save into DB <dbNamePrefix>K1min with collection name=<symbol>.<ds>
+        // ds with suffix '_t2k' will be ignored
+        "kline1min": [
+            {"symbol":"SH600076", "ds": "AShare"},
+            {"symbol":"btcusdt", "ds": "huobi"}, 
+        ],
+
+        // the interested ticks to subscribe from the market, then merge ticks into kline and
+        //    a) per repostT2K, post back to event channel with ds=<oldds>_t2k1
+        //    b) save into DB with collection name=<symbol>.<oldds>_t2k1
+        // "repostT2K": True,
+        "t2k1min": [
+            {"symbol":"ethusdt", "ds": "huobi"}, 
+            {"symbol":"btcusdt", "ds": "huobi"}, 
+       ],
+
+       // for csv recorder
+       "min2flush" : 0.3,
+       "days2roll" : 1.0,
+       "days2archive"  : 0.0028,
+
+    }
+}

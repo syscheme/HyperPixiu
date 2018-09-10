@@ -14,5 +14,6 @@
         "**/.DS_Store": true,
         "**/*.pyc": true
     },
-    "python.jediEnabled": false
+    "python.jediEnabled": false,
+    "files.autoSave": "onWindowChange"
 }

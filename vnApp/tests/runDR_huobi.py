@@ -46,13 +46,13 @@ def runChildProcess():
     me.addApp(Zipper, settings['datarecorder'])
     me.info(u'主引擎创建成功')
 
-    me.start()
+    me.start(False)
     startDate=datetime.now() - timedelta(60)
     data = recorder.loadRecentMarketData('ethusdt', startDate)
     data = recorder.loadRecentMarketData('ethusdt', startDate, MarketData.EVENT_TICK)
     me.loop()
-
-    input()
+    # input()
+    
 
 #----------------------------------------------------------------------
 def runParentProcess():

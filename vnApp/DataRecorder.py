@@ -21,7 +21,6 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 from Queue import Queue, Empty
 from pymongo.errors import DuplicateKeyError
-import shelve
 
 EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
 
@@ -37,7 +36,6 @@ class DataRecorder(BaseApplication):
         super(DataRecorder, self).__init__(mainRoutine, settings)
 
         self._dbNamePrefix = settings.dbNamePrefix(self.DEFAULT_DBPrefix)
-        self._dataPath     = settings.dataPath('./data')
         
         # 配置字典
         self._dictDR = OrderedDict()
@@ -88,6 +86,8 @@ class DataRecorder(BaseApplication):
 
         # 分钟线记录配置
         self._subscribeMarketData(self._settings.kline1min, MarketData.EVENT_KLINE_1MIN)
+
+        self.subscribeEvent(Account.EVENT_POSITION, self.onAccountEvent)
 
     #----------------------------------------------------------------------
     def onMarketEvent(self, event):
@@ -151,31 +151,16 @@ class DataRecorder(BaseApplication):
 
         return collection
 
-    @abstractmethod
-    def saveObject(self, category, id, obj):
-        """保存对象到硬盘"""
-        try :
-            os.makedirs(self._dataPath + '/objects')
-        except:
-            pass
+    #----------------------------------------------------------------------
+    def onAccountEvent(self, event):
+        """处理行情事件"""
+        eventType = event.type_
 
-        fn = '%s/objects/%s' % (self._dataPath, category)
-        f = shelve.open(fn)
-        f[id] = obj
-        f.close()
+        if Account.EVENT_PREFIX != eventType[:len(Account.EVENT_PREFIX)] :
+            return
 
-    @abstractmethod
-    def loadObject(self, category, id):
-        """读取对象"""
-        try :
-            fn = '%s/objects/%s' % (self._dataPath, category)
-            f = shelve.open(fn)
-            if id in f :
-                return f[id].value
-        except Exception as ex:
-            print("loadObject() error: %s %s" % (ex, traceback.format_exc()))
-
-        return None
+        mdEvent = eventType[len(Account.EVENT_PREFIX):]
+        eData = event.dict_['data'] # this is a PositionData
 
     #----------------------------------------------------------------------
     # impl of BaseApplication

@@ -48,8 +48,12 @@ def runChildProcess():
 
     me.start(False)
     startDate=datetime.now() - timedelta(60)
-    data = recorder.loadRecentMarketData('ethusdt', startDate)
-    data = recorder.loadRecentMarketData('ethusdt', startDate, MarketData.EVENT_TICK)
+    data = recorder.loadMarketData('ethusdt', startDate)
+    me.debug('loaded %d marketdata' % len(data))
+    
+    data = recorder.loadMarketData('ethusdt', startDate, None, MarketData.EVENT_TICK)
+    me.debug('loaded %d marketdata' % len(data))
+
     me.loop()
     # input()
     

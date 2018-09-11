@@ -214,7 +214,7 @@ class DataRecorder(BaseApplication):
 
                 if dtToRoll > dtNow :
                     return collection
-                    
+
                 self.debug('rolling %s/%s' % (collection['dir'], collection['name']))
         
         stampToZip = (dtNow - timedelta(hours=self._days2zip*24)).strftime('%Y%m%dT%H%M%S')
@@ -265,21 +265,23 @@ class DataRecorder(BaseApplication):
         return self._checkAndRoll(col)
 
     @abstractmethod
-    def loadRecentMarketData(self, symbol, startDate, eventType =MarketData.EVENT_KLINE_1MIN):
+    def filterCollections(self, symbol, startDate, endDate=None, eventType =MarketData.EVENT_KLINE_1MIN):
         """从数据库中读取Bar数据，startDate是datetime对象"""
 
         mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
+        csvfiles =[]
         if not mdEvent in self._dictDR.keys() or not symbol in self._dictDR[mdEvent].keys():
-            return []
+            return csvfiles
 
         node = self._dictDR[mdEvent][symbol]
         if not 'coll' in node.keys() :
-            return []
+            return csvfiles
 
         # filter the csv files
-        stampSince   = startDate.strftime('%Y%m%dT000000')
+        stampSince = startDate.strftime('%Y%m%dT000000')
+        stampTill  = (endDate +timedelta(hours=24)).strftime('%Y%m%dT000000') if endDate else '39991231T000000'
+
         collection = node['coll']
-        csvfiles = []
         prev = ""
         for _, _, files in os.walk(collection['dir']):
             files.sort()
@@ -288,22 +290,36 @@ class DataRecorder(BaseApplication):
                 if stk[-1] !='csv' or collection['name'] != name[:len(collection['name'])]:
                     continue
                 fn = '%s/%s' % (collection['dir'], name)
-                if stk[-2] <stampSince:
+                if stk[-2] <stampSince :
                     prev = fn
-                else :
+                elif stk[-2] <stampTill:
                     csvfiles.append(fn)
+
         if len(prev) >0:
             csvfiles = [prev] + csvfiles
-        
+
+        return csvfiles, stampSince, stampTill
+
+    @abstractmethod
+    def loadMarketData(self, symbol, startDate, endDate=None, eventType =MarketData.EVENT_KLINE_1MIN):
+        """从数据库中读取Bar数据，startDate是datetime对象"""
+
+        mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
+        csvfiles, stampSince, stampTill = self.filterCollections(symbol, startDate, endDate, eventType)
         ret = []
+        if len(csvfiles) <=0:
+            return ret
+
         DataClass = TickData if mdEvent == 'Tick' else KLineData
 
         for fn in csvfiles :
             with open(fn, 'rb') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    if fn == prev and row['datetime'] <stampSince:
+                    if fn == csvfiles[0] and row['datetime'] <stampSince:
                         continue
+                    if fn == csvfiles[-1] and ['datetime'] >=stampTill:
+                        break
                     data = DataClass('')
                     data.__dict__  = row
                     ret.append(data)

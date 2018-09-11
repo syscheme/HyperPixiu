@@ -41,8 +41,8 @@ def runChildProcess():
     me = MainRoutine(settings)
 
     me.addMarketData(mdHuobi, settings['marketdata'][0])
-    # recorder = me.addApp(DataRecorder, settings['datarecorder'])
-    recorder = me.addApp(CsvRecorder, settings['datarecorder'])
+    recorder = me.addApp(DataRecorder, settings['datarecorder']) # csv
+    # recorder = me.addApp(MongoRecorder, settings['datarecorder']) # mongo DB
     me.addApp(Zipper, settings['datarecorder'])
     me.info(u'主引擎创建成功')
 

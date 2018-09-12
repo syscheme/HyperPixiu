@@ -9,6 +9,7 @@ from __future__ import division
 
 from .MainRoutine import *
 from .MarketData import *
+from .Account import Account
 from .EventChannel import datetime2float
 from .language import text
 
@@ -21,32 +22,75 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 from Queue import Queue, Empty
 from pymongo.errors import DuplicateKeyError
-import shelve
 
 EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
 
 ########################################################################
+import csv
 class DataRecorder(BaseApplication):
-    """数据记录引擎"""
+    """数据记录引擎, the base DR is implmented as a csv Recorder"""
      
     DEFAULT_DBPrefix = 'dr'
+    #close,date,datetime,high,low,open,openInterest,time,volume
+    #,date,datetime,high,price,volume,low,lowerLimit,openInterest,open,prevClose,time,upperLimit,volume
+    SORT_KEYS=['datetime','price','close', 'volume', 'high','low','open']
 
     #----------------------------------------------------------------------
     def __init__(self, mainRoutine, settings):
         """Constructor"""
         super(DataRecorder, self).__init__(mainRoutine, settings)
 
-        self._dbNamePrefix = settings.dbNamePrefix(self.DEFAULT_DBPrefix)
-        self._dataPath     = settings.dataPath('./data')
-        
+        self._dbNamePrefix = settings.dbNamePrefix(DataRecorder.DEFAULT_DBPrefix)
+        self._min2flush  = settings.min2flush(1.0)
+        self._days2roll  = settings.days2roll(1.0)
+        self._days2zip   = settings.days2archive(7.0)
+        if self._days2zip < self._days2roll *2:
+            self._days2zip = self._days2roll *2
+
         # 配置字典
         self._dictDR = OrderedDict()
-
         # 负责执行数据库插入的单独线程相关
         self._queueMarketData = Queue()                    # 队列
-        # self.thread = Thread(target=self.run)   # 线程
 
     #----------------------------------------------------------------------
+    # impl of BaseApplication
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def init(self): # return True if succ
+        return super(DataRecorder, self).init()
+
+    @abstractmethod
+    def start(self):
+        # 载入设置，订阅行情
+        self.debug('start() subcribing')
+        self.subscribe()
+        for e in self._dictDR.keys() :
+            dict = self._dictDR[e]
+            for symbol in dict.keys() :
+                collName = '%s.%s' %(symbol, dict[symbol]['ds'])
+                dict[symbol]['coll'] = self.openCollection(self._dbNamePrefix +e, collName)
+
+    @abstractmethod
+    def step(self):
+        while True:
+            try:
+                collection, d = self._queueMarketData.get(block=False, timeout=0.05)
+                self.saveMarketData(collection, d)
+            except: # Empty:
+                break
+
+    #----------------------------------------------------------------------
+    def subscribe(self):
+        """加载配置"""
+
+        # Tick记录配置
+        self._subscribeMarketData(self._settings.ticks, MarketData.EVENT_TICK)
+
+        # 分钟线记录配置
+        self._subscribeMarketData(self._settings.kline1min, MarketData.EVENT_KLINE_1MIN)
+
+        # self.subscribeEvent(Account.EVENT_DAILYPOS, self.onAccountEvent)
+
     def _subscribeMarketData(self, settingnode, eventType): # , dict, cbFunc) :
         if len(settingnode({})) <=0:
             return
@@ -80,15 +124,6 @@ class DataRecorder(BaseApplication):
             except Exception as e:
                 self.logexception(e)
 
-    def subscribe(self):
-        """加载配置"""
-
-        # Tick记录配置
-        self._subscribeMarketData(self._settings.ticks, MarketData.EVENT_TICK)
-
-        # 分钟线记录配置
-        self._subscribeMarketData(self._settings.kline1min, MarketData.EVENT_KLINE_1MIN)
-
     #----------------------------------------------------------------------
     def onMarketEvent(self, event):
         """处理行情事件"""
@@ -121,130 +156,17 @@ class DataRecorder(BaseApplication):
         self.debug('On%s: %s' % (mdEvent, eData.desc))
         self._queueMarketData.put((collection, eData.__dict__))
     
-    @abstractmethod
-    def saveMarketData(self, collection, row) :
-            # 这里采用MongoDB的update模式更新数据，在记录tick数据时会由于查询
-            # 过于频繁，导致CPU占用和硬盘读写过高后系统卡死，因此不建议使用
-            #flt = {'datetime': d['datetime']}
-            #self._engine.dbUpdate(dbName, collectionName, d, flt, True)
-        # 使用insert模式更新数据，可能存在时间戳重复的情况，需要用户自行清洗
-        try :
-            del row['exchange']
-            del row['symbol']
-            del row['vtSymbol']
-        except:
-            pass
+    def onAccountEvent(self, event):
+        """处理行情事件"""
+        eventType = event.type_
 
-        try:
-            self.dbInsert(collection['collectionName'], row, collection['dbName'])
-            self.debug('DB %s[%s] inserted: %s' % (collection['dbName'], collection['collectionName'], row))
-        except DuplicateKeyError:
-            self.error('键值重复插入失败：%s' %traceback.format_exc())
+        # if Account.EVENT_PREFIX != eventType[:len(Account.EVENT_PREFIX)] :
+        #     return
 
-    @abstractmethod
-    def openCollection(self, dbName, collectionName) :
-        collection = {
-            'dbName': dbName,
-            'collectionName' : collectionName
-        }
-        self.dbEnsureIndex(collectionName, [('date', ASCENDING), ('time', ASCENDING)], True, dbName) #self._dbNamePrefix +e
-
-        return collection
-
-    @abstractmethod
-    def saveObject(self, category, id, obj):
-        """保存对象到硬盘"""
-        try :
-            os.makedirs(self._dataPath + '/objects')
-        except:
-            pass
-
-        fn = '%s/objects/%s' % (self._dataPath, category)
-        f = shelve.open(fn)
-        f[id] = obj
-        f.close()
-
-    @abstractmethod
-    def loadObject(self, category, id):
-        """读取对象"""
-        try :
-            fn = '%s/objects/%s' % (self._dataPath, category)
-            f = shelve.open(fn)
-            if id in f :
-                return f[id].value
-        except Exception as ex:
-            print("loadObject() error: %s %s" % (ex, traceback.format_exc()))
-
-        return None
+        # mdEvent = eventType[len(Account.EVENT_PREFIX):]
+        # eData = event.dict_['data'] # this is a PositionData
 
     #----------------------------------------------------------------------
-    # impl of BaseApplication
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def init(self): # return True if succ
-        return super(DataRecorder, self).init()
-
-    @abstractmethod
-    def start(self):
-        # 载入设置，订阅行情
-        self.debug('start() subcribing')
-        self.subscribe()
-        for e in self._dictDR.keys() :
-            dict = self._dictDR[e]
-            for symbol in dict.keys() :
-                collName = '%s.%s' %(symbol, dict[symbol]['ds'])
-                dict[symbol]['coll'] = self.openCollection(self._dbNamePrefix +e, collName)
-
-    @abstractmethod
-    def step(self):
-        while True:
-            try:
-                collection, d = self._queueMarketData.get(block=False, timeout=0.05)
-                self.saveMarketData(collection, d)
-            except: # Empty:
-                break
-
-    @abstractmethod
-    def loadRecentMarketData(self, symbol, startDate, eventType =MarketData.EVENT_KLINE_1MIN):
-        """从数据库中读取Bar数据，startDate是datetime对象"""
-
-        mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
-        if not mdEvent in self._dictDR.keys() or not symbol in self._dictDR[mdEvent].keys():
-            return []
-
-        node = self._dictDR[mdEvent][symbol]
-        if not 'coll' in node.keys() :
-            return []
-            
-        flt = {'datetime':{'$gte':startDate}}
-        lst = self.dbQuery(node['coll']['collectionName'], flt, 'datetime', ASCENDING, node['coll']['dbName'])
-        
-        ret = []
-        for data in lst:
-            v = KLineData(node['ds'], symbol)
-            v.__dict__ = data
-            ret.append(v)
-        return ret
-
-########################################################################
-import csv
-
-class CsvRecorder(DataRecorder):
-    """数据记录引擎"""
-    def __init__(self, mainRoutine, settings):
-        """Constructor"""
-        super(CsvRecorder, self).__init__(mainRoutine, settings)
-        self._dbNamePrefix = settings.dbNamePrefix('dr')
-        self._min2flush  = settings.min2flush(1.0)
-        self._days2roll  = settings.days2roll(1.0)
-        self._days2zip   = settings.days2archive(7.0)
-        if self._days2zip < self._days2roll *2:
-            self._days2zip = self._days2roll *2
-
-    #close,date,datetime,high,low,open,openInterest,time,volume
-    #,date,datetime,high,price,volume,low,lowerLimit,openInterest,open,prevClose,time,upperLimit,volume
-    SORT_KEYS=['datetime','price','close', 'volume', 'high','low','open']
-
     @abstractmethod
     def saveMarketData(self, collection, row) :
         try :
@@ -287,11 +209,13 @@ class CsvRecorder(DataRecorder):
 
             if collection['o'] :
                 dtToRoll = collection['o']+timedelta(hours=self._days2roll*24)
-                if self._days2roll >=1 and (self._days2roll-int(self._days2roll)) <1/24 : # make
+                if self._days2roll >=1 and (self._days2roll-int(self._days2roll)) <1/24 : # make the roll occur at midnight
                     dtToRoll = datetime(dtToRoll.year, dtToRoll.month, dtToRoll.day, 23, 59, 59, 999999)
 
                 if dtToRoll > dtNow :
                     return collection
+
+                self.debug('rolling %s/%s' % (collection['dir'], collection['name']))
         
         stampToZip = (dtNow - timedelta(hours=self._days2zip*24)).strftime('%Y%m%dT%H%M%S')
         stampThis   = dtNow.strftime('%Y%m%dT%H%M%S')
@@ -341,6 +265,112 @@ class CsvRecorder(DataRecorder):
         return self._checkAndRoll(col)
 
     @abstractmethod
+    def filterCollections(self, symbol, startDate, endDate=None, eventType =MarketData.EVENT_KLINE_1MIN):
+        """从数据库中读取Bar数据，startDate是datetime对象"""
+
+        mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
+        csvfiles =[]
+        if not mdEvent in self._dictDR.keys() or not symbol in self._dictDR[mdEvent].keys():
+            return csvfiles
+
+        node = self._dictDR[mdEvent][symbol]
+        if not 'coll' in node.keys() :
+            return csvfiles
+
+        # filter the csv files
+        stampSince = startDate.strftime('%Y%m%dT000000')
+        stampTill  = (endDate +timedelta(hours=24)).strftime('%Y%m%dT000000') if endDate else '39991231T000000'
+
+        collection = node['coll']
+        prev = ""
+        for _, _, files in os.walk(collection['dir']):
+            files.sort()
+            for name in files:
+                stk = name.split('.')
+                if stk[-1] !='csv' or collection['name'] != name[:len(collection['name'])]:
+                    continue
+                fn = '%s/%s' % (collection['dir'], name)
+                if stk[-2] <stampSince :
+                    prev = fn
+                elif stk[-2] <stampTill:
+                    csvfiles.append(fn)
+
+        if len(prev) >0:
+            csvfiles = [prev] + csvfiles
+
+        return csvfiles, stampSince, stampTill
+
+    @abstractmethod
+    def loadMarketData(self, symbol, startDate, endDate=None, eventType =MarketData.EVENT_KLINE_1MIN):
+        """从数据库中读取Bar数据，startDate是datetime对象"""
+
+        mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
+        csvfiles, stampSince, stampTill = self.filterCollections(symbol, startDate, endDate, eventType)
+        ret = []
+        if len(csvfiles) <=0:
+            return ret
+
+        DataClass = TickData if mdEvent == 'Tick' else KLineData
+
+        for fn in csvfiles :
+            with open(fn, 'rb') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if fn == csvfiles[0] and row['datetime'] <stampSince:
+                        continue
+                    if fn == csvfiles[-1] and ['datetime'] >=stampTill:
+                        break
+                    data = DataClass('')
+                    data.__dict__  = row
+                    ret.append(data)
+        return ret
+
+########################################################################
+class MongoRecorder(DataRecorder):
+    """数据记录引擎, the base DR is implmented as a csv Recorder"""
+     
+    #----------------------------------------------------------------------
+    def __init__(self, mainRoutine, settings):
+        """Constructor"""
+        super(MongoRecorder, self).__init__(mainRoutine, settings)
+        self._dbNamePrefix = settings.dbNamePrefix(self.DEFAULT_DBPrefix)
+        
+
+    #----------------------------------------------------------------------
+    # impl of DataRecorder
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def saveMarketData(self, collection, row) :
+            # 这里采用MongoDB的update模式更新数据，在记录tick数据时会由于查询
+            # 过于频繁，导致CPU占用和硬盘读写过高后系统卡死，因此不建议使用
+            #flt = {'datetime': d['datetime']}
+            #self._engine.dbUpdate(dbName, collectionName, d, flt, True)
+        # 使用insert模式更新数据，可能存在时间戳重复的情况，需要用户自行清洗
+        try :
+            del row['exchange']
+            del row['symbol']
+            del row['vtSymbol']
+        except:
+            pass
+
+        try:
+            self.dbInsert(collection['collectionName'], row, collection['dbName'])
+            self.debug('DB %s[%s] inserted: %s' % (collection['dbName'], collection['collectionName'], row))
+        except DuplicateKeyError:
+            self.error('键值重复插入失败：%s' %traceback.format_exc())
+
+    @abstractmethod
+    def openCollection(self, dbName, collectionName) :
+        collection = {
+            'dbName': dbName,
+            'collectionName' : collectionName
+        }
+        self.dbEnsureIndex(collectionName, [('date', ASCENDING), ('time', ASCENDING)], True, dbName) #self._dbNamePrefix +e
+
+        return collection
+
+
+    @abstractmethod
     def loadRecentMarketData(self, symbol, startDate, eventType =MarketData.EVENT_KLINE_1MIN):
         """从数据库中读取Bar数据，startDate是datetime对象"""
 
@@ -351,38 +381,15 @@ class CsvRecorder(DataRecorder):
         node = self._dictDR[mdEvent][symbol]
         if not 'coll' in node.keys() :
             return []
-
-        # filter the csv files
-        stampSince   = startDate.strftime('%Y%m%dT000000')
-        collection = node['coll']
-        csvfiles = []
-        prev = ""
-        for _, _, files in os.walk(collection['dir']):
-            files.sort()
-            for name in files:
-                stk = name.split('.')
-                if stk[-1] !='csv' or collection['name'] != name[:len(collection['name'])]:
-                    continue
-                fn = '%s/%s' % (collection['dir'], name)
-                if stk[-2] <stampSince:
-                    prev = fn
-                else :
-                    csvfiles.append(fn)
-        if len(prev) >0:
-            csvfiles = [prev] + csvfiles
+            
+        flt = {'datetime':{'$gte':startDate}}
+        lst = self.dbQuery(node['coll']['collectionName'], flt, 'datetime', ASCENDING, node['coll']['dbName'])
         
         ret = []
-        DataClass = TickData if mdEvent == 'Tick' else KLineData
-
-        for fn in csvfiles :
-            with open(fn, 'rb') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    if fn == prev and row['datetime'] <stampSince:
-                        continue
-                    data = DataClass('')
-                    data.__dict__  = row
-                    ret.append(data)
+        for data in lst:
+            v = KLineData(node['ds'], symbol)
+            v.__dict__ = data
+            ret.append(v)
         return ret
 
 ########################################################################

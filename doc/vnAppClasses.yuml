@@ -1,0 +1,21 @@
+// {type:class}
+// {generate:true}
+// {direction:leftToRight}
+[EventLoop|start();stop();step();put();]^[EventChannel]
+[EventChannel]-[note: A wrapper to run Eventloop by underground thread{bg:cornsilk}]
+[EventData]^[edTimer]
+[EventLoop]postEvent->[Event|data=EventData]
+[EventLoop]postEvent->[TimerEvent|data=edTimer]
+[BaseApplication|__init__(mainRoutine, settings);ident();app();mainRoutine();settings();subscribeEvent(event, funcCallback);postEvent(eventType, edata);|isActive();init();start();stop();step();|_dbConn;dbEnsureIndex(collectionName, definition, unique=False, dbName=None);dbInsert(collectionName, d, dbName =None);dbQuery(collectionName, d, sortKey='', sortDirection=ASCENDING, dbName =None);dbUpdate(collectionName, d, flt, upsert=True,  dbName =None);saveObject(category, id, obj);loadObject(category, id);logEvent(eventType, content);logError(eventType, content);|log/debug/info/warn/error/critical(msg);logexception(ex);]
+[ThreadedApplication|__init__(app);_run();start();stop();]<>1-app 1>[BaseApplication]
+[Singleton]^[MainRoutine|addApp(appModule, settings);getApp(appName);getAllAppDetails();|addMarketData(dsModule, settings);getMarketData(dsName, exchange=None);subscribeMarketData(subscribeReq, dsName);|start(daemonize=None);stop();loop();daemonize(stdin='/dev/null',stdout='/dev/null',stderr='/dev/null');|initLogger();setLogLevel(level);log(level, msg);debug(msg);info(msg);warn(msg);error(msg);critical(msg);logexception(ex);eventHdlr_Log(event);eventHdlr_Error(event);|dbConn;dbConnect();dbEnsureIndex(dbName, collectionName, definition, unique=False);dbInsert(dbName, collectionName, d);dbQuery(dbName, collectionName, d, sortKey='', sortDirection=ASCENDING);dbUpdate(dbName, collectionName, d, flt, upsert=True);dbLogging(event);]
+[MainRoutine]<>1-appDict 1..*>[BaseApplication]
+[BaseApplication]^[Trader|__init__(mainRoutine, settings);|adoptAccount(account, default=False);account;allAccounts;|init();start();stop();step();|getTick(vtSymbol);getContract(vtSymbol);getAllContracts();saveContracts();loadContracts();|getOrder(vtOrderID);getAllWorkingOrders();getAllOrders();getAllTrades();getAllPositions();getPositionDetail(symbol);getAllPositionDetails();latestPrice(symbol);|subscribeSymbols();eventHdl_KLine1min(event);eventHdl_Tick(event);eventHdl_Tick(event);|eventHdl_TradeEnd(event);eventHdl_Order(event);eventHdl_Trade(event);eventHdl_OnTimer(event);|processContractEvent(event);onDayOpen(symbol, date);|preStrategyByKLine(kline);postStrategy(symbol);preStrategyByTick(tick);processStopOrdersByTick(tick);processStopOrdersByKLine(kline);|strategies_LoadAll(settingList);strategies_List();strategies_Start();strategies_Stop();strategies_Save();]
+[Trader]<>1-dictAccounts 1..*>[Account|_dictPosition;_dictTrade;|sendOrder(symbol,orderType, price,volume,strategy);cancelOrder(brokerOrderId);sendStopOrder(symbol, orderType, price, volume, strategy);batchCancel(brokerOrderIds);findOrdersOfStrategy(strategyId, symbol=None);ordersOfStrategy(strategyId, symbol=None);postStrategyEvent(strategyId);|getPosition(symbol);getAllPositions();cashAmount();cashChange(dAvail=0, dTotal=0)]
+[BaseApplication]^[DataRecorder|__init__(mainRoutine, settings);|init();start();step();|subscribe();onMarketEvent(event);saveMarketData(collection, row);|openCollection(dbName, collectionName);onAccountEvent(event);|loadRecentMarketData(symbol, startDate, eventType =MarketData.EVENT_KLINE_1MIN);|_checkAndRoll(collection);]
+[DataRecorder]-[note:The base DataRecorder is implemented as a csv recorder with rolling automation{bg:cornsilk}]
+[DataRecorder]^[MongoRecorder|saveMarketData(collection, row);openCollection(dbName, collectionName);loadRecentMarketData(symbol, startDate, eventType =MarketData.EVENT_KLINE_1MIN);]
+[BaseApplication]^[Zipper|step();onToArchive(event);_push(filename)]
+[BaseApplication]-[note: Application driven by MainRoutine, start()->loop{step()}->stop(){bg:cornsilk}]
+[ThreadedApplication]-[note: A wrapper to run an application by underground thread{bg:cornsilk}]
+[MainRoutine]<>1-eventCh 1>[EventChannel]

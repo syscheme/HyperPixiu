@@ -11,6 +11,7 @@ import time
 from copy import copy
 from abc import ABCMeta, abstractmethod
 import traceback
+import shelve
 
 from .EventChannel import Event, EventLoop, EventChannel, EventData
 from .language import text
@@ -70,6 +71,8 @@ class BaseApplication(object):
             BaseApplication.__lastId__ +=1
             self._id = 'P%d' % BaseApplication.__lastId__
 
+        self._dataPath     = settings.dataPath('./data')
+
         # 日志级别函数映射
         self._loglevelFunctionDict = {
             LOGLEVEL_DEBUG:    self.debug,
@@ -117,6 +120,7 @@ class BaseApplication(object):
         event = Event(type_= eventType)
         event.dict_['data'] = edata
         self._engine._eventChannel.put(event)
+        self.debug('posted event[%s]' % eventType)
 
     #---logging -----------------------
     def log(self, level, msg):
@@ -212,6 +216,32 @@ class BaseApplication(object):
             self._engine.dbUpdate(dbName, collectionName, d, flt, upsert)
             
     #----------------------------------------------------------------------
+    @abstractmethod
+    def saveObject(self, category, id, obj):
+        """保存对象到硬盘"""
+        try :
+            os.makedirs(self._dataPath + '/objects')
+        except:
+            pass
+
+        fn = '%s/objects/%s' % (self._dataPath, category)
+        f = shelve.open(fn)
+        f[id] = obj
+        f.close()
+
+    @abstractmethod
+    def loadObject(self, category, id):
+        """读取对象"""
+        try :
+            fn = '%s/objects/%s' % (self._dataPath, category)
+            f = shelve.open(fn)
+            if id in f :
+                return f[id].value
+        except Exception as ex:
+            print("loadObject() error: %s %s" % (ex, traceback.format_exc()))
+
+        return None
+
     @abstractmethod
     def logEvent(self, eventType, content):
         """快速发出日志事件"""
@@ -398,7 +428,12 @@ class MainRoutine(object):
             return None
         
     #----------------------------------------------------------------------
-    def start(self):
+    def start(self, daemonize=None):
+
+        if daemonize == None: 
+            daemonize = self._settings.daemonize(False)
+        if daemonize :
+            self.daemonize()
 
         self.debug('starting event channel')
         if self._eventChannel:
@@ -504,7 +539,7 @@ class MainRoutine(object):
 
         self.info(u'MainRoutine finish looping')
 
-    def runAsDaemon(self, stdin='/dev/null',stdout='/dev/null',stderr='/dev/null'):
+    def daemonize(self, stdin='/dev/null',stdout='/dev/null',stderr='/dev/null'):
         import sys
         sys.stdin  = open(stdin,'r')
         sys.stdout = open(stdout,'a+')
@@ -541,9 +576,6 @@ class MainRoutine(object):
         #       os.close(i)
         sys.stdout.write("Daemon has been created! with self._pid: %d\n" % os.getpid())
         sys.stdout.flush()  #由于这里我们使用的是标准IO，回顾APUE第五章，这里应该是行缓冲或全缓冲，因此要调用flush，从内存中刷入日志文件。\
-
-        self.loop()
-    
 
     #----------------------------------------------------------------------
     def subscribeMarketData(self, subscribeReq, dsName):

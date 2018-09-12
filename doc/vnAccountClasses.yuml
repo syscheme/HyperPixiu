@@ -1,0 +1,13 @@
+// {type:class}
+// {generate:true}
+// {direction:leftToRight}
+
+[Trader]<>1-dictAccounts 1..*>[Account|__init__(trader, settings);|cashSymbol;priceTick;dbName;ident;nextOrderReqId;collectionName_dpos;collectionName_trade;|insertData(collectionName, data);postEvent_Order(orderData);|getPosition(symbol);getAllPositions();cashAmount();cashChange(dAvail=0, dTotal=0);|sendOrder(symbol, orderType, price, volume, strategy);cancelOrder(brokerOrderId);sendStopOrder(symbol, orderType, price, volume, strategy);batchCancel(brokerOrderIds);findOrdersOfStrategy(strategyId, symbol=None);ordersOfStrategy(strategyId, symbol=None);postStrategyEvent(strategyId);|_broker_placeOrder(orderData);_broker_onOrderPlaced(orderData);_broker_cancelOrder(brokerOrderId);_broker_onCancelled(orderData);_broker_onOrderDone(orderData);_broker_onTrade(trade);_broker_datetimeAsOf();_broker_onOpenOrders(dictOrders);_broker_onTradedOrders(dictOrders);_broker_onGetAccountBalance(data, reqid);_broker_onGetOrder(data, reqid);_broker_onGetOrders(data, reqid);_broker_onGetMatchResults(data, reqid);_broker_onGetMatchResult(data, reqid);_broker_onGetTimestamp(data, reqid);_brocker_procSyncData();_brocker_triggerSync();|_cashChange(dAvail=0, dTotal=0);calcAmountOfTrade(symbol, price, volume);maxOrderVolume(symbol, price);roundToPriceTick(price);|step();onStart();onDayClose();onDayOpen(newDate);onTimer(dt);|dbSaveDataOfDay();loadDB(since =None);calcDailyPositions();|stdout(message);debug(msg);info(msg);warn(msg);error(msg);stop();]
+[Account]postEvent->[TradeData]
+[Account]<>1-dictPos 1..*>[PositionData]
+[Account]postEvent->[DailyPosition|pushTrade(account, trade);close();]
+[PositionData]assoc-[DailyPosition]
+[Account]postEvent->[OrderData]
+[OrderData]^[StopOrder]
+[Account]^[Account_AShare|__init__(trader, settings=None);|calcAmountOfTrade(symbol, price, volume);onDayOpen(newDate);]
+

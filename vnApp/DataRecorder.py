@@ -54,39 +54,39 @@ class DataRecorder(BaseApplication):
         self._queueMarketData = Queue()                    # 队列
         self._queueAccountEvent = Queue()                  # 队列
 
-    "datarecorder": {
-        "dbNamePrefix": "dr", // the preffix of DB name to save: <dbNamePrefix>Tick, <dbNamePrefix>K1min
+    # "datarecorder": {
+    #     "dbNamePrefix": "dr", // the preffix of DB name to save: <dbNamePrefix>Tick, <dbNamePrefix>K1min
 
-        // the interested ticks to subscribe from the market, then save into DB <dbNamePrefix>Tick with collection name=<symbol>.<ds>
-        "ticks": [
-            {"symbol":"eosusdt", "ds": "huobi"}, 
-            {"symbol":"ethusdt", "ds": "huobi"}, 
-             {"symbol":"btcusdt", "ds": "huobi"}, 
-        ],
+    #     // the interested ticks to subscribe from the market, then save into DB <dbNamePrefix>Tick with collection name=<symbol>.<ds>
+    #     "ticks": [
+    #         {"symbol":"eosusdt", "ds": "huobi"}, 
+    #         {"symbol":"ethusdt", "ds": "huobi"}, 
+    #          {"symbol":"btcusdt", "ds": "huobi"}, 
+    #     ],
 
-        // the interested klines to subscribe from the market, then save into DB <dbNamePrefix>K1min with collection name=<symbol>.<ds>
-        // ds with suffix '_t2k' will be ignored
-        "kline1min": [
-            {"symbol":"eosusdt", "ds": "huobi"}, 
-            {"symbol":"ethusdt", "ds": "huobi"},
-            {"symbol":"btcusdt", "ds": "huobi"}, 
-        ],
+    #     // the interested klines to subscribe from the market, then save into DB <dbNamePrefix>K1min with collection name=<symbol>.<ds>
+    #     // ds with suffix '_t2k' will be ignored
+    #     "kline1min": [
+    #         {"symbol":"eosusdt", "ds": "huobi"}, 
+    #         {"symbol":"ethusdt", "ds": "huobi"},
+    #         {"symbol":"btcusdt", "ds": "huobi"}, 
+    #     ],
 
-        // the interested ticks to subscribe from the market, then merge ticks into kline and
-        //    a) per repostT2K, post back to event channel with ds=<oldds>_t2k1
-        //    b) save into DB with collection name=<symbol>.<oldds>_t2k1
-        // "repostT2K": True,
-        "t2k1min": [
-            {"symbol":"ethusdt", "ds": "huobi"}, 
-            {"symbol":"btcusdt", "ds": "huobi"}, 
-       ],
+    #     // the interested ticks to subscribe from the market, then merge ticks into kline and
+    #     //    a) per repostT2K, post back to event channel with ds=<oldds>_t2k1
+    #     //    b) save into DB with collection name=<symbol>.<oldds>_t2k1
+    #     // "repostT2K": True,
+    #     "t2k1min": [
+    #         {"symbol":"ethusdt", "ds": "huobi"}, 
+    #         {"symbol":"btcusdt", "ds": "huobi"}, 
+    #    ],
 
-       // for csv recorder
-       "min2flush" : 0.3,
-       "days2roll" : 1.0,
-       "days2archive"  : 0.0028,
+    #    // for csv recorder
+    #    "min2flush" : 0.3,
+    #    "days2roll" : 1.0,
+    #    "days2archive"  : 0.0028,
 
-    }
+    # }
 
 
     #----------------------------------------------------------------------

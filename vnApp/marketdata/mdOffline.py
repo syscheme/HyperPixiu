@@ -123,8 +123,8 @@ class mdOffline(MarketData):
         # filter the csv files
         self._stampRangeinFn = {
             'T': [self._dtStart.strftime('%Y%m%dT000000'), self._dtEnd.strftime('%Y%m%dT000000')],
-            'H': ['%sH%s' % (self._dtStart.year, (self._dtStart.month /6) +1), '%sH%s' % (self._dtEnd.year, (self._dtEnd.month /6) +1)],
-            'Q': ['%sQ%s' % (self._dtStart.year, (self._dtStart.month /3) +1), '%sQ%s' % (self._dtEnd.year, (self._dtEnd.month /3) +1)],
+            'H': ['%dH%d' % (self._dtStart.year, int((self._dtStart.month+5) /6)), '%dH%d' % (self._dtEnd.year, int((self._dtEnd.month+5) /6))],
+            'Q': ['%dQ%d' % (self._dtStart.year, int((self._dtStart.month+2) /3)), '%dQ%d' % (self._dtEnd.year, int((self._dtEnd.month+2) /3))],
         }
 
         self._symbol    = settings.symbol('')
@@ -190,13 +190,13 @@ class mdOffline(MarketData):
             
             if stampstr < trange[0]:
                 prev= name
-            elif stampstr < trange[1]:
+            elif stampstr <= trange[1]:
                 csvfiles.append(name)
 
-        if len(prev) >0:
+        if len(prev) >0 and len(csvfiles) >0 and csvfiles[0] > trange[0]:
             csvfiles = [prev] + csvfiles
         
-        return csvfiles
+        return csvfiles, trange
 
     # @abstractmethod
     # def addFolders_YYYYHh(self, dir): # dateStart, dateEnd, eventType=None, symbol=None) : # return a list of sorted filenames
@@ -254,11 +254,11 @@ class mdOffline(MarketData):
 
     def connect(self):
 
-        self._seqFiles = self. _filterFiles() # addFolders_YYYYHh(self._homeDir)
+        self._seqFiles, trange = self. _filterFiles() # addFolders_YYYYHh(self._homeDir)
         self._idxNextFiles = 0
         self._importStream = None
         self._reader = None
-        self.debug('files to import: %s' % self._seqFiles)
+        self.debug('ftrange %s associated files to import: %s' % (trange, self._seqFiles))
 
     def step(self):
 
@@ -289,15 +289,12 @@ class mdOffline(MarketData):
                     self._fields = self._reader.headers()
 
             try :
-                line = None
-                line = self._reader.next()
-                c+=1
-            except StopIteration:
-                self.error(traceback.format_exc())
-                self._reader = None
-                self._importStream.close()
-                continue
+                line = next(self._reader, None)
+                if line: c+=1 
             except:
+                line = None
+
+            if not line:
                 self.error(traceback.format_exc())
                 self._reader = None
                 self._importStream.close()

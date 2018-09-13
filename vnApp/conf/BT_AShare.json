@@ -19,12 +19,12 @@
             "id": "shop37077890",
             "className": "shop37077890",
             "exchange": "AShare$BT",
-            "startDate": "2010-11-01",
+            "startDate": "2010-06-01",
             "endDate": "2010-12-29",
             "symbol": "600019", // ,"601727","601766","601788","601800","601808"],
 
             // the following are up to class mdOffline
-            "homeDir" : "/home/huishao/temp/drKL1m", // "/bigdata/sourcedata/shop37077890.taobao/股票1分钟csv",
+            "homeDir" : "/mnt/bigdata/tmp/btdata", // "/bigdata/sourcedata/shop37077890.taobao/股票1分钟csv",
             "event" : "KL1m",
             "timerStep": "30", // 30sec
         },

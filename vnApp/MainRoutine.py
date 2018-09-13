@@ -757,9 +757,9 @@ class MainRoutine(object):
                 if self._settings.database.logging("") in ['True']:
                     self._eventChannel.register(LogData.EVENT_TAG, self.dbLogging)
                     
-                self.info('connecting DB[%s :%s] %s'%(dbhost, dbport, text.DATABASE_CONNECTING_COMPLETED))
+                self.info('connected DB[%s :%s] %s'%(dbhost, dbport))
             except ConnectionFailure:
-                self.error('failed to connect to DB[%s :%s] %s' %(dbhost, dbport, text.DATABASE_CONNECTING_FAILED))
+                self.error('failed to connect to DB[%s :%s]' %(dbhost, dbport))
             except:
                 self.error('failed to connect to DB[%s :%s]' %(dbhost, dbport))
     

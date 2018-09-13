@@ -40,15 +40,6 @@ def runChildProcess():
         print('failed to load configure[%s]: %s' % (conf_fn, e))
         return
 
-    # 创建日志引擎
-    # logger = Logger()
-    # logger.setLogLevel(logger.LEVEL_INFO)
-    # logger.addConsoleHandler()
-    # logger.info(u'Huobi交易子进程')
-    
-    # ee = EventChannel()
-    # logger.info(u'事件引擎创建成功')
-    
     me = MainRoutine(settings)
 
     # me.addMarketData(mdHuobi, settings['marketdata'][0])

@@ -677,8 +677,8 @@ class Account(object):
 
         # part 2. the daily position
         positions, _ = self.calcDailyPositions()
-        for l in positions:
-            self._trader.dbUpdate(self.collectionName_dpos, l, {'date':l['date'], 'symbol':l['symbol']})
+        for dpos in positions:
+            self._trader.dbUpdate(self.collectionName_dpos, dpos, {'date':dpos['date'], 'symbol':dpos['symbol']})
         self.info('saveDataOfDay() saved positions into DB: %s' % positions)
 
     @abstractmethod

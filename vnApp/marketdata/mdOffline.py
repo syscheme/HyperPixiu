@@ -106,16 +106,33 @@ class mdOffline(MarketData):
         super(mdOffline, self).__init__(mainRoutine, settings)
 
         # self._btApp = btApp
-        self._main = mainRoutine
-        self._homeDir   = settings.homeDir('.')
+        self._main      = mainRoutine
+        self._dirData  = settings.homeDir('.')
         self._timerStep = settings.timerStep(0)
-        self._dateStart = settings.startDate('2000-01-01')
-        self._dateEnd   = settings.endDate('2999-12-31')
-        self._symbol   = settings.symbol('')
-        self._eventType   = MARKETDATE_EVENT_PREFIX + settings.event('KL1m')
+        try :
+            tmp = settings.startDate('2000-01-01')
+            self._dtStart = datetime.strptime(tmp, '%Y-%m-%d')
+        except :
+            self._dtStart = datetime(year=1900, month=1, day=1, hour=0)
+        try :
+            tmp   = settings.endDate('2999-12-31')
+            self._dtEnd = datetime.strptime(tmp, '%Y-%m-%d') +timedelta(hours=23,minutes=59,seconds=59)
+        except :
+            self._dtEnd = MarketData.DUMMY_DT_EOS
+
+        # filter the csv files
+        self._stampRangeinFn = {
+            'T': [self._dtStart.strftime('%Y%m%dT000000'), self._dtEnd.strftime('%Y%m%dT000000')],
+            'H': ['%sH%s' % (self._dtStart.year, (self._dtStart.month /6) +1), '%sH%s' % (self._dtEnd.year, (self._dtEnd.month /6) +1)],
+            'Q': ['%sQ%s' % (self._dtStart.year, (self._dtStart.month /3) +1), '%sQ%s' % (self._dtEnd.year, (self._dtEnd.month /3) +1)],
+        }
+
+        self._symbol    = settings.symbol('')
+        self._eventType = MARKETDATE_EVENT_PREFIX + settings.event('KL1m')
         self._batchSize = 10
         self._fields = 'date,time,open,high,low,close,volume,ammount'
         self._dataToEvent = None
+
         classname = settings.className('')
         if classname in mdOffline.DataToEventClasses :
             convertor = mdOffline.DataToEventClasses[classname]
@@ -134,6 +151,53 @@ class mdOffline(MarketData):
         return 'date,time,open,high,low,close,volume,ammount'
 
     #----------------------------------------------------------------------
+    def _listAllFiles(self, top):
+        fnlist = []
+        for root, _, files in os.walk(top, topdown=False):
+            for name in files:
+                fnlist.append('%s/%s' % (root, name))
+            # for name in subdirs:
+            #     fnlist += self._listAllFiles('%s/%s' % (root, name))
+        return fnlist
+
+    def _filterFiles(self):
+        """从数据库中读取Bar数据，startDate是datetime对象"""
+
+        fnlist = self._listAllFiles(self._dirData)
+        fnlist.sort()
+        csvfiles = []
+        prev = ""
+        for name in fnlist:
+            if not self._symbol in name:
+                continue
+
+            basename = name.split('/')[-1]
+            stk = basename.split('.')
+            if stk[-1] =='csv' :
+                basename = stk[-2] 
+            elif stk[-1] =='bz2' and stk[-2] =='csv':
+                basename = stk[-3]
+            else : continue
+
+            pos = basename.find(self._symbol)
+            stampstr = basename[pos+1 + len(self._symbol):] if pos >=0 else basename
+            if 'H' in stampstr:
+                trange = self._stampRangeinFn['H']
+            elif 'Q' in stampstr :
+                trange = self._stampRangeinFn['Q']
+            else :
+                trange = self._stampRangeinFn['T']
+            
+            if stampstr < trange[0]:
+                prev= name
+            elif stampstr < trange[1]:
+                csvfiles.append(name)
+
+        if len(prev) >0:
+            csvfiles = [prev] + csvfiles
+        
+        return csvfiles
+
     @abstractmethod
     def addFolders_YYYYHh(self, dir): # dateStart, dateEnd, eventType=None, symbol=None) : # return a list of sorted filenames
         '''
@@ -180,8 +244,7 @@ class mdOffline(MarketData):
     def onMarketEvent(self, event) :
         data = event.dict_['data']
         if data.datetime != MarketData.DUMMY_DT_EOS:
-            datestr = data.datetime.strftime('%Y-%m-%d')
-            if datestr < self._dateStart or datestr > self._dateEnd:
+            if data.datetime < self._dtStart or data.datetime > self._dtEnd:
                 return # out of range
 
         data.exchange = self.exchange
@@ -189,7 +252,8 @@ class mdOffline(MarketData):
         self.debug('posted %s' % data.desc)
 
     def connect(self):
-        self._seqFiles = self.addFolders_YYYYHh(self._homeDir)
+
+        self._seqFiles = self. _filterFiles() # addFolders_YYYYHh(self._homeDir)
         self._idxNextFiles = 0
         self._importStream = None
         self._reader = None
@@ -264,7 +328,6 @@ if __name__ == '__main__':
     # hd.loadMcCsvBz2('examples/AShBacktesting/IF0000_1min.csv.bz2', MINUTE_DB_NAME, 'IF0000')
     # loadMcCsv('rb0000_1min.csv', MINUTE_DB_NAME, 'rb0000')
     
-    srcDataHome=u'/bigdata/sourcedata/shop37077890.taobao/股票1分钟csv'
     print('-'*20)
 
     # dirname(dirname(abspath(file)))
@@ -279,39 +342,10 @@ if __name__ == '__main__':
     me = MainRoutine(settings)
 
     me.addMarketData(mdOffline, settings['offlinedata'][0])
- #   recorder = me.addApp(DataRecorder, settings['datarecorder'])
-    recorder = me.addApp(CsvRecorder, settings['datarecorder'])
- #   me.addApp(Zipper, settings['datarecorder'])
+    recorder = me.addApp(DataRecorder, settings['datarecorder'])  
+    # recorder = me.addApp(CsvRecorder, settings['datarecorder'])
+    # me.addApp(Zipper, settings['datarecorder'])
     me.info(u'主引擎创建成功')
 
     me.start()
     me.loop()
-
-    input()
-
-
-    # hd.loadTaobaoCsvBz2(srcDataHome +'/2012.7-2012.12/SH601519.csv.bz2', MINUTE_DB_NAME, 'A601519')
-    # hd.loadTaobaoCsvBz2(srcDataHome +'/2012.1-2012.6/SH601519.csv.bz2', MINUTE_DB_NAME, 'A601519')
-    # hd.loadTaobaoCsvBz2(srcDataHome +'/2011.7-2011.12/SH601519.csv.bz2', MINUTE_DB_NAME, 'A601519')
-    # hd.loadTaobaoCsvBz2(srcDataHome +'/2011.1-2011.6/SH601519.csv.bz2', MINUTE_DB_NAME, 'A601519')
-    folders = ['2012H2', '2012H1', '2011H2', '2011H1']
-    # symbols= ["601607","601611","601618","601628","601633","601668","601669","601688",
-    #     "601718","601727","601766","601788","601800","601808","601818","601828","601838","601857",
-    #     "601866","601877","601878","601881","601888","601898","601899","601901","601919","601933",
-    #     "601939","601958","601985","601988","601989","601991","601992","601997","601998","603160",
-    #     "603260","603288","603799","603833","603858","603993" ]
-
-    symbols= ["601000"]
-
-    for s in symbols :
-        for f in folders :
-            try :
-                csvfn = '%s/SH%s.csv.bz2' % (f, s)
-                sym = 'A%s' % s
-                hd.loadTaobaoCsvBz2(srcDataHome +'/'+csvfn, MINUTE_DB_NAME, sym)
-            except :
-                pass
-
-
-
- 

@@ -1168,6 +1168,7 @@ class AccountWrapper(object):
         '''
         outgoingOrders = []
         ordersToCancel = []
+        cStep =0
 
         with self._nest._lock:
             outgoingOrders = copy.deepcopy(self._nest._dictOutgoingOrders.values())
@@ -1196,6 +1197,8 @@ class AccountWrapper(object):
 
         if (len(ordersToCancel) + len(outgoingOrders)) >0:
             self.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
+
+        return cStep
 
     def onDayOpen(self, newDate):
         # instead that the true Account is able to sync with broker,

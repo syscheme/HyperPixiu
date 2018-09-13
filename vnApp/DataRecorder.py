@@ -49,8 +49,45 @@ class DataRecorder(BaseApplication):
 
         # 配置字典
         self._dictDR = OrderedDict()
+
         # 负责执行数据库插入的单独线程相关
         self._queueMarketData = Queue()                    # 队列
+        self._queueAccountEvent = Queue()                  # 队列
+
+    "datarecorder": {
+        "dbNamePrefix": "dr", // the preffix of DB name to save: <dbNamePrefix>Tick, <dbNamePrefix>K1min
+
+        // the interested ticks to subscribe from the market, then save into DB <dbNamePrefix>Tick with collection name=<symbol>.<ds>
+        "ticks": [
+            {"symbol":"eosusdt", "ds": "huobi"}, 
+            {"symbol":"ethusdt", "ds": "huobi"}, 
+             {"symbol":"btcusdt", "ds": "huobi"}, 
+        ],
+
+        // the interested klines to subscribe from the market, then save into DB <dbNamePrefix>K1min with collection name=<symbol>.<ds>
+        // ds with suffix '_t2k' will be ignored
+        "kline1min": [
+            {"symbol":"eosusdt", "ds": "huobi"}, 
+            {"symbol":"ethusdt", "ds": "huobi"},
+            {"symbol":"btcusdt", "ds": "huobi"}, 
+        ],
+
+        // the interested ticks to subscribe from the market, then merge ticks into kline and
+        //    a) per repostT2K, post back to event channel with ds=<oldds>_t2k1
+        //    b) save into DB with collection name=<symbol>.<oldds>_t2k1
+        // "repostT2K": True,
+        "t2k1min": [
+            {"symbol":"ethusdt", "ds": "huobi"}, 
+            {"symbol":"btcusdt", "ds": "huobi"}, 
+       ],
+
+       // for csv recorder
+       "min2flush" : 0.3,
+       "days2roll" : 1.0,
+       "days2archive"  : 0.0028,
+
+    }
+
 
     #----------------------------------------------------------------------
     # impl of BaseApplication
@@ -72,12 +109,15 @@ class DataRecorder(BaseApplication):
 
     @abstractmethod
     def step(self):
+        cStep =0
         while True:
             try:
                 collection, d = self._queueMarketData.get(block=False, timeout=0.05)
                 self.saveMarketData(collection, d)
+                cStep +=1
             except: # Empty:
                 break
+        return cStep
 
     #----------------------------------------------------------------------
     def subscribe(self):
@@ -89,7 +129,7 @@ class DataRecorder(BaseApplication):
         # 分钟线记录配置
         self._subscribeMarketData(self._settings.kline1min, MarketData.EVENT_KLINE_1MIN)
 
-        # self.subscribeEvent(Account.EVENT_DAILYPOS, self.onAccountEvent)
+        self.subscribeEvent(Account.EVENT_DAILYPOS, self.onAccountEvent)
 
     def _subscribeMarketData(self, settingnode, eventType): # , dict, cbFunc) :
         if len(settingnode({})) <=0:
@@ -407,6 +447,7 @@ class Zipper(BaseApplication):
     #----------------------------------------------------------------------
     @abstractmethod
     def step(self):
+        cStep =0
         while True:
             try:
                 fn = self._queue.get(block=True, timeout=0.2)
@@ -431,8 +472,11 @@ class Zipper(BaseApplication):
                             z.write(data)
 
                 if everGood: os.remove(fn)
+                cStep +=1
             except: # Empty:
                 break
+
+        return cStep
 
     def onToArchive(self, event) :
         self._push(event.dict_['data'])

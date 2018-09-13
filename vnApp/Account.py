@@ -518,12 +518,15 @@ class Account(object):
         outgoingOrders = []
         ordersToCancel = []
 
+        cStep =0
+
         with self._lock:
             outgoingOrders = copy.deepcopy(self._dictOutgoingOrders.values())
 
             # find out he orderData by brokerOrderId
             for odid in self._lstOrdersToCancel :
                 orderData = None
+                cStep +=1
                 try :
                     if OrderData.STOPORDERPREFIX in odid :
                         orderData = self._dictStopOrders[odid]
@@ -539,9 +542,11 @@ class Account(object):
 
         for co in ordersToCancel:
             self._broker_cancelOrder(co)
+            cStep +=1
 
         for no in outgoingOrders:
             self._broker_placeOrder(no)
+            cStep +=1
 
         if (len(ordersToCancel) + len(outgoingOrders)) >0:
             self.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
@@ -552,6 +557,9 @@ class Account(object):
         if self._stampLastSync + self._syncInterval < stampNow :
             self._stampLastSync = stampNow
             self._brocker_triggerSync()
+            cStep +=1
+
+        return cStep
 
 
     # end of App routine

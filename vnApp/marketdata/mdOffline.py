@@ -198,47 +198,47 @@ class mdOffline(MarketData):
         
         return csvfiles
 
-    @abstractmethod
-    def addFolders_YYYYHh(self, dir): # dateStart, dateEnd, eventType=None, symbol=None) : # return a list of sorted filenames
-        '''
-        filter out a sequence of sorted full filenames, 
-        its first file may includes some data piror to dateStart and its last may include some data after dateEnd
-        '''
-        ret = []
-        for root, subdirs, _ in os.walk(dir):
-            subdirs.sort()
-            for d in subdirs:
-                tks = self._dateStart.split('-')
-                fldStart = '%sH%s' % (tks[0], 1 if int(tks[1]) <7 else 2)
-                tks = self._dateEnd.split('-')
-                fldEnd = '%sH%s' % (tks[0], 1 if int(tks[1]) <7 else 2)
-                if d < fldStart or d > fldEnd:
-                    continue
+    # @abstractmethod
+    # def addFolders_YYYYHh(self, dir): # dateStart, dateEnd, eventType=None, symbol=None) : # return a list of sorted filenames
+    #     '''
+    #     filter out a sequence of sorted full filenames, 
+    #     its first file may includes some data piror to dateStart and its last may include some data after dateEnd
+    #     '''
+    #     ret = []
+    #     for root, subdirs, _ in os.walk(dir):
+    #         subdirs.sort()
+    #         for d in subdirs:
+    #             tks = self._dateStart.split('-')
+    #             fldStart = '%sH%s' % (tks[0], 1 if int(tks[1]) <7 else 2)
+    #             tks = self._dateEnd.split('-')
+    #             fldEnd = '%sH%s' % (tks[0], 1 if int(tks[1]) <7 else 2)
+    #             if d < fldStart or d > fldEnd:
+    #                 continue
 
-                ret += self._symolsInFolder('%s/%s' % (root, d))
+    #             ret += self._symolsInFolder('%s/%s' % (root, d))
 
-        ret.sort()
-        return ret
+    #     ret.sort()
+    #     return ret
 
-    @abstractmethod
-    def _symolsInFolder(self, dir): # dateStart, dateEnd, eventType=None, symbol=None) : # return a list of sorted filenames
-        '''
-        filter out a sequence of sorted full filenames, 
-        its first file may includes some data piror to dateStart and its last may include some data after dateEnd
-        '''
-        ret = []
-        for root, subdirs, files in os.walk(dir):
-            for name in files:
-                if self._symbol in name and ('csv' in name or 'bz2' in name) :
-                    pathname = '%s/%s' %(root, name)
-                    ret.append(unicode(pathname,'utf-8'))    
-                # if '1min' in name and '.bz2' in name:
-                #     ret.append('%s/%s' %(self._homeDir, name))
-            for d in subdirs:
-                ret += self._symolsInFolder('%s/%s' % (root, d))
+    # @abstractmethod
+    # def _symolsInFolder(self, dir): # dateStart, dateEnd, eventType=None, symbol=None) : # return a list of sorted filenames
+    #     '''
+    #     filter out a sequence of sorted full filenames, 
+    #     its first file may includes some data piror to dateStart and its last may include some data after dateEnd
+    #     '''
+    #     ret = []
+    #     for root, subdirs, files in os.walk(dir):
+    #         for name in files:
+    #             if self._symbol in name and ('csv' in name or 'bz2' in name) :
+    #                 pathname = '%s/%s' %(root, name)
+    #                 ret.append(unicode(pathname,'utf-8'))    
+    #             # if '1min' in name and '.bz2' in name:
+    #             #     ret.append('%s/%s' %(self._homeDir, name))
+    #         for d in subdirs:
+    #             ret += self._symolsInFolder('%s/%s' % (root, d))
 
-        ret.sort()
-        return ret
+    #     ret.sort()
+    #     return ret
 
     #----------------------------------------------------------------------
     def onMarketEvent(self, event) :
@@ -292,7 +292,12 @@ class mdOffline(MarketData):
                 line = None
                 line = self._reader.next()
                 c+=1
-            except :
+            except StopIteration:
+                self.error(traceback.format_exc())
+                self._reader = None
+                self._importStream.close()
+                continue
+            except:
                 self.error(traceback.format_exc())
                 self._reader = None
                 self._importStream.close()

@@ -125,8 +125,6 @@ class mdBacktest(MarketData):
     #----------------------------------------------------------------------
     def step(self):
 
-#        if not self._active :
-#            return 0
         nleft = 20 - self._main._eventChannel.pendingSize
         if nleft <= 0 or len(self._dictCursors) <=0:
             return -3
@@ -347,8 +345,6 @@ class mdCsvHistoryData(MarketData):
     #----------------------------------------------------------------------
     def step(self):
 
-#        if not self._active :
-#            return 0
         nleft = 20 - self._main._eventChannel.pendingSize
         if nleft <= 0 or len(self._dictCursors) <=0:
             return -3

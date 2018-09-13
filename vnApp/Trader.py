@@ -188,8 +188,11 @@ class Trader(BaseApplication):
 
     @abstractmethod
     def step(self):
+        cStep =0
         for a in self._dictAccounts.values():
-            a.step()
+            cStep += a.step()
+
+        return cStep;
     
     #----------------------------------------------------------------------
     # local the recent data by symbol
@@ -593,7 +596,7 @@ class Trader(BaseApplication):
         """停止策略"""
         if strategy.trading:
             self._stg_call(strategy, strategy.onStop)
-            self._stg_call(strategy, strategy.cancellAll)
+            # self._stg_call(strategy, strategy.cancellAll)
             strategy.trading = False
 
     def _stg_load(self, setting):

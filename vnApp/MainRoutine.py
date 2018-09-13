@@ -173,7 +173,7 @@ class BaseApplication(object):
     @abstractmethod
     def step(self):
         # TODO:
-        pass
+        return 0
 
     #----------------------------------------------------------------------
     @abstractmethod
@@ -510,7 +510,8 @@ class MainRoutine(object):
                 try :
                     if ds == None:
                         continue
-                    ds.step()
+                    if ds.step() >0:
+                        busy = True        
                 except Exception as ex:
                     self.error("marketdata step exception %s %s" % (ex, traceback.format_exc()))
 
@@ -521,7 +522,8 @@ class MainRoutine(object):
                     self.error("app step exception %s %s" % (ex, traceback.format_exc()))
 
             pending = self._eventChannel.pendingSize
-            busy =  pending >0
+            if not busy:
+                busy = pending >0
 
             pending = min(20, pending)
             for i in range(0, pending) :

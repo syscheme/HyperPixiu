@@ -311,9 +311,7 @@ class Trader(BaseApplication):
         d = event.dict_['data']
         tokens = (d.vtSymbol.split('.'))
         symbol = tokens[0]
-        ds =""
-        if len(tokens) >1:
-            ds = tokens[1]
+        ds = tokens[1] if len(tokens) >1 else d.exchange
         if not symbol in self._dictObjectives or ds != self._dictObjectives[symbol]['ds1min']:
             return # ignore those not interested
 
@@ -375,9 +373,7 @@ class Trader(BaseApplication):
         d = event.dict_['data']
         tokens = (d.vtSymbol.split('.'))
         symbol = tokens[0]
-        ds =""
-        if len(tokens) >1:
-            ds = tokens[1]
+        ds = tokens[1] if len(tokens) >1 else d.exchange
         if not symbol in self._dictObjectives or ds != self._dictObjectives[symbol]['ds1min']:
             return # ignore those not interested
 

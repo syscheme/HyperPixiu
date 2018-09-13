@@ -248,6 +248,7 @@ class mdOffline(MarketData):
                 return # out of range
 
         data.exchange = self.exchange
+        data.vtSymbol = '%s.%s' % (data.symbol, self.exchange)
         self._main._eventChannel.put(event)
         self.debug('posted %s' % data.desc)
 

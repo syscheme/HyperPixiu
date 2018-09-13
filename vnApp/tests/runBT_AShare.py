@@ -8,7 +8,7 @@ from time import sleep
 from datetime import datetime, time
 
 from vnApp.MainRoutine import MainRoutine
-from vnApp.marketdata.mdHuobi import mdHuobi
+from vnApp.marketdata.mdOffline import mdOffline
 from vnApp.marketdata.mdBacktest import mdBacktest
 from vnApp.DataRecorder import *
 from vnApp.EventChannel import EventChannel
@@ -34,7 +34,7 @@ def runChildProcess():
     # dirname(dirname(abspath(file)))
     settings= None
     try :
-        conf_fn = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/BT_app.json'
+        conf_fn = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/BT_AShare.json'
         settings= jsoncfg.load_config(conf_fn)
     except Exception as e :
         print('failed to load configure[%s]: %s' % (conf_fn, e))
@@ -43,7 +43,7 @@ def runChildProcess():
     me = MainRoutine(settings)
 
     # me.addMarketData(mdHuobi, settings['marketdata'][0])
-    me.addMarketData(mdBacktest, settings['marketdata'][0])
+    me.addMarketData(mdOffline, settings['marketdata'][0])
 
     me.addApp(BackTestApp, settings['backtest'])
     # logger.info(u'主引擎创建成功')

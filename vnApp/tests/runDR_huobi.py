@@ -41,18 +41,18 @@ def runChildProcess():
     me = MainRoutine(settings)
 
     me.addMarketData(mdHuobi, settings['marketdata'][0])
-    recorder = me.addApp(DataRecorder, settings['datarecorder']) # csv
+    recorder = me.addApp(MarketRecorder, settings['datarecorder']) # csv
     # recorder = me.addApp(MongoRecorder, settings['datarecorder']) # mongo DB
     me.addApp(Zipper, settings['datarecorder'])
     me.info(u'主引擎创建成功')
 
     me.start(False)
     startDate=datetime.now() - timedelta(60)
-    data = recorder.loadMarketData('ethusdt', startDate)
-    me.debug('loaded %d marketdata' % len(data))
+    # data = recorder.loadMarketData('ethusdt', startDate)
+    # me.debug('loaded %d marketdata' % len(data))
     
-    data = recorder.loadMarketData('ethusdt', startDate, None, MarketData.EVENT_TICK)
-    me.debug('loaded %d marketdata' % len(data))
+    # data = recorder.loadMarketData('ethusdt', startDate, None, MarketData.EVENT_TICK)
+    # me.debug('loaded %d marketdata' % len(data))
 
     me.loop()
     # input()

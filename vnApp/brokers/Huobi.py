@@ -816,7 +816,7 @@ if __name__ == '__main__':
 
     me = MainRoutine(settings)
 
-    trader = me.addApp(TestTrader, settings['trader'])
+    trader = me.createApp(TestTrader, settings['trader'])
     acc = trader.account
     # acc.start()
 

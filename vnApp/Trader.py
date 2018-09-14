@@ -103,6 +103,8 @@ class Trader(BaseApplication):
         self.debug('adopting account')
         # TODO: instantiaze different account by type: accountClass = self._settings.account.type('Account')
         account = Account_AShare(self, self._settings.account)
+        account = mainRoutine.addApp(account)
+
         if account:
             self.adoptAccount(account)
 
@@ -189,8 +191,8 @@ class Trader(BaseApplication):
     @abstractmethod
     def step(self):
         cStep =0
-        for a in self._dictAccounts.values():
-            cStep += a.step()
+        # for a in self._dictAccounts.values():
+        #     cStep += a.step()
 
         return cStep;
     
@@ -285,6 +287,12 @@ class Trader(BaseApplication):
             poslist.append(acc.getAllPositionDetails())
         return poslist
     
+    def getOHLC(self, symbol):
+        """查询所有本地持仓缓存细节"""
+        if symbol in self._dictObjectives.keys():
+            return self._dictObjectives[symbol]['ohlc']
+        
+        return None
     #----------------------------------------------------------------------
     # Interested Events from EventChannel
     #----------------------------------------------------------------------
@@ -308,6 +316,13 @@ class Trader(BaseApplication):
                     ds.subscribe(k, MarketData.EVENT_KLINE_1MIN)
 
     ### eventTick from MarketData ----------------
+    def updateOHLC(self, OHLC, open, high, low, close):
+        if not OHLC:
+            return (open, high, low, close)
+        
+        oopen, ohigh, olow, oclose = OHLC
+        return (oopen, high if high>ohigh else ohigh, low if low<olow else olow, close)
+
     @abstractmethod
     def eventHdl_KLine1min(self, event):
         """TODO: 处理行情推送"""
@@ -334,9 +349,13 @@ class Trader(BaseApplication):
             self.eventHdl_TradeEnd(event)
             return
 
-        if self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] != kline.date:
+        objective = self._dictObjectives[symbol]
+        objective['ohlc'] = self.updateOHLC(objective['ohlc'] if 'ohlc' in objective.keys() else None, kline.open, kline.high, kline.low, kline.close)
+
+        if objective[Trader.RUNTIME_TAG_TODAY] != kline.date:
             self.onDayOpen(symbol, kline.date)
-            self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = kline.date
+            objective[Trader.RUNTIME_TAG_TODAY] = kline.date
+            objective['ohlc'] = self.updateOHLC(None, kline.open, kline.high, kline.low, kline.close)
 
         # step 1. cache into the latest, lnf DataEngine
         self._dtData = kline.datetime # datetime of data
@@ -395,9 +414,13 @@ class Trader(BaseApplication):
             self.eventHdl_TradeEnd(event)
             return
 
+        objective = self._dictObjectives[symbol]
+        objective['ohlc'] = self.updateOHLC(objective['ohlc'] if 'ohlc' in objective.keys() else None, tick.open, tick.high, tick.low, tick.price)
+
         if self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] != tick.date:
             self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = tick.date
             self.onDayOpen(symbol, tick.date)
+            objective['ohlc'] = self.updateOHLC(None, tick.open, tick.high, tick.low, tick.price)
 
         # step 1. cache into the latest, lnf DataEngine
         self._dtData = tick.datetime # datetime of data

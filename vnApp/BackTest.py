@@ -21,6 +21,7 @@ import pymongo
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import shutil
 
 # 如果安装了seaborn则设置为白色风格
 try:
@@ -55,6 +56,17 @@ class BackTestApp(Trader):
             self._btEndDate = datetime.strptime(tmpstr, '%Y-%m-%d')
         self._startBalance = settings.startBalance(100000)
 
+        # backtest will always clear the datapath
+        if len(self._dataPath) <=0:
+            self._dataPath = '/tmp'
+
+        self._dataPath += '/%s_%s' % (self.ident, datetime.now().strftime('%Y%m%dT%H%M%S'))
+        try :
+            shutil.rmtree(self._dataPath)
+            os.makedirs(self._dataPath)
+        except:
+            pass
+
         # self.mode   = settings.mode(self.BAR_MODE)    # 引擎类型为回测
         # self.strategyStartDate = None   # 策略启动日期（即前面的数据用于初始化），datetime对象
 
@@ -73,9 +85,12 @@ class BackTestApp(Trader):
 
         # ADJ_2. wrapper the broker drivers of the accounts
         for ak in self._dictAccounts.keys() :
-            wrapper = AccountWrapper(self, self._dictAccounts[ak])
+            oldAcc = self._dictAccounts[ak]
+            mainRoutine.removeApp(oldAcc.ident)
+            wrapper = AccountWrapper(self, oldAcc)
             wrapper.setCapital(self._startBalance, True)
             self._dictAccounts[ak] = wrapper
+            mainRoutine.addApp(wrapper)
 
         # end of adjust the Trader
         #---------------------------------------------
@@ -1057,7 +1072,7 @@ hs300s= [
         "300059","300070","300072","300122","300124","300136","300144","300251","300408","300433"
         ]
 ########################################################################
-class AccountWrapper(object):
+class AccountWrapper(BaseApplication):
     """
     回测BrokerDriver
     函数接口和BrokerDriver保持一样，
@@ -1068,11 +1083,67 @@ class AccountWrapper(object):
     def __init__(self, btTrader, account):
         """Constructor"""
 
-        super(AccountWrapper, self).__init__()
+        super(AccountWrapper, self).__init__(btTrader.mainRoutine)
 
         self._btTrader = btTrader             # refer to the BackTest engine
         self._nest  = account
         self._tradeCount = 0
+
+    #----------------------------------------------------------------------
+    # impl of BaseApplication
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def init(self): return self._nest.init()
+
+    @abstractmethod
+    def start(self): self._nest.start()
+
+    @abstractmethod
+    def step(self):
+        ''' 
+        this is a 'duplicated' impl of Account in order to call BackTestAcc._broker_xxxx() 
+        instead of those of Account
+        '''
+        outgoingOrders = []
+        ordersToCancel = []
+        cStep =0
+
+        with self._nest._lock:
+            outgoingOrders = copy.deepcopy(self._nest._dictOutgoingOrders.values())
+
+            # find out he orderData by brokerOrderId
+            for odid in self._nest._lstOrdersToCancel :
+                orderData = None
+                try :
+                    if OrderData.STOPORDERPREFIX in odid :
+                        orderData = self._nest._dictStopOrders[odid]
+                    else :
+                        orderData = self._nest._dictLimitOrders[odid]
+                except KeyError:
+                    pass
+
+                if orderData :
+                    ordersToCancel.append(copy.copy(orderData))
+                
+                cStep +=1
+
+            self._nest._lstOrdersToCancel = []
+
+        for co in ordersToCancel:
+            self._broker_cancelOrder(co)
+            cStep +=1
+
+        for no in outgoingOrders:
+            self._broker_placeOrder(no)
+            cStep +=1
+
+        if (len(ordersToCancel) + len(outgoingOrders)) >0:
+            self.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
+
+        if cStep<=0 and self._nest._recorder :
+            cStep += self._nest._recorder.step()
+
+        return cStep
 
     #----------------------------------------------------------------------
     # most of the methods are just forward to the self._nest
@@ -1159,44 +1230,6 @@ class AccountWrapper(object):
         orderData.cancelTime = self._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:3]
         self._broker_onCancelled(orderData)
 
-    def step(self) : 
-        ''' 
-        this is a 'duplicated' impl of Account in order to call BackTestAcc._broker_xxxx() 
-        instead of those of Account
-        '''
-        outgoingOrders = []
-        ordersToCancel = []
-        cStep =0
-
-        with self._nest._lock:
-            outgoingOrders = copy.deepcopy(self._nest._dictOutgoingOrders.values())
-
-            # find out he orderData by brokerOrderId
-            for odid in self._nest._lstOrdersToCancel :
-                orderData = None
-                try :
-                    if OrderData.STOPORDERPREFIX in odid :
-                        orderData = self._nest._dictStopOrders[odid]
-                    else :
-                        orderData = self._nest._dictLimitOrders[odid]
-                except KeyError:
-                    pass
-
-                if orderData :
-                    ordersToCancel.append(copy.copy(orderData))
-
-            self._nest._lstOrdersToCancel = []
-
-        for co in ordersToCancel:
-            self._broker_cancelOrder(co)
-
-        for no in outgoingOrders:
-            self._broker_placeOrder(no)
-
-        if (len(ordersToCancel) + len(outgoingOrders)) >0:
-            self.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
-
-        return cStep
 
     def onDayOpen(self, newDate):
         # instead that the true Account is able to sync with broker,

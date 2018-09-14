@@ -9,7 +9,6 @@ from __future__ import division
 
 from .MainRoutine import *
 from .MarketData import *
-from .Account import Account
 from .EventChannel import datetime2float
 from .language import text
 
@@ -27,7 +26,12 @@ EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
 
 ########################################################################
 class DataRecorder(BaseApplication):
-    """数据记录引擎, the base DR is implmented as a csv Recorder"""
+    """数据记录引擎, the base DR is implmented as a csv Recorder
+        configuration:
+            "datarecorder": {
+                "dbNamePrefix": "dr", // the preffix of DB name to save: <dbNamePrefix>Tick, <dbNamePrefix>K1min
+            }
+    """
      
     DEFAULT_DBPrefix = 'dr'
 
@@ -43,40 +47,9 @@ class DataRecorder(BaseApplication):
         # 负责执行数据库插入的单独线程相关
         self._queRowsToRecord = Queue()  # 队列 of (category, Data)
 
-    # "datarecorder": {
-    #     "dbNamePrefix": "dr", // the preffix of DB name to save: <dbNamePrefix>Tick, <dbNamePrefix>K1min
-
-    #     // the interested ticks to subscribe from the market, then save into DB <dbNamePrefix>Tick with collection name=<symbol>.<ds>
-    #     "ticks": [
-    #         {"symbol":"eosusdt", "ds": "huobi"}, 
-    #         {"symbol":"ethusdt", "ds": "huobi"}, 
-    #          {"symbol":"btcusdt", "ds": "huobi"}, 
-    #     ],
-
-    #     // the interested klines to subscribe from the market, then save into DB <dbNamePrefix>K1min with collection name=<symbol>.<ds>
-    #     // ds with suffix '_t2k' will be ignored
-    #     "kline1min": [
-    #         {"symbol":"eosusdt", "ds": "huobi"}, 
-    #         {"symbol":"ethusdt", "ds": "huobi"},
-    #         {"symbol":"btcusdt", "ds": "huobi"}, 
-    #     ],
-
-    #     // the interested ticks to subscribe from the market, then merge ticks into kline and
-    #     //    a) per repostT2K, post back to event channel with ds=<oldds>_t2k1
-    #     //    b) save into DB with collection name=<symbol>.<oldds>_t2k1
-    #     // "repostT2K": True,
-    #     "t2k1min": [
-    #         {"symbol":"ethusdt", "ds": "huobi"}, 
-    #         {"symbol":"btcusdt", "ds": "huobi"}, 
-    #    ],
-
-    #    // for csv recorder
-    #    "min2flush" : 0.3,
-    #    "days2roll" : 1.0,
-    #    "days2archive"  : 0.0028,
-
-    # }
-
+    def setDataDir(self, dataDir):
+        if len(dataDir) > 3:
+            self._dataPath = dataDir
 
     #----------------------------------------------------------------------
     # impl of BaseApplication
@@ -124,7 +97,18 @@ class DataRecorder(BaseApplication):
 ########################################################################
 import csv
 class CsvRecorder(DataRecorder):
-    """数据记录引擎, the base DR is implmented as a csv Recorder"""
+    """数据记录引擎,
+        configuration:
+            "datarecorder": {
+                ...
+                "dbNamePrefix": "dr", // the preffix of DB name to save: <dbNamePrefix>Tick, <dbNamePrefix>K1min
+
+                // for csv recorder
+                "min2flush" : 0.3,
+                "days2roll" : 1.0,
+                "days2archive"  : 0.0028,
+            }
+    """
 
     #----------------------------------------------------------------------
     def __init__(self, mainRoutine, settings):
@@ -153,7 +137,7 @@ class CsvRecorder(DataRecorder):
             dir =""
             fn = self._dbNamePrefix + category
 
-        coll['dir'] = '%s/%s' % (self._dataPath, dir)
+        coll['dir'] = '%s/%s' % (self.dataRoot, dir)
         coll['fn'] = fn
         coll['f'] = None
         coll['c'] = 0
@@ -192,11 +176,11 @@ class CsvRecorder(DataRecorder):
         if collection['c'] <=0:
             w.writeheader()
             collection['c'] +=1
-            self.debug('header[%s/%s] saved' % (collection['dir'], collection['fn']))
+            self.debug('catg[%s/%s] header saved' % (collection['dir'], collection['fn']))
 
         w.writerow(row)
         collection['c'] +=1
-        self.debug('row[%s/%s] saved: %s' % (collection['dir'], collection['fn'], row))
+        self.debug('catg[%s/%s] row saved: %s' % (collection['dir'], collection['fn'], row))
 
         self._checkAndRoll(collection)
 
@@ -293,8 +277,8 @@ class CsvRecorder(DataRecorder):
 
 ########################################################################
 class MongoRecorder(DataRecorder):
-    """数据记录引擎, the base DR is implmented as a csv Recorder"""
-     
+    """数据记录引擎
+    """
     #----------------------------------------------------------------------
     def __init__(self, mainRoutine, settings):
         """Constructor"""
@@ -475,66 +459,66 @@ class MarketRecorder(BaseApplication):
 
         self._recorder.pushRow(category, row)
     
-    @abstractmethod
-    def filterCollections(self, symbol, startDate, endDate=None, eventType =MarketData.EVENT_KLINE_1MIN):
-        """从数据库中读取Bar数据，startDate是datetime对象"""
+    # @abstractmethod
+    # def filterCollections(self, symbol, startDate, endDate=None, eventType =MarketData.EVENT_KLINE_1MIN):
+    #     """从数据库中读取Bar数据，startDate是datetime对象"""
 
-        mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
-        csvfiles =[]
-        if not mdEvent in self._dictDR.keys() or not symbol in self._dictDR[mdEvent].keys():
-            return csvfiles
+    #     mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
+    #     csvfiles =[]
+    #     if not mdEvent in self._dictDR.keys() or not symbol in self._dictDR[mdEvent].keys():
+    #         return csvfiles
 
-        node = self._dictDR[mdEvent][symbol]
-        if not 'coll' in node.keys() :
-            return csvfiles
+    #     node = self._dictDR[mdEvent][symbol]
+    #     if not 'coll' in node.keys() :
+    #         return csvfiles
 
-        # filter the csv files
-        stampSince = startDate.strftime('%Y%m%dT000000')
-        stampTill  = (endDate +timedelta(hours=24)).strftime('%Y%m%dT000000') if endDate else '39991231T000000'
+    #     # filter the csv files
+    #     stampSince = startDate.strftime('%Y%m%dT000000')
+    #     stampTill  = (endDate +timedelta(hours=24)).strftime('%Y%m%dT000000') if endDate else '39991231T000000'
 
-        collection = node['coll']
-        prev = ""
-        for _, _, files in os.walk(collection['dir']):
-            files.sort()
-            for name in files:
-                stk = name.split('.')
-                if stk[-1] !='csv' or collection['fn'] != name[:len(collection['fn'])]:
-                    continue
-                fn = '%s/%s' % (collection['dir'], name)
-                if stk[-2] <stampSince :
-                    prev = fn
-                elif stk[-2] <stampTill:
-                    csvfiles.append(fn)
+    #     collection = node['coll']
+    #     prev = ""
+    #     for _, _, files in os.walk(collection['dir']):
+    #         files.sort()
+    #         for name in files:
+    #             stk = name.split('.')
+    #             if stk[-1] !='csv' or collection['fn'] != name[:len(collection['fn'])]:
+    #                 continue
+    #             fn = '%s/%s' % (collection['dir'], name)
+    #             if stk[-2] <stampSince :
+    #                 prev = fn
+    #             elif stk[-2] <stampTill:
+    #                 csvfiles.append(fn)
 
-        if len(prev) >0:
-            csvfiles = [prev] + csvfiles
+    #     if len(prev) >0:
+    #         csvfiles = [prev] + csvfiles
 
-        return csvfiles, stampSince, stampTill
+    #     return csvfiles, stampSince, stampTill
 
-    @abstractmethod
-    def loadMarketData(self, symbol, startDate, endDate=None, eventType =MarketData.EVENT_KLINE_1MIN):
-        """从数据库中读取Bar数据，startDate是datetime对象"""
+    # @abstractmethod
+    # def loadMarketData(self, symbol, startDate, endDate=None, eventType =MarketData.EVENT_KLINE_1MIN):
+    #     """从数据库中读取Bar数据，startDate是datetime对象"""
 
-        mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
-        csvfiles, stampSince, stampTill = self.filterCollections(symbol, startDate, endDate, eventType)
-        ret = []
-        if len(csvfiles) <=0:
-            return ret
+    #     mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
+    #     csvfiles, stampSince, stampTill = self.filterCollections(symbol, startDate, endDate, eventType)
+    #     ret = []
+    #     if len(csvfiles) <=0:
+    #         return ret
 
-        DataClass = TickData if mdEvent == 'Tick' else KLineData
+    #     DataClass = TickData if mdEvent == 'Tick' else KLineData
 
-        for fn in csvfiles :
-            with open(fn, 'rb') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    if fn == csvfiles[0] and row['datetime'] <stampSince:
-                        continue
-                    if fn == csvfiles[-1] and ['datetime'] >=stampTill:
-                        break
-                    data = DataClass('')
-                    data.__dict__  = row
-                    ret.append(data)
-        return ret
+    #     for fn in csvfiles :
+    #         with open(fn, 'rb') as f:
+    #             reader = csv.DictReader(f)
+    #             for row in reader:
+    #                 if fn == csvfiles[0] and row['datetime'] <stampSince:
+    #                     continue
+    #                 if fn == csvfiles[-1] and ['datetime'] >=stampTill:
+    #                     break
+    #                 data = DataClass('')
+    #                 data.__dict__  = row
+    #                 ret.append(data)
+    #     return ret
 
 ########################################################################
 import bz2

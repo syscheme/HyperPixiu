@@ -6,6 +6,8 @@ This module represent a basic account
 from __future__ import division
 
 from .EventChannel import EventChannel, EventData, datetime2float,EVENT_NAME_PREFIX
+from .MainRoutine  import BaseApplication
+from .DataRecorder import CsvRecorder, MongoRecorder
 
 from datetime import datetime, timedelta
 from collections import OrderedDict
@@ -15,12 +17,11 @@ import copy
 import threading
 import traceback
 import jsoncfg # pip install json-cfg
-
 from pymongo import ASCENDING
 
 ########################################################################
 from abc import ABCMeta, abstractmethod
-class Account(object):
+class Account(BaseApplication):
     """
     Basic Account
     """
@@ -44,6 +45,8 @@ class Account(object):
     def __init__(self, trader, settings):
         """Constructor"""
 
+        super(Account, self).__init__(trader.mainRoutine, settings)
+
         self._lock = threading.Lock()
 
         self._settings     = settings
@@ -60,6 +63,15 @@ class Account(object):
 
         self._state        = Account.STATE_CLOSE
         self._mode         = Account.BROKER_API_ASYNC
+
+        #create a data recorder for the Account events
+        rectype = settings.recorder('csv')
+        if self._trader :
+            self._datePath = self._trader._dataPath
+        if rectype == 'mongo' :
+            self._recorder = MongoRecorder(self.mainRoutine, settings)
+        else:
+            self._recorder = CsvRecorder(self.mainRoutine, settings)
 
         # trader executer
         # self._dvrBroker = dvrBrokerClass(self, self._settings)
@@ -104,6 +116,10 @@ class Account(object):
     @property
     def priceTick(self):
         return self._priceTick
+
+    @property
+    def dataRoot(self) :
+        return self._trader.dataRoot
 
     @property
     def dbName(self):
@@ -511,8 +527,25 @@ class Account(object):
     #----------------------------------------------------------------------
 
     #----------------------------------------------------------------------
-    # Application routine
-    def step(self) :
+    # impl of BaseApplication
+    #----------------------------------------------------------------------
+    @abstractmethod
+    def init(self): # return True if succ
+        if self._recorder and not self._recorder.init() :
+           return False
+
+        return super(DataRecorder, self).init()
+
+    @abstractmethod
+    def start(self):
+        if self._recorder :
+           self._recCatgDPosition = 'ACC/dpos.%s' %(self._id)
+           self._recorder.setDataDir(self.dataRoot)
+           self._recorder.registerCollection(self._recCatgDPosition, params= {'index': [('date', ASCENDING), ('time', ASCENDING)], 'columns' : ['date','symbol']})
+           self._recorder.start()
+
+    @abstractmethod
+    def step(self):
 
         # step 1. flush out-going orders and cancels to the broker
         outgoingOrders = []
@@ -558,6 +591,9 @@ class Account(object):
             self._stampLastSync = stampNow
             self._brocker_triggerSync()
             cStep +=1
+
+        if cStep<=0 and self._recorder :
+            cStep += self._recorder.step()
 
         return cStep
 
@@ -729,7 +765,7 @@ class Account(object):
     def calcDailyPositions(self):
         """今日交易的结果"""
 
-        tradesOfSymbol = { self.cashSymbol:[] }        # 成交列表
+        tradesOfSymbol = { self.cashSymbol: [] }        # 成交列表
         with self._lock :
             for t in self._dictTrades.values():
                 if len(t.symbol) <=0:
@@ -748,6 +784,7 @@ class Account(object):
         for s in tradesOfSymbol.keys():
 
             currentPos = currentPositions[s]
+            ohlc =  self._trader.getOHLC(s)
 
             if s in self._prevPositions:
                 with self._lock :
@@ -756,12 +793,21 @@ class Account(object):
                 prevPos = PositionData()
             
             dpos = DailyPosition()
-            dpos.initPositions(self, s, currentPos, prevPos)
+            dpos.initPositions(self, s, currentPos, prevPos, ohlc)
             
             for trade in tradesOfSymbol[s]:
-                dpos.pushTrade(self, trade) 
-            
+                dpos.pushTrade(self, trade)
+
             dpos.close()
+
+            if self._recorder :
+                row = dpos.__dict__
+                try :
+                    del row['datetime']
+                except:
+                    pass
+                self._recorder.pushRow(self._recCatgDPosition, row)
+
             self._trader.postEvent(Account.EVENT_DAILYPOS, dpos)
             result.append(dpos.__dict__)
 
@@ -1001,6 +1047,9 @@ class DailyPosition(object):
         self.calcMValue  = EventData.EMPTY_FLOAT # MarketValue
         self.prevClose   = EventData.EMPTY_FLOAT     # 昨日收盘
         self.prevPos     = EventData.EMPTY_FLOAT    # 昨日收盘
+        self.execOpen  = EventData.EMPTY_FLOAT
+        self.execHigh  = EventData.EMPTY_FLOAT 
+        self.execLow   = EventData.EMPTY_FLOAT
                 
         self.turnover    = EventData.EMPTY_FLOAT        # 成交量
         self.commission  = EventData.EMPTY_FLOAT       # 手续费
@@ -1016,11 +1065,11 @@ class DailyPosition(object):
         self.txns        = EventData.EMPTY_STRING
         self.asof        = []
 
-    def initPositions(self, account, symbol, currentPos, prevPos):
+    def initPositions(self, account, symbol, currentPos, prevPos, ohlc =None):
         """Constructor"""
 
         self.symbol      = symbol
-        self.date        = account._dateToday,   # 日期
+        self.date        = account._dateToday             # 日期
         self.recentPrice = round(currentPos.price, 3)     # 当日收盘
         self.avgPrice    = round(currentPos.avgPrice, 3)  # 持仓均价
         self.recentPos   = round(currentPos.position, 3)  # 当日收盘
@@ -1031,7 +1080,10 @@ class DailyPosition(object):
         self.asof        =[ currentPos.stampByTrader, currentPos.stampByBroker ]
         # 持仓部分
         self.positionPnl = round(prevPos.position * (currentPos.price - currentPos.avgPrice) * account.size, 3)
-                
+
+        if ohlc:
+            self.execOpen, self.execHigh, self.execLow, _ = ohlc
+
         # self.calcMValue  = round(calcPosition*currentPos.price*self.size , 2),     # 昨日收盘
     def pushTrade(self, account, trade) :
         '''

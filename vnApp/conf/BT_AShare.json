@@ -24,7 +24,7 @@
             "symbol": "600019", // ,"601727","601766","601788","601800","601808"],
 
             // the following are up to class mdOffline
-            "homeDir" : "/mnt/bigdata/tmp/btdata", // "/mnt/bigdata/tmp/btdata",
+            "homeDir" : "/home/huishao/temp/drKL1m/", // "/mnt/bigdata/tmp/btdata",
             "event" : "KL1m",
             "timerStep": "30", // 30sec
         },

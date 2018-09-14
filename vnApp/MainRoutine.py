@@ -57,21 +57,13 @@ class BaseApplication(object):
     __lastId__ =100
 
     #----------------------------------------------------------------------
-    def __init__(self, mainRoutine, settings):
+    def __init__(self, mainRoutine, settings=None):
         """Constructor"""
         self._engine = mainRoutine
         self._settings = settings
         self._active = False                     # 工作状态
 
         self._pid = os.getpid() # process id
-
-        # the app instance Id
-        self._id = settings.id("")
-        if len(self._id)<=0 :
-            BaseApplication.__lastId__ +=1
-            self._id = 'P%d' % BaseApplication.__lastId__
-
-        self._dataPath     = settings.dataPath('./data')
 
         # 日志级别函数映射
         self._loglevelFunctionDict = {
@@ -82,6 +74,17 @@ class BaseApplication(object):
             LOGLEVEL_CRITICAL: self.critical,
         }
 
+        # the app instance Id
+        if not settings:
+            return
+
+        self._id = settings.id("")
+        if len(self._id)<=0 :
+            BaseApplication.__lastId__ +=1
+            self._id = 'P%d' % BaseApplication.__lastId__
+
+        self._dataPath  = settings.dataPath('./data')
+
     #----------------------------------------------------------------------
     @property
     def ident(self) :
@@ -90,6 +93,10 @@ class BaseApplication(object):
     @property
     def app(self) : # for the thread wrapper
         return self
+
+    @property
+    def dataRoot(self) :
+        return self._dataPath
 
     @property
     def mainRoutine(self) :
@@ -220,11 +227,11 @@ class BaseApplication(object):
     def saveObject(self, category, id, obj):
         """保存对象到硬盘"""
         try :
-            os.makedirs(self._dataPath + '/objects')
+            os.makedirs(self.dataRoot + '/objects')
         except:
             pass
 
-        fn = '%s/objects/%s' % (self._dataPath, category)
+        fn = '%s/objects/%s' % (self.dataRoot, category)
         f = shelve.open(fn)
         f[id] = obj
         f.close()
@@ -233,7 +240,7 @@ class BaseApplication(object):
     def loadObject(self, category, id):
         """读取对象"""
         try :
-            fn = '%s/objects/%s' % (self._dataPath, category)
+            fn = '%s/objects/%s' % (self.dataRoot, category)
             f = shelve.open(fn)
             if id in f :
                 return f[id].value
@@ -360,7 +367,6 @@ class MainRoutine(object):
         
         # 应用模块实例
         self._dictApps = OrderedDict()
-        self._dlstApps = []
         
         # 风控引擎实例（特殊独立对象）
         self._riskMgm = None
@@ -394,10 +400,8 @@ class MainRoutine(object):
         return md
 
     #----------------------------------------------------------------------
-    def addApp(self, appModule, settings):
+    def addApp(self, app, displayName=None, widget=None, icon=None):
         """添加上层应用"""
-
-        app = appModule(self, settings)
         id = app.ident
         
         # 创建应用实例
@@ -405,19 +409,25 @@ class MainRoutine(object):
         
         # 将应用引擎实例添加到主引擎的属性中
         self.__dict__[id] = self._dictApps[id]
-        
-        # 保存应用信息
-        d = {
-            'appName': id,
-            'displayName': settings.displayName(id),
-            'appWidget': settings.widget(id),
-#            'appIco': appModule.appIco
-        }
-        self._dlstApps.append(d)
-        self.info('app[%s] added: %s' %(id, d))
-
+        self.info('app[%s] added' %(id))
         return app
+
+    def createApp(self, appModule, settings):
+        """添加上层应用"""
+        app = appModule(self, settings)
+        if not app:
+            return None
+
+        return self.addApp(app)
         
+    def removeApp(self, appId):
+        if not appId in self._dictApps.keys():
+            return None
+        
+        ret = self._dictApps[appId]
+        del self._dictApps[appId]
+        return ret
+
     #----------------------------------------------------------------------
     def getMarketData(self, dsName, exchange=None):
         """获取接口"""
@@ -836,11 +846,6 @@ class MainRoutine(object):
     def getAllGatewayDetails(self):
         """查询引擎中所有底层接口的信息"""
         return self._dlstMarketDatas
-    
-    #----------------------------------------------------------------------
-    def getAllAppDetails(self):
-        """查询引擎中所有上层应用的信息"""
-        return self._dlstApps
     
     #----------------------------------------------------------------------
     def getApp(self, appName):

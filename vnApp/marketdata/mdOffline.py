@@ -167,6 +167,7 @@ class mdOffline(MarketData):
         fnlist.sort()
         csvfiles = []
         prev = ""
+        trange = None
         for name in fnlist:
             if not self._symbol in name:
                 continue
@@ -345,9 +346,9 @@ if __name__ == '__main__':
     me = MainRoutine(settings)
 
     me.addMarketData(mdOffline, settings['offlinedata'][0])
-    recorder = me.addApp(DataRecorder, settings['datarecorder'])  
-    # recorder = me.addApp(CsvRecorder, settings['datarecorder'])
-    # me.addApp(Zipper, settings['datarecorder'])
+    recorder = me.createApp(DataRecorder, settings['datarecorder'])  
+    # recorder = me.createApp(CsvRecorder, settings['datarecorder'])
+    # me.createApp(Zipper, settings['datarecorder'])
     me.info(u'主引擎创建成功')
 
     me.start()

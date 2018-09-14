@@ -45,7 +45,7 @@ def runChildProcess():
     # me.addMarketData(mdHuobi, settings['marketdata'][0])
     me.addMarketData(mdOffline, settings['marketdata'][0])
 
-    me.addApp(BackTestApp, settings['backtest'])
+    me.createApp(BackTestApp, settings['backtest'])
     # logger.info(u'主引擎创建成功')
 
     me.start()

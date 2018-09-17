@@ -4,6 +4,7 @@ from __future__ import division
 
 import os
 import logging
+from logging.handlers import RotatingFileHandler
 from collections import OrderedDict
 from threading import Thread
 from datetime import datetime
@@ -646,7 +647,7 @@ class MainRoutine(object):
         tmpval = self._settings.logger.file('True').lower()
         if tmpval in BOOL_TRUE and not self._hdlrFile:
             filepath = getTempPath('vnApp' + datetime.now().strftime('%Y%m%d') + '.log')
-            self._hdlrFile = logging.FileHandler(filepath)
+            self._hdlrFile = RotatingFileHandler(filepath, maxBytes=50*1024*1024, backupCount=9) # now 50MB*10,  = logging.FileHandler(filepath)
             self._hdlrFile.setLevel(self._loglevel)
             self._hdlrFile.setFormatter(self._logfmtr)
             self._logger.addHandler(self._hdlrFile)

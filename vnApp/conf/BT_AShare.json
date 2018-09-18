@@ -1,30 +1,75 @@
 // configuration of a BackTest
 {
-    "mode": "bar",
-    "symbols": ["A601005"],
-    "database": {
-        "datadb":  "VnTrader_1Min_Db",
-        "dataset": "${SYMBOL}",
-        "url": "mongo-vnpy",
+    "logger": {
+        // "level": "99",
+        // "console": "False",
+        // "file": "True",
+        // "event": { "log": "True", "error": "True" } // whether to post the log into event channel
     },
 
-    "startDate": "2012-01-01", // %Y-%m-%d
-    "endDate": "2012-02-06",   // %Y-%m-%d
+    "database": {
+        "host": "mongo-vnpy",
+        // "console": "False",
+        // "file": "True",
+        // "event": { "log": "True", "error": "True" } // whether to post the log into event channel
+    },
 
-    "account" : {
-        "accountId" : "12345556",
-        "type" : "12345556",
-        "slippage" : 0,       // 假设的滑点
-        "ratePer10K" : 30,    // 佣金比例（per 10K）
-        "size" : 100,         // 合约大小，默认为1
-        "priceTick" : 0,      // 价格最小变动 
+    "marketdata": [ // in the case that marketdata is collected thru local subscribers
+        {
+            "id": "shop37077890",
+            "className": "shop37077890",
+            "exchange": "AShare$BT",
+            "startDate": "2010-06-01",
+            "endDate": "2010-12-29",
+            "symbol": "600019", // ,"601727","601766","601788","601800","601808"],
 
-        "strategies" : {
-            "BBand": {
+            // the following are up to class mdOffline
+            "homeDir" : "/home/huishao/temp/drKL1m/", // "/mnt/bigdata/tmp/btdata",
+            "event" : "KL1m",
+            "timerStep": "30", // 30sec
+        },
+    ],
 
+    "backtest": { // the configuration schema is extending "trader"
+
+        "startCapitial": 100000,
+    
+
+        // the following are same as "trader"
+        "dbNamePrefixHist" : "dr", // the preffix of DB name where to read history data from: <dbNamePrefixHist>Tick, <dbNamePrefixHist>K1min
+        "objectives": [
+            { 
+                "symbol": "600019", 
+                "ds1min": "AShare",  // sample "ds1min":"hadax:t2k1", in the case that we don't subscribe Kline directly from the market but take those merged from ticks
+            }, 
+        ],
+
+        "account": { // account settings
+            "id": "blah",
+            "broker": "AShare",
+
+            "slippage" : 0,       // 假设的滑点
+            "ratePer10K" : 30,    // 佣金比例（per 10K）
+            "size" : 100,         // 合约大小，默认为1
+            "priceTick" : 0,      // 价格最小变动 
+    
+            // the following is up to the broker driver
+            "httpproxy": "localhost:8118",
+            "accessKey": "blah",
+            "secretKey": "blah",
+        },
+
+        "strategies": [
+            {
+                "name" : "BBand", // strategy name equals to class name
+                "symbols": ["600019"],
+                "weights": { // weights to affect decisions, in range of [0-100] each
+                    "long" : 100, // optimisti
+                    "short": 100, // pessimistic
+                },
+
+                // TODO: the following is up to the stategy class
             },
-            "KK": {
-            }
-        }
+        ],
     },
 }

@@ -87,7 +87,7 @@ class MarketData(object):
 
     @abstractmethod
     def close(self):
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def start(self):
@@ -97,7 +97,7 @@ class MarketData(object):
     @abstractmethod
     def step(self):
         """连接"""
-        raise NotImplementedError
+        return 0 # raise NotImplementedError
 
     @abstractmethod
     def stop(self):

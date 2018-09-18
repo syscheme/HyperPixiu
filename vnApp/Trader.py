@@ -103,6 +103,8 @@ class Trader(BaseApplication):
         self.debug('adopting account')
         # TODO: instantiaze different account by type: accountClass = self._settings.account.type('Account')
         account = Account_AShare(self, self._settings.account)
+        account = mainRoutine.addApp(account)
+
         if account:
             self.adoptAccount(account)
 
@@ -188,8 +190,11 @@ class Trader(BaseApplication):
 
     @abstractmethod
     def step(self):
-        for a in self._dictAccounts.values():
-            a.step()
+        cStep =0
+        # for a in self._dictAccounts.values():
+        #     cStep += a.step()
+
+        return cStep;
     
     #----------------------------------------------------------------------
     # local the recent data by symbol
@@ -282,6 +287,12 @@ class Trader(BaseApplication):
             poslist.append(acc.getAllPositionDetails())
         return poslist
     
+    def getOHLC(self, symbol):
+        """查询所有本地持仓缓存细节"""
+        if symbol in self._dictObjectives.keys():
+            return self._dictObjectives[symbol]['ohlc']
+        
+        return None
     #----------------------------------------------------------------------
     # Interested Events from EventChannel
     #----------------------------------------------------------------------
@@ -305,15 +316,20 @@ class Trader(BaseApplication):
                     ds.subscribe(k, MarketData.EVENT_KLINE_1MIN)
 
     ### eventTick from MarketData ----------------
+    def updateOHLC(self, OHLC, open, high, low, close):
+        if not OHLC:
+            return (open, high, low, close)
+        
+        oopen, ohigh, olow, oclose = OHLC
+        return (oopen, high if high>ohigh else ohigh, low if low<olow else olow, close)
+
     @abstractmethod
     def eventHdl_KLine1min(self, event):
         """TODO: 处理行情推送"""
         d = event.dict_['data']
         tokens = (d.vtSymbol.split('.'))
         symbol = tokens[0]
-        ds =""
-        if len(tokens) >1:
-            ds = tokens[1]
+        ds = tokens[1] if len(tokens) >1 else d.exchange
         if not symbol in self._dictObjectives or ds != self._dictObjectives[symbol]['ds1min']:
             return # ignore those not interested
 
@@ -333,9 +349,13 @@ class Trader(BaseApplication):
             self.eventHdl_TradeEnd(event)
             return
 
-        if self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] != kline.date:
+        objective = self._dictObjectives[symbol]
+        objective['ohlc'] = self.updateOHLC(objective['ohlc'] if 'ohlc' in objective.keys() else None, kline.open, kline.high, kline.low, kline.close)
+
+        if objective[Trader.RUNTIME_TAG_TODAY] != kline.date:
             self.onDayOpen(symbol, kline.date)
-            self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = kline.date
+            objective[Trader.RUNTIME_TAG_TODAY] = kline.date
+            objective['ohlc'] = self.updateOHLC(None, kline.open, kline.high, kline.low, kline.close)
 
         # step 1. cache into the latest, lnf DataEngine
         self._dtData = kline.datetime # datetime of data
@@ -375,9 +395,7 @@ class Trader(BaseApplication):
         d = event.dict_['data']
         tokens = (d.vtSymbol.split('.'))
         symbol = tokens[0]
-        ds =""
-        if len(tokens) >1:
-            ds = tokens[1]
+        ds = tokens[1] if len(tokens) >1 else d.exchange
         if not symbol in self._dictObjectives or ds != self._dictObjectives[symbol]['ds1min']:
             return # ignore those not interested
 
@@ -396,9 +414,13 @@ class Trader(BaseApplication):
             self.eventHdl_TradeEnd(event)
             return
 
+        objective = self._dictObjectives[symbol]
+        objective['ohlc'] = self.updateOHLC(objective['ohlc'] if 'ohlc' in objective.keys() else None, tick.open, tick.high, tick.low, tick.price)
+
         if self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] != tick.date:
             self._dictObjectives[symbol][Trader.RUNTIME_TAG_TODAY] = tick.date
             self.onDayOpen(symbol, tick.date)
+            objective['ohlc'] = self.updateOHLC(None, tick.open, tick.high, tick.low, tick.price)
 
         # step 1. cache into the latest, lnf DataEngine
         self._dtData = tick.datetime # datetime of data
@@ -597,7 +619,7 @@ class Trader(BaseApplication):
         """停止策略"""
         if strategy.trading:
             self._stg_call(strategy, strategy.onStop)
-            self._stg_call(strategy, strategy.cancellAll)
+            # self._stg_call(strategy, strategy.cancellAll)
             strategy.trading = False
 
     def _stg_load(self, setting):

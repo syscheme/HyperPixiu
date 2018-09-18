@@ -49,7 +49,7 @@ def runChildProcess(filePath):
     
     me = MainRoutine(ee)
     me.addMarketData(gwHuobi, setting)
-    me.addApp(dataRecorder)
+    me.createApp(dataRecorder)
     le.info(u'主引擎创建成功')
 
     ee.register(EVENT_LOG, le.processLogEvent)

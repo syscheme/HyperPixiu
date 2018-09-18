@@ -50,7 +50,7 @@ def runChildProcess():
 
     me.addMarketData(mdHuobi, settings['marketdata'][0])
 
-    me.addApp(Trader, settings['trader'])
+    me.createApp(Trader, settings['trader'])
     # logger.info(u'主引擎创建成功')
 
     me.start()

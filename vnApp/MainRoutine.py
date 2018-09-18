@@ -646,7 +646,8 @@ class MainRoutine(object):
 
         tmpval = self._settings.logger.file('True').lower()
         if tmpval in BOOL_TRUE and not self._hdlrFile:
-            filepath = getTempPath('vnApp' + datetime.now().strftime('%Y%m%d') + '.log')
+            # filepath = getTempPath('vnApp' + datetime.now().strftime('%Y%m%d') + '.log')
+            filepath = '/tmp/vnApp%s.log' % datetime.now().strftime('%Y%m%d')
             self._hdlrFile = TimedRotatingFileHandler(filepath, when='W5', backupCount=9) # when='W5' for Satday, 'D' daily, 'midnight' rollover at midnight
            #  = RotatingFileHandler(filepath, maxBytes=100*1024*1024, backupCount=9) # now 100MB*10,  = logging.FileHandler(filepath)
             self._hdlrFile.setLevel(self._loglevel)

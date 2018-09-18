@@ -197,7 +197,7 @@ class CsvRecorder(DataRecorder):
             if collection['o'] :
                 dtToRoll = collection['o']+timedelta(hours=self._days2roll*24)
                 if self._days2roll >=1 and (self._days2roll-int(self._days2roll)) <1/24 : # make the roll occur at midnight
-                    dtToRoll = datetime(dtToRoll.year, dtToRoll.month, dtToRoll.day, 23, 59, 59, 999999)
+                    dtToRoll = datetime(dtToRoll.year, dtToRoll.month, dtToRoll.day, 0, 0, 0, 0)
 
                 if dtToRoll > dtNow :
                     return collection

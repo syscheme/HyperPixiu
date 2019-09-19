@@ -21,8 +21,45 @@ v_ff_sz300543="sz300543~0.00~0.00~0.00~0.00~2242.79~2332.08~-89.28~-3.83~4782000
 历史数据
 day line：
 http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=sz002095&scale=240&ma=no&datalen=250
-
+值得一提的是改成scale=240就变成日K了，scale=1200变成周K，分钟级别的还支持5、15和30分钟
+然后去掉ma=no参数还可以获得5、10和30日均价均值
+http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=sh600036&scale=240&datalen=100
+[{day:"2019-04-26",open:"35.160",high:"35.200",low:"34.340",close:"34.360",volume:"51734443",ma_price5:35.124,ma_volume5:54055057,ma_price10:35.377,ma_volume10:56977681,ma_price30:34.098,ma_volume30:59737401},
+{day:"2019-04-29",open:"34.570",high:"35.730",low:"34.420",close:"35.330",volume:"55033176",ma_price5:35.23,ma_volume5:50745098,ma_price10:35.428,ma_volume10:53231789,ma_price30:34.22,ma_volume30:59585364},
 
 for i in `cat numsymb.txt`; do curl -o ${i}.json "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${i}&scale=5&ma=no&datalen=1000" ; done
 
+复权数据
+关于复权数据，以龙力生物2015年6月5日复权为例，当日该股下跌2.26%
+http://finance.sina.com.cn/realstock/newcompany/sz002604/phfq.js
+
+_2015_06_05:"52.5870",
+_2015_06_04:"53.8027",
+52.5870 / 53.8027 = 0.9774，和下跌2.26%一致
+
+
+https://github.com/HarrisonXi/AStock/blob/master/%E5%AE%9E%E6%97%B6%E8%A1%8C%E6%83%85API.md
+
+逐比交易明细数据
+http://vip.stock.finance.sina.com.cn/quotes_service/view/CN_TransListV2.php?num=10&symbol=sh600036
+http://vip.stock.finance.sina.com.cn/quotes_service/view/CN_TransListV2.php?symbol=sh600036
+数据：时间，成交量(股)，价格，类型（UP-买，DOWN-卖，EQUAL-平）
+var trade_item_list = new Array(); 
+trade_item_list[0] = new Array('15:00:00', '722600', '34.510', 'UP'); 
+trade_item_list[1] = new Array('14:57:00', '200', '34.510', 'UP'); 
+trade_item_list[2] = new Array('14:56:57', '2200', '34.500', 'DOWN'); 
+trade_item_list[3] = new Array('14:56:54', '3100', '34.500', 'DOWN'); 
+trade_item_list[4] = new Array('14:56:51', '30000', '34.510', 'UP');
+trade_item_list[5] = new Array('14:56:48', '5200', '34.500', 'UP');
+trade_item_list[6] = new Array('14:56:45', '4200', '34.500', 'UP');
+...
+trade_item_list[9] = new Array('14:56:36', '64200', '34.500', 'UP');
+尾部额外带了当日总买入股数和总卖出股数
+var trade_INVOL_OUTVOL=[27793246.5,26052078.5];
+
+分时数据
+http://vip.stock.finance.sina.com.cn/quotes_service/view/vML_DataList.php?asc=j&symbol=sh600036&num=10
+
+['14:59:00', '18.59', '3778240']
+数据：时间，价格，成交量（股）
 

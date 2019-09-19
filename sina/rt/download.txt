@@ -26,6 +26,7 @@
 # (22, 23), (24, 25), (26,27), (28, 29)分别为“卖二”至“卖四的情况”
 # 30：”2008-01-11″，日期；
 # 31：”15:05:32″，时间；
+HEADER="symbol,name,open,prevclose,price,high,low,bid,ask,volume,total,bid1v,bid1,bid2v,bid2,bid3v,bid3,bid4v,bid4,bid5v,bid5,ask1v,ask1,ask2v,ask2,ask3v,ask3,ask4v,ask4,ask5v,ask5,date,time"
 
 # ETFs_SZ="sz399001,sz150152,sz150153,sz159901,sz159903,sz159911,sz159912,sz159915,sz159919,sz159920,sz159922,sz159923,sz159926,sz159928,sz159929,sz159930,sz159931,sz159932,sz159933,sz159934,sz159941,sz159943,sz159948,sz159949,sz159952,sz159953,sz159954,sz159955,sz159956,sz159957,sz159958,sz159959,sz399006,sz399102,sz399306,sz399380,sz399606,sz399635,sz399667,sz399668,sz399673"
 # removed no txns: sz159911,sz399006,sz399102,sz399306,sz399380,sz399606,sz399635,sz399667,sz399668,sz399673
@@ -43,7 +44,10 @@ while [ 1 ]; do
     # curl -o SHETF_${time}.txt "http://hq.sinajs.cn/list=${ETFs_SH}"
     # sleep 1
 
-    curl "http://hq.sinajs.cn/list=${ETFs_SZ}" | sed -e 's/^var hq_str_\([^=]*\)="/\1,/g' | sed -e 's/,";//g' | iconv -f GBK -t utf-8 > SZETF_${time}.csv
-    curl "http://hq.sinajs.cn/list=${ETFs_SH}" | sed -e 's/^var hq_str_\([^=]*\)="/\1,/g' | sed -e 's/,";//g' | iconv -f GBK -t utf-8 > SHETF_${time}.csv
+    echo "${HEADER},NA1,NA2" > SZETF_${time}.csv
+    echo "${HEADER},NA1,NA2" > SHETF_${time}.csv
+
+    curl "http://hq.sinajs.cn/list=${ETFs_SZ}" | sed -e 's/^var hq_str_\([^=]*\)="/\1,/g' | sed -e 's/,";//g' | iconv -f GBK -t utf-8 >> SZETF_${time}.csv
+    curl "http://hq.sinajs.cn/list=${ETFs_SH}" | sed -e 's/^var hq_str_\([^=]*\)="/\1,/g' | sed -e 's/,";//g' | iconv -f GBK -t utf-8 >> SHETF_${time}.csv
     usleep 700000 # 700msec
 done

@@ -29,9 +29,14 @@ http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Cente
 ```
 http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=sz002095&scale=240&ma=no&datalen=250
 ```
-值得一提的是改成scale=240就变成日K了，scale=1200变成周K，分钟级别的还支持5、15和30分钟
-然后去掉ma=no参数还可以获得5、10和30日均价均值
+值得一提的是改成scale=240就变成日K了，scale=1200变成周K，分钟级别的还支持5、15和30分钟。
+- 5分钟(scale=5),  最近一周
+- 15分钟(scale=15), 约最近二周
+- 30分钟(scale=30), 约最近一月
+- 1小时(scale=60), 约最近二月
+- 日线(scale=240&datalen=4000), 最近十几年
 
+然后去掉ma=no参数还可以获得5、10和30日均价均值
 
 请求样例:
 ```

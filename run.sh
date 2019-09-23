@@ -1,0 +1,5 @@
+TOPDIR=$(realpath $(dirname $0)/.)
+PYTHON=/usr/bin/python3
+PROGRAM=$1
+env "PYTHONPATH=${TOPDIR}:${TOPDIR}/src" "PYTHONIOENCODING=UTF-8" "PYTHONUNBUFFERED=1" ${PYTHON} ${PROGRAM}
+

@@ -2,7 +2,7 @@
 
 from __future__ import division
 
-from ..event.ecBasic import EventData, Event, EVENT_NAME_PREFIX
+from event.ecBasic import EventData, Event, EVENT_NAME_PREFIX
 
 import traceback
 from datetime import datetime
@@ -11,7 +11,7 @@ from abc import ABCMeta, abstractmethod
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 
 ########################################################################
-class MarketDataBackEnd(object):
+class MarketData(object):
     # Market相关events
     EVENT_TICK          = MARKETDATE_EVENT_PREFIX + 'Tick'                   # TICK行情事件，可后接具体的vtSymbol
     EVENT_MARKET_DEPTH0 = MARKETDATE_EVENT_PREFIX + 'MD0'           # Market depth0
@@ -19,7 +19,7 @@ class MarketDataBackEnd(object):
     EVENT_KLINE_1MIN    = MARKETDATE_EVENT_PREFIX + 'KL1m'
     EVENT_KLINE_5MIN    = MARKETDATE_EVENT_PREFIX + 'KL5m'
     EVENT_KLINE_15MIN   = MARKETDATE_EVENT_PREFIX + 'KL15m'
-    EVENT_KLINE_30MIN   =bMARKETDATE_EVENT_PREFIX + 'KL30m'
+    EVENT_KLINE_30MIN   = MARKETDATE_EVENT_PREFIX + 'KL30m'
     EVENT_KLINE_1HOUR   = MARKETDATE_EVENT_PREFIX + 'KL1h'
     EVENT_KLINE_4HOUR   = MARKETDATE_EVENT_PREFIX + 'KL4h'
     EVENT_KLINE_1DAY    = MARKETDATE_EVENT_PREFIX + 'KL1d'
@@ -41,14 +41,14 @@ class MarketDataBackEnd(object):
         """Constructor"""
 
         # the MarketData instance Id
-        self._id = settings.id("")
-        if len(self._id)<=0 :
-            MarketData.__lastId__ +=1
-            self._id = 'MD%d' % MarketData.__lastId__
+        # self._id = settings.id("")
+        # if len(self._id)<=0 :
+        #     MarketData.__lastId__ +=1
+        #     self._id = 'MD%d' % MarketData.__lastId__
 
-        self._mr = mainRoutine
-        self._eventCh  = mainRoutine._eventChannel
-        self._exchange = settings.exchange(self._id)
+        # self._mr = mainRoutine
+        # self._eventCh  = mainRoutine._eventChannel
+        # self._exchange = settings.exchange(self._id)
 
         self._active = False
         self.subDict = {}
@@ -79,7 +79,7 @@ class MarketDataBackEnd(object):
     #----------------------------------------------------------------------
     # inqueries to some market data
     # https://www.cnblogs.com/bradleon/p/6106595.html
-     def sendQuery(self, symbol, eventType, since, cortResp=None):
+    def query(self, symbol, eventType, since, cortResp=None):
         """查询请求""" 
         '''
         will call cortResp.send(csvline) when the result comes

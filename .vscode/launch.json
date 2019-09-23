@@ -44,10 +44,11 @@
         {
             "name": "Python: Current File",
             "env": {
-                "PYTHONPATH":"${workspaceFolder}:${PYTHONPATH}"
+                "PYTHONPATH":"${workspaceFolder}:${workspaceFolder}/src:${PYTHONPATH}"
             },
             "type": "python",
             "request": "launch",
+            "pythonPath": "/usr/bin/python3", //python3的安装路径
             "program": "${file}"
         },
         {

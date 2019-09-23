@@ -51,3 +51,12 @@ while [ 1 ]; do
     curl "http://hq.sinajs.cn/list=${ETFs_SH}" | sed -e 's/^var hq_str_\([^=]*\)="/\1,/g' | sed -e 's/,";//g' | iconv -f GBK -t utf-8 >> SHETF_${time}.csv
     usleep 700000 # 700msec
 done
+
+DATE=`date +%y%m%d`
+LIST="${ETFs_SH},${ETFs_SZ}"
+for sym in ${LIST//,/ } ; do 
+    url="http://vip.stock.finance.sina.com.cn/quotes_service/view/CN_TransListV2.php?symbol=${sym}"
+    echo "url: ${url}"
+    curl  "${url}" |grep '^.*trade_item_list\[.*new Array(' |sed 's/^.*trade_item_list.*new Array(//g' |sed 's/);//g' > txn_${sym}_${DATE}.csv
+    usleep 700000
+done

@@ -3,7 +3,7 @@
 from __future__ import division
 
 from .mdBackEnd import MarketData, KLineData, TickData, DataToEvent
-#from ..event.EventChannel import Event
+from event.ecBasic import Event, datetime2float
 
 import requests 
 from copy import copy
@@ -124,11 +124,10 @@ class mdSina(MarketData):
 
         now_datetime = datetime.now()
         if since:
-            tdelta = now_datetime - since
-            tslide = timedelta(minuts=scale)
-            lines = (tdelta + tslide -1) / tslide
+            tdelta = datetime2float(now_datetime) - datetime2float(since)
+            lines = (tdelta + 60*scale -1) / 60/scale
 
-        url = "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=%s&scale=%s&datalen=%s" % (symbol, scale, lines)
+        url = "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=%s&scale=%s&datalen=%d" % (symbol, scale, lines)
         klineseq =[]
         try:
             response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)

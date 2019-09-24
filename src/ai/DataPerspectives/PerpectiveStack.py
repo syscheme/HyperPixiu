@@ -16,17 +16,6 @@ class MDPerspective(object):
     3. 5min KLines
     4. 1day KLines
     '''
-    # EVENT_TICK          = MARKETDATE_EVENT_PREFIX + 'Tick'                   # TICK行情事件，可后接具体的vtSymbol
-    # EVENT_MARKET_DEPTH0 = MARKETDATE_EVENT_PREFIX + 'MD0'           # Market depth0
-    # EVENT_MARKET_DEPTH2 = MARKETDATE_EVENT_PREFIX + 'MD2'           # Market depth2
-    # EVENT_KLINE_1MIN    = MARKETDATE_EVENT_PREFIX + 'KL1m'
-    # EVENT_KLINE_5MIN    = MARKETDATE_EVENT_PREFIX + 'KL5m'
-    # EVENT_KLINE_15MIN   = MARKETDATE_EVENT_PREFIX + 'KL15m'
-    # EVENT_KLINE_30MIN   = MARKETDATE_EVENT_PREFIX + 'KL30m'
-    # EVENT_KLINE_1HOUR   = MARKETDATE_EVENT_PREFIX + 'KL1h'
-    # EVENT_KLINE_4HOUR   = MARKETDATE_EVENT_PREFIX + 'KL4h'
-    # EVENT_KLINE_30MIN    = MARKETDATE_EVENT_PREFIX + 'KL1d'
-
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol =None):
         '''Constructor'''

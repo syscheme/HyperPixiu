@@ -2,7 +2,8 @@
 
 from __future__ import division
 
-from marketdata.mdBackEnd import MarketData
+from marketdata.mdBackEnd import MarketData, TickToKLineMerger, KlineToXminMerger, TickData, KLineData
+from event.ecBasic import EventData
 
 from datetime import datetime
 from abc import ABCMeta, abstractmethod
@@ -34,7 +35,7 @@ class MDPerspective(object):
         if symbol and len(symbol)>0:
             self.symbol = self.vtSymbol = symbol
             if  len(exchange)>0 :
-                self.vtSymbol = '.'.join([self.symbol, self.exchange])
+                self._vtSymbol = '.'.join([self._symbol, self._exchange])
 
 
 ########################################################################
@@ -57,18 +58,18 @@ class PerspectiveStack(object):
 
         self._symbol   =symbol
         self._exchange =exchange
-        self._mergerTick21Min    = TickToKLineMerger(self.cbMergedKLine1min)
+        self._mergerTickTo1Min    = TickToKLineMerger(self.cbMergedKLine1min)
         self._mergerKline1To5m   = KlineToXminMerger(self.cbMergedKLine5min, xmin=5)
         self._mergerKline5mToDay = KlineToXminMerger(self.cbMergedKLineDay,  xmin=240)
         self._currentPersective =  MDPerspective(self._symbol, self._exchange)
         for i in range(self._depth[MarketData.EVENT_TICK]) :
-            self._currentPersective._data.ticks = [TickData(self._symbol, self._exchange)] + self._currentPersective._data.ticks
+            self._currentPersective._data[MarketData.EVENT_TICK] = [TickData(self._exchange, self._symbol)] + self._currentPersective._data[MarketData.EVENT_TICK]
         for i in range(self._depth[MarketData.EVENT_KLINE_1MIN]) :
-            self._currentPersective._data.KL_1min = [KLineData(self._symbol, self._exchange)] + self._currentPersective._data.KL_1min
+            self._currentPersective._data[MarketData.EVENT_KLINE_1MIN] = [KLineData(self._exchange, self._symbol)] + self._currentPersective._data[MarketData.EVENT_KLINE_1MIN]
         for i in range(self._depth[MarketData.EVENT_KLINE_5MIN]) :
-            self._currentPersective._data.KL_5min = [KLineData(self._symbol, self._exchange)] + self._currentPersective._data.KL_5min
+            self._currentPersective._data[MarketData.EVENT_KLINE_5MIN] = [KLineData(self._exchange, self._symbol)] + self._currentPersective._data[MarketData.EVENT_KLINE_5MIN]
         for i in range(self._depth[MarketData.EVENT_KLINE_1DAY]) :
-            self._currentPersective._data.KLDepth_1day = [KLineData(self._symbol, self._exchange)] + self._currentPersective._data.KLDepth_1day
+            self._currentPersective._data[MarketData.EVENT_KLINE_1DAY] = [KLineData(self._exchange, self._symbol)] + self._currentPersective._data[MarketData.EVENT_KLINE_1DAY]
 
         self._stampStepped = {
             MarketData.EVENT_TICK:   None,
@@ -86,9 +87,11 @@ class PerspectiveStack(object):
             self.OnNewPerspective(copy(self._currentPersective))
             self._stampNoticed = datetime.now()
 
+    @abstractmethod
     def OnNewPerspective(self, persective) :
         pass
            
+    @abstractmethod
     def OnKLinePrefillWished(self, kltype) :
         # dummy setting the stamp
         self._stampStepped[kltype] = datetime.now()
@@ -117,7 +120,7 @@ class PerspectiveStack(object):
             nextKLT = MarketData.EVENT_KLINE_1DAY
             merger = self._mergerKline5mToDay
         if MarketData.EVENT_KLINE_5MIN == kltype:
-            nextKLT = MarketData.EVENT_TICK
+            nextKLT = MarketData.EVENT_TICK # as an invalid option
 
         klines = self._currentPersective._data.get(kltype)
         if klines and len(klines) >0 :
@@ -152,6 +155,45 @@ class PerspectiveStack(object):
         if not self._stampStepped[MarketData.EVENT_KLINE_1MIN] :
             self.OnKLinePrefillWished(MarketData.EVENT_KLINE_1MIN)
 
-        if self._mergerTick21Min:
-            self._mergerTick21Min.pushTick(tick)
+        if self._mergerTickTo1Min:
+            self._mergerTickTo1Min.pushTick(tick)
 
+########################################################################
+class TestStack(PerspectiveStack):
+    #----------------------------------------------------------------------
+    def __init__(self, symbol) :
+        '''Constructor'''
+        if symbol.isdigit() :
+            if symbol.startswith('0') :
+                symbol = "sz%s" % symbol
+            elif symbol.startswith('3') :
+                symbol = "sz%s" % symbol
+            elif symbol.startswith('6') :
+                symbol = "sh%s" % symbol
+
+        super(TestStack, self).__init__("shop37077890", symbol)
+
+    def pushKLine1min(self, kline) :
+        self.pushKLineXmin(kline, MarketData.EVENT_KLINE_1MIN)
+
+if __name__ == '__main__':
+    # import vnApp.HistoryData as hd
+    import os
+
+    srcDataHome=u'/mnt/h/AShareSample/'
+    symbols= ["000540","000623","000630","000709","00072"]
+
+    for s in symbols :
+        ps = TestStack(s)
+        try :
+            for root, subdirs, files in os.walk(srcDataHome + s):
+                for fn in files :
+                    if s != fn[:len(s)] or fn[-8:] != '.csv.bz2' :
+                        continue
+                    hd.loadTaobaoCsvBz2(srcDataHome + s +'/'+fn, ps.pushKLine1min)
+        except :
+            pass
+
+
+
+ 

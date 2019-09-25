@@ -2,16 +2,16 @@
 
 from __future__ import division
 
-from vnApp.MainRoutine import *
-from vnApp.Account import *
+# from vnApp.MainRoutine import *
+# from vnApp.Account import *
 from vnApp.MarketData import *
 from vnApp.EventChannel import *
-from vnApp.DataRecorder import *
+# from vnApp.DataRecorder import *
 
 from copy import copy
 from datetime import datetime
 from threading import Thread
-from Queue import Queue, Empty
+from queue import Queue, Empty
 from multiprocessing.dummy import Pool
 from time import sleep
 from datetime import datetime
@@ -72,7 +72,7 @@ class TaobaoCvsToEvent(DataToEvent):
         self._cbMarketEvent(eventType, eData, dataOf)
 
 ########################################################################
-from vnApp.marketdata.mdHuobi import HuobiToEvent
+# from vnApp.marketdata.mdHuobi import HuobiToEvent
 
 class mdOffline(MarketData):
     '''
@@ -85,7 +85,7 @@ class mdOffline(MarketData):
     DataToEventClasses = {
         'MultiCharts'  : McCvsToEvent,
         'shop37077890' : TaobaoCvsToEvent,
-        'huobi'        : HuobiToEvent,
+#        'huobi'        : HuobiToEvent,
     }
 
     #----------------------------------------------------------------------

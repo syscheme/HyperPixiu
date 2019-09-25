@@ -1,7 +1,7 @@
 # encoding: UTF-8
 
 # 系统模块
-from Queue import Queue, Empty
+from queue import Queue, Empty
 from threading import Thread
 from time import sleep
 from collections import defaultdict
@@ -90,7 +90,7 @@ class EventLoop(object): # non-thread
             if event :
                 self.__process(event)
                 c+=1
-        except Exception, ex:
+        except Exception as ex:
             print("eventCH exception %s %s" % (ex, traceback.format_exc()))
 
         if c<=0:

@@ -15,7 +15,7 @@ import traceback
 import shelve
 
 from .EventChannel import Event, EventLoop, EventChannel, EventData
-from .language import text
+# from .language import text
 
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
@@ -544,7 +544,7 @@ class MainRoutine(object):
                 except KeyboardInterrupt:
                     self.error("quit per KeyboardInterrupt")
                     exit(-1)
-                except Exception, ex:
+                except Exception as ex:
                     self.error("eventCH step exception %s %s" % (ex, traceback.format_exc()))
 
             # if c % 10 ==0:
@@ -562,7 +562,7 @@ class MainRoutine(object):
             self._pid = os.fork()
             if self._pid > 0:        #parrent
                 os._exit(0)
-        except OSError,e:
+        except OSError as e:
             sys.stderr.write("first fork failed!!"+e.strerror)
             os._exit(1)
     
@@ -580,7 +580,7 @@ class MainRoutine(object):
             self._pid = os.fork()     #第二次进行fork,为了防止会话首进程意外获得控制终端
             if self._pid > 0:
                 os._exit(0)     #父进程退出
-        except OSError,e:
+        except OSError as e:
             sys.stderr.write("second fork failed!!"+e.strerror)
             os._exit(1)
     

@@ -81,7 +81,7 @@ class PerspectiveStack(object):
         
     #----------------------------------------------------------------------
     def pushKLineXmin(self, kline, kltype =MarketData.EVENT_KLINE_1MIN) :
-        self._pushKLine(self, kline, kltype)
+        self._pushKLine(kline, kltype)
         if self._stampNoticed < self._stampStepped :
             self._currentPersective._stampAsOf = self._stampStepped
             self.OnNewPerspective(copy(self._currentPersective))
@@ -124,8 +124,7 @@ class PerspectiveStack(object):
 
         klines = self._currentPersective._data.get(kltype)
         if klines and len(klines) >0 :
-            if (kline.exchange.find('_k2x') or kline.exchange.find('_t2k')) and \
-                klines[0].datetime and kline.datetime < klines[0].datetime:
+            if (kline.exchange.find('_k2x') or kline.exchange.find('_t2k')) and klines[0].datetime and kline.datetime < klines[0].datetime:
                 return # ignore the late merging
 
             if klines[0].datetime.minute == kline.datetime.minute and klines[0].datetime.date == kline.datetime.date :
@@ -159,9 +158,14 @@ class PerspectiveStack(object):
             self._mergerTickTo1Min.pushTick(tick)
 
 ########################################################################
+from src.marketdata.mdOffline import TaobaoCvsToEvent
+import bz2
+import csv
+
 class TestStack(PerspectiveStack):
+
     #----------------------------------------------------------------------
-    def __init__(self, symbol) :
+    def __init__(self, symbol, folder) :
         '''Constructor'''
         if symbol.isdigit() :
             if symbol.startswith('0') :
@@ -172,9 +176,129 @@ class TestStack(PerspectiveStack):
                 symbol = "sh%s" % symbol
 
         super(TestStack, self).__init__("shop37077890", symbol)
+        self._dirData = folder
+        self._fields = 'date,time,open,high,low,close,volume,ammount'
+        self._dataToEvent = TaobaoCvsToEvent(self.pushKLineEvent)
+
+    def pushKLineEvent(self, event) :
+        self.pushKLineXmin(event._dict['data'], event.type_)
 
     def pushKLine1min(self, kline) :
         self.pushKLineXmin(kline, MarketData.EVENT_KLINE_1MIN)
+
+    def _listAllFiles(self, top):
+        fnlist = []
+        for root, _, files in os.walk(top, topdown=False):
+            for name in files:
+                fnlist.append('%s/%s' % (root, name))
+            # for name in subdirs:
+            #     fnlist += self._listAllFiles('%s/%s' % (root, name))
+        return fnlist
+
+    def _filterFiles(self):
+        """从数据库中读取Bar数据，startDate是datetime对象"""
+
+        fnlist = self._listAllFiles(self._dirData)
+        fnlist.sort()
+        csvfiles = []
+        prev = ""
+        trange = None
+        searchsymb = self._symbol[2:]
+        for name in fnlist:
+            if not searchsymb in name:
+                continue
+
+            basename = name.split('/')[-1]
+            stk = basename.split('.')
+            if stk[-1] =='csv' :
+                basename = stk[-2] 
+            elif stk[-1] =='bz2' and stk[-2] =='csv':
+                basename = stk[-3]
+            else : continue
+
+            pos = basename.find(searchsymb)
+            stampstr = basename[pos+1 + len(searchsymb):] if pos >=0 else basename
+            # if 'H' in stampstr:
+            #     trange = self._stampRangeinFn['H']
+            # elif 'Q' in stampstr :
+            #     trange = self._stampRangeinFn['Q']
+            # else :
+            #     trange = self._stampRangeinFn['T']
+            
+            # if stampstr < trange[0]:
+            #     prev= name
+            # elif stampstr <= trange[1]:
+            csvfiles.append(name)
+
+        if len(prev) >0 and len(csvfiles) >0 and csvfiles[0] > trange[0]:
+            csvfiles = [prev] + csvfiles
+        
+        return csvfiles
+
+    def debug(self, msg) :
+        pass
+
+    def error(self, msg) :
+        pass
+
+    def loadFiles(self) :
+
+        self._seqFiles = self._filterFiles()
+        fields = self._fields.split(',') if self._fields else None
+        for fn in self._seqFiles :
+            self.debug('openning input file %s' % (fn))
+            extname = fn.split('.')[-1]
+            if extname == 'bz2':
+                self._importStream = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
+            else:
+                self._importStream = file(fn, 'rt')
+
+            self._reader = csv.DictReader(self._importStream, fields, lineterminator='\n') if 'csv' in fn else self._importStream
+            # self._reader = csv.reader(self._importStream) if 'csv' in fn else self._importStream
+            if not self._reader:
+                self.warn('failed to open input file %s' % (fn))
+                continue
+
+            if len(self._fields) <=0:
+                self._fields = self._reader.headers()
+
+            while self._reader:
+                try :
+                    line = next(self._reader, None)
+                    # c+=1 if line
+                except Exception as ex:
+                    line = None
+
+                if not line:
+                    # self.error(traceback.format_exc())
+                    self._reader = None
+                    self._importStream.close()
+                    continue
+
+                try :
+                    if line and self._dataToEvent:
+                        # self.debug('line: %s' % (line))
+                        self._dataToEvent.push(line, MarketData.EVENT_KLINE_1MIN, self._symbol)
+                except Exception as ex:
+                    pass # self.error(traceback.format_exc())
+
+        if bEOS:
+            self.info('reached end, queued dummy Event(End), fake an EOS event')
+            newSymbol = '%s.%s' % (self._symbol, self.exchange)
+            edata = TickData(self._symbol) if 'Tick' in self._eventType else KLineData(self._symbol)
+            edata.date = MarketData.DUMMY_DATE_EOS
+            edata.time = MarketData.DUMMY_TIME_EOS
+            edata.datetime = MarketData.DUMMY_DT_EOS
+            edata.exchange  = MarketData.exchange # output exchange name 
+            event = Event(self._eventType)
+            event.dict_['data'] = edata
+            self.onMarketEvent(event)
+            c +=1
+            self.onMarketEvent(event)
+            self._main.stop()
+
+        return c
+
 
 if __name__ == '__main__':
     # import vnApp.HistoryData as hd
@@ -184,15 +308,9 @@ if __name__ == '__main__':
     symbols= ["000540","000623","000630","000709","00072"]
 
     for s in symbols :
-        ps = TestStack(s)
-        try :
-            for root, subdirs, files in os.walk(srcDataHome + s):
-                for fn in files :
-                    if s != fn[:len(s)] or fn[-8:] != '.csv.bz2' :
-                        continue
-                    hd.loadTaobaoCsvBz2(srcDataHome + s +'/'+fn, ps.pushKLine1min)
-        except :
-            pass
+        ps = TestStack(s,srcDataHome)
+        files = ps.loadFiles()
+
 
 
 

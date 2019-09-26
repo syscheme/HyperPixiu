@@ -9,6 +9,22 @@ from datetime import datetime
 from abc import ABCMeta, abstractmethod
 import traceback
 
+from src.marketdata.mdOffline import CapturedToKLine
+import bz2
+import csv
+import tensorflow as tf
+
+########################################################################
+class mdStack(object):
+    def __init__(self, fixedSize=0, nildata=None):
+        '''Constructor'''
+        super(MDPerspective, self).__init__()
+        self._data =[]
+        self._fixedSize =fixedSize
+        if nildata and self._fixedSize and self._fixedSize>0 :
+            for i in range(self._fixedSize) :
+                self._data.insert(0,nildata)
+
 ########################################################################
 class MDPerspective(object):
     '''
@@ -164,10 +180,6 @@ class PerspectiveStack(object):
             self._mergerTickTo1Min.pushTick(tick)
 
 ########################################################################
-from src.marketdata.mdOffline import CapturedToKLine
-import bz2
-import csv
-import tensorflow as tf
 
 class TestStack(PerspectiveStack):
 
@@ -192,7 +204,7 @@ class TestStack(PerspectiveStack):
     def __enter__(self) :
         return self
 
-    def __exit__(self) :
+    def __exit__(self, exc_type, exc_val, exc_tb) :
         if self._writer :
             self._writer.close()
 
@@ -202,37 +214,50 @@ class TestStack(PerspectiveStack):
     def pushKLine1min(self, kline) :
         self.pushKLineXmin(kline, MarketData.EVENT_KLINE_1MIN)
 
-    def KLinePartiToMetrix(self, klines) :
-        lst = [] # metrx = []
+    def KLinePartiToTfFeature(self, klines) :
+        lst = []
         for kl in klines :
             dti = int(datetime2float(kl.datetime)) if kl.datetime else 0
-            # nlst = [int(dti/86400), int(dti%86400), int(kl.open*1000), int(kl.high*1000), int(kl.low*1000), int(kl.close*1000), int(kl.volume)]
-            nlst = [float(dti), float(kl.open*1000), float(kl.high), float(kl.low), float(kl.close*1000), float(kl.volume)]
-            lst.extend(nlst) # metrx.append(nlst)
-        return lst
+            # nlst = [float(dti), float(kl.open*1000), float(kl.high), float(kl.low), float(kl.close*1000), float(kl.volume)]
+            nlst = [int(dti/86400), int(dti%86400), int(kl.open*1000), int(kl.high*1000), int(kl.low*1000), int(kl.close*1000), int(kl.volume)]
+            lst.extend(nlst)
+        # return tf.train.Feature(float_list=tf.train.FloatList(value=lst))
+        return tf.train.Feature(int64_list=tf.train.Int64List(value=lst)) # the sizeof(Int64List） is about 1/3 of sizeof(FloatList）
 
-    def ticksPartiToMetrix(self, ticks) :
-        metrx = []
-
+    def ticksPartiToTfFeature(self, ticks) :
+        lst = []
         for tk in ticks :
-            # TODO metrx.append(value =[datetime2float(kl.datetime), float(kl.open), float(kl.high), float(kl.low), float(kl.close), float(kl.volume)])
-            pass
-        return metrx
+            dti = int(datetime2float(tk.datetime)) if tk.datetime else 0
+            nlst = [ int(dti/86400), int(dti%86400), 
+                    int(tk.price*1000), int(tk.volume), int(tk.openInterest), 
+                    int(tk.open*1000), int(tk.high*1000), int(tk.low*1000), int(tk.prevClose*1000), # no tk.close always
+                    int(tk.b1P*1000), int(tk.b1V), int(tk.a1P*1000), int(tk.a1V),
+                    int(tk.b2P*1000), int(tk.b2V), int(tk.a2P*1000), int(tk.a2V),
+                    int(tk.b3P*1000), int(tk.b3V), int(tk.a3P*1000), int(tk.a3V),
+                    int(tk.b4P*1000), int(tk.b4V), int(tk.a4P*1000), int(tk.a4V),
+                    int(tk.b5P*1000), int(tk.b5V), int(tk.a5P*1000), int(tk.a5V)
+                    ]
+        
+            lst.extend(nlst)
+
+        return tf.train.Feature(int64_list=tf.train.Int64List(value=lst)) # the sizeof(Int64List） is about 1/3 of sizeof(FloatList）
 
     @abstractmethod
     def OnNewPerspective(self, persective) :
         dti = int(datetime2float(persective._stampAsOf)) if persective._stampAsOf else 0
-        partiTick = self.ticksPartiToMetrix(persective._data[MarketData.EVENT_TICK])
-        partiK1m = self.KLinePartiToMetrix(persective._data[MarketData.EVENT_KLINE_1MIN])
-        partiK5m = self.KLinePartiToMetrix(persective._data[MarketData.EVENT_KLINE_5MIN])
-        partiK1d = self.KLinePartiToMetrix(persective._data[MarketData.EVENT_KLINE_1DAY])
+
+        partiTick = self.ticksPartiToTfFeature(persective._data[MarketData.EVENT_TICK])
+
+        partiK1m = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_1MIN])
+        partiK5m = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_5MIN])
+        partiK1d = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_1DAY])
 
         example = tf.train.Example(features=tf.train.Features(feature={
-                    "asof": tf.train.Feature(int64_list=tf.train.Int64List(value=[dti])),
-                    "Tick": tf.train.Feature(float_list=tf.train.FloatList(value=partiTick)),
-                    "K1m": tf.train.Feature(float_list=tf.train.FloatList(value=partiK1m)),
-                    "K5m": tf.train.Feature(float_list=tf.train.FloatList(value=partiK5m)),
-                    "K1d": tf.train.Feature(float_list=tf.train.FloatList(value=partiK1d)),
+                    "label": tf.train.Feature(int64_list=tf.train.Int64List(value=[dti])),
+                    "Tick": partiTick,
+                    "K1m": partiK1m,
+                    "K5m": partiK5m,
+                    "K1d": partiK1d,
                     }
                     ))
         self._writer.write(example.SerializeToString())
@@ -296,6 +321,7 @@ class TestStack(PerspectiveStack):
 
         self._seqFiles = self._filterFiles()
         fields = self._fields.split(',') if self._fields else None
+        c=0
         for fn in self._seqFiles :
             self.debug('openning input file %s' % (fn))
             extname = fn.split('.')[-1]
@@ -314,9 +340,12 @@ class TestStack(PerspectiveStack):
                 self._fields = self._reader.headers()
 
             while self._reader:
+                
+                if c>1000:
+                    return c
+
                 try :
                     line = next(self._reader, None)
-                    # c+=1 if line
                 except Exception as ex:
                     line = None
 
@@ -330,24 +359,9 @@ class TestStack(PerspectiveStack):
                     if line and self._cvsToKLine:
                         # self.debug('line: %s' % (line))
                         self._cvsToKLine.pushCvsRow(line, MarketData.EVENT_KLINE_1MIN, self._exchange, self._symbol)
+                        c+=1
                 except Exception as ex:
                     print(traceback.format_exc())
-
-        if bEOS:
-            self.info('reached end, queued dummy Event(End), fake an EOS event')
-            newSymbol = '%s.%s' % (self._symbol, self.exchange)
-            edata = TickData(self._symbol) if 'Tick' in self._eventType else KLineData(self._symbol)
-            edata.date = MarketData.DUMMY_DATE_EOS
-            edata.time = MarketData.DUMMY_TIME_EOS
-            edata.datetime = MarketData.DUMMY_DT_EOS
-            edata.exchange  = MarketData.exchange # output exchange name 
-            event = Event(self._eventType)
-            event.dict_['data'] = edata
-            self.onMarketEvent(event)
-            c +=1
-            self.onMarketEvent(event)
-            self._main.stop()
-
         return c
 
 
@@ -355,15 +369,12 @@ if __name__ == '__main__':
     # import vnApp.HistoryData as hd
     import os
 
-    srcDataHome=u'/mnt/e/AShareSample/'
-    destDataHome=u'/mnt/e/AShareSample/'
+    srcDataHome=u'/mnt/h/AShareSample/'
+    destDataHome=u'/mnt/h/AShareSample/'
     symbols= ["000540","000623"]
 
     for s in symbols :
         with TestStack(s,srcDataHome,destDataHome) as ps :
             ps.loadFiles()
-
-
-
 
  

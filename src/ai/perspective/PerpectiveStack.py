@@ -15,15 +15,38 @@ import csv
 import tensorflow as tf
 
 ########################################################################
-class mdStack(object):
+class psStack(object):
     def __init__(self, fixedSize=0, nildata=None):
         '''Constructor'''
-        super(MDPerspective, self).__init__()
+        super(psStack, self).__init__()
         self._data =[]
         self._fixedSize =fixedSize
         if nildata and self._fixedSize and self._fixedSize>0 :
             for i in range(self._fixedSize) :
                 self._data.insert(0,nildata)
+
+    @property
+    def top(self):
+        return self._data[0] if len(self._data) >0 else None
+
+    @property
+    def size(self):
+        return len(self._data) if self._data else 0
+
+    @property
+    def tolist(self):
+        return self._data
+
+    def overwrite(self, item):
+        self._data[0] =item
+
+    def pop(self):
+        del(self._data[-1])
+
+    def push(self, item):
+        self._data.insert(0, item)
+        while self._fixedSize and self._fixedSize >0 and self.size > self._fixedSize:
+            self.pop()
 
 ########################################################################
 class MDPerspective(object):
@@ -35,16 +58,10 @@ class MDPerspective(object):
     4. 1day KLines
     '''
     #----------------------------------------------------------------------
-    def __init__(self, exchange, symbol =None):
+    def __init__(self, exchange, symbol =None, KLDepth_1min=60, KLDepth_5min=240, KLDepth_1day=220, tickDepth=120):
         '''Constructor'''
         super(MDPerspective, self).__init__()
-        self._data = {
-            MarketData.EVENT_TICK:   [],
-            MarketData.EVENT_KLINE_1MIN: [],
-            MarketData.EVENT_KLINE_5MIN: [],
-            MarketData.EVENT_KLINE_1DAY: [],
-        }
-        
+
         self._stampAsOf = None
         self._symbol    = EventData.EMPTY_STRING
         self._vtSymbol  = EventData.EMPTY_STRING
@@ -53,6 +70,14 @@ class MDPerspective(object):
             self._symbol = self.vtSymbol = symbol
             if  len(exchange)>0 :
                 self._vtSymbol = '.'.join([self._symbol, self._exchange])
+
+        self._data = {
+            MarketData.EVENT_TICK:   psStack(tickDepth, TickData(self._exchange, self._symbol)),
+            MarketData.EVENT_KLINE_1MIN: psStack(KLDepth_1min, KLineData(self._exchange, self._symbol)),
+            MarketData.EVENT_KLINE_5MIN: psStack(KLDepth_5min, KLineData(self._exchange, self._symbol)),
+            MarketData.EVENT_KLINE_1DAY: psStack(KLDepth_5min, KLineData(self._exchange, self._symbol)),
+        }
+        
 
 ########################################################################
 class PerspectiveStack(object):
@@ -78,15 +103,7 @@ class PerspectiveStack(object):
         self._mergerTickTo1Min    = TickToKLineMerger(self.cbMergedKLine1min)
         self._mergerKline1To5m   = KlineToXminMerger(self.cbMergedKLine5min, xmin=5)
         self._mergerKline5mToDay = KlineToXminMerger(self.cbMergedKLineDay,  xmin=240)
-        self._currentPersective =  MDPerspective(self._exchange, self._symbol)
-        for i in range(self._depth[MarketData.EVENT_TICK]) :
-            self._currentPersective._data[MarketData.EVENT_TICK] = [TickData(self._exchange, self._symbol)] + self._currentPersective._data[MarketData.EVENT_TICK]
-        for i in range(self._depth[MarketData.EVENT_KLINE_1MIN]) :
-            self._currentPersective._data[MarketData.EVENT_KLINE_1MIN] = [KLineData(self._exchange, self._symbol)] + self._currentPersective._data[MarketData.EVENT_KLINE_1MIN]
-        for i in range(self._depth[MarketData.EVENT_KLINE_5MIN]) :
-            self._currentPersective._data[MarketData.EVENT_KLINE_5MIN] = [KLineData(self._exchange, self._symbol)] + self._currentPersective._data[MarketData.EVENT_KLINE_5MIN]
-        for i in range(self._depth[MarketData.EVENT_KLINE_1DAY]) :
-            self._currentPersective._data[MarketData.EVENT_KLINE_1DAY] = [KLineData(self._exchange, self._symbol)] + self._currentPersective._data[MarketData.EVENT_KLINE_1DAY]
+        self._currentPersective =  MDPerspective(self._exchange, self._symbol, KLDepth_1min=60, KLDepth_5min=240, KLDepth_1day=220, tickDepth=120)
 
         self._stampStepped = {
             MarketData.EVENT_TICK:   None,
@@ -141,18 +158,19 @@ class PerspectiveStack(object):
         if MarketData.EVENT_KLINE_5MIN == kltype:
             nextKLT = MarketData.EVENT_TICK # as an invalid option
 
-        if kltype in self._currentPersective._data.keys() and len(self._currentPersective._data[kltype]) >0 :
-            peek = self._currentPersective._data[kltype][-1]
+        if kltype in self._currentPersective._data.keys() :
+            top = self._currentPersective._data[kltype].top
+            added = False
+            if top and top.datetime:
+                if (kline.exchange.find('_k2x') or kline.exchange.find('_t2k')) and kline.datetime < top.datetime:
+                    return # ignore the late merging
 
-            if (kline.exchange.find('_k2x') or kline.exchange.find('_t2k')) and peek.datetime and kline.datetime < peek.datetime:
-                return # ignore the late merging
-
-            if peek.datetime and (peek.datetime.minute == kline.datetime.minute and peek.datetime.date == kline.datetime.date) :
-                self._currentPersective._data[kltype][-1] = kline # overwrite the frond Kline
-            else:
-                del(self._currentPersective._data[kltype][0])
-                self._currentPersective._data[kltype].append(kline)
-                # klines.insert(0,kline) # shift the existing list and push new kline at the front
+                if top.datetime.minute == kline.datetime.minute and top.datetime.date == top.datetime.date :
+                    self._currentPersective._data[kltype].overwrite(kline) # overwrite the frond Kline
+                    added = True
+            
+            if not added :
+                self._currentPersective._data[kltype].push(kline)
                 self._stampStepped[kltype] = kline.datetime
 
         nextKL = None
@@ -246,11 +264,11 @@ class TestStack(PerspectiveStack):
     def OnNewPerspective(self, persective) :
         dti = int(datetime2float(persective._stampAsOf)) if persective._stampAsOf else 0
 
-        partiTick = self.ticksPartiToTfFeature(persective._data[MarketData.EVENT_TICK])
+        partiTick = self.ticksPartiToTfFeature(persective._data[MarketData.EVENT_TICK].tolist)
 
-        partiK1m = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_1MIN])
-        partiK5m = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_5MIN])
-        partiK1d = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_1DAY])
+        partiK1m = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_1MIN].tolist)
+        partiK5m = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_5MIN].tolist)
+        partiK1d = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_1DAY].tolist)
 
         example = tf.train.Example(features=tf.train.Features(feature={
                     "label": tf.train.Feature(int64_list=tf.train.Int64List(value=[dti])),

@@ -3,10 +3,11 @@
 from __future__ import division
 
 from marketdata.mdBackEnd import MarketData, TickToKLineMerger, KlineToXminMerger, TickData, KLineData
-from event.ecBasic import EventData
+from event.ecBasic import EventData, datetime2float
 
 from datetime import datetime
 from abc import ABCMeta, abstractmethod
+import traceback
 
 ########################################################################
 class MDPerspective(object):
@@ -33,10 +34,9 @@ class MDPerspective(object):
         self._vtSymbol  = EventData.EMPTY_STRING
         self._exchange  = exchange
         if symbol and len(symbol)>0:
-            self.symbol = self.vtSymbol = symbol
+            self._symbol = self.vtSymbol = symbol
             if  len(exchange)>0 :
                 self._vtSymbol = '.'.join([self._symbol, self._exchange])
-
 
 ########################################################################
 class PerspectiveStack(object):
@@ -48,6 +48,7 @@ class PerspectiveStack(object):
 
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol, KLDepth_1min=60, KLDepth_5min=240, KLDepth_1day=220, tickDepth=120) :
+    # def __init__(self, exchange, symbol, KLDepth_1min=10, KLDepth_5min=12, KLDepth_1day=20, tickDepth=20) :
         '''Constructor'''
         self._depth ={
             MarketData.EVENT_TICK:   tickDepth,
@@ -61,7 +62,7 @@ class PerspectiveStack(object):
         self._mergerTickTo1Min    = TickToKLineMerger(self.cbMergedKLine1min)
         self._mergerKline1To5m   = KlineToXminMerger(self.cbMergedKLine5min, xmin=5)
         self._mergerKline5mToDay = KlineToXminMerger(self.cbMergedKLineDay,  xmin=240)
-        self._currentPersective =  MDPerspective(self._symbol, self._exchange)
+        self._currentPersective =  MDPerspective(self._exchange, self._symbol)
         for i in range(self._depth[MarketData.EVENT_TICK]) :
             self._currentPersective._data[MarketData.EVENT_TICK] = [TickData(self._exchange, self._symbol)] + self._currentPersective._data[MarketData.EVENT_TICK]
         for i in range(self._depth[MarketData.EVENT_KLINE_1MIN]) :
@@ -77,15 +78,17 @@ class PerspectiveStack(object):
             MarketData.EVENT_KLINE_5MIN: None,
             MarketData.EVENT_KLINE_1DAY: None,
         }
-        self._stampNoticed = datetime.now()
+        self._stampNoticed = None
         
     #----------------------------------------------------------------------
     def pushKLineXmin(self, kline, kltype =MarketData.EVENT_KLINE_1MIN) :
+        import copy
         self._pushKLine(kline, kltype)
-        if self._stampNoticed < self._stampStepped :
-            self._currentPersective._stampAsOf = self._stampStepped
-            self.OnNewPerspective(copy(self._currentPersective))
-            self._stampNoticed = datetime.now()
+        asof = self._stampStepped[kltype]
+        if not self._stampNoticed or self._stampNoticed < asof :
+            self._currentPersective._stampAsOf = asof
+            self.OnNewPerspective(self._currentPersective)
+            self._stampNoticed = asof
 
     @abstractmethod
     def OnNewPerspective(self, persective) :
@@ -122,15 +125,18 @@ class PerspectiveStack(object):
         if MarketData.EVENT_KLINE_5MIN == kltype:
             nextKLT = MarketData.EVENT_TICK # as an invalid option
 
-        klines = self._currentPersective._data.get(kltype)
-        if klines and len(klines) >0 :
-            if (kline.exchange.find('_k2x') or kline.exchange.find('_t2k')) and klines[0].datetime and kline.datetime < klines[0].datetime:
+        if kltype in self._currentPersective._data.keys() and len(self._currentPersective._data[kltype]) >0 :
+            peek = self._currentPersective._data[kltype][-1]
+
+            if (kline.exchange.find('_k2x') or kline.exchange.find('_t2k')) and peek.datetime and kline.datetime < peek.datetime:
                 return # ignore the late merging
 
-            if klines[0].datetime.minute == kline.datetime.minute and klines[0].datetime.date == kline.datetime.date :
-                klines[0] = kline # overwrite the frond Kline
+            if peek.datetime and (peek.datetime.minute == kline.datetime.minute and peek.datetime.date == kline.datetime.date) :
+                self._currentPersective._data[kltype][-1] = kline # overwrite the frond Kline
             else:
-                klines = [kline] + klines[1:] # shift the existing list and push new kline at the front
+                del(self._currentPersective._data[kltype][0])
+                self._currentPersective._data[kltype].append(kline)
+                # klines.insert(0,kline) # shift the existing list and push new kline at the front
                 self._stampStepped[kltype] = kline.datetime
 
         nextKL = None
@@ -158,14 +164,15 @@ class PerspectiveStack(object):
             self._mergerTickTo1Min.pushTick(tick)
 
 ########################################################################
-from src.marketdata.mdOffline import TaobaoCvsToEvent
+from src.marketdata.mdOffline import CapturedToKLine
 import bz2
 import csv
+import tensorflow as tf
 
 class TestStack(PerspectiveStack):
 
     #----------------------------------------------------------------------
-    def __init__(self, symbol, folder) :
+    def __init__(self, symbol, srcFolder, destFolder) :
         '''Constructor'''
         if symbol.isdigit() :
             if symbol.startswith('0') :
@@ -176,15 +183,59 @@ class TestStack(PerspectiveStack):
                 symbol = "sh%s" % symbol
 
         super(TestStack, self).__init__("shop37077890", symbol)
-        self._dirData = folder
-        self._fields = 'date,time,open,high,low,close,volume,ammount'
-        self._dataToEvent = TaobaoCvsToEvent(self.pushKLineEvent)
+        self._srcFolder, self._destFolder = srcFolder, destFolder
+        self._writer = tf.python_io.TFRecordWriter(self._destFolder + "/" + self._currentPersective.vtSymbol +".dpst")
 
-    def pushKLineEvent(self, event) :
-        self.pushKLineXmin(event._dict['data'], event.type_)
+        self._fields = 'date,time,open,high,low,close,volume,ammount'
+        self._cvsToKLine = CapturedToKLine(self.OnKLine)
+
+    def __enter__(self) :
+        return self
+
+    def __exit__(self) :
+        if self._writer :
+            self._writer.close()
+
+    def OnKLine(self, kl, eventType) :
+        self.pushKLineXmin(kl, eventType)
 
     def pushKLine1min(self, kline) :
         self.pushKLineXmin(kline, MarketData.EVENT_KLINE_1MIN)
+
+    def KLinePartiToMetrix(self, klines) :
+        lst = [] # metrx = []
+        for kl in klines :
+            dti = int(datetime2float(kl.datetime)) if kl.datetime else 0
+            # nlst = [int(dti/86400), int(dti%86400), int(kl.open*1000), int(kl.high*1000), int(kl.low*1000), int(kl.close*1000), int(kl.volume)]
+            nlst = [float(dti), float(kl.open*1000), float(kl.high), float(kl.low), float(kl.close*1000), float(kl.volume)]
+            lst.extend(nlst) # metrx.append(nlst)
+        return lst
+
+    def ticksPartiToMetrix(self, ticks) :
+        metrx = []
+
+        for tk in ticks :
+            # TODO metrx.append(value =[datetime2float(kl.datetime), float(kl.open), float(kl.high), float(kl.low), float(kl.close), float(kl.volume)])
+            pass
+        return metrx
+
+    @abstractmethod
+    def OnNewPerspective(self, persective) :
+        dti = int(datetime2float(persective._stampAsOf)) if persective._stampAsOf else 0
+        partiTick = self.ticksPartiToMetrix(persective._data[MarketData.EVENT_TICK])
+        partiK1m = self.KLinePartiToMetrix(persective._data[MarketData.EVENT_KLINE_1MIN])
+        partiK5m = self.KLinePartiToMetrix(persective._data[MarketData.EVENT_KLINE_5MIN])
+        partiK1d = self.KLinePartiToMetrix(persective._data[MarketData.EVENT_KLINE_1DAY])
+
+        example = tf.train.Example(features=tf.train.Features(feature={
+                    "asof": tf.train.Feature(int64_list=tf.train.Int64List(value=[dti])),
+                    "Tick": tf.train.Feature(float_list=tf.train.FloatList(value=partiTick)),
+                    "K1m": tf.train.Feature(float_list=tf.train.FloatList(value=partiK1m)),
+                    "K5m": tf.train.Feature(float_list=tf.train.FloatList(value=partiK5m)),
+                    "K1d": tf.train.Feature(float_list=tf.train.FloatList(value=partiK1d)),
+                    }
+                    ))
+        self._writer.write(example.SerializeToString())
 
     def _listAllFiles(self, top):
         fnlist = []
@@ -198,7 +249,7 @@ class TestStack(PerspectiveStack):
     def _filterFiles(self):
         """从数据库中读取Bar数据，startDate是datetime对象"""
 
-        fnlist = self._listAllFiles(self._dirData)
+        fnlist = self._listAllFiles(self._srcFolder)
         fnlist.sort()
         csvfiles = []
         prev = ""
@@ -276,11 +327,11 @@ class TestStack(PerspectiveStack):
                     continue
 
                 try :
-                    if line and self._dataToEvent:
+                    if line and self._cvsToKLine:
                         # self.debug('line: %s' % (line))
-                        self._dataToEvent.push(line, MarketData.EVENT_KLINE_1MIN, self._symbol)
+                        self._cvsToKLine.pushCvsRow(line, MarketData.EVENT_KLINE_1MIN, self._exchange, self._symbol)
                 except Exception as ex:
-                    pass # self.error(traceback.format_exc())
+                    print(traceback.format_exc())
 
         if bEOS:
             self.info('reached end, queued dummy Event(End), fake an EOS event')
@@ -304,12 +355,13 @@ if __name__ == '__main__':
     # import vnApp.HistoryData as hd
     import os
 
-    srcDataHome=u'/mnt/h/AShareSample/'
-    symbols= ["000540","000623","000630","000709","00072"]
+    srcDataHome=u'/mnt/e/AShareSample/'
+    destDataHome=u'/mnt/e/AShareSample/'
+    symbols= ["000540","000623"]
 
     for s in symbols :
-        ps = TestStack(s,srcDataHome)
-        files = ps.loadFiles()
+        with TestStack(s,srcDataHome,destDataHome) as ps :
+            ps.loadFiles()
 
 
 

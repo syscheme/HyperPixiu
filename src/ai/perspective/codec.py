@@ -292,6 +292,8 @@ class TestEncoder(Encoder):
 
         dti = int(datetime2float(persective._stampAsOf)) if persective._stampAsOf else 0
 
+        ftLabel = tf.train.Feature(int64_list=tf.train.Int64List(value=[int(self._cFrames), dti]))
+
         frame = None
         if self._cFrames <=0 :
             # the first frame
@@ -300,7 +302,7 @@ class TestEncoder(Encoder):
             partiK5m = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_5MIN].tolist)
             partiK1d = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_1DAY].tolist)
             frame = tf.train.Example(features=tf.train.Features(feature={
-                        "label": tf.train.Feature(int64_list=tf.train.Int64List(value=[dti])),
+                        "label": ftLabel,
                         "Tick": partiTick,
                         "K1m": partiK1m,
                         "K5m": partiK5m,
@@ -327,7 +329,7 @@ class TestEncoder(Encoder):
             inc[c] = tf.train.Feature(int64_list=tf.train.Int64List(value=self._klineToListInt(incremental[dtype])))
 
         frame = tf.train.Example(features=tf.train.Features(feature={
-                        "label": tf.train.Feature(int64_list=tf.train.Int64List(value=[dti])),
+                        "label": ftLabel,
                         "Tick": inc[0],
                         "K1m": inc[1],
                         "K5m": inc[2],
@@ -448,8 +450,18 @@ if __name__ == '__main__':
 
     srcDataHome=u'/mnt/h/AShareSample/'
     destDataHome=u'/mnt/h/AShareSample/'
-    symbols= ["000540","000623"]
+    symbols= [
+        "000001","000069","000402","000425","000559","000627","000709","000768","300003","300027",
+        "300251","600015","600028","600036","600061","600089","600111","601877","601919","601989",
+        "000002","000100","000413","000503","000568","000630","000723","000776","300015","300033",
+        "600009","600016","600029","600038","600066","600100","600115","601888","601939","601991",
+        "000060","000157","000415","000538","000623","000651","000725","000783","300017","300059",
+        "600010","600018","600030","600048","600068","600104","600118","601898","601958","601998",
+        "000063","000338","000423","000540","000625","000671","000728","000786","300024","300124",
+        "600011","600019","600031","600050","600085","600109","601866","601899","601988"
+    ]
 
+    # symbols= ["000540","000623"]
     for s in symbols :
         with TestEncoder(s,srcDataHome,destDataHome) as ps :
             ps.loadFiles()

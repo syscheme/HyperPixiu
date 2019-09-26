@@ -77,7 +77,6 @@ class MDPerspective(object):
             MarketData.EVENT_KLINE_5MIN: psStack(KLDepth_5min, KLineData(self._exchange, self._symbol)),
             MarketData.EVENT_KLINE_1DAY: psStack(KLDepth_5min, KLineData(self._exchange, self._symbol)),
         }
-        
 
 ########################################################################
 class PerspectiveStack(object):
@@ -104,6 +103,12 @@ class PerspectiveStack(object):
         self._mergerKline1To5m   = KlineToXminMerger(self.cbMergedKLine5min, xmin=5)
         self._mergerKline5mToDay = KlineToXminMerger(self.cbMergedKLineDay,  xmin=240)
         self._currentPersective =  MDPerspective(self._exchange, self._symbol, KLDepth_1min=60, KLDepth_5min=240, KLDepth_1day=220, tickDepth=120)
+        self._incremental = {
+            MarketData.EVENT_TICK:   None,
+            MarketData.EVENT_KLINE_1MIN: None,
+            MarketData.EVENT_KLINE_5MIN: None,
+            MarketData.EVENT_KLINE_1DAY: None,
+        }
 
         self._stampStepped = {
             MarketData.EVENT_TICK:   None,
@@ -115,16 +120,16 @@ class PerspectiveStack(object):
         
     #----------------------------------------------------------------------
     def pushKLineXmin(self, kline, kltype =MarketData.EVENT_KLINE_1MIN) :
-        import copy
         self._pushKLine(kline, kltype)
         asof = self._stampStepped[kltype]
         if not self._stampNoticed or self._stampNoticed < asof :
             self._currentPersective._stampAsOf = asof
-            self.OnNewPerspective(self._currentPersective)
+            self.OnIncrementalPerspective(self._currentPersective, self._incremental)
+            self.commitIncremental()
             self._stampNoticed = asof
 
     @abstractmethod
-    def OnNewPerspective(self, persective) :
+    def OnIncrementalPerspective(self, persective, incremental) :
         pass
            
     @abstractmethod
@@ -143,6 +148,22 @@ class PerspectiveStack(object):
     def cbMergedKLineDay(self, kline):
         self._pushKLine(kline, kltype =MarketData.EVENT_KLINE_1DAY)
 
+    def commitIncremental(self):
+        for dtype in [MarketData.EVENT_TICK, MarketData.EVENT_KLINE_1MIN, MarketData.EVENT_KLINE_5MIN, MarketData.EVENT_KLINE_1DAY] :
+            newdata = self._incremental[dtype]
+            if not newdata :
+                continue
+
+            updated = False
+            top = self._currentPersective._data[dtype].top
+            if top and top.datetime and top.datetime == newdata.datetime :
+                self._currentPersective._data[kltype].overwrite(newdata) # overwrite the frond Kline
+                updated = True
+            
+            if not updated :
+                self._currentPersective._data[dtype].push(newdata)
+
+            self._incremental[dtype] = None # reset the _incremental if has commited
     #----------------------------------------------------------------------
     def _pushKLine(self, kline, kltype =MarketData.EVENT_KLINE_1MIN):
         '''X分钟K线更新'''
@@ -165,13 +186,14 @@ class PerspectiveStack(object):
                 if (kline.exchange.find('_k2x') or kline.exchange.find('_t2k')) and kline.datetime < top.datetime:
                     return # ignore the late merging
 
-                if top.datetime.minute == kline.datetime.minute and top.datetime.date == top.datetime.date :
-                    self._currentPersective._data[kltype].overwrite(kline) # overwrite the frond Kline
-                    added = True
+            #     if top.datetime.minute == kline.datetime.minute and top.datetime.date == top.datetime.date :
+            #         self._currentPersective._data[kltype].overwrite(kline) # overwrite the frond Kline
+            #         added = True
             
-            if not added :
-                self._currentPersective._data[kltype].push(kline)
-                self._stampStepped[kltype] = kline.datetime
+            # if not added :
+            #     self._currentPersective._data[kltype].push(kline)
+        self._incremental[kltype]  = kline
+        self._stampStepped[kltype] = kline.datetime
 
         nextKL = None
         if nextKLT != MarketData.EVENT_TICK :
@@ -215,7 +237,7 @@ class TestStack(PerspectiveStack):
         super(TestStack, self).__init__("shop37077890", symbol)
         self._srcFolder, self._destFolder = srcFolder, destFolder
         self._writer = tf.python_io.TFRecordWriter(self._destFolder + "/" + self._currentPersective.vtSymbol +".dpst")
-
+        self._cFrames =0
         self._fields = 'date,time,open,high,low,close,volume,ammount'
         self._cvsToKLine = CapturedToKLine(self.OnKLine)
 
@@ -232,21 +254,22 @@ class TestStack(PerspectiveStack):
     def pushKLine1min(self, kline) :
         self.pushKLineXmin(kline, MarketData.EVENT_KLINE_1MIN)
 
+    def _klineToListInt(self, kl) :
+        dti = int(datetime2float(kl.datetime)) if kl.datetime else 0
+        return [int(dti/86400), int(dti%86400), int(kl.open*1000), int(kl.high*1000), int(kl.low*1000), int(kl.close*1000), int(kl.volume)]
+
     def KLinePartiToTfFeature(self, klines) :
         lst = []
         for kl in klines :
-            dti = int(datetime2float(kl.datetime)) if kl.datetime else 0
             # nlst = [float(dti), float(kl.open*1000), float(kl.high), float(kl.low), float(kl.close*1000), float(kl.volume)]
-            nlst = [int(dti/86400), int(dti%86400), int(kl.open*1000), int(kl.high*1000), int(kl.low*1000), int(kl.close*1000), int(kl.volume)]
-            lst.extend(nlst)
+            # nlst = [int(dti/86400), int(dti%86400), int(kl.open*1000), int(kl.high*1000), int(kl.low*1000), int(kl.close*1000), int(kl.volume)]
+            lst.extend(self._klineToListInt(kl))
         # return tf.train.Feature(float_list=tf.train.FloatList(value=lst))
         return tf.train.Feature(int64_list=tf.train.Int64List(value=lst)) # the sizeof(Int64List） is about 1/3 of sizeof(FloatList）
 
-    def ticksPartiToTfFeature(self, ticks) :
-        lst = []
-        for tk in ticks :
-            dti = int(datetime2float(tk.datetime)) if tk.datetime else 0
-            nlst = [ int(dti/86400), int(dti%86400), 
+    def _tickToListInt(self, tk) :
+        dti = int(datetime2float(tk.datetime)) if tk.datetime else 0
+        nlst = [ int(dti/86400), int(dti%86400), 
                     int(tk.price*1000), int(tk.volume), int(tk.openInterest), 
                     int(tk.open*1000), int(tk.high*1000), int(tk.low*1000), int(tk.prevClose*1000), # no tk.close always
                     int(tk.b1P*1000), int(tk.b1V), int(tk.a1P*1000), int(tk.a1V),
@@ -255,30 +278,66 @@ class TestStack(PerspectiveStack):
                     int(tk.b4P*1000), int(tk.b4V), int(tk.a4P*1000), int(tk.a4V),
                     int(tk.b5P*1000), int(tk.b5V), int(tk.a5P*1000), int(tk.a5V)
                     ]
+        return nlst
         
-            lst.extend(nlst)
+    def ticksPartiToTfFeature(self, ticks) :
+        lst = []
+        for tk in ticks :
+            lst.extend(self._tickToListInt(tk))
 
         return tf.train.Feature(int64_list=tf.train.Int64List(value=lst)) # the sizeof(Int64List） is about 1/3 of sizeof(FloatList）
 
     @abstractmethod
-    def OnNewPerspective(self, persective) :
+    def OnIncrementalPerspective(self, persective, incremental) :
+
         dti = int(datetime2float(persective._stampAsOf)) if persective._stampAsOf else 0
 
-        partiTick = self.ticksPartiToTfFeature(persective._data[MarketData.EVENT_TICK].tolist)
+        frame = None
+        if self._cFrames <=0 :
+            # the first frame
+            partiTick = self.ticksPartiToTfFeature(persective._data[MarketData.EVENT_TICK].tolist)
+            partiK1m = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_1MIN].tolist)
+            partiK5m = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_5MIN].tolist)
+            partiK1d = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_1DAY].tolist)
+            frame = tf.train.Example(features=tf.train.Features(feature={
+                        "label": tf.train.Feature(int64_list=tf.train.Int64List(value=[dti])),
+                        "Tick": partiTick,
+                        "K1m": partiK1m,
+                        "K5m": partiK5m,
+                        "K1d": partiK1d,
+                        }
+                        ))
 
-        partiK1m = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_1MIN].tolist)
-        partiK5m = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_5MIN].tolist)
-        partiK1d = self.KLinePartiToTfFeature(persective._data[MarketData.EVENT_KLINE_1DAY].tolist)
+        if frame :
+            self._writer.write(frame.SerializeToString())
+            self._cFrames+=1
 
-        example = tf.train.Example(features=tf.train.Features(feature={
-                    "label": tf.train.Feature(int64_list=tf.train.Int64List(value=[dti])),
-                    "Tick": partiTick,
-                    "K1m": partiK1m,
-                    "K5m": partiK5m,
-                    "K1d": partiK1d,
-                    }
-                    ))
-        self._writer.write(example.SerializeToString())
+        frame = None
+        # the incremental frame
+        NilFeature = tf.train.Feature(int64_list=tf.train.Int64List(value=[])) 
+        inc = [NilFeature, NilFeature, NilFeature, NilFeature]
+        if incremental[MarketData.EVENT_TICK] :
+            inc[0] = tf.train.Feature(int64_list=tf.train.Int64List(value=self._tickToListInt(incremental[MarketData.EVENT_TICK])))
+        c =0
+        for dtype in [MarketData.EVENT_KLINE_1MIN, MarketData.EVENT_KLINE_5MIN, MarketData.EVENT_KLINE_1DAY] :
+            c+=1
+            newdata = incremental[dtype]
+            if not newdata :
+                continue
+            inc[c] = tf.train.Feature(int64_list=tf.train.Int64List(value=self._klineToListInt(incremental[dtype])))
+
+        frame = tf.train.Example(features=tf.train.Features(feature={
+                        "label": tf.train.Feature(int64_list=tf.train.Int64List(value=[dti])),
+                        "Tick": inc[0],
+                        "K1m": inc[1],
+                        "K5m": inc[2],
+                        "K1d": inc[3],
+                        }
+                        ))
+
+        if frame :
+            self._writer.write(frame.SerializeToString())
+            self._cFrames+=1
 
     def _listAllFiles(self, top):
         fnlist = []

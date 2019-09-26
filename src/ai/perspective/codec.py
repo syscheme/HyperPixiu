@@ -310,8 +310,39 @@ class Encoder(object):
             self._mergerTickTo1Min.pushTick(tick)
 
 ########################################################################
-class TestEncoder(Encoder):
+class Decoder(object):
+    '''
+    read TF frame to Perspective:
+    '''
 
+    #----------------------------------------------------------------------
+    def __init__(self, exchange, symbol, KLDepth_1min=60, KLDepth_5min=240, KLDepth_1day=220, tickDepth=120) :
+    # def __init__(self, exchange, symbol, KLDepth_1min=10, KLDepth_5min=12, KLDepth_1day=20, tickDepth=20) :
+        '''Constructor'''
+        self._depth ={
+            MarketData.EVENT_TICK:       tickDepth,
+            MarketData.EVENT_KLINE_1MIN: KLDepth_1min,
+            MarketData.EVENT_KLINE_5MIN: KLDepth_5min,
+            MarketData.EVENT_KLINE_1DAY: KLDepth_1day,
+        }
+
+        self._symbol   =symbol
+        self._exchange =exchange
+        self._currentPersective =  MDPerspective(self._exchange, self._symbol, KLDepth_1min=60, KLDepth_5min=240, KLDepth_1day=220, tickDepth=120)
+        self._cFrames =0
+
+    def pushTick(self, frame):
+        self._incremental = {
+            MarketData.EVENT_TICK:   None,
+            MarketData.EVENT_KLINE_1MIN: None,
+            MarketData.EVENT_KLINE_5MIN: None,
+            MarketData.EVENT_KLINE_1DAY: None,
+        }
+
+
+
+########################################################################
+class CsvToTfFrame(Encoder):
     #----------------------------------------------------------------------
     def __init__(self, symbol, srcFolder, destFolder) :
         '''Constructor'''
@@ -323,7 +354,7 @@ class TestEncoder(Encoder):
             elif symbol.startswith('6') :
                 symbol = "sh%s" % symbol
 
-        super(TestEncoder, self).__init__("AShare", symbol)
+        super(CsvToTfFrame, self).__init__("AShare", symbol)
         self._srcFolder, self._destFolder = srcFolder, destFolder
         self._writer = tf.python_io.TFRecordWriter(self._destFolder + "/" + self._currentPersective.vtSymbol +".dpst")
         self._fields = 'date,time,open,high,low,close,volume,ammount'
@@ -446,6 +477,96 @@ class TestEncoder(Encoder):
                     print(traceback.format_exc())
         return c
 
+########################################################################
+class FrameReader(object):
+    #----------------------------------------------------------------------
+    def __init__(self, exchange, symbol) :
+        '''Constructor'''
+        if symbol.isdigit() :
+            if symbol.startswith('0') :
+                symbol = "sz%s" % symbol
+            elif symbol.startswith('3') :
+                symbol = "sz%s" % symbol
+            elif symbol.startswith('6') :
+                symbol = "sh%s" % symbol
+
+        super(FrameReader, self).__init__()
+        # self._writer = tf.python_io.TFRecordWriter(self._destFolder + "/" + self._currentPersective.vtSymbol +".dpst")
+        # self._fields = 'date,time,open,high,low,close,volume,ammount'
+        # self._cvsToKLine = CapturedToKLine(self._cbCapturedKLine)
+
+    def _parser(self, frame ) :
+        features = tf.parse_single_example(frame, features={
+                'label': tf.FixedLenFeature([], tf.int64),
+                'Tick':  tf.FixedLenFeature([], tf.int64),
+                'K1m':   tf.FixedLenFeature([], tf.int64),
+                'K5m':   tf.FixedLenFeature([], tf.int64),
+                'K1d':   tf.FixedLenFeature([], tf.int64),
+                })
+
+        label = tf.cast(features["label"], tf.int64)
+        ticks = tf.cast(features["Tick"],  tf.int64)
+        kl1m  = tf.cast(features["K1m"],   tf.int64)
+        kl5m  = tf.cast(features["K5m"],   tf.int64)
+        kl1d  = tf.cast(features["K1d"],   tf.int64)
+        if label[1] ==0: # the frame 0
+            # frame 0 is always a full perspective, so take it to initialize the _currentImg
+            self._currentImg = {
+                'Tick': ticks,
+                'K1m': kl1m,
+                'K5m': kl5m,
+                'K1d': kl1d
+            }
+        else :
+            rowsize = len(ticks)
+            if rowsize >0 :
+                del(self._currentImg['Tick'][:rowsize])
+                for i in range( rowsize ) :
+                    self._currentImg['Tick'].insert(0, ticks[rowsize -1 -i])
+
+            rowsize = len(kl1m)
+            if rowsize >0 :
+                del(self._currentImg['K1m'][:rowsize])
+                for i in range( rowsize ) :
+                    self._currentImg['K1m'].insert(0, kl1m[rowsize -1 -i])
+
+            rowsize = len(kl5m)
+            if rowsize >0 :
+                del(self._currentImg['K5m'][:rowsize])
+                for i in range( rowsize ) :
+                    self._currentImg['K5m'].insert(0, kl5m[rowsize -1 -i])
+
+            rowsize = len(kl1d)
+            if rowsize >0 :
+                del(self._currentImg['K1d'][:rowsize])
+                for i in range( rowsize ) :
+                    self._currentImg['K1d'].insert(0, kl1d[rowsize -1 -i])
+
+        img = self._currentImg['Tick']
+        img.expend(self._currentImg['K1m'])
+        img.expend(self._currentImg['K5m'])
+        img.expend(self._currentImg['K1d'])
+
+        return img, label
+
+    def __enter__(self) :
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) :
+        if self._writer :
+            self._writer.close()
+
+    def loadDataSet(self, filename) :
+        dataset = tf.data.TFRecordDataset(filename)
+        dataset = dataset.map(self._parser)
+        dataset = dataset.repeat()
+        dataset = dataset.batch(1) #步长
+        dataset = dataset.shuffle(buffer_size=1 ) #batch(1)获取一张图像每次,buffer size=1，数据集不打乱；如果shuffle 的buffer size=数据集样本数量，随机打乱整个数据集
+        iterator = dataset.make_one_shot_iterator()
+        imglabelout = iterator.get_next()
+    
+        return imglabelout
+            
 
 if __name__ == '__main__':
     # import vnApp.HistoryData as hd
@@ -465,8 +586,18 @@ if __name__ == '__main__':
     ]
 
     # symbols= ["000540","000623"]
-    for s in symbols :
-        with TestEncoder(s,srcDataHome,destDataHome) as ps :
-            ps.loadFiles()
+    # for s in symbols :
+    #     with CsvToTfFrame(s,srcDataHome,destDataHome) as ps :
+    #         ps.loadFiles()
+
+    FR = FrameReader("AShare", "000540")
+    DS = FR.loadDataSet(destDataHome + 'sz000568.dpst')
+    sess = tf.Session()
+    for i in range(10):
+        img, label = sess.run(DS)
+        print(img.shape, label)
+        print()
+    sess.close()
+
 
  

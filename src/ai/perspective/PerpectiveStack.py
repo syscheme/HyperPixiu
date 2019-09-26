@@ -79,7 +79,7 @@ class MDPerspective(object):
         }
 
 ########################################################################
-class PerspectiveStack(object):
+class Encoder(object):
     '''
     Perspective合成器，支持:
     1. 基于x分钟K线输入（X可以是1、5、day	）
@@ -221,7 +221,7 @@ class PerspectiveStack(object):
 
 ########################################################################
 
-class TestStack(PerspectiveStack):
+class TestEncoder(Encoder):
 
     #----------------------------------------------------------------------
     def __init__(self, symbol, srcFolder, destFolder) :
@@ -234,7 +234,7 @@ class TestStack(PerspectiveStack):
             elif symbol.startswith('6') :
                 symbol = "sh%s" % symbol
 
-        super(TestStack, self).__init__("shop37077890", symbol)
+        super(TestEncoder, self).__init__("shop37077890", symbol)
         self._srcFolder, self._destFolder = srcFolder, destFolder
         self._writer = tf.python_io.TFRecordWriter(self._destFolder + "/" + self._currentPersective.vtSymbol +".dpst")
         self._cFrames =0
@@ -418,8 +418,8 @@ class TestStack(PerspectiveStack):
 
             while self._reader:
                 
-                if c>1000:
-                    return c
+                # if c>1000:
+                #     return c
 
                 try :
                     line = next(self._reader, None)
@@ -451,7 +451,7 @@ if __name__ == '__main__':
     symbols= ["000540","000623"]
 
     for s in symbols :
-        with TestStack(s,srcDataHome,destDataHome) as ps :
+        with TestEncoder(s,srcDataHome,destDataHome) as ps :
             ps.loadFiles()
 
  

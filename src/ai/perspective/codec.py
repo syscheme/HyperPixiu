@@ -520,9 +520,10 @@ class FrameReader(object):
         else :
             rowsize = len(ticks)
             if rowsize >0 :
-                del(self._currentImg['Tick'][:rowsize])
-                for i in range( rowsize ) :
-                    self._currentImg['Tick'].insert(0, ticks[rowsize -1 -i])
+                # del(self._currentImg['Tick'][:rowsize])
+                # for i in range( rowsize ) :
+                #     self._currentImg['Tick'].insert(0, ticks[rowsize -1 -i])
+                self._currentImg['Tick'] = tf.concat(0, [ticks, self._currentImg['Tick']])
 
             rowsize = len(kl1m)
             if rowsize >0 :

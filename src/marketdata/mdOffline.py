@@ -19,28 +19,81 @@ from datetime import datetime
 import json
 
 ########################################################################
+class CapturedToKLine(object):
+
+    def __init__(self, sink):
+        """Constructor"""
+        super(CapturedToKLine, self).__init__()
+        self._sink = sink
+
+    @property
+    def fields(self) :
+        return 'date,time,open,high,low,close,volume,ammount'
+
+    @abstractmethod
+    def OnKLine(self, eventType, kline, dataOf =None):
+        if self._sink:
+            self._sink(kline, eventType)
+
+    @abstractmethod
+    def pushCvsRow(self, csvrow, eventType, exchange, symbol =None) :
+        if eventType == MarketData.EVENT_TICK :
+            raise NotImplementedError
+
+        kl = KLineData(exchange, symbol)
+        kl.open = float(csvrow['open'])
+        kl.high = float(csvrow['high'])
+        kl.low = float(csvrow['low'])
+        kl.close = float(csvrow['close'])
+        kl.volume = float(csvrow['volume'])
+        kl.date = datetime.strptime(csvrow['date'], '%Y/%m/%d').strftime('%Y%m%d')
+        kl.time = csvrow['time']+":00"
+        
+        kl.datetime = datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:%S')
+        dataOf = kl.datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:00')
+        self.OnKLine(eventType, kl, dataOf)
+
+########################################################################
+class McCvsToKLine(CapturedToKLine):
+
+    def __init__(self, sink):
+        """Constructor"""
+        super(McCvsToKLine, self, sink).__init__(sink)
+
+    @abstractmethod
+    def pushCvsRow(self, csvrow, eventType =None, symbol =None) :
+        if eventType == MarketData.EVENT_TICK :
+            raise NotImplementedError
+
+        kl = KLineData('', symbol)
+        kl.open = float(csvrow['Open'])
+        kl.high = float(csvrow['High'])
+        kl.low = float(csvrow['Low'])
+        kl.close = float(csvrow['Close'])
+        kl.volume = float(csvrow['TotalVolume'])
+        kl.date = datetime.strptime(csvrow['Date'], '%Y-%m-%d').strftime('%Y%m%d')
+        kl.time = csvrow['Time']+":00"
+        
+        kl.datetime = datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:%S')
+        dataOf = kl.datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:00')
+        self.OnKLine(eventType, kl, dataOf)
+
+########################################################################
 class McCvsToEvent(DataToEvent):
 
     def __init__(self, sink):
         """Constructor"""
         super(McCvsToEvent, self).__init__(sink)
+        self._dataToKline = McCvsToKLine(_cbKLine)
+
+    def _cbKLine(self, eventType, kline, dataOf =None):
+        self._updateEvent(self, eventType, kline, dataOf)
 
     @abstractmethod
     def push(self, csvrow, eventType =None, symbol =None) :
         if eventType == MarketData.EVENT_TICK :
             raise NotImplementedError
-        else :
-            eData = KLineData(symbol)
-            eData.open = float(csvrow['Open'])
-            eData.high = float(csvrow['High'])
-            eData.low = float(csvrow['Low'])
-            eData.close = float(csvrow['Close'])
-            eData.volume = csvrow['TotalVolume']
-            eData.date = datetime.strptime(csvrow['Date'], '%Y-%m-%d').strftime('%Y%m%d')
-            eData.time = csvrow['Time']
-            eData.datetime = datetime.strptime(eData.date + ' ' + eData.time, '%Y%m%d %H:%M:%S')
-            dataOf = eData.datetime.strptime(eData.date + ' ' + eData.time, '%Y%m%d %H:%M:00')
-        self._updateEvent(self, eventType, eData, dataOf)
+        self._dataToKline.pushCvsRow(csvrow, eventType, symbol)
 
 ########################################################################
 class TaobaoCvsToEvent(DataToEvent):

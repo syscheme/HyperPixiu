@@ -407,11 +407,11 @@ class KlineToXminMerger(object):
     #----------------------------------------------------------------------
     def __init__(self, onKLineXmin, xmin=15) :
         """Constructor"""
-        self._dictKlineXmin = {}        # 1分钟K线对象
-        self._dictKlineIn = {}          # 上一Input缓存对象
-        self._xmin = xmin            # X的值
+        self._dictKlineXmin = {}      # 1分钟K线对象
+        self._dictKlineIn = {}        # 上一Input缓存对象
+        self._xmin = xmin             # X的值
         self.onXminBar = onKLineXmin  # X分钟K线的回调函数
-        
+
     #----------------------------------------------------------------------
     def pushKLine(self, kline):
         """1分钟K线更新"""
@@ -419,8 +419,17 @@ class KlineToXminMerger(object):
         # 尚未创建对象
         if kline.symbol in self._dictKlineXmin:
             klineXmin = self._dictKlineXmin[kline.symbol]
-            if not (kline.datetime.minute + 1) % self._xmin:   # 可以用X整除, X分钟已经走完
 
+            newXLine = False
+            minOfDay = kline.datetime.hour*60 + kline.datetime.minute
+            if (self._xmin >=1200 and (kline.datetime.month != klineXmin.datetime.month) or (kline.datetime.year != klineXmin.datetime.year)) :
+                newXLine = True
+            elif (self._xmin >=240) and (kline.datetime.day != klineXmin.datetime.day) :
+                newXLine = True
+            elif self._xmin <240 and (0 == minOfDay % self._xmin): # 可以用X整除, X分钟已经走完
+                newXLine = True
+
+            if newXLine:
                 klineXmin.datetime = klineXmin.datetime.replace(second=0, microsecond=0)  # 将秒和微秒设为0
                 klineXmin.date = klineXmin.datetime.strftime('%Y%m%d')
                 klineXmin.time = klineXmin.datetime.strftime('%H:%M:%S.%f')
@@ -444,6 +453,8 @@ class KlineToXminMerger(object):
             # 累加更新老一分钟的K线数据
             klineXmin.high = max(klineXmin.high, kline.high)
             klineXmin.low = min(klineXmin.low, kline.low)
+            if (self._xmin >=240) :
+                klineXmin.datetime = kline.datetime    # 以last分钟K线的开始时间戳作为日线的时间戳
 
         # 通用部分
         klineXmin.close = kline.close        
@@ -486,4 +497,3 @@ class DataToEvent(object):
             }
 
         self._dict[eventType] = d
-

@@ -2,7 +2,7 @@
 # - the first base image, precented once
 #      . 5min-KLines x240 stack for a week, KLine[0] is the most recent, the rest 0-prefilled
 #      . day-KLines x 220 stack for a year, KLine[0] is the most recnet, the rest 0-prefilled
-# - the 2nd+ record is incremetal data
+# - the 2nd+ record is incremental data
 #      . one new 5min-KLines at KLine[0] in addtion. the new record is expected to shift the previous record by 1
 #      . one new day-Klines, shifting previous record is expected too if pushing a new Kline
 # https://blog.csdn.net/zx520113/article/details/84556489

@@ -22,55 +22,59 @@ __all__ = ["QUOTE_MINIMAL", "QUOTE_ALL", "QUOTE_NONNUMERIC", "QUOTE_NONE",
            "unix_dialect"]
 
 ########################################################################
-class DictReader:
-    def __init__(self, f, fieldnames=None, restkey=None, restval=None,
-                 dialect="excel", *args, **kwds):
+class MCsvReader:
+    def __init__(self, dialect="excel", fieldsDict=None):
+                # , fieldnames=None, restkey=None, restval=None,
+                #  dialect="excel", *args, **kwds):
+        '''
+        '''
+        self._fieldsDict = fieldsDict if fieldsDict else {}
+
         self._fieldnames = fieldnames   # list of keys for the dict
         self.restkey = restkey          # key to catch long rows
         self.restval = restval          # default value for short rows
-        self.reader = reader(f, dialect, *args, **kwds)
-        self.dialect = dialect
+        self.reader = reader(f, dialect)
         self.line_num = 0
 
     def __iter__(self):
         return self
 
     @property
-    def fieldnames(self):
-        if self._fieldnames is None:
-            try:
-                self._fieldnames = next(self.reader)
-            except StopIteration:
-                pass
-        self.line_num = self.reader.line_num
-        return self._fieldnames
+    def rowtypes(self):
+        return self._fieldsDict.keys()
 
-    @fieldnames.setter
-    def fieldnames(self, value):
-        self._fieldnames = value
+    def fieldnames(self, rowtype):
+        if rowtype in self.rowtypes:
+            return self._fieldsDict[rowtype]
+        return []
 
     def __next__(self):
-        if self.line_num == 0:
-            # Used only for its side effect.
-            self.fieldnames
         row = next(self.reader)
         self.line_num = self.reader.line_num
 
         # unlike the basic reader, we prefer not to return blanks,
         # because we will typically wind up with a dict full of None
         # values
-        while row == []:
+        while row == [] :
             row = next(self.reader)
-        d = OrderedDict(zip(self.fieldnames, row))
-        lf = len(self.fieldnames)
-        lr = len(row)
-        if lf < lr:
-            d[self.restkey] = row[lf:]
-        elif lf > lr:
-            for key in self.fieldnames[lr:]:
-                d[key] = self.restval
-        return d
-
+        
+        tag = row[0]
+        erase(row[0])
+        if tag.endwith('#') : # this is a header line
+            self._fieldsDict[tag[:-1]] = row
+        elif tag.endwith['>'] : # this is a value line
+            fieldnames = self._fieldsDict[tag[:-1]]
+            d = OrderedDict(zip(fieldnames, row))
+            lf = len(self.fieldnames)
+            lr = len(row)
+            if lf < lr:
+                d[self.restkey] = row[lf:]
+            elif lf > lr:
+                for key in self.fieldnames[lr:]:
+                    d[key] = self.restval
+            return d # yield(d)
+        else :
+            pass # should print a warning
 
 ########################################################################
 class DictWriter:

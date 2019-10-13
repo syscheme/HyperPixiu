@@ -34,7 +34,7 @@ class GymEnv(object):
 
         Returns:
             numpy.array: The initial observation of the space. Initial reward is assumed to be 0.
-        """r
+        """
         raise NotImplementedError()
 
     @abstractmethod

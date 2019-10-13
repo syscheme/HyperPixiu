@@ -1,10 +1,10 @@
 # encoding: UTF-8
 
+from gym import GymEnv
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-from .gym import GymEnv
-from .envTrading import envTrading
 
 plt.style.use('dark_background')
 mpl.rcParams.update(

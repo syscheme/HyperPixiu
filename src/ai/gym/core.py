@@ -3,7 +3,7 @@
 from abc import ABCMeta, abstractmethod
 
 ########################################################################
-class GymEnv(object):
+class GymEnv(metaclass=ABCMeta):
     """Abstract class for an environment. Simplified OpenAI API.
     """
 

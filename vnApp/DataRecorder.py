@@ -19,7 +19,11 @@ import copy
 import traceback
 from collections import OrderedDict
 from datetime import datetime, timedelta
-from Queue import Queue, Empty
+import sys
+if sys.version_info <(3,):
+    from Queue import Queue, Empty
+else:
+    from queue import Queue, Empty
 from pymongo.errors import DuplicateKeyError
 
 EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'

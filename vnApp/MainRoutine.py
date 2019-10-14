@@ -15,7 +15,7 @@ import traceback
 import shelve
 
 from .EventChannel import Event, EventLoop, EventChannel, EventData
-# from .language import text
+from .language import text
 
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure

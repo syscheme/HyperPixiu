@@ -26,8 +26,7 @@ from time import sleep
 import json
 import zlib
 
-# retrieve package: sudo pip install websocket websocket-client pathlib
-from websocket import create_connection, _exceptions
+from websocket import create_connection, _exceptions # retrieve package: sudo pip install websocket websocket-client pathlib
 import ssl
 
 # 常量定义

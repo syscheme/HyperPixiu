@@ -7,7 +7,7 @@ Training time is short and results are unstable.
 Do not hesitate to run several times and/or tweak parameters to get better results.
 Inspired from https://github.com/keon/deep-q-learning
 """
-from .envTrading import envTrading
+from envTrading import envTrading
 
 import random
 
@@ -16,7 +16,6 @@ from keras.layers import Dense
 from keras.models import Sequential
 from keras.optimizers import Adam
 from abc import ABCMeta, abstractmethod
-
 
 ########################################################################
 class DQNAgent(object):
@@ -115,9 +114,9 @@ class DQNAgent(object):
 ########################################################################
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
+    import envTrading as envt
 
-    from tgym.envs import envTrading
-    from tgym.gens.deterministic import WavySignal
+    # from tgym.gens.deterministic import WavySignal
     # Instantiating the environmnent
     generator = WavySignal(period_1=25, period_2=50, epsilon=-0.5)
     episodes = 50
@@ -125,12 +124,13 @@ if __name__ == "__main__":
     trading_fee = .2
     time_fee = 0
     history_length = 2
-    environment = envTrading(spread_coefficients=[1],
+    environment = envt.envTrading(spread_coefficients=[1],
                                 data_generator=generator,
                                 trading_fee=trading_fee,
                                 time_fee=time_fee,
                                 history_length=history_length,
                                 episode_length=episode_length)
+                                
     state = environment.reset()
     # Instantiating the agent
     memory_size = 3000

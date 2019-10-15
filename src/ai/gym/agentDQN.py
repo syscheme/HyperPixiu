@@ -18,7 +18,7 @@ from keras.optimizers import Adam
 from abc import ABCMeta, abstractmethod
 
 ########################################################################
-class DQNAgent(object):
+class DQNAgent(object): # TODO: inherit from Trader as an application
     def __init__(self,
                  state_size,
                  action_size,

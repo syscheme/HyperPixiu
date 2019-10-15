@@ -13,25 +13,13 @@ from copy import copy
 from abc import ABCMeta, abstractmethod
 import traceback
 import shelve
+import jsoncfg # pip install json-cfg
 
-from .EventChannel import Event, EventLoop, EventChannel, EventData
-from .language import text
-
-from pymongo import MongoClient, ASCENDING
-from pymongo.errors import ConnectionFailure
+from EventData import Event, EventData
 
 ########################################################################
 # 常量定义
 ########################################################################
-
-# 数据库名称
-SETTING_DB_NAME = 'vnDB_Setting'
-POSITION_DB_NAME = 'vnDB_Position'
-
-TICK_DB_NAME   = 'vnDB_Tick'
-DAILY_DB_NAME  = 'vnDB_Daily'
-MINUTE_DB_NAME = 'vnDB_1Min'
-
 # 日志级别
 LOGLEVEL_DEBUG    = logging.DEBUG
 LOGLEVEL_INFO     = logging.INFO
@@ -39,23 +27,20 @@ LOGLEVEL_WARN     = logging.WARN
 LOGLEVEL_ERROR    = logging.ERROR
 LOGLEVEL_CRITICAL = logging.CRITICAL
 
-# 数据库
-LOG_DB_NAME = 'vnDB_Log'
-
-import jsoncfg # pip install json-cfg
-
+BOOL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh']
 
 ########################################################################
 class BaseApplication(object):
 
     __lastId__ =100
-
+    
     #----------------------------------------------------------------------
-    def __init__(self, mainRoutine, settings=None):
+    def __init__(self, program, settings=None):
         """Constructor"""
-        self._engine = mainRoutine
+
+        self._program = program
         self._settings = settings
-        self._active = False                     # 工作状态
+        self._active = False    # 工作状态
 
         self._pid = os.getpid() # process id
 
@@ -93,8 +78,8 @@ class BaseApplication(object):
         return self._dataPath
 
     @property
-    def mainRoutine(self) :
-        return self._engine
+    def program(self) :
+        return self._program
 
     @property
     def settings(self) :
@@ -104,23 +89,40 @@ class BaseApplication(object):
     def isActive(self) :
         return self._active
     
-    @property
-    def _dbConn(self) :
-        return self._engine.dbConn
+    #--- pollable step routine for AppThreadedWrapper -----------------------
+    @abstractmethod
+    def init(self): # return True if succ
+        return True
 
-    #----------------------------------------------------------------------
+    @abstractmethod
+    def start(self):
+        # TODO:
+        self._active = True
+
+    @abstractmethod
+    def stop(self):
+        # TODO:
+        self._active = False
+
+    @abstractmethod
+    def step(self):
+        '''
+        return sec for next yield/sleep
+        '''
+        return AppThreadedWrapper.MAX_INTERVAL
+
+    #---- event operations ---------------------------
     @abstractmethod
     def subscribeEvent(self, event, funcCallback) :
-        if self._engine and self._engine._eventChannel:
-            self._engine._eventChannel.register(event, funcCallback)
+        if self._program and self._program._eventChannel:
+            self._program._eventChannel.register(event, funcCallback)
 
-    #----------------------------------------------------------------------
     @abstractmethod
     def postEvent(self, eventType, edata):
         """发出事件"""
         event = Event(type_= eventType)
         event.dict_['data'] = edata
-        self._engine._eventChannel.put(event)
+        self._program._eventChannel.put(event)
         self.debug('posted event[%s]' % eventType)
 
     #---logging -----------------------
@@ -132,57 +134,27 @@ class BaseApplication(object):
         function(msg)
 
     def debug(self, msg):
-        self._engine.debug('APP['+self.ident +'] ' + msg)
+        self._program.debug('APP['+self.ident +'] ' + msg)
         
     def info(self, msg):
         """正常输出"""
-        self._engine.info('APP['+self.ident +'] ' + msg)
+        self._program.info('APP['+self.ident +'] ' + msg)
 
     def warn(self, msg):
         """警告信息"""
-        self._engine.warn('APP['+self.ident +'] ' + msg)
+        self._program.warn('APP['+self.ident +'] ' + msg)
         
     def error(self, msg):
         """报错输出"""
-        self._engine.error('APP['+self.ident +'] ' + msg)
+        self._program.error('APP['+self.ident +'] ' + msg)
         
     def critical(self, msg):
         """影响程序运行的严重错误"""
-        self._engine.critical('APP['+self.ident +'] ' + msg)
+        self._program.critical('APP['+self.ident +'] ' + msg)
 
     def logexception(self, ex):
         """报错输出+记录异常信息"""
-        self._engine.logexception('APP['+self.ident +'] %s: %s' % (ex, traceback.format_exc()))
-
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def init(self): # return True if succ
-        return True
-
-    @abstractmethod
-    def start(self):
-        # TODO:
-        self._active = True
-
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def stop(self):
-        # TODO:
-        self._active = False
-
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def step(self):
-        # TODO:
-        return 0
-
-    @abstractmethod
-    def logEvent(self, eventType, content):
-        """快速发出日志事件"""
-        log = LogData()
-        log.dsName = self.ident
-        log.logContent = content
-        self.postEvent(eventType, log)
+        self._program.logexception('APP['+self.ident +'] %s: %s' % (ex, traceback.format_exc()))
 
     #----------------------------------------------------------------------
     @abstractmethod
@@ -192,46 +164,64 @@ class BaseApplication(object):
     #    self._lstErrors.append(error)
 
 ########################################################################
-class ThreadedApplication(object):
+class AppThreadedWrapper(object):
+
+    MAX_INTERVAL = 5 # 5sec
     #----------------------------------------------------------------------
     def __init__(self, app):
         """Constructor"""
         self._app = app
-        self.thread = Thread(target=self._run)
+        self._thread = Thread(target=self._run)
+        self._wakeup = threading.Event()
 
     #----------------------------------------------------------------------
     def _run(self):
         """执行连接 and receive"""
-        while self._app._active:
+        while self._app.isActive:
+            nextSleep =5
             try :
-                nextSleep = - self._app.step()
-                if nextSleep >0:
-                    time.sleep(min(2, nextSleep))
+                nextSleep = min([nextSleep, self._app.step()])
             except Exception as ex:
-                self._app.error('ThreadedApplication::step() excepton: %s' % ex)
-        self._app.info('ThreadedApplication exit')
+                self._app.error('AppThreadedWrapper::step() excepton: %s' % ex)
+
+            if nextSleep >0:
+                self._wakeup(nextSleep)
+
+        self._app.info('AppThreadedWrapper exit')
+
+    def wakeup(self) :
+        self._wakeup.set()
 
     #----------------------------------------------------------------------
     @abstractmethod
     def start(self):
+        '''
+        return True if started
+        '''
+
+        if not self._app :
+            return False
+        
         ret = self._app.start()
-        self.thread.start()
-        self._app.debug('ThreadedApplication starts')
+        self._thread.start()
+        self._app.debug('AppThreadedWrapper started')
         return ret
 
     #----------------------------------------------------------------------
     @abstractmethod
     def stop(self):
+        ''' call to stop a app
+        '''
         self._app.stop()
-        self.thread.join()
-        self._app.info('ThreadedApplication stopped')
+        self.wakeup()
+        self._thread.join()
+        self._app.info('AppThreadedWrapper stopped')
     
 ########################################################################
 class Singleton(type):
     """
     单例，应用方式:静态变量 __metaclass__ = Singleton
     """
-    
     _instances = {}
 
     #----------------------------------------------------------------------
@@ -243,91 +233,45 @@ class Singleton(type):
         return cls._instances[cls]
 
 ########################################################################
-class MainRoutine(object):
+class Program(object):
     """主引擎"""
 
     # 单例模式
     __metaclass__ = Singleton
 
     #----------------------------------------------------------------------
-    def __init__(self, settings):
+    def __init__(self, setting_filename=None):
         """Constructor"""
         
+        # dirname(dirname(abspath(file)))
+        settings= None
+        if not setting_filename :
+            try :
+                settings= jsoncfg.load_config(settingfilename)
+            except Exception as e :
+                print('failed to load configure[%s]: %s' % (conf_fn, e))
+                return
+
         self._settings = settings
         self._threadless = True
 
         # 记录今日日期
         self.todayDate = datetime.now().strftime('%Y%m%d')
-        
-        # 创建EventChannel
-        if self.threadless :
-            self._eventChannel = EventLoop()
-        else :
-            self._eventChannel = EventChannel()
-        # self._eventChannel.start()
 
         # 日志引擎实例
         self._logger = None
         self.initLogger()
-
+        
+        # 创建EventLoop
+        self._eventLoop = EventLoop(self) if self.threadless else AppThreadedWrapper(EventLoop(self))
         self._bRun = True
         
-        #----------------------------------------------------------------------
-        # from old 数据引擎
-        # 保存数据的字典和列表
-        self._dictLatestTick = {}    # the latest tick of each symbol
-        self._dictLatestContract = {}
-        self._dictLatestOrder = {}
-        self._dictWorkingOrder = {}  # 可撤销委托
-        self._dictTrade = {}
-        self._dictAccounts = {}
-        self._dictPositions= {}
-        self._lstLogs = []
-        self._lstErrors = []
-        
-        # MongoDB数据库相关
-        self._dbConn = None    # MongoDB客户端对象
-        
-        # 接口实例
-        self._dictMarketDatas = OrderedDict()
-        self._dlstMarketDatas = []
-        
-        # 应用模块实例
-        self._dictApps = OrderedDict()
-        
-        # 风控引擎实例（特殊独立对象）
-        self._riskMgm = None
-    
     @property
     def threadless(self) :
         return self._threadless
 
-    @property
-    def dbConn(self) :
-        return self._dbConn
-
     #----------------------------------------------------------------------
-    def addMarketData(self, dsModule, settings):
-        """添加底层接口"""
-
-        # 创建接口实例
-        clsName = dsModule.__class__.__name__
-        md = dsModule(self, settings)
-        # 保存接口详细信息
-        d = {
-            'id': md.id,
-            'dsDisplayName': settings.displayName(md.id),
-            'dsType': clsName,
-        }
-
-        self._dictMarketDatas[md.exchange] = md
-        self._dlstMarketDatas.append(d)
-        self.info('md[%s] added: %s' %(md.exchange, d))
-
-        return md
-
-    #----------------------------------------------------------------------
-    def addApp(self, app, displayName=None, widget=None, icon=None):
+    def addApp(self, app, displayName=None):
         """添加上层应用"""
         id = app.ident
         
@@ -337,6 +281,9 @@ class MainRoutine(object):
         # 将应用引擎实例添加到主引擎的属性中
         self.__dict__[id] = self._dictApps[id]
         self.info('app[%s] added' %(id))
+
+        # TODO maybe test isinstance(app, MarketData) to ease index and so on
+
         return app
 
     def createApp(self, appModule, settings):
@@ -355,15 +302,10 @@ class MainRoutine(object):
         del self._dictApps[appId]
         return ret
 
-    #----------------------------------------------------------------------
-    def getMarketData(self, dsName, exchange=None):
-        """获取接口"""
-        if dsName in self._dictMarketDatas:
-            return self._dictMarketDatas[dsName]
-        else:
-            self.error('getMarketData() %s not exist' % dsName)
-            return None
-        
+    def getApp(self, appName):
+        """获取APP引擎对象"""
+        return self._dictApps[appName]
+
     #----------------------------------------------------------------------
     def start(self, daemonize=None):
 
@@ -372,11 +314,12 @@ class MainRoutine(object):
         if daemonize :
             self.daemonize()
 
-        self.debug('starting event channel')
-        if self._eventChannel:
-            self._eventChannel.start()
-            self.info('started event channel')
+        self.debug('starting event loop')
+        if self._eventLoop:
+            self._eventLoop.start()
+            self.info('started event loop')
 
+        '''
         self.dbConnect()
         
         self.debug('starting market data subscribers')
@@ -390,6 +333,7 @@ class MainRoutine(object):
             else :
                 ds.start()
                 self.debug('market subscriber[%s] started' % k)
+        '''
 
         self.debug('starting applications')
         for (k, app) in self._dictApps.items() :
@@ -398,20 +342,22 @@ class MainRoutine(object):
             
             self.debug('staring app[%s]' % k)
             app.start()
-            self.info('started app[%shows]' % k)
+            self.info('started app[%s]' % k)
 
-        self.info('main-routine started')
+        self.info('main-program started')
 
     def stop(self):
         """退出程序前调用，保证正常退出"""        
         self._bRun = False
 
+        '''
         # 安全关闭所有接口
         for ds in self._dictMarketDatas.values():        
             ds.close()
+        '''
         
         # 停止事件引擎
-        self._eventChannel.stop()
+        self._eventLoop.stop()
         
         # 停止上层应用引擎
         for app in self._dictApps.values():
@@ -423,7 +369,7 @@ class MainRoutine(object):
     #----------------------------------------------------------------------
     def loop(self):
 
-        self.info(u'MainRoutine start looping')
+        self.info(u'Program start looping')
         c=0
         
         busy = True
@@ -458,26 +404,27 @@ class MainRoutine(object):
                 except Exception as ex:
                     self.error("app step exception %s %s" % (ex, traceback.format_exc()))
 
-            pending = self._eventChannel.pendingSize
+            pending = self._eventLoop.pendingSize
             if not busy:
                 busy = pending >0
 
             pending = min(20, pending)
             for i in range(0, pending) :
                 try :
-                    self._eventChannel.step()
+                    self._eventLoop.step()
                     c+=1
                 except KeyboardInterrupt:
                     self.error("quit per KeyboardInterrupt")
                     exit(-1)
-                except Exception, ex:
+                except Exception as ex:
                     self.error("eventCH step exception %s %s" % (ex, traceback.format_exc()))
 
             # if c % 10 ==0:
             #     self.debug(u'MainThread heartbeat')
 
-        self.info(u'MainRoutine finish looping')
+        self.info(u'Program finish looping')
 
+    #----------------------------------------------------------------------
     def daemonize(self, stdin='/dev/null',stdout='/dev/null',stderr='/dev/null'):
         import sys
         sys.stdin  = open(stdin,'r')
@@ -488,7 +435,7 @@ class MainRoutine(object):
             self._pid = os.fork()
             if self._pid > 0:        #parrent
                 os._exit(0)
-        except OSError,e:
+        except OSError as e:
             sys.stderr.write("first fork failed!!"+e.strerror)
             os._exit(1)
     
@@ -506,7 +453,7 @@ class MainRoutine(object):
             self._pid = os.fork()     #第二次进行fork,为了防止会话首进程意外获得控制终端
             if self._pid > 0:
                 os._exit(0)     #父进程退出
-        except OSError,e:
+        except OSError as e:
             sys.stderr.write("second fork failed!!"+e.strerror)
             os._exit(1)
     
@@ -516,14 +463,6 @@ class MainRoutine(object):
         sys.stdout.write("Daemon has been created! with self._pid: %d\n" % os.getpid())
         sys.stdout.flush()  #由于这里我们使用的是标准IO，回顾APUE第五章，这里应该是行缓冲或全缓冲，因此要调用flush，从内存中刷入日志文件。\
 
-    #----------------------------------------------------------------------
-    def subscribeMarketData(self, subscribeReq, dsName):
-        """订阅特定接口的行情"""
-        ds = self.getMarketData(dsName)
-        
-        if ds:
-            ds.subscribe(subscribeReq)
-  
     #----------------------------------------------------------------------
     # methods about logging
     # ----------------------------------------------------------------------
@@ -583,11 +522,11 @@ class MainRoutine(object):
         # 注册事件监听
         tmpval = self._settings.logger.event.log('True').lower()
         if tmpval in BOOL_TRUE :
-            self._eventChannel.register(EventChannel.EVENT_LOG, self.eventHdlr_Log)
+            self._eventLoop.register(EventChannel.EVENT_LOG, self.eventHdlr_Log)
 
         tmpval = self._settings.logger.event.error('True').lower()
         if tmpval in BOOL_TRUE :
-            self._eventChannel.register(EventChannel.EVENT_ERROR, self.eventHdlr_Error)
+            self._eventLoop.register(EventChannel.EVENT_ERROR, self.eventHdlr_Error)
 
     def setLogLevel(self, level):
         """设置日志级别"""
@@ -674,6 +613,57 @@ class MainRoutine(object):
         self.error(u'错误代码：%s，错误信息：%s' %(error.errorID, error.errorMsg))
 
     #----------------------------------------------------------------------
+    def getTempPath(name):
+        """获取存放临时文件的路径"""
+        tempPath = os.path.join(os.getcwd(), 'temp')
+        if not os.path.exists(tempPath):
+            os.makedirs(tempPath)
+            
+        path = os.path.join(tempPath, name)
+        return path
+
+'''
+    #----------------------------------------------------------------------
+    def addMarketData(self, dsModule, settings):
+        """添加底层接口"""
+
+        # 创建接口实例
+        clsName = dsModule.__class__.__name__
+        md = dsModule(self, settings)
+        # 保存接口详细信息
+        d = {
+            'id': md.id,
+            'dsDisplayName': settings.displayName(md.id),
+            'dsType': clsName,
+        }
+
+        self._dictMarketDatas[md.exchange] = md
+        self._dlstMarketDatas.append(d)
+        self.info('md[%s] added: %s' %(md.exchange, d))
+
+        return md
+
+    def getMarketData(self, dsName, exchange=None):
+        """获取接口"""
+        if dsName in self._dictMarketDatas:
+            return self._dictMarketDatas[dsName]
+        else:
+            self.error('getMarketData() %s not exist' % dsName)
+            return None
+
+    def subscribeMarketData(self, subscribeReq, dsName):
+        """订阅特定接口的行情"""
+        ds = self.getMarketData(dsName)
+        
+        if ds:
+            ds.subscribe(subscribeReq)
+  
+        
+    #----------------------------------------------------------------------
+    @property
+    def dbConn(self) :
+        return self._dbConn
+
     def dbConnect(self):
         """连接MongoDB数据库"""
         if not self._dbConn:
@@ -694,7 +684,7 @@ class MainRoutine(object):
 
                 # 如果启动日志记录，则注册日志事件监听函数
                 if self._settings.database.logging("") in ['True']:
-                    self._eventChannel.register(LogData.EVENT_TAG, self.dbLogging)
+                    self._eventLoop.register(LogData.EVENT_TAG, self.dbLogging)
                     
                 self.info('connected DB[%s :%s] %s'%(dbhost, dbport))
             except ConnectionFailure:
@@ -775,51 +765,142 @@ class MainRoutine(object):
     def getAllGatewayDetails(self):
         """查询引擎中所有底层接口的信息"""
         return self._dlstMarketDatas
-    
-    #----------------------------------------------------------------------
-    def getApp(self, appName):
-        """获取APP引擎对象"""
-        return self._dictApps[appName]
-    
-    #----------------------------------------------------------------------
-
+''' 
 
 ########################################################################
-class ErrorData(EventData):
-    """错误数据类"""
+class EventLoop(BaseApplication):
+    """
+    非线程的事件驱动引擎        
+    """
+    #----------------------------------------------------------------------
+    def __init__(self, program, timer=True):
+        """初始化事件引擎"""
+        super(EventLoop, self).__init__(program)
+
+        # 事件队列
+        self.__queue = Queue()
+        
+        # 计时器，用于触发计时器事件
+        self.__timerActive = timer     # 计时器工作状态
+        self.__timerStep = 60           # 计时器触发间隔（默认1秒）
+        self.__stampTimerLast = None
+        
+        # 这里的__handlers是一个字典，用来保存对应的事件调用关系
+        # 其中每个键对应的值是一个列表，列表中保存了对该事件进行监听的函数功能
+        self.__handlers = defaultdict(list)
+        
+        # __generalHandlers是一个列表，用来保存通用回调函数（所有事件均调用）
+        self.__generalHandlers = []        
+        
+    #--- override of BaseApplication routine for AppThreadedWrapper -----------------------
+    def step(self):
+        """引擎运行"""
+        dt = datetime.now()
+        stampNow = datetime2float(datetime.now())
+        c =0
+        if not self.__stampTimerLast :
+            self.__stampTimerLast = stampNow
+
+        if self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
+            self.__stampTimerLast = stampNow
+                
+            # 向队列中存入计时器事件
+            edata = edTimer(dt)
+            event = Event(type_= EventChannel.EVENT_TIMER)
+            event.dict_['data'] = edata
+            self.put(event)
+
+        # pop the event to dispatch
+        event = None
+        try :
+            event = self.__queue.get(block = True, timeout = 0.5)  # 获取事件的阻塞时间设为1秒
+        except Empty:
+            pass
+
+        try:
+            if event :
+                self.__process(event)
+                c+=1
+        except Exception as ex:
+            self.error("eventCH exception %s %s" % (ex, traceback.format_exc()))
+
+        return 0 # because self.__queue.get() is blockable, we don't wish to sleep outside of step()
+            
+    #----------------------------------------------------------------------
+    def __process(self, event):
+        """处理事件"""
+        # 检查是否存在对该事件进行监听的处理函数
+        if event.type_ in self.__handlers:
+            # 若存在，则按顺序将事件传递给处理函数执行
+            for handler in self.__handlers[event.type_] :
+                try:
+                    handler(event)
+                except Exception as ex:
+                    self.error("eventCH handle(%s) %s: %s %s" % (event.type_, ex, handler, traceback.format_exc()))
+            
+        # 调用通用处理函数进行处理
+        if self.__generalHandlers:
+            for handler in self.__generalHandlers :
+                try:
+                    handler(event)
+                except Exception as ex:
+                    self.error("eventCH handle %s %s" % (ex, traceback.format_exc()))
+               
+    #----------------------------------------------------------------------
+    def start(self, timer=True):
+        # 启动计时器，计时器事件间隔默认设定为1秒
+        if timer:
+            self.__timerActive = True
+        super(EventLoop, self).start()
+    
+    #----------------------------------------------------------------------
+    def stop(self):
+        """停止引擎"""
+        pass
+            
+    #----------------------------------------------------------------------
+    def register(self, type_, handler):
+        """注册事件处理函数监听"""
+        # 尝试获取该事件类型对应的处理函数列表，若无defaultDict会自动创建新的list
+        handlerList = self.__handlers[type_]
+        
+        # 若要注册的处理器不在该事件的处理器列表中，则注册该事件
+        if handler not in handlerList:
+            handlerList.append(handler)
+            
+    #----------------------------------------------------------------------
+    def unregister(self, type_, handler):
+        """注销事件处理函数监听"""
+        # 尝试获取该事件类型对应的处理函数列表，若无则忽略该次注销请求   
+        handlerList = self.__handlers[type_]
+            
+        # 如果该函数存在于列表中，则移除
+        if handler in handlerList:
+            handlerList.remove(handler)
+
+        # 如果函数列表为空，则从引擎中移除该事件类型
+        if not handlerList:
+            del self.__handlers[type_]  
+        
+    #----------------------------------------------------------------------
+    def put(self, event):
+        """向事件队列中存入事件"""
+        self.__queue.put(event)
 
     #----------------------------------------------------------------------
-    def __init__(self):
-        """Constructor"""
-        super(ErrorData, self).__init__()
-        
-        self.errorID = EventData.EMPTY_STRING             # 错误代码
-        self.errorMsg = EventData.EMPTY_UNICODE           # 错误信息
-        self.additionalInfo = EventData.EMPTY_UNICODE     # 补充信息
-        
-        self.errorTime = time.strftime('%X', time.localtime())    # 错误生成时间
-
-
-########################################################################
-class LogData(EventData):
-    """日志数据类"""
-    EVENT_TAG = 'eLog'                      # 日志事件，全局通用
+    @property
+    def pendingSize(self):
+        return self.__queue.qsize()
 
     #----------------------------------------------------------------------
-    def __init__(self):
-        """Constructor"""
-        super(LogData, self).__init__()
-        
-        self.logTime = time.strftime('%X', time.localtime())    # 日志生成时间
-        self.logContent = EventData.EMPTY_UNICODE                         # 日志信息
-        self.logLevel = LOGLEVEL_INFO                                    # 日志级别
+    def registerGeneralHandler(self, handler):
+        """注册通用事件处理函数监听"""
+        if handler not in self.__generalHandlers:
+            self.__generalHandlers.append(handler)
+            
+    #----------------------------------------------------------------------
+    def unregisterGeneralHandler(self, handler):
+        """注销通用事件处理函数监听"""
+        if handler in self.__generalHandlers:
+            self.__generalHandlers.remove(handler)
 
-#----------------------------------------------------------------------
-def getTempPath(name):
-    """获取存放临时文件的路径"""
-    tempPath = os.path.join(os.getcwd(), 'temp')
-    if not os.path.exists(tempPath):
-        os.makedirs(tempPath)
-        
-    path = os.path.join(tempPath, name)
-    return path

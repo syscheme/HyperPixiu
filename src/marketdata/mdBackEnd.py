@@ -256,7 +256,6 @@ class TickData(EventData):
         # 成交数据
         self.price = EventData.EMPTY_FLOAT            # 最新成交价
         self.volume = EventData.EMPTY_INT             # 最新成交量
-        self.volume = EventData.EMPTY_INT                 # 今天总成交量
         self.openInterest = EventData.EMPTY_INT           # 持仓量
         self.time = EventData.EMPTY_STRING                # 时间 11:20:56.5
         self.date = EventData.EMPTY_STRING                # 日期 20151009

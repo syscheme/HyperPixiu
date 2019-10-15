@@ -2,10 +2,10 @@
 
 from __future__ import division
 
-from .mdBackEnd import MarketData, KLineData, TickData, DataToEvent
+from mdBackEnd import MarketData, KLineData, TickData, DataToEvent
 from event.ecBasic import Event, datetime2float
 
-import requests 
+import requests # pip3 install requests
 from copy import copy
 from datetime import datetime
 from threading import Thread
@@ -13,9 +13,10 @@ from queue import Queue, Empty
 from multiprocessing.dummy import Pool
 from datetime import datetime , timedelta
 from abc import ABCMeta, abstractmethod
-import demjson
+import demjson # pip3 install demjso
 
 import zlib
+import re
 
 from threading import Thread
 from multiprocessing import Pool
@@ -93,13 +94,7 @@ class mdSina(MarketData):
         will call cortResp.send(csvline) when the result comes
         '''
         
-        if symbol.isdigit() :
-            if symbol.startswith('0') :
-                symbol = "sz%s" % symbol
-            elif symbol.startswith('3') :
-                symbol = "sz%s" % symbol
-            elif symbol.startswith('6') :
-                symbol = "sh%s" % symbol
+        symbol = fixupSymbolPrefix(symbol)
 
         if (eventType == MarketData.EVENT_TICK) :
             return self.searchTicks(symbol, since, cb)
@@ -158,10 +153,96 @@ class mdSina(MarketData):
         except Exception as e:
             return False, u'GET请求触发异常，原因：%s' %e
 
+    def fixupSymbolPrefix(symbol):
+        if symbol.isdigit() :
+            if symbol.startswith('0') :
+                return "SZ%s" % symbol
+            elif symbol.startswith('3') :
+                return "SZ%s" % symbol
+            elif symbol.startswith('6') :
+                return "SH%s" % symbol
+        return symbol
+
+    #------------------------------------------------    
+    def getRecentTicks(self, symbols):
+        """查询请求""" 
+        '''
+        will call cortResp.send(csvline) when the result comes
+        '''
+        if not isinstance(symbols, list) :
+            symbols = symbols.split(',')
+        qsymbols = [mdSina.fixupSymbolPrefix(s) for s in symbols]
+        url = 'http://hq.sinajs.cn/list=%s' % (','.join(qsymbols))
+        HEADERSEQ="name,open,prevClose,price,high,low,bid,ask,volume,total,bid1v,bid1,bid2v,bid2,bid3v,bid3,bid4v,bid4,bid5v,bid5,ask1v,ask1,ask2v,ask2,ask3v,ask3,ask4v,ask4,ask5v,ask5,date,time"
+        HEADERS=HEADERSEQ.split(',')
+        SYNTAX = re.compile('^var hq_str_([^=]*)="([^"]*).*')
+        tickseq = []
+        try:
+            response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
+            if response.status_code == 200:
+                for line in response.text.split('\n') :
+                    m = SYNTAX.match(line)
+                    if not m :
+                        # LOG ERR
+                        continue
+
+                    s = m.group(1)
+                    row = m.group(2).split(',')
+                    ncols = len(HEADERS)
+                    if ncols > len(row) : ncols = len(row) 
+                    d = {HEADERS[i]:row[i] for i in range(ncols)}
+                    tickdata = TickData("ASHARE", s)
+                    tickdata.price = float(d['price'])
+                    tickdata.volume = float(d['volume'])
+                    tickdata.total = float(d['total'])
+
+                    # tickdata.time = EventData.EMPTY_STRING                # 时间 11:20:56.5
+                    # tickdata.date = EventData.EMPTY_STRING                # 日期 20151009
+                    # tickdata.datetime = None                    # python的datetime时间对象
+                    
+                    tickdata.open = float(d['open'])
+                    tickdata.high = float(d['high'])
+                    tickdata.low = float(d['low'])
+                    tickdata.prevClose = float(d['prevClose'])
+
+                    # tickdata.upperLimit = EventData.EMPTY_FLOAT           # 涨停价
+                    # tickdata.lowerLimit = EventData.EMPTY_FLOAT           # 跌停价
+                    
+                    # 五档行情
+                    tickdata.b1P = float(d['bid1'])
+                    tickdata.b1V = float(d['bid1v'])
+                    tickdata.b2P = float(d['bid2'])
+                    tickdata.b2V = float(d['bid2v'])
+                    tickdata.b3P = float(d['bid3'])
+                    tickdata.b3V = float(d['bid3v'])
+                    tickdata.b4P = float(d['bid4'])
+                    tickdata.b4V = float(d['bid4v'])
+                    tickdata.b5P = float(d['bid5'])
+                    tickdata.b5V = float(d['bid5v'])
+                    
+                    # ask to sell: price and volume
+                    tickdata.a1P = float(d['ask1'])
+                    tickdata.a1V = float(d['ask1v'])
+                    tickdata.a2P = float(d['ask2'])
+                    tickdata.a2V = float(d['ask2v'])
+                    tickdata.a3P = float(d['ask3'])
+                    tickdata.a3V = float(d['ask3v'])
+                    tickdata.a4P = float(d['ask4'])
+                    tickdata.a4V = float(d['ask4v'])
+                    tickdata.a5P = float(d['ask5'])
+                    tickdata.a5V = float(d['ask5v'])
+
+                    tickseq.append(tickdata)
+            else:
+                return False, u'GET请求失败，状态代码：%s' %response.status_code
+        except Exception as e:
+            return False, u'GET请求触发异常，原因：%s' %e
+        
+        return tickseq
+
 
 if __name__ == '__main__':
     md = mdSina(None, None);
-    result = md.searchKLines("000002", MarketData.EVENT_KLINE_5MIN)
+    # result = md.searchKLines("000002", MarketData.EVENT_KLINE_5MIN)
+    result = md.getRecentTicks('sh601006,sh601005,sh000001,sz000001')
     result
-
-

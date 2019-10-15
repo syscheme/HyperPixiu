@@ -105,7 +105,8 @@ http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ss
 ```
 ({r0_in:"0.0000",r0_out:"0.0000",r0:"0.0000",r1_in:"3851639.0000",r1_out:"4794409.0000",r1:"9333936.0000",r2_in:"8667212.0000",r2_out:"10001938.0000",r2:"18924494.0000",r3_in:"7037186.0000",r3_out:"7239931.2400",r3:"15039741.2400",curr_capital:"9098",name:"朗科智能",trade:"24.4200",changeratio:"0.000819672",volume:"1783866.0000",turnover:"196.083",r0x_ratio:"0",netamount:"-2480241.2400"})
 ```
-QQ 数据
+
+### QQ 数据
 请求样例:
 ```
 http://qt.gtimg.cn/q=ff_sz300543

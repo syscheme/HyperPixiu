@@ -2,7 +2,7 @@
 
 from __future__ import division
 
-from EventData import Event, EventData
+from EventData import Event, EventData, EVENT_EXIT, EVENT_TIMER
 
 import os
 import logging
@@ -16,11 +16,6 @@ from abc import ABC, abstractmethod
 import traceback
 import shelve
 import jsoncfg # pip install json-cfg
-import sys
-if sys.version_info <(3,):
-    from Queue import Queue, Empty
-else:
-    from queue import Queue, Empty
 
 ########################################################################
 # 常量定义
@@ -58,16 +53,19 @@ class BaseApplication(ABC):
             LOGLEVEL_CRITICAL: self.critical,
         }
 
-        # the app instance Id
-        if not settings:
-            return
+        self._gen = self._generator(EVENT_EXIT)
 
-        self._id = settings.id("")
+        # the app instance Id
+        self._id =""
+        if settings:
+            self._id = settings.id("")
+
         if len(self._id)<=0 :
             BaseApplication.__lastId__ +=1
             self._id = 'P%d' % BaseApplication.__lastId__
 
-        self._dataPath  = settings.dataPath('./data')
+        if settings:
+            self._dataPath  = settings.dataPath('./data')
 
     #----------------------------------------------------------------------
     @property
@@ -93,10 +91,11 @@ class BaseApplication(ABC):
     @property
     def isActive(self) :
         return self._active
-    
+
     #--- pollable step routine for AppThreadedWrapper -----------------------
     def start(self):
         # TODO:
+        next(self._gen)
         self._active = True
 
     def stop(self):
@@ -108,11 +107,22 @@ class BaseApplication(ABC):
         return True
 
     @abstractmethod
-    def step(self):
+    def OnEvent(self, event):
         '''
-        return sec for next yield/sleep
+        process the event
         '''
-        return AppThreadedWrapper.MAX_INTERVAL
+        pass
+
+    def _generator(self, stopEvent=EVENT_EXIT) :
+        event = Event(EVENT_START)
+        while True :
+            event = yield (self.id, event)
+            self.OnEvent(event)
+            if not isinstance(event, Event) or stopEvent == event.type_:
+                break # quit
+
+    def step(self, event) :
+        return self._gen.send(event)
 
     #---- event operations ---------------------------
     def subscribeEvent(self, event, funcCallback) :
@@ -241,6 +251,12 @@ class Singleton(type):
         return cls._instances[cls]
 
 ########################################################################
+import sys
+if sys.version_info <(3,):
+    from Queue import Queue, Empty
+else:
+    from queue import Queue, Empty
+
 class Program(object):
     """主引擎"""
 
@@ -262,6 +278,7 @@ class Program(object):
 
         self._settings = settings
         self._threadless = True
+        self._dictApps ={}
 
         # 记录今日日期
         self.todayDate = datetime.now().strftime('%Y%m%d')
@@ -270,10 +287,20 @@ class Program(object):
         self._logger = None
         self.initLogger()
         
+        '''
         # 创建EventLoop
         self._eventLoop = EventLoop(self) if self.threadless else AppThreadedWrapper(EventLoop(self))
         self._bRun = True
+        '''
+        # 事件队列
+        self.__queue = Queue()
         
+        # 计时器，用于触发计时器事件
+        self.__timerActive = timer     # 计时器工作状态
+        self.__timerStep = 60           # 计时器触发间隔（默认1秒）
+        self.__stampTimerLast = None
+        self.__eventWakeup = threading.Event()
+
     @property
     def threadless(self) :
         return self._threadless
@@ -317,8 +344,8 @@ class Program(object):
     #----------------------------------------------------------------------
     def start(self, daemonize=None):
 
-        if daemonize == None: 
-            daemonize = self._settings.daemonize(False)
+        daemonize = self._settings.daemonize(False) if daemonize == None and self._settings else False
+            
         if daemonize :
             self.daemonize()
 
@@ -378,57 +405,75 @@ class Program(object):
     def loop(self):
 
         self.info(u'Program start looping')
-        c=0
-        
         busy = True
+
         while self._bRun:
+            dt = datetime.now()
+            stampNow = datetime2float(datetime.now())
+
+            nextSleep =1 # 1sec
+            if not self.__stampTimerLast :
+                self.__stampTimerLast = stampNow
+
+            if self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
+                self.__stampTimerLast = stampNow
+
+                # 向队列中存入计时器事件
+                edata = edTimer(dt)
+                event = Event(type_= EventChannel.EVENT_TIMER)
+                event.dict_['data'] = edata
+                self.put(event)
+                # nextSleep =0
+
             if not self.threadless :
                 try :
                     time.sleep(1)
                     self.debug(u'MainThread heartbeat')
                 except KeyboardInterrupt:
                     self.error("quit per KeyboardInterrupt")
+                    self._bRun = False
                     break
 
                 continue
 
-            # loop mode as below
-            if not busy:
-                time.sleep(0.5)
+            if self.__offlinetest:
+                event = Event(EVENT_HEARTB)
+                self.put(event)
 
-            busy = False
-            for (k, ds) in self._dictMarketDatas.items():
+            if nextSleep >0:
                 try :
-                    if ds == None:
-                        continue
-                    if ds.step() >0:
-                        busy = True        
-                except Exception as ex:
-                    self.error("marketdata step exception %s %s" % (ex, traceback.format_exc()))
-
-            for app in self._dictApps.values() :
-                try :
-                    app.step()
-                except Exception as ex:
-                    self.error("app step exception %s %s" % (ex, traceback.format_exc()))
-
-            pending = self._eventLoop.pendingSize
-            if not busy:
-                busy = pending >0
-
-            pending = min(20, pending)
-            for i in range(0, pending) :
-                try :
-                    self._eventLoop.step()
-                    c+=1
+                    self._wakeup(nextSleep)
                 except KeyboardInterrupt:
                     self.error("quit per KeyboardInterrupt")
                     exit(-1)
-                except Exception as ex:
-                    self.error("eventCH step exception %s %s" % (ex, traceback.format_exc()))
 
-            # if c % 10 ==0:
-            #     self.debug(u'MainThread heartbeat')
+            # pop the event to dispatch
+            while True:
+                event = None
+                try :
+                    event = self.__queue.get(block = True, timeout = 0.1)  # 获取事件的阻塞时间设为0.1秒
+                except Empty:
+                    nextSleep =1 # 1sec
+                    break
+                except KeyboardInterrupt:
+                    self.error("quit per KeyboardInterrupt")
+                    exit(-1)
+
+                # 检查是否存在对该事件进行监听的处理函数
+                if not event or not event.type_ in self.__handlers:
+                    continue
+
+                # 若存在，则按顺序将事件传递给处理函数执行
+                for s in self.__subscriber[event.type_] :
+                    try:
+                        app =self.getApp(s)
+                        if app and app.isActive:
+                            app.step(event)
+                    except KeyboardInterrupt:
+                        self.error("quit per KeyboardInterrupt")
+                        exit(-1)
+                    except Exception as ex:
+                        self.error("app step exception %s %s" % (ex, traceback.format_exc()))
 
         self.info(u'Program finish looping')
 
@@ -915,6 +960,22 @@ class EventLoop(BaseApplication):
         if handler in self.__generalHandlers:
             self.__generalHandlers.remove(handler)
 
+# the following is a sample
 if __name__ == "__main__":
-    p = Program()
+
+    class Foo(BaseApplication) :
+        def __init__(self, program, settings):
+            super(Foo, self).__init__(program, settings)
+
+        def init(self): # return True if succ
+            return True
+
+        def OnEvent(self, event):
+            pass
+
     # a = BaseApplication() #wrong
+    p = Program()
+    p.createApp(Foo, None)
+    p.start()
+    p.loop()
+    p.stop()

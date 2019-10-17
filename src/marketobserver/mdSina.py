@@ -9,11 +9,6 @@ import requests # pip3 install requests
 from copy import copy
 from datetime import datetime
 from threading import Thread
-import sys
-if sys.version_info <(3,):
-    from Queue import Queue, Empty
-else:
-    from queue import Queue, Empty
 from multiprocessing.dummy import Pool
 from datetime import datetime , timedelta
 from abc import ABCMeta, abstractmethod

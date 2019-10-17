@@ -1,11 +1,6 @@
 # encoding: UTF-8
 
 # 系统模块
-import sys
-if sys.version_info <(3,):
-    from Queue import Queue, Empty
-else:
-    from queue import Queue, Empty
 from threading import Thread
 from time import sleep
 from collections import defaultdict
@@ -25,6 +20,9 @@ EVENT_NAME_PREFIX = 'ev'    # 事件名字前缀
 EVENT_TIMER = EVENT_NAME_PREFIX + 'Timer'   # 计时器事件，每隔1秒发送一次
 EVENT_LOG   = EVENT_NAME_PREFIX + 'Log'     # 日志事件，全局通用
 EVENT_ERROR = EVENT_NAME_PREFIX + 'Error'   # 错误回报事件
+EVENT_START  = EVENT_NAME_PREFIX + 'START'   #
+EVENT_HEARTB = EVENT_NAME_PREFIX + 'HB'   #
+EVENT_EXIT   = EVENT_NAME_PREFIX + 'Exit'    # 程序退出
 
 ########################################################################
 class Event:

@@ -37,7 +37,7 @@ class Account(BaseApplication):
     STATE_OPEN  = 'open'   # during trading hours
     STATE_CLOSE = 'close'  # during market close
 
-    SYMBOL_CASH = '.RMB.' # the dummy symbol in order to represent cache in _dictPositions
+    SYMBOL_CASH = '.RMB.'  # the dummy symbol in order to represent cache in _dictPositions
 
     BROKER_API_SYNC  = 'brocker.sync'  # sync API to call broker
     BROKER_API_ASYNC = 'brocker.async' # async API to call broker

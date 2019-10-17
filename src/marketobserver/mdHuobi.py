@@ -15,7 +15,6 @@ import socket
 from copy import copy
 from datetime import datetime
 from threading import Thread
-from Queue import Queue, Empty
 from multiprocessing.dummy import Pool
 from time import sleep
 

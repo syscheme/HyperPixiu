@@ -801,6 +801,9 @@ class EventLoop(BaseApplication):
         self.__generalHandlers = []        
         
     #--- override of BaseApplication routine for AppThreadedWrapper -----------------------
+    def init(self):
+        return True  # dummy impl, do nothing
+
     def step(self):
         """引擎运行"""
         dt = datetime.now()

@@ -2,20 +2,25 @@
 
 from __future__ import division
 
+from EventData import Event, EventData
+
 import os
 import logging
 from logging.handlers import TimedRotatingFileHandler
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from threading import Thread
 from datetime import datetime
 import time
 from copy import copy
-from abc import ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 import traceback
 import shelve
 import jsoncfg # pip install json-cfg
-
-from EventData import Event, EventData
+import sys
+if sys.version_info <(3,):
+    from Queue import Queue, Empty
+else:
+    from queue import Queue, Empty
 
 ########################################################################
 # 常量定义
@@ -30,7 +35,7 @@ LOGLEVEL_CRITICAL = logging.CRITICAL
 BOOL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh']
 
 ########################################################################
-class BaseApplication(object):
+class BaseApplication(ABC):
 
     __lastId__ =100
     
@@ -90,16 +95,13 @@ class BaseApplication(object):
         return self._active
     
     #--- pollable step routine for AppThreadedWrapper -----------------------
-    @abstractmethod
     def init(self): # return True if succ
         return True
 
-    @abstractmethod
     def start(self):
         # TODO:
         self._active = True
 
-    @abstractmethod
     def stop(self):
         # TODO:
         self._active = False
@@ -112,14 +114,17 @@ class BaseApplication(object):
         return AppThreadedWrapper.MAX_INTERVAL
 
     #---- event operations ---------------------------
-    @abstractmethod
     def subscribeEvent(self, event, funcCallback) :
-        if self._program and self._program._eventChannel:
-            self._program._eventChannel.register(event, funcCallback)
+        if not self._program or not self._program._eventChannel:
+            pass
+        
+        self._program._eventChannel.register(event, funcCallback)
 
-    @abstractmethod
     def postEvent(self, eventType, edata):
         """发出事件"""
+        if not self._program or not self._program._eventChannel:
+            pass
+
         event = Event(type_= eventType)
         event.dict_['data'] = edata
         self._program._eventChannel.put(event)
@@ -127,11 +132,8 @@ class BaseApplication(object):
 
     #---logging -----------------------
     def log(self, level, msg):
-        if not level in self._loglevelFunctionDict : 
-            return
-        
-        function = self._loglevelFunctionDict[level] # 获取日志级别对应的处理函数
-        function(msg)
+        if self._program:
+            self._program.log(level, 'APP['+self.ident +'] ' + msg)
 
     def debug(self, msg):
         self._program.debug('APP['+self.ident +'] ' + msg)
@@ -157,11 +159,11 @@ class BaseApplication(object):
         self._program.logexception('APP['+self.ident +'] %s: %s' % (ex, traceback.format_exc()))
 
     #----------------------------------------------------------------------
-    @abstractmethod
     def logError(self, eventType, content):
         """处理错误事件"""
     # TODO   error = event.dict_['data']
     #    self._lstErrors.append(error)
+        pass
 
 ########################################################################
 class AppThreadedWrapper(object):
@@ -193,7 +195,6 @@ class AppThreadedWrapper(object):
         self._wakeup.set()
 
     #----------------------------------------------------------------------
-    @abstractmethod
     def start(self):
         '''
         return True if started
@@ -208,7 +209,6 @@ class AppThreadedWrapper(object):
         return ret
 
     #----------------------------------------------------------------------
-    @abstractmethod
     def stop(self):
         ''' call to stop a app
         '''
@@ -245,7 +245,7 @@ class Program(object):
         
         # dirname(dirname(abspath(file)))
         settings= None
-        if not setting_filename :
+        if setting_filename :
             try :
                 settings= jsoncfg.load_config(settingfilename)
             except Exception as e :
@@ -468,7 +468,7 @@ class Program(object):
     # ----------------------------------------------------------------------
     def initLogger(self):
         """初始化日志引擎"""
-        if not jsoncfg.node_exists(self._settings.logger):
+        if not self._settings or not jsoncfg.node_exists(self._settings.logger):
             return
         
         # 创建引擎
@@ -538,7 +538,7 @@ class Program(object):
     
     @abstractmethod
     def log(self, level, msg):
-        if not level in self._loglevelFunctionDict : 
+        if not self._loglevelFunctionDict or not level in self._loglevelFunctionDict : 
             return
         
         function = self._loglevelFunctionDict[level] # 获取日志级别对应的处理函数
@@ -904,3 +904,6 @@ class EventLoop(BaseApplication):
         if handler in self.__generalHandlers:
             self.__generalHandlers.remove(handler)
 
+if __name__ == "__main__":
+    p = Program()
+    # a = BaseApplication() #wrong

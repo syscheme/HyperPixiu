@@ -17,6 +17,8 @@ import copy
 import traceback
 from collections import OrderedDict
 from datetime import datetime, timedelta
+from abc import ABCMeta, abstractmethod
+
 import sys
 if sys.version_info <(3,):
     from Queue import Queue, Empty
@@ -97,6 +99,53 @@ class DataRecorder(BaseApplication):
     @abstractmethod
     def saveRow(self, category, dataDict) :
         coll = self.findCollection(self, category)
+        pass
+
+
+########################################################################
+class IterableData(object):
+    """The reader part of HistoryData
+    Args:
+        filename (str): Filepath to a csv file.
+        header (bool): True if the file has got a header, False otherwise
+    """
+    def __init__(self):
+        """Initialisation function. The API (kwargs) should be defined in
+        the function _generator.
+        """
+        super(IterableData, self).__init__()
+        self._generator = self.generate()
+
+    def __iter__(self):
+        if not self._generator :
+            raise NotImplementedError()
+        return self
+
+    @abstractmethod
+    def generate(self):
+        # dummyrow = [2.0]*5
+        i=0
+        while True:
+            if i >10:
+                raise StopIteration
+            yield np.array([np.random.normal(scale=10)]*5, dtype=np.float)
+            i+=1
+ 
+    def __next__(self):
+        if not self._generator :
+            raise NotImplementedError()
+        return next(self._generator)
+
+    def _iterator_end(self):
+        """Rewinds if end of data reached.
+        """
+        print("End of data reached, rewinding.")
+        super(self.__class__, self).rewind()
+
+    @abstractmethod
+    def rewind(self):
+        """For this generator, we want to rewind only when the end of the data is reached.
+        """
         pass
 
 ########################################################################
@@ -577,50 +626,3 @@ class Zipper(BaseApplication):
     def _push(self, filename) :
         self._queue.put(filename)
 
-
-
-########################################################################
-class IterableData(object):
-    """The reader part of HistoryData
-    Args:
-        filename (str): Filepath to a csv file.
-        header (bool): True if the file has got a header, False otherwise
-    """
-    def __init__(self):
-        """Initialisation function. The API (kwargs) should be defined in
-        the function _generator.
-        """
-        super(IterableData, self).__init__()
-        self._generator = self.generate()
-
-    def __iter__(self):
-        if not self._generator :
-            raise NotImplementedError()
-        return self
-
-    @abstractmethod
-    def generate(self):
-        # dummyrow = [2.0]*5
-        i=0
-        while True:
-            if i >10:
-                raise StopIteration
-            yield np.array([np.random.normal(scale=10)]*5, dtype=np.float)
-            i+=1
- 
-    def __next__(self):
-        if not self._generator :
-            raise NotImplementedError()
-        return next(self._generator)
-
-    def _iterator_end(self):
-        """Rewinds if end of data reached.
-        """
-        print("End of data reached, rewinding.")
-        super(self.__class__, self).rewind()
-
-    @abstractmethod
-    def rewind(self):
-        """For this generator, we want to rewind only when the end of the data is reached.
-        """
-        pass

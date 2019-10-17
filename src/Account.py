@@ -9,6 +9,7 @@ from EventData    import EventData, datetime2float, EVENT_NAME_PREFIX
 from Application  import BaseApplication
 # from .DataRecorder import CsvRecorder, MongoRecorder
 
+from abc import ABCMeta, abstractmethod
 from datetime import datetime, timedelta
 from collections import OrderedDict
 # from itertools import product

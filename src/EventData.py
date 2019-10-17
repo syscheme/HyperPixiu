@@ -7,6 +7,7 @@ from time import sleep
 from collections import defaultdict
 from datetime import datetime
 import traceback
+from abc import ABCMeta, abstractmethod
 
 __dtEpoch = datetime.utcfromtimestamp(0)
 def datetime2float(dt):

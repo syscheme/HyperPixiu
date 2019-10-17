@@ -11,7 +11,11 @@ from vnApp.EventChannel import *
 from copy import copy
 from datetime import datetime
 from threading import Thread
-from queue import Queue, Empty
+import sys
+if sys.version_info <(3,):
+    from Queue import Queue, Empty
+else:
+    from queue import Queue, Empty
 from multiprocessing.dummy import Pool
 from time import sleep
 from datetime import datetime
@@ -142,7 +146,7 @@ class mdOffline(MarketData):
     }
 
     #----------------------------------------------------------------------
-    def __init__(self, mainRoutine, settings):
+    def __init__(self, program, settings):
         """Constructor
             setting schema:
                 {
@@ -156,10 +160,10 @@ class mdOffline(MarketData):
                 },
         """
 
-        super(mdOffline, self).__init__(mainRoutine, settings)
+        super(mdOffline, self).__init__(program, settings)
 
         # self._btApp = btApp
-        self._main      = mainRoutine
+        self._main      = program
         self._dirData  = settings.homeDir('.')
         self._timerStep = settings.timerStep(0)
         try :
@@ -303,7 +307,7 @@ class mdOffline(MarketData):
 
         data.exchange = self.exchange
         data.vtSymbol = '%s.%s' % (data.symbol, self.exchange)
-        self._main._eventChannel.put(event)
+        self._main._eventLoop.put(event)
         self.debug('posted %s' % data.desc)
 
     def connect(self):

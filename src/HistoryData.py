@@ -6,6 +6,7 @@ from __future__ import division
 
 from Application import BaseApplication
 from EventData import *
+from MarketData import MarketData
 '''
 from .language import text
 '''
@@ -30,7 +31,7 @@ EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
 
 ########################################################################
 class DataRecorder(BaseApplication):
-    """数据记录引擎, the base DR is implmented as a csv Recorder
+    """数据记录, the base DR is implmented as a csv Recorder
         configuration:
             "datarecorder": {
                 "dbNamePrefix": "dr", // the preffix of DB name to save: <dbNamePrefix>Tick, <dbNamePrefix>K1min
@@ -40,13 +41,13 @@ class DataRecorder(BaseApplication):
     DEFAULT_DBPrefix = 'dr'
 
     #----------------------------------------------------------------------
-    def __init__(self, mainRoutine, settings):
+    def __init__(self, program, settings):
         """Constructor"""
-        super(DataRecorder, self).__init__(mainRoutine, settings)
+        super(DataRecorder, self).__init__(program, settings)
         self._dbNamePrefix = settings.dbNamePrefix(DataRecorder.DEFAULT_DBPrefix)
 
         # 配置字典
-        self._dictDR = OrderedDict()
+        self._dictDR = OrderedDict() # categroy -> { fieldnames, ....}
 
         # 负责执行数据库插入的单独线程相关
         self._queRowsToRecord = Queue()  # 队列 of (category, Data)
@@ -165,9 +166,9 @@ class CsvRecorder(DataRecorder):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self, mainRoutine, settings):
+    def __init__(self, program, settings):
         """Constructor"""
-        super(CsvRecorder, self).__init__(mainRoutine, settings)
+        super(CsvRecorder, self).__init__(program, settings)
 
         self._min2flush  = settings.min2flush(1.0)
         self._days2roll  = settings.days2roll(1.0)
@@ -334,9 +335,9 @@ class MongoRecorder(DataRecorder):
     """数据记录引擎
     """
     #----------------------------------------------------------------------
-    def __init__(self, mainRoutine, settings):
+    def __init__(self, program, settings):
         """Constructor"""
-        super(MongoRecorder, self).__init__(mainRoutine, settings)
+        super(MongoRecorder, self).__init__(program, settings)
 
     #----------------------------------------------------------------------
     # impl of DataRecorder
@@ -409,19 +410,19 @@ class MarketRecorder(BaseApplication):
     CSV_LEADING_COLUMNS=['datetime','price','close', 'volume', 'high','low','open']
 
     #----------------------------------------------------------------------
-    def __init__(self, mainRoutine, settings, recorder=None):
+    def __init__(self, program, settings, recorder=None):
         """Constructor"""
 
-        super(MarketRecorder, self).__init__(mainRoutine, settings)
+        super(MarketRecorder, self).__init__(program, settings)
 
         if recorder :
             self._recorder = recorder
         else : 
             rectype = settings.type('csv')
             if rectype == 'mongo' :
-                self._recorder = MongoRecorder(mainRoutine, settings)
+                self._recorder = MongoRecorder(program, settings)
             else:
-                self._recorder = CsvRecorder(mainRoutine, settings)
+                self._recorder = CsvRecorder(program, settings)
 
     #----------------------------------------------------------------------
     # impl of BaseApplication
@@ -579,8 +580,8 @@ import bz2
 
 class Zipper(BaseApplication):
     """数据记录引擎"""
-    def __init__(self, mainRoutine, settings):
-        super(Zipper, self).__init__(mainRoutine, settings)
+    def __init__(self, program, settings):
+        super(Zipper, self).__init__(program, settings)
         self._queue = Queue()                    # 队列
         self.subscribeEvent(EVENT_TOARCHIVE, self.onToArchive)
 

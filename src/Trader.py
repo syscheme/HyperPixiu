@@ -36,10 +36,10 @@ class Trader(BaseApplication):
     RUNTIME_TAG_TODAY = '$today'
 
     #----------------------------------------------------------------------
-    def __init__(self, mainRoutine, settings):
+    def __init__(self, program, settings):
         """Constructor"""
 
-        super(Trader, self).__init__(mainRoutine, settings)
+        super(Trader, self).__init__(program, settings)
 
         # 引擎类型为实盘
         # self._tradeType = TRADER_TYPE_TRADING
@@ -107,7 +107,7 @@ class Trader(BaseApplication):
         self.debug('adopting account')
         # TODO: instantiaze different account by type: accountClass = self._settings.account.type('Account')
         account = Account_AShare(self, self._settings.account)
-        account = mainRoutine.addApp(account)
+        account = program.addApp(account)
 
         if account:
             self.adoptAccount(account)

@@ -66,10 +66,10 @@ class mdHuobi(MarketData):
     #----------------------------------------------------------------------
     # setting schema
     # {'exchange':HADAX, 'proxies':{'host': 'url' }} } 
-    def __init__(self, mainRoutine, settings):
+    def __init__(self, program, settings):
         """Constructor"""
 
-        super(mdHuobi, self).__init__(mainRoutine, settings)
+        super(mdHuobi, self).__init__(program, settings)
 
         self._merger = HuobiToEvent(self.onMarketEvent)
 
@@ -340,7 +340,7 @@ class mdHuobi(MarketData):
 
     def onMarketEvent(self, event) :
         event.dict_['data'].exchange = self.exchange
-        self.postMarketEvent(event)
+        self.postEvent(event)
         
     #----------------------------------------------------------------------
     #

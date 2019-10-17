@@ -1,7 +1,11 @@
 # encoding: UTF-8
 
 # 系统模块
-from queue import Queue, Empty
+import sys
+if sys.version_info <(3,):
+    from Queue import Queue, Empty
+else:
+    from queue import Queue, Empty
 from threading import Thread
 from time import sleep
 from collections import defaultdict

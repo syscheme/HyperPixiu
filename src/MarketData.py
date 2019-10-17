@@ -2,237 +2,25 @@
 
 from __future__ import division
 
-from event.ecBasic import EventData, Event, EVENT_NAME_PREFIX
-
-import traceback
+from EventData import *
 from datetime import datetime
-from abc import ABCMeta, abstractmethod
 
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 
-########################################################################
-class MarketData(object):
-    # Market相关events
-    EVENT_TICK          = MARKETDATE_EVENT_PREFIX + 'Tick'                   # TICK行情事件，可后接具体的vtSymbol
-    EVENT_MARKET_DEPTH0 = MARKETDATE_EVENT_PREFIX + 'MD0'           # Market depth0
-    EVENT_MARKET_DEPTH2 = MARKETDATE_EVENT_PREFIX + 'MD2'           # Market depth2
-    EVENT_KLINE_1MIN    = MARKETDATE_EVENT_PREFIX + 'KL1m'
-    EVENT_KLINE_5MIN    = MARKETDATE_EVENT_PREFIX + 'KL5m'
-    EVENT_KLINE_15MIN   = MARKETDATE_EVENT_PREFIX + 'KL15m'
-    EVENT_KLINE_30MIN   = MARKETDATE_EVENT_PREFIX + 'KL30m'
-    EVENT_KLINE_1HOUR   = MARKETDATE_EVENT_PREFIX + 'KL1h'
-    EVENT_KLINE_4HOUR   = MARKETDATE_EVENT_PREFIX + 'KL4h'
-    EVENT_KLINE_1DAY    = MARKETDATE_EVENT_PREFIX + 'KL1d'
+# Market相关events
+EVENT_TICK          = MARKETDATE_EVENT_PREFIX + 'Tick'                   # TICK行情事件，可后接具体的vtSymbol
+EVENT_MARKET_DEPTH0 = MARKETDATE_EVENT_PREFIX + 'MD0'           # Market depth0
+EVENT_MARKET_DEPTH2 = MARKETDATE_EVENT_PREFIX + 'MD2'           # Market depth2
+EVENT_KLINE_1MIN    = MARKETDATE_EVENT_PREFIX + 'KL1m'
+EVENT_KLINE_5MIN    = MARKETDATE_EVENT_PREFIX + 'KL5m'
+EVENT_KLINE_15MIN   = MARKETDATE_EVENT_PREFIX + 'KL15m'
+EVENT_KLINE_30MIN   = MARKETDATE_EVENT_PREFIX + 'KL30m'
+EVENT_KLINE_1HOUR   = MARKETDATE_EVENT_PREFIX + 'KL1h'
+EVENT_KLINE_4HOUR   = MARKETDATE_EVENT_PREFIX + 'KL4h'
+EVENT_KLINE_1DAY    = MARKETDATE_EVENT_PREFIX + 'KL1d'
 
-    EVENT_T2KLINE_1MIN  = MARKETDATE_EVENT_PREFIX + 'T2K1m'
+EVENT_T2KLINE_1MIN  = MARKETDATE_EVENT_PREFIX + 'T2K1m'
 
-    TAG_BACKTEST = '$BT'
-
-    DUMMY_DT_EOS = datetime(2999, 12, 31, 23,59,59)
-    DUMMY_DATE_EOS = DUMMY_DT_EOS.strftime('%Y%m%d')
-    DUMMY_TIME_EOS = DUMMY_DT_EOS.strftime('%H%M%S')
-
-    __lastId__ =100
-
-    from abc import ABCMeta, abstractmethod
-
-    #----------------------------------------------------------------------
-    def __init__(self, mainRoutine, settings):
-        """Constructor"""
-
-        # the MarketData instance Id
-        # self._id = settings.id("")
-        # if len(self._id)<=0 :
-        #     MarketData.__lastId__ +=1
-        #     self._id = 'MD%d' % MarketData.__lastId__
-
-        # self._mr = mainRoutine
-        # self._eventCh  = mainRoutine._eventChannel
-        # self._exchange = settings.exchange(self._id)
-
-        self._active = False
-        self.subDict = {}
-        
-        self.proxies = {}
-    
-    #----------------------------------------------------------------------
-    @property
-    def id(self) :
-        return self._id
-
-    @property
-    def ident(self) :
-        return self.__class__.__name__ +"." + self._id
-
-    @property
-    def exchange(self) :
-        return self._exchange
-
-    @property
-    def active(self):
-        return self._active
-
-    @property
-    def subscriptions(self):
-        return self.subDict
-        
-    #----------------------------------------------------------------------
-    # inqueries to some market data
-    # https://www.cnblogs.com/bradleon/p/6106595.html
-    def query(self, symbol, eventType, since, cortResp=None):
-        """查询请求""" 
-        '''
-        will call cortResp.send(csvline) when the result comes
-        '''
-        scale =1200
-        if (eventType == EVENT_TICK) :
-            scale=0
-        elif (eventType == EVENT_TICK) :
-            scale = 1
-        
-        url = "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?scale=5&datalen=1000" % (scale1min, linesExpected)
-
-        req = (uri, httpParams, reqData, funcMethod, callbackResp)
-
-        self.enqueue(reqId, req)
-        return reqId
-   
-    #----------------------------------------------------------------------
-    # if the MarketData has background thread, connect() will not start the thread
-    # but start() will
-    @abstractmethod
-    def connect(self):
-        """连接"""
-        raise NotImplementedError
-#        return self.active
-
-    @abstractmethod
-    def close(self):
-        pass
-
-    @abstractmethod
-    def start(self):
-        """连接"""
-        self.connect()
-        
-    @abstractmethod
-    def step(self):
-        """连接"""
-        return 0 # raise NotImplementedError
-
-    @abstractmethod
-    def stop(self):
-        """停止"""
-        if self._active:
-            self._active = False
-            self.close()
-        
-    #----------------------------------------------------------------------
-    def subscribeKey(self, symbol, eventType):
-        key = '%s>%s' %(eventType, symbol)
-        return key
-
-    #----------------------------------------------------------------------
-    # return eventType, symbol
-    def chopSubscribeKey(self, key):
-        pos = key.find('>')
-        return key[:pos], key[pos+1:]
-
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def subscribe(self, symbol, eventType =EVENT_TICK):
-        """订阅成交细节"""
-        pass
-
-    #----------------------------------------------------------------------
-    def unsubscribe(self, symbol, eventType):
-        """取消订阅主题"""
-        key = self.subscribeKey(symbol, eventType)
-        if key not in self.subDict:
-            return
-
-        self.doUnsubscribe(key)
-        del self.subDict[key]
-
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def doUnsubscribe(self, key):
-        """取消订阅主题"""
-        raise NotImplementedError
-
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def onError(self, msg):
-        """错误推送"""
-        print (msg)
-        
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def postMarketEvent(self, event):
-        if self._eventCh ==None:
-            return
-
-        self._eventCh.put(event)
-        self.debug('posted %s' % event.dict_['data'].desc)
-
-    #---logging -----------------------
-    def debug(self, msg):
-        self._mr.debug('MD['+self.id +'] ' + msg)
-        
-    def info(self, msg):
-        """正常输出"""
-        self._mr.info('MD['+self.id +'] ' + msg)
-
-    def warn(self, msg):
-        """警告信息"""
-        self._mr.warn('MD['+self.id +'] ' + msg)
-        
-    def error(self, msg):
-        """报错输出"""
-        self._mr.error('MD['+self.id +'] ' + msg)
-        
-    def logexception(self, ex):
-        """报错输出+记录异常信息"""
-        self._mr.logexception('MD['+self.id +'] %s: %s' % (ex, traceback.format_exc()))
-    
-########################################################################
-from threading import Thread
-from time import sleep
-
-class ThreadedBE(object):
-    #----------------------------------------------------------------------
-    def __init__(self, marketData):
-        """Constructor"""
-        self._md = marketData
-        self.thread = Thread(target=self._run)
-
-    #----------------------------------------------------------------------
-    def _run(self):
-        """执行连接 and receive"""
-        while self._md._active:
-            try :
-                nextSleep = - self._md.step()
-                if nextSleep >0:
-                    sleep(nextSleep)
-            except Exception as ex:
-                self._md.error('ThreadedBE::step() excepton: %s' % ex)
-        self._md.info('ThreadedBE exit')
-
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def start(self):
-        self._md.start()
-        self.thread.start()
-        self._md.debug('ThreadedBE starts')
-        return self._md._active
-
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def stop(self):
-        self._md.stop()
-        self.thread.join()
-        self._md.info('ThreadedBE stopped')
-    
 ########################################################################
 class TickData(EventData):
     """Tick行情数据类"""
@@ -496,3 +284,4 @@ class DataToEvent(object):
             }
 
         self._dict[eventType] = d
+

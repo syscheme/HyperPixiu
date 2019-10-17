@@ -95,9 +95,6 @@ class BaseApplication(ABC):
         return self._active
     
     #--- pollable step routine for AppThreadedWrapper -----------------------
-    def init(self): # return True if succ
-        return True
-
     def start(self):
         # TODO:
         self._active = True
@@ -105,6 +102,10 @@ class BaseApplication(ABC):
     def stop(self):
         # TODO:
         self._active = False
+
+    @abstractmethod
+    def init(self): # return True if succ
+        return True
 
     @abstractmethod
     def step(self):
@@ -115,20 +116,27 @@ class BaseApplication(ABC):
 
     #---- event operations ---------------------------
     def subscribeEvent(self, event, funcCallback) :
-        if not self._program or not self._program._eventChannel:
+        if not self._program or not self._program._eventLoop:
             pass
         
-        self._program._eventChannel.register(event, funcCallback)
+        self._program._eventLoop.register(event, funcCallback)
 
-    def postEvent(self, eventType, edata):
+    def postEventData(self, eventType, edata):
         """发出事件"""
-        if not self._program or not self._program._eventChannel:
-            pass
+        if not self._program or not self._program._eventLoop:
+            return
 
         event = Event(type_= eventType)
         event.dict_['data'] = edata
-        self._program._eventChannel.put(event)
-        self.debug('posted event[%s]' % eventType)
+        self.postEvent(event)
+
+    def postEvent(self, event):
+        """发出事件"""
+        if not event or not self._program or not self._program._eventLoop:
+            return
+
+        self._program._eventLoop.put(event)
+        self.debug('posted event[%s]' % event.dict_['type_'])
 
     #---logging -----------------------
     def log(self, level, msg):

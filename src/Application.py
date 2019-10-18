@@ -8,7 +8,6 @@ import os
 import logging
 from logging.handlers import TimedRotatingFileHandler
 from collections import OrderedDict, defaultdict
-from threading import Thread
 from datetime import datetime
 import time
 from copy import copy
@@ -16,6 +15,7 @@ from abc import ABC, abstractmethod
 import traceback
 import shelve
 import jsoncfg # pip install json-cfg
+import json
 
 ########################################################################
 # 常量定义
@@ -27,7 +27,7 @@ LOGLEVEL_WARN     = logging.WARN
 LOGLEVEL_ERROR    = logging.ERROR
 LOGLEVEL_CRITICAL = logging.CRITICAL
 
-BOOL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh']
+BOOL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh', True, 1]
 __dtEpoch = datetime.utcfromtimestamp(0)
 def datetime2float(dt):
     total_seconds =  (dt - __dtEpoch).total_seconds()
@@ -56,13 +56,16 @@ class BaseApplication(MetaApp):
     HEARTBEAT_INTERVAL_DEFAULT = 5 # 5sec
     
     #----------------------------------------------------------------------
-    def __init__(self, program, settings=None):
+    def __init__(self, program, settings={}):
         """Constructor"""
 
         super(BaseApplication,self).__init__()
         
         self._program = program
         self._settings = settings
+        if not self._settings or not isinstance(self._settings, dict) :
+            self._settings ={}
+        
         self._active = False    # 工作状态
         self._threadWished = False
 
@@ -70,16 +73,17 @@ class BaseApplication(MetaApp):
 
         # the app instance Id
         self._id =""
-        if settings:
-            self._id = settings.id("")
+        if 'id' in self._settings.keys() :
+            self._id = self._settings['id']
 
         if len(self._id)<=0 :
             BaseApplication.__lastId__ +=1
             self._id = 'P%d' % BaseApplication.__lastId__
 
-        if settings:
-            self._dataPath  = settings.dataPath('./data')
-            self._threadWished = settings.threaded("false") in BOOL_TRUE
+        if 'dataPath' in self._settings.keys()  :
+            self._dataPath  = self._settings['dataPath']
+        if 'threaded' in self._settings.keys() and self._settings['threaded'] in BOOL_TRUE:
+            self._threadWished = True
 
     #----------------------------------------------------------------------
     @property
@@ -113,6 +117,7 @@ class BaseApplication(MetaApp):
         # TODO:
         self._active = True
         next(self._gen)
+        return self._active
 
     def stop(self):
         # TODO:
@@ -213,6 +218,7 @@ class BaseApplication(MetaApp):
         pass
 
 ########################################################################
+import threading
 class ThreadedAppWrapper(MetaApp):
     #----------------------------------------------------------------------
     def __init__(self, app, maxinterval=BaseApplication.HEARTBEAT_INTERVAL_DEFAULT):
@@ -222,7 +228,7 @@ class ThreadedAppWrapper(MetaApp):
 
         self._app = app
         self._maxinterval = maxinterval
-        self._thread = Thread(target=self._run)
+        self._thread = threading.Thread(target=self._run)
         self._evWakeup = threading.Event()
 
     #----------------------------------------------------------------------
@@ -237,7 +243,7 @@ class ThreadedAppWrapper(MetaApp):
                 self._app.error('ThreadedAppWrapper::step() excepton: %s' % ex)
 
             if nextSleep >0:
-                self._evWakeup(nextSleep)
+                self._evWakeup.wait(nextSleep)
 
         self._app.info('ThreadedAppWrapper exit')
 
@@ -341,7 +347,7 @@ class Program(object):
         if not isinstance(app, MetaApp):
             return
 
-        id = app.ident
+        id = app.theApp().ident
         
         # 创建应用实例
         self._dictApps[id] = app
@@ -352,14 +358,25 @@ class Program(object):
 
         # TODO maybe test isinstance(apptype, MarketData) to ease index and so on
         if self.hasHeartbeat :
-            self.subscribe(EVENT_HEARTB, app)
+            self.subscribe(EVENT_HEARTB, app.theApp())
         return app
 
-    def createApp(self, appModule, settings):
+    def createApp(self, appModule, settings, **kwargs):
         """添加上层应用"""
 
-        # if not appModule is BaseApplication:
+        # if not isinstance(appModule, BaseApplication):
         #     return None
+
+        if settings and not isinstance(settings, dict) :
+            self._settings = json.loads(s=settings)
+        else:
+            self._settings = settings
+        if not self._settings or not isinstance(self._settings, dict) :
+            self._settings ={}
+        
+        if len(kwargs) >0:
+            self._settings = {**self._settings, **kwargs}
+
         app = appModule(self, settings)
         if not app: return
         if app._threadWished :
@@ -385,7 +402,7 @@ class Program(object):
 
     def getApp(self, appId):
         """获取APP对象"""
-        return self._dictApps[appId]
+        return self._dictApps[appId].theApp()
 
     #----------------------------------------------------------------------
     def start(self, daemonize=None):
@@ -513,7 +530,7 @@ class Program(object):
 
                 # 若存在，则按顺序将事件传递给处理函数执行
                 for appId in self.__subscribers[event.type_] :
-                    app =self.getApp(appId)
+                    app = self.getApp(appId)
                     if not app or not app.isActive:
                         continue
 
@@ -909,7 +926,7 @@ if __name__ == "__main__":
     # a = BaseApplication() #wrong
     p = Program()
     p.__heartbeatInterval =-1
-    p.createApp(Foo, None)
+    p.createApp(Foo, {'asfs':1, 'aaa':'000'}, aaa='bbb', ccc='ddd')
     p.start()
     p.loop()
     p.stop()

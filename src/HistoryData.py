@@ -6,6 +6,7 @@ from __future__ import division
 
 from Application import BaseApplication
 from EventData import *
+from MarketData import *
 '''
 from .language import text
 '''
@@ -252,17 +253,27 @@ class Playback(BaseApplication):
         the function _generator.
         """
         super(Playback, self).__init__(program, settings)
+        self._symbol = symbol
+        self._category = EVENT_KLINE_1MIN
+        if 'symbol' in self._settings.keys()  :
+            self._symbol = self._settings['symbol']
+
+        if 'category' in self._settings.keys()  :
+            self._category = self._settings['category']
+
+        self._threadWished = True  # this App must be Threaded
         self._dbNamePrefix = Recorder.DEFAULT_DBPrefix
         
         self._startDate = Playback.DUMMY_DATE_START
         self._endDate   = Playback.DUMMY_DATE_END
-        if settings :
-            self._dbNamePrefix = settings.dbNamePrefix(self._dbNamePrefix)
-            self._startDate = settings.startDate(self._startDate)
-            self._endDate = settings.endDate(self._endDate)
+        if 'startDate' in self._settings.keys()  :
+            self._startDate = self._settings['startDate']
+
+        if 'endDate' in self._settings.keys()  :
+            self._endDate = self._settings['endDate']
 
         # 事件队列
-        self.__queue = Queue()
+        self.__queue = Queue(maxsize=100)
 
         # 配置字典
         self._dictDR = OrderedDict() # categroy -> { fieldnames, ....}
@@ -336,15 +347,7 @@ class CsvPlayback(Playback):
 
     def __init__(self, program, settings, symbol=None):
         super(CsvPlayback, self).__init__(program, settings)
-        self._symbol = symbol
-        self._category = EVENT_KLINE_1MIN
-        if self._settings : 
-            if not self._symbol:
-                self._symbol = self._settings.symbol("")
-            self._category = self._settings.category(self._category)
         self._csvfiles =[]
-        # 事件队列
-        self.__queue = Queue()
         self._cvsToEvent = None
 
     #--- impl of BaseApplication -----------------------
@@ -389,7 +392,7 @@ class CsvPlayback(Playback):
             # self.error(traceback.format_exc())
             self._reader = None
             self._importStream.close()
-            return True
+            return False
 
         try :
             ev = None
@@ -397,7 +400,7 @@ class CsvPlayback(Playback):
                 # self.debug('line: %s' % (line))
                 ev = self._cvsToEvent.pushCvsRow(line, self._category, self._exchange, self._symbol)
             if None != ev:
-                self.__queue.put(ev)
+                self.__queue.put(ev, block=True)
         except Exception as ex:
             self.logexception(ex)
 
@@ -405,7 +408,7 @@ class CsvPlayback(Playback):
 
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):
-        mdEvent = self._category[len(MARKETDATE_EVENT_PREFIX):]
+        category = self._category
         self._csvfiles =[]
         self.__queue = Queue()
         self._fieldnames = self._fields.split(',') if self._fields else None
@@ -416,10 +419,10 @@ class CsvPlayback(Playback):
         stampSince = self._startDate
         stampTill  = self._endDate
 
-        if not mdEvent in self._dictDR.keys() or not symbol in self._dictDR[mdEvent].keys():
+        if not category in self._dictDR.keys() or not symbol in self._dictDR[category].keys():
             return False
 
-        node = self._dictDR[mdEvent][self._symbol]
+        node = self._dictDR[category][self._symbol]
         if not 'coll' in node.keys() :
             return False
 
@@ -493,14 +496,6 @@ class MongoPlayback(Playback):
 
     def __init__(self, program, settings, symbol=None):
         super(MongoPlayback, self).__init__(program, settings)
-        self._symbol = symbol
-        self._category = EVENT_KLINE_1MIN
-        if self._settings : 
-            if not self._symbol:
-                self._symbol = self._settings.symbol("")
-            self._category = self._settings.category(self._category)
-        self._csvfiles =[]
-        self._cvsToEvent = None
 
     #--- impl of BaseApplication -----------------------
     def step(self):
@@ -526,14 +521,14 @@ class MongoPlayback(Playback):
 
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):
-        mdEvent = self._category[len(MARKETDATE_EVENT_PREFIX):]
+        category = self._category[len(MARKETDATE_EVENT_PREFIX):]
         stampSince = self._startDate
         stampTill  = self._endDate
 
-        if not mdEvent in self._dictDR.keys() or not symbol in self._dictDR[mdEvent].keys():
+        if not category in self._dictDR.keys() or not symbol in self._dictDR[category].keys():
             return False
 
-        node = self._dictDR[mdEvent][symbol]
+        node = self._dictDR[category][symbol]
         if not 'coll' in node.keys() :
             return False
 
@@ -623,13 +618,13 @@ class MarketRecorder(BaseApplication):
         if  MARKETDATE_EVENT_PREFIX != eventType[:len(MARKETDATE_EVENT_PREFIX)] :
             return
 
-        mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
+        category = eventType[len(MARKETDATE_EVENT_PREFIX):]
         eData = event.dict_['data'] # this is a TickData or KLineData
         # if tick.sourceType != MarketData.DATA_SRCTYPE_REALTIME:
         if MarketData.TAG_BACKTEST in eData.exchange :
             return
 
-        category = '%s/%s' % (mdEvent, eData.symbol)
+        category = '%s/%s' % (category, eData.symbol)
         collection= self._recorder.findCollection(category)
         if not collection:
             return
@@ -641,7 +636,7 @@ class MarketRecorder(BaseApplication):
             except:
                 pass
 
-        self.debug('On%s: %s' % (mdEvent, eData.desc))
+        self.debug('On%s: %s' % (category, eData.desc))
 
         row = eData.__dict__
         try :

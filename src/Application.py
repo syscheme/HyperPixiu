@@ -318,20 +318,15 @@ class Program(object):
         self._logger = None
         self.initLogger()
         
-        '''
-        # 创建EventLoop
-        self._eventLoop = EventLoop(self) if self.threadless else ThreadedAppWrapper(EventLoop(self))
-        self._bRun = True
-        '''
         # 事件队列
         self.__queue = Queue()
         
-        # 计时器，用于触发计时器事件
+        # heartbeat
         self.__heartbeatActive = True     # 计时器工作状态
         self.__heartbeatInterval = BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # 计时器触发间隔（默认1秒）
         self.__stampLastHB = None
 
-        # 这里的__handlers是一个字典，用来保存对应的事件到appId的订阅关系
+        # __subscribers字典，用来保存对应的事件到appId的订阅关系
         # 其中每个键对应的值是一个列表，列表中保存了对该事件进行监听的appId
         self.__subscribers = {}
 
@@ -399,11 +394,6 @@ class Program(object):
 
         self._bRun =True
         '''
-        self.debug('starting event loop')
-        if self._eventLoop:
-            self._eventLoop.start()
-            self.info('started event loop')
-
         self.dbConnect()
         
         self.debug('starting market data subscribers')
@@ -439,8 +429,6 @@ class Program(object):
         for ds in self._dictMarketDatas.values():        
             ds.close()
         
-        # 停止事件引擎
-        self._eventLoop.stop()
         '''
         
         # 停止上层应用引擎
@@ -510,7 +498,6 @@ class Program(object):
                             
                     continue
 
-                
                 # 检查是否存在对该事件进行监听的处理函数
                 if not event.type_ in self.__subscribers.keys():
                     continue
@@ -614,8 +601,6 @@ class Program(object):
         if not self._settings or not jsoncfg.node_exists(self._settings.logger):
             return
         
-        # 创建引擎
-
         # abbout the logger
         # ----------------------------------------------------------------------
         self._logger   = logging.getLogger()        
@@ -892,145 +877,6 @@ class Program(object):
         """查询引擎中所有底层接口的信息"""
         return self._dlstMarketDatas
 
-########################################################################
-class EventLoop(BaseApplication):
-    """
-    非线程的事件驱动引擎        
-    """
-    #----------------------------------------------------------------------
-    def __init__(self, program, timer=True):
-        """初始化事件引擎"""
-        super(EventLoop, self).__init__(program)
-
-        # 事件队列
-        self.__queue = Queue()
-        
-        # 计时器，用于触发计时器事件
-        self.__heartbeatActive = timer     # 计时器工作状态
-        self.__heartbeatInterval = 1          # 计时器触发间隔（默认1秒）, 0 means nonblock loop
-        self.__stampLastHB = None
-        
-        # 这里的__handlers是一个字典，用来保存对应的事件调用关系
-        # 其中每个键对应的值是一个列表，列表中保存了对该事件进行监听的函数功能
-        self.__subscribers = defaultdict(list)
-        
-        # __generalHandlers是一个列表，用来保存通用回调函数（所有事件均调用）
-        self.__generalHandlers = []        
-        
-    #--- override of BaseApplication routine for ThreadedAppWrapper -----------------------
-    def init(self):
-        return True  # dummy impl, do nothing
-
-    def step(self):
-        """引擎运行"""
-        dt = datetime.now()
-        stampNow = datetime2float(datetime.now())
-        c =0
-        if not self.__stampLastHB :
-            self.__stampLastHB = stampNow
-
-        if self.__heartbeatActive and self.__stampLastHB + self.__heartbeatInterval < stampNow:
-            self.__stampLastHB = stampNow
-                
-            # 向队列中存入计时器事件
-            edata = edTime(dt)
-            event = Event(type_= EventChannel.EVENT_HEARTB)
-            event.dict_['data'] = edata
-            self.put(event)
-
-        # pop the event to dispatch
-        event = None
-        try :
-            event = self.__queue.get(block = True, timeout = 0.5)  # 获取事件的阻塞时间设为1秒
-        except Empty:
-            pass
-
-        try:
-            if event :
-                self.__process(event)
-                c+=1
-        except Exception as ex:
-            self.error("eventCH exception %s %s" % (ex, traceback.format_exc()))
-
-        return 0 # because self.__queue.get() is blockable, we don't wish to sleep outside of step()
-            
-    #----------------------------------------------------------------------
-    def __process(self, event):
-        """处理事件"""
-        # 检查是否存在对该事件进行监听的处理函数
-        if event.type_ in self.__subscribers:
-            # 若存在，则按顺序将事件传递给处理函数执行
-            for handler in self.__subscribers[event.type_] :
-                try:
-                    handler(event)
-                except Exception as ex:
-                    self.error("eventCH handle(%s) %s: %s %s" % (event.type_, ex, handler, traceback.format_exc()))
-            
-        # 调用通用处理函数进行处理
-        if self.__generalHandlers:
-            for handler in self.__generalHandlers :
-                try:
-                    handler(event)
-                except Exception as ex:
-                    self.error("eventCH handle %s %s" % (ex, traceback.format_exc()))
-               
-    #----------------------------------------------------------------------
-    def start(self, timer=True):
-        # 启动计时器，计时器事件间隔默认设定为1秒
-        if timer:
-            self.__heartbeatActive = True
-        super(EventLoop, self).start()
-    
-    #----------------------------------------------------------------------
-    def stop(self):
-        """停止引擎"""
-        pass
-            
-    #----------------------------------------------------------------------
-    def register(self, type_, handler):
-        """注册事件处理函数监听"""
-        # 尝试获取该事件类型对应的处理函数列表，若无defaultDict会自动创建新的list
-        handlerList = self.__subscribers[type_]
-        
-        # 若要注册的处理器不在该事件的处理器列表中，则注册该事件
-        if handler not in handlerList:
-            handlerList.append(handler)
-            
-    #----------------------------------------------------------------------
-    def unregister(self, type_, handler):
-        """注销事件处理函数监听"""
-        # 尝试获取该事件类型对应的处理函数列表，若无则忽略该次注销请求   
-        handlerList = self.__subscribers[type_]
-            
-        # 如果该函数存在于列表中，则移除
-        if handler in handlerList:
-            handlerList.remove(handler)
-
-        # 如果函数列表为空，则从引擎中移除该事件类型
-        if not handlerList:
-            del self.__subscribers[type_]  
-        
-    #----------------------------------------------------------------------
-    def put(self, event):
-        """向事件队列中存入事件"""
-        self.__queue.put(event)
-
-    #----------------------------------------------------------------------
-    @property
-    def pendingSize(self):
-        return self.__queue.qsize()
-
-    #----------------------------------------------------------------------
-    def registerGeneralHandler(self, handler):
-        """注册通用事件处理函数监听"""
-        if handler not in self.__generalHandlers:
-            self.__generalHandlers.append(handler)
-            
-    #----------------------------------------------------------------------
-    def unregisterGeneralHandler(self, handler):
-        """注销通用事件处理函数监听"""
-        if handler in self.__generalHandlers:
-            self.__generalHandlers.remove(handler)
 ''' 
 
 # the following is a sample

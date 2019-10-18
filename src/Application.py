@@ -64,6 +64,7 @@ class BaseApplication(MetaApp):
         self._program = program
         self._settings = settings
         self._active = False    # 工作状态
+        self._threadWished = False
 
         self._gen = self._generator()
 
@@ -78,6 +79,7 @@ class BaseApplication(MetaApp):
 
         if settings:
             self._dataPath  = settings.dataPath('./data')
+            self._threadWished = settings.threaded("false") in BOOL_TRUE
 
     #----------------------------------------------------------------------
     @property
@@ -322,8 +324,7 @@ class Program(object):
         self.__queue = Queue()
         
         # heartbeat
-        self.__heartbeatActive = True     # 计时器工作状态
-        self.__heartbeatInterval = BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # 计时器触发间隔（默认1秒）
+        self.__heartbeatInterval = int(self._settings.heartbeatInterval("1")) if self._settings else BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # heartbeat间隔（默认1秒）
         self.__stampLastHB = None
 
         # __subscribers字典，用来保存对应的事件到appId的订阅关系
@@ -360,7 +361,8 @@ class Program(object):
         # if not appModule is BaseApplication:
         #     return None
         app = appModule(self, settings)
-        if settings and settings.threaded("false") in BOOL_TRUE:
+        if not app: return
+        if app._threadWished :
             app = ThreadedAppWrapper(app)
 
         return self.addApp(app)

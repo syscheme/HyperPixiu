@@ -6,7 +6,6 @@ from __future__ import division
 
 from Application import BaseApplication
 from EventData import *
-from MarketData import MarketData
 '''
 from .language import text
 '''
@@ -30,7 +29,7 @@ from pymongo.errors import DuplicateKeyError
 EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
 
 ########################################################################
-class DataRecorder(BaseApplication):
+class Recorder(BaseApplication):
     """数据记录, the base DR is implmented as a csv Recorder
         configuration:
             "datarecorder": {
@@ -43,8 +42,8 @@ class DataRecorder(BaseApplication):
     #----------------------------------------------------------------------
     def __init__(self, program, settings):
         """Constructor"""
-        super(DataRecorder, self).__init__(program, settings)
-        self._dbNamePrefix = settings.dbNamePrefix(DataRecorder.DEFAULT_DBPrefix)
+        super(Recorder, self).__init__(program, settings)
+        self._dbNamePrefix = settings.dbNamePrefix(Recorder.DEFAULT_DBPrefix) if settings else Recorder.DEFAULT_DBPrefix
 
         # 配置字典
         self._dictDR = OrderedDict() # categroy -> { fieldnames, ....}
@@ -56,34 +55,27 @@ class DataRecorder(BaseApplication):
         if len(dataDir) > 3:
             self._dataPath = dataDir
 
-    #----------------------------------------------------------------------
     # impl of BaseApplication
     #----------------------------------------------------------------------
-    @abstractmethod
     def init(self): # return True if succ
-        return super(DataRecorder, self).init()
+        return super(Recorder, self).init()
 
-    @abstractmethod
-    def start(self):
-        pass
-
-    @abstractmethod
     def step(self):
         cStep =0
-        while True:
+        while self.isActive:
             try:
                 category, row = self._queRowsToRecord.get(block=False, timeout=0.05)
                 self.saveRow(category, row)
                 cStep +=1
             except: # Empty:
                 break
-        return cStep
+
+        return cStep >0
 
     #----------------------------------------------------------------------
     def pushRow(self, category, row):
         self._queRowsToRecord.put((category, row))
 
-    @abstractmethod
     def registerCollection(self, category, params= {}):
         '''
            for example recorder.registerCollection(self._recCatgDPosition, params= {'index': [('date', ASCENDING), ('time', ASCENDING)], 'columns' : ['date','symbol']})
@@ -99,70 +91,24 @@ class DataRecorder(BaseApplication):
 
     @abstractmethod
     def saveRow(self, category, dataDict) :
-        coll = self.findCollection(self, category)
-        pass
+        # coll = self.findCollection(self, category)
+        pass # TODO
 
-
-########################################################################
-class IterableData(object):
-    """The reader part of HistoryData
-    Args:
-        filename (str): Filepath to a csv file.
-        header (bool): True if the file has got a header, False otherwise
-    """
-    def __init__(self):
-        """Initialisation function. The API (kwargs) should be defined in
-        the function _generator.
-        """
-        super(IterableData, self).__init__()
-        self._generator = self.generate()
-
-    def __iter__(self):
-        if not self._generator :
-            raise NotImplementedError()
-        return self
-
-    @abstractmethod
-    def generate(self):
-        # dummyrow = [2.0]*5
-        i=0
-        while True:
-            if i >10:
-                raise StopIteration
-            yield np.array([np.random.normal(scale=10)]*5, dtype=np.float)
-            i+=1
- 
-    def __next__(self):
-        if not self._generator :
-            raise NotImplementedError()
-        return next(self._generator)
-
-    def _iterator_end(self):
-        """Rewinds if end of data reached.
-        """
-        print("End of data reached, rewinding.")
-        super(self.__class__, self).rewind()
-
-    @abstractmethod
-    def rewind(self):
-        """For this generator, we want to rewind only when the end of the data is reached.
-        """
-        pass
 
 ########################################################################
 import csv
-class CsvRecorder(DataRecorder):
+class CsvRecorder(Recorder):
     """数据记录引擎,
-        configuration:
-            "datarecorder": {
-                ...
-                "dbNamePrefix": "dr", // the preffix of DB name to save: <dbNamePrefix>Tick, <dbNamePrefix>K1min
+    configuration:
+        "datarecorder": {
+            ...
+            "dbNamePrefix": "dr", // the preffix of DB name to save: <dbNamePrefix>Tick, <dbNamePrefix>K1min
 
-                // for csv recorder
-                "min2flush" : 0.3,
-                "days2roll" : 1.0,
-                "days2archive"  : 0.0028,
-            }
+            // for csv recorder
+            "min2flush" : 0.3,
+            "days2roll" : 1.0,
+            "days2archive"  : 0.0028,
+        }
     """
 
     #----------------------------------------------------------------------
@@ -176,10 +122,8 @@ class CsvRecorder(DataRecorder):
         if self._days2zip < self._days2roll *2:
             self._days2zip = self._days2roll *2
 
+    # impl/overwrite of Recorder
     #----------------------------------------------------------------------
-    # impl of DataRecorder
-    #----------------------------------------------------------------------
-    @abstractmethod
     def registerCollection(self, category, params= {}):
         coll = super(CsvRecorder, self).registerCollection(category, params)
 
@@ -204,7 +148,6 @@ class CsvRecorder(DataRecorder):
 
         return coll
 
-    @abstractmethod
     def saveRow(self, category, row) :
         collection =  self.findCollection(category)
         if not collection:
@@ -222,6 +165,7 @@ class CsvRecorder(DataRecorder):
                 if i in tmp:
                     colnames.append(i)
                     tmp.remove(i)
+
             tmp.sort()
             colnames += tmp
             collection['w'] =csv.DictWriter(collection['f'], colnames)
@@ -239,7 +183,7 @@ class CsvRecorder(DataRecorder):
 
         self._checkAndRoll(collection)
 
-    #----------------------------------------------------------------------
+    # --private methods----------------------------------------------------------------
     def _checkAndRoll(self, collection) :
 
         dtNow = datetime.now()
@@ -294,22 +238,190 @@ class CsvRecorder(DataRecorder):
         self.debug('file[%s] opened: size=%s' % (fname, size))
         return collection
 
+########################################################################
+class Playback(BaseApplication):
+    DUMMY_DATE_START = '19900101T000000'
+    DUMMY_DATE_END   = '39991231T000000'
+    """The reader part of HistoryData
+    Args:
+        filename (str): Filepath to a csv file.
+        header (bool): True if the file has got a header, False otherwise
+    """
+    def __init__(self, program, settings):
+        """Initialisation function. The API (kwargs) should be defined in
+        the function _generator.
+        """
+        super(Playback, self).__init__(program, settings)
+        self._dbNamePrefix = Recorder.DEFAULT_DBPrefix
+        
+        self._startDate = Playback.DUMMY_DATE_START
+        self._endDate   = Playback.DUMMY_DATE_END
+        if settings :
+            self._dbNamePrefix = settings.dbNamePrefix(self._dbNamePrefix)
+            self._startDate = settings.startDate(self._startDate)
+            self._endDate = settings.endDate(self._endDate)
+
+        # 事件队列
+        self.__queue = Queue()
+
+        # 配置字典
+        self._dictDR = OrderedDict() # categroy -> { fieldnames, ....}
+
+    def __iter__(self):
+        if self.resetRead() : # alway perform reset here
+            self._generator = self.__generate()
+            self._c = 0
+        return self
+
+    def __next__(self):
+        if not self._generator and self.resetRead() : # not perform reset here
+            self._generator = self.__generate()
+            self._c = 0
+        return next(self._generator)
+
+    def __generate(self):
+        while self.isActive :
+            try :
+                n = self.readNext()
+                if None ==n:
+                    continue
+                yield n
+                self._c +=1
+            except Exception:
+                break
+
+        self._generator=None
+        raise StopIteration
+ 
+    # -- new methods --------------------------------------------------------------
     @abstractmethod
-    def filterCollections(self, symbol, startDate, endDate=None, eventType =MarketData.EVENT_KLINE_1MIN):
-        """从数据库中读取Bar数据，startDate是datetime对象"""
+    def resetRead(self):
+        """For this generator, we want to rewind only when the end of the data is reached.
+        """
+        pass
 
-        mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
-        csvfiles =[]
+    def readNext(self):
+        '''
+        @return next item, mostlikely expect one of Event()
+        '''
+        if not self.isActive or not self.__queue: 
+            raise StopIteration
+
+        event = None
+        try :
+            event = self.__queue.get(block = True, timeout = 10)
+        except Exception:
+            pass
+        return event
+
+    #--- impl of BaseApplication -----------------------
+    def init(self): # return True if succ
+        self.__iter__()
+        return not self._generator
+
+    def OnEvent(self, event):
+        '''
+        process the event
+        '''
+        pass
+
+    def step(self):
+        '''
+        @return True if busy at this step
+        '''
+        return False
+
+########################################################################
+class CsvPlayback(Playback):
+
+    def __init__(self, program, settings, symbol=None):
+        super(CsvPlayback, self).__init__(program, settings)
+        self._symbol = symbol
+        self._category = EVENT_KLINE_1MIN
+        if self._settings : 
+            if not self._symbol:
+                self._symbol = self._settings.symbol("")
+            self._category = self._settings.category(self._category)
+        self._csvfiles =[]
+        # 事件队列
+        self.__queue = Queue()
+        self._cvsToEvent = None
+
+    #--- impl of BaseApplication -----------------------
+    def step(self):
+        '''
+        @return True if busy at this step
+        '''
+        if not self._csvfiles :
+            return False
+        
+        c=0
+        while not self._reader:
+            if len(self._csvfiles) <=0:
+                return False
+
+            fn = self._csvfiles[0]
+            del(self._csvfiles[0])
+
+            self.debug('openning input file %s' % (fn))
+            extname = fn.split('.')[-1]
+            if extname == 'bz2':
+                self._importStream = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
+            else:
+                self._importStream = file(fn, 'rt')
+
+            self._reader = csv.DictReader(self._importStream, self._fieldnames, lineterminator='\n') if 'csv' in fn else self._importStream
+            if not self._reader:
+                self.warn('failed to open input file %s' % (fn))
+
+        if not self._reader:
+            return False
+
+        if len(self._fields) <=0:
+            self._fields = self._reader.headers()
+
+        try :
+            line = next(self._reader, None)
+        except Exception as ex:
+            line = None
+
+        if not line:
+            # self.error(traceback.format_exc())
+            self._reader = None
+            self._importStream.close()
+            return True
+
+        try :
+            ev = None
+            if line and self._cvsToEvent:
+                # self.debug('line: %s' % (line))
+                ev = self._cvsToEvent.pushCvsRow(line, self._category, self._exchange, self._symbol)
+            if None != ev:
+                self.__queue.put(ev)
+        except Exception as ex:
+            self.logexception(ex)
+
+        return True
+
+    # -- Impl of Playback --------------------------------------------------------------
+    def resetRead(self):
+        mdEvent = self._category[len(MARKETDATE_EVENT_PREFIX):]
+        self._csvfiles =[]
+        self.__queue = Queue()
+        self._fieldnames = self._fields.split(',') if self._fields else None
+
+        # # filter the csv files
+        # stampSince = self._startDate.strftime('%Y%m%dT000000')
+        # stampTill  = (self._endDate +timedelta(hours=24)).strftime('%Y%m%dT000000') if self._endDate else Playback.DUMMY_DATE_END
+        stampSince = self._startDate
+        stampTill  = self._endDate
+
         if not mdEvent in self._dictDR.keys() or not symbol in self._dictDR[mdEvent].keys():
-            return csvfiles
+            return False
 
-        node = self._dictDR[mdEvent][symbol]
+        node = self._dictDR[mdEvent][self._symbol]
         if not 'coll' in node.keys() :
-            return csvfiles
-
-        # filter the csv files
-        stampSince = startDate.strftime('%Y%m%dT000000')
-        stampTill  = (endDate +timedelta(hours=24)).strftime('%Y%m%dT000000') if endDate else '39991231T000000'
+            return False
 
         collection = node['coll']
         prev = ""
@@ -323,15 +435,16 @@ class CsvRecorder(DataRecorder):
                 if stk[-2] <stampSince :
                     prev = fn
                 elif stk[-2] <stampTill:
-                    csvfiles.append(fn)
+                    self._csvfiles.append(fn)
 
         if len(prev) >0:
-            csvfiles = [prev] + csvfiles
-
-        return csvfiles, stampSince, stampTill
+            self._csvfiles = [prev] + self._csvfiles
+        
+        if len(self._csvfiles) <=0:
+            return False
 
 ########################################################################
-class MongoRecorder(DataRecorder):
+class MongoRecorder(Recorder):
     """数据记录引擎
     """
     #----------------------------------------------------------------------
@@ -339,14 +452,12 @@ class MongoRecorder(DataRecorder):
         """Constructor"""
         super(MongoRecorder, self).__init__(program, settings)
 
+    # impl/overwrite of Recorder
     #----------------------------------------------------------------------
-    # impl of DataRecorder
-    #----------------------------------------------------------------------
-    @abstractmethod
     def registerCollection(self, category, params= {}):
         coll = super(MongoRecorder, self).registerCollection(category, params)
 
-        # perform the csv registration
+        # perform the registration
         pos = category.rfind('/')
         if pos >0:
             dbName = self._dbNamePrefix + category[:pos]
@@ -365,7 +476,6 @@ class MongoRecorder(DataRecorder):
 
         return coll
 
-    @abstractmethod
     def saveRow(self, category, row) :
         collection =  self.findCollection(category)
         if not collection:
@@ -378,28 +488,57 @@ class MongoRecorder(DataRecorder):
         except DuplicateKeyError:
             self.error('键值重复插入失败：%s' %traceback.format_exc())
 
-    @abstractmethod
-    def loadRecentMarketData(self, symbol, startDate, eventType =MarketData.EVENT_KLINE_1MIN):
-        """从数据库中读取Bar数据，startDate是datetime对象"""
+########################################################################
+class MongoPlayback(Playback):
 
-        mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
+    def __init__(self, program, settings, symbol=None):
+        super(MongoPlayback, self).__init__(program, settings)
+        self._symbol = symbol
+        self._category = EVENT_KLINE_1MIN
+        if self._settings : 
+            if not self._symbol:
+                self._symbol = self._settings.symbol("")
+            self._category = self._settings.category(self._category)
+        self._csvfiles =[]
+        self._cvsToEvent = None
+
+    #--- impl of BaseApplication -----------------------
+    def step(self):
+        '''
+        @return True if busy at this step
+        '''
+        if not self._lst :
+            return False
+        
+        try :
+            data = next(lst)
+        except Exception:
+            self._lst = None
+            return True
+        
+        ev = KLineData(node['ds'], symbol)
+        ev.__dict__ = data
+            # if self._cvsToEvent:
+            #     # self.debug('line: %s' % (line))
+            #     ev = self._cvsToEvent.pushCvsRow(line, self._category, self._exchange, self._symbol)
+        self.__queue.put(ev)
+        return True
+
+    # -- Impl of Playback --------------------------------------------------------------
+    def resetRead(self):
+        mdEvent = self._category[len(MARKETDATE_EVENT_PREFIX):]
+        stampSince = self._startDate
+        stampTill  = self._endDate
+
         if not mdEvent in self._dictDR.keys() or not symbol in self._dictDR[mdEvent].keys():
-            return []
+            return False
 
         node = self._dictDR[mdEvent][symbol]
         if not 'coll' in node.keys() :
-            return []
-            
-        flt = {'datetime':{'$gte':startDate}}
-        lst = self.dbQuery(node['coll']['collectionName'], flt, 'datetime', ASCENDING, node['coll']['dbName'])
-        
-        ret = []
-        for data in lst:
-            v = KLineData(node['ds'], symbol)
-            v.__dict__ = data
-            ret.append(v)
-        return ret
+            return False
 
+        flt = {'datetime':{'$gte':startDate}}
+        self._lst = self.dbQuery(node['coll']['collectionName'], flt, 'datetime', ASCENDING, node['coll']['dbName'])
 
 ########################################################################
 class MarketRecorder(BaseApplication):
@@ -514,67 +653,6 @@ class MarketRecorder(BaseApplication):
 
         self._recorder.pushRow(category, row)
     
-    # @abstractmethod
-    # def filterCollections(self, symbol, startDate, endDate=None, eventType =MarketData.EVENT_KLINE_1MIN):
-    #     """从数据库中读取Bar数据，startDate是datetime对象"""
-
-    #     mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
-    #     csvfiles =[]
-    #     if not mdEvent in self._dictDR.keys() or not symbol in self._dictDR[mdEvent].keys():
-    #         return csvfiles
-
-    #     node = self._dictDR[mdEvent][symbol]
-    #     if not 'coll' in node.keys() :
-    #         return csvfiles
-
-    #     # filter the csv files
-    #     stampSince = startDate.strftime('%Y%m%dT000000')
-    #     stampTill  = (endDate +timedelta(hours=24)).strftime('%Y%m%dT000000') if endDate else '39991231T000000'
-
-    #     collection = node['coll']
-    #     prev = ""
-    #     for _, _, files in os.walk(collection['dir']):
-    #         files.sort()
-    #         for name in files:
-    #             stk = name.split('.')
-    #             if stk[-1] !='csv' or collection['fn'] != name[:len(collection['fn'])]:
-    #                 continue
-    #             fn = '%s/%s' % (collection['dir'], name)
-    #             if stk[-2] <stampSince :
-    #                 prev = fn
-    #             elif stk[-2] <stampTill:
-    #                 csvfiles.append(fn)
-
-    #     if len(prev) >0:
-    #         csvfiles = [prev] + csvfiles
-
-    #     return csvfiles, stampSince, stampTill
-
-    # @abstractmethod
-    # def loadMarketData(self, symbol, startDate, endDate=None, eventType =MarketData.EVENT_KLINE_1MIN):
-    #     """从数据库中读取Bar数据，startDate是datetime对象"""
-
-    #     mdEvent = eventType[len(MARKETDATE_EVENT_PREFIX):]
-    #     csvfiles, stampSince, stampTill = self.filterCollections(symbol, startDate, endDate, eventType)
-    #     ret = []
-    #     if len(csvfiles) <=0:
-    #         return ret
-
-    #     DataClass = TickData if mdEvent == 'Tick' else KLineData
-
-    #     for fn in csvfiles :
-    #         with open(fn, 'rb') as f:
-    #             reader = csv.DictReader(f)
-    #             for row in reader:
-    #                 if fn == csvfiles[0] and row['datetime'] <stampSince:
-    #                     continue
-    #                 if fn == csvfiles[-1] and ['datetime'] >=stampTill:
-    #                     break
-    #                 data = DataClass('')
-    #                 data.__dict__  = row
-    #                 ret.append(data)
-    #     return ret
-
 ########################################################################
 import bz2
 
@@ -582,16 +660,16 @@ class Zipper(BaseApplication):
     """数据记录引擎"""
     def __init__(self, program, settings):
         super(Zipper, self).__init__(program, settings)
+        self._threadWished = True  # this App must be Threaded
+
         self._queue = Queue()                    # 队列
         self.subscribeEvent(EVENT_TOARCHIVE, self.onToArchive)
 
-    #----------------------------------------------------------------------
     # impl of BaseApplication
     #----------------------------------------------------------------------
-    @abstractmethod
     def step(self):
         cStep =0
-        while True:
+        while self.isActive:
             try:
                 fn = self._queue.get(block=True, timeout=0.2)
                 f = file(fn, 'rb')
@@ -619,7 +697,7 @@ class Zipper(BaseApplication):
             except: # Empty:
                 break
 
-        return cStep
+        return False # this doesn't matter as this is threaded
 
     def onToArchive(self, event) :
         self._push(event.dict_['data'])

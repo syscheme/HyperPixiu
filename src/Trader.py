@@ -179,8 +179,6 @@ class Trader(BaseApplication):
         self.subscribeEvent(Account.EVENT_ORDER, self.eventHdl_Order)
         self.subscribeEvent(Account.EVENT_TRADE, self.eventHdl_Trade)
 
-        self.subscribeEvent(EventChannel.EVENT_TIMER, self.eventHdl_OnTimer)
-
         # step 3. call allstrategy.onInit()
         self.strategies_Start()
 

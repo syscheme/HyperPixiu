@@ -2,7 +2,7 @@
 
 from __future__ import division
 
-from EventData import *
+from EventData import Event, edTime, EVENT_HEARTB
 
 import os
 import logging
@@ -53,6 +53,7 @@ class MetaApp(ABC):
 class BaseApplication(MetaApp):
 
     __lastId__ =100
+    HEARTBEAT_INTERVAL_DEFAULT = 5 # 5sec
     
     #----------------------------------------------------------------------
     def __init__(self, program, settings=None):
@@ -64,7 +65,7 @@ class BaseApplication(MetaApp):
         self._settings = settings
         self._active = False    # 工作状态
 
-        self._gen = self._generator(EVENT_EXIT)
+        self._gen = self._generator()
 
         # the app instance Id
         self._id =""
@@ -108,8 +109,8 @@ class BaseApplication(MetaApp):
 
     def start(self):
         # TODO:
-        next(self._gen)
         self._active = True
+        next(self._gen)
 
     def stop(self):
         # TODO:
@@ -127,13 +128,18 @@ class BaseApplication(MetaApp):
         '''
         pass
 
-    def _generator(self, stopEvent=EVENT_EXIT) :
-        event = Event(EVENT_START)
-        while True :
-            event = yield (self.ident, event)
-            self.OnEvent(event)
-            if not isinstance(event, Event) or stopEvent == event.type_:
-                break # quit
+    @abstractmethod
+    def step(self):
+        '''
+        @return True if busy at this step
+        '''
+        return False
+
+    def _generator(self) :
+        while self.isActive :
+            event = yield self.ident
+            if isinstance(event, Event):
+                self.OnEvent(event)
 
     def _procEvent(self, event) : # called by Program
         return self._gen.send(event)
@@ -206,35 +212,35 @@ class BaseApplication(MetaApp):
 
 ########################################################################
 class ThreadedAppWrapper(MetaApp):
-
-    MAX_INTERVAL = 5 # 5sec
     #----------------------------------------------------------------------
-    def __init__(self, app):
+    def __init__(self, app, maxinterval=BaseApplication.HEARTBEAT_INTERVAL_DEFAULT):
         """Constructor"""
 
-        super(BaseApplication,self).__init__()
+        super(ThreadedAppWrapper, self).__init__()
 
         self._app = app
+        self._maxinterval = maxinterval
         self._thread = Thread(target=self._run)
-        self._wakeup = threading.Event()
+        self._evWakeup = threading.Event()
 
     #----------------------------------------------------------------------
     def _run(self):
         """执行连接 and receive"""
         while self._app.isActive:
-            nextSleep =5
+            nextSleep = self._maxinterval
             try :
-                nextSleep = min([nextSleep, self._app.step()])
+                if self._app.step() :
+                    nextSleep =0 # will trigger again if this step busy 
             except Exception as ex:
                 self._app.error('ThreadedAppWrapper::step() excepton: %s' % ex)
 
             if nextSleep >0:
-                self._wakeup(nextSleep)
+                self._evWakeup(nextSleep)
 
         self._app.info('ThreadedAppWrapper exit')
 
     def wakeup(self) :
-        self._wakeup.set()
+        self._evWakeup.set()
 
     #------Impl of MetaApp --------------------------------------------------
     def theApp(self): return self._app
@@ -243,14 +249,12 @@ class ThreadedAppWrapper(MetaApp):
         '''
         return True if started
         '''
-
-        if not self._app :
+        if not self._app or not self._app.start():
             return False
         
-        ret = self._app.start()
         self._thread.start()
         self._app.debug('ThreadedAppWrapper started')
-        return ret
+        return True
 
     def stop(self):
         ''' call to stop a app
@@ -323,13 +327,13 @@ class Program(object):
         self.__queue = Queue()
         
         # 计时器，用于触发计时器事件
-        self.__timerActive = True     # 计时器工作状态
-        self.__timerStep = 10         # 计时器触发间隔（默认1秒）
-        self.__stampTimerLast = None
+        self.__heartbeatActive = True     # 计时器工作状态
+        self.__heartbeatInterval = BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # 计时器触发间隔（默认1秒）
+        self.__stampLastHB = None
 
         # 这里的__handlers是一个字典，用来保存对应的事件到appId的订阅关系
         # 其中每个键对应的值是一个列表，列表中保存了对该事件进行监听的appId
-        self.__handlers = defaultdict(list)
+        self.__subscribers = {}
 
     @property
     def threadless(self) :
@@ -351,7 +355,7 @@ class Program(object):
         self.info('app[%s] added' %(id))
 
         # TODO maybe test isinstance(apptype, MarketData) to ease index and so on
-        self.subscribe(EVENT_TIMER, BaseApplication)
+        self.subscribe(EVENT_HEARTB, app)
         return app
 
     def createApp(self, appModule, settings):
@@ -365,10 +369,18 @@ class Program(object):
 
         return self.addApp(app)
         
-    def removeApp(self, appId):
+    def removeApp(self, app):
+
+        if not isinstance(app, MetaApp):
+            return
+
+        for et in self.__subscribers.keys() :
+            self.unsubscribe(et, app)
+
+        appId = app.theApp.ident
         if not appId in self._dictApps.keys():
             return None
-        
+
         ret = self._dictApps[appId]
         del self._dictApps[appId]
         return ret
@@ -426,10 +438,10 @@ class Program(object):
         # 安全关闭所有接口
         for ds in self._dictMarketDatas.values():        
             ds.close()
-        '''
         
         # 停止事件引擎
         self._eventLoop.stop()
+        '''
         
         # 停止上层应用引擎
         for app in self._dictApps.values():
@@ -448,17 +460,17 @@ class Program(object):
             dt = datetime.now()
             stampNow = datetime2float(datetime.now())
 
-            if not self.__stampTimerLast :
-                self.__stampTimerLast = stampNow
+            if not self.__stampLastHB :
+                self.__stampLastHB = stampNow
 
-            timeout = self.__stampTimerLast + self.__timerStep - stampNow
-            if self.__timerActive and timeout < 0:
-                self.__stampTimerLast = stampNow
+            timeout = self.__stampLastHB + self.__heartbeatInterval - stampNow
+            if self.__heartbeatActive and timeout < 0:
+                self.__stampLastHB = stampNow
                 timeout = 0.1
 
                 # 向队列中存入计时器事件
-                edata = edTimer(dt)
-                event = Event(type_= EVENT_TIMER)
+                edata = edTime(dt)
+                event = Event(type_= EVENT_HEARTB)
                 event.dict_['data'] = edata
                 self.publish(event)
 
@@ -466,7 +478,7 @@ class Program(object):
             bEmpty = False
             while self._bRun and not bEmpty:
                 event = None
-                blocking = True if self.__timerStep >0 else False
+                blocking = True if self.__heartbeatInterval >0 else False
                 try :
                     event = self.__queue.get(block = blocking, timeout = timeout)  # 获取事件的阻塞时间设为0.1秒
                     bEmpty = False
@@ -484,7 +496,7 @@ class Program(object):
 
                     for (k, app) in self._dictApps.items() :
                         # if threaded, it has its own trigger to step()
-                        if not app or isinstance(app, ThreadedAppWrapper) :
+                        if not app or isinstance(app, ThreadedAppWrapper) or not app.isActive:
                             continue
                         
                         try:
@@ -500,11 +512,11 @@ class Program(object):
 
                 
                 # 检查是否存在对该事件进行监听的处理函数
-                if not event.type_ in self.__subscriber.keys():
+                if not event.type_ in self.__subscribers.keys():
                     continue
 
                 # 若存在，则按顺序将事件传递给处理函数执行
-                for appId in self.__subscriber[event.type_] :
+                for appId in self.__subscribers[event.type_] :
                     app =self.getApp(appId)
                     if not app or not app.isActive:
                         continue
@@ -565,26 +577,27 @@ class Program(object):
         """注册事件处理函数监听"""
         if not isinstance(app, BaseApplication):
             return
+        if not type_ in self.__subscribers.keys() :
+            self.__subscribers[type_] = []
 
-        appIdList = self.__handlers[type_]
         # 若要注册的处理器不在该事件的处理器列表中，则注册该事件
-        if app.id not in appIdList:
-            appIdList.append(app.id)
+        if app.ident not in self.__subscribers[type_]:
+            self.__subscribers[type_].append(app.ident)
             
     def unsubscribe(self, type_, app):
         """注销事件处理函数监听"""
-        if not isinstance(app, BaseApplication):
+        if not isinstance(app, MetaApp) or not type_ in self.__subscribers.keys():
             return
 
-        appIdList = self.__handlers[type_]
-            
+        appId = app.theApp.ident
+
         # 如果该函数存在于列表中，则移除
-        if app.id in appIdList:
-            appIdList.remove(app.id)
+        if appId in self.__subscribers[type_]:
+            self.__subscribers[type_].remove(appId)
 
         # 如果函数列表为空，则从引擎中移除该事件类型
-        if not appIdList:
-            del self.__handlers[type_]  
+        if not len(self.__subscribers[type_]) <=0:
+            del self.__subscribers[type_]  
 
     def publish(self, event):
         """向事件队列中存入事件"""
@@ -893,13 +906,13 @@ class EventLoop(BaseApplication):
         self.__queue = Queue()
         
         # 计时器，用于触发计时器事件
-        self.__timerActive = timer     # 计时器工作状态
-        self.__timerStep = 1          # 计时器触发间隔（默认1秒）, 0 means nonblock loop
-        self.__stampTimerLast = None
+        self.__heartbeatActive = timer     # 计时器工作状态
+        self.__heartbeatInterval = 1          # 计时器触发间隔（默认1秒）, 0 means nonblock loop
+        self.__stampLastHB = None
         
         # 这里的__handlers是一个字典，用来保存对应的事件调用关系
         # 其中每个键对应的值是一个列表，列表中保存了对该事件进行监听的函数功能
-        self.__handlers = defaultdict(list)
+        self.__subscribers = defaultdict(list)
         
         # __generalHandlers是一个列表，用来保存通用回调函数（所有事件均调用）
         self.__generalHandlers = []        
@@ -913,15 +926,15 @@ class EventLoop(BaseApplication):
         dt = datetime.now()
         stampNow = datetime2float(datetime.now())
         c =0
-        if not self.__stampTimerLast :
-            self.__stampTimerLast = stampNow
+        if not self.__stampLastHB :
+            self.__stampLastHB = stampNow
 
-        if self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
-            self.__stampTimerLast = stampNow
+        if self.__heartbeatActive and self.__stampLastHB + self.__heartbeatInterval < stampNow:
+            self.__stampLastHB = stampNow
                 
             # 向队列中存入计时器事件
-            edata = edTimer(dt)
-            event = Event(type_= EventChannel.EVENT_TIMER)
+            edata = edTime(dt)
+            event = Event(type_= EventChannel.EVENT_HEARTB)
             event.dict_['data'] = edata
             self.put(event)
 
@@ -945,9 +958,9 @@ class EventLoop(BaseApplication):
     def __process(self, event):
         """处理事件"""
         # 检查是否存在对该事件进行监听的处理函数
-        if event.type_ in self.__handlers:
+        if event.type_ in self.__subscribers:
             # 若存在，则按顺序将事件传递给处理函数执行
-            for handler in self.__handlers[event.type_] :
+            for handler in self.__subscribers[event.type_] :
                 try:
                     handler(event)
                 except Exception as ex:
@@ -965,7 +978,7 @@ class EventLoop(BaseApplication):
     def start(self, timer=True):
         # 启动计时器，计时器事件间隔默认设定为1秒
         if timer:
-            self.__timerActive = True
+            self.__heartbeatActive = True
         super(EventLoop, self).start()
     
     #----------------------------------------------------------------------
@@ -977,7 +990,7 @@ class EventLoop(BaseApplication):
     def register(self, type_, handler):
         """注册事件处理函数监听"""
         # 尝试获取该事件类型对应的处理函数列表，若无defaultDict会自动创建新的list
-        handlerList = self.__handlers[type_]
+        handlerList = self.__subscribers[type_]
         
         # 若要注册的处理器不在该事件的处理器列表中，则注册该事件
         if handler not in handlerList:
@@ -987,7 +1000,7 @@ class EventLoop(BaseApplication):
     def unregister(self, type_, handler):
         """注销事件处理函数监听"""
         # 尝试获取该事件类型对应的处理函数列表，若无则忽略该次注销请求   
-        handlerList = self.__handlers[type_]
+        handlerList = self.__subscribers[type_]
             
         # 如果该函数存在于列表中，则移除
         if handler in handlerList:
@@ -995,7 +1008,7 @@ class EventLoop(BaseApplication):
 
         # 如果函数列表为空，则从引擎中移除该事件类型
         if not handlerList:
-            del self.__handlers[type_]  
+            del self.__subscribers[type_]  
         
     #----------------------------------------------------------------------
     def put(self, event):
@@ -1026,12 +1039,17 @@ if __name__ == "__main__":
     class Foo(BaseApplication) :
         def __init__(self, program, settings):
             super(Foo, self).__init__(program, settings)
+            self.__step =0
 
         def init(self): # return True if succ
             return True
 
         def OnEvent(self, event):
-            pass
+            print("Foo.OnEvent %s\n" % event)
+        
+        def step(self):
+            self.__step +=1
+            print("Foo.step %d\n" % self.__step)
 
     # a = BaseApplication() #wrong
     p = Program()

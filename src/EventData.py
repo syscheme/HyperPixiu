@@ -11,12 +11,11 @@ from abc import ABCMeta, abstractmethod
 EVENT_NAME_PREFIX = 'ev'    # 事件名字前缀
 
 # 系统相关
-EVENT_ERROR = EVENT_NAME_PREFIX + 'Error'   # 错误回报事件
-EVENT_START  = EVENT_NAME_PREFIX + 'START'   #
-EVENT_HEARTB = EVENT_NAME_PREFIX + 'HB'   #
-EVENT_EXIT   = EVENT_NAME_PREFIX + 'Exit'    # 程序退出
-EVENT_TIMER = EVENT_NAME_PREFIX + 'Timer'   # 计时器事件，每隔1秒发送一次
-EVENT_LOG   = EVENT_NAME_PREFIX + 'Log'     # 日志事件，全局通用
+EVENT_HEARTB = EVENT_NAME_PREFIX + 'HB'      # all application attached to program will receive heartbeat event
+EVENT_ERROR  = EVENT_NAME_PREFIX + 'Error'   # 错误回报事件
+#EVENT_START  = EVENT_NAME_PREFIX + 'START'   # not used
+# EVENT_EXIT   = EVENT_NAME_PREFIX + 'EXIT'    # not used 程序退出
+EVENT_LOG    = EVENT_NAME_PREFIX + 'Log'     # 日志事件，全局通用
 
 ########################################################################
 class Event:
@@ -77,13 +76,13 @@ class LogData(EventData):
         self.logLevel = LOGLEVEL_INFO                                    # 日志级别
 
 ########################################################################
-class edTimer(EventData):
+class edTime(EventData):
     """K线数据"""
 
     #----------------------------------------------------------------------
     def __init__(self, dt, type='clock'):
         """Constructor"""
-        super(edTimer, self).__init__()
+        super(edTime, self).__init__()
         
         self.datetime   = dt
         self.sourceType = type          # 数据来源类型

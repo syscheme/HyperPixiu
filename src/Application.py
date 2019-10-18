@@ -350,7 +350,8 @@ class Program(object):
         self.info('app[%s] added' %(id))
 
         # TODO maybe test isinstance(apptype, MarketData) to ease index and so on
-        self.subscribe(EVENT_HEARTB, app)
+        if self.hasHeartbeat :
+            self.subscribe(EVENT_HEARTB, app)
         return app
 
     def createApp(self, appModule, settings):
@@ -439,36 +440,43 @@ class Program(object):
         # self.dataEngine.saveContracts()
 
     #----------------------------------------------------------------------
+    @property
+    def hasHeartbeat(self) : 
+        return (self.__heartbeatInterval > 0) # what's wrong!!!!
+
     def loop(self):
 
         self.info(u'Program start looping')
         busy = True
 
         while self._bRun:
-            dt = datetime.now()
-            stampNow = datetime2float(datetime.now())
+            timeout =0
+            enabledHB = self.hasHeartbeat
+            # enabledHB = False
+            if enabledHB: # heartbeat enabled
+                dt = datetime.now()
+                stampNow = datetime2float(datetime.now())
+            
+                if not self.__stampLastHB :
+                    self.__stampLastHB = stampNow
 
-            if not self.__stampLastHB :
-                self.__stampLastHB = stampNow
+                timeout = self.__stampLastHB + self.__heartbeatInterval - stampNow
+                if timeout < 0:
+                    self.__stampLastHB = stampNow
+                    timeout = 0.1
 
-            timeout = self.__stampLastHB + self.__heartbeatInterval - stampNow
-            if self.__heartbeatActive and timeout < 0:
-                self.__stampLastHB = stampNow
-                timeout = 0.1
-
-                # 向队列中存入计时器事件
-                edata = edTime(dt)
-                event = Event(type_= EVENT_HEARTB)
-                event.dict_['data'] = edata
-                self.publish(event)
+                    # inject then event of heartbeat
+                    edata = edTime(dt)
+                    event = Event(type_= EVENT_HEARTB)
+                    event.dict_['data'] = edata
+                    self.publish(event)
 
             # pop the event to dispatch
             bEmpty = False
             while self._bRun and not bEmpty:
                 event = None
-                blocking = True if self.__heartbeatInterval >0 else False
                 try :
-                    event = self.__queue.get(block = blocking, timeout = timeout)  # 获取事件的阻塞时间设为0.1秒
+                    event = self.__queue.get(block = enabledHB, timeout = timeout)  # 获取事件的阻塞时间设为0.1秒
                     bEmpty = False
                 except Empty:
                     bEmpty = True
@@ -481,7 +489,6 @@ class Program(object):
                 if not event :
                     # if blocking: # ????
                     #     continue
-
                     for (k, app) in self._dictApps.items() :
                         # if threaded, it has its own trigger to step()
                         if not app or isinstance(app, ThreadedAppWrapper) or not app.isActive:
@@ -899,6 +906,7 @@ if __name__ == "__main__":
 
     # a = BaseApplication() #wrong
     p = Program()
+    p.__heartbeatInterval =-1
     p.createApp(Foo, None)
     p.start()
     p.loop()

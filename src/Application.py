@@ -463,20 +463,44 @@ class Program(object):
                 self.publish(event)
 
             # pop the event to dispatch
-            while self._bRun:
+            bEmpty = False
+            while self._bRun and not bEmpty:
                 event = None
+                blocking = True if self.__timerStep >0 else False
                 try :
-                    blocking = True if self.__timerStep >0 else False
                     event = self.__queue.get(block = blocking, timeout = timeout)  # 获取事件的阻塞时间设为0.1秒
+                    bEmpty = False
                 except Empty:
-                    break
+                    bEmpty = True
                 except KeyboardInterrupt:
                     self.error("quit per KeyboardInterrupt")
                     self._bRun = False
                     break
 
+                # do the step only when there is no event
+                if not event :
+                    # if blocking: # ????
+                    #     continue
+
+                    for (k, app) in self._dictApps.items() :
+                        # if threaded, it has its own trigger to step()
+                        if not app or isinstance(app, ThreadedAppWrapper) :
+                            continue
+                        
+                        try:
+                            app.step()
+                        except KeyboardInterrupt:
+                            self.error("quit per KeyboardInterrupt")
+                            self._bRun = False
+                            break
+                        except Exception as ex:
+                            self.error("app step exception %s %s" % (ex, traceback.format_exc()))
+                            
+                    continue
+
+                
                 # 检查是否存在对该事件进行监听的处理函数
-                if not event or not event.type_ in self.__handlers:
+                if not event.type_ in self.__subscriber.keys():
                     continue
 
                 # 若存在，则按顺序将事件传递给处理函数执行

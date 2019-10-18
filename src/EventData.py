@@ -8,21 +8,15 @@ from datetime import datetime
 import traceback
 from abc import ABCMeta, abstractmethod
 
-__dtEpoch = datetime.utcfromtimestamp(0)
-def datetime2float(dt):
-    total_seconds =  (dt - __dtEpoch).total_seconds()
-    # total_seconds will be in decimals (millisecond precision)
-    return total_seconds
-
 EVENT_NAME_PREFIX = 'ev'    # 事件名字前缀
 
 # 系统相关
-EVENT_TIMER = EVENT_NAME_PREFIX + 'Timer'   # 计时器事件，每隔1秒发送一次
-EVENT_LOG   = EVENT_NAME_PREFIX + 'Log'     # 日志事件，全局通用
 EVENT_ERROR = EVENT_NAME_PREFIX + 'Error'   # 错误回报事件
 EVENT_START  = EVENT_NAME_PREFIX + 'START'   #
 EVENT_HEARTB = EVENT_NAME_PREFIX + 'HB'   #
 EVENT_EXIT   = EVENT_NAME_PREFIX + 'Exit'    # 程序退出
+EVENT_TIMER = EVENT_NAME_PREFIX + 'Timer'   # 计时器事件，每隔1秒发送一次
+EVENT_LOG   = EVENT_NAME_PREFIX + 'Log'     # 日志事件，全局通用
 
 ########################################################################
 class Event:
@@ -68,7 +62,6 @@ class ErrorData(EventData):
         
         self.errorTime = time.strftime('%X', time.localtime())    # 错误生成时间
 
-
 ########################################################################
 class LogData(EventData):
     """日志数据类"""
@@ -83,3 +76,14 @@ class LogData(EventData):
         self.logContent = EventData.EMPTY_UNICODE                         # 日志信息
         self.logLevel = LOGLEVEL_INFO                                    # 日志级别
 
+########################################################################
+class edTimer(EventData):
+    """K线数据"""
+
+    #----------------------------------------------------------------------
+    def __init__(self, dt, type='clock'):
+        """Constructor"""
+        super(edTimer, self).__init__()
+        
+        self.datetime   = dt
+        self.sourceType = type          # 数据来源类型

@@ -2,7 +2,7 @@
 
 from __future__ import division
 
-from EventData import Event, EventData, EVENT_EXIT, EVENT_TIMER
+from EventData import *
 
 import os
 import logging
@@ -28,9 +28,29 @@ LOGLEVEL_ERROR    = logging.ERROR
 LOGLEVEL_CRITICAL = logging.CRITICAL
 
 BOOL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh']
+__dtEpoch = datetime.utcfromtimestamp(0)
+def datetime2float(dt):
+    total_seconds =  (dt - __dtEpoch).total_seconds()
+    # total_seconds will be in decimals (millisecond precision)
+    return total_seconds
 
 ########################################################################
-class BaseApplication(ABC):
+class MetaApp(ABC):
+
+    @abstractmethod
+    def theApp(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def start(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def stop(self):
+        raise NotImplementedError
+
+########################################################################
+class BaseApplication(MetaApp):
 
     __lastId__ =100
     
@@ -38,20 +58,11 @@ class BaseApplication(ABC):
     def __init__(self, program, settings=None):
         """Constructor"""
 
+        super(BaseApplication,self).__init__()
+        
         self._program = program
         self._settings = settings
         self._active = False    # 工作状态
-
-        self._pid = os.getpid() # process id
-
-        # 日志级别函数映射
-        self._loglevelFunctionDict = {
-            LOGLEVEL_DEBUG:    self.debug,
-            LOGLEVEL_INFO:     self.info,
-            LOGLEVEL_WARN:     self.warn,
-            LOGLEVEL_ERROR:    self.error,
-            LOGLEVEL_CRITICAL: self.critical,
-        }
 
         self._gen = self._generator(EVENT_EXIT)
 
@@ -70,7 +81,7 @@ class BaseApplication(ABC):
     #----------------------------------------------------------------------
     @property
     def ident(self) :
-        return self.__class__.__name__ + self._id
+        return '%s.%s' % (self.__class__.__name__, self._id)
 
     @property
     def app(self) : # for the thread wrapper
@@ -92,7 +103,9 @@ class BaseApplication(ABC):
     def isActive(self) :
         return self._active
 
-    #--- pollable step routine for AppThreadedWrapper -----------------------
+    #------Impl of MetaApp --------------------------------------------------
+    def theApp(self): return self
+
     def start(self):
         # TODO:
         next(self._gen)
@@ -102,6 +115,7 @@ class BaseApplication(ABC):
         # TODO:
         self._active = False
 
+    #--- pollable step routine for ThreadedAppWrapper -----------------------
     @abstractmethod
     def init(self): # return True if succ
         return True
@@ -116,12 +130,12 @@ class BaseApplication(ABC):
     def _generator(self, stopEvent=EVENT_EXIT) :
         event = Event(EVENT_START)
         while True :
-            event = yield (self.id, event)
+            event = yield (self.ident, event)
             self.OnEvent(event)
             if not isinstance(event, Event) or stopEvent == event.type_:
                 break # quit
 
-    def step(self, event) :
+    def _procEvent(self, event) : # called by Program
         return self._gen.send(event)
 
     #---- event operations ---------------------------
@@ -150,46 +164,56 @@ class BaseApplication(ABC):
 
     #---logging -----------------------
     def log(self, level, msg):
-        if self._program:
-            self._program.log(level, 'APP['+self.ident +'] ' + msg)
+        if not self._program: return
+        self._program.log(level, 'APP['+self.ident +'] ' + msg)
 
     def debug(self, msg):
+        if not self._program: return
         self._program.debug('APP['+self.ident +'] ' + msg)
         
     def info(self, msg):
         """正常输出"""
+        if not self._program: return
         self._program.info('APP['+self.ident +'] ' + msg)
 
     def warn(self, msg):
         """警告信息"""
+        if not self._program: return
         self._program.warn('APP['+self.ident +'] ' + msg)
         
     def error(self, msg):
         """报错输出"""
+        if not self._program: return
         self._program.error('APP['+self.ident +'] ' + msg)
         
     def critical(self, msg):
         """影响程序运行的严重错误"""
+        if not self._program: return
         self._program.critical('APP['+self.ident +'] ' + msg)
 
     def logexception(self, ex):
         """报错输出+记录异常信息"""
+        if not self._program: return
         self._program.logexception('APP['+self.ident +'] %s: %s' % (ex, traceback.format_exc()))
 
     #----------------------------------------------------------------------
     def logError(self, eventType, content):
         """处理错误事件"""
+        if not self._program: return
     # TODO   error = event.dict_['data']
     #    self._lstErrors.append(error)
         pass
 
 ########################################################################
-class AppThreadedWrapper(object):
+class ThreadedAppWrapper(MetaApp):
 
     MAX_INTERVAL = 5 # 5sec
     #----------------------------------------------------------------------
     def __init__(self, app):
         """Constructor"""
+
+        super(BaseApplication,self).__init__()
+
         self._app = app
         self._thread = Thread(target=self._run)
         self._wakeup = threading.Event()
@@ -202,17 +226,19 @@ class AppThreadedWrapper(object):
             try :
                 nextSleep = min([nextSleep, self._app.step()])
             except Exception as ex:
-                self._app.error('AppThreadedWrapper::step() excepton: %s' % ex)
+                self._app.error('ThreadedAppWrapper::step() excepton: %s' % ex)
 
             if nextSleep >0:
                 self._wakeup(nextSleep)
 
-        self._app.info('AppThreadedWrapper exit')
+        self._app.info('ThreadedAppWrapper exit')
 
     def wakeup(self) :
         self._wakeup.set()
 
-    #----------------------------------------------------------------------
+    #------Impl of MetaApp --------------------------------------------------
+    def theApp(self): return self._app
+
     def start(self):
         '''
         return True if started
@@ -223,17 +249,16 @@ class AppThreadedWrapper(object):
         
         ret = self._app.start()
         self._thread.start()
-        self._app.debug('AppThreadedWrapper started')
+        self._app.debug('ThreadedAppWrapper started')
         return ret
 
-    #----------------------------------------------------------------------
     def stop(self):
         ''' call to stop a app
         '''
         self._app.stop()
         self.wakeup()
         self._thread.join()
-        self._app.info('AppThreadedWrapper stopped')
+        self._app.info('ThreadedAppWrapper stopped')
     
 ########################################################################
 class Singleton(type):
@@ -266,6 +291,8 @@ class Program(object):
     #----------------------------------------------------------------------
     def __init__(self, setting_filename=None):
         """Constructor"""
+
+        self._pid = os.getpid() # process id
         
         # dirname(dirname(abspath(file)))
         settings= None
@@ -289,17 +316,20 @@ class Program(object):
         
         '''
         # 创建EventLoop
-        self._eventLoop = EventLoop(self) if self.threadless else AppThreadedWrapper(EventLoop(self))
+        self._eventLoop = EventLoop(self) if self.threadless else ThreadedAppWrapper(EventLoop(self))
         self._bRun = True
         '''
         # 事件队列
         self.__queue = Queue()
         
         # 计时器，用于触发计时器事件
-        self.__timerActive = timer     # 计时器工作状态
-        self.__timerStep = 60           # 计时器触发间隔（默认1秒）
+        self.__timerActive = True     # 计时器工作状态
+        self.__timerStep = 10         # 计时器触发间隔（默认1秒）
         self.__stampTimerLast = None
-        self.__eventWakeup = threading.Event()
+
+        # 这里的__handlers是一个字典，用来保存对应的事件到appId的订阅关系
+        # 其中每个键对应的值是一个列表，列表中保存了对该事件进行监听的appId
+        self.__handlers = defaultdict(list)
 
     @property
     def threadless(self) :
@@ -308,6 +338,9 @@ class Program(object):
     #----------------------------------------------------------------------
     def addApp(self, app, displayName=None):
         """添加上层应用"""
+        if not isinstance(app, MetaApp):
+            return
+
         id = app.ident
         
         # 创建应用实例
@@ -317,15 +350,18 @@ class Program(object):
         self.__dict__[id] = self._dictApps[id]
         self.info('app[%s] added' %(id))
 
-        # TODO maybe test isinstance(app, MarketData) to ease index and so on
-
+        # TODO maybe test isinstance(apptype, MarketData) to ease index and so on
+        self.subscribe(EVENT_TIMER, BaseApplication)
         return app
 
     def createApp(self, appModule, settings):
         """添加上层应用"""
+
+        # if not appModule is BaseApplication:
+        #     return None
         app = appModule(self, settings)
-        if not app:
-            return None
+        if settings and settings.threaded("false") in BOOL_TRUE:
+            app = ThreadedAppWrapper(app)
 
         return self.addApp(app)
         
@@ -337,9 +373,9 @@ class Program(object):
         del self._dictApps[appId]
         return ret
 
-    def getApp(self, appName):
-        """获取APP引擎对象"""
-        return self._dictApps[appName]
+    def getApp(self, appId):
+        """获取APP对象"""
+        return self._dictApps[appId]
 
     #----------------------------------------------------------------------
     def start(self, daemonize=None):
@@ -349,12 +385,13 @@ class Program(object):
         if daemonize :
             self.daemonize()
 
+        self._bRun =True
+        '''
         self.debug('starting event loop')
         if self._eventLoop:
             self._eventLoop.start()
             self.info('started event loop')
 
-        '''
         self.dbConnect()
         
         self.debug('starting market data subscribers')
@@ -411,67 +448,49 @@ class Program(object):
             dt = datetime.now()
             stampNow = datetime2float(datetime.now())
 
-            nextSleep =1 # 1sec
             if not self.__stampTimerLast :
                 self.__stampTimerLast = stampNow
 
-            if self.__timerActive and self.__stampTimerLast + self.__timerStep < stampNow:
+            timeout = self.__stampTimerLast + self.__timerStep - stampNow
+            if self.__timerActive and timeout < 0:
                 self.__stampTimerLast = stampNow
+                timeout = 0.1
 
                 # 向队列中存入计时器事件
                 edata = edTimer(dt)
-                event = Event(type_= EventChannel.EVENT_TIMER)
+                event = Event(type_= EVENT_TIMER)
                 event.dict_['data'] = edata
-                self.put(event)
-                # nextSleep =0
+                self.publish(event)
 
-            if not self.threadless :
+            # pop the event to dispatch
+            while self._bRun:
+                event = None
                 try :
-                    time.sleep(1)
-                    self.debug(u'MainThread heartbeat')
+                    blocking = True if self.__timerStep >0 else False
+                    event = self.__queue.get(block = blocking, timeout = timeout)  # 获取事件的阻塞时间设为0.1秒
+                except Empty:
+                    break
                 except KeyboardInterrupt:
                     self.error("quit per KeyboardInterrupt")
                     self._bRun = False
                     break
-
-                continue
-
-            if self.__offlinetest:
-                event = Event(EVENT_HEARTB)
-                self.put(event)
-
-            if nextSleep >0:
-                try :
-                    self._wakeup(nextSleep)
-                except KeyboardInterrupt:
-                    self.error("quit per KeyboardInterrupt")
-                    exit(-1)
-
-            # pop the event to dispatch
-            while True:
-                event = None
-                try :
-                    event = self.__queue.get(block = True, timeout = 0.1)  # 获取事件的阻塞时间设为0.1秒
-                except Empty:
-                    nextSleep =1 # 1sec
-                    break
-                except KeyboardInterrupt:
-                    self.error("quit per KeyboardInterrupt")
-                    exit(-1)
 
                 # 检查是否存在对该事件进行监听的处理函数
                 if not event or not event.type_ in self.__handlers:
                     continue
 
                 # 若存在，则按顺序将事件传递给处理函数执行
-                for s in self.__subscriber[event.type_] :
+                for appId in self.__subscriber[event.type_] :
+                    app =self.getApp(appId)
+                    if not app or not app.isActive:
+                        continue
+
                     try:
-                        app =self.getApp(s)
-                        if app and app.isActive:
-                            app.step(event)
+                        app._procEvent(event)
                     except KeyboardInterrupt:
                         self.error("quit per KeyboardInterrupt")
-                        exit(-1)
+                        self._bRun = False
+                        break
                     except Exception as ex:
                         self.error("app step exception %s %s" % (ex, traceback.format_exc()))
 
@@ -516,7 +535,41 @@ class Program(object):
         sys.stdout.write("Daemon has been created! with self._pid: %d\n" % os.getpid())
         sys.stdout.flush()  #由于这里我们使用的是标准IO，回顾APUE第五章，这里应该是行缓冲或全缓冲，因此要调用flush，从内存中刷入日志文件。\
 
+    # methods about event subscription
     #----------------------------------------------------------------------
+    def subscribe(self, type_, app):
+        """注册事件处理函数监听"""
+        if not isinstance(app, BaseApplication):
+            return
+
+        appIdList = self.__handlers[type_]
+        # 若要注册的处理器不在该事件的处理器列表中，则注册该事件
+        if app.id not in appIdList:
+            appIdList.append(app.id)
+            
+    def unsubscribe(self, type_, app):
+        """注销事件处理函数监听"""
+        if not isinstance(app, BaseApplication):
+            return
+
+        appIdList = self.__handlers[type_]
+            
+        # 如果该函数存在于列表中，则移除
+        if app.id in appIdList:
+            appIdList.remove(app.id)
+
+        # 如果函数列表为空，则从引擎中移除该事件类型
+        if not appIdList:
+            del self.__handlers[type_]  
+
+    def publish(self, event):
+        """向事件队列中存入事件"""
+        self.__queue.put(event)
+
+    @property
+    def pendingSize(self):
+        return self.__queue.qsize()
+
     # methods about logging
     # ----------------------------------------------------------------------
     def initLogger(self):
@@ -547,8 +600,6 @@ class Program(object):
         # 设置日志级别
         self.setLogLevel(self._settings.logger.level(LOGLEVEL_DEBUG)) # LOGLEVEL_INFO))
         
-        BOOL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh']
-
         # 设置输出
         tmpval = self._settings.logger.console('True').lower()
         if tmpval in BOOL_TRUE and not self._hdlrConsole:
@@ -600,56 +651,42 @@ class Program(object):
     @abstractmethod
     def debug(self, msg):
         """开发时用"""
-        if self._logger ==None:
-            return
-
+        if not self._logger: return
         self._logger.debug(msg)
         
     @abstractmethod
     def info(self, msg):
         """正常输出"""
-        if self._logger ==None:
-            return
-
+        if not self._logger: return
         self._logger.info(msg)
 
     @abstractmethod
     def warn(self, msg):
         """警告信息"""
-        if self._logger ==None:
-            return
-
+        if not self._logger: return
         self._logger.warn(msg)
         
     @abstractmethod
     def error(self, msg):
         """报错输出"""
-        if self._logger ==None:
-            return
-
+        if not self._logger: return
         self._logger.error(msg)
         
     @abstractmethod
     def critical(self, msg):
         """影响程序运行的严重错误"""
-        if self._logger ==None:
-            return
-
+        if not self._logger: return
         self._logger.critical(msg)
 
     def logexception(self, ex):
         """报错输出+记录异常信息"""
-        if self._logger ==None:
-            return
-
+        if not self._logger: return
         traceback.format_exc()
         #s elf._logger.exception(msg)
 
     def eventHdlr_Log(self, event):
         """处理日志事件"""
-        if self._logger ==None:
-            return
-
+        if not self._logger: return
         log = event.dict_['data']
         function = self._loglevelFunctionDict[log.logLevel]     # 获取日志级别对应的处理函数
         msg = '\t'.join([log.dsName, log.logContent])
@@ -659,8 +696,7 @@ class Program(object):
         """
         处理错误事件
         """
-        if self._logger ==None:
-            return
+        if not self._logger: return
 
         error = event.dict_['data']
         self.error(u'错误代码：%s，错误信息：%s' %(error.errorID, error.errorMsg))
@@ -818,7 +854,6 @@ class Program(object):
     def getAllGatewayDetails(self):
         """查询引擎中所有底层接口的信息"""
         return self._dlstMarketDatas
-''' 
 
 ########################################################################
 class EventLoop(BaseApplication):
@@ -835,7 +870,7 @@ class EventLoop(BaseApplication):
         
         # 计时器，用于触发计时器事件
         self.__timerActive = timer     # 计时器工作状态
-        self.__timerStep = 60           # 计时器触发间隔（默认1秒）
+        self.__timerStep = 1          # 计时器触发间隔（默认1秒）, 0 means nonblock loop
         self.__stampTimerLast = None
         
         # 这里的__handlers是一个字典，用来保存对应的事件调用关系
@@ -845,7 +880,7 @@ class EventLoop(BaseApplication):
         # __generalHandlers是一个列表，用来保存通用回调函数（所有事件均调用）
         self.__generalHandlers = []        
         
-    #--- override of BaseApplication routine for AppThreadedWrapper -----------------------
+    #--- override of BaseApplication routine for ThreadedAppWrapper -----------------------
     def init(self):
         return True  # dummy impl, do nothing
 
@@ -959,6 +994,7 @@ class EventLoop(BaseApplication):
         """注销通用事件处理函数监听"""
         if handler in self.__generalHandlers:
             self.__generalHandlers.remove(handler)
+''' 
 
 # the following is a sample
 if __name__ == "__main__":

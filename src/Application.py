@@ -338,6 +338,10 @@ class Program(object):
         self.__subscribers = {}
 
     @property
+    def logger(self) : 
+        return self._logger
+
+    @property
     def threadless(self) :
         return self._threadless
 
@@ -728,9 +732,7 @@ class Program(object):
 
     def logexception(self, ex):
         """报错输出+记录异常信息"""
-        if not self._logger: return
-        traceback.format_exc()
-        #s elf._logger.exception(msg)
+        self.error('%s: %s\n' % (ex, traceback.format_exc()))
 
     def eventHdlr_Log(self, event):
         """处理日志事件"""

@@ -264,9 +264,7 @@ class Playback(ABC):
 
         # 事件队列
         self.__queMergedEvent = Queue(maxsize=100)
-
-        # 配置字典
-        self._dictDR = OrderedDict() # categroy -> { fieldnames, ....}
+        self._logger = None
 
     def __iter__(self):
         if self.resetRead() : # alway perform reset here
@@ -307,21 +305,38 @@ class Playback(ABC):
     def enqueMerged(self, ev):
         self.__queMergedEvent.put(ev, block = True)
  
+    def setLogger(self, logger):
+        if logger and isinstance(logger, logging.Logger):
+            self._logger = logger
+        self.__queMergedEvent.put(ev, block = True)
+
     #---logging -----------------------
     def debug(self, msg):
-        print('%s\n' % msg)
+        if self._logger: 
+            self.logger.debug(msg)
+        else:
+            print('%s\n' % msg)
         
     def info(self, msg):
-        print('%s\n' % msg)
+        if self._logger: 
+            self.logger.info(msg)
+        else:
+            print('%s\n' % msg)
 
     def warn(self, msg):
-        print('%s\n' % msg)
+        if self._logger: 
+            self.logger.warn(msg)
+        else:
+            print('%s\n' % msg)
         
     def error(self, msg):
-        print('%s\n' % msg)
+        if self._logger: 
+            self.logger.error(msg)
+        else:
+            print('%s\n' % msg)
 
     def logexception(self, ex):
-        print('%s: %s\n' % (ex, traceback.format_exc()))
+        self.error('%s: %s\n' % (ex, traceback.format_exc()))
 
     # -- new methods --------------------------------------------------------------
     @abstractmethod
@@ -418,40 +433,41 @@ class CsvPlayback(Playback):
         '''
         @return True if busy at this step
         '''
-        while not self._reader:
-            if not self._csvfiles or len(self._csvfiles) <=0:
+        row = None
+        while not row:
+            while not self._reader:
+                if not self._csvfiles or len(self._csvfiles) <=0:
+                    return None
+
+                fn = self._csvfiles[0]
+                del(self._csvfiles[0])
+
+                self.debug('openning input file %s' % (fn))
+                extname = fn.split('.')[-1]
+                if extname == 'bz2':
+                    self._importStream = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
+                else:
+                    self._importStream = file(fn, 'rt')
+
+                self._reader = csv.DictReader(self._importStream, self._fieldnames, lineterminator='\n') if 'csv' in fn else self._importStream
+                if not self._reader:
+                    self.warn('failed to open input file %s' % (fn))
+
+            if not self._reader:
                 return None
 
-            fn = self._csvfiles[0]
-            del(self._csvfiles[0])
+            # if not self._fieldnames or len(self._fieldnames) <=0:
+            #     self._fieldnames = self._reader.headers()
 
-            self.debug('openning input file %s' % (fn))
-            extname = fn.split('.')[-1]
-            if extname == 'bz2':
-                self._importStream = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
-            else:
-                self._importStream = file(fn, 'rt')
+            try :
+                row = next(self._reader, None)
+            except Exception as ex:
+                row = None
 
-            self._reader = csv.DictReader(self._importStream, self._fieldnames, lineterminator='\n') if 'csv' in fn else self._importStream
-            if not self._reader:
-                self.warn('failed to open input file %s' % (fn))
-
-        if not self._reader:
-            return None
-
-        # if not self._fieldnames or len(self._fieldnames) <=0:
-        #     self._fieldnames = self._reader.headers()
-
-        try :
-            row = next(self._reader, None)
-        except Exception as ex:
-            row = None
-
-        if not row:
-            # self.error(traceback.format_exc())
-            self._reader = None
-            self._importStream.close()
-            return None
+            if not row:
+                # self.error(traceback.format_exc())
+                self._reader = None
+                self._importStream.close()
 
         ev = None
         try :

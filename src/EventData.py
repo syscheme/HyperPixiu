@@ -27,6 +27,14 @@ class Event:
         self.type_ = type_      # 事件类型
         self.dict_ = {}         # 字典用于保存具体的事件数据
 
+    def setData(self, data=None):
+        """Constructor"""
+        self.dict_['data'] = data
+
+    @property
+    def desc(self) :
+        return '%s:%s' % (self.type_, self.dict_['data'].desc if 'data' in self.dict_.keys() else '')
+
 ########################################################################
 class EventData(object):
     """回调函数推送数据的基础类，其他数据类继承于此"""

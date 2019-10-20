@@ -1,7 +1,6 @@
 import unittest
-from HistoryData import *
+import HistoryData as hist
 from Application import *
-
 
 '''
 class TestBaseApp(unittest.TestCase):
@@ -43,7 +42,7 @@ class TestBaseApp(unittest.TestCase):
 
     def test_divide(self):
         """Test method divide(a, b)"""
-        self.assertEqual(2, divide(6, 3))
+        self.assertEqual(2, divide(6, 3)) 
         self.assertEqual(2.5, divide(5, 2))
 
 '''
@@ -51,11 +50,9 @@ class TestBaseApp(unittest.TestCase):
 class TestHistoryData(unittest.TestCase):
 
     def test_playback(self):
-        p = Program()
-        p.createApp(CsvPlayback, None)
-        p.start()
-        p.loop()
-        p.stop()
+        hpb = hist.CsvPlayback(symbol='000001', folder='/mnt/e/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
+        for i in hpb :
+            print('Row: %s\n' % i.desc)
 
 
 if __name__ == '__main__':

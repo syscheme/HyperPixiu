@@ -18,7 +18,7 @@ import copy
 import traceback
 from collections import OrderedDict
 from datetime import datetime, timedelta
-from abc import ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 
 import sys
 if sys.version_info <(3,):
@@ -240,40 +240,30 @@ class CsvRecorder(Recorder):
         return collection
 
 ########################################################################
-class Playback(BaseApplication):
-    DUMMY_DATE_START = '19900101T000000'
-    DUMMY_DATE_END   = '39991231T000000'
+class Playback(ABC):
     """The reader part of HistoryData
     Args:
         filename (str): Filepath to a csv file.
         header (bool): True if the file has got a header, False otherwise
     """
-    def __init__(self, program, settings):
+    DUMMY_DATE_START = '19900101T000000'
+    DUMMY_DATE_END   = '39991231T000000'
+
+    def __init__(self, symbol, startDate =DUMMY_DATE_START, endDate=DUMMY_DATE_END, category =None, exchange=None):
         """Initialisation function. The API (kwargs) should be defined in
         the function _generator.
         """
-        super(Playback, self).__init__(program, settings)
+        super(Playback, self).__init__()
         self._symbol = symbol
-        self._category = EVENT_KLINE_1MIN
-        if 'symbol' in self._settings.keys()  :
-            self._symbol = self._settings['symbol']
-
-        if 'category' in self._settings.keys()  :
-            self._category = self._settings['category']
-
-        self._threadWished = True  # this App must be Threaded
+        self._category = category if category else EVENT_KLINE_1MIN
+        self._exchange = exchange if exchange else 'na'
         self._dbNamePrefix = Recorder.DEFAULT_DBPrefix
         
-        self._startDate = Playback.DUMMY_DATE_START
-        self._endDate   = Playback.DUMMY_DATE_END
-        if 'startDate' in self._settings.keys()  :
-            self._startDate = self._settings['startDate']
-
-        if 'endDate' in self._settings.keys()  :
-            self._endDate = self._settings['endDate']
+        self._startDate = startDate if startDate else Playback.DUMMY_DATE_START
+        self._endDate   = endDate if endDate else Playback.DUMMY_DATE_END
 
         # 事件队列
-        self.__queue = Queue(maxsize=100)
+        self.__queMergedEvent = Queue(maxsize=100)
 
         # 配置字典
         self._dictDR = OrderedDict() # categroy -> { fieldnames, ....}
@@ -291,19 +281,48 @@ class Playback(BaseApplication):
         return next(self._generator)
 
     def __generate(self):
-        while self.isActive :
+        while True :
+            try :
+                event = self.__queMergedEvent.get(block = False, timeout = 0.1)
+                if event:
+                    yield event
+                    self._c +=1
+            except Exception:
+                pass
+
             try :
                 n = self.readNext()
                 if None ==n:
-                    continue
+                    break
+
                 yield n
                 self._c +=1
-            except Exception:
+            except Exception as ex:
+                self.logexception(ex)
                 break
 
         self._generator=None
         raise StopIteration
+
+    def enqueMerged(self, ev):
+        self.__queMergedEvent.put(ev, block = True)
  
+    #---logging -----------------------
+    def debug(self, msg):
+        print('%s\n' % msg)
+        
+    def info(self, msg):
+        print('%s\n' % msg)
+
+    def warn(self, msg):
+        print('%s\n' % msg)
+        
+    def error(self, msg):
+        print('%s\n' % msg)
+
+    def logexception(self, ex):
+        print('%s: %s\n' % (ex, traceback.format_exc()))
+
     # -- new methods --------------------------------------------------------------
     @abstractmethod
     def resetRead(self):
@@ -315,53 +334,93 @@ class Playback(BaseApplication):
         '''
         @return next item, mostlikely expect one of Event()
         '''
-        if not self.isActive or not self.__queue: 
+        if not self.isActive or not self.__queMergedEvent: 
             raise StopIteration
 
         event = None
         try :
-            event = self.__queue.get(block = True, timeout = 10)
+            event = self.__queMergedEvent.get(block = False, timeout = 0.1)
+            if event: return event
         except Exception:
             pass
         return event
 
-    #--- impl of BaseApplication -----------------------
-    def init(self): # return True if succ
-        self.__iter__()
-        return not self._generator
-
-    def OnEvent(self, event):
-        '''
-        process the event
-        '''
-        pass
-
-    def step(self):
-        '''
-        @return True if busy at this step
-        '''
-        return False
-
 ########################################################################
 class CsvPlayback(Playback):
+    DIGITS=set('0123456789')
 
-    def __init__(self, program, settings, symbol=None):
-        super(CsvPlayback, self).__init__(program, settings)
+    #----------------------------------------------------------------------
+    def __init__(self, symbol, folder, fields, category =None, startDate =Playback.DUMMY_DATE_START, endDate=Playback.DUMMY_DATE_END) :
+
+        super(CsvPlayback, self).__init__(symbol, startDate, endDate, category)
+        self._folder = folder
+        self._fields = fields
+
         self._csvfiles =[]
-        self._cvsToEvent = None
+        self._cvsToEvent = DictToKLine(self._category, symbol)
+        # self._merger1minTo5min =None
+        self._merger1minTo5min = KlineToXminMerger(self._cbMergedKLine5min, xmin=5)
+        self._merger1minTo1Day = KlineToXminMerger(self._cbMergedKLine1Day, xmin=60*24-10)
 
-    #--- impl of BaseApplication -----------------------
-    def step(self):
+#        if not self._fields and 'mdKL' in self._category:
+#            self._fields ='' #TODO
+        self._fieldnames = self._fields.split(',') if self._fields else None
+
+    def _cbMergedKLine5min(self, klinedata):
+        if not klinedata: return
+        ev = Event(EVENT_KLINE_5MIN)
+        ev.setData(klinedata)
+        self.enqueMerged(ev)
+        if self._merger1minTo1Day :
+            self._merger1minTo1Day.pushKLineEvent(ev)
+
+    def _cbMergedKLine1Day(self, klinedata):
+        if not klinedata: return
+        ev = Event(EVENT_KLINE_1DAY)
+        ev.setData(klinedata)
+        self.enqueMerged(ev)
+
+    # -- Impl of Playback --------------------------------------------------------------
+    def resetRead(self):
+
+        self._csvfiles =[]
+        self._reader =None
+
+        # # filter the csv files
+        prev = ""
+        for _, _, files in os.walk(self._folder):
+            files.sort()
+            for name in files:
+                stk = name.split('.')
+                if not 'csv' in stk or self._symbol.lower() != name[:len(self._symbol)].lower():
+                    continue
+
+                fn = '%s/%s' % (self._folder, name)
+                stampstr = stk[0][len(self._symbol):]
+                pos = next((i for i, ch  in enumerate(stampstr) if ch in CsvPlayback.DIGITS), None)
+                if not pos :
+                    self._csvfiles.append(fn)
+                    continue
+
+                if 'Y' == stampstr[pos] : pos +=1
+                stampstr = stampstr[pos:]
+                if stampstr < self._startDate :
+                    prev = fn
+                elif stampstr <= self._endDate:
+                    self._csvfiles.append(fn)
+
+        if len(prev) >0:
+            self._csvfiles = [prev] + self._csvfiles
+        
+        return len(self._csvfiles) >0
+
+    def readNext(self):
         '''
         @return True if busy at this step
         '''
-        if not self._csvfiles :
-            return False
-        
-        c=0
         while not self._reader:
-            if len(self._csvfiles) <=0:
-                return False
+            if not self._csvfiles or len(self._csvfiles) <=0:
+                return None
 
             fn = self._csvfiles[0]
             del(self._csvfiles[0])
@@ -378,73 +437,33 @@ class CsvPlayback(Playback):
                 self.warn('failed to open input file %s' % (fn))
 
         if not self._reader:
-            return False
+            return None
 
-        if len(self._fields) <=0:
-            self._fields = self._reader.headers()
+        # if not self._fieldnames or len(self._fieldnames) <=0:
+        #     self._fieldnames = self._reader.headers()
 
         try :
-            line = next(self._reader, None)
+            row = next(self._reader, None)
         except Exception as ex:
-            line = None
+            row = None
 
-        if not line:
+        if not row:
             # self.error(traceback.format_exc())
             self._reader = None
             self._importStream.close()
-            return False
+            return None
 
+        ev = None
         try :
-            ev = None
-            if line and self._cvsToEvent:
-                # self.debug('line: %s' % (line))
-                ev = self._cvsToEvent.pushCvsRow(line, self._category, self._exchange, self._symbol)
-            if None != ev:
-                self.__queue.put(ev, block=True)
+            if row and self._cvsToEvent:
+                # print('line: %s' % (line))
+                ev = self._cvsToEvent.convert(row, self._exchange, self._symbol)
+                if ev and self._merger1minTo5min :
+                    self._merger1minTo5min.pushKLineEvent(ev)
         except Exception as ex:
             self.logexception(ex)
 
-        return True
-
-    # -- Impl of Playback --------------------------------------------------------------
-    def resetRead(self):
-        category = self._category
-        self._csvfiles =[]
-        self.__queue = Queue()
-        self._fieldnames = self._fields.split(',') if self._fields else None
-
-        # # filter the csv files
-        # stampSince = self._startDate.strftime('%Y%m%dT000000')
-        # stampTill  = (self._endDate +timedelta(hours=24)).strftime('%Y%m%dT000000') if self._endDate else Playback.DUMMY_DATE_END
-        stampSince = self._startDate
-        stampTill  = self._endDate
-
-        if not category in self._dictDR.keys() or not symbol in self._dictDR[category].keys():
-            return False
-
-        node = self._dictDR[category][self._symbol]
-        if not 'coll' in node.keys() :
-            return False
-
-        collection = node['coll']
-        prev = ""
-        for _, _, files in os.walk(collection['dir']):
-            files.sort()
-            for name in files:
-                stk = name.split('.')
-                if stk[-1] !='csv' or collection['fn'] != name[:len(collection['fn'])]:
-                    continue
-                fn = '%s/%s' % (collection['dir'], name)
-                if stk[-2] <stampSince :
-                    prev = fn
-                elif stk[-2] <stampTill:
-                    self._csvfiles.append(fn)
-
-        if len(prev) >0:
-            self._csvfiles = [prev] + self._csvfiles
-        
-        if len(self._csvfiles) <=0:
-            return False
+        return ev
 
 ########################################################################
 class MongoRecorder(Recorder):

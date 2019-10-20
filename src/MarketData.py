@@ -3,7 +3,7 @@
 from __future__ import division
 
 from EventData import *
-from datetime import datetime
+from datetime import datetime, timedelta
 
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 
@@ -122,8 +122,68 @@ class KLineData(EventData):
 
     @property
     def desc(self) :
-        return 'kline.%s@%s_%sx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.volume, round(self.close,2))
+        return 'kline.%s@%s>%sx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.volume, round(self.close,2))
 
+########################################################################
+class DictToKLine(object):
+
+    def __init__(self, eventType, symbol, exchange=None):
+        """Constructor"""
+        super(DictToKLine, self).__init__()
+        self._type = eventType
+        self._symbol = symbol
+        self._exchange = exchange if exchange else 'na'
+
+    @property
+    def fields(self) :
+        return 'date,time,open,high,low,close,volume,ammount'
+
+    @abstractmethod
+    def convert(self, row, exchange, symbol =None) :
+        if not 'mdKL' in self._type :
+            raise NotImplementedError
+
+        kl = KLineData(self._exchange, self._symbol)
+        kl.open = float(row['open'])
+        kl.high = float(row['high'])
+        kl.low = float(row['low'])
+        kl.close = float(row['close'])
+        kl.volume = float(row['volume'])
+        kl.date = datetime.strptime(row['date'], '%Y/%m/%d').strftime('%Y%m%d')
+        kl.time = row['time']+":00"
+        
+        kl.datetime = datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:%S')
+        dataOf = kl.datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:00')
+        ev = Event(type_=self._type)
+        ev.dict_['data'] = kl
+        return ev
+
+########################################################################
+class McCvsToKLine(DictToKLine):
+
+    def __init__(self, eventType, symbol, exchange=None):
+        """Constructor"""
+        super(McCvsToKLine, self).__init__(eventType, symbol, exchange)
+
+    @abstractmethod
+    def convert(self, csvrow, eventType =None, symbol =None) :
+        if not 'mdKL' in self._type :
+            raise NotImplementedError
+
+        kl = KLineData('', symbol)
+        kl.open = float(csvrow['Open'])
+        kl.high = float(csvrow['High'])
+        kl.low = float(csvrow['Low'])
+        kl.close = float(csvrow['Close'])
+        kl.volume = float(csvrow['TotalVolume'])
+        kl.date = datetime.strptime(csvrow['Date'], '%Y-%m-%d').strftime('%Y%m%d')
+        kl.time = csvrow['Time']+":00"
+        
+        kl.datetime = datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:%S')
+        dataOf = kl.datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:00')
+        ev = Event(type_=self._type)
+        ev.dict_['data'] = kl
+        return ev
 
 ########################################################################
 class TickToKLineMerger(object):
@@ -194,63 +254,55 @@ class KlineToXminMerger(object):
     #----------------------------------------------------------------------
     def __init__(self, onKLineXmin, xmin=15) :
         """Constructor"""
-        self._dictKlineXmin = {}      # 1分钟K线对象
-        self._dictKlineIn = {}        # 上一Input缓存对象
+        self._klineOut = None
+        self._klineIn = None        # 上一Input缓存对象
         self._xmin = xmin             # X的值
         self.onXminBar = onKLineXmin  # X分钟K线的回调函数
 
     #----------------------------------------------------------------------
-    def pushKLine(self, kline):
+    def pushKLineEvent(self, klineEv):
         """1分钟K线更新"""
-        klineXmin = None
+        d = klineEv.dict_['data']
+        self.pushKLineData(d)
+
+    def pushKLineData(self, kline):
+        """1分钟K线更新"""
         # 尚未创建对象
-        if kline.symbol in self._dictKlineXmin:
-            klineXmin = self._dictKlineXmin[kline.symbol]
-
-            newXLine = False
-            minOfDay = kline.datetime.hour*60 + kline.datetime.minute
-            if (self._xmin >=1200 and (kline.datetime.month != klineXmin.datetime.month) or (kline.datetime.year != klineXmin.datetime.year)) :
-                newXLine = True
-            elif (self._xmin >=240) and (kline.datetime.day != klineXmin.datetime.day) :
-                newXLine = True
-            elif self._xmin <240 and (0 == minOfDay % self._xmin): # 可以用X整除, X分钟已经走完
-                newXLine = True
-
-            if newXLine:
-                klineXmin.datetime = klineXmin.datetime.replace(second=0, microsecond=0)  # 将秒和微秒设为0
-                klineXmin.date = klineXmin.datetime.strftime('%Y%m%d')
-                klineXmin.time = klineXmin.datetime.strftime('%H:%M:%S.%f')
-                
+        if self._klineOut:
+            if kline.datetime > self._klineOut.datetime :
+                self._klineOut.date = self._klineOut.datetime.strftime('%Y%m%d')
+                self._klineOut.time = self._klineOut.datetime.strftime('%H:%M:%S.%f')
+                    
                 # 推送, X分钟策略计算和决策
                 if self.onXminBar :
-                    self.onXminBar(klineXmin)
+                    self.onXminBar(self._klineOut)
                 
                 # 清空老K线缓存对象
-                klineXmin = None
+                self._klineOut = None
 
         # 初始化新一分钟的K线数据
-        if not klineXmin:
+        if not self._klineOut:
             # 创建新的K线对象
-            klineXmin = KLineData(kline.exchange + '_k2x', kline.symbol)
-            klineXmin.open = kline.open
-            klineXmin.high = kline.high
-            klineXmin.low = kline.low
-            klineXmin.datetime = kline.datetime    # 以第一根分钟K线的开始时间戳作为X分钟线的时间戳
+            self._klineOut = KLineData(kline.exchange + '_k2x', kline.symbol)
+            self._klineOut.open = kline.open
+            self._klineOut.high = kline.high
+            self._klineOut.low = kline.low
+            timeTil = kline.datetime + timedelta(minutes=self._xmin)
+            timeTil = timeTil.replace(minute=int(timeTil.minute/self._xmin)*self._xmin, second=0, microsecond=0)
+
+            self._klineOut.datetime = timeTil    # 以x分钟K线末作为X分钟线的时间戳
         else:                                   
             # 累加更新老一分钟的K线数据
-            klineXmin.high = max(klineXmin.high, kline.high)
-            klineXmin.low = min(klineXmin.low, kline.low)
-            if (self._xmin >=240) :
-                klineXmin.datetime = kline.datetime    # 以last分钟K线的开始时间戳作为日线的时间戳
+            self._klineOut.high = max(self._klineOut.high, kline.high)
+            self._klineOut.low = min(self._klineOut.low, kline.low)
 
         # 通用部分
-        klineXmin.close = kline.close        
-        klineXmin.openInterest = kline.openInterest
-        klineXmin.volume += int(kline.volume)                
+        self._klineOut.close = kline.close        
+        self._klineOut.openInterest = kline.openInterest
+        self._klineOut.volume += int(kline.volume)                
 
         # 清空老K线缓存对象
-        self._dictKlineXmin[kline.symbol] = klineXmin
-        self._dictKlineIn[kline.symbol] = kline
+        self._klineIn = kline
 
 ########################################################################
 class DataToEvent(object):

@@ -32,6 +32,10 @@ class Event:
         self.dict_['data'] = data
 
     @property
+    def data(self) :
+        return self.dict_['data'] if 'data' in self.dict_.keys() else None
+
+    @property
     def desc(self) :
         return '%s:%s' % (self.type_, self.dict_['data'].desc if 'data' in self.dict_.keys() else '')
 

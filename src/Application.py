@@ -288,6 +288,91 @@ class Singleton(type):
         return cls._instances[cls]
 
 ########################################################################
+class Iterable(ABC):
+    """ A metaclass of Iterable
+    """
+    def __init__(self):
+        """Initialisation function. The API (kwargs) should be defined in
+        the function _generator.
+        """
+        super(Iterable, self).__init__()
+        self._generator = None
+        self._logger = None
+
+    def __iter__(self):
+        if self.resetRead() : # alway perform reset here
+            self._generator = self.__generate()
+            self._c = 0
+        return self
+
+    def __next__(self):
+        if not self._generator and self.resetRead() : # not perform reset here
+            self._generator = self.__generate()
+            self._c = 0
+        return next(self._generator)
+
+    def __generate(self):
+        while True :
+            try :
+                n = self.readNext()
+                if None ==n:
+                    break
+
+                yield n
+                self._c +=1
+            except Exception as ex:
+                self.logexception(ex)
+                break
+
+        self._generator=None
+        raise StopIteration
+
+    @abstractmethod
+    def resetRead(self):
+        """For this generator, we want to rewind only when the end of the data is reached.
+        """
+        pass
+
+    def readNext(self):
+        '''
+        @return next item, mostlikely expect one of Event()
+        '''
+        return None
+
+    #---logging -----------------------
+    def setLogger(self, logger):
+        if logger and isinstance(logger, logging.Logger):
+            self._logger = logger
+        self.__queMergedEvent.put(ev, block = True)
+
+    def debug(self, msg):
+        if self._logger: 
+            self.logger.debug(msg)
+        else:
+            print('%s\n' % msg)
+        
+    def info(self, msg):
+        if self._logger: 
+            self.logger.info(msg)
+        else:
+            print('%s\n' % msg)
+
+    def warn(self, msg):
+        if self._logger: 
+            self.logger.warn(msg)
+        else:
+            print('%s\n' % msg)
+        
+    def error(self, msg):
+        if self._logger: 
+            self.logger.error(msg)
+        else:
+            print('%s\n' % msg)
+
+    def logexception(self, ex):
+        self.error('%s: %s\n' % (ex, traceback.format_exc()))
+
+########################################################################
 import sys
 if sys.version_info <(3,):
     from Queue import Queue, Empty

@@ -4,7 +4,7 @@
 '''
 from __future__ import division
 
-from Application import BaseApplication
+from Application import BaseApplication, Iterable
 from EventData import *
 from MarketData import *
 '''
@@ -240,7 +240,7 @@ class CsvRecorder(Recorder):
         return collection
 
 ########################################################################
-class Playback(ABC):
+class Playback(Iterable):
     """The reader part of HistoryData
     Args:
         filename (str): Filepath to a csv file.
@@ -266,18 +266,7 @@ class Playback(ABC):
         self.__queMergedEvent = Queue(maxsize=100)
         self._logger = None
 
-    def __iter__(self):
-        if self.resetRead() : # alway perform reset here
-            self._generator = self.__generate()
-            self._c = 0
-        return self
-
-    def __next__(self):
-        if not self._generator and self.resetRead() : # not perform reset here
-            self._generator = self.__generate()
-            self._c = 0
-        return next(self._generator)
-
+    # -- overwrite Iteratable ---------------------------------------------------------
     def __generate(self):
         while True :
             try :
@@ -305,46 +294,14 @@ class Playback(ABC):
     def enqueMerged(self, ev):
         self.__queMergedEvent.put(ev, block = True)
  
-    def setLogger(self, logger):
-        if logger and isinstance(logger, logging.Logger):
-            self._logger = logger
-        self.__queMergedEvent.put(ev, block = True)
-
-    #---logging -----------------------
-    def debug(self, msg):
-        if self._logger: 
-            self.logger.debug(msg)
-        else:
-            print('%s\n' % msg)
-        
-    def info(self, msg):
-        if self._logger: 
-            self.logger.info(msg)
-        else:
-            print('%s\n' % msg)
-
-    def warn(self, msg):
-        if self._logger: 
-            self.logger.warn(msg)
-        else:
-            print('%s\n' % msg)
-        
-    def error(self, msg):
-        if self._logger: 
-            self.logger.error(msg)
-        else:
-            print('%s\n' % msg)
-
-    def logexception(self, ex):
-        self.error('%s: %s\n' % (ex, traceback.format_exc()))
-
-    # -- new methods --------------------------------------------------------------
+    # -- impl of Iterable --------------------------------------------------------------
     @abstractmethod
     def resetRead(self):
         """For this generator, we want to rewind only when the end of the data is reached.
         """
         pass
 
+    @abstractmethod
     def readNext(self):
         '''
         @return next item, mostlikely expect one of Event()

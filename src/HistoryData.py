@@ -268,7 +268,7 @@ class Playback(Iterable):
 
     # -- overwrite Iteratable ---------------------------------------------------------
     def __generate(self):
-        while True :
+        while not self._iterableEnd :
             try :
                 event = self.__queMergedEvent.get(block = False, timeout = 0.1)
                 if event:
@@ -280,12 +280,13 @@ class Playback(Iterable):
             try :
                 n = self.readNext()
                 if None ==n:
-                    break
+                    continue
 
                 yield n
                 self._c +=1
             except Exception as ex:
                 self.logexception(ex)
+                self._iterableEnd = True
                 break
 
         self._generator=None
@@ -394,6 +395,7 @@ class CsvPlayback(Playback):
         while not row:
             while not self._reader:
                 if not self._csvfiles or len(self._csvfiles) <=0:
+                    self._iterableEnd = True
                     return None
 
                 fn = self._csvfiles[0]
@@ -411,6 +413,7 @@ class CsvPlayback(Playback):
                     self.warn('failed to open input file %s' % (fn))
 
             if not self._reader:
+                self._iterableEnd = True
                 return None
 
             # if not self._fieldnames or len(self._fieldnames) <=0:

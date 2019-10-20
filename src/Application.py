@@ -298,11 +298,13 @@ class Iterable(ABC):
         super(Iterable, self).__init__()
         self._generator = None
         self._logger = None
+        self._iterableEnd = False
 
     def __iter__(self):
         if self.resetRead() : # alway perform reset here
             self._generator = self.__generate()
             self._c = 0
+            self._iterableEnd = False
         return self
 
     def __next__(self):
@@ -312,16 +314,17 @@ class Iterable(ABC):
         return next(self._generator)
 
     def __generate(self):
-        while True :
+        while not self._iterableEnd :
             try :
                 n = self.readNext()
                 if None ==n:
-                    break
+                    continue
 
                 yield n
                 self._c +=1
             except Exception as ex:
                 self.logexception(ex)
+                self._iterableEnd = True
                 break
 
         self._generator=None

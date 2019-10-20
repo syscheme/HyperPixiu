@@ -131,7 +131,7 @@ class PerspectiveGenerator(Iterable):
             if not self._readers[et] :
                 continue
             ev = next(self._readers[et])
-            if not ev or not ev.data :
+            if not ev or not ev.data or not ev.type_ in self._perspective._stacks.keys():
                 return None
 
             latestevd = self._perspective._stacks[ev.type_].top

@@ -1,36 +1,36 @@
 # encoding: UTF-8
 
 '''
-This module represent a basic account
+This module defines a basic account
 '''
 from __future__ import division
 
-from EventData    import EventData, datetime2float, EVENT_NAME_PREFIX
-from Application  import BaseApplication
+from EventData    import EventData, EVENT_NAME_PREFIX
+from Application  import BaseApplication, datetime2float
 # from .DataRecorder import CsvRecorder, MongoRecorder
 
 from abc import ABCMeta, abstractmethod
 from datetime import datetime, timedelta
 from collections import OrderedDict
+
 # from itertools import product
 import multiprocessing
 import copy
 import threading
 import traceback
 import jsoncfg # pip install json-cfg
-from pymongo import ASCENDING
+# from pymongo import ASCENDING
 
 ########################################################################
-from abc import ABCMeta, abstractmethod
 class Account(BaseApplication):
     """
     Basic Account
     """
     __lastId__ =10000
 
-    EVENT_PREFIX = EVENT_NAME_PREFIX + 'acc'
-    EVENT_ORDER = EVENT_PREFIX +'Order'                 # 报单回报事件, data=OrderData
-    EVENT_TRADE = EVENT_PREFIX + 'Trade'                # 报单回报事件, data=TradeData
+    EVENT_PREFIX   = EVENT_NAME_PREFIX + 'acc'
+    EVENT_ORDER    = EVENT_PREFIX +'Order'                 # 报单回报事件, data=OrderData
+    EVENT_TRADE    = EVENT_PREFIX + 'Trade'                # 报单回报事件, data=TradeData
     EVENT_DAILYPOS = EVENT_PREFIX + 'DPos'              # 每日交易事件, data=DailyPosition
 
     # state of Account
@@ -44,8 +44,8 @@ class Account(BaseApplication):
 
     #----------------------------------------------------------------------
     def __init__(self, trader, settings):
-        """Constructor"""
-
+        """Constructor
+        """
         super(Account, self).__init__(trader._program, settings)
 
         self._lock = threading.Lock()
@@ -93,7 +93,6 @@ class Account(BaseApplication):
         self._dictTrades = {} # dict from tradeId to trade confirmed during today
         self._dictStopOrders = {} # dict from broker's orderId to OrderData that has been submitted but not yet traded
         self._dictLimitOrders = {} # dict from broker's orderId to OrderData that has been submitted but not yet traded
-
 
         # self.capital = 0        # 起始本金（默认10万）
         # self._cashAvail =0
@@ -530,13 +529,13 @@ class Account(BaseApplication):
 
     #----------------------------------------------------------------------
     # impl of BaseApplication
-    #----------------------------------------------------------------------
+
     @abstractmethod
     def init(self): # return True if succ
         if self._recorder and not self._recorder.init() :
            return False
 
-        return super(DataRecorder, self).init()
+        return super(Account, self).init()
 
     @abstractmethod
     def start(self):
@@ -599,7 +598,6 @@ class Account(BaseApplication):
 
         return cStep
 
-
     # end of App routine
     #----------------------------------------------------------------------
 
@@ -630,9 +628,10 @@ class Account(BaseApplication):
     #----------------------------------------------------------------------
 
     @abstractmethod
-    def calcAmountOfTrade(self, symbol, price, volume): raise NotImplementedError
-
+    def calcAmountOfTrade(self, symbol, price, volume):
+        raise NotImplementedError
     # return volume, commission, slippage
+
     @abstractmethod
     #----------------------------------------------------------------------
     # determine buy ability according to the available cash
@@ -704,7 +703,7 @@ class Account(BaseApplication):
 
     #----------------------------------------------------------------------
     # method to access Account DB
-    #----------------------------------------------------------------------
+
     @abstractmethod
     def dbSaveDataOfDay(self):
         ''' save the account data into DB 
@@ -753,13 +752,8 @@ class Account(BaseApplication):
         super(Account, self).error('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
 
     #----------------------------------------------------------------------
-    def stop(self):
-        """停止"""
-        pass
-
-    #----------------------------------------------------------------------
     #  account daily statistics methods
-    #----------------------------------------------------------------------
+
     @abstractmethod
     def calcDailyPositions(self):
         """今日交易的结果"""

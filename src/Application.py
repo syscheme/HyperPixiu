@@ -405,18 +405,19 @@ class Program(object):
     __metaclass__ = Singleton
 
     #----------------------------------------------------------------------
-    def __init__(self, setting_filename=None):
+    def __init__(self, progName, setting_filename=None):
         """Constructor"""
 
         self._pid = os.getpid() # process id
+        self._progName = progName
         
         # dirname(dirname(abspath(file)))
         settings= None
         if setting_filename :
             try :
-                settings= jsoncfg.load_config(settingfilename)
+                settings= jsoncfg.load_config(setting_filename)
             except Exception as e :
-                print('failed to load configure[%s]: %s' % (conf_fn, e))
+                print('failed to load configure[%s]: %s' % (setting_filename, e))
                 return
 
         self._settings = settings
@@ -424,7 +425,7 @@ class Program(object):
         self._dictApps ={}
 
         # 记录今日日期
-        self._runStart = datetime.now().strftime('%Y%m%d')
+        self._runStartDate = datetime.now().strftime('%Y%m%d')
 
         # 日志引擎实例
         self._logger = None
@@ -434,7 +435,7 @@ class Program(object):
         self.__queue = Queue()
         
         # heartbeat
-        self.__heartbeatInterval = int(self._settings.heartbeatInterval("1")) if self._settings else BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # heartbeat间隔（默认1秒）
+        self._heartbeatInterval = int(self._settings.heartbeatInterval("1")) if self._settings else BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # heartbeat间隔（默认1秒）
         self.__stampLastHB = None
 
         # __subscribers字典，用来保存对应的事件到appId的订阅关系
@@ -448,6 +449,10 @@ class Program(object):
     @property
     def threadless(self) :
         return self._threadless
+
+    @property
+    def settings(self) :
+        return self._settings
 
     #----------------------------------------------------------------------
     def addApp(self, app, displayName=None):
@@ -569,7 +574,7 @@ class Program(object):
     #----------------------------------------------------------------------
     @property
     def hasHeartbeat(self) : 
-        return (self.__heartbeatInterval > 0) # what's wrong!!!!
+        return (self._heartbeatInterval > 0) # what's wrong!!!!
 
     def loop(self):
 
@@ -587,7 +592,7 @@ class Program(object):
                 if not self.__stampLastHB :
                     self.__stampLastHB = stampNow
 
-                timeout = self.__stampLastHB + self.__heartbeatInterval - stampNow
+                timeout = self.__stampLastHB + self._heartbeatInterval - stampNow
                 if timeout < 0:
                     self.__stampLastHB = stampNow
                     timeout = 0.1
@@ -772,7 +777,7 @@ class Program(object):
         tmpval = self._settings.logger.file('True').lower()
         if tmpval in BOOL_TRUE and not self._hdlrFile:
             # filepath = getTempPath('vnApp' + datetime.now().strftime('%Y%m%d') + '.log')
-            filepath = '/tmp/vnApp%s.log' % datetime.now().strftime('%Y%m%d')
+            filepath = '/tmp/%s%s.log' % (self._progName, datetime.now().strftime('%Y%m%d'))
             self._hdlrFile = TimedRotatingFileHandler(filepath, when='W5', backupCount=9) # when='W5' for Satday, 'D' daily, 'midnight' rollover at midnight
            #  = RotatingFileHandler(filepath, maxBytes=100*1024*1024, backupCount=9) # now 100MB*10,  = logging.FileHandler(filepath)
             self._hdlrFile.setLevel(self._loglevel)
@@ -780,13 +785,9 @@ class Program(object):
             self._logger.addHandler(self._hdlrFile)
             
         # 注册事件监听
-        tmpval = self._settings.logger.event.log('True').lower()
+        tmpval = self._settings.logger.loggingEvent('True').lower()
         if tmpval in BOOL_TRUE :
-            self._eventLoop.register(EventChannel.EVENT_LOG, self.eventHdlr_Log)
-
-        tmpval = self._settings.logger.event.error('True').lower()
-        if tmpval in BOOL_TRUE :
-            self._eventLoop.register(EventChannel.EVENT_ERROR, self.eventHdlr_Error)
+            self._loggingEvent = True
 
     def setLogLevel(self, level):
         """设置日志级别"""
@@ -1012,7 +1013,7 @@ class Program(object):
             'time': log.logTime,
             'ds': log.dsName
         }
-        self.dbInsert(LOG_DB_NAME, self._runStart, d)
+        self.dbInsert(LOG_DB_NAME, self._runStartDate, d)
     
     #----------------------------------------------------------------------
     def getAllGatewayDetails(self):
@@ -1041,7 +1042,7 @@ if __name__ == "__main__":
 
     # a = BaseApplication() #wrong
     p = Program()
-    p.__heartbeatInterval =-1
+    p._heartbeatInterval =-1
     p.createApp(Foo, {'asfs':1, 'aaa':'000'}, aaa='bbb', ccc='ddd')
     p.start()
     p.loop()

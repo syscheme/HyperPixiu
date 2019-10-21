@@ -32,7 +32,7 @@ class TestBaseApp(unittest.TestCase):
 
     def test_NonBlocking(self):
         p = Program()
-        p.__heartbeatInterval =-1
+        p._heartbeatInterval =-1
         p.createApp(Foo, None)
         p.start()
         p.loop()
@@ -51,7 +51,7 @@ class TestBaseApp(unittest.TestCase):
 
 class TestHistoryData(unittest.TestCase):
 
-    def test_playback(self):
+    def _test_playback(self):
         hpb = hist.CsvPlayback(symbol='000001', folder='/mnt/e/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
         for i in hpb :
             print('Row: %s\n' % i.desc)

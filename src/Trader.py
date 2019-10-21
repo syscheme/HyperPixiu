@@ -4,8 +4,9 @@ Trader maps to the agent in OpenAI/Gym
 '''
 from __future__ import division
 
-from EventData    import EventData, datetime2float
-from Application  import BaseApplication
+from EventData    import EventData
+import MarketData as md
+from Application  import BaseApplication, datetime2float
 from Account      import Account, Account_AShare, PositionData, TradeData, OrderData
 '''
 from .MarketData   import MarketData
@@ -158,13 +159,10 @@ class Trader(BaseApplication):
         return self._dictAccounts.values()
         
     #----------------------------------------------------------------------
-    # impl of BaseApplication
-    #----------------------------------------------------------------------
-    @abstractmethod
+    # impl/overwrite of BaseApplication
     def init(self): # return True if succ
         return super(Trader, self).init()
 
-    @abstractmethod
     def start(self):
 
         self.debug('collected %s interested symbols, adopting strategies' % len(self._dictObjectives))
@@ -181,23 +179,31 @@ class Trader(BaseApplication):
 
         # step 3. call allstrategy.onInit()
         self.strategies_Start()
+        super(self.__class__, self).start()
 
-    @abstractmethod
     def stop(self):
         """退出程序前调用，保证正常退出"""        
         # TODO: subscribe all interested market data
 
         self.strategies_Stop()
-        pass
+        super(self.__class__, self).stop()
 
-    @abstractmethod
     def step(self):
         cStep =0
         # for a in self._dictAccounts.values():
         #     cStep += a.step()
 
         return cStep;
-    
+
+    def OnEvent(self, ev):
+        '''
+        process the event
+        '''
+        if md.EVENT_TICK == ev.type_:
+            return self.eventHdl_Tick(ev)
+        if md.EVENT_KLINE_1MIN == ev.type_:
+            return self.eventHdl_KLine1min(ev)
+   
     #----------------------------------------------------------------------
     # local the recent data by symbol
     #----------------------------------------------------------------------
@@ -301,21 +307,21 @@ class Trader(BaseApplication):
     def subscribeSymbols(self) :
 
         # subscribe the symbols
-        self.subscribeEvent(MarketData.EVENT_TICK,       self.eventHdl_Tick)
-        self.subscribeEvent(MarketData.EVENT_KLINE_1MIN, self.eventHdl_KLine1min)
+        self.subscribeEvent(md.EVENT_TICK,       self.eventHdl_Tick)
+        self.subscribeEvent(md.EVENT_KLINE_1MIN, self.eventHdl_KLine1min)
         for k in self._dictObjectives.keys():
             s = self._dictObjectives[k]
             if len(s['dsTick']) >0:
                 ds = self._engine.getMarketData(s['dsTick'])
                 if ds:
                     self.debug('calling local subcribers for EVENT_TICK: %s' % s)
-                    ds.subscribe(k, MarketData.EVENT_TICK)
+                    ds.subscribe(k, md.EVENT_TICK)
                 
             if len(s['ds1min']) >0:
                 ds = self._engine.getMarketData(s['ds1min'])
                 if ds:
                     self.debug('calling local subcribers for EVENT_KLINE_1MIN: %s' % s)
-                    ds.subscribe(k, MarketData.EVENT_KLINE_1MIN)
+                    ds.subscribe(k, md.EVENT_KLINE_1MIN)
 
     ### eventTick from MarketData ----------------
     def updateOHLC(self, OHLC, open, high, low, close):

@@ -262,39 +262,6 @@ class Playback(Iterable):
         self._startDate = startDate if startDate else Playback.DUMMY_DATE_START
         self._endDate   = endDate if endDate else Playback.DUMMY_DATE_END
 
-        # 事件队列
-        self.__queMergedEvent = Queue(maxsize=100)
-        self._logger = None
-
-    # -- overwrite Iteratable ---------------------------------------------------------
-    def __generate(self):
-        while not self._iterableEnd :
-            try :
-                event = self.__queMergedEvent.get(block = False, timeout = 0.1)
-                if event:
-                    yield event
-                    self._c +=1
-            except Exception:
-                pass
-
-            try :
-                n = self.readNext()
-                if None ==n:
-                    continue
-
-                yield n
-                self._c +=1
-            except Exception as ex:
-                self.logexception(ex)
-                self._iterableEnd = True
-                break
-
-        self._generator=None
-        raise StopIteration
-
-    def enqueMerged(self, ev):
-        self.__queMergedEvent.put(ev, block = True)
- 
     # -- impl of Iterable --------------------------------------------------------------
     @abstractmethod
     def resetRead(self):
@@ -343,7 +310,7 @@ class CsvPlayback(Playback):
         if not klinedata: return
         ev = Event(EVENT_KLINE_5MIN)
         ev.setData(klinedata)
-        self.enqueMerged(ev)
+        self.enqueGenerated(ev)
         if self._merger1minTo1Day :
             self._merger1minTo1Day.pushKLineEvent(ev)
 
@@ -351,7 +318,7 @@ class CsvPlayback(Playback):
         if not klinedata: return
         ev = Event(EVENT_KLINE_1DAY)
         ev.setData(klinedata)
-        self.enqueMerged(ev)
+        self.enqueGenerated(ev)
 
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):

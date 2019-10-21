@@ -300,6 +300,9 @@ class Iterable(ABC):
         self._logger = None
         self._iterableEnd = False
 
+        # 事件队列
+        self.__queGenerated = Queue(maxsize=100)
+
     def __iter__(self):
         if self.resetRead() : # alway perform reset here
             self._generator = self.__generate()
@@ -316,6 +319,14 @@ class Iterable(ABC):
     def __generate(self):
         while not self._iterableEnd :
             try :
+                event = self.__queGenerated.get(block = False, timeout = 0.1)
+                if event:
+                    yield event
+                    self._c +=1
+            except Exception:
+                pass
+
+            try :
                 n = self.readNext()
                 if None ==n:
                     continue
@@ -330,12 +341,17 @@ class Iterable(ABC):
         self._generator=None
         raise StopIteration
 
+    def enqueGenerated(self, ev):
+        self.__queGenerated.put(ev, block = True)
+
+    #--- new methods  -----------------------
     @abstractmethod
     def resetRead(self):
         """For this generator, we want to rewind only when the end of the data is reached.
         """
         pass
 
+    @abstractmethod
     def readNext(self):
         '''
         @return next item, mostlikely expect one of Event()
@@ -346,7 +362,7 @@ class Iterable(ABC):
     def setLogger(self, logger):
         if logger and isinstance(logger, logging.Logger):
             self._logger = logger
-        self.__queMergedEvent.put(ev, block = True)
+        self.__queGenerated.put(ev, block = True)
 
     def debug(self, msg):
         if self._logger: 

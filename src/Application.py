@@ -383,7 +383,7 @@ else:
     from queue import Queue, Empty
 
 class Program(object):
-    """主引擎"""
+    ''' main program '''
 
     # 单例模式
     __metaclass__ = Singleton
@@ -408,7 +408,7 @@ class Program(object):
         self._dictApps ={}
 
         # 记录今日日期
-        self.todayDate = datetime.now().strftime('%Y%m%d')
+        self._runStart = datetime.now().strftime('%Y%m%d')
 
         # 日志引擎实例
         self._logger = None
@@ -986,7 +986,7 @@ class Program(object):
             'time': log.logTime,
             'ds': log.dsName
         }
-        self.dbInsert(LOG_DB_NAME, self.todayDate, d)
+        self.dbInsert(LOG_DB_NAME, self._runStart, d)
     
     #----------------------------------------------------------------------
     def getAllGatewayDetails(self):

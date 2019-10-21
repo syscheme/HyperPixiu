@@ -331,7 +331,7 @@ class MainRoutine(object):
         self._threadless = True
 
         # 记录今日日期
-        self.todayDate = datetime.now().strftime('%Y%m%d')
+        self._runStart = datetime.now().strftime('%Y%m%d')
         
         # 创建EventChannel
         if self.threadless :
@@ -843,7 +843,7 @@ class MainRoutine(object):
             'time': log.logTime,
             'ds': log.dsName
         }
-        self.dbInsert(LOG_DB_NAME, self.todayDate, d)
+        self.dbInsert(LOG_DB_NAME, self._runStart, d)
     
     #----------------------------------------------------------------------
     def getAllGatewayDetails(self):

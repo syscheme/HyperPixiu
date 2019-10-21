@@ -2,26 +2,24 @@
 
 from __future__ import division
 
-from mdBackEnd import MarketData, KLineData, TickData, DataToEvent
-from event.ecBasic import Event, datetime2float
+from MarketCrawler import *
+from EventData import Event
+from MarketData import KLineData, TickData, DataToEvent
+from Application import datetime2float
 
 import requests # pip3 install requests
 from copy import copy
-from datetime import datetime
-from threading import Thread
-from multiprocessing.dummy import Pool
 from datetime import datetime , timedelta
 from abc import ABCMeta, abstractmethod
 import demjson # pip3 install demjso
 
-import zlib
 import re
 
-from threading import Thread
-from multiprocessing import Pool
+# from threading import Thread
+# from multiprocessing import Pool
 
 ########################################################################
-class mdSina(MarketData):
+class SinaCrawler(MarketCrawler):
     """MarketData BackEnd API"""
     # 常量定义
     #----------------------------------------------------------------------
@@ -31,13 +29,25 @@ class mdSina(MarketData):
     }
 
     TIMEOUT = 5
+    TICK_BATCH_SIZE = 100
 
     def __init__(self, program, settings):
         """Constructor"""
-        super(mdSina, self).__init__(program, settings)
-
+        super(SinaCrawler, self).__init__(program, settings)
         self._proxies = {}
 
+        self._symbolsToPoll = []
+        
+        self._cacheTick    = {}
+        self._cacheKL5m    = {}
+        self._cacheKL1d    = {}
+
+        self._stampTickNext    = None
+        self._stampKLNext    = {}
+
+        self._tickBatches = None
+        self.__steps = [self.__gstep_pollTicks, self.__gstep_pollKL5min, self.__gstep_pollKL1day]
+        self.__genSteps={}
         # self._mode        = Account.BROKER_API_ASYNC
         # self._queRequests = Queue()        # queue of request ids
         # self._dictRequests = {}            # dict from request Id to request
@@ -54,35 +64,142 @@ class mdSina(MarketData):
     # def secretKey(self) :
     #     return self._settings.secretKey('')
 
-    #----------------------------------------------------------------------
+    #--- impl/overwrite of BaseApplication -----------------------
+    def init(self): # return True if succ
+        return self.connect()
+
+    def OnEvent(self, event):
+        '''
+        process the event
+        '''
+        pass
+
+    def step(self):
+        '''
+        @return True if busy at this step
+        '''
+        self._stepAsOf = datetime2float(datetime.now())
+        busy = False
+
+        for s in self.__steps:
+            if not s in self.__genSteps.keys() or not self.__genSteps[s] :
+                self.__genSteps[s] = s()
+            try :
+                if next(self.__genSteps[s]) :
+                    busy = True
+            except StopIteration:
+                self.__genSteps[s] = None
+
+        return busy
+
+    def stop(self):
+        super(SinaCrawler, self).stop()
+        self.close()
+
+    #--- new methods defined in MarketCrawler ---------
     # if the MarketData has background thread, connect() will not start the thread
     # but start() will
-    @abstractmethod
     def connect(self):
-        """连接"""
-        raise NotImplementedError
-#        return self.active
+        '''
+        return True if connected 
+        '''
+        return True
 
-    @abstractmethod
     def close(self):
         pass
 
-    @abstractmethod
-    def start(self):
-        """连接"""
-        self.connect()
-        
-    @abstractmethod
-    def step(self):
-        """连接"""
-        return 0 # raise NotImplementedError
+    #-- sub-steps ---------------
+    def __gstep_pollTicks(self):
+        #step 1. build up self._tickBatches
+        i =0
+        if not self._tickBatches and len(self._symbolsToPoll) >0:
+            self._tickBatches = []
+            while True:
+                bth = self._symbolsToPoll[i*SinaCrawler.TICK_BATCH_SIZE: (i+1)*SinaCrawler.TICK_BATCH_SIZE]
+                if len(bth) <=0: break
+                self._tickBatches.append(bth)
+                i+=1
 
-    @abstractmethod
-    def stop(self):
-        """停止"""
-        if self._active:
-            self._active = False
-            self.close()
+        if self._stampTickNext and self._stampTickNext < self._stepAsOf :
+            return False
+        
+        self._stampTickNext = self._stepAsOf +0.5
+        for btch in self._tickBatches :
+            succ, result = self.getRecentTicks(btch)
+            if not succ:
+                yield True
+            
+            # succ at previous batch here
+            if len(result) <=0 : self._stampTickNext + 60*10 # likely after a trade-day closed 10min
+            for tk in result:
+                self._cacheTick[tk.symbols] = tk
+        
+        return True
+
+    def __gstep_pollKline(self, evType, minInterval=10):
+
+        if evType in self._stampKLNext.keys() and self._stampKLNext[evType] and self._stampKLNext[evType] < self._stepAsOf :
+            return False
+
+        self._stampKLNext[evType] = self._stepAsOf + minInterval*60
+        lst = self._symbolsToPoll
+
+        while len(lst) >0:
+            s = lst[0]
+            del(lst[0])
+            httperr, result = self.searchKLines(s, evType)
+            if httperr !=200:
+                lst.append(s)
+                self.error("searchKLines(%s:%s) failed, err(%s)" %(s, evType, httperr))
+                yield True
+            
+            # succ at previous batch here
+            # TODO: merge and evict th result of previous
+            self._cacheKL5m[s] = result
+            yield True
+
+        return True
+
+    def __gstep_pollKL5min(self):
+        return self.__gstep_pollKline(EVENT_KLINE_5MIN, 3)
+
+    def __gstep_pollKL1day(self):
+        return self.__gstep_pollKline(EVENT_KLINE_1DAY, 15)
+
+    def subscribe(self, symbols):
+        c =0
+        for s in symbols:
+            s = SinaCrawler.fixupSymbolPrefix(s)
+            if s in self._symbolsToPoll:
+                continue
+
+            self._symbolsToPoll.append(s)
+            c +=1
+        
+        if c <=0:
+            return c
+        
+        self._symbolsToPoll.sort()
+
+        # reset the intermedia vars
+        self._tickBatches = None
+
+        return c
+
+    def unsubscribe(self, symbols):
+        c = len(self._symbolsToPoll)
+        for s in symbols:
+            s = SinaCrawler.fixupSymbolPrefix(s)
+            self._symbolsToPoll.remove(s)
+        
+        if c ==len(self._symbolsToPoll):
+            return c
+        
+        self._symbolsToPoll.sort()
+
+        # reset the intermedia vars
+        self._tickBatches = None
+        return len(self._symbolsToPoll)
 
     #------------------------------------------------
     # overwrite of BackEnd
@@ -93,27 +210,27 @@ class mdSina(MarketData):
         will call cortResp.send(csvline) when the result comes
         '''
         
-        symbol = fixupSymbolPrefix(symbol)
+        symbol = SinaCrawler.fixupSymbolPrefix(symbol)
 
-        if (eventType == MarketData.EVENT_TICK) :
-            return self.searchTicks(symbol, since, cb)
+        if not EVENT_KLINE_PREFIX in eventType :
+            return 400, 'event %s not allowed'
 
         scale =1200
         lines =1000
 
-        if   MarketData.EVENT_KLINE_1MIN == eventType :
+        if   EVENT_KLINE_1MIN == eventType :
             scale =5
-        if   MarketData.EVENT_KLINE_5MIN == eventType :
+        if   EVENT_KLINE_5MIN == eventType :
             scale =5
-        elif MarketData.EVENT_KLINE_15MIN == eventType :
+        elif EVENT_KLINE_15MIN == eventType :
             scale =15
-        elif MarketData.EVENT_KLINE_30MIN == eventType :
+        elif EVENT_KLINE_30MIN == eventType :
             scale =30
-        elif MarketData.EVENT_KLINE_1HOUR == eventType :
+        elif EVENT_KLINE_1HOUR == eventType :
             scale =60
-        elif MarketData.EVENT_KLINE_4HOUR == eventType :
+        elif EVENT_KLINE_4HOUR == eventType :
             scale =240
-        elif MarketData.EVENT_KLINE_1DAY == eventType :
+        elif EVENT_KLINE_1DAY == eventType :
             scale =240
 
         now_datetime = datetime.now()
@@ -123,9 +240,12 @@ class mdSina(MarketData):
 
         url = "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=%s&scale=%s&datalen=%d" % (symbol, scale, lines)
         klineseq =[]
+        errmsg = u'GET请求失败'
+        httperr = 400
         try:
             response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
-            if response.status_code == 200:
+            httperr = response.status_code
+            if httperr == 200:
                 # [{day:"2019-09-23 14:15:00",open:"15.280",high:"15.290",low:"15.260",close:"15.270",volume:"892600",ma_price5:15.274,ma_volume5:1645033,ma_price10:15.272,ma_volume10:1524623,ma_price30:15.296,ma_volume30:2081080},
                 # {day:"2019-09-23 14:20:00",open:"15.270",high:"15.280",low:"15.240",close:"15.240",volume:"1591705",ma_price5:15.266,ma_volume5:1676498,ma_price10:15.27,ma_volume10:1593887,ma_price30:15.292,ma_volume30:1955370},
                 # ...]
@@ -146,11 +266,13 @@ class mdSina(MarketData):
                     kldata.time = kl['day'][11:]
                     klineseq.append(kldata)
 
-                return True, klineseq
+                return httperr, klineseq
             else:
-                return False, u'GET请求失败，状态代码：%s' %response.status_code
+                errmsg = u'GET请求失败，状态代码：%s' % response.status_code
         except Exception as e:
-            return False, u'GET请求触发异常，原因：%s' %e
+                errmsg = u'GET请求失败，异常：%s' % e
+
+        return httperr, errmsg
 
     def fixupSymbolPrefix(symbol):
         if symbol.isdigit() :
@@ -160,7 +282,7 @@ class mdSina(MarketData):
                 return "SZ%s" % symbol
             elif symbol.startswith('6') :
                 return "SH%s" % symbol
-        return symbol
+        return symbol.upper()
 
     #------------------------------------------------    
     def getRecentTicks(self, symbols):
@@ -170,7 +292,7 @@ class mdSina(MarketData):
         '''
         if not isinstance(symbols, list) :
             symbols = symbols.split(',')
-        qsymbols = [mdSina.fixupSymbolPrefix(s) for s in symbols]
+        qsymbols = [SinaCrawler.fixupSymbolPrefix(s) for s in symbols]
         url = 'http://hq.sinajs.cn/list=%s' % (','.join(qsymbols))
         HEADERSEQ="name,open,prevClose,price,high,low,bid,ask,volume,total,bid1v,bid1,bid2v,bid2,bid3v,bid3,bid4v,bid4,bid5v,bid5,ask1v,ask1,ask2v,ask2,ask3v,ask3,ask4v,ask4,ask5v,ask5,date,time"
         HEADERS=HEADERSEQ.split(',')
@@ -191,6 +313,9 @@ class mdSina(MarketData):
 
             s = m.group(1).upper()
             row = m.group(2).split(',')
+
+            if len(row) <=1: continue # likely end of the trade-day
+
             ncols = min([len(HEADERS), len(row)])
             d = {HEADERS[i]:row[i] for i in range(ncols)}
             tickdata = TickData("ASHARE", s)
@@ -305,7 +430,7 @@ class mdSina(MarketData):
         HEADERSEQ="time,volume,price,type"
         HEADERS=HEADERSEQ.split(',')
         SYNTAX = re.compile('^.*trade_item_list\[.*Array\(([^\)]*)\).*')
-        url = 'http://finance.sina.com.cn/realstock/newcompany/%s/phfq.js' % (mdSina.fixupSymbolPrefix(symbol))
+        url = 'http://finance.sina.com.cn/realstock/newcompany/%s/phfq.js' % (SinaCrawler.fixupSymbolPrefix(symbol))
         try:
             response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
             if response.status_code != 200:
@@ -318,11 +443,15 @@ class mdSina(MarketData):
         jsonData = demjson.decode(str)
         jsonData['data']
 
+        # {'_2019_10_18': '13.8112', '_2019_10_17': '13.8112', ...} 
         return True, jsonData['data']
 
 if __name__ == '__main__':
-    md = mdSina(None, None);
-    # result = md.searchKLines("000002", MarketData.EVENT_KLINE_5MIN)
+    md = SinaCrawler(None, None);
+    # _, result = md.searchKLines("000002", EVENT_KLINE_5MIN)
     # _, result = md.getRecentTicks('sh601006,sh601005,sh000001,sz000001')
-    _, result = md.getSplitRate('sh601006')
-    print(result)
+    # _, result = md.getSplitRate('sh601006')
+    # print(result)
+    md.subscribe(['601006','sh601005','sh000001','000001'])
+    while True:
+        md.step()

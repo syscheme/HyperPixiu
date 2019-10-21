@@ -4,20 +4,17 @@ from __future__ import division
 
 from Application import BaseApplication
 from MarketData import *
+
 import traceback
 from datetime import datetime
 
 from abc import ABCMeta, abstractmethod
 
 ########################################################################
-class MarketObserver(BaseApplication):
+class MarketCrawler(BaseApplication):
     ''' abstract application to observe market
     '''
     TAG_BACKTEST = '$BT'
-
-    DUMMY_DT_EOS = datetime(2999, 12, 31, 23,59,59)
-    DUMMY_DATE_EOS = DUMMY_DT_EOS.strftime('%Y%m%d')
-    DUMMY_TIME_EOS = DUMMY_DT_EOS.strftime('%H%M%S')
 
     __lastId__ =100
 
@@ -25,7 +22,7 @@ class MarketObserver(BaseApplication):
     def __init__(self, program, settings):
         '''Constructor
         '''
-        super(MarketObserver, self).__init__(program, settings)
+        super(MarketCrawler, self).__init__(program, settings)
 
         # the MarketData instance Id
         # self._id = settings.id("")
@@ -87,7 +84,7 @@ class MarketObserver(BaseApplication):
         """连接"""
         if not self.connect() :
             return False
-        return super(MarketObserver,self).start()
+        return super(MarketCrawler,self).start()
         
     @abstractmethod
     def step(self):
@@ -98,7 +95,7 @@ class MarketObserver(BaseApplication):
     def stop(self):
         """停止"""
         if self.isActive:
-            super(MarketObserver,self).stop()
+            super(MarketCrawler,self).stop()
             self.close()
         
     #----------------------------------------------------------------------

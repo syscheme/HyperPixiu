@@ -2,7 +2,7 @@
 
 from __future__ import division
 
-from Application import BaseApplication
+from Application import BaseApplication, datetime2float
 from MarketData import *
 
 import traceback
@@ -14,8 +14,6 @@ from abc import ABCMeta, abstractmethod
 class MarketCrawler(BaseApplication):
     ''' abstract application to observe market
     '''
-    TAG_BACKTEST = '$BT'
-
     __lastId__ =100
 
     #----------------------------------------------------------------------
@@ -24,6 +22,7 @@ class MarketCrawler(BaseApplication):
         '''
         super(MarketCrawler, self).__init__(program, settings)
 
+        self._symbolsToPoll = []
         # the MarketData instance Id
         # self._id = settings.id("")
         # if len(self._id)<=0 :
@@ -34,8 +33,8 @@ class MarketCrawler(BaseApplication):
         # self._eventCh  = program._eventLoop
         # self._exchange = settings.exchange(self._id)
 
-        self.subDict = {}
-        self.proxies = {}
+        self._steps = []
+        self.__genSteps={}
     
     #----------------------------------------------------------------------
     @property
@@ -45,7 +44,7 @@ class MarketCrawler(BaseApplication):
     @property
     def subscriptions(self):
         return self.subDict
-        
+
     #----------------------------------------------------------------------
     # inqueries to some market data
     # https://www.cnblogs.com/bradleon/p/6106595.html
@@ -67,36 +66,75 @@ class MarketCrawler(BaseApplication):
         self.enqueue(reqId, req)
         return reqId
    
-    #----------------------------------------------------------------------
+    def subscribe(self, symbols):
+        c =0
+        for s in symbols:
+            if s in self._symbolsToPoll:
+                continue
+
+            self._symbolsToPoll.append(s)
+            c +=1
+        
+        if c <=0:
+            return c
+        
+        self._symbolsToPoll.sort()
+        return c
+
+    def unsubscribe(self, symbols):
+        c = len(self._symbolsToPoll)
+        for s in symbols:
+            self._symbolsToPoll.remove(s)
+        
+        if c ==len(self._symbolsToPoll):
+            return c
+        
+        self._symbolsToPoll.sort()
+        return len(self._symbolsToPoll)
+
+    #--- new methods defined in MarketCrawler ---------
     # if the MarketData has background thread, connect() will not start the thread
     # but start() will
-    @abstractmethod
     def connect(self):
-        """连接"""
-        raise NotImplementedError
+        '''
+        return True if connected 
+        '''
+        return True
 
-    @abstractmethod
     def close(self):
         pass
 
-    #--- impll of BaseApplication -----------------------
-    def start(self):
-        """连接"""
-        if not self.connect() :
-            return False
-        return super(MarketCrawler,self).start()
-        
-    @abstractmethod
-    def step(self):
-        """连接"""
-        raise NotImplementedError
+    #--- impl/overwrite of BaseApplication -----------------------
+    def init(self): # return True if succ
+        return self.connect()
 
-    @abstractmethod
+    def OnEvent(self, event):
+        '''
+        process the event
+        '''
+        pass
+
+    def step(self):
+        '''
+        @return True if busy at this step
+        '''
+        self._stepAsOf = datetime2float(datetime.now())
+        busy = False
+
+        for s in self._steps:
+            if not s in self.__genSteps.keys() or not self.__genSteps[s] :
+                self.__genSteps[s] = s()
+            try :
+                if next(self.__genSteps[s]) :
+                    busy = True
+            except StopIteration:
+                self.__genSteps[s] = None
+
+        return busy
+
     def stop(self):
-        """停止"""
-        if self.isActive:
-            super(MarketCrawler,self).stop()
-            self.close()
+        super(SinaCrawler, self).stop()
+        self.close()
         
     #----------------------------------------------------------------------
     def fmtSubscribeKey(self, symbol, eventType):

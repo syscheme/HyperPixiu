@@ -807,32 +807,42 @@ class Program(object):
     @abstractmethod
     def debug(self, msg):
         """开发时用"""
-        if not self._logger: return
-        self._logger.debug(msg)
+        if self._logger: 
+            self.logger.debug(msg)
+        else:
+            print('%s\n' % msg)
         
     @abstractmethod
     def info(self, msg):
         """正常输出"""
-        if not self._logger: return
-        self._logger.info(msg)
+        if self._logger: 
+            self.logger.info(msg)
+        else:
+            print('%s\n' % msg)
 
     @abstractmethod
     def warn(self, msg):
         """警告信息"""
-        if not self._logger: return
-        self._logger.warn(msg)
+        if self._logger: 
+            self.logger.warn(msg)
+        else:
+            print('%s\n' % msg)
         
     @abstractmethod
     def error(self, msg):
         """报错输出"""
-        if not self._logger: return
-        self._logger.error(msg)
+        if self._logger: 
+            self.logger.error(msg)
+        else:
+            print('%s\n' % msg)
         
     @abstractmethod
     def critical(self, msg):
         """影响程序运行的严重错误"""
-        if not self._logger: return
-        self._logger.critical(msg)
+        if self._logger: 
+            self.logger.critical(msg)
+        else:
+            print('%s\n' % msg)
 
     def logexception(self, ex):
         """报错输出+记录异常信息"""

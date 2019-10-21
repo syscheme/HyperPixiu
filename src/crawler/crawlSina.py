@@ -5,7 +5,7 @@ from __future__ import division
 from MarketCrawler import *
 from EventData import Event
 from MarketData import KLineData, TickData, DataToEvent
-from Application import datetime2float
+from Application import Program
 
 import requests # pip3 install requests
 from copy import copy
@@ -34,10 +34,10 @@ class SinaCrawler(MarketCrawler):
     def __init__(self, program, settings):
         """Constructor"""
         super(SinaCrawler, self).__init__(program, settings)
+        self._steps = [self.__gstep_pollTicks, self.__gstep_pollKL5min, self.__gstep_pollKL1day]
+
         self._proxies = {}
 
-        self._symbolsToPoll = []
-        
         self._cacheTick    = {}
         self._cacheKL5m    = {}
         self._cacheKL1d    = {}
@@ -46,67 +46,6 @@ class SinaCrawler(MarketCrawler):
         self._stampKLNext    = {}
 
         self._tickBatches = None
-        self.__steps = [self.__gstep_pollTicks, self.__gstep_pollKL5min, self.__gstep_pollKL1day]
-        self.__genSteps={}
-        # self._mode        = Account.BROKER_API_ASYNC
-        # self._queRequests = Queue()        # queue of request ids
-        # self._dictRequests = {}            # dict from request Id to request
-
-    # @property
-    # def cashSymbol(self): # overwrite Account's cash to usdt
-    #     return 'usdt'
-
-    # @property
-    # def accessKey(self) :
-    #     return self._settings.accessKey('')
-
-    # @property
-    # def secretKey(self) :
-    #     return self._settings.secretKey('')
-
-    #--- impl/overwrite of BaseApplication -----------------------
-    def init(self): # return True if succ
-        return self.connect()
-
-    def OnEvent(self, event):
-        '''
-        process the event
-        '''
-        pass
-
-    def step(self):
-        '''
-        @return True if busy at this step
-        '''
-        self._stepAsOf = datetime2float(datetime.now())
-        busy = False
-
-        for s in self.__steps:
-            if not s in self.__genSteps.keys() or not self.__genSteps[s] :
-                self.__genSteps[s] = s()
-            try :
-                if next(self.__genSteps[s]) :
-                    busy = True
-            except StopIteration:
-                self.__genSteps[s] = None
-
-        return busy
-
-    def stop(self):
-        super(SinaCrawler, self).stop()
-        self.close()
-
-    #--- new methods defined in MarketCrawler ---------
-    # if the MarketData has background thread, connect() will not start the thread
-    # but start() will
-    def connect(self):
-        '''
-        return True if connected 
-        '''
-        return True
-
-    def close(self):
-        pass
 
     #-- sub-steps ---------------
     def __gstep_pollTicks(self):
@@ -124,16 +63,20 @@ class SinaCrawler(MarketCrawler):
             return False
         
         self._stampTickNext = self._stepAsOf +0.5
+        updated=[]
         for btch in self._tickBatches :
-            succ, result = self.getRecentTicks(btch)
-            if not succ:
+            httperr, result = self.getRecentTicks(btch)
+            if httperr !=200:
+                self.error("getRecentTicks() failed, err(%s)" %(httperr))
                 yield True
             
             # succ at previous batch here
             if len(result) <=0 : self._stampTickNext + 60*10 # likely after a trade-day closed 10min
             for tk in result:
-                self._cacheTick[tk.symbols] = tk
-        
+                self._cacheTick[tk.symbol] = tk
+                updated.append(tk.symbol)
+
+        self.debug("getRecentTicks() cached %s" %(updated))
         return True
 
     def __gstep_pollKline(self, evType, minInterval=10):
@@ -156,6 +99,7 @@ class SinaCrawler(MarketCrawler):
             # succ at previous batch here
             # TODO: merge and evict th result of previous
             self._cacheKL5m[s] = result
+            self.debug("searchKLines(%s:%s) cached %s KL" %(s, evType, len(result)))
             yield True
 
         return True
@@ -167,39 +111,20 @@ class SinaCrawler(MarketCrawler):
         return self.__gstep_pollKline(EVENT_KLINE_1DAY, 15)
 
     def subscribe(self, symbols):
-        c =0
-        for s in symbols:
-            s = SinaCrawler.fixupSymbolPrefix(s)
-            if s in self._symbolsToPoll:
-                continue
-
-            self._symbolsToPoll.append(s)
-            c +=1
-        
-        if c <=0:
-            return c
-        
-        self._symbolsToPoll.sort()
+        ret = super(SinaCrawler, self).subscribe([SinaCrawler.fixupSymbolPrefix(s) for s in symbols])
 
         # reset the intermedia vars
-        self._tickBatches = None
+        if ret >0:
+            self._tickBatches = None
 
-        return c
+        return ret
 
     def unsubscribe(self, symbols):
-        c = len(self._symbolsToPoll)
-        for s in symbols:
-            s = SinaCrawler.fixupSymbolPrefix(s)
-            self._symbolsToPoll.remove(s)
-        
-        if c ==len(self._symbolsToPoll):
-            return c
-        
-        self._symbolsToPoll.sort()
+        ret = super(SinaCrawler, self).unsubscribe([SinaCrawler.fixupSymbolPrefix(s) for s in symbols])
 
         # reset the intermedia vars
         self._tickBatches = None
-        return len(self._symbolsToPoll)
+        return ret
 
     #------------------------------------------------
     # overwrite of BackEnd
@@ -298,12 +223,16 @@ class SinaCrawler(MarketCrawler):
         HEADERS=HEADERSEQ.split(',')
         SYNTAX = re.compile('^var hq_str_([^=]*)="([^"]*).*')
         tickseq = []
+
+        errmsg = u'GET请求失败'
+        httperr = 400
         try:
             response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
-            if response.status_code != 200:
-                return False, u'GET请求失败，状态代码：%s' %response.status_code
+            httperr = response.status_code
+            if httperr != 200:
+                return httperr, u'GET请求失败，状态代码：%s' %response.status_code
         except Exception as e:
-            return False, u'GET请求触发异常，原因：%s' %e
+            return httperr, u'GET请求触发,异常：%s' %e
 
         for line in response.text.split('\n') :
             m = SYNTAX.match(line)
@@ -361,7 +290,7 @@ class SinaCrawler(MarketCrawler):
 
             tickseq.append(tickdata)
         
-        return True, tickseq
+        return httperr, tickseq
 
     #------------------------------------------------    
     def getMoneyFlow(self, symbol):
@@ -447,7 +376,8 @@ class SinaCrawler(MarketCrawler):
         return True, jsonData['data']
 
 if __name__ == '__main__':
-    md = SinaCrawler(None, None);
+    p = Program()
+    md = SinaCrawler(p, None);
     # _, result = md.searchKLines("000002", EVENT_KLINE_5MIN)
     # _, result = md.getRecentTicks('sh601006,sh601005,sh000001,sz000001')
     # _, result = md.getSplitRate('sh601006')

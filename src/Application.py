@@ -13,6 +13,7 @@ import time
 from copy import copy
 from abc import ABC, abstractmethod
 import traceback
+
 import shelve
 import jsoncfg # pip install json-cfg
 import json
@@ -35,7 +36,12 @@ def datetime2float(dt):
     return total_seconds
 
 ########################################################################
-class MetaApp(ABC):
+class MetaObj(ABC):
+    def ident(self) :
+        return '%s.%s' % (self.__class__.__name__, self._id)
+
+########################################################################
+class MetaApp(MetaObj):
 
     @abstractmethod
     def theApp(self):
@@ -410,6 +416,8 @@ class Program(object):
 
         self._pid = os.getpid() # process id
         self._progName = progName
+        self._topdir = '.' #TODO
+        self._shelvefn = '%s/%s.sobj' %(self._topdir, progName)
         
         # dirname(dirname(abspath(file)))
         settings= None
@@ -876,6 +884,26 @@ class Program(object):
         path = os.path.join(tempPath, name)
         return path
 
+    #-----about shelve -----------------------------------------------------
+    @abstractmethod
+    def saveObject(self, sobj):
+        if not self._shelve :
+            return False
+        self._shelve[sobj.ident] = sobj
+        self._shelve.close()
+
+    @abstractmethod
+    def loadObject(self, category, id):
+        """读取对象"""
+        try :
+            fn = '%s/objects/%s' % (self.dataRoot, category)
+            f = shelve.open(fn)
+            if id in f :
+                return f[id].value
+        except Exception as ex:
+            print("loadObject() error: %s %s" % (ex, traceback.format_exc()))
+
+        return None
 '''
     #----------------------------------------------------------------------
     def addMarketData(self, dsModule, settings):

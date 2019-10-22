@@ -16,13 +16,13 @@ import tensorflow as tf
 
 ########################################################################
 class psStack(object):
-    def __init__(self, fixedSize=0, nildata=None):
+    def __init__(self, evictSize=0, nildata=None):
         '''Constructor'''
         super(psStack, self).__init__()
         self._data =[]
-        self._fixedSize =fixedSize
-        if nildata and self._fixedSize and self._fixedSize>0 :
-            for i in range(self._fixedSize) :
+        self._evictSize =evictSize
+        if nildata and self._evictSize and self._evictSize>0 :
+            for i in range(self._evictSize) :
                 self._data.insert(0,nildata)
 
     @property
@@ -45,7 +45,7 @@ class psStack(object):
 
     def push(self, item):
         self._data.insert(0, item)
-        while self._fixedSize and self._fixedSize >0 and self.size > self._fixedSize:
+        while self._evictSize and self._evictSize >0 and self.size > self._evictSize:
             self.pop()
 
 ########################################################################

@@ -37,8 +37,13 @@ def datetime2float(dt):
 
 ########################################################################
 class MetaObj(ABC):
+
+    @abstractmethod
+    def id(self):
+        raise NotImplementedError
+
     def ident(self) :
-        return '%s.%s' % (self.__class__.__name__, self._id)
+        return '%s.%s' % (self.__class__.__name__, self.id())
 
 ########################################################################
 class MetaApp(MetaObj):
@@ -92,9 +97,8 @@ class BaseApplication(MetaApp):
             self._threadWished = True
 
     #----------------------------------------------------------------------
-    @property
-    def ident(self) :
-        return '%s.%s' % (self.__class__.__name__, self._id)
+    def id(self):
+        return self._id
 
     @property
     def app(self) : # for the thread wrapper
@@ -320,6 +324,9 @@ class Iterable(ABC):
         if not self._generator and self.resetRead() : # not perform reset here
             self._generator = self.__generate()
             self._c = 0
+
+        if not self._generator :
+            raise StopIteration
         return next(self._generator)
 
     def __generate(self):
@@ -1069,7 +1076,7 @@ if __name__ == "__main__":
             print("Foo.step %d\n" % self.__step)
 
     # a = BaseApplication() #wrong
-    p = Program()
+    p = Program(__file__)
     p._heartbeatInterval =-1
     p.createApp(Foo, {'asfs':1, 'aaa':'000'}, aaa='bbb', ccc='ddd')
     p.start()

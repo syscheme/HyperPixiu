@@ -12,38 +12,39 @@ import traceback
 
 import bz2
 import csv
-import tensorflow as tf
 import copy
+# import tensorflow as tf
 
 EVENT_Perspective  = MARKETDATE_EVENT_PREFIX + 'Persp'   # 错误回报事件
 
 ########################################################################
-class Stack(object):
-    def __init__(self, fixedSize=0, nildata=None):
+class EvictableStack(object):
+    def __init__(self, evictSize=0, nildata=None):
         '''Constructor'''
-        super(Stack, self).__init__()
+        super(EvictableStack, self).__init__()
         self._data =[]
-        self._fixedSize =fixedSize
+        self._evictSize = evictSize
         self._dataNIL = copy.copy(nildata) if nildata else None
-        if self._dataNIL and self._fixedSize and self._fixedSize>0 :
-            for i in range(self._fixedSize) :
-                self._data.insert(0, nildata)
+        # if self._dataNIL and self._evictSize and self._evictSize >0 :
+        #     for i in range(self._evictSize) :
+        #         self._data.insert(0, nildata)
 
     @property
     def top(self):
         return self._data[0] if len(self._data) >0 else None
 
     @property
-    def tsize(self):
-        return self._fixedSize
+    def evictSize(self):
+        return self._evictSize if self._evictSize else -1
 
     @property
     def size(self):
         return len(self._data) if self._data else 0
 
     @property
-    def tolist(self):
-        return self._data
+    def exportList(self):
+        fillsize = (self.evictSize - self.size) if self.evictSize >=0 else 0
+        return self._data + [self._dataNIL] *fillsize
 
     def overwrite(self, item):
         self._data[0] =item
@@ -53,7 +54,7 @@ class Stack(object):
 
     def push(self, item):
         self._data.insert(0, item)
-        while self._fixedSize and self._fixedSize >0 and self.size > self._fixedSize:
+        while self.evictSize >=0 and self.size > self.evictSize:
             del(self._data[-1])
 
 ########################################################################
@@ -81,15 +82,51 @@ class Perspective(EventData):
                 self._vtSymbol = '.'.join([self._symbol, self._exchange])
 
         self._stacks = {
-            EVENT_TICK:       Stack(tickDepth, TickData(self._exchange, self._symbol)),
-            EVENT_KLINE_1MIN: Stack(KLDepth_1min, KLineData(self._exchange, self._symbol)),
-            EVENT_KLINE_5MIN: Stack(KLDepth_5min, KLineData(self._exchange, self._symbol)),
-            EVENT_KLINE_1DAY: Stack(KLDepth_5min, KLineData(self._exchange, self._symbol)),
+            EVENT_TICK:       EvictableStack(tickDepth, TickData(self._exchange, self._symbol)),
+            EVENT_KLINE_1MIN: EvictableStack(KLDepth_1min, KLineData(self._exchange, self._symbol)),
+            EVENT_KLINE_5MIN: EvictableStack(KLDepth_5min, KLineData(self._exchange, self._symbol)),
+            EVENT_KLINE_1DAY: EvictableStack(KLDepth_5min, KLineData(self._exchange, self._symbol)),
         }
+
+        self.__stampLast =None
 
     @property
     def desc(self) :
-        return ''
+        str = self.__stampLast.strftime('%Y%m%dT%H%M%S') if self.__stampLast else ''
+        str += ': '
+        for i in [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
+            str += '%sx%s, ' % (i[4:], self._stacks[i].size)
+        return str
+
+    def push(self, ev) :
+        if not ev.type_ in self._stacks.keys():
+            return False
+
+        latestevd = self._stacks[ev.type_].top
+        if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
+            self._stacks[ev.type_].push(ev.data)
+            if not self.__stampLast or self.__stampLast < ev.data.datetime : self.__stampLast = ev.data.datetime
+            return True
+        
+        if not ev.data.exchange or latestevd.exchange and not '_k2x' in latestevd.exchange and not '_t2k' in latestevd.exchange :
+            return False # not overwritable
+
+        for i in range(len(self._stacks[ev.type_])) :
+            if ev.data.datetime > self._stacks[ev.type_][i].datetime :
+                continue
+            if ev.data.datetime == self._stacks[ev.type_][i] :
+                self._stacks[ev.type_][i] = ev.data
+                return True
+            else :
+                self._stacks[ev.type_].insert(i, ev.data)
+                while self._stacks[ev.type_].evictSize >=0 and self._stacks[ev.type_].size > self._stacks[ev.type_].evictSize:
+                    del(self._stacks[ev.type_]._data[-1])
+                return True
+        
+        self._stacks[ev.type_].insert(-1, ev.data)
+        while self._stacks[ev.type_].evictSize >=0 and self._stacks[ev.type_].size > self._stacks[ev.type_].evictSize:
+            del(self._stacks[ev.type_]._data[-1])
+        return True
 
 ########################################################################
 class PerspectiveGenerator(Iterable):
@@ -136,9 +173,9 @@ class PerspectiveGenerator(Iterable):
 
             latestevd = self._perspective._stacks[ev.type_].top
             if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
-                self._perspective._stacks[ev.type_].push(ev.data)
-                evPsp = Event(EVENT_Perspective)
-                evPsp.setData(self._perspective)
-                return evPsp
+                if self._perspective.push(ev) :
+                    evPsp = Event(EVENT_Perspective)
+                    evPsp.setData(self._perspective)
+                    return evPsp
                 
         return None

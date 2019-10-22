@@ -6,7 +6,7 @@ This module defines a basic account
 from __future__ import division
 
 from EventData    import EventData, EVENT_NAME_PREFIX
-from Application  import BaseApplication, datetime2float
+from Application  import MetaObj, BaseApplication, datetime2float
 # from .DataRecorder import CsvRecorder, MongoRecorder
 
 from abc import ABCMeta, abstractmethod
@@ -22,7 +22,7 @@ import jsoncfg # pip install json-cfg
 # from pymongo import ASCENDING
 
 ########################################################################
-class Account(BaseApplication):
+class Account(MetaObj):
     """
     Basic Account
     """

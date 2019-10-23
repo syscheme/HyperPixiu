@@ -66,7 +66,7 @@ class Recorder(BaseApplication):
         while self.isActive:
             try:
                 category, row = self._queRowsToRecord.get(block=False, timeout=0.05)
-                self.saveRow(category, row)
+                self._saveRow(category, row)
                 cStep +=1
             except: # Empty:
                 break
@@ -76,6 +76,16 @@ class Recorder(BaseApplication):
     #----------------------------------------------------------------------
     def pushRow(self, category, row):
         self._queRowsToRecord.put((category, row))
+
+    @abstractmethod
+    def configIndex(self, category, definition, unique=False):
+        """定义某category collection的index"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def _saveRow(self, category, dataDict) :
+        # coll = self.findCollection(self, category)
+        raise NotImplementedError
 
     def registerCollection(self, category, params= {}):
         '''
@@ -89,12 +99,6 @@ class Recorder(BaseApplication):
 
     def findCollection(self, category) :
         return self._dictDR[category] if category in self._dictDR.keys() else None
-
-    @abstractmethod
-    def saveRow(self, category, dataDict) :
-        # coll = self.findCollection(self, category)
-        pass # TODO
-
 
 ########################################################################
 import csv
@@ -149,7 +153,12 @@ class CsvRecorder(Recorder):
 
         return coll
 
-    def saveRow(self, category, row) :
+    @abstractmethod
+    def configIndex(self, category, definition, unique=False):
+        """定义某category collection的index"""
+        pass # nothing to do as csv doesn't support index
+
+    def _saveRow(self, category, row) :
         collection =  self.findCollection(category)
         if not collection:
             self.debug('collection[%s] not registered, ignore' % category)
@@ -436,12 +445,12 @@ class MongoRecorder(Recorder):
         if params:
             coll['params'] = params
             if 'index' in params.keys():
-                # self.dbEnsureIndex(collectionName, [('date', ASCENDING), ('time', ASCENDING)], True, dbName) #self._dbNamePrefix +e
-                self.dbEnsureIndex(cn, params['index'], True, dbName) #self._dbNamePrefix +e
+                # self.configIndex(collectionName, [('date', ASCENDING), ('time', ASCENDING)], True, dbName) #self._dbNamePrefix +e
+                self.configIndex(cn, params['index'], True, dbName) #self._dbNamePrefix +e
 
         return coll
 
-    def saveRow(self, category, row) :
+    def _saveRow(self, category, row) :
         collection =  self.findCollection(category)
         if not collection:
             self.debug('collection[%s] not registered, ignore' % category)
@@ -452,6 +461,11 @@ class MongoRecorder(Recorder):
             self.debug('DB %s[%s] inserted: %s' % (collection['dbName'], collection['collectionName'], row))
         except DuplicateKeyError:
             self.error('键值重复插入失败：%s' %traceback.format_exc())
+
+    @abstractmethod
+    def configIndex(self, category, definition, unique=False):
+        """定义某category collection的index"""
+        # TODO
 
 ########################################################################
 class MongoPlayback(Playback):

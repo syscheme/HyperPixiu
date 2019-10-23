@@ -16,6 +16,7 @@ import copy
 # import tensorflow as tf
 
 EVENT_Perspective  = MARKETDATE_EVENT_PREFIX + 'Persp'   # 错误回报事件
+__dtEpoch = datetime.utcfromtimestamp(0)
 
 ########################################################################
 class EvictableStack(object):
@@ -88,15 +89,32 @@ class Perspective(EventData):
             EVENT_KLINE_1DAY: EvictableStack(KLDepth_5min, KLineData(self._exchange, self._symbol)),
         }
 
-        self.__stampLast =None
+        self.__stampLast = None
+        self.__focusLast = None
 
     @property
     def desc(self) :
-        str = self.__stampLast.strftime('%Y%m%dT%H%M%S') if self.__stampLast else ''
+        str = self.asof.strftime('%Y%m%dT%H%M%S')
         str += ': '
         for i in [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
             str += '%sx%s, ' % (i[4:], self._stacks[i].size)
         return str
+
+    @property
+    def asof(self) :
+        return self.__stampLast if self.__stampLast else __dtEpoch
+
+    @property
+    def latestPrice(self) :
+        stk = self._readers[self.__focusLast]
+        if stk or stk.size >0:
+            return stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
+
+        for et in Perspective.EVENT_SEQ:
+            stk = self._readers[self.__focusLast]
+            if not stk or stk.size <=0:
+                continue
+            return stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
 
     def push(self, ev) :
         if not ev.type_ in self._stacks.keys():
@@ -105,7 +123,9 @@ class Perspective(EventData):
         latestevd = self._stacks[ev.type_].top
         if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
             self._stacks[ev.type_].push(ev.data)
-            if not self.__stampLast or self.__stampLast < ev.data.datetime : self.__stampLast = ev.data.datetime
+            if not self.__stampLast or self.__stampLast < ev.data.datetime :
+                self.__stampLast = ev.data.datetime
+                self.__focusLast = ev.type_
             return True
         
         if not ev.data.exchange or latestevd.exchange and not '_k2x' in latestevd.exchange and not '_t2k' in latestevd.exchange :
@@ -179,3 +199,8 @@ class PerspectiveGenerator(Iterable):
                     return evPsp
                 
         return None
+
+########################################################################
+class MarketObserver(BaseApplication):
+    '''
+    '''

@@ -6,7 +6,8 @@ This module defines a basic account
 from __future__ import division
 
 from EventData    import EventData, EVENT_NAME_PREFIX
-from Application  import MetaObj, BaseApplication, datetime2float
+from Application  import BaseApplication, datetime2float
+import HistoryData  as hist
 # from .DataRecorder import CsvRecorder, MongoRecorder
 
 from abc import ABCMeta, abstractmethod
@@ -14,24 +15,22 @@ from datetime import datetime, timedelta
 from collections import OrderedDict
 
 # from itertools import product
-import multiprocessing
 import copy
-import threading
 import traceback
 import jsoncfg # pip install json-cfg
 # from pymongo import ASCENDING
 
 ########################################################################
-class Account(MetaObj):
+class Account(BaseApplication):
     """
     Basic Account
     """
     __lastId__ =10000
 
     EVENT_PREFIX   = EVENT_NAME_PREFIX + 'acc'
-    EVENT_ORDER    = EVENT_PREFIX +'Order'                 # 报单回报事件, data=OrderData
-    EVENT_TRADE    = EVENT_PREFIX + 'Trade'                # 报单回报事件, data=TradeData
-    EVENT_DAILYPOS = EVENT_PREFIX + 'DPos'              # 每日交易事件, data=DailyPosition
+    EVENT_ORDER    = EVENT_PREFIX +'Order'    # 报单事件, data=OrderData
+    EVENT_TRADE    = EVENT_PREFIX +'Trade'    # 报单回报事件, data=TradeData
+    EVENT_DAILYPOS = EVENT_PREFIX +'DPos'     # 每日持仓事件, data=DailyPosition
 
     # state of Account
     STATE_OPEN  = 'open'   # during trading hours
@@ -43,19 +42,30 @@ class Account(MetaObj):
     BROKER_API_ASYNC = 'brocker.async' # async API to call broker
 
     #----------------------------------------------------------------------
-    def __init__(self, trader, settings):
+    def __init__(self, program, accountId, exchange, ratePer10K =30, contractSize=1, slippage =0.0, priceTick=0.0, settings =None):
         """Constructor
         """
-        super(Account, self).__init__(trader._program, settings)
+        super(Account, self).__init__(program, settings)
 
+        self._id       = accountId
+        self._exchange = exchange
+
+        self._slippage  = slippage
+        self._rate      = ratePer10K
+        self._csize     = contractSize
+        self._priceTick = priceTick
+ 
         self._lock = threading.Lock()
-
-        self._settings     = settings
-        self._trader       = trader
+        if self._settings:
+            self._id       = self._settings.id(self._id)
+            self._exchange = self._settings.exchange(self._exchange)
+            self._slippage = self._settings.slippage(self._slippage)
+            self._rate     = self._settings.rate(self._rate)
+            self._csize    = self._settings.csize(self._csize)
+            self._priceTick = self._settings.priceTick(self._priceTick)
 
         # the app instance Id
-        self._id = settings.id("")
-        if len(self._id)<=0 :
+        if not self._id or len(self._id)<=0 :
             Account.__lastId__ +=1
             self._id = 'ACNT%d' % Account.__lastId__
 
@@ -65,14 +75,8 @@ class Account(MetaObj):
         self._state        = Account.STATE_CLOSE
         self._mode         = Account.BROKER_API_ASYNC
 
-        #create a data recorder for the Account events
-        rectype = settings.recorder('csv')
-        if self._trader :
-            self._datePath = self._trader._dataPath
-        if rectype == 'mongo' :
-            self._recorder = MongoRecorder(self._program, settings)
-        else:
-            self._recorder = CsvRecorder(self._program, settings)
+        self._recorder = None
+        self._marketObserver = None
 
         # trader executer
         # self._dvrBroker = dvrBrokerClass(self, self._settings)
@@ -98,9 +102,9 @@ class Account(MetaObj):
         # self._cashAvail =0
         
         self._dbName   = self._settings.dbName(self._id)           # 假设的滑点
-        self.slippage  = self._settings.slippage(0)           # 假设的滑点
-        self.rate      = self._settings.ratePer10K(30)/10000  # 假设的佣金比例（适用于百分比佣金）
-        self.size      = self._settings.size(1)               # 合约大小，默认为1    
+        self._slippage  = self._settings.slippage(0)           # 假设的滑点
+        self._rate      = self._settings.ratePer10K(30)/10000  # 假设的佣金比例（适用于百分比佣金）
+        self._csize      = self._settings.size(1)               # 合约大小，默认为1    
         self._priceTick = self._settings.priceTick(0)      # 价格最小变动 
         
         self._stampLastSync =0
@@ -112,15 +116,11 @@ class Account(MetaObj):
     # @abstractmethod
     @property
     def cashSymbol(self):
-        return '.RMB.' # the dummy symbol in order to represent cache in _dictPositions
+        return SYMBOL_CASH # the dummy symbol in order to represent cache in _dictPositions
 
     @property
     def priceTick(self):
         return self._priceTick
-
-    @property
-    def dataRoot(self) :
-        return self._trader.dataRoot
 
     @property
     def dbName(self):
@@ -152,7 +152,7 @@ class Account(MetaObj):
     def getAllPositions(self): # returns PositionData
         with self._lock :
             for pos in self._dictPositions.values() :
-                price = self._trader.latestPrice(pos.symbol)
+                price = self._marketObserver.latestPrice(pos.symbol)
                 if price >0:
                     pos.price = price
             return copy.deepcopy(self._dictPositions)
@@ -161,7 +161,7 @@ class Account(MetaObj):
     def cashAmount(self): # returns (avail, total)
         with self._lock :
             pos = self._dictPositions[self.cashSymbol]
-            volprice = pos.price * self.size
+            volprice = pos.price * self._csize
             return (pos.posAvail * volprice), (pos.position * volprice)
 
     def cashChange(self, dAvail=0, dTotal=0):
@@ -170,11 +170,11 @@ class Account(MetaObj):
 
     @abstractmethod
     def insertData(self, collectionName, data) :
-        self._trader.dbInsert(self._dbName, collectionName, data)
+        if self._recorder :
+            self._recorder.pushRow(collectionName, data)
 
     def postEvent_Order(self, orderData):
-        self._trader.postEvent(Account.EVENT_ORDER, copy.copy(orderData))
-        self.debug('posted %s[%s]' % (Account.EVENT_ORDER, orderData.brokerOrderId))
+        self.postEventData(Account.EVENT_ORDER, copy.copy(orderData))
 
     #----------------------------------------------------------------------
     # Account operations
@@ -411,13 +411,13 @@ class Account(MetaObj):
                 tradeAmount = turnover + commission + slippage
                 self._cashChange(-tradeAmount, -tradeAmount)
                 # calclulate pos.avgPrice
-                if self.size <=0:
-                    self.size =1
-                cost = pos.position * pos.avgPrice *self.size
+                if self._csize <=0:
+                    self._csize =1
+                cost = pos.position * pos.avgPrice *self._csize
                 cost += tradeAmount
                 pos.position += trade.volume
                 if pos.position >0:
-                    pos.avgPrice = cost / pos.position /self.size
+                    pos.avgPrice = cost / pos.position /self._csize
                 else: pos.avgPrice =0
 
                 # TODO: T+0 also need to increase pos.avalPos
@@ -425,13 +425,13 @@ class Account(MetaObj):
             pos.stampByTrader = trade.dt  # the current position is calculated based on trade
             self.info('broker_onTrade() processed: %s=>pos' % (trade.desc))#, pos.desc))
 
-        self._trader.postEvent(Account.EVENT_TRADE, copy.copy(trade))
+        self.postEventData(Account.EVENT_TRADE, copy.copy(trade))
 
-    @abstractmethod
-    def _broker_datetimeAsOf(self):
-        if self._trader._dtData:
-            return self._trader._dtData
-        return datetime.now()
+    # @abstractmethod
+    # def _broker_datetimeAsOf(self):
+    #     if self._trader._dtData:
+    #         return self._trader._dtData
+    #     return datetime.now()
 
     @abstractmethod
     def _broker_onOpenOrders(self, dictOrders):
@@ -478,7 +478,6 @@ class Account(MetaObj):
             for o in self._dictStopOrders.keys() :
                 if not o in orderIds:
                     gonelist.append(self._dictStopOrders[o])
-
 
         self.warn('unrecognized open orders, force to cancel: %s' % newlist)
         self.batchCancel(newlist)
@@ -532,18 +531,39 @@ class Account(MetaObj):
 
     @abstractmethod
     def init(self): # return True if succ
-        if self._recorder and not self._recorder.init() :
-           return False
+        if not self._recorder :
+            # find the recorder from the program
+            searchKey = '.%s' % self._id
+            for recorderId in self._program.listAppsOfType(hist.Recorder) :
+                pos = recorderId.find(searchKey)
+                if pos >0 and recorderId[pos:] == searchKey:
+                    self._recorder = self._program.findApp(recorderId)
+                    if self._recorder : break
 
-        return super(Account, self).init()
-
-    @abstractmethod
-    def start(self):
         if self._recorder :
-           self._recCatgDPosition = 'ACC/dpos.%s' %(self._id)
-           self._recorder.setDataDir(self.dataRoot)
-           self._recorder.registerCollection(self._recCatgDPosition, params= {'index': [('date', ASCENDING), ('time', ASCENDING)], 'columns' : ['date','symbol']})
-           self._recorder.start()
+            self.info('taking recoder[%s]' % self._recoder.ident)
+            self._recCatgDPosition = 'ACC/dpos.%s' %(self._id)
+            self._recorder.setDataDir(self.dataRoot)
+            self._recorder.registerCollection(self._recCatgDPosition, params= {'index': [('date', ASCENDING), ('time', ASCENDING)], 'columns' : ['date','symbol']})
+
+            # ensure the DB collection has the index applied
+            self._recorder.configIndex(self.collectionName_trade, [('brokerTradeId', ASCENDING)], True)
+            self._recorder.configIndex(self.collectionName_dpos,  [('date', ASCENDING), ('symbol', ASCENDING)], True)
+
+        if not self._marketObserver :
+            searchKey = '.%s' % self._exchange
+            for obsId in self._program.listAppsOfType(MarketObeserver) :
+                pos = recorderId.find(searchKey)
+                if pos >0 and obsId[pos:] == searchKey:
+                    self._marketObserver = self._program.findApp(obsId)
+                    if self._marketObserver : break
+
+        if not self._marketObserver :
+            self.error('no MarketObeserver found')
+            return False
+
+        self.info('taking MarketObeserver[%s]' % self._marketObserver.ident)
+        return super(Account, self).init()
 
     @abstractmethod
     def step(self):
@@ -593,9 +613,6 @@ class Account(MetaObj):
             self._brocker_triggerSync()
             cStep +=1
 
-        if cStep<=0 and self._recorder :
-            cStep += self._recorder.step()
-
         return cStep
 
     # end of App routine
@@ -604,11 +621,11 @@ class Account(MetaObj):
     @abstractmethod
     def _cashChange(self, dAvail=0, dTotal=0): # thread unsafe
         pos = self._dictPositions[self.cashSymbol]
-        volprice = pos.price * self.size
+        volprice = pos.price * self._csize
         if pos.price <=0 :   # if cache.price not initialized
             volprice = pos.price =1
-            if self.size >0:
-                pos.price /=self.size
+            if self._csize >0:
+                pos.price /=self._csize
 
         dAvail /= volprice
         dTotal /= volprice
@@ -622,7 +639,7 @@ class Account(MetaObj):
 
         pos.posAvail = newAvail
         pos.position = newTotal
-        pos.stampByTrader = self._broker_datetimeAsOf()
+        pos.stampByTrader = self._marketObserver.asof
         return True
 
     #----------------------------------------------------------------------
@@ -641,10 +658,10 @@ class Account(MetaObj):
         volume =0
         if price > 0 :
             cash, _  = self.cashAmount()
-            volume   = round(cash / price / self.size -0.999,0)
+            volume   = round(cash / price / self._csize -0.999,0)
             turnOver, commission, slippage = self.calcAmountOfTrade(symbol, price, volume)
             if cash < (turnOver + commission + slippage) :
-                volume -= int((commission + slippage) / price / self.size) +1
+                volume -= int((commission + slippage) / price / self._csize) +1
             if volume <=0:
                 volume =0
         
@@ -665,13 +682,6 @@ class Account(MetaObj):
     #----------------------------------------------------------------------
     # callbacks about timing
     #----------------------------------------------------------------------
-    @abstractmethod
-    def onStart(self):
-        # ensure the DB collection has the index applied
-        self._trader.dbEnsureIndex(self.collectionName_trade, [('brokerTradeId', ASCENDING)], True)
-        self._trader.dbEnsureIndex(self.collectionName_dpos,  [('date', ASCENDING), ('symbol', ASCENDING)], True)
-        return True
-
     @abstractmethod
     def onDayClose(self):
         self.dbSaveDataOfDay() # save the account data into DB
@@ -710,20 +720,22 @@ class Account(MetaObj):
         1) trades that confirmed
         2) 
         '''
-        if not self._trader:
+        if not self._recorder :
             return
 
         with self._lock :
             # part 1. the confirmed trades
             tl = self._dictTrades.values()
             for t in tl:
-                self._trader.dbUpdate(self.collectionName_trade, t.__dict__, {'brokerTradeId': t.brokerTradeId})
+                # self._trader.dbUpdate(self.collectionName_trade, t.__dict__, {'brokerTradeId': t.brokerTradeId})
+                self._recorder.pushRow(self.collectionName_trade, t.__dict__)
             self.info('saveDataOfDay() saved %s trades' % len(tl))
 
         # part 2. the daily position
         positions, _ = self.calcDailyPositions()
         for dpos in positions:
-            self._trader.dbUpdate(self.collectionName_dpos, dpos, {'date':dpos['date'], 'symbol':dpos['symbol']})
+            # self._trader.dbUpdate(self.collectionName_dpos, dpos, {'date':dpos['date'], 'symbol':dpos['symbol']})
+            self._recorder.pushRow(self.collectionName_dpos, dpos)
         self.info('saveDataOfDay() saved positions into DB: %s' % positions)
 
     @abstractmethod
@@ -801,7 +813,7 @@ class Account(MetaObj):
                     pass
                 self._recorder.pushRow(self._recCatgDPosition, row)
 
-            self._trader.postEvent(Account.EVENT_DAILYPOS, dpos)
+            self.postEventData(Account.EVENT_DAILYPOS, dpos)
             result.append(dpos.__dict__)
 
         return result, tradesOfSymbol
@@ -814,14 +826,14 @@ class Account_AShare(Account):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self, trader, settings=None):
+    def __init__(self, program, ratePer10K =30, settings=None):
         """Constructor"""
-        super(Account_AShare, self).__init__(trader, settings)
+        super(Account_AShare, self).__init__(program, accountId, exchange ='AShare', ratePer10K =ratePer10K, contractSize=100, slippage =0.0, priceTick=0.01, settings =settings)
 
     #----------------------------------------------------------------------
     def calcAmountOfTrade(self, symbol, price, volume):
         # 交易手续费=印花税+过户费+券商交易佣金
-        volumeX1 = abs(volume) * self.size
+        volumeX1 = abs(volume) * self._csize
         turnOver = price * volumeX1
 
         # 印花税: 成交金额的1‰ 。目前向卖方单边征收
@@ -835,9 +847,9 @@ class Account_AShare(Account):
             transfer = int((volumeX1+999)/1000)
             
         #3.券商交易佣金 最高为成交金额的3‰，最低5元起，单笔交易佣金不满5元按5元收取。
-        commission = max(turnOver * self.rate, 5)
+        commission = max(turnOver * self._rate, 5)
 
-        return turnOver, tax + transfer + commission, volumeX1 * self.slippage
+        return turnOver, tax + transfer + commission, volumeX1 * self._slippage
 
     @abstractmethod
     def onDayOpen(self, newDate):
@@ -1046,7 +1058,7 @@ class DailyPosition(object):
                 
         self.turnover    = EventData.EMPTY_FLOAT        # 成交量
         self.commission  = EventData.EMPTY_FLOAT       # 手续费
-        self.slippage    = EventData.EMPTY_FLOAT         # 滑点
+        self._slippage    = EventData.EMPTY_FLOAT         # 滑点
 
         self.tradingPnl  = EventData.EMPTY_FLOAT    # 交易盈亏
         self.positionPnl = EventData.EMPTY_FLOAT     # 持仓盈亏
@@ -1077,7 +1089,7 @@ class DailyPosition(object):
         if ohlc:
             self.execOpen, self.execHigh, self.execLow, _ = ohlc
 
-        # self.calcMValue  = round(calcPosition*currentPos.price*self.size , 2),     # 昨日收盘
+        # self.calcMValue  = round(calcPosition*currentPos.price*self._csize , 2),     # 昨日收盘
     def pushTrade(self, account, trade) :
         '''
         DayX bought some:
@@ -1115,7 +1127,7 @@ class DailyPosition(object):
         tover, comis, slpfee = account.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
         self.turnover += round(tover, 3)
         self.commission += round(comis, 3)
-        self.slippage += round(slpfee, 3)
+        self._slippage += round(slpfee, 3)
 
     def close(self) :
         # 汇总
@@ -1123,7 +1135,7 @@ class DailyPosition(object):
         self.tradingPnl = round(self.tradingPnl, 3)
 
         self.totalPnl = self.tradingPnl + self.positionPnl
-        self.netPnl   = self.totalPnl - self.commission - self.slippage
+        self.netPnl   = self.totalPnl - self.commission - self._slippage
         # stampstr = ''
         # if currentPos.stampByTrader :
         #     stampstr += currentPos.stampByTrader

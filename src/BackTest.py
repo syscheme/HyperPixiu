@@ -274,7 +274,7 @@ class BackTestApp(Trader):
     #                 closedVolume = min(exitTrade.volume, entryTrade.volume)
     #                 result = TradingResult(entryTrade.price, entryTrade.dt, 
     #                                        exitTrade.price, exitTrade.dt,
-    #                                        -closedVolume, self.rate, self.slippage, self.account.size)
+    #                                        -closedVolume, self._rate, self._slippage, self.account.size)
 
     #                 self.resultList.append(result)
                     
@@ -323,7 +323,7 @@ class BackTestApp(Trader):
     #             closedVolume = min(exitTrade.volume, entryTrade.volume)
     #             result = TradingResult(entryTrade.price, entryTrade.dt, 
     #                                    exitTrade.price, exitTrade.dt,
-    #                                    closedVolume, self.rate, self.slippage, self.account.size)
+    #                                    closedVolume, self._rate, self._slippage, self.account.size)
 
     #             self.resultList.append(result)
     #             self.posList.extend([1,0])
@@ -364,13 +364,13 @@ class BackTestApp(Trader):
     #     # 到最后交易日尚未平仓的交易，则以最后价格平仓
     #     for trade in buyTrades:
     #         result = TradingResult(trade.price, trade.dt, self._execEndClose, self._dtData, 
-    #                                trade.volume, self.rate, self.slippage, self.account.size)
+    #                                trade.volume, self._rate, self._slippage, self.account.size)
     #         self.resultList.append(result)
     #         txnstr += '%+dx%.2f' % (trade.volume, trade.price)
             
     #     for trade in sellTrades:
     #         result = TradingResult(trade.price, trade.dt, self._execEndClose, self._dtData, 
-    #                                -trade.volume, self.rate, self.slippage, self.account.size)
+    #                                -trade.volume, self._rate, self._slippage, self.account.size)
     #         self.resultList.append(result)
     #         txnstr += '%-dx%.2f' % (trade.volume, trade.price)
 

@@ -36,17 +36,7 @@ def datetime2float(dt):
     return total_seconds
 
 ########################################################################
-class MetaObj(ABC):
-
-    @abstractmethod
-    def id(self):
-        raise NotImplementedError
-
-    def ident(self) :
-        return '%s.%s' % (self.__class__.__name__, self.id())
-
-########################################################################
-class MetaApp(MetaObj):
+class MetaApp(ABC):
 
     @abstractmethod
     def theApp(self):
@@ -97,8 +87,9 @@ class BaseApplication(MetaApp):
             self._threadWished = True
 
     #----------------------------------------------------------------------
-    def id(self):
-        return self._id
+    @property
+    def ident(self) :
+        return '%s.%s' % (self.__class__.__name__, self._id)
 
     @property
     def app(self) : # for the thread wrapper
@@ -174,7 +165,7 @@ class BaseApplication(MetaApp):
             return
 
         event = Event(type_= eventType)
-        event.dict_['data'] = edata
+        event.setData(edata)
         self.postEvent(event)
 
     def postEvent(self, event):
@@ -520,7 +511,7 @@ class Program(object):
         for et in self.__subscribers.keys() :
             self.unsubscribe(et, app)
 
-        appId = app.theApp.ident
+        appId = app.theApp().ident
         if not appId in self._dictApps.keys():
             return None
 
@@ -531,6 +522,18 @@ class Program(object):
     def getApp(self, appId):
         """获取APP对象"""
         return self._dictApps[appId].theApp()
+
+    def listAppsOfType(self, type):
+        """list app object of a given type and its children
+        @return a list of appId
+        """
+        ret = []
+        for aid, app in self._dictApps.items():
+            if not app or not isinstance(app.theApp(), type):
+                continue
+            ret.append(aid)
+        
+        return ret
 
     #----------------------------------------------------------------------
     def start(self, daemonize=None):
@@ -983,7 +986,7 @@ class Program(object):
     
     #----------------------------------------------------------------------
     @abstractmethod
-    def dbEnsureIndex(self, dbName, collectionName, definition, unique=False):
+    def configIndex(self, dbName, collectionName, definition, unique=False):
         """向MongoDB中定义index"""
         if not self._dbConn:
             self.error(text.DATA_INSERT_FAILED)
@@ -992,7 +995,7 @@ class Program(object):
         db = self._dbConn[dbName]
         collection = db[collectionName]
         collection.ensure_index(definition, unique)
-        self.debug('dbEnsureIndex() %s.%s added: %s' % (dbName, collectionName, definition))
+        self.debug('configIndex() %s.%s added: %s' % (dbName, collectionName, definition))
 
     @abstractmethod
     def dbInsert(self, dbName, collectionName, d):

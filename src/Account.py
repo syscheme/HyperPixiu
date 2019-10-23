@@ -789,7 +789,7 @@ class Account(BaseApplication):
         for s in tradesOfSymbol.keys():
 
             currentPos = currentPositions[s]
-            ohlc =  self._trader.getOHLC(s)
+            ohlc =  self._marketObserver.todayOHLC(s)
 
             if s in self._prevPositions:
                 with self._lock :

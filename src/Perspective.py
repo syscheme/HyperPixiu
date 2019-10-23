@@ -200,7 +200,3 @@ class PerspectiveGenerator(Iterable):
                 
         return None
 
-########################################################################
-class MarketObserver(BaseApplication):
-    '''
-    '''

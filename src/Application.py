@@ -57,34 +57,31 @@ class BaseApplication(MetaApp):
     HEARTBEAT_INTERVAL_DEFAULT = 5 # 5sec
     
     #----------------------------------------------------------------------
-    def __init__(self, program, settings={}):
+    def __init__(self, program, settings):
         """Constructor"""
 
         super(BaseApplication,self).__init__()
         
         self._program = program
-        self._settings = settings
-        if not self._settings or not isinstance(self._settings, dict) :
-            self._settings ={}
-        
-        self._active = False    # 工作状态
+        self.__active = False    # 工作状态
         self._threadWished = False
+        self._id =""
 
-        self._gen = self._generator()
+        self._settings = None
+        if settings :
+            self._settings = settings
+            self._settings = settings if isinstance(settings, dict) else json.loads(s=settings)
+
+            self._id        = settings.id('')
+            self._dataPath  = settings.id('dataPath')
+            self._threadWished = settings.threaded('False') in BOOL_TRUE
 
         # the app instance Id
-        self._id =""
-        if 'id' in self._settings.keys() :
-            self._id = self._settings['id']
-
         if len(self._id)<=0 :
             BaseApplication.__lastId__ +=1
             self._id = 'P%d' % BaseApplication.__lastId__
 
-        if 'dataPath' in self._settings.keys()  :
-            self._dataPath  = self._settings['dataPath']
-        if 'threaded' in self._settings.keys() and self._settings['threaded'] in BOOL_TRUE:
-            self._threadWished = True
+        self.__gen = self._generator()
 
     #----------------------------------------------------------------------
     @property
@@ -109,20 +106,20 @@ class BaseApplication(MetaApp):
 
     @property
     def isActive(self) :
-        return self._active
+        return self.__active
 
     #------Impl of MetaApp --------------------------------------------------
     def theApp(self): return self
 
     def start(self):
         # TODO:
-        self._active = True
-        next(self._gen)
-        return self._active
+        self.__active = True
+        next(self.__gen)
+        return self.__active
 
     def stop(self):
         # TODO:
-        self._active = False
+        self.__active = False
 
     #--- pollable step routine for ThreadedAppWrapper -----------------------
     @abstractmethod
@@ -150,7 +147,7 @@ class BaseApplication(MetaApp):
                 self.OnEvent(event)
 
     def _procEvent(self, event) : # called by Program
-        return self._gen.send(event)
+        return self.__gen.send(event)
 
     #---- event operations ---------------------------
     def subscribeEvent(self, event, funcCallback) :
@@ -416,19 +413,20 @@ class Program(object):
         self._progName = progName
         self._topdir = '.' #TODO
         self._shelvefn = '%s/%s.sobj' %(self._topdir, progName)
-        
+        self._threadless = True
+        self._heartbeatInterval = BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # heartbeat间隔（默认1秒）
+        self.__daemonize =False
         # dirname(dirname(abspath(file)))
-        settings= None
+        self._settings = {}
         if setting_filename :
             try :
                 settings= jsoncfg.load_config(setting_filename)
+                self._settings = settings
+                self.__daemonize = settings.daemonize('False') in BOOL_TRUE
+                self._heartbeatInterval = int(settings.heartbeatInterval(BaseApplication.HEARTBEAT_INTERVAL_DEFAULT))
             except Exception as e :
                 print('failed to load configure[%s]: %s' % (setting_filename, e))
                 return
-
-        self._settings = settings
-        self._threadless = True
-        self._dictApps ={}
 
         # 记录今日日期
         self._runStartDate = datetime.now().strftime('%Y%m%d')
@@ -439,11 +437,11 @@ class Program(object):
         
         # 事件队列
         self.__queue = Queue()
+        self.__dictApps ={}
         
         # heartbeat
-        self._heartbeatInterval = int(self._settings.heartbeatInterval("1")) if self._settings else BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # heartbeat间隔（默认1秒）
         self.__stampLastHB = None
-
+            
         # __subscribers字典，用来保存对应的事件到appId的订阅关系
         # 其中每个键对应的值是一个列表，列表中保存了对该事件进行监听的appId
         self.__subscribers = {}
@@ -469,10 +467,10 @@ class Program(object):
         id = app.theApp().ident
         
         # 创建应用实例
-        self._dictApps[id] = app
+        self.__dictApps[id] = app
         
         # 将应用引擎实例添加到主引擎的属性中
-        self.__dict__[id] = self._dictApps[id]
+        self.__dict__[id] = self.__dictApps[id]
         self.info('app[%s] added' %(id))
 
         # TODO maybe test isinstance(apptype, MarketData) to ease index and so on
@@ -486,15 +484,15 @@ class Program(object):
         # if not isinstance(appModule, BaseApplication):
         #     return None
 
-        if settings and not isinstance(settings, dict) :
-            self._settings = json.loads(s=settings)
-        else:
-            self._settings = settings
-        if not self._settings or not isinstance(self._settings, dict) :
-            self._settings ={}
+        # if settings and not isinstance(settings, dict) :
+        #     settings = json.loads(s=settings)
+        # else:
+        #     settings = settings
+        # if not self._settings or not isinstance(settings, dict) :
+        #     settings ={}
         
-        if len(kwargs) >0:
-            self._settings = {**self._settings, **kwargs}
+        # if len(kwargs) >0:
+        #     settings = {**self._settings, **kwargs}
 
         app = appModule(self, settings)
         if not app: return
@@ -512,23 +510,23 @@ class Program(object):
             self.unsubscribe(et, app)
 
         appId = app.theApp().ident
-        if not appId in self._dictApps.keys():
+        if not appId in self.__dictApps.keys():
             return None
 
-        ret = self._dictApps[appId]
-        del self._dictApps[appId]
+        ret = self.__dictApps[appId]
+        del self.__dictApps[appId]
         return ret
 
     def getApp(self, appId):
         """获取APP对象"""
-        return self._dictApps[appId].theApp()
+        return self.__dictApps[appId].theApp()
 
     def listAppsOfType(self, type):
         """list app object of a given type and its children
         @return a list of appId
         """
         ret = []
-        for aid, app in self._dictApps.items():
+        for aid, app in self.__dictApps.items():
             if not app or not isinstance(app.theApp(), type):
                 continue
             ret.append(aid)
@@ -536,11 +534,11 @@ class Program(object):
         return ret
 
     #----------------------------------------------------------------------
-    def start(self, daemonize=None):
-
-        daemonize = self._settings.daemonize(False) if daemonize == None and self._settings else False
-            
+    def start(self, daemonize=False):
         if daemonize :
+           self.__daemonize = True
+
+        if self.__daemonize :
             self.daemonize()
 
         self._bRun =True
@@ -561,7 +559,7 @@ class Program(object):
         '''
 
         self.debug('starting applications')
-        for (k, app) in self._dictApps.items() :
+        for (k, app) in self.__dictApps.items() :
             if app == None:
                 continue
             
@@ -583,7 +581,7 @@ class Program(object):
         '''
         
         # 停止上层应用引擎
-        for app in self._dictApps.values():
+        for app in self.__dictApps.values():
             app.stop()
         
         # # 保存数据引擎里的合约数据到硬盘
@@ -639,7 +637,7 @@ class Program(object):
                 if not event :
                     # if blocking: # ????
                     #     continue
-                    for (k, app) in self._dictApps.items() :
+                    for (k, app) in self.__dictApps.items() :
                         # if threaded, it has its own trigger to step()
                         if not app or isinstance(app, ThreadedAppWrapper) or not app.isActive:
                             continue

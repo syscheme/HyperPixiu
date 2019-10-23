@@ -3,6 +3,7 @@
 from __future__ import division
 
 from EventData import *
+from Application import BaseApplication
 from datetime import datetime, timedelta
 
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
@@ -338,3 +339,27 @@ class DataToEvent(object):
 
         self._dict[eventType] = d
 
+########################################################################
+class MarketObserver(BaseApplication):
+    '''
+    '''
+    @abstractmethod
+    def latestPrice(symbol) :
+        ''' query for latest price of the given symbol
+        @return the price
+        '''
+        raise NotImplementedError
+
+    @property
+    def stampAsof() :
+        ''' 
+        @return the datetime as of latest observing
+        '''
+        raise NotImplementedError
+
+    @property
+    def todayOHLC(symbol) :
+        ''' 
+        @return (open, high, low, close) as of today
+        '''
+        raise NotImplementedError

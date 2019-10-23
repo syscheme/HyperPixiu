@@ -76,7 +76,7 @@ class Account(BaseApplication):
         self._mode         = Account.BROKER_API_ASYNC
 
         self._recorder = None
-        self._marketObserver = None
+        self._marketstate = None
 
         # trader executer
         # self._dvrBroker = dvrBrokerClass(self, self._settings)
@@ -152,7 +152,7 @@ class Account(BaseApplication):
     def getAllPositions(self): # returns PositionData
         with self._lock :
             for pos in self._dictPositions.values() :
-                price = self._marketObserver.latestPrice(pos.symbol)
+                price = self._marketstate.latestPrice(pos.symbol)
                 if price >0:
                     pos.price = price
             return copy.deepcopy(self._dictPositions)
@@ -550,19 +550,19 @@ class Account(BaseApplication):
             self._recorder.configIndex(self.collectionName_trade, [('brokerTradeId', ASCENDING)], True)
             self._recorder.configIndex(self.collectionName_dpos,  [('date', ASCENDING), ('symbol', ASCENDING)], True)
 
-        if not self._marketObserver :
+        if not self._marketstate :
             searchKey = '.%s' % self._exchange
             for obsId in self._program.listAppsOfType(MarketObeserver) :
                 pos = recorderId.find(searchKey)
                 if pos >0 and obsId[pos:] == searchKey:
-                    self._marketObserver = self._program.findApp(obsId)
-                    if self._marketObserver : break
+                    self._marketstate = self._program.findApp(obsId)
+                    if self._marketstate : break
 
-        if not self._marketObserver :
+        if not self._marketstate :
             self.error('no MarketObeserver found')
             return False
 
-        self.info('taking MarketObeserver[%s]' % self._marketObserver.ident)
+        self.info('taking MarketObeserver[%s]' % self._marketstate.ident)
         return super(Account, self).init()
 
     @abstractmethod
@@ -639,7 +639,7 @@ class Account(BaseApplication):
 
         pos.posAvail = newAvail
         pos.position = newTotal
-        pos.stampByTrader = self._marketObserver.asof
+        pos.stampByTrader = self._marketstate.asof
         return True
 
     #----------------------------------------------------------------------
@@ -789,7 +789,7 @@ class Account(BaseApplication):
         for s in tradesOfSymbol.keys():
 
             currentPos = currentPositions[s]
-            ohlc =  self._marketObserver.todayOHLC(s)
+            ohlc =  self._marketstate.todayOHLC(s)
 
             if s in self._prevPositions:
                 with self._lock :

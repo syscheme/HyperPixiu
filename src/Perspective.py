@@ -200,3 +200,5 @@ class PerspectiveGenerator(Iterable):
                 
         return None
 
+class PerspectiveDict(MarketState):
+    pass

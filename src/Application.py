@@ -36,7 +36,22 @@ def datetime2float(dt):
     return total_seconds
 
 ########################################################################
-class MetaApp(ABC):
+class MetaObj(ABC):
+    __lastId__  = 10000
+
+    def __init__(self):
+        self._id = None
+
+    @property
+    def ident(self) :
+        if not self._id or len(self._id)<=0 :
+            MetaObj.__lastId__ +=1
+            self._id = 'O%d' % MetaObj.__lastId__
+
+        return '%s.%s' % (self.__class__.__name__, self._id)
+
+########################################################################
+class MetaApp(MetaObj):
 
     @abstractmethod
     def theApp(self):
@@ -84,10 +99,6 @@ class BaseApplication(MetaApp):
         self.__gen = self._generator()
 
     #----------------------------------------------------------------------
-    @property
-    def ident(self) :
-        return '%s.%s' % (self.__class__.__name__, self._id)
-
     @property
     def app(self) : # for the thread wrapper
         return self
@@ -437,7 +448,7 @@ class Program(object):
         
         # 事件队列
         self.__queue = Queue()
-        self.__dictApps ={}
+        self.__dictMetaObjs ={}
         
         # heartbeat
         self.__stampLastHB = None
@@ -459,23 +470,65 @@ class Program(object):
         return self._settings
 
     #----------------------------------------------------------------------
+    def __addMetaObj(self, id, obj):
+        """添加上层应用"""
+        # 创建应用实例
+        self.__dictMetaObjs[id] = obj
+        self.__dict__[id] = self.__dictMetaObjs[id]
+        self.info('obj[%s] added' % id)
+        return obj
+
+    def __removeObj(self, id):
+        if not id or not id in self.__dictMetaObjs.keys():
+            return None
+
+        # del self.__dict__[id]
+        o = self.__dictMetaObjs[id]
+        del self.__dictMetaObjs[id]
+        return o
+
+    def addObj(self, obj):
+        """添加上层应用"""
+        if not obj or not isinstance(obj, MetaObj):
+            return None
+        
+        return self.__addMetaObj(obj.ident, obj)
+
+    def removeObj(self, obj):
+        if obj and isinstance(obj, MetaObj):
+            return __removeObj(self, obj.ident)
+        return None
+
+    def getObj(self, objId):
+        if objId in self.__dictMetaObjs.keys():
+            return self.__dictMetaObjs[objId]
+        return None
+
+    def listByType(self, type):
+        if issubclass(type, BaseApplication) :
+            return self.listApps(type)
+
+        ret = []
+        for oid, obj in self.__dictMetaObjs.items():
+            if not obj or not isinstance(obj, type):
+                continue
+            ret.append(oid)
+        
+        return ret
+
     def addApp(self, app, displayName=None):
         """添加上层应用"""
         if not isinstance(app, MetaApp):
             return
 
         id = app.theApp().ident
+        self.__addMetaObj(id, app)
         
-        # 创建应用实例
-        self.__dictApps[id] = app
-        
-        # 将应用引擎实例添加到主引擎的属性中
-        self.__dict__[id] = self.__dictApps[id]
-        self.info('app[%s] added' %(id))
-
         # TODO maybe test isinstance(apptype, MarketData) to ease index and so on
         if self.hasHeartbeat :
             self.subscribe(EVENT_HEARTB, app.theApp())
+
+        self.info('app[%s] added' %(id))
         return app
 
     def createApp(self, appModule, settings, **kwargs):
@@ -502,32 +555,30 @@ class Program(object):
         return self.addApp(app)
         
     def removeApp(self, app):
-
-        if not isinstance(app, MetaApp):
+        if not app or not isinstance(app, MetaApp):
             return
 
         for et in self.__subscribers.keys() :
             self.unsubscribe(et, app)
 
         appId = app.theApp().ident
-        if not appId in self.__dictApps.keys():
+        if not appId in self.__dictMetaObjs.keys():
             return None
 
-        ret = self.__dictApps[appId]
-        del self.__dictApps[appId]
-        return ret
+        return self.__removeObj(appId)
 
     def getApp(self, appId):
         """获取APP对象"""
-        return self.__dictApps[appId].theApp()
+        o = self.__dictMetaObjs[appId]
+        return o.theApp() if isinstance(o, MetaApp) else None
 
-    def listAppsOfType(self, type):
+    def listApps(self, type=BaseApplication):
         """list app object of a given type and its children
         @return a list of appId
         """
         ret = []
-        for aid, app in self.__dictApps.items():
-            if not app or not isinstance(app.theApp(), type):
+        for aid, app in self.__dictMetaObjs.items():
+            if not app or not isinstance(app, MetaApp) or not isinstance(app.theApp(), type):
                 continue
             ret.append(aid)
         
@@ -559,7 +610,7 @@ class Program(object):
         '''
 
         self.debug('starting applications')
-        for (k, app) in self.__dictApps.items() :
+        for (k, app) in self.listApps() :
             if app == None:
                 continue
             
@@ -581,8 +632,8 @@ class Program(object):
         '''
         
         # 停止上层应用引擎
-        for app in self.__dictApps.values():
-            app.stop()
+        for appId in self.listApps():
+            self.getApp(appId).stop()
         
         # # 保存数据引擎里的合约数据到硬盘
         # self.dataEngine.saveContracts()
@@ -637,9 +688,11 @@ class Program(object):
                 if not event :
                     # if blocking: # ????
                     #     continue
-                    for (k, app) in self.__dictApps.items() :
+                    for aid, app in self.__dictMetaObjs.items() :
                         # if threaded, it has its own trigger to step()
-                        if not app or isinstance(app, ThreadedAppWrapper) or not app.isActive:
+                        # if isinstance(app, ThreadedAppWrapper)
+                        #   continue
+                        if not isinstance(app, BaseApplication) or not app.isActive:
                             continue
                         
                         try:
@@ -649,7 +702,7 @@ class Program(object):
                             self._bRun = False
                             break
                         except Exception as ex:
-                            self.error("app step exception %s %s" % (ex, traceback.format_exc()))
+                            self.error("app[%s] step exception %s %s" % (aid, ex, traceback.format_exc()))
                             
                     continue
 

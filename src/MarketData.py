@@ -340,7 +340,7 @@ class DataToEvent(object):
         self._dict[eventType] = d
 
 ########################################################################
-class MarketObserver(BaseApplication):
+class MarketState(MetaObj):
     '''
     '''
     @abstractmethod

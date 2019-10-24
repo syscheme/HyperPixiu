@@ -142,7 +142,6 @@ class Account(BaseApplication):
     def collectionName_trade(self): return "trade." + self.ident
 
     #----------------------------------------------------------------------
-    @abstractmethod
     def getPosition(self, symbol): # returns PositionData
         with self._lock :
             if not symbol in self._dictPositions:
@@ -157,7 +156,6 @@ class Account(BaseApplication):
                     pos.price = price
             return copy.deepcopy(self._dictPositions)
 
-    @abstractmethod
     def cashAmount(self): # returns (avail, total)
         with self._lock :
             pos = self._dictPositions[self.cashSymbol]
@@ -166,9 +164,8 @@ class Account(BaseApplication):
 
     def cashChange(self, dAvail=0, dTotal=0):
         with self._lock :
-            return self._cashChange(dAvail, dTotal)
+            return self.__cashChange(dAvail, dTotal)
 
-    @abstractmethod
     def insertData(self, collectionName, data) :
         if self._recorder :
             self._recorder.pushRow(collectionName, data)
@@ -178,7 +175,6 @@ class Account(BaseApplication):
 
     #----------------------------------------------------------------------
     # Account operations
-    @abstractmethod
     def sendOrder(self, symbol, orderType, price, volume, strategy):
         """发单"""
         source = 'ACCOUNT'
@@ -216,7 +212,6 @@ class Account(BaseApplication):
 
         return orderData.reqId
 
-    @abstractmethod
     def cancelOrder(self, brokerOrderId):
 
         if self._mode == Account.BROKER_API_ASYNC :
@@ -238,7 +233,6 @@ class Account(BaseApplication):
         if orderData :
             self._broker_cancelOrder(orderData)
 
-    @abstractmethod
     def sendStopOrder(self, symbol, orderType, price, volume, strategy):
 
         source = 'ACCOUNT'
@@ -273,7 +267,6 @@ class Account(BaseApplication):
 
         return orderData.reqId
 
-    @abstractmethod
     def batchCancel(self, brokerOrderIds):
         for o in brokerOrderIds:
             self.cancelOrder(o)
@@ -281,12 +274,10 @@ class Account(BaseApplication):
 
     #----------------------------------------------------------------------
     # Interactions with BrokerDriver
-    @abstractmethod
     def _broker_placeOrder(self, orderData):
         """发单"""
         raise NotImplementedError
 
-    @abstractmethod
     def _broker_onOrderPlaced(self, orderData):
         """委托回调"""
         # order placed, move it from _dictOutgoingOrders to _dictLimitOrders
@@ -301,16 +292,14 @@ class Account(BaseApplication):
 
         if orderData.direction == OrderData.DIRECTION_LONG:
             turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.totalVolume)
-            self._cashChange(-(turnover + commission + slippage))
+            self.__cashChange(-(turnover + commission + slippage))
 
         self.postEvent_Order(orderData)
 
-    @abstractmethod
     def _broker_cancelOrder(self, brokerOrderId):
         """撤单"""
         raise NotImplementedError
 
-    @abstractmethod
     def _broker_onCancelled(self, orderData):
         """撤单回调"""
         orderData.status = OrderData.STATUS_CANCELLED
@@ -333,7 +322,7 @@ class Account(BaseApplication):
 
             if orderData.direction == OrderData.DIRECTION_LONG:
                 turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.totalVolume)
-                self._cashChange(turnover + commission + slippage)
+                self.__cashChange(turnover + commission + slippage)
 
         self.info('order.brokerOrderId[%s] canceled' % orderData.brokerOrderId)
         self.postEvent_Order(orderData)
@@ -353,7 +342,6 @@ class Account(BaseApplication):
 
         return ret
 
-    @abstractmethod
     def _broker_onOrderDone(self, orderData):
         """委托被执行"""
         with self._lock :
@@ -367,11 +355,10 @@ class Account(BaseApplication):
 
             if orderData.direction == OrderData.DIRECTION_LONG:
                 turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.totalVolume)
-                self._cashChange(turnover + commission + slippage)
+                self.__cashChange(turnover + commission + slippage)
 
         self.postEvent_Order(orderData)
 
-    @abstractmethod
     def _broker_onTrade(self, trade):
         """交易成功回调"""
         if trade.brokerTradeId in self._dictTrades:
@@ -402,14 +389,14 @@ class Account(BaseApplication):
                 turnover, commission, slippage = self.calcAmountOfTrade(s, trade.price, -trade.volume)
                 tradeAmount = turnover - commission - slippage
                 # sold, increase both cash aval/total
-                self._cashChange(tradeAmount, tradeAmount)
+                self.__cashChange(tradeAmount, tradeAmount)
 
                 pos.position -= trade.volume
                 pos.posAvail  -= trade.volume
             else :
                 turnover, commission, slippage = self.calcAmountOfTrade(s, trade.price, trade.volume)
                 tradeAmount = turnover + commission + slippage
-                self._cashChange(-tradeAmount, -tradeAmount)
+                self.__cashChange(-tradeAmount, -tradeAmount)
                 # calclulate pos.avgPrice
                 if self._csize <=0:
                     self._csize =1
@@ -427,13 +414,6 @@ class Account(BaseApplication):
 
         self.postEventData(Account.EVENT_TRADE, copy.copy(trade))
 
-    # @abstractmethod
-    # def _broker_datetimeAsOf(self):
-    #     if self._trader._dtData:
-    #         return self._trader._dtData
-    #     return datetime.now()
-
-    @abstractmethod
     def _broker_onOpenOrders(self, dictOrders):
         """枚举订单回调"""
         orderIds = dictOrders.keys()
@@ -456,7 +436,6 @@ class Account(BaseApplication):
                 if not o in orderIds:
                     gonelist.append(self._dictStopOrders[o])
 
-    @abstractmethod
     def _broker_onTradedOrders(self, dictOrders):
         """枚举订单回调"""
         orderIds = dictOrders.keys()
@@ -486,12 +465,10 @@ class Account(BaseApplication):
             self.warn('gone orders, force to perform onCancel: %s' % newlist)
             self._broker_cancelOrder(o)
 
-    @abstractmethod
     def _broker_onGetAccountBalance(self, data, reqid):
         """查询余额回调"""
         pass
         
-    @abstractmethod
     def _broker_onGetOrder(self, data, reqid):
         """查询单一委托回调"""
         pass
@@ -500,26 +477,21 @@ class Account(BaseApplication):
         """查询委托回调"""
         pass
         
-    @abstractmethod
     def _broker_onGetMatchResults(self, data, reqid):
         """查询成交回调"""
         pass
         
-    @abstractmethod
     def _broker_onGetMatchResult(self, data, reqid):
         """查询单一成交回调"""
         pass
 
-    @abstractmethod
     def _broker_onGetTimestamp(self, data, reqid):
         """查询时间回调"""
         pass
 
-    @abstractmethod
     def _brocker_procSyncData(self):
         pass
 
-    @abstractmethod
     def _brocker_triggerSync(self):
         pass
 
@@ -529,12 +501,11 @@ class Account(BaseApplication):
     #----------------------------------------------------------------------
     # impl of BaseApplication
 
-    @abstractmethod
     def init(self): # return True if succ
         if not self._recorder :
             # find the recorder from the program
             searchKey = '.%s' % self._id
-            for recorderId in self._program.listAppsOfType(hist.Recorder) :
+            for recorderId in self._program.listApps(hist.Recorder) :
                 pos = recorderId.find(searchKey)
                 if pos >0 and recorderId[pos:] == searchKey:
                     self._recorder = self._program.findApp(recorderId)
@@ -552,7 +523,7 @@ class Account(BaseApplication):
 
         if not self._marketstate :
             searchKey = '.%s' % self._exchange
-            for obsId in self._program.listAppsOfType(MarketObeserver) :
+            for obsId in self._program.listByType(MarketState) :
                 pos = recorderId.find(searchKey)
                 if pos >0 and obsId[pos:] == searchKey:
                     self._marketstate = self._program.findApp(obsId)
@@ -565,7 +536,6 @@ class Account(BaseApplication):
         self.info('taking MarketObeserver[%s]' % self._marketstate.ident)
         return super(Account, self).init()
 
-    @abstractmethod
     def step(self):
 
         # step 1. flush out-going orders and cancels to the broker
@@ -618,8 +588,7 @@ class Account(BaseApplication):
     # end of App routine
     #----------------------------------------------------------------------
 
-    @abstractmethod
-    def _cashChange(self, dAvail=0, dTotal=0): # thread unsafe
+    def __cashChange(self, dAvail=0, dTotal=0): # thread unsafe
         pos = self._dictPositions[self.cashSymbol]
         volprice = pos.price * self._csize
         if pos.price <=0 :   # if cache.price not initialized
@@ -649,7 +618,6 @@ class Account(BaseApplication):
         raise NotImplementedError
     # return volume, commission, slippage
 
-    @abstractmethod
     #----------------------------------------------------------------------
     # determine buy ability according to the available cash
     # return buy-volume-capabitilty, sell-volumes
@@ -681,8 +649,13 @@ class Account(BaseApplication):
 
     #----------------------------------------------------------------------
     # callbacks about timing
-    #----------------------------------------------------------------------
-    @abstractmethod
+    def OnEvent(self, ev):
+        '''
+        process the event
+        '''
+        #TODO if ev.type_
+        pass
+
     def onDayClose(self):
         self.dbSaveDataOfDay() # save the account data into DB
         
@@ -692,7 +665,6 @@ class Account(BaseApplication):
         self._state = Account.STATE_CLOSE
         self.debug('onDayClose() saved positions, updated state')
 
-    @abstractmethod
     def onDayOpen(self, newDate):
         if Account.STATE_OPEN == self._state:
             if newDate == self._dateToday :
@@ -706,7 +678,6 @@ class Account(BaseApplication):
         self._state = Account.STATE_OPEN
         self.debug('onDayOpen() shift pos to dict _prevPositions, updated state')
     
-    @abstractmethod
     def onTimer(self, dt):
         # TODO refresh from BrokerDriver
         pass
@@ -714,7 +685,6 @@ class Account(BaseApplication):
     #----------------------------------------------------------------------
     # method to access Account DB
 
-    @abstractmethod
     def dbSaveDataOfDay(self):
         ''' save the account data into DB 
         1) trades that confirmed
@@ -738,7 +708,6 @@ class Account(BaseApplication):
             self._recorder.pushRow(self.collectionName_dpos, dpos)
         self.info('saveDataOfDay() saved positions into DB: %s' % positions)
 
-    @abstractmethod
     def loadDB(self, since =None):
         ''' load the account data from DB ''' 
         if not since :
@@ -746,11 +715,6 @@ class Account(BaseApplication):
         pass
 
     #----------------------------------------------------------------------
-    @abstractmethod
-    def stdout(self, message):
-        """输出内容"""
-        print(str(self._broker_datetimeAsOf()) + " ACC[" + self.ident + "] " + message)
-
     def debug(self, msg):
         super(Account, self).debug('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
         
@@ -766,7 +730,6 @@ class Account(BaseApplication):
     #----------------------------------------------------------------------
     #  account daily statistics methods
 
-    @abstractmethod
     def calcDailyPositions(self):
         """今日交易的结果"""
 
@@ -826,7 +789,7 @@ class Account_AShare(Account):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self, program, ratePer10K =30, settings=None):
+    def __init__(self, program, accountId, ratePer10K =30, settings=None):
         """Constructor"""
         super(Account_AShare, self).__init__(program, accountId, exchange ='AShare', ratePer10K =ratePer10K, contractSize=100, slippage =0.0, priceTick=0.01, settings =settings)
 
@@ -836,7 +799,7 @@ class Account_AShare(Account):
         volumeX1 = abs(volume) * self._csize
         turnOver = price * volumeX1
 
-        # 印花税: 成交金额的1‰ 。目前向卖方单边征收
+        # 印花税: 成交金额的1‰, 目前向卖方单边征收
         tax = 0
         if volumeX1 <0:
             tax = turnOver /1000
@@ -851,7 +814,6 @@ class Account_AShare(Account):
 
         return turnOver, tax + transfer + commission, volumeX1 * self._slippage
 
-    @abstractmethod
     def onDayOpen(self, newDate):
         super(Account_AShare, self).onDayOpen(newDate)
         with self._lock :

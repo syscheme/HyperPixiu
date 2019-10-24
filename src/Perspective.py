@@ -106,7 +106,7 @@ class Perspective(EventData):
 
     @property
     def latestPrice(self) :
-        stk = self._readers[self.__focusLast]
+        stk = self._stacks[self.__focusLast]
         if stk or stk.size >0:
             return stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
 
@@ -200,5 +200,57 @@ class PerspectiveGenerator(Iterable):
                 
         return None
 
+########################################################################
 class PerspectiveDict(MarketState):
-    pass
+
+    def __init__(self, exchange):
+        """Constructor"""
+        super(PerspectiveDict, self).__init__(exchange)
+        self.__dictPerspective ={} # dict of symbol to Perspective
+
+    # -- impl of MarketState --------------------------------------------------------------
+    def latestPrice(self, symbol) :
+        ''' query for latest price of the given symbol
+        @return the price
+        '''
+        if not symbol in self.__dictPerspective.keys() :
+            return 0.0
+        
+        return self.__dictPerspective[symbol].latestPrice
+
+    def getAsOf(self, symbol=None) :
+        ''' 
+        @return the datetime as of latest observing
+        '''
+        if symbol and symbol in self.__dictPerspective.keys():
+            return self.__dictPerspective[symbol].asof
+
+        ret = None
+        for s, p in self.__dictPerspective.items() :
+            if not ret or ret > p.asof:
+                ret = p.asof
+        return ret if ret else __dtEpoch
+
+    def todayOHLC(self, symbol) :
+        ''' 
+        @return (open, high, low, close) as of today
+        '''
+        if symbol in self.__dictPerspective.keys():
+            p = self.__dictPerspective[symbol]
+            if p._stacks[EVENT_KLINE_1DAY].size >0:
+                d = p._stacks[EVENT_KLINE_1DAY].top
+                return d.date, d.open, d.high, d.low, d.close
+        return 0.0, 0.0, 0.0, 0.0
+
+    def updateByEvent(self, ev) :
+        ''' 
+        @event could be Event(Tick), Event(KLine), Event(Perspective)
+        '''
+        if EVENT_Perspective == ev.type_ :
+            self.__dictPerspective[ev.data._symbol] = ev.data
+            return
+
+        s = ev.data._symbol
+        if not s in self.__dictPerspective.keys() :
+            self.__dictPerspective[s] = Perspective(self.exchange, s)
+        self.__dictPerspective[s].push(ev)

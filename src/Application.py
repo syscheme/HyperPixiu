@@ -65,6 +65,13 @@ class MetaApp(MetaObj):
     def stop(self):
         raise NotImplementedError
 
+    @abstractmethod
+    def OnEvent(self, event):
+        '''
+        process the event
+        '''
+        pass
+
 ########################################################################
 class BaseApplication(MetaApp):
 
@@ -136,13 +143,6 @@ class BaseApplication(MetaApp):
     @abstractmethod
     def init(self): # return True if succ
         return True
-
-    @abstractmethod
-    def OnEvent(self, event):
-        '''
-        process the event
-        '''
-        pass
 
     @abstractmethod
     def step(self):
@@ -610,13 +610,14 @@ class Program(object):
         '''
 
         self.debug('starting applications')
-        for (k, app) in self.listApps() :
+        for appId in self.listApps() :
+            app = self.getApp(appId)
             if app == None:
                 continue
             
-            self.debug('staring app[%s]' % k)
+            self.debug('staring app[%s]' % appId)
             app.start()
-            self.info('started app[%s]' % k)
+            self.info('started app[%s]' % appId)
 
         self.info('main-program started')
 

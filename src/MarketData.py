@@ -3,7 +3,7 @@
 from __future__ import division
 
 from EventData import *
-from Application import BaseApplication
+from Application import MetaObj
 from datetime import datetime, timedelta
 
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
@@ -343,23 +343,38 @@ class DataToEvent(object):
 class MarketState(MetaObj):
     '''
     '''
+    def __init__(self, exchange):
+        """Constructor"""
+        super(MarketState, self).__init__()
+        self._exchange = exchange
+    
+    @property
+    def exchange(self) : return self._exchange
+
     @abstractmethod
-    def latestPrice(symbol) :
+    def latestPrice(self, symbol) :
         ''' query for latest price of the given symbol
         @return the price
         '''
         raise NotImplementedError
 
-    @property
-    def stampAsof() :
+    @abstractmethod
+    def getAsOf(self, symbol=None) :
         ''' 
         @return the datetime as of latest observing
         '''
         raise NotImplementedError
 
-    @property
-    def todayOHLC(symbol) :
+    @abstractmethod
+    def todayOHLC(self, symbol) :
         ''' 
-        @return (open, high, low, close) as of today
+        @return (datestr, open, high, low, close) as of today
+        '''
+        raise NotImplementedError
+
+    @abstractmethod
+    def updateByEvent(self, ev) :
+        ''' 
+        @ev  could be Event(Tick), Event(KLine), Event(Perspective)
         '''
         raise NotImplementedError

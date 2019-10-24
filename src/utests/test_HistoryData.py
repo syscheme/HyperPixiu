@@ -29,7 +29,7 @@ class TestHistoryData(unittest.TestCase):
         p.createApp(Foo, None)
         p.createApp(Foo, None)
 
-        applst = p.listAppsOfType(BaseApplication)
+        applst = p.listApps()
         print('listed all BaseApplication: %s\n' % applst)
 
         p.start()
@@ -43,7 +43,7 @@ class TestHistoryData(unittest.TestCase):
         p.createApp(Foo, None)
         p.createApp(Foo, None)
 
-        applst = p.listAppsOfType(BaseApplication)
+        applst = p.listApps()
         print('listed all BaseApplication: %s\n' % applst)
 
         p.start()
@@ -55,14 +55,49 @@ class TestHistoryData(unittest.TestCase):
         for i in hpb :
             print('Row: %s\n' % i.desc)
 
-    def test_PerspectiveGenerator(self):
+    def test_Perspective(self):
         ps = psp.Perspective('AShare', '000001')
         pg = psp.PerspectiveGenerator(ps)
-        hpb = hist.CsvPlayback(symbol='000001', folder='/mnt/h/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
+        hpb = hist.CsvPlayback(symbol='000001', folder='/mnt/e/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
         pg.adaptReader(hpb, md.EVENT_KLINE_1MIN)
+        pdict = psp.PerspectiveDict('AShare')
 
         for i in pg :
-            print('Psp: %s\n' % i.desc)
+            print('Psp: %s' % i.desc)
+            pdict.updateByEvent(i)
+            s = i.data._symbol
+            print('-> state: asof[%s] lastPrice[%s] OHLC%s\n' % (pdict.getAsOf(s).strftime('%Y%m%d %H:%M:%S'), pdict.latestPrice(s), pdict.todayOHLC(s)))
+
+    def func1(self, a=None, **kwargs):
+        print('func1(a=%s, kwargs=%s)\n' %(a, kwargs))
+
+    def func2(self, **kwargs):
+        self.func1(kwargs)
+        self.func1(**kwargs)
+
+    def _test_kwargs(self):
+        self.func2(a='123',b=45,c=78) 
+        self.func2(b=45,c=78)
+
+    def test_Account(self):
+        p = Program(PROGNAME)
+        p._heartbeatInterval =-1
+
+        p.createApp(Foo, None)
+        p.createApp(Foo, None)
+
+
+        ps = psp.Perspective('AShare', '000001')
+        pg = psp.PerspectiveGenerator(ps)
+        hpb = hist.CsvPlayback(symbol='000001', folder='/mnt/e/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
+        pg.adaptReader(hpb, md.EVENT_KLINE_1MIN)
+        pdict = psp.PerspectiveDict('AShare')
+
+        for i in pg :
+            print('Psp: %s' % i.desc)
+            pdict.updateByEvent(i)
+            s = i.data._symbol
+            print('-> state: asof[%s] lastPrice[%s] OHLC%s\n' % (pdict.getAsOf(s).strftime('%Y%m%d %H:%M:%S'), pdict.latestPrice(s), pdict.todayOHLC(s)))
 
 if __name__ == '__main__':
     unittest.main()

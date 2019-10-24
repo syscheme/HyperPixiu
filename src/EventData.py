@@ -11,8 +11,8 @@ from abc import ABCMeta, abstractmethod
 EVENT_NAME_PREFIX = 'ev'    # 事件名字前缀
 
 # 系统相关
-EVENT_HEARTB = EVENT_NAME_PREFIX + 'HB'      # all application attached to program will receive heartbeat event
-EVENT_ERROR  = EVENT_NAME_PREFIX + 'Error'   # 错误回报事件
+EVENT_SYS_CLOCK = EVENT_NAME_PREFIX + 'SysClk'   # all application attached to program will receive this event as heartbeat, its data is basic EventData
+EVENT_ERROR     = EVENT_NAME_PREFIX + 'Error'   # 错误回报事件
 #EVENT_START  = EVENT_NAME_PREFIX + 'START'   # not used
 # EVENT_EXIT   = EVENT_NAME_PREFIX + 'EXIT'    # not used 程序退出
 EVENT_LOG    = EVENT_NAME_PREFIX + 'Log'     # 日志事件，全局通用
@@ -41,7 +41,9 @@ class Event:
 
 ########################################################################
 class EventData(object):
-    """回调函数推送数据的基础类，其他数据类继承于此"""
+    """回调函数推送数据的基础类，其他数据类继承于此
+    minimally carry a AsOf datetime 
+    """
     EMPTY_STRING = ''
     EMPTY_UNICODE = u''
     EMPTY_INT = 0
@@ -52,11 +54,15 @@ class EventData(object):
         """Constructor"""
         # self.gatewayName = EventData.EMPTY_STRING  # Gateway名称        
         # self.rawData = None                     # 原始数据
+        self.datetime = datetime.now()
 
     @property
     def desc(self) :
         return self.__class__.__name__
 
+    @property
+    def asof(self) :
+        return self.datetime
 
 ########################################################################
 class ErrorData(EventData):
@@ -70,8 +76,6 @@ class ErrorData(EventData):
         self.errorID = EventData.EMPTY_STRING             # 错误代码
         self.errorMsg = EventData.EMPTY_UNICODE           # 错误信息
         self.additionalInfo = EventData.EMPTY_UNICODE     # 补充信息
-        
-        self.errorTime = time.strftime('%X', time.localtime())    # 错误生成时间
 
 ########################################################################
 class LogData(EventData):
@@ -87,14 +91,3 @@ class LogData(EventData):
         self.logContent = EventData.EMPTY_UNICODE                         # 日志信息
         self.logLevel = LOGLEVEL_INFO                                    # 日志级别
 
-########################################################################
-class edTime(EventData):
-    """K线数据"""
-
-    #----------------------------------------------------------------------
-    def __init__(self, dt, type='clock'):
-        """Constructor"""
-        super(edTime, self).__init__()
-        
-        self.datetime   = dt
-        self.sourceType = type          # 数据来源类型

@@ -2,7 +2,7 @@
 
 from __future__ import division
 
-from EventData import Event, edTime, EVENT_HEARTB
+from EventData import Event, EventData, EVENT_SYS_CLOCK
 
 import os
 import logging
@@ -526,7 +526,7 @@ class Program(object):
         
         # TODO maybe test isinstance(apptype, MarketData) to ease index and so on
         if self.hasHeartbeat :
-            self.subscribe(EVENT_HEARTB, app.theApp())
+            self.subscribe(EVENT_SYS_CLOCK, app.theApp())
 
         self.info('app[%s] added' %(id))
         return app
@@ -665,8 +665,8 @@ class Program(object):
                     timeout = 0.1
 
                     # inject then event of heartbeat
-                    edata = edTime(dt)
-                    event = Event(type_= EVENT_HEARTB)
+                    edata = EventData(dt)
+                    event = Event(type_= EVENT_SYS_CLOCK)
                     event.dict_['data'] = edata
                     self.publish(event)
 

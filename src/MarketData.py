@@ -23,6 +23,8 @@ EVENT_KLINE_1DAY    = EVENT_KLINE_PREFIX      + '1d'
 
 EVENT_T2KLINE_1MIN  = MARKETDATE_EVENT_PREFIX + 'T2K1m'
 
+EVENT_MARKET_HOUR   = MARKETDATE_EVENT_PREFIX + 'Hr'
+
 ########################################################################
 class TickData(EventData):
     """Tick行情数据类"""
@@ -91,6 +93,16 @@ class TickData(EventData):
     def desc(self) :
         return 'tick.%s@%s_%dx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S'),self.volume,round(self.price,2))
 
+    @property
+    def asof(self) :
+        if not self.datetime :
+            try :
+                self.datetime = datetime.strptime(self.date + ' ' + self.time, '%Y%m%d %H:%M:%S')
+            except:
+                self.datetime = datetime.utcfromtimestamp(0)
+                
+        return self.datetime
+
 ########################################################################
 class KLineData(EventData):
     """K线数据"""
@@ -110,9 +122,9 @@ class KLineData(EventData):
             if  len(exchange)>0 :
                 self.vtSymbol = '.'.join([self.symbol, self.exchange])
     
-        self.open = EventData.EMPTY_FLOAT             # OHLC
-        self.high = EventData.EMPTY_FLOAT
-        self.low = EventData.EMPTY_FLOAT
+        self.open  = EventData.EMPTY_FLOAT             # OHLC
+        self.high  = EventData.EMPTY_FLOAT
+        self.low   = EventData.EMPTY_FLOAT
         self.close = EventData.EMPTY_FLOAT
         
         self.date = EventData.EMPTY_STRING            # bar开始的时间，日期
@@ -125,6 +137,16 @@ class KLineData(EventData):
     @property
     def desc(self) :
         return 'kline.%s@%s>%sx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.volume, round(self.close,2))
+
+    @property
+    def asof(self) :
+        if not self.datetime :
+            try :
+                self.datetime = datetime.strptime(self.date + ' ' + self.time, '%Y%m%d %H:%M:%S')
+            except:
+                self.datetime = datetime.utcfromtimestamp(0)
+
+        return self.datetime
 
 ########################################################################
 class DictToKLine(object):

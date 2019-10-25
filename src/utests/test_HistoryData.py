@@ -63,6 +63,10 @@ class TestHistoryData(unittest.TestCase):
         pdict = psp.PerspectiveDict('AShare')
 
         for i in pg :
+            if psp.EVENT_Perspective != i.type_ :
+                print('evnt: %s' % i.desc) 
+                continue
+
             print('Psp: %s' % i.desc)
             pdict.updateByEvent(i)
             s = i.data._symbol

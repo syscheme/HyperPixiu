@@ -276,7 +276,7 @@ class Playback(Iterable):
     def resetRead(self):
         """For this generator, we want to rewind only when the end of the data is reached.
         """
-        pass
+        self.__lastMarketClk = None
 
     @abstractmethod
     def readNext(self):
@@ -289,10 +289,20 @@ class Playback(Iterable):
         event = None
         try :
             event = self.__queMergedEvent.get(block = False, timeout = 0.1)
-            if event: return event
         except Exception:
             pass
         return event
+
+    def _testAndGenerateMarketHourEvent(self, ev):
+        if self.__lastMarketClk and (self.__lastMarketClk + timedelta(hours=1)) > ev.data.asof:
+            return
+        self.__lastMarketClk = ev.data.asof
+        self.__lastMarketClk = self.__lastMarketClk.replace(minute=0, second=0, microsecond=0)
+        evdMH = EventData()
+        evdMH.datetime = self.__lastMarketClk
+        evMH = Event(EVENT_MARKET_HOUR)
+        evMH.setData(evdMH)
+        self.enqueGenerated(evMH)
 
 ########################################################################
 class CsvPlayback(Playback):
@@ -331,6 +341,8 @@ class CsvPlayback(Playback):
 
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):
+
+        super(CsvPlayback, self).resetRead()
 
         self._csvfiles =[]
         self._reader =None
@@ -410,8 +422,10 @@ class CsvPlayback(Playback):
             if row and self._cvsToEvent:
                 # print('line: %s' % (line))
                 ev = self._cvsToEvent.convert(row, self._exchange, self._symbol)
-                if ev and self._merger1minTo5min :
-                    self._merger1minTo5min.pushKLineEvent(ev)
+                if ev:
+                    self._testAndGenerateMarketHourEvent(ev)
+                    if self._merger1minTo5min :
+                        self._merger1minTo5min.pushKLineEvent(ev)
         except Exception as ex:
             self.logexception(ex)
 

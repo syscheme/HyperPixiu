@@ -188,8 +188,10 @@ class PerspectiveGenerator(Iterable):
             if not self._readers[et] :
                 continue
             ev = next(self._readers[et])
-            if not ev or not ev.data or not ev.type_ in self._perspective._stacks.keys():
+            if not ev or not ev.data:
                 return None
+            if not ev.type_ in self._perspective._stacks.keys():
+                return ev
 
             latestevd = self._perspective._stacks[ev.type_].top
             if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
@@ -250,6 +252,9 @@ class PerspectiveDict(MarketState):
             self.__dictPerspective[ev.data._symbol] = ev.data
             return
 
+        if not ev.type_ in Perspective.EVENT_SEQ :
+            return
+            
         s = ev.data._symbol
         if not s in self.__dictPerspective.keys() :
             self.__dictPerspective[s] = Perspective(self.exchange, s)

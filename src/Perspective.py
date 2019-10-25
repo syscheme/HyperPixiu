@@ -94,8 +94,7 @@ class Perspective(EventData):
 
     @property
     def desc(self) :
-        str = self.asof.strftime('%Y%m%dT%H%M%S')
-        str += ': '
+        str = '%s> ' % self.focus
         for i in [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
             str += '%sx%s, ' % (i[4:], self._stacks[i].size)
         return str
@@ -103,6 +102,10 @@ class Perspective(EventData):
     @property
     def asof(self) :
         return self.__stampLast if self.__stampLast else __dtEpoch
+
+    @property
+    def focus(self) :
+        return self.__focusLast if self.__focusLast else ''
 
     @property
     def latestPrice(self) :
@@ -123,14 +126,15 @@ class Perspective(EventData):
         latestevd = self._stacks[ev.type_].top
         if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
             self._stacks[ev.type_].push(ev.data)
+            self.__focusLast = ev.type_
             if not self.__stampLast or self.__stampLast < ev.data.datetime :
                 self.__stampLast = ev.data.datetime
-                self.__focusLast = ev.type_
             return True
         
         if not ev.data.exchange or latestevd.exchange and not '_k2x' in latestevd.exchange and not '_t2k' in latestevd.exchange :
             return False # not overwritable
 
+        self.__focusLast = ev.type_
         for i in range(len(self._stacks[ev.type_])) :
             if ev.data.datetime > self._stacks[ev.type_][i].datetime :
                 continue

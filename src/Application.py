@@ -310,7 +310,7 @@ class Iterable(ABC):
         self._iterableEnd = False
 
         # 事件队列
-        self.__queGenerated = Queue(maxsize=100)
+        self.__quePending = Queue(maxsize=100)
 
     def __iter__(self):
         if self.resetRead() : # alway perform reset here
@@ -331,7 +331,7 @@ class Iterable(ABC):
     def __generate(self):
         while not self._iterableEnd :
             try :
-                event = self.__queGenerated.get(block = False, timeout = 0.1)
+                event = self.popPending()
                 if event:
                     yield event
                     self._c +=1
@@ -353,8 +353,15 @@ class Iterable(ABC):
         self._generator=None
         raise StopIteration
 
-    def enqueGenerated(self, ev):
-        self.__queGenerated.put(ev, block = True)
+    @property
+    def pendingSize(self) :
+        return self.__quePending.qsize() if self.__quePending else 0
+
+    def enquePending(self, ev, block = True):
+        self.__quePending.put(ev, block = block)
+
+    def popPending(self, block=False, timeout=0.1):
+        return self.__quePending.get(block = block, timeout = timeout)
 
     #--- new methods  -----------------------
     @abstractmethod
@@ -374,7 +381,7 @@ class Iterable(ABC):
     def setLogger(self, logger):
         if logger and isinstance(logger, logging.Logger):
             self._logger = logger
-        self.__queGenerated.put(ev, block = True)
+        self.enquePending(ev, block = True)
 
     def debug(self, msg):
         if self._logger: 

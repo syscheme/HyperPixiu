@@ -278,7 +278,7 @@ class KlineToXminMerger(object):
     #----------------------------------------------------------------------
     def __init__(self, onKLineXmin, xmin=15) :
         """Constructor"""
-        self._klineOut = None
+        self._klineWk = None
         self._klineIn = None        # 上一Input缓存对象
         self._xmin = xmin             # X的值
         self.onXminBar = onKLineXmin  # X分钟K线的回调函数
@@ -291,42 +291,46 @@ class KlineToXminMerger(object):
 
     def pushKLineData(self, kline):
         """1分钟K线更新"""
+        klineOut = None
         # 尚未创建对象
-        if self._klineOut:
-            if kline.datetime > self._klineOut.datetime :
-                self._klineOut.date = self._klineOut.datetime.strftime('%Y%m%d')
-                self._klineOut.time = self._klineOut.datetime.strftime('%H:%M:%S.%f')
+        if self._klineWk:
+            if kline.datetime > self._klineWk.datetime :
+                self._klineWk.date = self._klineWk.datetime.strftime('%Y%m%d')
+                self._klineWk.time = self._klineWk.datetime.strftime('%H:%M:%S.%f')
                     
                 # 推送, X分钟策略计算和决策
                 if self.onXminBar :
-                    self.onXminBar(self._klineOut)
+                    klineOut = self._klineWk
+                    self.onXminBar(klineOut)
                 
                 # 清空老K线缓存对象
-                self._klineOut = None
+                self._klineWk = None
 
         # 初始化新一分钟的K线数据
-        if not self._klineOut:
+        if not self._klineWk:
             # 创建新的K线对象
-            self._klineOut = KLineData(kline.exchange + '_k2x', kline.symbol)
-            self._klineOut.open = kline.open
-            self._klineOut.high = kline.high
-            self._klineOut.low = kline.low
+            self._klineWk = KLineData(kline.exchange + '_k2x', kline.symbol)
+            self._klineWk.open = kline.open
+            self._klineWk.high = kline.high
+            self._klineWk.low = kline.low
             timeTil = kline.datetime + timedelta(minutes=self._xmin)
             timeTil = timeTil.replace(minute=int(timeTil.minute/self._xmin)*self._xmin, second=0, microsecond=0)
 
-            self._klineOut.datetime = timeTil    # 以x分钟K线末作为X分钟线的时间戳
+            self._klineWk.datetime = timeTil    # 以x分钟K线末作为X分钟线的时间戳
         else:                                   
             # 累加更新老一分钟的K线数据
-            self._klineOut.high = max(self._klineOut.high, kline.high)
-            self._klineOut.low = min(self._klineOut.low, kline.low)
+            self._klineWk.high = max(self._klineWk.high, kline.high)
+            self._klineWk.low = min(self._klineWk.low, kline.low)
 
         # 通用部分
-        self._klineOut.close = kline.close        
-        self._klineOut.openInterest = kline.openInterest
-        self._klineOut.volume += int(kline.volume)                
+        self._klineWk.close = kline.close        
+        self._klineWk.openInterest = kline.openInterest
+        self._klineWk.volume += int(kline.volume)                
 
         # 清空老K线缓存对象
         self._klineIn = kline
+
+        return klineOut
 
 ########################################################################
 class DataToEvent(object):

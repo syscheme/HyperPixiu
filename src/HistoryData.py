@@ -283,12 +283,12 @@ class Playback(Iterable):
         '''
         @return next item, mostlikely expect one of Event()
         '''
-        if not self.isActive or not self.__queMergedEvent: 
+        if not self.isActive or not self.pendingSize <=0: 
             raise StopIteration
 
         event = None
         try :
-            event = self.__queMergedEvent.get(block = False, timeout = 0.1)
+            event = self.popPending(block = False, timeout = 0.1)
         except Exception:
             pass
         return event
@@ -302,7 +302,7 @@ class Playback(Iterable):
         evdMH.datetime = self.__lastMarketClk
         evMH = Event(EVENT_MARKET_HOUR)
         evMH.setData(evdMH)
-        self.enqueGenerated(evMH)
+        self.enquePending(evMH)
 
 ########################################################################
 class CsvPlayback(Playback):
@@ -329,7 +329,7 @@ class CsvPlayback(Playback):
         if not klinedata: return
         ev = Event(EVENT_KLINE_5MIN)
         ev.setData(klinedata)
-        self.enqueGenerated(ev)
+        self.enquePending(ev)
         if self._merger1minTo1Day :
             self._merger1minTo1Day.pushKLineEvent(ev)
 
@@ -337,11 +337,10 @@ class CsvPlayback(Playback):
         if not klinedata: return
         ev = Event(EVENT_KLINE_1DAY)
         ev.setData(klinedata)
-        self.enqueGenerated(ev)
+        self.enquePending(ev)
 
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):
-
         super(CsvPlayback, self).resetRead()
 
         self._csvfiles =[]
@@ -379,6 +378,12 @@ class CsvPlayback(Playback):
         '''
         @return True if busy at this step
         '''
+        try :
+            ev = self.popPending(block = False, timeout = 0.1)
+            if ev: return ev
+        except Exception:
+            pass
+
         row = None
         while not row:
             while not self._reader:
@@ -424,8 +429,15 @@ class CsvPlayback(Playback):
                 ev = self._cvsToEvent.convert(row, self._exchange, self._symbol)
                 if ev:
                     self._testAndGenerateMarketHourEvent(ev)
-                    if self._merger1minTo5min :
+                    if  self._merger1minTo5min :
                         self._merger1minTo5min.pushKLineEvent(ev)
+
+                    # because the generated is always as of the previous event, so always deliver those pendings in queue first
+                    if self.pendingSize >0 :
+                        evout = self.popPending()
+                        self.enquePending(ev)
+                        return evout
+
         except Exception as ex:
             self.logexception(ex)
 

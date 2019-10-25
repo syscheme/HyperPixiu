@@ -289,9 +289,19 @@ class KlineToXminMerger(object):
         d = klineEv.dict_['data']
         self.pushKLineData(d)
 
+    def flush(self):
+        klineOut = self._klineWk
+        # 推送, X分钟策略计算和决策
+        if self.onXminBar :
+            self.onXminBar(klineOut)
+        
+        # 清空老K线缓存对象
+        self._klineWk = None
+        return klineOut
+
     def pushKLineData(self, kline):
         """1分钟K线更新"""
-        klineOut = None
+
         # 尚未创建对象
         if self._klineWk:
             if kline.datetime > self._klineWk.datetime :
@@ -299,12 +309,7 @@ class KlineToXminMerger(object):
                 self._klineWk.time = self._klineWk.datetime.strftime('%H:%M:%S.%f')
                     
                 # 推送, X分钟策略计算和决策
-                if self.onXminBar :
-                    klineOut = self._klineWk
-                    self.onXminBar(klineOut)
-                
-                # 清空老K线缓存对象
-                self._klineWk = None
+                return self.flush()
 
         # 初始化新一分钟的K线数据
         if not self._klineWk:
@@ -329,8 +334,7 @@ class KlineToXminMerger(object):
 
         # 清空老K线缓存对象
         self._klineIn = kline
-
-        return klineOut
+        return None
 
 ########################################################################
 class DataToEvent(object):
@@ -404,3 +408,4 @@ class MarketState(MetaObj):
         @ev  could be Event(Tick), Event(KLine), Event(Perspective)
         '''
         raise NotImplementedError
+

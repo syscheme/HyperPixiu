@@ -295,7 +295,7 @@ class Playback(Iterable):
 
     def _testAndGenerateMarketHourEvent(self, ev):
         if self.__lastMarketClk and (self.__lastMarketClk + timedelta(hours=1)) > ev.data.asof:
-            return
+            return None
         self.__lastMarketClk = ev.data.asof
         self.__lastMarketClk = self.__lastMarketClk.replace(minute=0, second=0, microsecond=0)
         evdMH = EventData()
@@ -303,6 +303,7 @@ class Playback(Iterable):
         evMH = Event(EVENT_MARKET_HOUR)
         evMH.setData(evdMH)
         self.enquePending(evMH)
+        return evdMH
 
 ########################################################################
 class CsvPlayback(Playback):
@@ -319,7 +320,8 @@ class CsvPlayback(Playback):
         self._cvsToEvent = DictToKLine(self._category, symbol)
         # self._merger1minTo5min =None
         self._merger1minTo5min = KlineToXminMerger(self._cbMergedKLine5min, xmin=5)
-        self._merger1minTo1Day = KlineToXminMerger(self._cbMergedKLine1Day, xmin=60*24-10)
+        self._merger5minTo1Day = KlineToXminMerger(self._cbMergedKLine1Day, xmin=60*24-10)
+        self._dtEndOfDay = None
 
 #        if not self._fields and 'mdKL' in self._category:
 #            self._fields ='' #TODO
@@ -330,8 +332,8 @@ class CsvPlayback(Playback):
         ev = Event(EVENT_KLINE_5MIN)
         ev.setData(klinedata)
         self.enquePending(ev)
-        if self._merger1minTo1Day :
-            self._merger1minTo1Day.pushKLineEvent(ev)
+        if self._merger5minTo1Day :
+            self._merger5minTo1Day.pushKLineEvent(ev)
 
     def _cbMergedKLine1Day(self, klinedata):
         if not klinedata: return
@@ -428,9 +430,20 @@ class CsvPlayback(Playback):
                 # print('line: %s' % (line))
                 ev = self._cvsToEvent.convert(row, self._exchange, self._symbol)
                 if ev:
-                    self._testAndGenerateMarketHourEvent(ev)
+                    evdMH = self._testAndGenerateMarketHourEvent(ev)
                     if  self._merger1minTo5min :
                         self._merger1minTo5min.pushKLineEvent(ev)
+
+                    if evdMH :
+                        if self._dtEndOfDay and self._dtEndOfDay < evdMH.asof :
+                            if  self._merger1minTo5min :
+                                self._merger1minTo5min.flush()
+                            if  self._merger5minTo1Day :
+                                self._merger5minTo1Day.flush()
+                            self._dtEndOfDay = None
+
+                        if not self._dtEndOfDay :
+                            self._dtEndOfDay = evdMH.asof.replace(hour=23,minute=59,second=59)
 
                     # because the generated is always as of the previous event, so always deliver those pendings in queue first
                     if self.pendingSize >0 :
@@ -701,4 +714,5 @@ class Zipper(BaseApplication):
 
     def _push(self, filename) :
         self._queue.put(filename)
+
 

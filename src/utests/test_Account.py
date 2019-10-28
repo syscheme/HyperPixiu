@@ -17,7 +17,7 @@ class TestAccount(unittest.TestCase):
         p.createApp(Account_AShare, None)
         pdict = psp.PerspectiveDict('AShare')
         p.addObj(pdict)
-        print('listed all Objects: %s\n' % p.listObjs())
+        print('listed all Objects: %s\n' % p.listByType(MetaObj))
 
         p.start()
         p.loop()
@@ -34,7 +34,7 @@ class TestAccount(unittest.TestCase):
             print('Psp: %s' % i.desc)
             pdict.updateByEvent(i)
             s = i.data._symbol
-            print('-> state: asof[%s] lastPrice[%s] OHLC%s\n' % (pdict.getAsOf(s).strftime('%Y%m%d %H:%M:%S'), pdict.latestPrice(s), pdict.todayOHLC(s)))
+            print('-> state: asof[%s] lastPrice[%s] OHLC%s\n' % (pdict.getAsOf(s).strftime('%Y%m%d %H:%M:%S'), pdict.latestPrice(s), pdict.dailyOHLC_sofar(s)))
 
     def _test_Account(self):
         p = Program(PROGNAME)
@@ -54,7 +54,7 @@ class TestAccount(unittest.TestCase):
             print('Psp: %s' % i.desc)
             pdict.updateByEvent(i)
             s = i.data._symbol
-            print('-> state: asof[%s] lastPrice[%s] OHLC%s\n' % (pdict.getAsOf(s).strftime('%Y%m%d %H:%M:%S'), pdict.latestPrice(s), pdict.todayOHLC(s)))
+            print('-> state: asof[%s] lastPrice[%s] OHLC%s\n' % (pdict.getAsOf(s).strftime('%Y%m%d %H:%M:%S'), pdict.latestPrice(s), pdict.dailyOHLC_sofar(s)))
 
 
 if __name__ == '__main__':

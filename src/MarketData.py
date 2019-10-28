@@ -148,6 +148,12 @@ class KLineData(EventData):
 
         return self.datetime
 
+    '''
+    @property
+    def OHLCV(self) :
+        return self.open, self.high, self.low, self.close, self.volume
+    '''
+
 ########################################################################
 class DictToKLine(object):
 
@@ -284,10 +290,10 @@ class KlineToXminMerger(object):
         self.onXminBar = onKLineXmin  # X分钟K线的回调函数
 
     #----------------------------------------------------------------------
-    def pushKLineEvent(self, klineEv):
+    def pushKLineEvent(self, klineEv, dtAsOf=None):
         """1分钟K线更新"""
         d = klineEv.dict_['data']
-        self.pushKLineData(d)
+        self.pushKLineData(d, dtAsOf)
 
     def flush(self):
         klineOut = self._klineWk
@@ -299,7 +305,7 @@ class KlineToXminMerger(object):
         self._klineWk = None
         return klineOut
 
-    def pushKLineData(self, kline):
+    def pushKLineData(self, kline, dtAsOf=None):
         """1分钟K线更新"""
 
         # 尚未创建对象
@@ -318,10 +324,14 @@ class KlineToXminMerger(object):
             self._klineWk.open = kline.open
             self._klineWk.high = kline.high
             self._klineWk.low = kline.low
-            timeTil = kline.datetime + timedelta(minutes=self._xmin)
-            timeTil = timeTil.replace(minute=int(timeTil.minute/self._xmin)*self._xmin, second=0, microsecond=0)
-
-            self._klineWk.datetime = timeTil    # 以x分钟K线末作为X分钟线的时间戳
+            if dtAsOf :
+                self._klineWk.datetime = dtAsOf
+            else :
+                timeTil = kline.datetime + timedelta(minutes=self._xmin)
+                timeTil = timeTil.replace(minute=int(timeTil.minute/self._xmin)*self._xmin, second=0, microsecond=0)
+                self._klineWk.datetime = timeTil    # 以x分钟K线末作为X分钟线的时间戳
+            self._klineWk.date = self._klineWk.datetime.strftime('%Y%m%d')
+            self._klineWk.time = self._klineWk.datetime.strftime('%H%M%S')
         else:                                   
             # 累加更新老一分钟的K线数据
             self._klineWk.high = max(self._klineWk.high, kline.high)
@@ -396,7 +406,7 @@ class MarketState(MetaObj):
         raise NotImplementedError
 
     @abstractmethod
-    def todayOHLC(self, symbol) :
+    def dailyOHLC_sofar(self, symbol) :
         ''' 
         @return (datestr, open, high, low, close) as of today
         '''

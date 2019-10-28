@@ -16,7 +16,7 @@ import copy
 # import tensorflow as tf
 
 EVENT_Perspective  = MARKETDATE_EVENT_PREFIX + 'Persp'   # 错误回报事件
-__dtEpoch = datetime.utcfromtimestamp(0)
+_dtEpoch = datetime.utcfromtimestamp(0)
 
 ########################################################################
 class EvictableStack(object):
@@ -44,8 +44,13 @@ class EvictableStack(object):
 
     @property
     def exportList(self):
-        fillsize = (self.evictSize - self.size) if self.evictSize >=0 else 0
-        return self._data + [self._dataNIL] *fillsize
+        return _exportList(self, nilFilled=True)
+
+    def _exportList(self, nilFilled=False):
+        if nilFilled :
+            fillsize = (self.evictSize - self.size) if self.evictSize >=0 else 0
+            return self._data + [self._dataNIL] *fillsize
+        return self._data
 
     def overwrite(self, item):
         self._data[0] =item
@@ -91,6 +96,7 @@ class Perspective(EventData):
 
         self.__stampLast = None
         self.__focusLast = None
+        self.__dayOHLC = None
 
     @property
     def desc(self) :
@@ -101,7 +107,7 @@ class Perspective(EventData):
 
     @property
     def asof(self) :
-        return self.__stampLast if self.__stampLast else __dtEpoch
+        return self.__stampLast if self.__stampLast else _dtEpoch
 
     @property
     def focus(self) :
@@ -119,7 +125,70 @@ class Perspective(EventData):
                 continue
             return stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
 
+    @property
+    def dailyOHLC_sofar(self) :
+        if not self.__dayOHLC:
+            dtAsof = self.asof
+            if not dtAsof or dtAsof <= _dtEpoch : 
+                return None
+
+            self.__dayOHLC = KLineData(self._exchange, self._symbol)
+            self.__dayOHLC.datetime = dtAsof.replace(hour=0,minute=0,second=0,microsecond=0)
+            self.__dayOHLC.open = 0.0
+            self.__dayOHLC.high = 0.0
+            self.__dayOHLC.low  = 0.0
+            self.__dayOHLC.volume=0
+
+            for et in [EVENT_KLINE_5MIN, EVENT_KLINE_1MIN]:
+                lst = self._stacks[et]._exportList()
+                if len(lst) <=0:
+                    continue
+                lst.reverse()
+                for i in lst :
+                    if i.asof < self.__dayOHLC.asof :
+                        continue
+
+                    self.__dayOHLC.high = max(self.__dayOHLC.high, i.high)
+                    self.__dayOHLC.low  = i.low if self.__dayOHLC.low <=0 else min(self.__dayOHLC.low, i.low)
+                    if self.__dayOHLC.open <=0 :
+                        self.__dayOHLC.open = i.open
+
+                    self.__dayOHLC.close = i.close        
+                    self.__dayOHLC.openInterest = i.openInterest
+                    self.__dayOHLC.volume =0  # NOT GOOD when built up from 1min+5min: += int(i.volume) 
+                    self.__dayOHLC.datetime = i.asof
+
+            #TODO sumup EVENT_TICK
+
+        # self.__dayOHLC.datetime = self.asof.replace(hour=23,minute=59,second=59,mircosecond=0)
+        self.__dayOHLC.date = self.__dayOHLC.datetime.strftime('%Y%m%d')
+        self.__dayOHLC.time = self.__dayOHLC.datetime.strftime('%H%M%S')
+        return self.__dayOHLC
+
     def push(self, ev) :
+        if not self.__push(ev) :
+            return False
+
+        if self.__dayOHLC and self.__dayOHLC.asof < self.asof.replace(hour=0,minute=0,second=0,microsecond=0) :
+            self.__dayOHLC = None
+
+        evd = ev.data
+        if not self.__dayOHLC :
+            self.__dayOHLC = evd
+            return True
+
+        if evd.asof > self.__dayOHLC.asof:
+            self.__dayOHLC.high = max(self.__dayOHLC.high, evd.high)
+            self.__dayOHLC.low  = min(self.__dayOHLC.low, evd.low)
+            self.__dayOHLC.close = evd.close        
+            self.__dayOHLC.volume =0 # NOT GOOD when built up from 1min+5min: += int(evd.volume)                
+
+            self.__dayOHLC.openInterest = evd.openInterest
+            self.__dayOHLC.datetime = evd.asof
+
+        return True
+
+    def __push(self, ev) :
         if not ev.type_ in self._stacks.keys():
             return False
 
@@ -235,19 +304,18 @@ class PerspectiveDict(MarketState):
         for s, p in self.__dictPerspective.items() :
             if not ret or ret > p.asof:
                 ret = p.asof
-        return ret if ret else __dtEpoch
+        return ret if ret else _dtEpoch
 
-    def todayOHLC(self, symbol) :
+    def dailyOHLC_sofar(self, symbol) :
         ''' 
-        @return (open, high, low, close) as of today
+        @return (date, open, high, low, close) as of today
         '''
-        if symbol in self.__dictPerspective.keys():
-            p = self.__dictPerspective[symbol]
-            if p._stacks[EVENT_KLINE_1DAY].size >0:
-                d = p._stacks[EVENT_KLINE_1DAY].top
-                return d.date, d.open, d.high, d.low, d.close
-        return 0.0, 0.0, 0.0, 0.0
+        if not symbol in self.__dictPerspective.keys():
+            return '', 0.0, 0.0, 0.0, 0.0, 0
 
+        kl = self.__dictPerspective[symbol].dailyOHLC_sofar
+        return kl.date, kl.open, kl.high, kl.low, kl.close
+        
     def updateByEvent(self, ev) :
         ''' 
         @event could be Event(Tick), Event(KLine), Event(Perspective)

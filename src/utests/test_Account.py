@@ -37,6 +37,7 @@ class TestAccount(unittest.TestCase):
             print('-> state: asof[%s] lastPrice[%s] OHLC%s\n' % (pdict.getAsOf(s).strftime('%Y%m%d %H:%M:%S'), pdict.latestPrice(s), pdict.todayOHLC(s)))
 
     def _test_Account(self):
+        
         p = Program(PROGNAME)
         p._heartbeatInterval =-1
 

@@ -67,3 +67,4 @@ vn.trader/dist/*
 
 A601000.BollChannel.csv
 vnApp/conf/Huobi.json
+doc/_build/*

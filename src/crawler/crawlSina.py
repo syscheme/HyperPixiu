@@ -58,6 +58,7 @@ class SinaCrawler(MarketCrawler):
                 if len(bth) <=0: break
                 self._tickBatches.append(bth)
                 i+=1
+            self.debug("%d symbols are divided into %d batches" %(len(self._symbolsToPoll), len(self._tickBatches)))
 
         if self._stampTickNext and self._stampTickNext < self._stepAsOf :
             return False
@@ -67,8 +68,9 @@ class SinaCrawler(MarketCrawler):
         for btch in self._tickBatches :
             httperr, result = self.getRecentTicks(btch)
             if httperr !=200:
-                self.error("getRecentTicks() failed, err(%s)" %(httperr))
+                self.error("getRecentTicks() failed, err(%s) bth:%s" %(httperr, bth))
                 yield True
+                continue
             
             # succ at previous batch here
             if len(result) <=0 : self._stampTickNext + 60*10 # likely after a trade-day closed 10min
@@ -168,6 +170,7 @@ class SinaCrawler(MarketCrawler):
         errmsg = u'GET请求失败'
         httperr = 400
         try:
+            self.debug("searchKLines() GET %s" %(url))
             response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
             httperr = response.status_code
             if httperr == 200:
@@ -227,14 +230,13 @@ class SinaCrawler(MarketCrawler):
         errmsg = u'GET请求失败'
         httperr = 400
         try:
-            self.debg("getRecentTicks() GET %s" %(url))
+            self.debug("getRecentTicks() GET %s" %(url))
             response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
             httperr = response.status_code
-            self.debg("getRecentTicks() GET[%s] resp(%d)" %(httperr, url))
             if httperr != 200:
-                return httperr, u'GET请求失败，状态代码：%s' % httperr
+                return httperr, u'getRecentTicks() GET err：%s' % httperr
         except Exception as e:
-            return httperr, u'GET请求触发,异常：%s' %e
+            return httperr, u'getRecentTicks() GET exception：%s' %e
 
         for line in response.text.split('\n') :
             m = SYNTAX.match(line)
@@ -292,7 +294,7 @@ class SinaCrawler(MarketCrawler):
 
             tickseq.append(tickdata)
         
-        self.debg("getRecentTicks() GET resp(%d) %dB: %s" %(httperr, url))
+        self.debug("getRecentTicks() GET[%s] resp(%d) got %d ticks" %(url, httperr, len(tickseq)))
         return httperr, tickseq
 
     #------------------------------------------------    
@@ -328,7 +330,7 @@ class SinaCrawler(MarketCrawler):
         '''
         HEADERSEQ="time,volume,price,type"
         HEADERS=HEADERSEQ.split(',')
-        SYNTAX = re.compile('^.*trade_item_list\[.*Array\(([^\)]*)\).*')
+        SYNTAX = re.compile('^.*trade_item_list.*Array\(([^\)]*)\).*')
         url = 'http://vip.stock.finance.sina.com.cn/quotes_service/view/CN_TransListV2.php?symbol=%s' % (mdSina.fixupSymbolPrefix(symbol))
         try:
             response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)

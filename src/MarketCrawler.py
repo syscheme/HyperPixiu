@@ -133,7 +133,7 @@ class MarketCrawler(BaseApplication):
         return busy
 
     def stop(self):
-        super(SinaCrawler, self).stop()
+        super(MarketCrawler, self).stop()
         self.close()
         
     #----------------------------------------------------------------------

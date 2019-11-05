@@ -58,6 +58,7 @@ class SinaCrawler(MarketCrawler):
                 if len(bth) <=0: break
                 self._tickBatches.append(bth)
                 i+=1
+            self.debug("%d symbols are divided into %d batches" %(len(self._symbolsToPoll), len(self._tickBatches)))
 
         if self._stampTickNext and self._stampTickNext < self._stepAsOf :
             return False
@@ -67,8 +68,9 @@ class SinaCrawler(MarketCrawler):
         for btch in self._tickBatches :
             httperr, result = self.getRecentTicks(btch)
             if httperr !=200:
-                self.error("getRecentTicks() failed, err(%s)" %(httperr))
+                self.error("getRecentTicks() failed, err(%s) bth:%s" %(httperr, bth))
                 yield True
+                continue
             
             # succ at previous batch here
             if len(result) <=0 : self._stampTickNext + 60*10 # likely after a trade-day closed 10min
@@ -129,6 +131,22 @@ class SinaCrawler(MarketCrawler):
     #------------------------------------------------
     # overwrite of BackEnd
     #------------------------------------------------    
+    def __sinaGET(self, url, apiName):
+        errmsg = '%s() GET ' % apiName
+        httperr = 400
+        try:
+            self.debug("%s() GET %s" %(apiName, url))
+            response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
+            httperr = response.status_code
+            if httperr == 200:
+                return httperr, response.text
+            errmsg += 'err(%s)' % httperr
+        except Exception as e:
+            errmsg += 'exception：%s' % e
+        
+        self.error(errmsg)
+        return httperr, errmsg
+
     def searchKLines(self, symbol, eventType, since=None, cb=None):
         """查询请求""" 
         '''
@@ -164,40 +182,32 @@ class SinaCrawler(MarketCrawler):
             lines = (tdelta + 60*scale -1) / 60/scale
 
         url = "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=%s&scale=%s&datalen=%d" % (symbol, scale, lines)
+        httperr, text = self.__sinaGET(url, 'searchKLines')
+        if httperr != 200:
+            return httperr, text
+
+        # [{day:"2019-09-23 14:15:00",open:"15.280",high:"15.290",low:"15.260",close:"15.270",volume:"892600",ma_price5:15.274,ma_volume5:1645033,ma_price10:15.272,ma_volume10:1524623,ma_price30:15.296,ma_volume30:2081080},
+        # {day:"2019-09-23 14:20:00",open:"15.270",high:"15.280",low:"15.240",close:"15.240",volume:"1591705",ma_price5:15.266,ma_volume5:1676498,ma_price10:15.27,ma_volume10:1593887,ma_price30:15.292,ma_volume30:1955370},
+        # ...]
+        # js = response.json()
+        # result = demjson.decode(response.text)
+        # result.decode('utf-8')
         klineseq =[]
-        errmsg = u'GET请求失败'
-        httperr = 400
-        try:
-            response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
-            httperr = response.status_code
-            if httperr == 200:
-                # [{day:"2019-09-23 14:15:00",open:"15.280",high:"15.290",low:"15.260",close:"15.270",volume:"892600",ma_price5:15.274,ma_volume5:1645033,ma_price10:15.272,ma_volume10:1524623,ma_price30:15.296,ma_volume30:2081080},
-                # {day:"2019-09-23 14:20:00",open:"15.270",high:"15.280",low:"15.240",close:"15.240",volume:"1591705",ma_price5:15.266,ma_volume5:1676498,ma_price10:15.27,ma_volume10:1593887,ma_price30:15.292,ma_volume30:1955370},
-                # ...]
-                # js = response.json()
-                # result = demjson.decode(response.text)
-                # result.decode('utf-8')
-                jsonData = demjson.decode(response.text)
+        jsonData = demjson.decode(text)
 
-                for kl in jsonData :
-                    kldata = KLineData("ASHARE", symbol)
-                    kldata.open = kl['open']             # OHLC
-                    kldata.high = kl['high']             # OHLC
-                    kldata.low = kl['low']             # OHLC
-                    kldata.close = kl['close']             # OHLC
-                    kldata.volume = kl['volume']
-                    kldata.close = kl['close']
-                    kldata.date = kl['day'][0:10]
-                    kldata.time = kl['day'][11:]
-                    klineseq.append(kldata)
+        for kl in jsonData :
+            kldata = KLineData("ASHARE", symbol)
+            kldata.open = kl['open']             # OHLC
+            kldata.high = kl['high']             # OHLC
+            kldata.low = kl['low']             # OHLC
+            kldata.close = kl['close']             # OHLC
+            kldata.volume = kl['volume']
+            kldata.close = kl['close']
+            kldata.date = kl['day'][0:10]
+            kldata.time = kl['day'][11:]
+            klineseq.append(kldata)
 
-                return httperr, klineseq
-            else:
-                errmsg = u'GET请求失败，状态代码：%s' % response.status_code
-        except Exception as e:
-                errmsg = u'GET请求失败，异常：%s' % e
-
-        return httperr, errmsg
+        return httperr, klineseq
 
     def fixupSymbolPrefix(symbol):
         if symbol.isdigit() :
@@ -219,24 +229,17 @@ class SinaCrawler(MarketCrawler):
             symbols = symbols.split(',')
         qsymbols = [SinaCrawler.fixupSymbolPrefix(s) for s in symbols]
         url = 'http://hq.sinajs.cn/list=%s' % (','.join(qsymbols).lower())
+
+        httperr, text = self.__sinaGET(url, 'getRecentTicks')
+        if httperr != 200:
+            return httperr, text
+
         HEADERSEQ="name,open,prevClose,price,high,low,bid,ask,volume,total,bid1v,bid1,bid2v,bid2,bid3v,bid3,bid4v,bid4,bid5v,bid5,ask1v,ask1,ask2v,ask2,ask3v,ask3,ask4v,ask4,ask5v,ask5,date,time"
         HEADERS=HEADERSEQ.split(',')
         SYNTAX = re.compile('^var hq_str_([^=]*)="([^"]*).*')
         tickseq = []
 
-        errmsg = u'GET请求失败'
-        httperr = 400
-        try:
-            self.debg("getRecentTicks() GET %s" %(url))
-            response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
-            httperr = response.status_code
-            self.debg("getRecentTicks() GET[%s] resp(%d)" %(httperr, url))
-            if httperr != 200:
-                return httperr, u'GET请求失败，状态代码：%s' % httperr
-        except Exception as e:
-            return httperr, u'GET请求触发,异常：%s' %e
-
-        for line in response.text.split('\n') :
+        for line in text.split('\n') :
             m = SYNTAX.match(line)
             if not m :
                 # LOG ERR
@@ -292,7 +295,7 @@ class SinaCrawler(MarketCrawler):
 
             tickseq.append(tickdata)
         
-        self.debg("getRecentTicks() GET resp(%d) %dB: %s" %(httperr, url))
+        self.debug("getRecentTicks() resp(%d) got %d ticks" %(httperr, len(tickseq)))
         return httperr, tickseq
 
     #------------------------------------------------    
@@ -303,14 +306,12 @@ class SinaCrawler(MarketCrawler):
         ({r0_in:"0.0000",r0_out:"0.0000",r0:"0.0000",r1_in:"3851639.0000",r1_out:"4794409.0000",r1:"9333936.0000",r2_in:"8667212.0000",r2_out:"10001938.0000",r2:"18924494.0000",r3_in:"7037186.0000",r3_out:"7239931.2400",r3:"15039741.2400",curr_capital:"9098",name:"朗科智能",trade:"24.4200",changeratio:"0.000819672",volume:"1783866.0000",turnover:"196.083",r0x_ratio:"0",netamount:"-2480241.2400"})
         '''
         url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssi_ssfx_flzjtj?daima=%s' % (mdSina.fixupSymbolPrefix(symbol))
-        try:
-            response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
-            if response.status_code != 200:
-                return False, u'GET请求失败，状态代码：%s' %response.status_code
-        except Exception as e:
-            return False, u'GET请求触发异常，原因：%s' %e
+        httperr, text = self.__sinaGET(url, 'getMoneyFlow')
+        if httperr != 200:
+            return httperr, text
 
-        str=response.text[response.text.find('{'):response.text.rfind('}')+1]
+
+        str=text[text.find('{'):text.rfind('}')+1]
         jsonData = demjson.decode(str)
 
         return True, jsonData
@@ -328,18 +329,15 @@ class SinaCrawler(MarketCrawler):
         '''
         HEADERSEQ="time,volume,price,type"
         HEADERS=HEADERSEQ.split(',')
-        SYNTAX = re.compile('^.*trade_item_list\[.*Array\(([^\)]*)\).*')
+        SYNTAX = re.compile('^.*trade_item_list.*Array\(([^\)]*)\).*')
         url = 'http://vip.stock.finance.sina.com.cn/quotes_service/view/CN_TransListV2.php?symbol=%s' % (mdSina.fixupSymbolPrefix(symbol))
-        try:
-            response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
-            if response.status_code != 200:
-                return False, u'GET请求失败，状态代码：%s' %response.status_code
-        except Exception as e:
-            return False, u'GET请求触发异常，原因：%s' %e
+        httperr, text = self.__sinaGET(url, 'getTransactions')
+        if httperr != 200:
+            return httperr, text
 
         txns = []
 
-        for line in response.text.split('\n') :
+        for line in text.split('\n') :
             m = SYNTAX.match(line)
             if not m :
                 # LOG ERR
@@ -360,15 +358,12 @@ class SinaCrawler(MarketCrawler):
         var sz002604hfq=[{total:1893,data:{_2019_05_14:"5.3599",...,2015_06_05:"52.5870",_2015_06_04:"53.8027",..._2011_07_29:"27.8500",_2011_07_28:"25.3200"}}]
         '''
         url = 'http://finance.sina.com.cn/realstock/newcompany/%s/phfq.js' % (SinaCrawler.fixupSymbolPrefix(symbol))
-        try:
-            response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
-            if response.status_code != 200:
-                return False, u'GET请求失败，状态代码：%s' %response.status_code
-        except Exception as e:
-            return False, u'GET请求触发异常，原因：%s' %e
+        httperr, text = self.__sinaGET(url, 'getSplitRate')
+        if httperr != 200:
+            return httperr, text
 
         spliterates = []
-        str=response.text[response.text.find('{'):response.text.rfind('}')+1]
+        str=text[text.find('{'):text.rfind('}')+1]
         jsonData = demjson.decode(re.sub('_([0-9]{4})_([0-9]{2})_([0-9]{2})', r'\1-\2-\3', str)) # convert _2019_05_14 to 2019-05-14
         ret = []
         for k,v in jsonData['data'].items() : 

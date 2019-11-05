@@ -11,8 +11,7 @@ class TestCrawler(unittest.TestCase):
         p = Program(PROGNAME)
         p._heartbeatInterval =-1
 
-        p.createApp(SinaCrawler, None)
-        md = SinaCrawler(p, None);
+        md = p.createApp(SinaCrawler, None) # md = SinaCrawler(p, None);
         # _, result = md.searchKLines("000002", EVENT_KLINE_5MIN)
         # _, result = md.getRecentTicks('sh601006,sh601005,sh000001,sz000001')
         # _, result = md.getSplitRate('sh601006')

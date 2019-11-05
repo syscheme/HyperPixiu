@@ -161,15 +161,15 @@ class BaseApplication(MetaApp):
         return self.__gen.send(event)
 
     #---- event operations ---------------------------
-    def subscribeEvent(self, event, funcCallback) :
-        if not self._program or not self._program._eventLoop:
+    def subscribeEvent(self, event) :
+        if not self._program:
             pass
         
-        self._program._eventLoop.register(event, funcCallback)
+        self._program.subscribe(event, self)
 
     def postEventData(self, eventType, edata):
         """发出事件"""
-        if not self._program or not self._program._eventLoop:
+        if not self._program:
             return
 
         event = Event(type_= eventType)
@@ -178,10 +178,10 @@ class BaseApplication(MetaApp):
 
     def postEvent(self, event):
         """发出事件"""
-        if not event or not self._program or not self._program._eventLoop:
+        if not event or not self._program:
             return
 
-        self._program._eventLoop.put(event)
+        self._program.publish(event)
         self.debug('posted event[%s]' % event.dict_['type_'])
 
     #---logging -----------------------

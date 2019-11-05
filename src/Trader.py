@@ -23,7 +23,6 @@ from copy import copy
 from abc import ABCMeta, abstractmethod
 import traceback
 import jsoncfg # pip install json-cfg
-import shelve
 
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
@@ -56,7 +55,7 @@ class Trader(BaseApplication):
         self._dictLatestOrder = {}
 
         # inside of Account self._dictTrade = {}
-        self._dictAccounts = {}
+        self._account = None
         self._defaultAccId = None
         self._dtData = None # datetime of data
         # inside of Account self._dictPositions= {}
@@ -140,28 +139,29 @@ class Trader(BaseApplication):
         
     #----------------------------------------------------------------------
     # access to the Account
-    #----------------------------------------------------------------------
-    def adoptAccount(self, account, default=False):
-        if not account:
-            return
-        
-        self._dictAccounts[account.ident] = account
-        if default or self._defaultAccId ==None:
-            self._defaultAccId = account.ident
-
     @property
     def account(self): # the default account
-        return self._dictAccounts[self._defaultAccId]
+        return self._account
 
-    @property
-    def allAccounts(self):
-        """获取所有帐号"""
-        return self._dictAccounts.values()
-        
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
     def init(self): # return True if succ
-        return super(Trader, self).init()
+        if not super(Trader, self).init() :
+            return False
+
+        # find adopt the account
+        if not self._account :
+            # find the Account from the program
+            if not self._accountId :
+                self._accountId = ''
+
+            searchKey = '.%s' % self._accountId
+            for appId in self._program.listApps(Account) :
+                pos = appId.find(searchKey)
+                if self._accountId == appId or pos >0 and appId[pos:] == searchKey:
+                    self._account = self._program.findApp(appId)
+                    if self._account : 
+                        self._accountId = self._account.ident
 
     def start(self):
 
@@ -174,8 +174,8 @@ class Trader(BaseApplication):
         self.account.onStart()
 
         # step 2. subscribe account events
-        self.subscribeEvent(Account.EVENT_ORDER, self.eventHdl_Order)
-        self.subscribeEvent(Account.EVENT_TRADE, self.eventHdl_Trade)
+        self.subscribeEvent(Account.EVENT_ORDER)
+        self.subscribeEvent(Account.EVENT_TRADE)
 
         # step 3. call allstrategy.onInit()
         self.strategies_Start()
@@ -197,13 +197,102 @@ class Trader(BaseApplication):
 
     def OnEvent(self, ev):
         '''
-        process the event
+        dispatch the event
         '''
         if md.EVENT_TICK == ev.type_:
             return self.eventHdl_Tick(ev)
         if md.EVENT_KLINE_1MIN == ev.type_:
             return self.eventHdl_KLine1min(ev)
+        if Account.EVENT_ORDER == ev.type_:
+            return self.eventHdl_Order(ev)
+        if Account.EVENT_TRADE == ev.type_:
+            return self.eventHdl_Trade(ev)
+
+    # end of BaseApplication routine
+    #----------------------------------------------------------------------
    
+    #----------------------------------------------------------------------
+    # about the event handling
+    @abstractmethod
+    def eventHdl_TradeEnd(self, event):
+        self.info('eventHdl_TradeEnd() quitting')
+        self._program.stop()
+        # exit(0) # usualy exit() would be called in it to quit the program
+
+    # --- eventOrder from Account ------------
+    @abstractmethod
+    def eventHdl_Order(self, event):
+        """处理委托事件"""
+        order = event.dict_['data']        
+
+        # step 3. 逐个推送到策略实例中 lnf DataEngine
+        if not order.brokerOrderId in self._idxOrderToStategy:
+            return
+
+        strategy = self._idxOrderToStategy[order.brokerOrderId]            
+            
+        # 如果委托已经完成（拒单、撤销、全成），则从活动委托集合中移除
+        if order.status == self.FINISHED_STATUS:
+            s = self._idxStrategyToOrder[strategy.id]
+            if order.brokerOrderId in s:
+                s.remove(order.brokerOrderId)
+            
+        self._stg_call(strategy, strategy.onOrder, order)
+            
+    # --- eventTrade from Account ----------------
+    @abstractmethod
+    def eventHdl_Trade(self, event):
+        """处理成交事件"""
+        trade = event.dict_['data']
+        
+        # step 3. 将成交推送到策略对象中 lnf ctaEngine
+        if trade.orderID in self._idxOrderToStategy:
+            strategy = self._idxOrderToStategy[trade.orderID]
+            self._stg_call(strategy, strategy.onTrade, trade)
+            # 保存策略持仓到数据库
+            # goes to Account now : self._stg_flushPos(strategy)
+
+    # --- generic events ??? ----------------
+    def eventHdl_OnTimer(self, event):
+        # edata = event.dict_['data']
+        # self.debug('OnTimer() src[%s] %s' % (edata.sourceType, edata.datetime.strftime('%Y%m%dT%H:%M:%S')))
+        # TODO: forward to account.onTimer()
+        pass                      
+
+    # --- eventContract from ??? ----------------
+    @abstractmethod
+    def processContractEvent(self, event):
+        """处理合约事件"""
+        contract = event.dict_['data']
+
+        # step 1. cache lnf DataEngine
+        self._dictLatestContract[contract.vtSymbol] = contract
+        self._dictLatestContract[contract.symbol] = contract       # 使用常规代码（不包括交易所）可能导致重复
+
+    #----------------------------------------------------------------------
+    @abstractmethod    # usually back test will overwrite this
+    def onDayOpen(self, symbol, date):
+
+        # step1. notify accounts
+        # TODO: to support multiaccount: for acc in self._dictAccounts.values():
+        self.debug('onDayOpen(%s) dispatching to account' % symbol)
+        if self._account :
+            try :
+                self._account.onDayOpen(date)
+            except Exception as ex:
+                self.logexception(ex)
+
+        # step1. notify stategies
+        if symbol in self._idxSymbolToStrategy:
+            # 逐个推送到策略实例中
+            l = self._idxSymbolToStrategy[symbol]
+            self.debug('onDayOpen(%s) dispatching to %d strategies' % (symbol, len(l)))
+            for strategy in l:
+                self._stg_call(strategy, strategy.onDayOpen, date)
+
+    # end of event handling
+    #----------------------------------------------------------------------
+
     #----------------------------------------------------------------------
     # local the recent data by symbol
     #----------------------------------------------------------------------
@@ -250,50 +339,47 @@ class Trader(BaseApplication):
         except KeyError:
             return None
     
-    def getAllWorkingOrders(self):
-        """查询所有活动委托（返回列表）"""
-        orders = []
-        for acc in self._dictAccounts.values():
-            orders.append(acc.getAllWorkingOrders())
-        return orders
+    # def getAllWorkingOrders(self):
+    #     """查询所有活动委托（返回列表）"""
+    #     return self._account.getAllWorkingOrders()
 
-    def getAllOrders(self):
-        """获取所有委托"""
-        orders = []
-        for acc in self._dictAccounts.values():
-            orders.append(acc.getAllOrders())
-        return orders
+    # def getAllOrders(self):
+    #     """获取所有委托"""
+    #     orders = []
+    #     for acc in self._dictAccounts.values():
+    #         orders.append(acc.getAllOrders())
+    #     return orders
     
-    def getAllTrades(self):
-        """获取所有成交"""
-        traders = []
-        for acc in self._dictAccounts.values():
-            traders.append(acc.getAllTrades())
-        return traders
+    # def getAllTrades(self):
+    #     """获取所有成交"""
+    #     traders = []
+    #     for acc in self._dictAccounts.values():
+    #         traders.append(acc.getAllTrades())
+    #     return traders
     
     #----------------------------------------------------------------------
     # about the positions
     #----------------------------------------------------------------------
-    def getAllPositions(self):
-        """获取所有持仓"""
-        poslist = []
-        for acc in self._dictAccounts.values():
-            poslist.append(acc.getAllPositions())
-        return poslist
+    # def getAllPositions(self):
+    #     """获取所有持仓"""
+    #     poslist = []
+    #     for acc in self._dictAccounts.values():
+    #         poslist.append(acc.getAllPositions())
+    #     return poslist
 
-    def getPositionDetail(self, symbol):
-        """查询持仓细节"""
-        poslist = []
-        for acc in self._dictAccounts.values():
-            poslist.append(acc.getPositionDetail(symbol))
-        return poslist
+    # def getPositionDetail(self, symbol):
+    #     """查询持仓细节"""
+    #     poslist = []
+    #     for acc in self._dictAccounts.values():
+    #         poslist.append(acc.getPositionDetail(symbol))
+    #     return poslist
 
-    def getAllPositionDetails(self):
-        """查询所有本地持仓缓存细节"""
-        poslist = []
-        for acc in self._dictAccounts.values():
-            poslist.append(acc.getAllPositionDetails())
-        return poslist
+    # def getAllPositionDetails(self):
+    #     """查询所有本地持仓缓存细节"""
+    #     poslist = []
+    #     for acc in self._dictAccounts.values():
+    #         poslist.append(acc.getAllPositionDetails())
+    #     return poslist
     
     def getOHLC(self, symbol):
         """查询所有本地持仓缓存细节"""
@@ -307,8 +393,8 @@ class Trader(BaseApplication):
     def subscribeSymbols(self) :
 
         # subscribe the symbols
-        self.subscribeEvent(md.EVENT_TICK,       self.eventHdl_Tick)
-        self.subscribeEvent(md.EVENT_KLINE_1MIN, self.eventHdl_KLine1min)
+        self.subscribeEvent(md.EVENT_TICK)
+        self.subscribeEvent(md.EVENT_KLINE_1MIN)
         for k in self._dictObjectives.keys():
             s = self._dictObjectives[k]
             if len(s['dsTick']) >0:
@@ -323,7 +409,7 @@ class Trader(BaseApplication):
                     self.debug('calling local subcribers for EVENT_KLINE_1MIN: %s' % s)
                     ds.subscribe(k, md.EVENT_KLINE_1MIN)
 
-    ### eventTick from MarketData ----------------
+    # --- eventTick from MarketData ----------------
     def updateOHLC(self, OHLC, open, high, low, close):
         if not OHLC:
             return (open, high, low, close)
@@ -467,83 +553,6 @@ class Trader(BaseApplication):
         elif tick:
             return tick.price
         return 0
-
-    @abstractmethod
-    def eventHdl_TradeEnd(self, event):
-        self.info('eventHdl_TradeEnd() quitting')
-        self._program.stop()
-        # exit(0) # usualy exit() would be called in it to quit the program
-
-    ### eventOrder from Account ----------------
-    @abstractmethod
-    def eventHdl_Order(self, event):
-        """处理委托事件"""
-        order = event.dict_['data']        
-
-        # step 3. 逐个推送到策略实例中 lnf DataEngine
-        if not order.brokerOrderId in self._idxOrderToStategy:
-            return
-
-        strategy = self._idxOrderToStategy[order.brokerOrderId]            
-            
-        # 如果委托已经完成（拒单、撤销、全成），则从活动委托集合中移除
-        if order.status == self.FINISHED_STATUS:
-            s = self._idxStrategyToOrder[strategy.id]
-            if order.brokerOrderId in s:
-                s.remove(order.brokerOrderId)
-            
-        self._stg_call(strategy, strategy.onOrder, order)
-            
-    ### eventTrade from Account ----------------
-    @abstractmethod
-    def eventHdl_Trade(self, event):
-        """处理成交事件"""
-        trade = event.dict_['data']
-        
-        # step 3. 将成交推送到策略对象中 lnf ctaEngine
-        if trade.orderID in self._idxOrderToStategy:
-            strategy = self._idxOrderToStategy[trade.orderID]
-            self._stg_call(strategy, strategy.onTrade, trade)
-            # 保存策略持仓到数据库
-            # goes to Account now : self._stg_flushPos(strategy)
-
-    ### generic events ??? ----------------
-    def eventHdl_OnTimer(self, event):
-        # edata = event.dict_['data']
-        # self.debug('OnTimer() src[%s] %s' % (edata.sourceType, edata.datetime.strftime('%Y%m%dT%H:%M:%S')))
-        # TODO: forward to account.onTimer()
-        pass                      
-
-    ### eventContract from ??? ----------------
-    @abstractmethod
-    def processContractEvent(self, event):
-        """处理合约事件"""
-        contract = event.dict_['data']
-
-        # step 1. cache lnf DataEngine
-        self._dictLatestContract[contract.vtSymbol] = contract
-        self._dictLatestContract[contract.symbol] = contract       # 使用常规代码（不包括交易所）可能导致重复
-
-    #----------------------------------------------------------------------
-    @abstractmethod    # usually back test will overwrite this
-    def onDayOpen(self, symbol, date):
-
-        # step1. notify accounts
-        # TODO: to support multiaccount: for acc in self._dictAccounts.values():
-        self.debug('onDayOpen(%s) dispatching to account' % symbol)
-        for acc in self._dictAccounts.values():
-            try :
-                acc.onDayOpen(date)
-            except Exception as ex:
-                self.logexception(ex)
-
-        # step1. notify stategies
-        if symbol in self._idxSymbolToStrategy:
-            # 逐个推送到策略实例中
-            l = self._idxSymbolToStrategy[symbol]
-            self.debug('onDayOpen(%s) dispatching to %d strategies' % (symbol, len(l)))
-            for strategy in l:
-                self._stg_call(strategy, strategy.onDayOpen, date)
 
     @abstractmethod    # usually back test will overwrite this
     def preStrategyByKLine(self, kline):

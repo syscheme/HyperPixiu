@@ -17,9 +17,9 @@ import multiprocessing
 import copy
 
 # import pymongo
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
+# import pandas as pd
+# import numpy as np
+# import matplotlib.pyplot as plt
 import shutil
 
 # 如果安装了seaborn则设置为白色风格
@@ -72,9 +72,13 @@ class BackTestApp(Trader):
 #        self.setStartDate(settings.startDate("2010-01-01"), settings.initDays(10)) 
 #        self.setEndDate(settings.endDate("")) 
 
-        #---------------------------------------------
+    #----------------------------------------------------------------------
+    # impl/overwrite of BaseApplication
+    def init(self): # return True if succ
+        if not super(BackTestApp, self).init() :
+            return False
+
         # adjust the Trader
-        #---------------------------------------------
         # ADJ_1. adjust the Trader._dictObjectives to append suffix MarketData.TAG_BACKTEST
         for obj in self._dictObjectives.values() :
             if len(obj["dsTick"]) >0 :
@@ -83,13 +87,13 @@ class BackTestApp(Trader):
                 obj["ds1min"] += MarketData.TAG_BACKTEST
 
         # ADJ_2. wrapper the broker drivers of the accounts
-        for ak in self._dictAccounts.keys() :
-            oldAcc = self._dictAccounts[ak]
-            mainRoutine.removeApp(oldAcc.ident)
+        if not self._account :
+            oldAcc = self._account
+            self._program.removeApp(oldAcc.ident)
             wrapper = AccountWrapper(self, oldAcc)
             wrapper.setCapital(self._startBalance, True)
-            self._dictAccounts[ak] = wrapper
-            mainRoutine.addApp(wrapper)
+            self._account = wrapper
+            self._program.addApp(wrapper)
 
         # end of adjust the Trader
         #---------------------------------------------
@@ -106,13 +110,8 @@ class BackTestApp(Trader):
         # 日线回测结果计算用
         self.dailyResultDict = OrderedDict()
 
-    #---- BEGIN properties ----------------------------------------
-
-    #---- END properties ----------------------------------------
-
-    #----- impl of BaseApplication ----------------------------------------
-
-    #----- end  of BaseApplication ----------------------------------------
+    # end of BaseApplication routine
+    #----------------------------------------------------------------------
 
     #----------------------------------------------------------------------
     def resetTest(self) :
@@ -131,7 +130,6 @@ class BackTestApp(Trader):
     
     #----------------------------------------------------------------------
     # Overrides of Events handling
-    #----------------------------------------------------------------------
     @abstractmethod    # usually back test will overwrite this
     def preStrategyByKLine(self, kline):
         """收到行情后处理本地停止单（检查是否要立即发出）"""
@@ -204,8 +202,6 @@ class BackTestApp(Trader):
     # 数据回放结果计算相关
     #------------------------------------------------
 
-
-
     #----------------------------------------------------------------------
     def clearResult(self):
         self.resultList = []             # 交易结果列表
@@ -218,14 +214,17 @@ class BackTestApp(Trader):
     #------------------------------------------------
     # 数据回放相关
     #------------------------------------------------    
-    def stdout(self, message):
+    def debug(self, message):
         """输出内容"""
-        message = str(self._dtData) + ' ' + message
-        self._engine.stdout(message)
+        if self._dtData:
+            message = str(self._dtData) + ' ' + message
+        super(BackTestApp, self).stdout(message)
     
     @abstractmethod
     def btlog(self, level, msg):
-        super(BackTestApp, self).log(level, str(self._dtData) + ' ' + msg)
+        if self._dtData:
+            msg = str(self._dtData) + ' ' + msg
+        super(BackTestApp, self).log(level, msg)
 
     #------------------------------------------------
     # 结果计算相关
@@ -239,7 +238,7 @@ class BackTestApp(Trader):
     #     """
     #     计算回测结果
     #     """
-    #     self.stdout(u'计算回测结果')
+    #     self.debug(u'计算回测结果')
         
     #     # 首先基于回测后的成交记录，计算每笔交易的盈亏
     #     self.clearResult()
@@ -381,7 +380,7 @@ class BackTestApp(Trader):
     def settleResult(self):
         # 检查是否有交易
         if not self.resultList:
-            self.stdout(u'无交易结果')
+            self.debug(u'无交易结果')
             return {}
         
         # 然后基于每笔交易的结果，我们可以计算具体的盈亏曲线和最大回撤等        
@@ -508,22 +507,22 @@ class BackTestApp(Trader):
             originGain = (self._execEndClose - self._execStartClose)*100/self._execStartClose
 
         # 输出
-        self.stdout('-' * 30)
-        self.stdout(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execStart, self._execStartClose, self._execEnd, self._execEndClose, formatNumber(originGain)))
-        self.stdout(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (d['timeList'][0], self._execStartClose, d['timeList'][-1], self._execEndClose))
+        self.debug('-' * 30)
+        self.debug(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execStart, self._execStartClose, self._execEnd, self._execEndClose, formatNumber(originGain)))
+        self.debug(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (d['timeList'][0], self._execStartClose, d['timeList'][-1], self._execEndClose))
         
-        self.stdout(u'总交易次数：\t%s' % formatNumber(d['totalResult'],0))        
-        self.stdout(u'总盈亏：\t%s' % formatNumber(d['capital']))
-        self.stdout(u'最大回撤: \t%s' % formatNumber(min(d['drawdownList'])))                
+        self.debug(u'总交易次数：\t%s' % formatNumber(d['totalResult'],0))        
+        self.debug(u'总盈亏：\t%s' % formatNumber(d['capital']))
+        self.debug(u'最大回撤: \t%s' % formatNumber(min(d['drawdownList'])))                
         
-        self.stdout(u'平均每笔盈利：\t%s' %formatNumber(d['capital']/d['totalResult']))
-        self.stdout(u'平均每笔滑点：\t%s' %formatNumber(d['totalSlippage']/d['totalResult']))
-        self.stdout(u'平均每笔佣金：\t%s' %formatNumber(d['totalCommission']/d['totalResult']))
+        self.debug(u'平均每笔盈利：\t%s' %formatNumber(d['capital']/d['totalResult']))
+        self.debug(u'平均每笔滑点：\t%s' %formatNumber(d['totalSlippage']/d['totalResult']))
+        self.debug(u'平均每笔佣金：\t%s' %formatNumber(d['totalCommission']/d['totalResult']))
         
-        self.stdout(u'胜率\t\t%s%%' %formatNumber(d['winningRate']))
-        self.stdout(u'盈利交易平均值\t%s' %formatNumber(d['averageWinning']))
-        self.stdout(u'亏损交易平均值\t%s' %formatNumber(d['averageLosing']))
-        self.stdout(u'盈亏比：\t%s' %formatNumber(d['profitLossRatio']))
+        self.debug(u'胜率\t\t%s%%' %formatNumber(d['winningRate']))
+        self.debug(u'盈利交易平均值\t%s' %formatNumber(d['averageWinning']))
+        self.debug(u'亏损交易平均值\t%s' %formatNumber(d['averageLosing']))
+        self.debug(u'盈亏比：\t%s' %formatNumber(d['profitLossRatio']))
 
         # self.plotBacktestingResult(d)
     
@@ -574,14 +573,14 @@ class BackTestApp(Trader):
         
         # 检查参数设置问题
         if not settingList or not targetName:
-            self.stdout(u'优化设置有问题，请检查')
+            self.debug(u'优化设置有问题，请检查')
         
         # 遍历优化
         self.resultList =[]
         for setting in settingList:
             self.clearBackTesting()
-            self.stdout('-' * 30)
-            self.stdout('setting: %s' %str(setting))
+            self.debug('-' * 30)
+            self.debug('setting: %s' %str(setting))
             self.initStrategy(strategyClass, setting)
             self.runBacktesting()
             df = self.calculateDailyResult()
@@ -594,10 +593,10 @@ class BackTestApp(Trader):
         
         # 显示结果
         self.resultList.sort(reverse=True, key=lambda result:result[1])
-        self.stdout('-' * 30)
-        self.stdout(u'优化结果：')
+        self.debug('-' * 30)
+        self.debug(u'优化结果：')
         for result in self.resultList:
-            self.stdout(u'参数：%s，目标：%s' %(result[0], result[1]))    
+            self.debug(u'参数：%s，目标：%s' %(result[0], result[1]))    
         return self.resultList
             
     #----------------------------------------------------------------------
@@ -609,7 +608,7 @@ class BackTestApp(Trader):
         
         # 检查参数设置问题
         if not settingList or not targetName:
-            self.stdout(u'优化设置有问题，请检查')
+            self.debug(u'优化设置有问题，请检查')
         
         # 多进程优化，启动一个对应CPU核心数量的进程池
         pool = multiprocessing.Pool(multiprocessing.cpu_count())
@@ -626,10 +625,10 @@ class BackTestApp(Trader):
         # 显示结果
         resultList = [res.get() for res in l]
         resultList.sort(reverse=True, key=lambda result:result[1])
-        self.stdout('-' * 30)
-        self.stdout(u'优化结果：')
+        self.debug('-' * 30)
+        self.debug(u'优化结果：')
         for result in resultList:
-            self.stdout(u'参数：%s，目标：%s' %(result[0], result[1]))    
+            self.debug(u'参数：%s，目标：%s' %(result[0], result[1]))    
             
         return resultList
 
@@ -646,7 +645,7 @@ class BackTestApp(Trader):
     #----------------------------------------------------------------------
     def calculateDailyResult(self):
         """计算按日统计的交易结果"""
-        self.stdout(u'计算按日统计结果')
+        self.debug(u'计算按日统计结果')
 
         if self._dictTrades ==None or len(self._dictTrades) <=0:
             return None
@@ -691,7 +690,7 @@ class BackTestApp(Trader):
         """计算按日统计的结果"""
 
         # if df ==None:
-        #     self.stdout(u'计算按日统计结果')
+        #     self.debug(u'计算按日统计结果')
         #     return None, None
 
         df['balance'] = df['netPnl'].cumsum() + self._startBalance
@@ -780,35 +779,35 @@ class BackTestApp(Trader):
             originGain = (self._execEndClose - self._execStartClose)*100/self._execStartClose
 
         # 输出统计结果
-        self.stdout('-' * 30)
-        self.stdout(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execStart, self._execStartClose, self._execEnd, self._execEndClose, formatNumber(originGain)))
-        self.stdout(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (result['startDate'], self._execStartClose, result['endDate'], self._execEndClose))
+        self.debug('-' * 30)
+        self.debug(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execStart, self._execStartClose, self._execEnd, self._execEndClose, formatNumber(originGain)))
+        self.debug(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (result['startDate'], self._execStartClose, result['endDate'], self._execEndClose))
         
-        self.stdout(u'交易日数：\t%s (盈利%s,亏损%s)' % (result['totalDays'], result['profitDays'], result['lossDays']))
+        self.debug(u'交易日数：\t%s (盈利%s,亏损%s)' % (result['totalDays'], result['profitDays'], result['lossDays']))
         
-        self.stdout(u'起始资金：\t%s' % formatNumber(self._startBalance))
-        self.stdout(u'结束资金：\t%s' % formatNumber(result['endBalance']))
+        self.debug(u'起始资金：\t%s' % formatNumber(self._startBalance))
+        self.debug(u'结束资金：\t%s' % formatNumber(result['endBalance']))
     
-        self.stdout(u'总收益率：\t%s%%' % formatNumber(result['totalReturn']))
-        self.stdout(u'年化收益：\t%s%%' % formatNumber(result['annualizedReturn']))
-        self.stdout(u'总盈亏：\t%s' % formatNumber(result['totalNetPnl']))
-        self.stdout(u'最大回撤: \t%s' % formatNumber(result['maxDrawdown']))   
-        self.stdout(u'百分比最大回撤: %s%%' % formatNumber(result['maxDdPercent']))   
+        self.debug(u'总收益率：\t%s%%' % formatNumber(result['totalReturn']))
+        self.debug(u'年化收益：\t%s%%' % formatNumber(result['annualizedReturn']))
+        self.debug(u'总盈亏：\t%s' % formatNumber(result['totalNetPnl']))
+        self.debug(u'最大回撤: \t%s' % formatNumber(result['maxDrawdown']))   
+        self.debug(u'百分比最大回撤: %s%%' % formatNumber(result['maxDdPercent']))   
         
-        self.stdout(u'总手续费：\t%s' % formatNumber(result['totalCommission']))
-        self.stdout(u'总滑点：\t%s' % formatNumber(result['totalSlippage']))
-        self.stdout(u'总成交金额：\t%s' % formatNumber(result['totalTurnover']))
-        self.stdout(u'总成交笔数：\t%s' % formatNumber(result['totalTradeCount'],0))
+        self.debug(u'总手续费：\t%s' % formatNumber(result['totalCommission']))
+        self.debug(u'总滑点：\t%s' % formatNumber(result['totalSlippage']))
+        self.debug(u'总成交金额：\t%s' % formatNumber(result['totalTurnover']))
+        self.debug(u'总成交笔数：\t%s' % formatNumber(result['totalTradeCount'],0))
         
-        self.stdout(u'日均盈亏：\t%s' % formatNumber(result['dailyNetPnl']))
-        self.stdout(u'日均手续费：\t%s' % formatNumber(result['dailyCommission']))
-        self.stdout(u'日均滑点：\t%s' % formatNumber(result['dailySlippage']))
-        self.stdout(u'日均成交金额：\t%s' % formatNumber(result['dailyTurnover']))
-        self.stdout(u'日均成交笔数：\t%s' % formatNumber(result['dailyTradeCount']))
+        self.debug(u'日均盈亏：\t%s' % formatNumber(result['dailyNetPnl']))
+        self.debug(u'日均手续费：\t%s' % formatNumber(result['dailyCommission']))
+        self.debug(u'日均滑点：\t%s' % formatNumber(result['dailySlippage']))
+        self.debug(u'日均成交金额：\t%s' % formatNumber(result['dailyTurnover']))
+        self.debug(u'日均成交笔数：\t%s' % formatNumber(result['dailyTradeCount']))
         
-        self.stdout(u'日均收益率：\t%s%%' % formatNumber(result['dailyReturn']))
-        self.stdout(u'收益标准差：\t%s%%' % formatNumber(result['returnStd']))
-        self.stdout(u'Sharpe Ratio：\t%s' % formatNumber(result['sharpeRatio']))
+        self.debug(u'日均收益率：\t%s%%' % formatNumber(result['dailyReturn']))
+        self.debug(u'收益标准差：\t%s%%' % formatNumber(result['returnStd']))
+        self.debug(u'Sharpe Ratio：\t%s' % formatNumber(result['sharpeRatio']))
         
         self.plotDailyResult(df)
 

@@ -99,7 +99,7 @@ class SinaCrawler(MarketCrawler):
             # succ at previous batch here
             # TODO: merge and evict th result of previous
             self._cacheKL5m[s] = result
-            self.debug("searchKLines(%s:%s) cached %s KL" %(s, evType, len(result)))
+            self.debug("searchKLines(%s:%s) cached %s-KLs" %(s, evType, len(result)))
             yield True
 
         return True
@@ -218,7 +218,7 @@ class SinaCrawler(MarketCrawler):
         if not isinstance(symbols, list) :
             symbols = symbols.split(',')
         qsymbols = [SinaCrawler.fixupSymbolPrefix(s) for s in symbols]
-        url = 'http://hq.sinajs.cn/list=%s' % (','.join(qsymbols))
+        url = 'http://hq.sinajs.cn/list=%s' % (','.join(qsymbols).lower())
         HEADERSEQ="name,open,prevClose,price,high,low,bid,ask,volume,total,bid1v,bid1,bid2v,bid2,bid3v,bid3,bid4v,bid4,bid5v,bid5,ask1v,ask1,ask2v,ask2,ask3v,ask3,ask4v,ask4,ask5v,ask5,date,time"
         HEADERS=HEADERSEQ.split(',')
         SYNTAX = re.compile('^var hq_str_([^=]*)="([^"]*).*')
@@ -227,10 +227,12 @@ class SinaCrawler(MarketCrawler):
         errmsg = u'GET请求失败'
         httperr = 400
         try:
+            self.debg("getRecentTicks() GET %s" %(url))
             response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
             httperr = response.status_code
+            self.debg("getRecentTicks() GET[%s] resp(%d)" %(httperr, url))
             if httperr != 200:
-                return httperr, u'GET请求失败，状态代码：%s' %response.status_code
+                return httperr, u'GET请求失败，状态代码：%s' % httperr
         except Exception as e:
             return httperr, u'GET请求触发,异常：%s' %e
 
@@ -290,6 +292,7 @@ class SinaCrawler(MarketCrawler):
 
             tickseq.append(tickdata)
         
+        self.debg("getRecentTicks() GET resp(%d) %dB: %s" %(httperr, url))
         return httperr, tickseq
 
     #------------------------------------------------    
@@ -356,9 +359,6 @@ class SinaCrawler(MarketCrawler):
         will call cortResp.send(csvline) when the result comes
         var sz002604hfq=[{total:1893,data:{_2019_05_14:"5.3599",...,2015_06_05:"52.5870",_2015_06_04:"53.8027",..._2011_07_29:"27.8500",_2011_07_28:"25.3200"}}]
         '''
-        HEADERSEQ="time,volume,price,type"
-        HEADERS=HEADERSEQ.split(',')
-        SYNTAX = re.compile('^.*trade_item_list\[.*Array\(([^\)]*)\).*')
         url = 'http://finance.sina.com.cn/realstock/newcompany/%s/phfq.js' % (SinaCrawler.fixupSymbolPrefix(symbol))
         try:
             response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
@@ -369,11 +369,11 @@ class SinaCrawler(MarketCrawler):
 
         spliterates = []
         str=response.text[response.text.find('{'):response.text.rfind('}')+1]
-        jsonData = demjson.decode(str)
-        jsonData['data']
-
-        # {'_2019_10_18': '13.8112', '_2019_10_17': '13.8112', ...} 
-        return True, jsonData['data']
+        jsonData = demjson.decode(re.sub('_([0-9]{4})_([0-9]{2})_([0-9]{2})', r'\1-\2-\3', str)) # convert _2019_05_14 to 2019-05-14
+        ret = []
+        for k,v in jsonData['data'].items() : 
+            ret.append({k, v.float()})
+        return True, ret
 
 if __name__ == '__main__':
     p = Program()

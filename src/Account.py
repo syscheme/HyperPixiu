@@ -13,6 +13,7 @@ import HistoryData  as hist
 from abc import ABCMeta, abstractmethod
 from datetime import datetime, timedelta
 from collections import OrderedDict
+import threading
 
 # from itertools import product
 import threading # for locker
@@ -64,6 +65,7 @@ class Account(BaseApplication):
             self._rate     = self._settings.rate(self._rate)
             self._csize    = self._settings.csize(self._csize)
             self._priceTick = self._settings.priceTick(self._priceTick)
+            self._dbName   = self._settings.dbName(self._id) 
 
         # the app instance Id
         if not self._id or len(self._id)<=0 :
@@ -71,7 +73,6 @@ class Account(BaseApplication):
             self._id = 'ACNT%d' % Account.__lastId__
 
         self._orderId = int(datetime2float(datetime.now())) %100000000 # start with a big number
-        self._exchange = settings.exchange("")
 
         self._state        = Account.STATE_CLOSE
         self._mode         = Account.BROKER_API_ASYNC
@@ -101,13 +102,6 @@ class Account(BaseApplication):
 
         # self.capital = 0        # 起始本金（默认10万）
         # self._cashAvail =0
-        
-        self._dbName   = self._settings.dbName(self._id)           # 假设的滑点
-        self._slippage  = self._settings.slippage(0)           # 假设的滑点
-        self._rate      = self._settings.ratePer10K(30)/10000  # 假设的佣金比例（适用于百分比佣金）
-        self._csize      = self._settings.size(1)               # 合约大小，默认为1    
-        self._priceTick = self._settings.priceTick(0)      # 价格最小变动 
-        
         self._stampLastSync =0
         self._syncInterval  = 10
 
@@ -117,7 +111,7 @@ class Account(BaseApplication):
     # @abstractmethod
     @property
     def cashSymbol(self):
-        return SYMBOL_CASH # the dummy symbol in order to represent cache in _dictPositions
+        return self.SYMBOL_CASH # the dummy symbol in order to represent cache in _dictPositions
 
     @property
     def priceTick(self):
@@ -546,7 +540,7 @@ class Account(BaseApplication):
         cStep =0
 
         with self._lock:
-            outgoingOrders = copy.deepcopy(self._dictOutgoingOrders.values())
+            outgoingOrders = copy.deepcopy(self._dictOutgoingOrders.values()) if len(self._dictOutgoingOrders) >0 else []
 
             # find out he orderData by brokerOrderId
             for odid in self._lstOrdersToCancel :
@@ -753,7 +747,7 @@ class Account(BaseApplication):
         for s in tradesOfSymbol.keys():
 
             currentPos = currentPositions[s]
-            ohlc =  self._marketstate.todayOHLC(s)
+            ohlc =  self._marketstate.dailyOHLC_sofar(s)
 
             if s in self._prevPositions:
                 with self._lock :

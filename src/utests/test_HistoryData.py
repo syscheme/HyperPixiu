@@ -70,7 +70,7 @@ class TestHistoryData(unittest.TestCase):
             print('Psp: %s' % i.desc)
             pdict.updateByEvent(i)
             s = i.data._symbol
-            print('-> state: asof[%s] lastPrice[%s] OHLC%s\n' % (pdict.getAsOf(s).strftime('%Y%m%d %H:%M:%S'), pdict.latestPrice(s), pdict.todayOHLC(s)))
+            print('-> state: asof[%s] lastPrice[%s] OHLC%s\n' % (pdict.getAsOf(s).strftime('%Y%m%d %H:%M:%S'), pdict.latestPrice(s), pdict.dailyOHLC_sofar(s)))
 
     def func1(self, a=None, **kwargs):
         print('func1(a=%s, kwargs=%s)\n' %(a, kwargs))

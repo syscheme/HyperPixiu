@@ -332,12 +332,14 @@ class CsvPlayback(Playback):
         ev = Event(EVENT_KLINE_5MIN)
         ev.setData(klinedata)
         self.enquePending(ev)
+        asofDay = klinedata.asof.replace(hour=23, minute=59, second=59)
         if self._merger5minTo1Day :
-            self._merger5minTo1Day.pushKLineEvent(ev)
+            self._merger5minTo1Day.pushKLineData(klinedata, asofDay)
 
     def _cbMergedKLine1Day(self, klinedata):
         if not klinedata: return
         ev = Event(EVENT_KLINE_1DAY)
+        # klinedata.datetime = klinedata.datetime.replace(hour=23, minute=59, second=59)
         ev.setData(klinedata)
         self.enquePending(ev)
 

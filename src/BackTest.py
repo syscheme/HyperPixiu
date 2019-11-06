@@ -1045,7 +1045,7 @@ def optimize(strategyClass, setting, targetName,
     return (str(setting), targetValue, d)    
     
 ########################################################################
-class AccountWrapper(BaseApplication):
+class AccountWrapper(MetaAccount):
     """
     回测BrokerDriver
     函数接口和BrokerDriver保持一样，
@@ -1053,12 +1053,12 @@ class AccountWrapper(BaseApplication):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self, btTrader, account):
+    def __init__(self, program, accountId):
         """Constructor"""
 
-        super(AccountWrapper, self).__init__(btTrader.mainRoutine)
+        super(AccountWrapper, self).__init__(program, account.id, account.exchange, None)
 
-        self._btTrader = btTrader             # refer to the BackTest engine
+        # self._btTrader = btTrader             # refer to the BackTest engine
         self._nest  = account
         self._tradeCount = 0
 

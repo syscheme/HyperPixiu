@@ -92,7 +92,7 @@ class TestHistoryData(unittest.TestCase):
     def test_Perspective(self):
         ps = psp.Perspective('AShare', '000001')
         pg = psp.PerspectiveGenerator(ps)
-        hpb = hist.CsvPlayback(symbol='000001', folder='/mnt/h/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
+        hpb = hist.CsvPlayback(symbol='000001', folder='/mnt/e/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
         pg.adaptReader(hpb, md.EVENT_KLINE_1MIN)
         pdict = psp.PerspectiveDict('AShare')
 

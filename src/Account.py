@@ -25,7 +25,98 @@ import jsoncfg # pip install json-cfg
 # from pymongo import ASCENDING
 
 ########################################################################
-class Account(BaseApplication):
+class MetaAccount(BaseApplication):
+    ''' to make sure the child impl don't miss neccessary methods
+    '''
+
+    #----------------------------------------------------------------------
+    def __init__(self, program, accountId, exchange, settings =None):
+        """Constructor"""
+        super(MetaAccount, self).__init__(program, settings)
+
+        self._id       = accountId
+        self._exchange = exchange
+
+    @abstractmethod 
+    def getPosition(self, symbol): raise NotImplementedError
+    @abstractmethod 
+    def getAllPositions(self): raise NotImplementedError
+    @abstractmethod 
+    def cashAmount(self): raise NotImplementedError
+    @abstractmethod 
+    def cashChange(self, dAvail=0, dTotal=0): raise NotImplementedError
+    @abstractmethod 
+    def insertData(self, dbName, collectionName, data): raise NotImplementedError
+    @abstractmethod 
+    def postEvent_Order(self, orderData): raise NotImplementedError
+    @abstractmethod 
+    def sendOrder(self, vtSymbol, orderType, price, volume, strategy): raise NotImplementedError
+    @abstractmethod 
+    def cancelOrder(self, brokerOrderId): raise NotImplementedError
+    @abstractmethod 
+    def batchCancel(self, brokerOrderIds): raise NotImplementedError
+    @abstractmethod 
+    def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): raise NotImplementedError
+    @abstractmethod 
+    def findOrdersOfStrategy(self, strategyId, symbol=None): raise NotImplementedError
+    
+    # @abstractmethod 
+    # def _broker_placeOrder(self, orderData): raise NotImplementedError
+    # @abstractmethod 
+    # def _broker_cancelOrder(self, orderData): raise NotImplementedError
+    # @abstractmethod 
+    # def _broker_datetimeAsOf(self): raise NotImplementedError
+    # @abstractmethod 
+    # def _broker_onOrderPlaced(self, orderData): raise NotImplementedError
+    # @abstractmethod 
+    # def _broker_onCancelled(self, orderData): raise NotImplementedError
+    # @abstractmethod 
+    # def _broker_onOrderDone(self, orderData): raise NotImplementedError
+    # @abstractmethod 
+    # def _broker_onTrade(self, trade): raise NotImplementedError
+    # @abstractmethod 
+    # def _broker_onGetAccountBalance(self, data, reqid): raise NotImplementedError
+    # @abstractmethod 
+    # def _broker_onGetOrder(self, data, reqid): raise NotImplementedError
+    # @abstractmethod 
+    # def _broker_onGetOrders(self, data, reqid): raise NotImplementedError
+    # @abstractmethod 
+    # def _broker_onGetMatchResults(self, data, reqid): raise NotImplementedError
+    # @abstractmethod 
+    # def _broker_onGetMatchResult(self, data, reqid): raise NotImplementedError
+    # @abstractmethod 
+    # def _broker_onGetTimestamp(self, data, reqid): raise NotImplementedError
+
+    @abstractmethod 
+    def calcAmountOfTrade(self, symbol, price, volume): raise NotImplementedError
+    @abstractmethod 
+    def maxOrderVolume(self, symbol, price): raise NotImplementedError
+    @abstractmethod 
+    def roundToPriceTick(self, price): raise NotImplementedError
+    # @abstractmethod 
+    # def onStart(self): raise NotImplementedError
+    # must be duplicated other than forwarding to _nest def doAppStep(self) : return self._nest.doAppStep()
+    @abstractmethod 
+    def onDayOpen(self, newDate): raise NotImplementedError
+    @abstractmethod 
+    def onDayClose(self): raise NotImplementedError
+    @abstractmethod 
+    def onTimer(self, dt): raise NotImplementedError
+    # @abstractmethod 
+    # def saveDB(self): raise NotImplementedError
+    # @abstractmethod 
+    # def loadDB(self, since =None): raise NotImplementedError
+    @abstractmethod 
+    def calcDailyPositions(self): raise NotImplementedError
+    # @abstractmethod 
+    # def saveSetting(self): raise NotImplementedError
+    # @abstractmethod 
+    # def updateDailyStat(self, dt, price): raise NotImplementedError
+    # @abstractmethod 
+    # def evaluateDailyStat(self, startdate, enddate): raise NotImplementedError
+
+########################################################################
+class Account(MetaAccount):
     """
     Basic Account
     """
@@ -49,10 +140,7 @@ class Account(BaseApplication):
     def __init__(self, program, accountId, exchange, ratePer10K =30, contractSize=1, slippage =0.0, priceTick=0.0, settings =None):
         """Constructor
         """
-        super(Account, self).__init__(program, settings)
-
-        self._id       = accountId
-        self._exchange = exchange
+        super(Account, self).__init__(program, accountId, exchange, settings)
 
         self._slippage  = slippage
         self._rate      = ratePer10K
@@ -231,7 +319,6 @@ class Account(BaseApplication):
             self._broker_cancelOrder(orderData)
 
     def sendStopOrder(self, symbol, orderType, price, volume, strategy):
-
         source = 'ACCOUNT'
         if strategy:
             source = strategy.name

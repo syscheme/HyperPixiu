@@ -5,7 +5,7 @@ Trader maps to the agent in OpenAI/Gym
 from __future__ import division
 
 from EventData    import EventData
-import MarketData as md
+from MarketData   import MarketState
 from Application  import BaseApplication, datetime2float
 from Account      import Account, Account_AShare, PositionData, TradeData, OrderData
 '''
@@ -169,7 +169,7 @@ class Trader(BaseApplication):
         if not self._marketstate :
             searchKey = '.%s' % self._exchange
             for obsId in self._program.listByType(MarketState) :
-                pos = recorderId.find(searchKey)
+                pos = obsId.find(searchKey)
                 if pos >0 and obsId[pos:] == searchKey:
                     self._marketstate = self._program.getObj(obsId)
                     if self._marketstate : break

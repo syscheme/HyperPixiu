@@ -58,8 +58,8 @@ class MetaApp(MetaObj):
         raise NotImplementedError
 
     @abstractmethod
-    def start(self):
-        raise NotImplementedError
+    def doAppInit(self): # return True if succ
+        return False
 
     @abstractmethod
     def stop(self):
@@ -129,12 +129,6 @@ class BaseApplication(MetaApp):
     #------Impl of MetaApp --------------------------------------------------
     def theApp(self): return self
 
-    def start(self):
-        # TODO:
-        self.__active = True
-        next(self.__gen)
-        return self.__active
-
     def stop(self):
         # TODO:
         self.__active = False
@@ -142,7 +136,9 @@ class BaseApplication(MetaApp):
     #--- pollable step routine for ThreadedAppWrapper -----------------------
     @abstractmethod
     def doAppInit(self): # return True if succ
-        return True
+        self.__active = True
+        next(self.__gen)
+        return self.__active
 
     @abstractmethod
     def doAppStep(self):
@@ -237,16 +233,16 @@ class ThreadedAppWrapper(MetaApp):
 
         self._app = app
         self._maxinterval = maxinterval
-        self._thread = threading.Thread(target=self._run)
+        self.__thread = threading.Thread(target=self.__run)
         self._evWakeup = threading.Event()
 
     #----------------------------------------------------------------------
-    def _run(self):
+    def __run(self):
         """执行连接 and receive"""
-        while self._app.isActive:
+        while self._app and self._app.isActive:
             nextSleep = self._maxinterval
             try :
-                if self._app.step() :
+                if self._app.doAppStep() :
                     nextSleep =0 # will trigger again if this step busy 
             except Exception as ex:
                 self._app.error('ThreadedAppWrapper::step() excepton: %s' % ex)
@@ -254,7 +250,8 @@ class ThreadedAppWrapper(MetaApp):
             if nextSleep >0:
                 self._evWakeup.wait(nextSleep)
 
-        self._app.info('ThreadedAppWrapper exit')
+        if self._app:
+            self._app.info('ThreadedAppWrapper exit')
 
     def wakeup(self) :
         self._evWakeup.set()
@@ -262,23 +259,29 @@ class ThreadedAppWrapper(MetaApp):
     #------Impl of MetaApp --------------------------------------------------
     def theApp(self): return self._app
 
-    def start(self):
+    def doAppInit(self):
         '''
         return True if started
         '''
-        if not self._app or not self._app.start():
+        if not isinstance(self._app, BaseApplication):
+            self._app = None
+
+        if not self._app or not self._app.doAppInit():
             return False
         
-        self._thread.start()
+        self.__thread.start()
         self._app.debug('ThreadedAppWrapper started')
         return True
 
     def stop(self):
         ''' call to stop a app
         '''
+        if not self._app :
+            return
+
         self._app.stop()
         self.wakeup()
-        self._thread.join()
+        self.__thread.join()
         self._app.info('ThreadedAppWrapper stopped')
     
 ########################################################################
@@ -482,6 +485,7 @@ class Program(object):
         # 创建应用实例
         self.__dictMetaObjs[id] = obj
         self.__dict__[id] = self.__dictMetaObjs[id]
+        self.__activeApps = []
         self.info('obj[%s] added' % id)
         return obj
 
@@ -593,6 +597,10 @@ class Program(object):
 
     #----------------------------------------------------------------------
     def start(self, daemonize=False):
+        if self.__activeApps and len(self.__activeApps) >0 :
+            self.error('already has active apps: %s ' % self.__activeApps)
+            return
+
         if daemonize :
            self.__daemonize = True
 
@@ -617,16 +625,25 @@ class Program(object):
         '''
 
         self.debug('starting applications')
-        for appId in self.listApps() :
-            app = self.getApp(appId)
+        self.__activeApps = []
+        for appId in self.listByType(MetaApp) :
+            app = self.getObj(appId)
             if app == None:
                 continue
             
             self.debug('staring app[%s]' % appId)
-            app.start()
-            self.info('started app[%s]' % appId)
+            if not app.doAppInit() :
+                self.error('failed to initialize app[%s]' % appId)
+            else :
+                self.__activeApps.append(appId)
+                self.info('initialized app[%s]' % appId)
 
-        self.info('main-program started')
+        if len(self.__activeApps) <=0 : 
+            self._bRun =False
+            self.error('no apps started, quitting')
+            return
+
+        self.info('main-program started %d apps: %s' % (len(self.__activeApps), self.__activeApps))
 
     def stop(self):
         """退出程序前调用，保证正常退出"""        
@@ -640,7 +657,7 @@ class Program(object):
         '''
         
         # 停止上层应用引擎
-        for appId in self.listApps():
+        for appId in self.__activeApps :
             self.getApp(appId).stop()
         
         # # 保存数据引擎里的合约数据到硬盘
@@ -696,7 +713,8 @@ class Program(object):
                 if not event :
                     # if blocking: # ????
                     #     continue
-                    for aid, app in self.__dictMetaObjs.items() :
+                    for appId in self.__activeApps :
+                        app = self.getObj(appId)
                         # if threaded, it has its own trigger to step()
                         # if isinstance(app, ThreadedAppWrapper)
                         #   continue

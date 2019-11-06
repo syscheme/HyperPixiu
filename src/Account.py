@@ -7,7 +7,9 @@ from __future__ import division
 
 from EventData    import EventData, EVENT_NAME_PREFIX
 from Application  import BaseApplication, datetime2float
+from MarketData  import MarketState
 import HistoryData  as hist
+
 # from .DataRecorder import CsvRecorder, MongoRecorder
 
 from abc import ABCMeta, abstractmethod
@@ -523,16 +525,13 @@ class Account(BaseApplication):
         if not self._marketstate :
             searchKey = '.%s' % self._exchange
             for obsId in self._program.listByType(MarketState) :
-                pos = recorderId.find(searchKey)
+                pos = obsId.find(searchKey)
                 if pos >0 and obsId[pos:] == searchKey:
                     self._marketstate = self._program.getObj(obsId)
-                    if self._marketstate : break
-
-        if not self._marketstate :
-            self.error('no MarketState found')
-            return False
-
-        self.info('taking MarketState[%s]' % self._marketstate.ident)
+                    if self._marketstate :
+                        self.info('taking MarketState[%s]' % self._marketstate.ident)
+                        break
+        return True
 
     def doAppStep(self):
 

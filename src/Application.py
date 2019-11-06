@@ -141,11 +141,11 @@ class BaseApplication(MetaApp):
 
     #--- pollable step routine for ThreadedAppWrapper -----------------------
     @abstractmethod
-    def init(self): # return True if succ
+    def doAppInit(self): # return True if succ
         return True
 
     @abstractmethod
-    def step(self):
+    def doAppStep(self):
         '''
         @return True if busy at this step
         '''
@@ -704,7 +704,7 @@ class Program(object):
                             continue
                         
                         try:
-                            app.step()
+                            app.doAppStep()
                         except KeyboardInterrupt:
                             self.error("quit per KeyboardInterrupt")
                             self._bRun = False
@@ -1127,13 +1127,15 @@ if __name__ == "__main__":
             super(Foo, self).__init__(program, settings)
             self.__step =0
 
-        def init(self): # return True if succ
+        def doAppInit(self): # return True if succ
+            if not super(Foo, self).doAppInit() :
+                return False
             return True
 
         def OnEvent(self, event):
             print("Foo.OnEvent %s\n" % event)
         
-        def step(self):
+        def doAppStep(self):
             self.__step +=1
             print("Foo.step %d\n" % self.__step)
 

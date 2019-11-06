@@ -143,11 +143,11 @@ class Trader(BaseApplication):
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
-    def init(self): # return True if succ
+    def doAppInit(self): # return True if succ
         if not super(Trader, self).init() :
             return False
 
-        # find adopt the account
+        # step 1. find and adopt the account
         if not self._account :
             # find the Account from the program
             if not self._accountId :
@@ -161,21 +161,48 @@ class Trader(BaseApplication):
                     if self._account : 
                         self._accountId = self._account.ident
 
+        if not self._account :
+            self.error('no account adopted')
+            return False
+
+        # step 2. associate the marketstate
+        if not self._marketstate :
+            searchKey = '.%s' % self._exchange
+            for obsId in self._program.listByType(MarketState) :
+                pos = recorderId.find(searchKey)
+                if pos >0 and obsId[pos:] == searchKey:
+                    self._marketstate = self._program.getObj(obsId)
+                    if self._marketstate : break
+
+        if not self._marketstate :
+            self.error('no MarketState found')
+            return False
+
+        self.info('taking MarketState[%s]' % self._marketstate.ident)
+
+        # step 3. subscribe the market events
+        self.subscribeEvent(md.EVENT_TICK)
+        self.subscribeEvent(md.EVENT_KLINE_1MIN)
+
+        if self._marketstate :
+            for symbol in self._dictObjectives.keys():
+                self._marketstate.addMonitor(self, symbol)
+
+        # step 4. subscribe account events
+        self.subscribeEvent(Account.EVENT_ORDER)
+        self.subscribeEvent(Account.EVENT_TRADE)
+
     def start(self):
 
         self.debug('collected %s interested symbols, adopting strategies' % len(self._dictObjectives))
         self.strategies_LoadAll(self._settings.strategies)
 
         # step 1. subscribe all interested market data
-        self.subscribeSymbols()
 
         self.account.onStart()
 
-        # step 2. subscribe account events
-        self.subscribeEvent(Account.EVENT_ORDER)
-        self.subscribeEvent(Account.EVENT_TRADE)
 
-        # step 3. call allstrategy.onInit()
+        # step 2. call allstrategy.onInit()
         self.strategies_Start()
         super(self.__class__, self).start()
 
@@ -186,7 +213,7 @@ class Trader(BaseApplication):
         self.strategies_Stop()
         super(self.__class__, self).stop()
 
-    def step(self):
+    def doAppStep(self):
         cStep =0
         # for a in self._dictAccounts.values():
         #     cStep += a.step()
@@ -386,27 +413,6 @@ class Trader(BaseApplication):
         
     #     return None
     #----------------------------------------------------------------------
-    # Interested Events from EventChannel
-    #----------------------------------------------------------------------
-    def subscribeSymbols(self) :
-
-        # subscribe the symbols
-        self.subscribeEvent(md.EVENT_TICK)
-        self.subscribeEvent(md.EVENT_KLINE_1MIN)
-        for k in self._dictObjectives.keys():
-            s = self._dictObjectives[k]
-            if len(s['dsTick']) >0:
-                ds = self._engine.getMarketData(s['dsTick'])
-                if ds:
-                    self.debug('calling local subcribers for EVENT_TICK: %s' % s)
-                    ds.subscribe(k, md.EVENT_TICK)
-                
-            if len(s['ds1min']) >0:
-                ds = self._engine.getMarketData(s['ds1min'])
-                if ds:
-                    self.debug('calling local subcribers for EVENT_KLINE_1MIN: %s' % s)
-                    ds.subscribe(k, md.EVENT_KLINE_1MIN)
-
     # --- eventTick from MarketData ----------------
     def updateOHLC(self, OHLC, open, high, low, close):
         if not OHLC:

@@ -99,7 +99,7 @@ class mdHuobi(MarketData):
 
         self._resubscribe()
 
-    def step(self):
+    def doAppStep(self):
         if not self.ws :
             if self._doConnect() :
                 self.onError(u'行情服务器重连成功')

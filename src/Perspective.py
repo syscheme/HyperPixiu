@@ -284,6 +284,11 @@ class PerspectiveDict(MarketState):
         self.__dictPerspective ={} # dict of symbol to Perspective
 
     # -- impl of MarketState --------------------------------------------------------------
+    def addMonitor(self, symbol) :
+        ''' add a symbol to monitor
+        '''
+        raise NotImplementedError
+
     def latestPrice(self, symbol) :
         ''' query for latest price of the given symbol
         @return the price

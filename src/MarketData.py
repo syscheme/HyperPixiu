@@ -392,6 +392,12 @@ class MarketState(MetaObj):
     def exchange(self) : return self._exchange
 
     @abstractmethod
+    def addMonitor(self, symbol) :
+        ''' add a symbol to monitor
+        '''
+        raise NotImplementedError
+
+    @abstractmethod
     def latestPrice(self, symbol) :
         ''' query for latest price of the given symbol
         @return the price

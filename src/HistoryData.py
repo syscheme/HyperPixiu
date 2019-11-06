@@ -58,10 +58,12 @@ class Recorder(BaseApplication):
 
     # impl of BaseApplication
     #----------------------------------------------------------------------
-    def init(self): # return True if succ
-        return super(Recorder, self).init()
+    def doAppInit(self): # return True if succ
+        if not super(Recorder, self).doAppInit() :
+            return False
+        return True
 
-    def step(self):
+    def doAppStep(self):
         cStep =0
         while self.isActive:
             try:
@@ -515,7 +517,7 @@ class MongoPlayback(Playback):
         super(MongoPlayback, self).__init__(program, settings)
 
     #--- impl of BaseApplication -----------------------
-    def step(self):
+    def doAppStep(self):
         '''
         @return True if busy at this step
         '''
@@ -579,10 +581,10 @@ class MarketRecorder(BaseApplication):
     # impl of BaseApplication
     #----------------------------------------------------------------------
     @abstractmethod
-    def init(self): # return True if succ
+    def doAppInit(self): # return True if succ
         if not self._recorder:
             return False
-        return self._recorder.init()
+        return self._recorder.doAppInit()
 
     @abstractmethod
     def start(self):
@@ -597,7 +599,7 @@ class MarketRecorder(BaseApplication):
         self._subscribeMarketData(self._settings.kline1min, MarketData.EVENT_KLINE_1MIN)
 
     @abstractmethod
-    def step(self):
+    def doAppStep(self):
         if not self._recorder:
             return 0
         return self._recorder.step()
@@ -679,7 +681,7 @@ class Zipper(BaseApplication):
 
     # impl of BaseApplication
     #----------------------------------------------------------------------
-    def step(self):
+    def doAppStep(self):
         cStep =0
         while self.isActive:
             try:

@@ -9,13 +9,15 @@ class Foo(BaseApplication) :
         super(Foo, self).__init__(program, settings)
         self.__step =0
 
-    def init(self): # return True if succ
+    def doAppInit(self): # return True if succ
+        if not super(Foo, self).doAppInit() :
+            return False
         return True
 
     def OnEvent(self, event):
         self.info("Foo.OnEvent %s" % event)
     
-    def step(self):
+    def doAppStep(self):
         self.__step +=1
         self.info("Foo.step %d" % self.__step)
 

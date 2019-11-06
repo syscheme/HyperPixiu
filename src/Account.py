@@ -496,7 +496,10 @@ class Account(BaseApplication):
     #----------------------------------------------------------------------
     # impl of BaseApplication
 
-    def init(self): # return True if succ
+    def doAppInit(self): # return True if succ
+        if not super(Account, self).doAppInit() :
+            return False
+
         if not self._recorder :
             # find the recorder from the program
             searchKey = '.%s' % self._id
@@ -516,22 +519,22 @@ class Account(BaseApplication):
             self._recorder.configIndex(self.collectionName_trade, [('brokerTradeId', ASCENDING)], True)
             self._recorder.configIndex(self.collectionName_dpos,  [('date', ASCENDING), ('symbol', ASCENDING)], True)
 
+        # find the marketstate
         if not self._marketstate :
             searchKey = '.%s' % self._exchange
             for obsId in self._program.listByType(MarketState) :
                 pos = recorderId.find(searchKey)
                 if pos >0 and obsId[pos:] == searchKey:
-                    self._marketstate = self._program.findApp(obsId)
+                    self._marketstate = self._program.getObj(obsId)
                     if self._marketstate : break
 
         if not self._marketstate :
-            self.error('no MarketObeserver found')
+            self.error('no MarketState found')
             return False
 
-        self.info('taking MarketObeserver[%s]' % self._marketstate.ident)
-        return super(Account, self).init()
+        self.info('taking MarketState[%s]' % self._marketstate.ident)
 
-    def step(self):
+    def doAppStep(self):
 
         # step 1. flush out-going orders and cancels to the broker
         outgoingOrders = []

@@ -314,7 +314,7 @@ class mdOffline(MarketData):
         self._reader = None
         self.debug('ftrange %s associated files to import: %s' % (trange, self._seqFiles))
 
-    def step(self):
+    def doAppStep(self):
 
         bEOS = False
         c =0

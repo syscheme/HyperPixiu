@@ -74,7 +74,7 @@ class BackTestApp(Trader):
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
-    def init(self): # return True if succ
+    def doAppInit(self): # return True if succ
         if not super(BackTestApp, self).init() :
             return False
 
@@ -1081,13 +1081,13 @@ class AccountWrapper(BaseApplication):
     # impl of BaseApplication
     #----------------------------------------------------------------------
     @abstractmethod
-    def init(self): return self._nest.init()
+    def doAppInit(self): return self._nest.doAppInit()
 
     @abstractmethod
     def start(self): self._nest.start()
 
     @abstractmethod
-    def step(self):
+    def doAppStep(self):
         ''' 
         this is a 'duplicated' impl of Account in order to call BackTestAcc._broker_xxxx() 
         instead of those of Account
@@ -1177,7 +1177,7 @@ class AccountWrapper(BaseApplication):
     def maxOrderVolume(self, symbol, price): return self._nest.maxOrderVolume(symbol, price)
     def roundToPriceTick(self, price): return self._nest.roundToPriceTick(price)
     def onStart(self): return self._nest.onStart()
-    # must be duplicated other than forwarding to _nest def step(self) : return self._nest.step()
+    # must be duplicated other than forwarding to _nest def doAppStep(self) : return self._nest.doAppStep()
     def onDayClose(self): return self._nest.onDayClose()
     def onTimer(self, dt): return self._nest.onTimer(dt)
     def saveDB(self): return self._nest.saveDB()

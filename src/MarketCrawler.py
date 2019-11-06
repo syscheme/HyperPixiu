@@ -105,7 +105,10 @@ class MarketCrawler(BaseApplication):
         pass
 
     #--- impl/overwrite of BaseApplication -----------------------
-    def init(self): # return True if succ
+    def doAppInit(self): # return True if succ
+        if not super(MarketCrawler, self).doAppInit() :
+            return False
+
         return self.connect()
 
     def OnEvent(self, event):
@@ -114,7 +117,7 @@ class MarketCrawler(BaseApplication):
         '''
         pass
 
-    def step(self):
+    def doAppStep(self):
         '''
         @return True if busy at this step
         '''

@@ -222,7 +222,7 @@ class BaseApplication(MetaApp):
     def logError(self, eventType, content):
         """处理错误事件"""
         if not self._program: return
-    # TODO   error = event.dict_['data']
+    # TODO   error = event.data
     #    self._lstErrors.append(error)
         pass
 
@@ -700,9 +700,10 @@ class Program(object):
                     timeout = 0.1
 
                     # inject then event of heartbeat
-                    edata = EventData(dt)
+                    ed = EventData()
+                    ed.datetime = dt
                     event = Event(type_= EVENT_SYS_CLOCK)
-                    event.dict_['data'] = edata
+                    event.setData(ed)
                     self.publish(event)
 
             # pop the event to dispatch
@@ -756,11 +757,11 @@ class Program(object):
                     continue
 
                 # 检查是否存在对该事件进行监听的处理函数
-                if not event.type_ in self.__subscribers.keys():
+                if not event.type in self.__subscribers.keys():
                     continue
 
                 # 若存在，则按顺序将事件传递给处理函数执行
-                for appId in self.__subscribers[event.type_] :
+                for appId in self.__subscribers[event.type] :
                     app = self.getApp(appId)
                     if not app or not app.isActive:
                         continue
@@ -970,7 +971,7 @@ class Program(object):
     def eventHdlr_Log(self, event):
         """处理日志事件"""
         if not self._logger: return
-        log = event.dict_['data']
+        log = event.data
         function = self._loglevelFunctionDict[log.logLevel]     # 获取日志级别对应的处理函数
         msg = '\t'.join([log.dsName, log.logContent])
         function(msg)
@@ -981,7 +982,7 @@ class Program(object):
         """
         if not self._logger: return
 
-        error = event.dict_['data']
+        error = event.data
         self.error(u'错误代码：%s，错误信息：%s' %(error.errorID, error.errorMsg))
 
     #----------------------------------------------------------------------
@@ -1145,7 +1146,7 @@ class Program(object):
     #----------------------------------------------------------------------
     def dbLogging(self, event):
         """向MongoDB中插入日志"""
-        log = event.dict_['data']
+        log = event.data
         d = {
             'content': log.logContent,
             'time': log.logTime,

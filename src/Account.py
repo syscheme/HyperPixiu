@@ -650,7 +650,6 @@ class Account(BaseApplication):
         '''
         process the event
         '''
-        #TODO if ev.type_
         pass
 
     def onDayClose(self):

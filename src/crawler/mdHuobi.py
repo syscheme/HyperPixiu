@@ -431,7 +431,7 @@ class HuobiToEvent(DataToEvent):
                     edata.time = edata.datetime.time().strftime('%H:%M:%S')
 
                     event = Event(type_=eventType)
-                    event.dict_['data'] = edata
+                    event.setData(edata)
 
             self._dictKLineLatest[topic] = d
             if event and self._sink:
@@ -476,7 +476,7 @@ class HuobiToEvent(DataToEvent):
             """
             pass
             # event = Event(type_=MarketData.EVENT_TICK)
-            # event.dict_['data'] = data # TODO: covert the event format
+            # event.setData(data) # TODO: covert the event format
         elif '.detail' in topic:
             """市场细节推送, 最近24小时成交量、成交额、开盘价、收盘价、最高价、最低价、成交笔数等
             RECV:{u'tick': {u'count': 124159, u'vol': 69271108.31560345, u'high': 465.03, u'amount': 151833.21684737998, u'version': 14324514537, u'low': 446.41, u'close': 451.07, u'open': 463.97, u'id': 14324514537}, u'ch': u'market.ethusdt.detail', u'ts': 1533015571033}
@@ -503,7 +503,7 @@ class HuobiToEvent(DataToEvent):
 
         if tick and tickReady and self._sink:
             event = Event(type_=MarketData.EVENT_TICK)
-            event.dict_['data'] = copy(tick)
+            event.setData(copy(tick))
             self._sink(event)
 
 

@@ -65,7 +65,7 @@ class TestHistoryData(unittest.TestCase):
         pdict = psp.PerspectiveDict('AShare')
 
         for i in pg :
-            if psp.EVENT_Perspective != i.type_ :
+            if psp.EVENT_Perspective != i.type :
                 print('evnt: %s' % i.desc) 
                 continue
 

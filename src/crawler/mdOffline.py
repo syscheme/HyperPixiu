@@ -296,7 +296,7 @@ class mdOffline(MarketData):
 
     #----------------------------------------------------------------------
     def onMarketEvent(self, event) :
-        data = event.dict_['data']
+        data = event.data
         if data.datetime != MarketData.DUMMY_DT_EOS:
             if data.datetime < self._dtStart or data.datetime > self._dtEnd:
                 return # out of range
@@ -370,7 +370,7 @@ class mdOffline(MarketData):
             edata.datetime = MarketData.DUMMY_DT_EOS
             edata.exchange  = MarketData.exchange # output exchange name 
             event = Event(self._eventType)
-            event.dict_['data'] = edata
+            event.setData(edata)
             self.onMarketEvent(event)
             c +=1
             self.onMarketEvent(event)

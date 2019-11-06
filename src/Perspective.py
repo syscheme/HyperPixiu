@@ -189,13 +189,13 @@ class Perspective(EventData):
         return True
 
     def __push(self, ev) :
-        if not ev.type_ in self._stacks.keys():
+        if not ev.type in self._stacks.keys():
             return False
 
-        latestevd = self._stacks[ev.type_].top
+        latestevd = self._stacks[ev.type].top
         if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
-            self._stacks[ev.type_].push(ev.data)
-            self.__focusLast = ev.type_
+            self._stacks[ev.type].push(ev.data)
+            self.__focusLast = ev.type
             if not self.__stampLast or self.__stampLast < ev.data.datetime :
                 self.__stampLast = ev.data.datetime
             return True
@@ -203,22 +203,22 @@ class Perspective(EventData):
         if not ev.data.exchange or latestevd.exchange and not '_k2x' in latestevd.exchange and not '_t2k' in latestevd.exchange :
             return False # not overwritable
 
-        self.__focusLast = ev.type_
-        for i in range(len(self._stacks[ev.type_])) :
-            if ev.data.datetime > self._stacks[ev.type_][i].datetime :
+        self.__focusLast = ev.type
+        for i in range(len(self._stacks[ev.type])) :
+            if ev.data.datetime > self._stacks[ev.type][i].datetime :
                 continue
-            if ev.data.datetime == self._stacks[ev.type_][i] :
-                self._stacks[ev.type_][i] = ev.data
+            if ev.data.datetime == self._stacks[ev.type][i] :
+                self._stacks[ev.type][i] = ev.data
                 return True
             else :
-                self._stacks[ev.type_].insert(i, ev.data)
-                while self._stacks[ev.type_].evictSize >=0 and self._stacks[ev.type_].size > self._stacks[ev.type_].evictSize:
-                    del(self._stacks[ev.type_]._data[-1])
+                self._stacks[ev.type].insert(i, ev.data)
+                while self._stacks[ev.type].evictSize >=0 and self._stacks[ev.type].size > self._stacks[ev.type].evictSize:
+                    del(self._stacks[ev.type]._data[-1])
                 return True
         
-        self._stacks[ev.type_].insert(-1, ev.data)
-        while self._stacks[ev.type_].evictSize >=0 and self._stacks[ev.type_].size > self._stacks[ev.type_].evictSize:
-            del(self._stacks[ev.type_]._data[-1])
+        self._stacks[ev.type].insert(-1, ev.data)
+        while self._stacks[ev.type].evictSize >=0 and self._stacks[ev.type].size > self._stacks[ev.type].evictSize:
+            del(self._stacks[ev.type]._data[-1])
         return True
 
 ########################################################################
@@ -263,10 +263,10 @@ class PerspectiveGenerator(Iterable):
             ev = next(self._readers[et])
             if not ev or not ev.data:
                 return None
-            if not ev.type_ in self._perspective._stacks.keys():
+            if not ev.type in self._perspective._stacks.keys():
                 return ev
 
-            latestevd = self._perspective._stacks[ev.type_].top
+            latestevd = self._perspective._stacks[ev.type].top
             if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
                 if self._perspective.push(ev) :
                     evPsp = Event(EVENT_Perspective)
@@ -325,11 +325,11 @@ class PerspectiveDict(MarketState):
         ''' 
         @event could be Event(Tick), Event(KLine), Event(Perspective)
         '''
-        if EVENT_Perspective == ev.type_ :
+        if EVENT_Perspective == ev.type :
             self.__dictPerspective[ev.data._symbol] = ev.data
             return
 
-        if not ev.type_ in Perspective.EVENT_SEQ :
+        if not ev.type in Perspective.EVENT_SEQ :
             return
             
         s = ev.data._symbol

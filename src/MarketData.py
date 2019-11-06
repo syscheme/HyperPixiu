@@ -185,7 +185,7 @@ class DictToKLine(object):
         kl.datetime = datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:%S')
         dataOf = kl.datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:00')
         ev = Event(type_=self._type)
-        ev.dict_['data'] = kl
+        ev.setData(kl)
         return ev
 
 ########################################################################
@@ -212,7 +212,7 @@ class McCvsToKLine(DictToKLine):
         kl.datetime = datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:%S')
         dataOf = kl.datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:00')
         ev = Event(type_=self._type)
-        ev.dict_['data'] = kl
+        ev.setData(kl)
         return ev
 
 ########################################################################
@@ -292,7 +292,7 @@ class KlineToXminMerger(object):
     #----------------------------------------------------------------------
     def pushKLineEvent(self, klineEv, dtAsOf=None):
         """1分钟K线更新"""
-        d = klineEv.dict_['data']
+        d = klineEv.data
         self.pushKLineData(d, dtAsOf)
 
     def flush(self):
@@ -369,7 +369,7 @@ class DataToEvent(object):
             if self._sink and self._dict[eventType]['data']:
                 event = Event()
                 event.type_ = eventType
-                event.dict_['data'] = self._dict[eventType]['data']
+                event.setData(self._dict[eventType]['data'])
                 self._sink(event)
 
         d =  {

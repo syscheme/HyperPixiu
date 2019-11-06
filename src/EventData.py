@@ -24,7 +24,7 @@ class Event:
     #----------------------------------------------------------------------
     def __init__(self, type_=None):
         """Constructor"""
-        self.type_ = type_      # 事件类型
+        self.__type = type_      # 事件类型
         self.dict_ = {}         # 字典用于保存具体的事件数据
 
     def setData(self, data=None):
@@ -32,12 +32,15 @@ class Event:
         self.dict_['data'] = data
 
     @property
+    def type(self) : return self.__type
+
+    @property
     def data(self) :
         return self.dict_['data'] if 'data' in self.dict_.keys() else None
 
     @property
     def desc(self) :
-        return '%s@%s:%s' % (self.type_, self.data.asof.strftime('%Y%m%dT%H%M%S'), self.data.desc)
+        return '%s@%s:%s' % (self.__type, self.data.asof.strftime('%Y%m%dT%H%M%S'), self.data.desc)
 
 ########################################################################
 class EventData(object):

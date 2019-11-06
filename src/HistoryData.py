@@ -632,13 +632,13 @@ class MarketRecorder(BaseApplication):
     #----------------------------------------------------------------------
     def onMarketEvent(self, event):
         """处理行情事件"""
-        eventType = event.type_
+        eventType = event.type
 
         if  MARKETDATE_EVENT_PREFIX != eventType[:len(MARKETDATE_EVENT_PREFIX)] :
             return
 
         category = eventType[len(MARKETDATE_EVENT_PREFIX):]
-        eData = event.dict_['data'] # this is a TickData or KLineData
+        eData = event.data # this is a TickData or KLineData
         # if tick.sourceType != MarketData.DATA_SRCTYPE_REALTIME:
         if MarketData.TAG_BACKTEST in eData.exchange :
             return
@@ -714,7 +714,7 @@ class Zipper(BaseApplication):
         return False # this doesn't matter as this is threaded
 
     def onToArchive(self, event) :
-        self._push(event.dict_['data'])
+        self._push(event.data)
 
     def _push(self, filename) :
         self._queue.put(filename)

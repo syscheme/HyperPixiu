@@ -57,6 +57,10 @@ class MetaApp(MetaObj):
     def theApp(self):
         raise NotImplementedError
 
+    @property
+    def isActive(self) :
+        raise NotImplementedError
+
     @abstractmethod
     def doAppInit(self): # return True if succ
         return False
@@ -235,6 +239,7 @@ class ThreadedAppWrapper(MetaApp):
         self._maxinterval = maxinterval
         self.__thread = threading.Thread(target=self.__run)
         self._evWakeup = threading.Event()
+        self.__stopped = False
 
     #----------------------------------------------------------------------
     def __run(self):
@@ -252,12 +257,17 @@ class ThreadedAppWrapper(MetaApp):
 
         if self._app:
             self._app.info('ThreadedAppWrapper exit')
+        self.__stopped = True
 
     def wakeup(self) :
         self._evWakeup.set()
 
     #------Impl of MetaApp --------------------------------------------------
     def theApp(self): return self._app
+
+    @property
+    def isActive(self) :
+        return False if self.__stopped or not self._app else self._app.isActive
 
     def doAppInit(self):
         '''
@@ -713,12 +723,20 @@ class Program(object):
                 if not event :
                     # if blocking: # ????
                     #     continue
+                    cApps =0
                     for appId in self.__activeApps :
                         app = self.getObj(appId)
                         # if threaded, it has its own trigger to step()
                         # if isinstance(app, ThreadedAppWrapper)
                         #   continue
-                        if not isinstance(app, BaseApplication) or not app.isActive:
+                        if not isinstance(app, MetaApp):
+                            continue
+
+                        if not app.isActive :
+                            continue
+                        cApps +=1
+
+                        if not isinstance(app, BaseApplication):
                             continue
                         
                         try:
@@ -729,6 +747,11 @@ class Program(object):
                             break
                         except Exception as ex:
                             self.error("app[%s] step exception %s %s" % (aid, ex, traceback.format_exc()))
+
+                    if cApps <=0:
+                        self.info("no more active apps running, update running state")
+                        self._bRun = False
+                        break
                             
                     continue
 

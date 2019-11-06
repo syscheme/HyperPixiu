@@ -300,7 +300,7 @@ class Playback(Iterable):
             return None
         self.__lastMarketClk = ev.data.asof
         self.__lastMarketClk = self.__lastMarketClk.replace(minute=0, second=0, microsecond=0)
-        evdMH = EventData()
+        evdMH = MarketData(self._exchange, self._symbol)
         evdMH.datetime = self.__lastMarketClk
         evMH = Event(EVENT_MARKET_HOUR)
         evMH.setData(evdMH)

@@ -26,13 +26,13 @@ EVENT_T2KLINE_1MIN  = MARKETDATE_EVENT_PREFIX + 'T2K1m'
 EVENT_MARKET_HOUR   = MARKETDATE_EVENT_PREFIX + 'Hr'
 
 ########################################################################
-class TickData(EventData):
+class MarketData(EventData):
     """Tick行情数据类"""
 
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol =None):
         """Constructor"""
-        super(TickData, self).__init__()
+        super(MarketData, self).__init__()
         
         # 代码相关
         self.symbol = EventData.EMPTY_STRING              # 合约代码
@@ -45,13 +45,33 @@ class TickData(EventData):
             if  len(exchange)>0 :
                 self.vtSymbol = '.'.join([self.symbol, self.exchange])
         
+        self.datetime = None                    # python的datetime时间对象
+        self.time = EventData.EMPTY_STRING                # 时间 11:20:56.5
+        self.date = EventData.EMPTY_STRING                # 日期 20151009
+
+    @property
+    def asof(self) :
+        if not self.datetime :
+            try :
+                self.datetime = datetime.strptime(self.date + ' ' + self.time, '%Y%m%d %H:%M:%S')
+            except:
+                self.datetime = datetime.utcfromtimestamp(0)
+                
+        return self.datetime
+
+########################################################################
+class TickData(MarketData):
+    """Tick行情数据类"""
+
+    #----------------------------------------------------------------------
+    def __init__(self, exchange, symbol =None):
+        """Constructor"""
+        super(TickData, self).__init__(exchange, symbol)
+        
         # 成交数据
         self.price = EventData.EMPTY_FLOAT            # 最新成交价
         self.volume = EventData.EMPTY_INT             # 最新成交量
         self.openInterest = EventData.EMPTY_INT           # 持仓量
-        self.time = EventData.EMPTY_STRING                # 时间 11:20:56.5
-        self.date = EventData.EMPTY_STRING                # 日期 20151009
-        self.datetime = None                    # python的datetime时间对象
         
         # 常规行情
         self.open = EventData.EMPTY_FLOAT            # 今日开盘价
@@ -91,62 +111,28 @@ class TickData(EventData):
 
     @property
     def desc(self) :
-        return 'tick.%s@%s_%dx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S'),self.volume,round(self.price,2))
-
-    @property
-    def asof(self) :
-        if not self.datetime :
-            try :
-                self.datetime = datetime.strptime(self.date + ' ' + self.time, '%Y%m%d %H:%M:%S')
-            except:
-                self.datetime = datetime.utcfromtimestamp(0)
-                
-        return self.datetime
+        return 'tick.%s@%s_%dx%s' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S'), self.volume,round(self.price,2))
 
 ########################################################################
-class KLineData(EventData):
+class KLineData(MarketData):
     """K线数据"""
 
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol =None):
         """Constructor"""
-        super(KLineData, self).__init__()
+        super(KLineData, self).__init__(exchange, symbol)
         
-        self.symbol = EventData.EMPTY_STRING          # 代码
-        self.vtSymbol = EventData.EMPTY_STRING 
-
-        self.exchange   = exchange
-        # self.sourceType = md._sourceType          # 数据来源类型
-        if symbol and len(symbol)>0:
-            self.symbol = self.vtSymbol = symbol
-            if  len(exchange)>0 :
-                self.vtSymbol = '.'.join([self.symbol, self.exchange])
-    
         self.open  = EventData.EMPTY_FLOAT             # OHLC
         self.high  = EventData.EMPTY_FLOAT
         self.low   = EventData.EMPTY_FLOAT
         self.close = EventData.EMPTY_FLOAT
-        
-        self.date = EventData.EMPTY_STRING            # bar开始的时间，日期
-        self.time = EventData.EMPTY_STRING            # 时间
-        self.datetime = None                # python的datetime时间对象
         
         self.volume = EventData.EMPTY_INT             # 成交量
         self.openInterest = EventData.EMPTY_INT       # 持仓量    
 
     @property
     def desc(self) :
-        return 'kline.%s@%s>%sx%s' % (self.symbol, self.datetime.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.volume, round(self.close,2))
-
-    @property
-    def asof(self) :
-        if not self.datetime :
-            try :
-                self.datetime = datetime.strptime(self.date + ' ' + self.time, '%Y%m%d %H:%M:%S')
-            except:
-                self.datetime = datetime.utcfromtimestamp(0)
-
-        return self.datetime
+        return 'kline.%s@%s>%sx%s' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.volume, round(self.close,2))
 
     '''
     @property
@@ -422,6 +408,7 @@ class MarketState(MetaObj):
     def updateByEvent(self, ev) :
         ''' 
         @ev  could be Event(Tick), Event(KLine), Event(Perspective)
+        @return True if updated
         '''
         raise NotImplementedError
 

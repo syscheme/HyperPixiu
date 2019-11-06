@@ -200,7 +200,6 @@ class BackTestApp(Trader):
 
     #------------------------------------------------
     # 数据回放结果计算相关
-    #------------------------------------------------
 
     #----------------------------------------------------------------------
     def clearResult(self):
@@ -208,12 +207,6 @@ class BackTestApp(Trader):
         self.posList = [0]               # 每笔成交后的持仓情况        
         self.tradeTimeList = []          # 每笔成交时间戳
     
-    #------------------------------------------------
-    # 参数设置相关
-    #------------------------------------------------
-    #------------------------------------------------
-    # 数据回放相关
-    #------------------------------------------------    
     def debug(self, message):
         """输出内容"""
         if self._dtData:
@@ -226,8 +219,6 @@ class BackTestApp(Trader):
             msg = str(self._dtData) + ' ' + msg
         super(BackTestApp, self).log(level, msg)
 
-    #------------------------------------------------
-    # 结果计算相关
     #------------------------------------------------
     def finishTest(self) :
         self.debug('finishTest() generating test reports')
@@ -525,8 +516,7 @@ class BackTestApp(Trader):
         self.debug(u'盈亏比：\t%s' %formatNumber(d['profitLossRatio']))
 
         # self.plotBacktestingResult(d)
-    
-    
+
     #----------------------------------------------------------------------
     def clearBackTesting(self):
         """清空之前回测的结果"""

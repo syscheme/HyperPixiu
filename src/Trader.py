@@ -49,17 +49,15 @@ class Trader(BaseApplication):
         # from old 数据引擎
         # 保存数据的字典和列表
 
-        self._dictLatestTick = {}         # the latest tick of each symbol
-        self._dictLatestKline1min = {}    #SSS the latest kline1min of each symbol
-        self._dictLatestContract = {}
-        self._dictLatestOrder = {}
+        # moved to MarketState: self._dictLatestTick = {}         # the latest tick of each symbol
+        # moved to MarketState: self._dictLatestKline1min = {}    #SSS the latest kline1min of each symbol
+        # self._dictLatestContract = {}
 
         # inside of Account self._dictTrade = {}
         self._account = None
         self._defaultAccId = None
         self._dtData = None # datetime of data
         # inside of Account self._dictPositions= {}
-        self._lstErrors = []
 
         self.debug('local data cache initialized')
         
@@ -259,15 +257,15 @@ class Trader(BaseApplication):
         # TODO: forward to account.onTimer()
         pass                      
 
-    # --- eventContract from ??? ----------------
-    @abstractmethod
-    def processContractEvent(self, event):
-        """处理合约事件"""
-        contract = event.dict_['data']
+    # # --- eventContract from ??? ----------------
+    # @abstractmethod
+    # def processContractEvent(self, event):
+    #     """处理合约事件"""
+    #     contract = event.dict_['data']
 
-        # step 1. cache lnf DataEngine
-        self._dictLatestContract[contract.vtSymbol] = contract
-        self._dictLatestContract[contract.symbol] = contract       # 使用常规代码（不包括交易所）可能导致重复
+    #     # step 1. cache lnf DataEngine
+    #     self._dictLatestContract[contract.vtSymbol] = contract
+    #     self._dictLatestContract[contract.symbol] = contract       # 使用常规代码（不包括交易所）可能导致重复
 
     #----------------------------------------------------------------------
     @abstractmethod    # usually back test will overwrite this
@@ -296,48 +294,48 @@ class Trader(BaseApplication):
     #----------------------------------------------------------------------
     # local the recent data by symbol
     #----------------------------------------------------------------------
-    def getTick(self, vtSymbol):
-        """查询行情对象"""
-        try:
-            return self._dictLatestTick[vtSymbol]
-        except KeyError:
-            return None        
+    # def getTick(self, vtSymbol):
+    #     """查询行情对象"""
+    #     try:
+    #         return self._dictLatestTick[vtSymbol]
+    #     except KeyError:
+    #         return None        
     
-    def getContract(self, vtSymbol):
-        """查询合约对象"""
-        try:
-            return self._dictLatestContract[vtSymbol]
-        except KeyError:
-            return None
+    # def getContract(self, vtSymbol):
+    #     """查询合约对象"""
+    #     try:
+    #         return self._dictLatestContract[vtSymbol]
+    #     except KeyError:
+    #         return None
         
-    def getAllContracts(self):
-        """查询所有合约对象（返回列表）"""
-        return self._dictLatestContract.values()
+    # def getAllContracts(self):
+    #     """查询所有合约对象（返回列表）"""
+    #     return self._dictLatestContract.values()
     
-    def saveContracts(self):
-        """保存所有合约对象到硬盘"""
-        f = shelve.open(self._pathContracts)
-        f['data'] = self._dictLatestContract
-        f.close()
+    # def saveContracts(self):
+    #     """保存所有合约对象到硬盘"""
+    #     f = shelve.open(self._pathContracts)
+    #     f['data'] = self._dictLatestContract
+    #     f.close()
     
-    def loadContracts(self):
-        """从硬盘读取合约对象"""
-        f = shelve.open(self._pathContracts)
-        if 'data' in f:
-            d = f['data']
-            for key, value in d.items():
-                self._dictLatestContract[key] = value
-        f.close()
+    # def loadContracts(self):
+    #     """从硬盘读取合约对象"""
+    #     f = shelve.open(self._pathContracts)
+    #     if 'data' in f:
+    #         d = f['data']
+    #         for key, value in d.items():
+    #             self._dictLatestContract[key] = value
+    #     f.close()
         
     #----------------------------------------------------------------------
     # about the orders
     #----------------------------------------------------------------------
-    def getOrder(self, vtOrderID):
-        """查询委托"""
-        try:
-            return self._dictLatestOrder[vtOrderID]
-        except KeyError:
-            return None
+    # def getOrder(self, vtOrderID):
+    #     """查询委托"""
+    #     try:
+    #         return self._dictLatestOrder[vtOrderID]
+    #     except KeyError:
+    #         return None
     
     # def getAllWorkingOrders(self):
     #     """查询所有活动委托（返回列表）"""
@@ -381,12 +379,12 @@ class Trader(BaseApplication):
     #         poslist.append(acc.getAllPositionDetails())
     #     return poslist
     
-    def getOHLC(self, symbol):
-        """查询所有本地持仓缓存细节"""
-        if symbol in self._dictObjectives.keys():
-            return self._dictObjectives[symbol]['ohlc']
+    # def getOHLC(self, symbol):
+    #     """查询所有本地持仓缓存细节"""
+    #     if symbol in self._dictObjectives.keys():
+    #         return self._dictObjectives[symbol]['ohlc']
         
-        return None
+    #     return None
     #----------------------------------------------------------------------
     # Interested Events from EventChannel
     #----------------------------------------------------------------------
@@ -453,7 +451,7 @@ class Trader(BaseApplication):
 
         # step 1. cache into the latest, lnf DataEngine
         self._dtData = kline.datetime # datetime of data
-        self._dictLatestKline1min[symbol] = kline
+        #moved to MarketState: self._dictLatestKline1min[symbol] = kline
 
         # step 2. 收到行情后，在启动策略前的处理
         # 先处理本地停止单（检查是否要立即发出） lnf ctaEngine
@@ -518,7 +516,7 @@ class Trader(BaseApplication):
 
         # step 1. cache into the latest, lnf DataEngine
         self._dtData = tick.datetime # datetime of data
-        self._dictLatestTick[symbol] = tick
+        #moved to MarketState: self._dictLatestTick[symbol] = tick
 
         # step 2. 收到行情后，在启动策略前的处理
         # 先处理本地停止单（检查是否要立即发出） lnf ctaEngine
@@ -539,20 +537,20 @@ class Trader(BaseApplication):
 
         self.debug('eventHdl_Tick(%s) done' % tick.desc)
 
-    def latestPrice(self, symbol) :
-        kline = self._dictLatestKline1min.get(symbol, None)
-        tick  = self._dictLatestTick.get(symbol, None)
+    # def latestPrice(self, symbol) :
+    #     kline = self._dictLatestKline1min.get(symbol, None)
+    #     tick  = self._dictLatestTick.get(symbol, None)
 
-        if kline and tick:
-            if kline.datetime > tick.datetime:
-                return kline.close
-            else:
-                return tick.price
-        elif kline:
-            return kline.close
-        elif tick:
-            return tick.price
-        return 0
+    #     if kline and tick:
+    #         if kline.datetime > tick.datetime:
+    #             return kline.close
+    #         else:
+    #             return tick.price
+    #     elif kline:
+    #         return kline.close
+    #     elif tick:
+    #         return tick.price
+    #     return 0
 
     @abstractmethod    # usually back test will overwrite this
     def preStrategyByKLine(self, kline):

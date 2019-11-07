@@ -30,7 +30,7 @@ except ImportError:
     pass
 
 ########################################################################
-class BackTestApp(BaseTrader):
+class BackTestApp(MetaTrader):
     """
     回测Trader
     函数接口和Trader保持一样，

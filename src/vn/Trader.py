@@ -3,7 +3,7 @@
 Trader maps to the agent in OpenAI/Gym
 '''
 
-from Trader    import BaseTrader
+from ../Trader import BaseTrader
 
 ########################################################################
 class VnTrader(BaseTrader):
@@ -81,7 +81,7 @@ class VnTrader(BaseTrader):
         strategy = self._idxOrderToStategy[order.brokerOrderId]            
             
         # 如果委托已经完成（拒单、撤销、全成），则从活动委托集合中移除
-        if order.status == self.FINISHED_STATUS:
+        if order.status == MetaTrader.FINISHED_STATUS:
             s = self._idxStrategyToOrder[strategy.id]
             if order.brokerOrderId in s:
                 s.remove(order.brokerOrderId)

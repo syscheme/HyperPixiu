@@ -28,12 +28,33 @@ from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
 
 ########################################################################
-class BaseTrader(BaseApplication):
-    '''BaseTrader Application'''
-
+class MetaTrader(BaseApplication):
+    '''defines the common interace of a Trader'''
     FINISHED_STATUS = [OrderData.STATUS_ALLTRADED, OrderData.STATUS_REJECTED, OrderData.STATUS_CANCELLED]
-
     RUNTIME_TAG_TODAY = '$today'
+
+    def __init__(self, program, settings):
+        super(BaseTrader, self).__init__(program, settings)
+        self._account = None
+        self._defaultAccId = None
+        self._dtData = None # datetime of data
+
+    @property
+    def account(self): return self._account # the default account
+    @abstractmethod
+    def eventHdl_TradeEnd(self, event): raise NotImplementedError
+    @abstractmethod
+    def eventHdl_Order(self, event): raise NotImplementedError
+    @abstractmethod
+    def eventHdl_Trade(self, event): raise NotImplementedError
+    @abstractmethod
+    def onDayOpen(self, symbol, date): raise NotImplementedError
+    @abstractmethod
+    def proc_MarketEvent(self, evtype, data): raise NotImplementedError
+
+########################################################################
+class BaseTrader(MetaTrader):
+    '''BaseTrader Application'''
 
      #----------------------------------------------------------------------
     def __init__(self, program, settings):
@@ -54,9 +75,6 @@ class BaseTrader(BaseApplication):
         # self._dictLatestContract = {}
 
         # inside of Account self._dictTrade = {}
-        self._account = None
-        self._defaultAccId = None
-        self._dtData = None # datetime of data
         # inside of Account self._dictPositions= {}
 
         self.debug('local data cache initialized')
@@ -107,12 +125,6 @@ class BaseTrader(BaseApplication):
         #         pass
         
         
-    #----------------------------------------------------------------------
-    # access to the Account
-    @property
-    def account(self): # the default account
-        return self._account
-
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
     def doAppInit(self): # return True if succ
@@ -166,25 +178,7 @@ class BaseTrader(BaseApplication):
         self.subscribeEvent(Account.EVENT_ORDER)
         self.subscribeEvent(Account.EVENT_TRADE)
 
-    def start(self):
-
-        self.debug('collected %s interested symbols, adopting strategies' % len(self._dictObjectives))
-        self.strategies_LoadAll(self._settings.strategies)
-
-        # step 1. subscribe all interested market data
-
-        self.account.onStart()
-
-
-        # step 2. call allstrategy.onInit()
-        self.strategies_Start()
-        super(self.__class__, self).start()
-
-    def stop(self):
-        """退出程序前调用，保证正常退出"""        
-        # TODO: subscribe all interested market data
-
-        super(BaseTrader, self).stop()
+        return True
 
     def doAppStep(self):
         super(BaseTrader, self).doAppStep()
@@ -212,9 +206,9 @@ class BaseTrader(BaseApplication):
             objective = self._dictObjectives[symbol]
             objective['ohlc'] = self.updateOHLC(objective['ohlc'] if 'ohlc' in objective.keys() else None, kline.open, kline.high, kline.low, kline.close)
 
-            if objective[BaseTrader.RUNTIME_TAG_TODAY] != d.date:
+            if objective[MetaTrader.RUNTIME_TAG_TODAY] != d.date:
                 self.onDayOpen(symbol, d.date)
-                objective[BaseTrader.RUNTIME_TAG_TODAY] = d.date
+                objective[MetaTrader.RUNTIME_TAG_TODAY] = d.date
                 objective['ohlc'] = self.updateOHLC(None, d.open, d.high, d.low, d.close)
 
             # step 1. cache into the latest, lnf DataEngine

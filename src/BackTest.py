@@ -31,18 +31,18 @@ except ImportError:
 
 ########################################################################
 class BackTestApp(MetaTrader):
-    """
-    回测Trader
-    函数接口和Trader保持一样，
-    """
+    '''
+    BackTest is a wrapprer of Trader, with same interface of Trader
+    '''
     
     #----------------------------------------------------------------------
-    def __init__(self, mainRoutine, settings):
+    def __init__(self, program, trader, settings):
         """Constructor"""
 
-        super(BackTestApp, self).__init__(mainRoutine, settings)
-
-        # self.resetTest()
+        super(BackTestApp, self).__init__(program, settings)
+        self._nestTrader = trader
+        self._nestTraderClz = type(trader) # class of the nested Trader
+        self._account = None
 
         # 回测相关属性
         # -----------------------------------------
@@ -66,11 +66,12 @@ class BackTestApp(MetaTrader):
         except:
             pass
 
-        # self.mode   = settings.mode(self.BAR_MODE)    # 引擎类型为回测
-        # self.strategyStartDate = None   # 策略启动日期（即前面的数据用于初始化），datetime对象
-
-#        self.setStartDate(settings.startDate("2010-01-01"), settings.initDays(10)) 
-#        self.setEndDate(settings.endDate("")) 
+    @property
+    def ident(self) :
+        if not self._nestTrader :
+            return super(BackTestApp, self).ident
+        
+        return '%s.%s' % (self.__class__.__name__, self._nestTrader.ident)
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -78,7 +79,21 @@ class BackTestApp(MetaTrader):
         if not super(BackTestApp, self).init() :
             return False
 
-        # adjust the Trader
+        # step 1. wrapper the Trader
+        if not self._nestTrader :
+            self._program.removeApp(self._nestTrader.ident)
+            self._program.addApp(self)
+            self._account = self._nestTrader.account
+
+        # step 1. wrapper the broker drivers of the accounts
+        if not self._account and not isinstance(self._account, AccountWrapper):
+            oldAcc = self._account
+            self._program.removeApp(oldAcc.ident)
+            wrapper = AccountWrapper(self, oldAcc)
+            wrapper.setCapital(self._startBalance, True)
+            self._account = wrapper
+            self._program.addApp(wrapper)
+
         # ADJ_1. adjust the Trader._dictObjectives to append suffix MarketData.TAG_BACKTEST
         for obj in self._dictObjectives.values() :
             if len(obj["dsTick"]) >0 :
@@ -86,14 +101,6 @@ class BackTestApp(MetaTrader):
             if len(obj["ds1min"]) >0 :
                 obj["ds1min"] += MarketData.TAG_BACKTEST
 
-        # ADJ_2. wrapper the broker drivers of the accounts
-        if not self._account :
-            oldAcc = self._account
-            self._program.removeApp(oldAcc.ident)
-            wrapper = AccountWrapper(self, oldAcc)
-            wrapper.setCapital(self._startBalance, True)
-            self._account = wrapper
-            self._program.addApp(wrapper)
 
         # end of adjust the Trader
         #---------------------------------------------
@@ -111,7 +118,8 @@ class BackTestApp(MetaTrader):
         self.dailyResultDict = OrderedDict()
 
         ##########################
-        ps = psp.Perspective('AShare', '000001')
+        self._marketstat = psp.PerspectiveDict(self._account.exchange)
+        self.ps = psp.Perspective(self._account.exchange, '000001')
         pg = psp.PerspectiveGenerator(ps)
         hpb = hist.CsvPlayback(symbol='000001', folder='/mnt/h/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
         pg.adaptReader(hpb, md.EVENT_KLINE_1MIN)

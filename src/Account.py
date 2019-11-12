@@ -198,7 +198,14 @@ class Account(MetaAccount):
     #----------------------------------------------------------------------
     #  properties
     #----------------------------------------------------------------------
-    # @abstractmethod
+    @property
+    def recorder(self):
+        return self._recorder
+
+    @property
+    def marketState(self):
+        return self._marketstate
+
     @property
     def cashSymbol(self):
         return self.SYMBOL_CASH # the dummy symbol in order to represent cache in _dictPositions

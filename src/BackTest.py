@@ -9,6 +9,7 @@ from Application import *
 from Account import *
 from Trader import *
 from HistoryData import *
+from Perspective import *
 
 from datetime import datetime, timedelta
 from collections import OrderedDict
@@ -48,7 +49,7 @@ class BackTestApp(MetaTrader):
         # -----------------------------------------
         tmpstr = settings.startDate('2000-01-01')
         self._btStartDate = datetime.strptime(tmpstr, '%Y-%m-%d') # 回测数据开始日期，datetime对象
-        self._dtData = self._btStartDate
+        self.__dtData = self._btStartDate
         self._btEndDate   = None         # 回测数据结束日期，datetime对象, None to today or late data
         tmpstr = settings.endDate('')
         if len(tmpstr) >8:
@@ -109,31 +110,22 @@ class BackTestApp(MetaTrader):
 
         self.initData = []          # 初始化用的数据
 
-        # 当前最新数据，用于模拟成交用
-        self.tick = None
-        self.bar  = None
-        self._dtData   = None      # 最新数据的时间
-
         # 日线回测结果计算用
         self.dailyResultDict = OrderedDict()
 
-        ##########################
-        self._marketstat = psp.PerspectiveDict(self._account.exchange)
-        self.ps = psp.Perspective(self._account.exchange, '000001')
-        pg = psp.PerspectiveGenerator(ps)
-        hpb = hist.CsvPlayback(symbol='000001', folder='/mnt/h/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
-        pg.adaptReader(hpb, md.EVENT_KLINE_1MIN)
-        pdict = psp.PerspectiveDict('AShare')
 
-        for i in pg :
-            if psp.EVENT_Perspective != i.type :
-                print('evnt: %s' % i.desc) 
+    def doAppStep(self):
+        super(BaseTrader, self).doAppStep()
+
+        try :
+            ev = next(self.__pg)
+            if psp.EVENT_Perspective != ev.type :
+                print('evnt: %s' % ev.desc) 
                 continue
 
             print('Psp: %s' % i.desc)
-            pdict.updateByEvent(i)
-            s = i.data._symbol
-            print('-> state: asof[%s] lastPrice[%s] OHLC%s\n' % (pdict.getAsOf(s).strftime('%Y%m%d %H:%M:%S'), pdict.latestPrice(s), pdict.dailyOHLC_sofar(s)))
+            self._marketstat.updateByEvent(ev)
+            self.log('-> state: asof[%s] lastPrice[%s] OHLC%s\n' % (pdict.getAsOf(s).strftime('%Y%m%d %H:%M:%S'), pdict.latestPrice(s), pdict.dailyOHLC_sofar(s)))
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
@@ -152,6 +144,24 @@ class BackTestApp(MetaTrader):
         self._execEndClose = 0.0
 
         self.clearResult()
+
+        # 当前最新数据，用于模拟成交用
+        self.tick = None
+        self.bar  = None
+        self.__dtData   = None      # 最新数据的时间
+
+        self._marketstat = PerspectiveDict(self._account.exchange)
+        self.__pg = None
+
+        ##########################
+        for ob in self._dictObjectives.keys() :
+            self._marketstat.addMonitor(ob)
+            ps = Perspective(self._account.exchange, ob)
+            self.__pg = PerspectiveGenerator(ps)
+            hpb = hist.CsvPlayback(symbol=ob, folder=self._dataPath, fields='date,time,open,high,low,close,volume,ammount')
+            self.__pg.adaptReader(hpb, md.EVENT_KLINE_1MIN)
+            break;
+
     
     #----------------------------------------------------------------------
     # Overrides of Events handling
@@ -168,7 +178,7 @@ class BackTestApp(MetaTrader):
             self._execStartClose = kline.close
             self._execStart = kline.date
 
-        self._dtData = kline.datetime
+        self.__dtData = kline.datetime
 
         # 先确定会撮合成交的价格
         bestPrice          = round(((kline.open + kline.close) *4 + kline.high + kline.low) /10, 2)
@@ -199,7 +209,7 @@ class BackTestApp(MetaTrader):
             self._execStart = tick.date
             self._execStartClose = tick.priceTick
 
-        self._dtData = tick.datetime
+        self.__dtData = tick.datetime
 
         # 先确定会撮合成交的价格
         buyCrossPrice      = tick.a1P
@@ -208,14 +218,14 @@ class BackTestApp(MetaTrader):
         sellBestCrossPrice = tick.b1P
 
         # 先撮合限价单
-        self.account.crossLimitOrder(tick.symbol, self._dtData, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3)) # to determine maxCrossVolume from Tick, maxCrossVolume)
+        self.account.crossLimitOrder(tick.symbol, self.__dtData, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3)) # to determine maxCrossVolume from Tick, maxCrossVolume)
         # 再撮合停止单
-        self.account.crossStopOrder(tick.symbol, self._dtData, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3)) # to determine maxCrossVolume from Tick, maxCrossVolume)
+        self.account.crossStopOrder(tick.symbol, self.__dtData, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3)) # to determine maxCrossVolume from Tick, maxCrossVolume)
 
     @abstractmethod    # usually back test will overwrite this
     def postStrategy(self, symbol) :
         """执行完策略后的的处理，通常为综合决策"""
-        self.updateDailyClose(self._dtData, symbol)
+        self.updateDailyClose(self.__dtData, symbol)
 
     def eventHdl_TradeEnd(self, event):
         self.info('eventHdl_TradeEnd() sell all positions to cash')
@@ -225,8 +235,7 @@ class BackTestApp(MetaTrader):
 
     #------------------------------------------------
     # 数据回放结果计算相关
-
-    #----------------------------------------------------------------------
+    #------------------------------------------------
     def clearResult(self):
         self.resultList = []             # 交易结果列表
         self.posList = [0]               # 每笔成交后的持仓情况        
@@ -234,14 +243,13 @@ class BackTestApp(MetaTrader):
     
     def debug(self, message):
         """输出内容"""
-        if self._dtData:
-            message = str(self._dtData) + ' ' + message
-        super(BackTestApp, self).stdout(message)
+        if self.__dtData:
+            message = str(self.__dtData) + ' ' + message
+        super(BackTestApp, self).debug(message)
     
-    @abstractmethod
-    def btlog(self, level, msg):
-        if self._dtData:
-            msg = str(self._dtData) + ' ' + msg
+    def log(self, level, msg):
+        if self.__dtData:
+            msg = str(self.__dtData) + ' ' + msg
         super(BackTestApp, self).log(level, msg)
 
     #------------------------------------------------
@@ -378,13 +386,13 @@ class BackTestApp(MetaTrader):
     #     # ---------------------------
     #     # 到最后交易日尚未平仓的交易，则以最后价格平仓
     #     for trade in buyTrades:
-    #         result = TradingResult(trade.price, trade.dt, self._execEndClose, self._dtData, 
+    #         result = TradingResult(trade.price, trade.dt, self._execEndClose, self.__dtData, 
     #                                trade.volume, self._rate, self._slippage, self.account.size)
     #         self.resultList.append(result)
     #         txnstr += '%+dx%.2f' % (trade.volume, trade.price)
             
     #     for trade in sellTrades:
-    #         result = TradingResult(trade.price, trade.dt, self._execEndClose, self._dtData, 
+    #         result = TradingResult(trade.price, trade.dt, self._execEndClose, self.__dtData, 
     #                                -trade.volume, self._rate, self._slippage, self.account.size)
     #         self.resultList.append(result)
     #         txnstr += '%-dx%.2f' % (trade.volume, trade.price)
@@ -1284,7 +1292,7 @@ class AccountWrapper(MetaAccount):
                 trade.volume    = order.totalVolume
                 trade.dt        = self._btTrader._dtData
                 # trade.tradeTime = self._btTrader._dtData.strftime('%H:%M:%S')
-                # trade.dt = self._dtData
+                # trade.dt = self.__dtData
                 if buyCross:
                     trade.price = min(order.price, buyBestCrossPrice)
                 else:
@@ -1358,8 +1366,8 @@ class AccountWrapper(MetaAccount):
         #         trade.direction = so.direction
         #         trade.offset = so.offset
         #         trade.volume = so.volume
-        #         trade.tradeTime = self._dtData.strftime('%H:%M:%S')
-        #         trade.dt = self._dtData
+        #         trade.tradeTime = self.__dtData.strftime('%H:%M:%S')
+        #         trade.dt = self.__dtData
                     
         #         self._dictTrades[tradeID] = trade
                     

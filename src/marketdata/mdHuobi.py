@@ -15,11 +15,7 @@ import socket
 from copy import copy
 from datetime import datetime
 from threading import Thread
-import sys
-if sys.version_info <(3,) :
-    from Queue import Queue, Empty
-else:
-    from queue import Queue, Empty
+from Queue import Queue, Empty
 from multiprocessing.dummy import Pool
 from time import sleep
 

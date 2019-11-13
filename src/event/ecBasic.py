@@ -15,6 +15,16 @@ def datetime2float(dt):
     return total_seconds
 
 ########################################################################
+class Event:
+    """事件对象"""
+
+    #----------------------------------------------------------------------
+    def __init__(self, type_=None):
+        """Constructor"""
+        self.type_ = type_      # 事件类型
+        self.dict_ = {}         # 字典用于保存具体的事件数据
+
+########################################################################
 class EventData(object):
     """回调函数推送数据的基础类，其他数据类继承于此"""
     EMPTY_STRING = ''
@@ -25,7 +35,7 @@ class EventData(object):
     #----------------------------------------------------------------------
     def __init__(self):
         """Constructor"""
-        # self.gatewayName = EventData.EMPTY_STRING         # Gateway名称        
+        # self.gatewayName = EventData.EMPTY_STRING  # Gateway名称        
         # self.rawData = None                     # 原始数据
 
     @property
@@ -226,16 +236,6 @@ class EventChannel(EventLoop):
         # 等待事件处理线程退出
         self.__thread.join()
             
-
-########################################################################
-class Event:
-    """事件对象"""
-
-    #----------------------------------------------------------------------
-    def __init__(self, type_=None):
-        """Constructor"""
-        self.type_ = type_      # 事件类型
-        self.dict_ = {}         # 字典用于保存具体的事件数据
 
 #----------------------------------------------------------------------
 def test():

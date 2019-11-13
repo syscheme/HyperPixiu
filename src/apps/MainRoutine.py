@@ -44,13 +44,6 @@ LOG_DB_NAME = 'vnDB_Log'
 
 import jsoncfg # pip install json-cfg
 
-# def loadSettings(filepath):
-#     """读取配置"""
-#     try :
-#         return jsoncfg.load_config(filepath)
-#     except Exception as e :
-#         print('failed to load configure[%s] :%s' % (filepath, e))
-#         return None
 
 ########################################################################
 class BaseApplication(object):
@@ -182,73 +175,6 @@ class BaseApplication(object):
     def step(self):
         # TODO:
         return 0
-
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def dbEnsureIndex(self, collectionName, definition, unique=False, dbName=None):
-        """向MongoDB中插入数据，d是具体数据"""
-        if not dbName or len(dbName) <=0:
-            dbName = self._id
-
-        if self._engine:
-            self._engine.dbEnsureIndex(dbName, collectionName, definition, unique)
-                    # db = self._dbConn['Account']
-                    # collection = db[tblName]
-                    # collection.ensure_index([('vtTradeID', ASCENDING)], unique=True) #TODO this should init ONCE
-                    # collection = db[tblName]
-                    # collection.update({'vtTradeID':t.vtTradeID}, t.__dict__, True)
-    @abstractmethod
-    def dbInsert(self, collectionName, d, dbName =None):
-        """向MongoDB中插入数据，d是具体数据"""
-        if not dbName or len(dbName) <=0:
-            dbName = self._id
-        if self._engine:
-            self._engine.dbInsert(dbName, collectionName, d)
-    
-    @abstractmethod
-    def dbQuery(self, collectionName, d, sortKey='', sortDirection=ASCENDING, dbName =None):
-        """从MongoDB中读取数据，d是查询要求，返回的是数据库查询的指针"""
-        if not dbName or len(dbName) <=0:
-            dbName = self._id
-        if self._engine:
-            return self._engine.dbQuery(dbName, collectionName, d, sortKey, sortDirection)
-
-        return []
-        
-    @abstractmethod
-    def dbUpdate(self, collectionName, d, flt, upsert=True,  dbName =None):
-        """向MongoDB中更新数据，d是具体数据，flt是过滤条件，upsert代表若无是否要插入"""
-        if not dbName or len(dbName) <=0:
-            dbName = self._id
-        if self._engine:
-            self._engine.dbUpdate(dbName, collectionName, d, flt, upsert)
-            
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def saveObject(self, category, id, obj):
-        """保存对象到硬盘"""
-        try :
-            os.makedirs(self.dataRoot + '/objects')
-        except:
-            pass
-
-        fn = '%s/objects/%s' % (self.dataRoot, category)
-        f = shelve.open(fn)
-        f[id] = obj
-        f.close()
-
-    @abstractmethod
-    def loadObject(self, category, id):
-        """读取对象"""
-        try :
-            fn = '%s/objects/%s' % (self.dataRoot, category)
-            f = shelve.open(fn)
-            if id in f :
-                return f[id].value
-        except Exception as ex:
-            print("loadObject() error: %s %s" % (ex, traceback.format_exc()))
-
-        return None
 
     @abstractmethod
     def logEvent(self, eventType, content):
@@ -544,7 +470,7 @@ class MainRoutine(object):
                 except KeyboardInterrupt:
                     self.error("quit per KeyboardInterrupt")
                     exit(-1)
-                except Exception as ex:
+                except Exception, ex:
                     self.error("eventCH step exception %s %s" % (ex, traceback.format_exc()))
 
             # if c % 10 ==0:
@@ -562,7 +488,7 @@ class MainRoutine(object):
             self._pid = os.fork()
             if self._pid > 0:        #parrent
                 os._exit(0)
-        except OSError as e:
+        except OSError,e:
             sys.stderr.write("first fork failed!!"+e.strerror)
             os._exit(1)
     
@@ -580,7 +506,7 @@ class MainRoutine(object):
             self._pid = os.fork()     #第二次进行fork,为了防止会话首进程意外获得控制终端
             if self._pid > 0:
                 os._exit(0)     #父进程退出
-        except OSError as e:
+        except OSError,e:
             sys.stderr.write("second fork failed!!"+e.strerror)
             os._exit(1)
     

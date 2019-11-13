@@ -46,7 +46,7 @@ def runChildProcess():
     me.createApp(Zipper, settings['datarecorder'])
     me.info(u'主引擎创建成功')
 
-    me.start(False)
+    me.start(True)
     startDate=datetime.now() - timedelta(60)
     # data = recorder.loadMarketData('ethusdt', startDate)
     # me.debug('loaded %d marketdata' % len(data))

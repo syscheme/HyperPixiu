@@ -232,20 +232,14 @@ class BaseTrader(MetaTrader):
 
    #----------------------------------------------------------------------
     # about the event handling
-    @abstractmethod
-    def eventHdl_TradeEnd(self, event):
-        self.info('eventHdl_TradeEnd() quitting')
-        self._program.stop()
-        # exit(0) # usualy exit() would be called in it to quit the program
-
     # --- eventOrder from Account ------------
     @abstractmethod
-    def eventHdl_Order(self, event):
+    def eventHdl_Order(self, ev):
         """处理委托事件"""
         pass
             
     @abstractmethod
-    def eventHdl_Trade(self, event):
+    def eventHdl_Trade(self, ev):
         """处理成交事件"""
         pass
 
@@ -262,7 +256,6 @@ class BaseTrader(MetaTrader):
     #----------------------------------------------------------------------
     @abstractmethod    # usually back test will overwrite this
     def onDayOpen(self, symbol, date):
-
         # step1. notify accounts
         self.debug('onDayOpen(%s) dispatching to account' % symbol)
         if self._account :

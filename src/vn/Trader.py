@@ -39,7 +39,7 @@ class VnTrader(BaseTrader):
 
         # step 1. subscribe all interested market data
 
-        self.account.onStart()
+        self._account.onStart()
 
         # step 2. call allstrategy.onInit()
         self.strategies_Start()
@@ -124,7 +124,7 @@ class VnTrader(BaseTrader):
                     self.error('proc_MarketData(%s) [%s] caught %s: %s' % (d.desc, strategy.id, ex, traceback.format_exc()))
 
         # step 4. 执行完策略后的的处理，通常为综合决策
-        self.postMarketEvent(symbol)
+        self.OnMarketEventProcessed(evtype, symbol, data)
 
         self.debug('proc_MarketEvent(%s) processed: %s' % (d.desc, execStgList))
 
@@ -217,7 +217,7 @@ class VnTrader(BaseTrader):
             symbols = self._dictObjectives.keys()
         
         for s in symbols:
-            strategy = strategyClass(self, s, self.account, setting)
+            strategy = strategyClass(self, s, self._account, setting)
             if strategy.id in self._dictStrategies:  # 防止策略重名
                 self.error(u'策略实例重名：%s' %id)
                 continue
@@ -304,7 +304,7 @@ class VnTrader(BaseTrader):
         pass
 
     @abstractmethod    # usually back test will overwrite this
-    def postMarketEvent(self, symbol) :
+    def OnMarketEventProcessed(self, evtype, symbol, data) :
         """执行完策略后的的处理，通常为综合决策"""
         pass
 

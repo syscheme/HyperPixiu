@@ -76,6 +76,17 @@ class BackTestApp(MetaTrader):
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
+    def debug(self, message):
+        """输出内容"""
+        if self.__dtData:
+            message = str(self.__dtData) + ' ' + message
+        super(BackTestApp, self).debug(message)
+    
+    def log(self, level, msg):
+        if self.__dtData:
+            msg = str(self.__dtData) + ' ' + msg
+        super(BackTestApp, self).log(level, msg)
+
     def doAppInit(self): # return True if succ
         if not super(BackTestApp, self).init() :
             return False
@@ -88,12 +99,13 @@ class BackTestApp(MetaTrader):
 
         # step 1. wrapper the broker drivers of the accounts
         if not self._account and not isinstance(self._account, AccountWrapper):
-            oldAcc = self._account
-            self._program.removeApp(oldAcc.ident)
-            wrapper = AccountWrapper(self, oldAcc)
-            wrapper.setCapital(self._startBalance, True)
-            self._account = wrapper
-            self._program.addApp(wrapper)
+            originAcc = self._account
+            self._program.removeApp(originAcc.ident)
+            self._initAcc = AccountWrapper(self, copy(originAcc)) # duplicate the original account for test espoches
+            self._initAcc.setCapital(self._startBalance, True)
+            # MOVED to resetTest():
+            # self._account = wrapper
+            # self._program.addApp(self._account)
 
         # ADJ_1. adjust the Trader._dictObjectives to append suffix MarketData.TAG_BACKTEST
         for obj in self._dictObjectives.values() :
@@ -102,44 +114,109 @@ class BackTestApp(MetaTrader):
             if len(obj["ds1min"]) >0 :
                 obj["ds1min"] += MarketData.TAG_BACKTEST
 
-
         # end of adjust the Trader
-        #---------------------------------------------
-        self._execStart = None
-        self._execStartClose = 0
+
+        self._execDate_Begin = None
+        self._execClosePrice_Begin = 0
 
         self.initData = []          # 初始化用的数据
+        self.resetTest()
 
     def doAppStep(self):
         super(BaseTrader, self).doAppStep()
 
-        # try :
-        #     ev = next(self.__pg)
-        #     if psp.EVENT_Perspective != ev.type :
-        #         print('evnt: %s' % ev.desc) 
-        #         continue
+        try :
+            ev = next(self.__pg)
+            if not ev : return
 
-        #     print('Psp: %s' % i.desc)
-        #     self._marketstat.updateByEvent(ev)
-        #     self.log('-> state: asof[%s] lastPrice[%s] OHLC%s\n' % (pdict.getAsOf(s).strftime('%Y%m%d %H:%M:%S'), pdict.latestPrice(s), pdict.dailyOHLC_sofar(s)))
+            self.OnEvent(ev) # call Trader
+            return # successfully pushed an Event
+        except StopIteration:
+            pass
+
+        # this test should be done if reached here
+        self.info('test-round[%s] done, generating report', self.__testRoundId)
+        self.generateReport()
+
+        self.__testRoundId +=1
+        if (self.__testRoundId < self.__testRounds) :
+            self.info('test-round[%s] starts', self.__testRoundId)
+            self.resetTest()
+            return
+
+        # all tests have been done
+        self.stop()
+
+    def OnEvent(self, ev): 
+        # step 2. 收到行情后，在启动策略前的处理
+        if EVENT_TICK == ev.type:
+            self.__tradeMatchingByTick(ev.data)
+        elif EVENT_KLINE_PREFIX == evtype[:len(EVENT_KLINE_PREFIX)] :
+            self.__tradeMatchingByKLine(ev.data)
+
+        return self._nestTrader.OnEvent(ev)
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
-
+    
     #----------------------------------------------------------------------
-    def resetTest(self) :
-#        self.account = self._accountClass(None, tdBackTest, self._settings.account)
-#        self.account._dvrBroker._backtest= self
-#        self.account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
-        
-        self.account.setCapital(self._startBalance, True) # 回测时的起始本金（默认10万）
+    # Overrides of Events handling
+    def eventHdl_Order(self, ev):
+        return self._nestTrader.eventHdl_Order(ev)
+            
+    def eventHdl_Trade(self, ev):
+        return self._nestTrader.eventHdl_Trade(ev)
 
-        self._execStart = ''
-        self._execEnd = ''
-        self._execStartClose = 0.0
+    def onDayOpen(self, symbol, date):
+        return self._nestTrader.onDayOpen(symbol, date)
+
+    def proc_MarketEvent(self, evtype, symbol, data):
+        self.error('proc_MarketEvent() should not be here')
+
+    #------------------------------------------------
+    # 数据回放结果计算相关
+
+    def resetTest(self) :
+#        self._account = self._accountClass(None, tdBackTest, self._settings.account)
+#        self._account._dvrBroker._backtest= self
+#        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
+        
+        if self._account ：
+            self._program.removeApp(self._account)
+            self._account =None
+        
+        if self._initAcc :
+            self._account = copy.deepcopy(self._initAcc)
+            self._program.addApp(self._account)
+        
+        self._account.setCapital(self._startBalance, True) # 回测时的起始本金（默认10万）
+
+        self._execClosePrice_Begin = 0.0
         self._execEndClose = 0.0
 
-        self.clearResult()
+        self._execDate_Begin = None
+        self._execEnd = None
+        self._execClosePrice_Begin = 0.0
+
+        self.initData = []          # 初始化用的数据
+
+        self.resultList = []             # 交易结果列表
+        self.posList = [0]               # 每笔成交后的持仓情况        
+        self.tradeTimeList = []          # 每笔成交时间戳
+
+        # 清空限价单相关
+        self.tdDriver.limitOrderCount = 0
+        self.tdDriver.limitOrderDict.clear()
+        self._dictLimitOrders.clear()        
+        
+        # 清空停止单相关
+        self.tdDriver.stopOrderCount = 0
+        self.tdDriver.stopOrderDict.clear()
+        self._dictStopOrders.clear()
+        
+        # 清空成交相关
+        self.tdDriver.tradeCount = 0
+        self._dictTrades.clear()
 
         # 当前最新数据，用于模拟成交用
         self.tick = None
@@ -158,11 +235,7 @@ class BackTestApp(MetaTrader):
             self.__pg.adaptReader(hpb, md.EVENT_KLINE_1MIN)
             break;
 
-    
-    #----------------------------------------------------------------------
-    # Overrides of Events handling
-    @abstractmethod    # usually back test will overwrite this
-    def preStrategyByKLine(self, kline):
+    def __tradeMatchingByKLine(self, kldata):
         """收到行情后处理本地停止单（检查是否要立即发出）"""
 
         # TODO check if received the END signal of backtest data
@@ -170,216 +243,69 @@ class BackTestApp(MetaTrader):
         # if self.mode != self.BAR_MODE:
         #     return
 
-        if self._execStart ==None:
-            self._execStartClose = kline.close
-            self._execStart = kline.date
+        if self._execDate_Begin ==None:
+            self._execClosePrice_Begin = kldata.close
+            self._execDate_Begin = kldata.date
 
-        self.__dtData = kline.datetime
+        self.__dtData = kldata.datetime
 
         # 先确定会撮合成交的价格
-        bestPrice          = round(((kline.open + kline.close) *4 + kline.high + kline.low) /10, 2)
+        bestPrice          = round(((kldata.open + kldata.close) *4 + kldata.high + kldata.low) /10, 2)
 
-        buyCrossPrice      = kline.low        # 若买入方向限价单价格高于该价格，则会成交
-        sellCrossPrice     = kline.high      # 若卖出方向限价单价格低于该价格，则会成交
-        maxCrossVolume     = kline.volume
+        buyCrossPrice      = kldata.low        # 若买入方向限价单价格高于该价格，则会成交
+        sellCrossPrice     = kldata.high      # 若卖出方向限价单价格低于该价格，则会成交
+        maxCrossVolume     = kldata.volume
         buyBestCrossPrice  = bestPrice       # 在当前时间点前发出的买入委托可能的最优成交价
         sellBestCrossPrice = bestPrice       # 在当前时间点前发出的卖出委托可能的最优成交价
         
         # 张跌停封板
-        if buyCrossPrice <= kline.open*0.9 :
+        if buyCrossPrice <= kldata.open*0.9 :
             buyCrossPrice =0
-        if sellCrossPrice >= kline.open*1.1 :
+        if sellCrossPrice >= kldata.open*1.1 :
             sellCrossPrice =0
 
         # 先撮合限价单
-        self.account.crossLimitOrder(kline.symbol, kline.datetime, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
+        self._account.crossLimitOrder(kldata.symbol, kldata.datetime, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
         # 再撮合停止单
-        self.account.crossStopOrder(kline.symbol, kline.datetime, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
+        self._account.crossStopOrder(kldata.symbol, kldata.datetime, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
 
-    @abstractmethod    # usually back test will overwrite this
-    def preStrategyByTick(self, tick):
+    def __tradeMatchingByTick(self, tkdata):
         """收到行情后，在启动策略前的处理
         通常处理本地停止单（检查是否要立即发出）"""
 
-        if self._execStart ==None:
-            self._execStart = tick.date
-            self._execStartClose = tick.priceTick
+        if not self._execDate_Begin:
+            self._execDate_Begin = tkdata.date
+            self._execClosePrice_Begin = tkdata.priceTick
 
-        self.__dtData = tick.datetime
+        self.__dtData = tkdata.datetime
 
         # 先确定会撮合成交的价格
-        buyCrossPrice      = tick.a1P
-        sellCrossPrice     = tick.b1P
-        buyBestCrossPrice  = tick.a1P
-        sellBestCrossPrice = tick.b1P
+        buyCrossPrice      = tkdata.a1P
+        sellCrossPrice     = tkdata.b1P
+        buyBestCrossPrice  = tkdata.a1P
+        sellBestCrossPrice = tkdata.b1P
 
         # 先撮合限价单
-        self.account.crossLimitOrder(tick.symbol, self.__dtData, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3)) # to determine maxCrossVolume from Tick, maxCrossVolume)
+        self._account.crossLimitOrder(tkdata.symbol, self.__dtData, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3)) # to determine maxCrossVolume from Tick, maxCrossVolume)
         # 再撮合停止单
-        self.account.crossStopOrder(tick.symbol, self.__dtData, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3)) # to determine maxCrossVolume from Tick, maxCrossVolume)
-
-    @abstractmethod    # usually back test will overwrite this
-    def postStrategy(self, symbol, price) :
-        """执行完策略后的的处理，通常为综合决策"""
-        # self.updateDailyClose(self.__dtData, symbol)
-        dt = self.__dtData.date()
-
-        if dt not in self.__dailyResultDict:
-            self.__dailyResultDict[dt] = DailyResult(date, price)
-        else:
-            self.__dailyResultDict[dt].closePrice = price
-
-    def eventHdl_TradeEnd(self, event):
-        self.info('eventHdl_TradeEnd() sell all positions to cash')
-        self.account.onTestEnd()
-        self.finishTest() # usualy exit() would be called in it to quit the program
-        super(BackTestApp, self).eventHdl_TradeEnd(event)
-
-    #------------------------------------------------
-    # 数据回放结果计算相关
-    #------------------------------------------------
-    def clearResult(self):
-        self.resultList = []             # 交易结果列表
-        self.posList = [0]               # 每笔成交后的持仓情况        
-        self.tradeTimeList = []          # 每笔成交时间戳
-    
-    def debug(self, message):
-        """输出内容"""
-        if self.__dtData:
-            message = str(self.__dtData) + ' ' + message
-        super(BackTestApp, self).debug(message)
-    
-    def log(self, level, msg):
-        if self.__dtData:
-            msg = str(self.__dtData) + ' ' + msg
-        super(BackTestApp, self).log(level, msg)
-
-    #------------------------------------------------
-    def finishTest(self) :
-        self.debug('finishTest() generating test reports')
-        exit(0)
+        self._account.crossStopOrder(tkdata.symbol, self.__dtData, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3)) # to determine maxCrossVolume from Tick, maxCrossVolume)
 
     #----------------------------------------------------------------------
-    def clearBackTesting(self):
-        """清空之前回测的结果"""
-
-        # 清空限价单相关
-        self.tdDriver.limitOrderCount = 0
-        self.tdDriver.limitOrderDict.clear()
-        self._dictLimitOrders.clear()        
-        
-        # 清空停止单相关
-        self.tdDriver.stopOrderCount = 0
-        self.tdDriver.stopOrderDict.clear()
-        self._dictStopOrders.clear()
-        
-        # 清空成交相关
-        self.tdDriver.tradeCount = 0
-        self._dictTrades.clear()
-
-        self.clearResult()
-        self._id = ""
-
-    #----------------------------------------------------------------------
-    def batchBacktesting(self, strategyList, d):
-        """批量回测结果"""
-
-        # self.loadHistoryData()
-
-        for strategy in strategyList:
-            if strategy ==None :
-                continue
-
-            self.clearBackTesting()
-            self.initStrategy(strategy, d)
-            self.runBacktesting()
-
-            self.showDailyResult()
-        
-    #----------------------------------------------------------------------
-    def runOptimization(self, strategyClass, optimizationSetting):
-        """优化参数"""
-        # 获取优化设置        
-        settingList = optimizationSetting.generateSetting()
-        targetName = optimizationSetting.optimizeTarget
-        
-        # 检查参数设置问题
-        if not settingList or not targetName:
-            self.debug(u'优化设置有问题，请检查')
-        
-        # 遍历优化
-        self.resultList =[]
-        for setting in settingList:
-            self.clearBackTesting()
-            self.debug('-' * 30)
-            self.debug('setting: %s' %str(setting))
-            self.initStrategy(strategyClass, setting)
-            self.runBacktesting()
-
-            df, d = statisticsByDay(self.startBalance, self.account.dailyResultDict)
-            try:
-                targetValue = d[targetName]
-            except KeyError:
-                targetValue = 0
-            self.resultList.append(([str(setting)], targetValue, d))
-        
-        # 显示结果
-        self.resultList.sort(reverse=True, key=lambda result:result[1])
-        self.debug('-' * 30)
-        self.debug(u'优化结果：')
-        for result in self.resultList:
-            self.debug(u'参数：%s，目标：%s' %(result[0], result[1]))    
-        return self.resultList
-            
-    #----------------------------------------------------------------------
-    def runParallelOptimization(self, strategyClass, optimizationSetting):
-        """并行优化参数"""
-        # 获取优化设置        
-        settingList = optimizationSetting.generateSetting()
-        targetName = optimizationSetting.optimizeTarget
-        
-        # 检查参数设置问题
-        if not settingList or not targetName:
-            self.debug(u'优化设置有问题，请检查')
-        
-        # 多进程优化，启动一个对应CPU核心数量的进程池
-        pool = multiprocessing.Pool(multiprocessing.cpu_count())
-        l = []
-
-        for setting in settingList:
-            l.append(pool.apply_async(optimize, (strategyClass, setting,
-                                                 targetName, self.mode, 
-                                                 self.startDate, self.initDays, self.endDate,
-                                                 self.dbName, self.symbol)))
-        pool.close()
-        pool.join()
-        
-        # 显示结果
-        resultList = [res.get() for res in l]
-        resultList.sort(reverse=True, key=lambda result:result[1])
-        self.debug('-' * 30)
-        self.debug(u'优化结果：')
-        for result in resultList:
-            self.debug(u'参数：%s，目标：%s' %(result[0], result[1]))    
-            
-        return resultList
-
-    #----------------------------------------------------------------------
-    def showDailyResult(self, df=None, result=None):
+    def generateReport(self, df=None, result=None):
         """显示按日统计的交易结果"""
         if df is None:
-            df, result = statisticsByDay(self.startBalance, self.account.dailyResultDict)
+            df, result = sumupDailyResults(self.startBalance, self._account.dailyResultDict)
 
-        df.to_csv(self.account._id+'.csv')
+        df.to_csv(self._account._id+'.csv')
             
         originGain = 0.0
-        if self._execStartClose >0 :
-            originGain = (self._execEndClose - self._execStartClose)*100/self._execStartClose
+        if self._execClosePrice_Begin >0 :
+            originGain = (self._execEndClose - self._execClosePrice_Begin)*100/self._execClosePrice_Begin
 
         # 输出统计结果
         self.debug('-' * 30)
-        self.debug(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execStart, self._execStartClose, self._execEnd, self._execEndClose, formatNumber(originGain)))
-        self.debug(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (result['startDate'], self._execStartClose, result['endDate'], self._execEndClose))
+        self.debug(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execDate_Begin, self._execClosePrice_Begin, self._execEnd, self._execEndClose, formatNumber(originGain)))
+        self.debug(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (result['startDate'], self._execClosePrice_Begin, result['endDate'], self._execEndClose))
         
         self.debug(u'交易日数：\t%s (盈利%s,亏损%s)' % (result['totalDays'], result['profitDays'], result['lossDays']))
         
@@ -407,10 +333,10 @@ class BackTestApp(MetaTrader):
         self.debug(u'收益标准差：\t%s%%' % formatNumber(result['returnStd']))
         self.debug(u'夏普率：\t%s' % formatNumber(result['sharpeRatio']))
         
-        self.plotDailyResult(df)
+        self.plotResult(df)
 
     #----------------------------------------------------------------------
-    def plotDailyResult(self, df):
+    def plotResult(self, df):
         # 绘图
         plt.rcParams['agg.path.chunksize'] =10000
 
@@ -432,249 +358,319 @@ class BackTestApp(MetaTrader):
         pKDE.set_title('Daily Pnl Distribution')
         df['netPnl'].hist(bins=50)
         
-        plt.savefig('DR-%s.png' % self.account._id, dpi=400, bbox_inches='tight')
+        plt.savefig('DR-%s.png' % self._account._id, dpi=400, bbox_inches='tight')
         plt.show()
         plt.close()
        
-    # Transaction-based
     # #----------------------------------------------------------------------
-    # def plotBacktestingResult(self, d):
-    #     # 绘图
-    #     plt.rcParams['agg.path.chunksize'] =10000
-    #     fig = plt.figure(figsize=(10, 16))
+    # def runOptimization(self, strategyClass, optimizationSetting):
+    #     """优化参数"""
+    #     # 获取优化设置        
+    #     settingList = optimizationSetting.generateSetting()
+    #     targetName = optimizationSetting.optimizeTarget
         
-    #     pCapital = plt.subplot(4, 1, 1)
-    #     pCapital.set_ylabel("capital")
-    #     pCapital.plot(d['capitalList'], color='r', lw=0.8)
+    #     # 检查参数设置问题
+    #     if not settingList or not targetName:
+    #         self.debug(u'优化设置有问题，请检查')
         
-    #     pDD = plt.subplot(4, 1, 2)
-    #     pDD.set_ylabel("DD")
-    #     pDD.bar(range(len(d['drawdownList'])), d['drawdownList'], color='g')
+    #     # 遍历优化
+    #     self.resultList =[]
+    #     for setting in settingList:
+    #         self.clearBackTesting()
+    #         self.debug('-' * 30)
+    #         self.debug('setting: %s' %str(setting))
+    #         self.initStrategy(strategyClass, setting)
+    #         self.runBacktesting()
+
+    #         df, d = sumupDailyResults(self.startBalance, self._account.dailyResultDict)
+    #         try:
+    #             targetValue = d[targetName]
+    #         except KeyError:
+    #             targetValue = 0
+    #         self.resultList.append(([str(setting)], targetValue, d))
         
-    #     pPnl = plt.subplot(4, 1, 3)
-    #     pPnl.set_ylabel("pnl")
-    #     pPnl.hist(d['pnlList'], bins=50, color='c')
-
-    #     pPos = plt.subplot(4, 1, 4)
-    #     pPos.set_ylabel("Position")
-    #     if d['posList'][-1] == 0:
-    #         del d['posList'][-1]
-    #     tradeTimeIndex = [item.strftime("%m/%d %H:%M:%S") for item in d['tradeTimeList']]
-    #     xindex = np.arange(0, len(tradeTimeIndex), np.int(len(tradeTimeIndex)/10))
-    #     tradeTimeIndex = map(lambda i: tradeTimeIndex[i], xindex)
-    #     pPos.plot(d['posList'], color='k', drawstyle='steps-pre')
-    #     pPos.set_ylim(-1.2, 1.2)
-    #     plt.sca(pPos)
-    #     plt.tight_layout()
-    #     plt.xticks(xindex, tradeTimeIndex, rotation=30)  # 旋转15
-        
-    #     plt.savefig('BT-%s.png' % self._id, dpi=400, bbox_inches='tight')
-    #     # plt.show()
-    #     plt.close()
-
-    # #----------------------------------------------------------------------
-    # def showBacktestingResult(self):
-    #     """显示回测结果"""
-
-    #     d = self.calculateTransactions()
-    #     originGain = 0.0
-    #     if self._execStartClose >0 :
-    #         originGain = (self._execEndClose - self._execStartClose)*100/self._execStartClose
-
-    #     # 输出
+    #     # 显示结果
+    #     self.resultList.sort(reverse=True, key=lambda result:result[1])
     #     self.debug('-' * 30)
-    #     self.debug(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execStart, self._execStartClose, self._execEnd, self._execEndClose, formatNumber(originGain)))
-    #     self.debug(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (d['timeList'][0], self._execStartClose, d['timeList'][-1], self._execEndClose))
-        
-    #     self.debug(u'总交易次数：\t%s' % formatNumber(d['totalResult'],0))        
-    #     self.debug(u'总盈亏：\t%s' % formatNumber(d['capital']))
-    #     self.debug(u'最大回撤: \t%s' % formatNumber(min(d['drawdownList'])))                
-        
-    #     self.debug(u'平均每笔盈利：\t%s' %formatNumber(d['capital']/d['totalResult']))
-    #     self.debug(u'平均每笔滑点：\t%s' %formatNumber(d['totalSlippage']/d['totalResult']))
-    #     self.debug(u'平均每笔佣金：\t%s' %formatNumber(d['totalCommission']/d['totalResult']))
-        
-    #     self.debug(u'胜率\t\t%s%%' %formatNumber(d['winningRate']))
-    #     self.debug(u'盈利交易平均值\t%s' %formatNumber(d['averageWinning']))
-    #     self.debug(u'亏损交易平均值\t%s' %formatNumber(d['averageLosing']))
-    #     self.debug(u'盈亏比：\t%s' %formatNumber(d['profitLossRatio']))
-
-    #     # self.plotBacktestingResult(d)
+    #     self.debug(u'优化结果：')
+    #     for result in self.resultList:
+    #         self.debug(u'参数：%s，目标：%s' %(result[0], result[1]))    
+    #     return self.resultList
+            
     # #----------------------------------------------------------------------
-    # def calculateTransactions(self):
-    #     """
-    #     计算回测结果
-    #     """
-    #     self.debug(u'计算回测结果')
+    # def runParallelOptimization(self, strategyClass, optimizationSetting):
+    #     """并行优化参数"""
+    #     # 获取优化设置        
+    #     settingList = optimizationSetting.generateSetting()
+    #     targetName = optimizationSetting.optimizeTarget
         
-    #     # 首先基于回测后的成交记录，计算每笔交易的盈亏
-    #     self.clearResult()
+    #     # 检查参数设置问题
+    #     if not settingList or not targetName:
+    #         self.debug(u'优化设置有问题，请检查')
+        
+    #     # 多进程优化，启动一个对应CPU核心数量的进程池
+    #     pool = multiprocessing.Pool(multiprocessing.cpu_count())
+    #     l = []
 
-    #     buyTrades = []              # 未平仓的多头交易
-    #     sellTrades = []             # 未平仓的空头交易
-
-    #     # ---------------------------
-    #     # scan all 交易
-    #     # ---------------------------
-    #     # convert the trade records into result records then put them into resultList
-    #     for trade in self._dictTrades.values():
-    #         # 复制成交对象，因为下面的开平仓交易配对涉及到对成交数量的修改
-    #         # 若不进行复制直接操作，则计算完后所有成交的数量会变成0
-    #         trade = copy.copy(trade)
+    #     for setting in settingList:
+    #         l.append(pool.apply_async(optimize, (strategyClass, setting,
+    #                                              targetName, self.mode, 
+    #                                              self.startDate, self.initDays, self.endDate,
+    #                                              self.dbName, self.symbol)))
+    #     pool.close()
+    #     pool.join()
+        
+    #     # 显示结果
+    #     resultList = [res.get() for res in l]
+    #     resultList.sort(reverse=True, key=lambda result:result[1])
+    #     self.debug('-' * 30)
+    #     self.debug(u'优化结果：')
+    #     for result in resultList:
+    #         self.debug(u'参数：%s，目标：%s' %(result[0], result[1]))    
             
-    #         # buy交易
-    #         # ---------------------------
-    #         if trade.direction == OrderData.DIRECTION_LONG:
+    #     return resultList
 
-    #             if not sellTrades:
-    #                 # 如果尚无空头交易
-    #                 buyTrades.append(trade)
-    #                 continue
-
-    #             # 当前多头交易为平空
-    #             while True:
-    #                 entryTrade = sellTrades[0]
-    #                 exitTrade = trade
-                    
-    #                 # 清算开平仓交易
-    #                 closedVolume = min(exitTrade.volume, entryTrade.volume)
-    #                 result = TradingResult(entryTrade.price, entryTrade.dt, 
-    #                                        exitTrade.price, exitTrade.dt,
-    #                                        -closedVolume, self._rate, self._slippage, self.account.size)
-
-    #                 self.resultList.append(result)
-                    
-    #                 self.posList.extend([-1,0])
-    #                 self.tradeTimeList.extend([result.entryDt, result.exitDt])
-                    
-    #                 # 计算未清算部分
-    #                 entryTrade.volume -= closedVolume
-    #                 exitTrade.volume -= closedVolume
-                    
-    #                 # 如果开仓交易已经全部清算，则从列表中移除
-    #                 if not entryTrade.volume:
-    #                     sellTrades.pop(0)
-                    
-    #                 # 如果平仓交易已经全部清算，则退出循环
-    #                 if not exitTrade.volume:
-    #                     break
-                    
-    #                 # 如果平仓交易未全部清算，
-    #                 if exitTrade.volume:
-    #                     # 且开仓交易已经全部清算完，则平仓交易剩余的部分
-    #                     # 等于新的反向开仓交易，添加到队列中
-    #                     if not sellTrades:
-    #                         buyTrades.append(exitTrade)
-    #                         break
-    #                     # 如果开仓交易还有剩余，则进入下一轮循环
-    #                     else:
-    #                         pass
-
-    #             continue 
-    #             # end of # 多头交易
-
-    #         # 空头交易        
-    #         # ---------------------------
-    #         if not buyTrades:
-    #             # 如果尚无多头交易
-    #             sellTrades.append(trade)
-    #             continue
-
-    #         # 当前空头交易为平多
-    #         while True:
-    #             entryTrade = buyTrades[0]
-    #             exitTrade = trade
-                
-    #             # 清算开平仓交易
-    #             closedVolume = min(exitTrade.volume, entryTrade.volume)
-    #             result = TradingResult(entryTrade.price, entryTrade.dt, 
-    #                                    exitTrade.price, exitTrade.dt,
-    #                                    closedVolume, self._rate, self._slippage, self.account.size)
-
-    #             self.resultList.append(result)
-    #             self.posList.extend([1,0])
-    #             self.tradeTimeList.extend([result.entryDt, result.exitDt])
-
-    #             # 计算未清算部分
-    #             entryTrade.volume -= closedVolume
-    #             exitTrade.volume -= closedVolume
-                
-    #             # 如果开仓交易已经全部清算，则从列表中移除
-    #             if not entryTrade.volume:
-    #                 buyTrades.pop(0)
-                
-    #             # 如果平仓交易已经全部清算，则退出循环
-    #             if not exitTrade.volume:
-    #                 break
-                
-    #             # 如果平仓交易未全部清算，
-    #             if exitTrade.volume:
-    #                 # 且开仓交易已经全部清算完，则平仓交易剩余的部分
-    #                 # 等于新的反向开仓交易，添加到队列中
-    #                 if not buyTrades:
-    #                     sellTrades.append(exitTrade)
-    #                     txnstr += '%-dx%.2f' % (trade.volume, trade.price)
-    #                     break
-    #                 # 如果开仓交易还有剩余，则进入下一轮循环
-    #                 else:
-    #                     pass                    
-
-    #             continue 
-    #             # end of 空头交易
-
-    #     # end of scanning tradeDict
+''' 
+    # Transaction-based
+    #----------------------------------------------------------------------
+    def plotBacktestingResult(self, d):
+        # 绘图
+        plt.rcParams['agg.path.chunksize'] =10000
+        fig = plt.figure(figsize=(10, 16))
         
-    #     # ---------------------------
-    #     # 结算日
-    #     # ---------------------------
-    #     # 到最后交易日尚未平仓的交易，则以最后价格平仓
-    #     for trade in buyTrades:
-    #         result = TradingResult(trade.price, trade.dt, self._execEndClose, self.__dtData, 
-    #                                trade.volume, self._rate, self._slippage, self.account.size)
-    #         self.resultList.append(result)
-    #         txnstr += '%+dx%.2f' % (trade.volume, trade.price)
+        pCapital = plt.subplot(4, 1, 1)
+        pCapital.set_ylabel("capital")
+        pCapital.plot(d['capitalList'], color='r', lw=0.8)
+        
+        pDD = plt.subplot(4, 1, 2)
+        pDD.set_ylabel("DD")
+        pDD.bar(range(len(d['drawdownList'])), d['drawdownList'], color='g')
+        
+        pPnl = plt.subplot(4, 1, 3)
+        pPnl.set_ylabel("pnl")
+        pPnl.hist(d['pnlList'], bins=50, color='c')
+
+        pPos = plt.subplot(4, 1, 4)
+        pPos.set_ylabel("Position")
+        if d['posList'][-1] == 0:
+            del d['posList'][-1]
+        tradeTimeIndex = [item.strftime("%m/%d %H:%M:%S") for item in d['tradeTimeList']]
+        xindex = np.arange(0, len(tradeTimeIndex), np.int(len(tradeTimeIndex)/10))
+        tradeTimeIndex = map(lambda i: tradeTimeIndex[i], xindex)
+        pPos.plot(d['posList'], color='k', drawstyle='steps-pre')
+        pPos.set_ylim(-1.2, 1.2)
+        plt.sca(pPos)
+        plt.tight_layout()
+        plt.xticks(xindex, tradeTimeIndex, rotation=30)  # 旋转15
+        
+        plt.savefig('BT-%s.png' % self._id, dpi=400, bbox_inches='tight')
+        # plt.show()
+        plt.close()
+
+    #----------------------------------------------------------------------
+    def showBacktestingResult(self):
+        """显示回测结果"""
+
+        d = self.calculateTransactions()
+        originGain = 0.0
+        if self._execClosePrice_Begin >0 :
+            originGain = (self._execEndClose - self._execClosePrice_Begin)*100/self._execClosePrice_Begin
+
+        # 输出
+        self.debug('-' * 30)
+        self.debug(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execDate_Begin, self._execClosePrice_Begin, self._execEnd, self._execEndClose, formatNumber(originGain)))
+        self.debug(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (d['timeList'][0], self._execClosePrice_Begin, d['timeList'][-1], self._execEndClose))
+        
+        self.debug(u'总交易次数：\t%s' % formatNumber(d['totalResult'],0))        
+        self.debug(u'总盈亏：\t%s' % formatNumber(d['capital']))
+        self.debug(u'最大回撤: \t%s' % formatNumber(min(d['drawdownList'])))                
+        
+        self.debug(u'平均每笔盈利：\t%s' %formatNumber(d['capital']/d['totalResult']))
+        self.debug(u'平均每笔滑点：\t%s' %formatNumber(d['totalSlippage']/d['totalResult']))
+        self.debug(u'平均每笔佣金：\t%s' %formatNumber(d['totalCommission']/d['totalResult']))
+        
+        self.debug(u'胜率\t\t%s%%' %formatNumber(d['winningRate']))
+        self.debug(u'盈利交易平均值\t%s' %formatNumber(d['averageWinning']))
+        self.debug(u'亏损交易平均值\t%s' %formatNumber(d['averageLosing']))
+        self.debug(u'盈亏比：\t%s' %formatNumber(d['profitLossRatio']))
+
+        # self.plotBacktestingResult(d)
+    #----------------------------------------------------------------------
+    def calculateTransactions(self):
+        """
+        计算回测结果
+        """
+        self.debug(u'计算回测结果')
+        
+        # 首先基于回测后的成交记录，计算每笔交易的盈亏
+        self.clearResult()
+
+        buyTrades = []              # 未平仓的多头交易
+        sellTrades = []             # 未平仓的空头交易
+
+        # ---------------------------
+        # scan all 交易
+        # ---------------------------
+        # convert the trade records into result records then put them into resultList
+        for trade in self._dictTrades.values():
+            # 复制成交对象，因为下面的开平仓交易配对涉及到对成交数量的修改
+            # 若不进行复制直接操作，则计算完后所有成交的数量会变成0
+            trade = copy.copy(trade)
             
-    #     for trade in sellTrades:
-    #         result = TradingResult(trade.price, trade.dt, self._execEndClose, self.__dtData, 
-    #                                -trade.volume, self._rate, self._slippage, self.account.size)
-    #         self.resultList.append(result)
-    #         txnstr += '%-dx%.2f' % (trade.volume, trade.price)
+            # buy交易
+            # ---------------------------
+            if trade.direction == OrderData.DIRECTION_LONG:
 
-    #     # return resultList;
-    #     return self.settleResult()
+                if not sellTrades:
+                    # 如果尚无空头交易
+                    buyTrades.append(trade)
+                    continue
+
+                # 当前多头交易为平空
+                while True:
+                    entryTrade = sellTrades[0]
+                    exitTrade = trade
+                    
+                    # 清算开平仓交易
+                    closedVolume = min(exitTrade.volume, entryTrade.volume)
+                    result = TradingResult(entryTrade.price, entryTrade.dt, 
+                                           exitTrade.price, exitTrade.dt,
+                                           -closedVolume, self._rate, self._slippage, self._account.size)
+
+                    self.resultList.append(result)
+                    
+                    self.posList.extend([-1,0])
+                    self.tradeTimeList.extend([result.entryDt, result.exitDt])
+                    
+                    # 计算未清算部分
+                    entryTrade.volume -= closedVolume
+                    exitTrade.volume -= closedVolume
+                    
+                    # 如果开仓交易已经全部清算，则从列表中移除
+                    if not entryTrade.volume:
+                        sellTrades.pop(0)
+                    
+                    # 如果平仓交易已经全部清算，则退出循环
+                    if not exitTrade.volume:
+                        break
+                    
+                    # 如果平仓交易未全部清算，
+                    if exitTrade.volume:
+                        # 且开仓交易已经全部清算完，则平仓交易剩余的部分
+                        # 等于新的反向开仓交易，添加到队列中
+                        if not sellTrades:
+                            buyTrades.append(exitTrade)
+                            break
+                        # 如果开仓交易还有剩余，则进入下一轮循环
+                        else:
+                            pass
+
+                continue 
+                # end of # 多头交易
+
+            # 空头交易        
+            # ---------------------------
+            if not buyTrades:
+                # 如果尚无多头交易
+                sellTrades.append(trade)
+                continue
+
+            # 当前空头交易为平多
+            while True:
+                entryTrade = buyTrades[0]
+                exitTrade = trade
+                
+                # 清算开平仓交易
+                closedVolume = min(exitTrade.volume, entryTrade.volume)
+                result = TradingResult(entryTrade.price, entryTrade.dt, 
+                                       exitTrade.price, exitTrade.dt,
+                                       closedVolume, self._rate, self._slippage, self._account.size)
+
+                self.resultList.append(result)
+                self.posList.extend([1,0])
+                self.tradeTimeList.extend([result.entryDt, result.exitDt])
+
+                # 计算未清算部分
+                entryTrade.volume -= closedVolume
+                exitTrade.volume -= closedVolume
+                
+                # 如果开仓交易已经全部清算，则从列表中移除
+                if not entryTrade.volume:
+                    buyTrades.pop(0)
+                
+                # 如果平仓交易已经全部清算，则退出循环
+                if not exitTrade.volume:
+                    break
+                
+                # 如果平仓交易未全部清算，
+                if exitTrade.volume:
+                    # 且开仓交易已经全部清算完，则平仓交易剩余的部分
+                    # 等于新的反向开仓交易，添加到队列中
+                    if not buyTrades:
+                        sellTrades.append(exitTrade)
+                        txnstr += '%-dx%.2f' % (trade.volume, trade.price)
+                        break
+                    # 如果开仓交易还有剩余，则进入下一轮循环
+                    else:
+                        pass                    
+
+                continue 
+                # end of 空头交易
+
+        # end of scanning tradeDict
         
-# ########################################################################
-# SEE BackTestApp.calculateTransactions()
-# class TradingResult(object):
-#     """每笔交易的结果
-#      """
+        # ---------------------------
+        # 结算日
+        # ---------------------------
+        # 到最后交易日尚未平仓的交易，则以最后价格平仓
+        for trade in buyTrades:
+            result = TradingResult(trade.price, trade.dt, self._execEndClose, self.__dtData, 
+                                   trade.volume, self._rate, self._slippage, self._account.size)
+            self.resultList.append(result)
+            txnstr += '%+dx%.2f' % (trade.volume, trade.price)
+            
+        for trade in sellTrades:
+            result = TradingResult(trade.price, trade.dt, self._execEndClose, self.__dtData, 
+                                   -trade.volume, self._rate, self._slippage, self._account.size)
+            self.resultList.append(result)
+            txnstr += '%-dx%.2f' % (trade.volume, trade.price)
 
-#    #----------------------------------------------------------------------
-#     def __init__(self, entryPrice, entryDt, exitPrice, 
-#                  exitDt, volume, rate, slippage, size):
-#         """Constructor"""
-#         self.entryPrice = entryPrice    # 开仓价格
-#         self.exitPrice = exitPrice      # 平仓价格
+        # return resultList;
+        return self.settleResult()
         
-#         self.entryDt = entryDt          # 开仓时间datetime    
-#         self.exitDt = exitDt            # 平仓时间
+########################################################################
+SEE BackTestApp.calculateTransactions()
+class TradingResult(object):
+    """每笔交易的结果
+     """
+
+   #----------------------------------------------------------------------
+    def __init__(self, entryPrice, entryDt, exitPrice, 
+                 exitDt, volume, rate, slippage, size):
+        """Constructor"""
+        self.entryPrice = entryPrice    # 开仓价格
+        self.exitPrice = exitPrice      # 平仓价格
         
-#         self.volume = volume    # 交易数量（+/-代表方向）
+        self.entryDt = entryDt          # 开仓时间datetime    
+        self.exitDt = exitDt            # 平仓时间
         
-#         self.turnover   = (self.entryPrice + self.exitPrice) *size*abs(volume)   # 成交金额
-#         entryCommission = self.entryPrice *size*abs(volume) *rate
-#         if entryCommission < 2.0:
-#             entryCommission =2.0
+        self.volume = volume    # 交易数量（+/-代表方向）
+        
+        self.turnover   = (self.entryPrice + self.exitPrice) *size*abs(volume)   # 成交金额
+        entryCommission = self.entryPrice *size*abs(volume) *rate
+        if entryCommission < 2.0:
+            entryCommission =2.0
 
-#         exitCommission = self.exitPrice *size*abs(volume) *rate
-#         if exitCommission < 2.0:
-#             exitCommission =2.0
+        exitCommission = self.exitPrice *size*abs(volume) *rate
+        if exitCommission < 2.0:
+            exitCommission =2.0
 
-#         self.commission = entryCommission + exitCommission
-#         self.slippage   = slippage*2*size*abs(volume)                            # 滑点成本
-#         self.pnl        = ((self.exitPrice - self.entryPrice) * volume * size 
-#                             - self.commission - self.slippage)                   # 净盈亏
+        self.commission = entryCommission + exitCommission
+        self.slippage   = slippage*2*size*abs(volume)                            # 滑点成本
+        self.pnl        = ((self.exitPrice - self.entryPrice) * volume * size 
+                            - self.commission - self.slippage)                   # 净盈亏
 
+'''
 
 ########################################################################
 class OptimizationSetting(object):
@@ -735,7 +731,7 @@ class OptimizationSetting(object):
         self.optimizeTarget = target
 
 #----------------------------------------------------------------------
-def statisticsByDay(startBalance, dayResultDict):
+def sumupDailyResults(startBalance, dayResultDict):
     '''
     @param dayResultDict - OrderedDict of account DailyResult during the date-window
     @return panda dataframe of formated-'DailyResult', summary-stat
@@ -857,7 +853,7 @@ def optimize(strategyClass, setting, targetName,
     account.initStrategy(strategyClass, setting)
     account.runBacktesting()
     
-    df, d = statisticsByDay(startBalance, account.dailyResultDict)
+    df, d = sumupDailyResults(startBalance, account.dailyResultDict)
     try:
         targetValue = d[targetName]
     except KeyError:
@@ -1207,7 +1203,7 @@ class AccountWrapper(MetaAccount):
                     
         #         self.tdDriver.limitOrderDict[orderID] = order
                     
-        #         self.account.onTrade(trade)
+        #         self._account.onTrade(trade)
 
         #         # 按照顺序推送数据
         #         self.strategy.onStopOrder(so)
@@ -1297,7 +1293,19 @@ if __name__ == '__main__':
         print('failed to load configure[%s]: %s' % (conf_fn, e))
         quit()
 
-    me = MainRoutine(settings)
+    PROGNAME = os.path.basename(__file__)[0:-3]
+    p = Program(PROGNAME)
+    p._heartbeatInterval =-1
+
+    p.createApp(Account_AShare, None)
+    pdict = PerspectiveDict('AShare')
+    p.addObj(pdict)
+    print('listed all Objects: %s\n' % p.listByType(MetaObj))
+    p.createApp(BackTestApp, None)
+
+    p.start()
+    p.loop()
+    p.stop()
 
     # me.addMarketData(mdHuobi, settings['marketdata'][0])
     me.addMarketData(mdOffline, settings['marketdata'][0])

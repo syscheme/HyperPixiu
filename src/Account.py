@@ -176,6 +176,7 @@ class Account(MetaAccount):
         self._dateToday      = None # date of previous close
         self._datePrevClose  = None # date of previous close
         self._prevPositions = {} # dict from symbol to previous PositionData
+        #TODO self._todayResult = DailyResult(self._dateToday, )
 
         self._dictOutgoingOrders = {} # the outgoing orders dict from reqId to OrderData that has not been confirmed with broker's orderId
         self._lstOrdersToCancel = []
@@ -747,8 +748,52 @@ class Account(MetaAccount):
         pass
 
     def onDayClose(self):
-        self.dbSaveDataOfDay() # save the account data into DB
-        
+
+        self.debug('onDayClose() calculating daily result')
+        cTrades =0
+        positions, _ = self.calcDailyPositions()
+
+        with self._lock :
+            # part 1. 汇总 the confirmed trades, and save
+            for trade in self._dictTrades.values():
+                if self._dateToday != trade.dt.date():
+                    continue
+
+                cTrades +=1
+                if self._recorder:
+                    self._recorder.pushRow(self.collectionName_trade, trade.__dict__)
+
+                if trade.direction == OrderData.DIRECTION_LONG:
+                    posChange = trade.volume
+                    self.tcBuy += 1
+                else:
+                    posChange = -trade.volume
+                    self.tcSell += 1
+                    
+                self._todayResult.txnHist += "%+dx%s" % (posChange, trade.price)
+
+                self._todayResult.tradingPnl += round(posChange * (self.closePrice - trade.price) * account.size, 2)
+                self._todayResult.closePosition += posChange
+                turnover, commission, slippagefee = self.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
+                self._todayResult.turnover += turnover
+                self._todayResult.commission += commission
+                self._todayResult.slippage += slippagefee
+
+            # 汇总
+            self._todayResult.totalPnl = round(self._todayResult.tradingPnl + self._todayResult.positionPnl, 2)
+            self._todayResult.netPnl = round(self._todayResult.totalPnl - self._todayResult.commission - self._todayResult.slippage, 2)
+            self.info('onDayClose() summed %s trades: %s' % (len(tl), self._todayResult.txnHist))
+
+            # part 2. record the daily result and positions
+            if self._recorder:
+                self._recorder.pushRow(self.collectionName_dailyresult, self._todayResult)
+
+                # 2.2 the positions
+                for dpos in positions:
+                    # self._trader.dbUpdate(self.collectionName_dpos, dpos, {'date':dpos['date'], 'symbol':dpos['symbol']})
+                    self._recorder.pushRow(self.collectionName_dpos, dpos)
+                self.info('saveDataOfDay() saved positions into DB: %s' % positions)
+
         self._datePrevClose = self._dateToday
         self._dateToday = None
         
@@ -762,6 +807,8 @@ class Account(MetaAccount):
             self.onDayClose()
 
         self._dateToday = newDate
+        #TODO self._todayResult = DailyResult(self._dateToday, )
+
         self._dictTrades.clear() # clean the trade list
         # shift the positions, must do copy each PositionData
         self._prevPositions = self.getAllPositions()
@@ -772,32 +819,8 @@ class Account(MetaAccount):
         # TODO refresh from BrokerDriver
         pass
 
-    #----------------------------------------------------------------------
-    # method to access Account DB
-
-    def dbSaveDataOfDay(self):
-        ''' save the account data into DB 
-        1) trades that confirmed
-        2) 
-        '''
-        if not self._recorder :
-            return
-
-        with self._lock :
-            # part 1. the confirmed trades
-            tl = self._dictTrades.values()
-            for t in tl:
-                # self._trader.dbUpdate(self.collectionName_trade, t.__dict__, {'brokerTradeId': t.brokerTradeId})
-                self._recorder.pushRow(self.collectionName_trade, t.__dict__)
-            self.info('saveDataOfDay() saved %s trades' % len(tl))
-
-        # part 2. the daily position
-        positions, _ = self.calcDailyPositions()
-        for dpos in positions:
-            # self._trader.dbUpdate(self.collectionName_dpos, dpos, {'date':dpos['date'], 'symbol':dpos['symbol']})
-            self._recorder.pushRow(self.collectionName_dpos, dpos)
-        self.info('saveDataOfDay() saved positions into DB: %s' % positions)
-
+    # #----------------------------------------------------------------------
+    # # method to access Account DB
     def loadDB(self, since =None):
         ''' load the account data from DB ''' 
         if not since :
@@ -1192,3 +1215,76 @@ class DailyPosition(object):
         # if currentPos.stampByTrader :
         #     stampstr += currentPos.stampByTrader
         # [ currentPos.stampByTrader, currentPos.stampByBroker ]
+
+########################################################################
+class DailyResult(object):
+    """每日交易的结果"""
+
+    #----------------------------------------------------------------------
+    def __init__(self, date, closePrice):
+        """Constructor"""
+
+        self.date = date                # 日期
+        self.closePrice = closePrice    # 当日收盘价
+        self.previousClose = 0          # 昨日收盘价
+        
+        self.tradeList = []             # 成交列表
+        self.tcBuy = 0             # 成交数量
+        self.tcSell = 0             # 成交数量
+        
+        self.openPosition = 0           # 开盘时的持仓
+        self.closePosition = 0          # 收盘时的持仓
+        
+        self.tradingPnl = 0             # 交易盈亏
+        self.positionPnl = 0            # 持仓盈亏
+        self.totalPnl = 0               # 总盈亏
+        
+        self.turnover = 0               # 成交量
+        self.commission = 0             # 手续费
+        self.slippage = 0               # 滑点
+        self.netPnl = 0                 # 净盈亏
+        
+        self.txnHist = ""
+
+    #----------------------------------------------------------------------
+    def addTrade(self, trade):
+        """添加交易"""
+        self.tradeList.append(trade)
+
+    #----------------------------------------------------------------------
+    def calculatePnl(self, account, openPosition=0):
+        """
+        计算盈亏
+        size: 合约乘数
+        rate：手续费率
+        slippage：滑点点数
+        """
+        # 持仓部分
+        self.openPosition = openPosition
+        self.positionPnl = round(self.openPosition * (self.closePrice - self.previousClose) * account.size, 3)
+        self.closePosition = self.openPosition
+        
+        # 交易部分
+        self.tcBuy = 0
+        self.tcSell = 0
+        
+        for trade in self.tradeList:
+            if trade.direction == OrderData.DIRECTION_LONG:
+                posChange = trade.volume
+                self.tcBuy += 1
+            else:
+                posChange = -trade.volume
+                self.tcSell += 1
+                
+            self.txnHist += "%+dx%s" % (posChange, trade.price)
+
+            self.tradingPnl += round(posChange * (self.closePrice - trade.price) * account.size, 2)
+            self.closePosition += posChange
+            turnover, commission, slippagefee = account.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
+            self.turnover += turnover
+            self.commission += commission
+            self.slippage += slippagefee
+        
+        # 汇总
+        self.totalPnl = round(self.tradingPnl + self.positionPnl, 2)
+        self.netPnl = round(self.totalPnl - self.commission - self.slippage, 2)

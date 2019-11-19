@@ -37,7 +37,7 @@ class BackTestApp(MetaTrader):
     '''
     
     #----------------------------------------------------------------------
-    def __init__(self, program, trader, settings):
+    def __init__(self, program, trader, jsettings):
         """Constructor"""
 
         super(BackTestApp, self).__init__(program, settings)
@@ -181,7 +181,7 @@ class BackTestApp(MetaTrader):
 #        self._account._dvrBroker._backtest= self
 #        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
         
-        if self._account ：
+        if self._account :
             self._program.removeApp(self._account)
             self._account =None
         
@@ -535,7 +535,7 @@ class BackTestApp(MetaTrader):
                     closedVolume = min(exitTrade.volume, entryTrade.volume)
                     result = TradingResult(entryTrade.price, entryTrade.dt, 
                                            exitTrade.price, exitTrade.dt,
-                                           -closedVolume, self._rate, self._slippage, self._account.size)
+                                           -closedVolume, self._ratePer10K, self._slippage, self._account.size)
 
                     self.resultList.append(result)
                     
@@ -584,7 +584,7 @@ class BackTestApp(MetaTrader):
                 closedVolume = min(exitTrade.volume, entryTrade.volume)
                 result = TradingResult(entryTrade.price, entryTrade.dt, 
                                        exitTrade.price, exitTrade.dt,
-                                       closedVolume, self._rate, self._slippage, self._account.size)
+                                       closedVolume, self._ratePer10K, self._slippage, self._account.size)
 
                 self.resultList.append(result)
                 self.posList.extend([1,0])
@@ -625,13 +625,13 @@ class BackTestApp(MetaTrader):
         # 到最后交易日尚未平仓的交易，则以最后价格平仓
         for trade in buyTrades:
             result = TradingResult(trade.price, trade.dt, self._execEndClose, self.__dtData, 
-                                   trade.volume, self._rate, self._slippage, self._account.size)
+                                   trade.volume, self._ratePer10K, self._slippage, self._account.size)
             self.resultList.append(result)
             txnstr += '%+dx%.2f' % (trade.volume, trade.price)
             
         for trade in sellTrades:
             result = TradingResult(trade.price, trade.dt, self._execEndClose, self.__dtData, 
-                                   -trade.volume, self._rate, self._slippage, self._account.size)
+                                   -trade.volume, self._ratePer10K, self._slippage, self._account.size)
             self.resultList.append(result)
             txnstr += '%-dx%.2f' % (trade.volume, trade.price)
 
@@ -1284,33 +1284,25 @@ if __name__ == '__main__':
     # oldprogram()
 
     # new program:
-    # dirname(dirname(abspath(file)))
-    settings= None
-    try :
-        conf_fn = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/BT_AShare.json'
-        settings= jsoncfg.load_config(conf_fn)
-    except Exception as e :
-        print('failed to load configure[%s]: %s' % (conf_fn, e))
-        quit()
-
-    PROGNAME = os.path.basename(__file__)[0:-3]
-    p = Program(PROGNAME)
+    sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/BT_AShare.json']
+    # p = Program(sys.argv)
+    p = Program()
     p._heartbeatInterval =-1
 
-    p.createApp(Account_AShare, None)
+    p.createApp(Account_AShare, configNode ='account', accountId='sadfasfd', ratePer10K =30)
     pdict = PerspectiveDict('AShare')
     p.addObj(pdict)
     print('listed all Objects: %s\n' % p.listByType(MetaObj))
-    p.createApp(BackTestApp, None)
+    p.createApp(BackTestApp, p.jsettings('backtest'))
 
     p.start()
     p.loop()
     p.stop()
 
-    # me.addMarketData(mdHuobi, settings['marketdata'][0])
-    me.addMarketData(mdOffline, settings['marketdata'][0])
+    # me.addMarketData(mdHuobi, jsettings['marketdata'][0])
+    me.addMarketData(mdOffline, jsettings['marketdata'][0])
 
-    me.createApp(BackTestApp, settings['backtest'])
+    me.createApp(BackTestApp, jsettings['backtest'])
     # logger.info(u'主引擎创建成功')
 
     me.start()

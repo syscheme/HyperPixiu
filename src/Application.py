@@ -83,24 +83,22 @@ class BaseApplication(MetaApp):
     HEARTBEAT_INTERVAL_DEFAULT = 5 # 5sec
     
     #----------------------------------------------------------------------
-    def __init__(self, program, settings):
+    def __init__(self, program, *args, **kwargs):
         """Constructor"""
 
-        super(BaseApplication,self).__init__()
+        super(BaseApplication, self).__init__()
         
         self._program = program
         self.__active = False    # 工作状态
         self._threadWished = False
         self._id =""
 
-        self._settings = None
-        if settings :
-            self._settings = settings
-            self._settings = settings if isinstance(settings, dict) else json.loads(s=settings)
-
-            self._id        = settings.id('')
-            self._dataPath  = settings.id('dataPath')
-            self._threadWished = settings.threaded('False') in BOOL_TRUE
+        self._kwargs = kwargs
+        if 'jsettings' in self._kwargs.keys():
+            jsettings = self._kwargs['jsettings']
+            self._id        = jsettings.id('')
+            self._dataPath  = jsettings.id('dataPath')
+            self._threadWished = jsettings.threaded('False') in BOOL_TRUE
 
         # the app instance Id
         if len(self._id)<=0 :
@@ -123,8 +121,8 @@ class BaseApplication(MetaApp):
         return self._program
 
     @property
-    def settings(self) :
-        return self._settings
+    def kwargs(self) :
+        return self.__kwargs
 
     @property
     def isActive(self) :
@@ -424,7 +422,8 @@ class Iterable(ABC):
         self.error('%s: %s\n' % (ex, traceback.format_exc()))
 
 ########################################################################
-import sys
+import sys, getopt
+
 if sys.version_info <(3,):
     from Queue import Queue, Empty
 else:
@@ -437,28 +436,50 @@ class Program(object):
     __metaclass__ = Singleton
 
     #----------------------------------------------------------------------
-    def __init__(self, progName, setting_filename=None):
-        """Constructor"""
+    def __init__(self, argvs=None) : # setting_filename=None):
+        """Constructor
+           usage: Program(sys.argv)
+        """
+        if not argvs or len(argvs) <1:
+            argvs = sys.argv
 
         self._pid = os.getpid() # process id
-        self._progName = progName
-        self._topdir = '.' #TODO
-        self._shelvefn = '%s/%s.sobj' %(self._topdir, progName)
+        self._progName = os.path.basename(argvs[0])[0:-3] # cut off the .py extname
+        self._outdir = '.' #TODO
         self._threadless = True
         self._heartbeatInterval = BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # heartbeat间隔（默认1秒）
         self.__daemonize =False
         # dirname(dirname(abspath(file)))
         self._settings = {}
-        if setting_filename :
-            try :
-                settings= jsoncfg.load_config(setting_filename)
-                self._settings = settings
-                self.__daemonize = settings.daemonize('False') in BOOL_TRUE
-                self._heartbeatInterval = int(settings.heartbeatInterval(BaseApplication.HEARTBEAT_INTERVAL_DEFAULT))
-            except Exception as e :
-                print('failed to load configure[%s]: %s' % (setting_filename, e))
-                return
 
+        try:
+            opts, args = getopt.getopt(argvs[1:], "hf:o:", ["config=","outdir="])
+        except getopt.GetoptError :
+            print('%s.py -f <config-file> -o <outputdir>' % self._progName)
+            sys.exit(2)
+
+        config_filename = None
+        for opt, arg in opts:
+            if opt == '-h':
+                print('%s.py -f <config-file> -o <outputdir>' % self._progName)
+                sys.exit()
+            elif opt in ("-f", "--ifile"):
+                config_filename = arg
+            elif opt in ("-o", "--ofile"):
+                self._outdir = arg
+
+        if config_filename :
+            try :
+                config_filename = os.path.abspath(config_filename)
+                print('loading configfile: %s' % config_filename)
+                self._jsettings = jsoncfg.load_config(config_filename)
+                self.__daemonize = self._jsettings.daemonize('False') in BOOL_TRUE
+                self._heartbeatInterval = int(self._jsettings.heartbeatInterval(BaseApplication.HEARTBEAT_INTERVAL_DEFAULT))
+            except Exception as e :
+                print('failed to load configure[%s]: %s' % (confijg_filename, e))
+                sys.exit(3)
+
+        self._shelvefn = '%s/%s.sobj' % (self._outdir, self._progName)
         # 记录今日日期
         self._runStartDate = datetime.now().strftime('%Y%m%d')
 
@@ -476,6 +497,17 @@ class Program(object):
         # __subscribers字典，用来保存对应的事件到appId的订阅关系
         # 其中每个键对应的值是一个列表，列表中保存了对该事件进行监听的appId
         self.__subscribers = {}
+    
+    def jsettings(self, nodeName) : 
+        if not self._jsettings : return None
+        if not nodeName or len(nodeName) <=0: return self._jsettings
+        n = self._jsettings
+        try :
+            for i in nodeName.split('/') :
+                n = n[i]
+        except:
+            n = None
+        return n
 
     @property
     def logger(self) : 
@@ -552,23 +584,26 @@ class Program(object):
         self.info('app[%s] added' %(id))
         return app
 
-    def createApp(self, appModule, settings, **kwargs):
+    def createApp(self, appModule, *args, **kwargs):
         """添加上层应用"""
 
-        # if not isinstance(appModule, BaseApplication):
-        #     return None
+#        if not isinstance(appModule, BaseApplication) :
+#            return None
 
-        # if settings and not isinstance(settings, dict) :
-        #     settings = json.loads(s=settings)
-        # else:
-        #     settings = settings
-        # if not self._settings or not isinstance(settings, dict) :
-        #     settings ={}
-        
-        # if len(kwargs) >0:
-        #     settings = {**self._settings, **kwargs}
+        jsettings = None
+        if self._jsettings and 'configNode' in kwargs.keys():
+            jsettings = self._jsettings
+            configNode = kwargs.pop('configNode', None)
+            try :
+                for i in configNode.split('/') :
+                    jsettings = jsettings[i]
+            except:
+                jsettings = None
 
-        app = appModule(self, settings)
+        if jsettings :
+            kwargs =  {**kwargs, 'jsettings': jsettings }
+
+        app = appModule(self, *args, **kwargs)
         if not app: return
         if app._threadWished :
             app = ThreadedAppWrapper(app)

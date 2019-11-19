@@ -30,9 +30,9 @@ class MetaAccount(BaseApplication):
     '''
 
     #----------------------------------------------------------------------
-    def __init__(self, program, accountId, exchange, settings =None):
+    def __init__(self, program, accountId, exchange, jsettings =None):
         """Constructor"""
-        super(MetaAccount, self).__init__(program, settings)
+        super(MetaAccount, self).__init__(program, jsettings=jsettings)
 
         self._id       = accountId
         self._exchange = exchange
@@ -137,26 +137,28 @@ class Account(MetaAccount):
     BROKER_API_ASYNC = 'brocker.async' # async API to call broker
 
     #----------------------------------------------------------------------
-    def __init__(self, program, accountId, exchange, ratePer10K =30, contractSize=1, slippage =0.0, priceTick=0.0, settings =None):
+    def __init__(self, program, accountId, exchange, ratePer10K =30, contractSize=1, slippage =0.0, priceTick=0.0, jsettings =None):
         """Constructor
         """
-        super(Account, self).__init__(program, accountId, exchange, settings)
+        if jsettings:
+            accountId = jsettings.id(accountId)
+            exchange  = jsettings.exchange(exchange)
 
-        self._slippage  = slippage
-        self._rate      = ratePer10K
-        self._csize     = contractSize
-        self._priceTick = priceTick
- 
-        self._lock = threading.Lock()
-        if self._settings:
-            self._id       = self._settings.id(self._id)
-            self._exchange = self._settings.exchange(self._exchange)
+        super(Account, self).__init__(program, accountId, exchange, jsettings)
+
+        self._slippage   = slippage
+        self._ratePer10K = ratePer10K # 0.3%
+        self._csize      = contractSize
+        self._priceTick  = priceTick
+
+        if jsettings:
             self._slippage = self._settings.slippage(self._slippage)
-            self._rate     = self._settings.rate(self._rate)
+            self._ratePer10K     = self._settings.rate(self._ratePer10K)
             self._csize    = self._settings.csize(self._csize)
             self._priceTick = self._settings.priceTick(self._priceTick)
             self._dbName   = self._settings.dbName(self._id) 
 
+        self._lock = threading.Lock()
         # the app instance Id
         if not self._id or len(self._id)<=0 :
             Account.__lastId__ +=1
@@ -902,9 +904,9 @@ class Account_AShare(Account):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self, program, accountId, ratePer10K =30, settings=None):
+    def __init__(self, program, accountId, ratePer10K =30, jsettings=None):
         """Constructor"""
-        super(Account_AShare, self).__init__(program, accountId, exchange ='AShare', ratePer10K =ratePer10K, contractSize=100, slippage =0.0, priceTick=0.01, settings =settings)
+        super(Account_AShare, self).__init__(program, accountId, exchange ='AShare', ratePer10K =ratePer10K, contractSize=100, slippage =0.0, priceTick=0.01, jsettings =jsettings)
 
     #----------------------------------------------------------------------
     def calcAmountOfTrade(self, symbol, price, volume):
@@ -923,7 +925,7 @@ class Account_AShare(Account):
             transfer = int((volumeX1+999)/1000)
             
         #3.券商交易佣金 最高为成交金额的3‰，最低5元起，单笔交易佣金不满5元按5元收取。
-        commission = max(turnOver * self._rate, 5)
+        commission = max(turnOver * self._ratePer10K, 5)
 
         return turnOver, tax + transfer + commission, volumeX1 * self._slippage
 

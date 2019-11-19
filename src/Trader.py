@@ -42,8 +42,6 @@ class MetaTrader(BaseApplication):
     @property
     def account(self): return self._account # the default account
     @abstractmethod
-    def eventHdl_TradeEnd(self, event): raise NotImplementedError
-    @abstractmethod
     def eventHdl_Order(self, event): raise NotImplementedError
     @abstractmethod
     def eventHdl_Trade(self, event): raise NotImplementedError
@@ -200,7 +198,7 @@ class BaseTrader(MetaTrader):
 
             if d.asof > (datetime.now() + timedelta(days=7)):
                 self.warn('Trade-End signal received: %s' % d.desc)
-                self.eventHdl_TradeEnd(event)
+                self.eventHdl_TradeEnd(ev)
                 return
 
             objective = self._dictObjectives[symbol]

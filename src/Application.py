@@ -92,17 +92,22 @@ class BaseApplication(MetaApp):
         self.__active = False    # 工作状态
         self._threadWished = False
         self._id =""
+        self._jsettings = None
+        self.__dataDir = '.'
 
         self._kwargs = kwargs
         if 'jsettings' in self._kwargs.keys():
             self._jsettings = self._kwargs.pop('jsettings', None)
-            self._id        = self._jsettings.id('')
-            self._dataPath  = self._jsettings.dataPath('.')
+            self._id        = self._jsettings.id(self._id)
+            self.__dataDir  = self._jsettings.dataPath(self.__dataDir)
             self._threadWished = self._jsettings.threaded('False') in BOOL_TRUE
 
         self._id = self._kwargs.pop('id', self._id)
-        self._dataPath  = self._kwargs.pop('dataPath', self._dataPath)
+        self.__dataDir  = self._kwargs.pop('dataPath', self.__dataDir)
         self._threadWished = self._kwargs.pop('threaded', self._threadWished) in BOOL_TRUE
+
+        if '/' != self.__dataDir[-1]:
+            self.__dataDir +='/'
 
         # the app instance Id
         if len(self._id)<=0 :
@@ -118,7 +123,7 @@ class BaseApplication(MetaApp):
 
     @property
     def dataRoot(self) :
-        return self._dataPath
+        return self.__dataDir
 
     @property
     def program(self) :
@@ -454,7 +459,7 @@ class Program(object):
         self._heartbeatInterval = BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # heartbeat间隔（默认1秒）
         self.__daemonize =False
         # dirname(dirname(abspath(file)))
-        self._settings = {}
+        self._jsettings = None
 
         try:
             opts, args = getopt.getopt(argvs[1:], "hf:o:", ["config=","outdir="])
@@ -523,7 +528,7 @@ class Program(object):
 
     @property
     def settings(self) :
-        return self._settings
+        return self._jsettings
 
     #----------------------------------------------------------------------
     def __addMetaObj(self, id, obj):
@@ -588,7 +593,7 @@ class Program(object):
         self.info('app[%s] added' %(id))
         return app
 
-    def createApp(self, appModule, *args, **kwargs):
+    def createApp(self, appModule, **kwargs):
         """添加上层应用"""
 
 #        if not isinstance(appModule, BaseApplication) :
@@ -607,7 +612,7 @@ class Program(object):
         if jsettings :
             kwargs =  {**kwargs, 'jsettings': jsettings }
 
-        app = appModule(self, *args, **kwargs)
+        app = appModule(self, **kwargs)
         if not app: return
         if app._threadWished :
             app = ThreadedAppWrapper(app)
@@ -895,7 +900,7 @@ class Program(object):
     # ----------------------------------------------------------------------
     def initLogger(self):
         """初始化日志引擎"""
-        if not self._settings or not jsoncfg.node_exists(self._settings.logger):
+        if not self._jsettings or not jsoncfg.node_exists(self._jsettings.logger):
             return
         
         # abbout the logger
@@ -917,10 +922,10 @@ class Program(object):
         }
 
         # 设置日志级别
-        self.setLogLevel(self._settings.logger.level(LOGLEVEL_DEBUG)) # LOGLEVEL_INFO))
+        self.setLogLevel(self._jsettings.logger.level(LOGLEVEL_DEBUG)) # LOGLEVEL_INFO))
         
         # 设置输出
-        tmpval = self._settings.logger.console('True').lower()
+        tmpval = self._jsettings.logger.console('True').lower()
         if tmpval in BOOL_TRUE and not self._hdlrConsole:
             """添加终端输出"""
             self._hdlrConsole = logging.StreamHandler()
@@ -932,7 +937,7 @@ class Program(object):
             nullHandler = logging.NullHandler()
             self._logger.addHandler(nullHandler)    
 
-        tmpval = self._settings.logger.file('True').lower()
+        tmpval = self._jsettings.logger.file('True').lower()
         if tmpval in BOOL_TRUE and not self._hdlrFile:
             # filepath = getTempPath('vnApp' + datetime.now().strftime('%Y%m%d') + '.log')
             filepath = '/tmp/%s%s.log' % (self._progName, datetime.now().strftime('%Y%m%d'))
@@ -943,7 +948,7 @@ class Program(object):
             self._logger.addHandler(self._hdlrFile)
             
         # 注册事件监听
-        tmpval = self._settings.logger.loggingEvent('True').lower()
+        tmpval = self._jsettings.logger.loggingEvent('True').lower()
         if tmpval in BOOL_TRUE :
             self._loggingEvent = True
 
@@ -1100,8 +1105,8 @@ class Program(object):
         """连接MongoDB数据库"""
         if not self._dbConn:
             # 读取MongoDB的设置
-            dbhost = self._settings.database.host('localhost')
-            dbport = self._settings.database.port(27017)
+            dbhost = self._jsettings.database.host('localhost')
+            dbport = self._jsettings.database.port(27017)
             if len(dbhost) <=0:
                 return
 
@@ -1115,7 +1120,7 @@ class Program(object):
                 self._dbConn.server_info()
 
                 # 如果启动日志记录，则注册日志事件监听函数
-                if self._settings.database.logging("") in ['True']:
+                if self._jsettings.database.logging("") in ['True']:
                     self._eventLoop.register(LogData.EVENT_TAG, self.dbLogging)
                     
                 self.info('connected DB[%s :%s] %s'%(dbhost, dbport))

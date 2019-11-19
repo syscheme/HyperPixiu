@@ -36,11 +36,14 @@ class MetaAccount(BaseApplication):
 
         self._exchange = 'Unknown'
         if self._jsettings:
-            self._id = jsettings.accountId(self._id)
-            self._exchange = jsettings.exchange(self._exchange)
+            self._id = self._jsettings.accountId(self._id)
+            self._exchange = self._jsettings.exchange(self._exchange)
 
         self._id = kwargs.pop('accountId', self._id)
         self._exchange = kwargs.pop('exchange', self._exchange)
+
+    @property
+    def exchange(self) : return self._exchange
 
     @abstractmethod 
     def getPosition(self, symbol): raise NotImplementedError
@@ -148,11 +151,11 @@ class Account(MetaAccount):
         super(Account, self).__init__(program, **kwargs)
 
         if self._jsettings:
-            self._slippage   = self._jsettings.slippage(0.0)
-            self._ratePer10K   = self._jsettings.ratePer10K(30)
+            self._slippage    = self._jsettings.slippage(0.0)
+            self._ratePer10K  = self._jsettings.ratePer10K(30)
             self._csize       = self._jsettings.contractSize(0.0)
             self._priceTick   = self._jsettings.priceTick(0.0)
-            self._dbName      = self._settings.dbName(self._id) 
+            self._dbName      = self._jsettings.dbName(self._id) 
 
         self._lock = threading.Lock()
         # the app instance Id
@@ -601,7 +604,7 @@ class Account(MetaAccount):
             for recorderId in self._program.listApps(hist.Recorder) :
                 pos = recorderId.find(searchKey)
                 if pos >0 and recorderId[pos:] == searchKey:
-                    self._recorder = self._program.findApp(recorderId)
+                    self._recorder = self._program.getApp(recorderId)
                     if self._recorder : break
 
         if self._recorder :

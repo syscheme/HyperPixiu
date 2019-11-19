@@ -18,6 +18,9 @@ class VnTrader(BaseTrader):
         # key为策略名称，value为策略实例，注意策略名称不允许重复
         self._dictStrategies = {}
 
+        # 保存数据的字典和列表
+        self._settingfilePath = self.dataRoot + 'stgdata.dat'
+
         # 保存vtSymbol和策略实例映射的字典（用于推送tick数据）
         # 由于可能多个strategy交易同一个vtSymbol，因此key为vtSymbol
         # value为包含所有相关strategy对象的list

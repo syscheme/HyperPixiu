@@ -37,55 +37,47 @@ class BackTestApp(MetaTrader):
     '''
     
     #----------------------------------------------------------------------
-    def __init__(self, program, trader, jsettings):
+    def __init__(self, program, trader, **kwargs):
         """Constructor"""
 
-        super(BackTestApp, self).__init__(program, settings)
+        super(BackTestApp, self).__init__(program, **kwargs)
         self._nestTrader = trader
         self._nestTraderClz = type(trader) # class of the nested Trader
         self._account = None
 
         # 回测相关属性
         # -----------------------------------------
-        tmpstr = settings.startDate('2000-01-01')
-        self._btStartDate = datetime.strptime(tmpstr, '%Y-%m-%d') # 回测数据开始日期，datetime对象
-        self.__dtData = self._btStartDate
+        self._btStartDate = datetime.strptime('2000-01-01', '%Y-%m-%d') # 回测数据开始日期，datetime对象
         self._btEndDate   = None         # 回测数据结束日期，datetime对象, None to today or late data
-        tmpstr = settings.endDate('')
-        if len(tmpstr) >8:
-            self._btEndDate = datetime.strptime(tmpstr, '%Y-%m-%d')
-        self._startBalance = settings.startBalance(100000)
+        self._startBalance = 100000      # 10w
+
+        if self._jsettings:
+            self._btStartDate  = datetime.strptime(self._jsettings.startDate('2000-01-01'), '%Y-%m-%d')
+            self._btEndDate    = datetime.strptime(self._jsettings.endDate('2999-12-31'), '%Y-%m-%d')
+            self._startBalance = self._jsettings.startBalance(100000)
 
         # backtest will always clear the datapath
-        if len(self._dataPath) <=0:
-            self._dataPath = '/tmp'
-
-        self._dataPath += '/%s_%s' % (self.ident, datetime.now().strftime('%Y%m%dT%H%M%S'))
+        self.__outdir = '%s/%s_%s' % (self.dataRoot, self.ident, datetime.now().strftime('%Y%m%dT%H%M%S'))
         try :
-            shutil.rmtree(self._dataPath)
-            os.makedirs(self._dataPath)
+            shutil.rmtree(self.__outdir)
+            os.makedirs(self.__outdir)
         except:
             pass
 
-    @property
-    def ident(self) :
-        if not self._nestTrader :
-            return super(BackTestApp, self).ident
-        
-        return '%s.%s' % (self.__class__.__name__, self._nestTrader.ident)
+        self.__dtData = self._btStartDate
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
     def debug(self, message):
         """输出内容"""
         if self.__dtData:
-            message = str(self.__dtData) + ' ' + message
+            message = 'AsOf[%s] ' % str(self.__dtData)  + message
         super(BackTestApp, self).debug(message)
     
-    def log(self, level, msg):
+    def log(self, level, message):
         if self.__dtData:
-            msg = str(self.__dtData) + ' ' + msg
-        super(BackTestApp, self).log(level, msg)
+            message = 'AsOf[%s] ' % str(self.__dtData)  + message
+        super(BackTestApp, self).log(level, message)
 
     def doAppInit(self): # return True if succ
         if not super(BackTestApp, self).init() :
@@ -231,7 +223,7 @@ class BackTestApp(MetaTrader):
             self._marketstat.addMonitor(ob)
             ps = Perspective(self._account.exchange, ob)
             self.__pg = PerspectiveGenerator(ps)
-            hpb = hist.CsvPlayback(symbol=ob, folder=self._dataPath, fields='date,time,open,high,low,close,volume,ammount')
+            hpb = hist.CsvPlayback(symbol=ob, folder=self.__outdir, fields='date,time,open,high,low,close,volume,ammount')
             self.__pg.adaptReader(hpb, md.EVENT_KLINE_1MIN)
             break;
 
@@ -1289,11 +1281,12 @@ if __name__ == '__main__':
     p = Program()
     p._heartbeatInterval =-1
 
-    p.createApp(Account_AShare, configNode ='account', id='1234', accountId='sadfasfd', ratePer10K =30)
+    acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
     pdict = PerspectiveDict('AShare')
     p.addObj(pdict)
+    tdr = p.createApp(BaseTrader, configNode ='backtest', account=acc)
     print('listed all Objects: %s\n' % p.listByType(MetaObj))
-    p.createApp(BackTestApp, p.jsettings('backtest'))
+    p.createApp(BackTestApp, configNode ='backtest', trader= tdr)
 
     p.start()
     p.loop()

@@ -5,7 +5,7 @@ Trader maps to the agent in OpenAI/Gym
 from __future__ import division
 
 from EventData    import EventData
-from MarketData   import MarketState
+from MarketData   import *
 from Application  import BaseApplication, datetime2float
 from Account      import Account, Account_AShare, PositionData, TradeData, OrderData
 '''
@@ -33,10 +33,10 @@ class MetaTrader(BaseApplication):
     FINISHED_STATUS = [OrderData.STATUS_ALLTRADED, OrderData.STATUS_REJECTED, OrderData.STATUS_CANCELLED]
     RUNTIME_TAG_TODAY = '$today'
 
-    def __init__(self, program, settings):
-        super(BaseTrader, self).__init__(program, settings)
+    def __init__(self, program, **kwargs) :
+        super(MetaTrader, self).__init__(program, **kwargs)
         self._account = None
-        self._defaultAccId = None
+        self._accountId = None
         self._dtData = None # datetime of data
 
     @property
@@ -55,18 +55,21 @@ class BaseTrader(MetaTrader):
     '''BaseTrader Application'''
 
      #----------------------------------------------------------------------
-    def __init__(self, program, settings):
+    def __init__(self, program, **kwargs):
         """Constructor"""
 
-        super(BaseTrader, self).__init__(program, settings)
+        super(BaseTrader, self).__init__(program, **kwargs)
 
         # 引擎类型为实盘
         # self._tradeType = TRADER_TYPE_TRADING
-        self._settingfilePath = './temp/stgdata.dat'
-        
+
+        self._marketstate = None
+
+        if self._jsettings :
+            self._accountId = self._jsettings.accountId(self._accountId)
+
         #--------------------
         # from old 数据引擎
-        # 保存数据的字典和列表
 
         # moved to MarketState: self._dictLatestTick = {}         # the latest tick of each symbol
         # moved to MarketState: self._dictLatestKline1min = {}    #SSS the latest kline1min of each symbol
@@ -79,7 +82,7 @@ class BaseTrader(MetaTrader):
         
         # 持仓细节相关
         # inside of Account self._dictDetails = {}                        # vtSymbol:PositionDetail
-        self._lstTdPenalty = settings.tdPenalty       # 平今手续费惩罚的产品代码列表
+        # self._lstTdPenalty = settings.tdPenalty       # 平今手续费惩罚的产品代码列表
 
         # 读取保存在硬盘的合约数据
         # TODO self.loadContracts()
@@ -88,7 +91,7 @@ class BaseTrader(MetaTrader):
         self._riskMgm = None
 
         #------from old ctaEngine--------------
-        self._pathContracts = settings.pathContracts('./contracts')
+        self._pathContracts = self.dataRoot + 'contracts'
 
         # # 本地停止单字典
         # # key为stopOrderID，value为stopOrder对象
@@ -126,7 +129,7 @@ class BaseTrader(MetaTrader):
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
     def doAppInit(self): # return True if succ
-        if not super(BaseTrader, self).init() :
+        if not super(BaseTrader, self).doAppInit() :
             return False
 
         # step 1. find and adopt the account
@@ -139,7 +142,7 @@ class BaseTrader(MetaTrader):
             for appId in self._program.listApps(Account) :
                 pos = appId.find(searchKey)
                 if self._accountId == appId or pos >0 and appId[pos:] == searchKey:
-                    self._account = self._program.findApp(appId)
+                    self._account = self._program.getApp(appId)
                     if self._account : 
                         self._accountId = self._account.ident
 
@@ -151,13 +154,15 @@ class BaseTrader(MetaTrader):
 
         # step 2. associate the marketstate
         if not self._marketstate :
-            searchKey = '.%s' % self._exchange
-            for obsId in self._program.listByType(MarketState) :
-                pos = obsId.find(searchKey)
-                if pos >0 and obsId[pos:] == searchKey:
-                    self._marketstate = self._program.getObj(obsId)
-                    if self._marketstate : break
+            self._marketstate = self._account.marketState
 
+        if not self._marketstate :
+            for obsId in self._program.listByType(MarketState) :
+                marketstate = self._program.getObj(obsId)
+                if marketstate and marketstate.exchange == self._account.exchange:
+                    self._marketstate = marketstate
+                    break
+                
         if not self._marketstate :
             self.error('no MarketState found')
             return False
@@ -165,8 +170,8 @@ class BaseTrader(MetaTrader):
         self.info('taking MarketState[%s]' % self._marketstate.ident)
 
         # step 3. subscribe the market events
-        self.subscribeEvent(md.EVENT_TICK)
-        self.subscribeEvent(md.EVENT_KLINE_1MIN)
+        self.subscribeEvent(EVENT_TICK)
+        self.subscribeEvent(EVENT_KLINE_1MIN)
 
         if self._marketstate :
             for symbol in self._dictObjectives.keys():
@@ -231,12 +236,10 @@ class BaseTrader(MetaTrader):
    #----------------------------------------------------------------------
     # about the event handling
     # --- eventOrder from Account ------------
-    @abstractmethod
     def eventHdl_Order(self, ev):
         """处理委托事件"""
         pass
             
-    @abstractmethod
     def eventHdl_Trade(self, ev):
         """处理成交事件"""
         pass
@@ -252,7 +255,7 @@ class BaseTrader(MetaTrader):
     #     self._dictLatestContract[contract.symbol] = contract       # 使用常规代码（不包括交易所）可能导致重复
 
     #----------------------------------------------------------------------
-    @abstractmethod    # usually back test will overwrite this
+    # usually back test will overwrite this
     def onDayOpen(self, symbol, date):
         # step1. notify accounts
         self.debug('onDayOpen(%s) dispatching to account' % symbol)
@@ -261,6 +264,10 @@ class BaseTrader(MetaTrader):
                 self._account.onDayOpen(date)
             except Exception as ex:
                 self.logexception(ex)
+
+    def proc_MarketEvent(self, evtype, data):
+        '''processing an incoming MarketEvent'''
+        pass
 
     # end of event handling
     #----------------------------------------------------------------------
@@ -367,11 +374,6 @@ class BaseTrader(MetaTrader):
         
         oopen, ohigh, olow, oclose = OHLC
         return (oopen, high if high>ohigh else ohigh, low if low<olow else olow, close)
-
-    @abstractmethod
-    def proc_MarketEvent(self, evtype, data):
-        '''processing an incoming MarketEvent'''
-        pass
 
     # def latestPrice(self, symbol) :
     #     kline = self._dictLatestKline1min.get(symbol, None)

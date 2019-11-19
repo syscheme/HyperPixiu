@@ -12,10 +12,10 @@ PROGNAME = os.path.basename(__file__)[0:-3]
 class TestAccount(unittest.TestCase):
 
     def test_AccApp(self):
-        p = Program(PROGNAME)
+        p = Program()
         p._heartbeatInterval =-1
 
-        p.createApp(Account_AShare, None)
+        p.createApp(Account_AShare)
         pdict = psp.PerspectiveDict('AShare')
         p.addObj(pdict)
         print('listed all Objects: %s\n' % p.listByType(MetaObj))
@@ -28,10 +28,10 @@ class TestAccount(unittest.TestCase):
         p = Program(PROGNAME)
         p._heartbeatInterval =-1
 
-        acc = p.createApp(Account_AShare, None)
+        acc = p.createApp(Account_AShare)
         pdict = psp.PerspectiveDict('AShare')
         p.addObj(pdict)
-        tdr = p.createApp(BaseTrader, None)
+        tdr = p.createApp(BaseTrader)
         print('listed all Objects: %s\n' % p.listByType(MetaObj))
 
         p.start()

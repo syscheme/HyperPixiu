@@ -46,7 +46,7 @@
     },
 
     "backtest": { // the configuration schema is extending "trader"
-
+        "accountId" : "blah",
         "startCapitial": 100000,
     
 

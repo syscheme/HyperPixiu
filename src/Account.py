@@ -30,12 +30,17 @@ class MetaAccount(BaseApplication):
     '''
 
     #----------------------------------------------------------------------
-    def __init__(self, program, accountId, exchange, jsettings =None):
+    def __init__(self, program, **kwargs):
         """Constructor"""
-        super(MetaAccount, self).__init__(program, jsettings=jsettings)
+        super(MetaAccount, self).__init__(program, **kwargs)
 
-        self._id       = accountId
-        self._exchange = exchange
+        self._exchange = 'Unknown'
+        if self._jsettings:
+            self._id = jsettings.accountId(self._id)
+            self._exchange = jsettings.exchange(self._exchange)
+
+        self._id = kwargs.pop('accountId', self._id)
+        self._exchange = kwargs.pop('exchange', self._exchange)
 
     @abstractmethod 
     def getPosition(self, symbol): raise NotImplementedError
@@ -137,26 +142,17 @@ class Account(MetaAccount):
     BROKER_API_ASYNC = 'brocker.async' # async API to call broker
 
     #----------------------------------------------------------------------
-    def __init__(self, program, accountId, exchange, ratePer10K =30, contractSize=1, slippage =0.0, priceTick=0.0, jsettings =None):
+    def __init__(self, program, **kwargs): # accountId, exchange, ratePer10K =30, contractSize=1, slippage =0.0, priceTick=0.0, jsettings =None):
         """Constructor
         """
-        if jsettings:
-            accountId = jsettings.id(accountId)
-            exchange  = jsettings.exchange(exchange)
+        super(Account, self).__init__(program, **kwargs)
 
-        super(Account, self).__init__(program, accountId, exchange, jsettings)
-
-        self._slippage   = slippage
-        self._ratePer10K = ratePer10K # 0.3%
-        self._csize      = contractSize
-        self._priceTick  = priceTick
-
-        if jsettings:
-            self._slippage = self._settings.slippage(self._slippage)
-            self._ratePer10K     = self._settings.rate(self._ratePer10K)
-            self._csize    = self._settings.csize(self._csize)
-            self._priceTick = self._settings.priceTick(self._priceTick)
-            self._dbName   = self._settings.dbName(self._id) 
+        if self._jsettings:
+            self._slippage   = self._jsettings.slippage(0.0)
+            self._ratePer10K   = self._jsettings.ratePer10K(30)
+            self._csize       = self._jsettings.contractSize(0.0)
+            self._priceTick   = self._jsettings.priceTick(0.0)
+            self._dbName      = self._settings.dbName(self._id) 
 
         self._lock = threading.Lock()
         # the app instance Id
@@ -904,9 +900,17 @@ class Account_AShare(Account):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self, program, accountId, ratePer10K =30, jsettings=None):
+    def __init__(self, program, **kwargs):
         """Constructor"""
-        super(Account_AShare, self).__init__(program, accountId, exchange ='AShare', ratePer10K =ratePer10K, contractSize=100, slippage =0.0, priceTick=0.01, jsettings =jsettings)
+        # some default settings known for AShare
+        if not 'exchange' in kwargs.keys() :
+            kwargs['exchange'] ='AShare'
+        if not 'contractSize' in kwargs.keys() :
+            kwargs['contractSize'] =1000
+        if not 'priceTick' in kwargs.keys() :
+            kwargs['priceTick'] = 0.01
+
+        super(Account_AShare, self).__init__(program, **kwargs) # accountId, exchange ='AShare', ratePer10K =ratePer10K, contractSize=100, slippage =0.0, priceTick=0.01, jsettings =jsettings)
 
     #----------------------------------------------------------------------
     def calcAmountOfTrade(self, symbol, price, volume):

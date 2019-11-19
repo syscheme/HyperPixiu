@@ -83,7 +83,7 @@ class BaseApplication(MetaApp):
     HEARTBEAT_INTERVAL_DEFAULT = 5 # 5sec
     
     #----------------------------------------------------------------------
-    def __init__(self, program, *args, **kwargs):
+    def __init__(self, program, **kwargs):
         """Constructor"""
 
         super(BaseApplication, self).__init__()
@@ -95,10 +95,14 @@ class BaseApplication(MetaApp):
 
         self._kwargs = kwargs
         if 'jsettings' in self._kwargs.keys():
-            jsettings = self._kwargs['jsettings']
-            self._id        = jsettings.id('')
-            self._dataPath  = jsettings.id('dataPath')
-            self._threadWished = jsettings.threaded('False') in BOOL_TRUE
+            self._jsettings = self._kwargs.pop('jsettings', None)
+            self._id        = self._jsettings.id('')
+            self._dataPath  = self._jsettings.dataPath('.')
+            self._threadWished = self._jsettings.threaded('False') in BOOL_TRUE
+
+        self._id = self._kwargs.pop('id', self._id)
+        self._dataPath  = self._kwargs.pop('dataPath', self._dataPath)
+        self._threadWished = self._kwargs.pop('threaded', self._threadWished) in BOOL_TRUE
 
         # the app instance Id
         if len(self._id)<=0 :

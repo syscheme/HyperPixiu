@@ -1289,7 +1289,7 @@ if __name__ == '__main__':
     p = Program()
     p._heartbeatInterval =-1
 
-    p.createApp(Account_AShare, configNode ='account', accountId='sadfasfd', ratePer10K =30)
+    p.createApp(Account_AShare, configNode ='account', id='1234', accountId='sadfasfd', ratePer10K =30)
     pdict = PerspectiveDict('AShare')
     p.addObj(pdict)
     print('listed all Objects: %s\n' % p.listByType(MetaObj))
@@ -1306,7 +1306,6 @@ if __name__ == '__main__':
     # logger.info(u'主引擎创建成功')
 
     me.start()
-    # logger.info(u'MainRoutine starts')
 
     # cta.loadSetting()
     # logger.info(u'CTA策略载入成功')

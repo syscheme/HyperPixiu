@@ -80,20 +80,21 @@ class BackTestApp(MetaTrader):
         super(BackTestApp, self).log(level, message)
 
     def doAppInit(self): # return True if succ
-        if not super(BackTestApp, self).init() :
+        if not super(BackTestApp, self).doAppInit() :
             return False
 
         # step 1. wrapper the Trader
         if not self._nestTrader :
             self._program.removeApp(self._nestTrader.ident)
             self._program.addApp(self)
-            self._account = self._nestTrader.account
+        
+        self._account = self._nestTrader.account
 
         # step 1. wrapper the broker drivers of the accounts
-        if not self._account and not isinstance(self._account, AccountWrapper):
+        if self._account and not isinstance(self._account, AccountWrapper):
             originAcc = self._account
             self._program.removeApp(originAcc.ident)
-            self._initAcc = AccountWrapper(self, copy(originAcc)) # duplicate the original account for test espoches
+            self._initAcc = AccountWrapper(self, copy.deepcopy(originAcc)) # duplicate the original account for test espoches
             self._initAcc.setCapital(self._startBalance, True)
             # MOVED to resetTest():
             # self._account = wrapper

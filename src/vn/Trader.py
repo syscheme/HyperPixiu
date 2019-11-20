@@ -34,7 +34,7 @@ class VnTrader(BaseTrader):
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
     def doAppInit(self): # return True if succ
-        if not super(VnTrader, self).init() :
+        if not super(VnTrader, self).doAppInit() :
             return False
 
         self.debug('collected %s interested symbols, adopting strategies' % len(self._dictObjectives))

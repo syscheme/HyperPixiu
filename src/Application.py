@@ -558,7 +558,7 @@ class Program(object):
         self.__dictMetaObjs[id] = obj
         self.__dict__[id] = self.__dictMetaObjs[id]
         self.__activeApps = []
-        self.info('obj[%s] added' % id)
+        self.debug('obj[%s] added' % id)
         return obj
 
     def __removeObj(self, id):
@@ -611,7 +611,7 @@ class Program(object):
         if self.hasHeartbeat :
             self.subscribe(EVENT_SYS_CLOCK, app.theApp())
 
-        self.info('app[%s] added' %(id))
+        self.debug('app[%s] added' %(id))
         return app
 
     def createApp(self, appModule, **kwargs):
@@ -1104,7 +1104,7 @@ class Program(object):
 
         self._dictMarketDatas[md.exchange] = md
         self._dlstMarketDatas.append(d)
-        self.info('md[%s] added: %s' %(md.exchange, d))
+        self.debug('md[%s] added: %s' %(md.exchange, d))
 
         return md
 

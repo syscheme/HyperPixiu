@@ -55,7 +55,7 @@ class MarketData(EventData):
             try :
                 self.datetime = datetime.strptime(self.date + ' ' + self.time, '%Y%m%d %H:%M:%S')
             except:
-                self.datetime = datetime.utcfromtimestamp(0)
+                self.datetime = DT_EPOCH
                 
         return self.datetime
 

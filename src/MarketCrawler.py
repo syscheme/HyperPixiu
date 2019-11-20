@@ -2,7 +2,8 @@
 
 from __future__ import division
 
-from Application import BaseApplication, datetime2float
+from Application import BaseApplication
+from EventData import datetime2float
 from MarketData import *
 
 import traceback

@@ -5,8 +5,8 @@ This module defines a basic account
 '''
 from __future__ import division
 
-from EventData    import EventData, EVENT_NAME_PREFIX
-from Application  import BaseApplication, datetime2float
+from EventData    import EventData, EVENT_NAME_PREFIX, datetime2float
+from Application  import BaseApplication
 from MarketData  import MarketState
 import HistoryData  as hist
 

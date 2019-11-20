@@ -3,7 +3,7 @@
 from __future__ import division
 
 from MarketCrawler import *
-from EventData import Event
+from EventData import Event, datetime2float
 from MarketData import KLineData, TickData, DataToEvent
 from Application import Program
 

@@ -17,6 +17,13 @@ EVENT_ERROR     = EVENT_NAME_PREFIX + 'Error'   # 错误回报事件
 # EVENT_EXIT   = EVENT_NAME_PREFIX + 'EXIT'    # not used 程序退出
 EVENT_LOG    = EVENT_NAME_PREFIX + 'Log'     # 日志事件，全局通用
 
+DT_EPOCH = datetime.utcfromtimestamp(0)
+
+def datetime2float(dt):
+    total_seconds =  (dt - DT_EPOCH).total_seconds()
+    # total_seconds will be in decimals (millisecond precision)
+    return total_seconds
+
 ########################################################################
 class Event:
     """事件对象"""

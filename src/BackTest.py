@@ -1266,22 +1266,23 @@ if __name__ == '__main__':
     # p = Program(sys.argv)
     p = Program()
     p._heartbeatInterval =-1
-    SYMBOL = '000540' # = '000001'
+    SYMBOL = '000001' # '000540' '000001'
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-    csvdir = '/mnt/d/temp' # = '/mnt/m/AShareSample'
+    csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
     ps = Perspective('AShare', SYMBOL)
+    csvreader = hist.CsvPlayback(symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
     histdata = PerspectiveGenerator(ps)
-    reader = hist.CsvPlayback(symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
-    histdata.adaptReader(reader, EVENT_KLINE_1MIN)
-    marketstate = PerspectiveDict('AShare')
+    histdata.adaptReader(csvreader, EVENT_KLINE_1MIN)
+    
+    marketstate = hist.PlaybackDay('AShare') # = PerspectiveDict('AShare')
     p.addObj(marketstate)
 
     tdr = p.createApp(BaseTrader, configNode ='backtest', account=acc)
     
     p.info('All objects registered piror to BackTestApp: %s' % p.listByType(MetaObj))
     
-    p.createApp(BackTestApp, configNode ='backtest', trader= tdr, histdata = histdata)
+    p.createApp(BackTestApp, configNode ='backtest', trader= tdr, histdata=csvreader) #histdata = histdata)
 
     # # cta.loadSetting()
     # # logger.info(u'CTA策略载入成功')

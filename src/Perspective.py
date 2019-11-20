@@ -16,7 +16,6 @@ import copy
 # import tensorflow as tf
 
 EVENT_Perspective  = MARKETDATE_EVENT_PREFIX + 'Persp'   # 错误回报事件
-_dtEpoch = datetime.utcfromtimestamp(0)
 
 ########################################################################
 class EvictableStack(object):
@@ -99,7 +98,7 @@ class Perspective(MarketData):
 
     @property
     def asof(self) :
-        return self.__stampLast if self.__stampLast else _dtEpoch
+        return self.__stampLast if self.__stampLast else DT_EPOCH
 
     @property
     def focus(self) :
@@ -121,7 +120,7 @@ class Perspective(MarketData):
     def dailyOHLC_sofar(self) :
         if not self.__dayOHLC:
             dtAsof = self.asof
-            if not dtAsof or dtAsof <= _dtEpoch : 
+            if not dtAsof or dtAsof <= DT_EPOCH : 
                 return None
 
             self.__dayOHLC = KLineData(self.exchange, self.symbol)
@@ -304,7 +303,7 @@ class PerspectiveDict(MarketState):
         for s, p in self.__dictPerspective.items() :
             if not ret or ret > p.asof:
                 ret = p.asof
-        return ret if ret else _dtEpoch
+        return ret if ret else DT_EPOCH
 
     def dailyOHLC_sofar(self, symbol) :
         ''' 

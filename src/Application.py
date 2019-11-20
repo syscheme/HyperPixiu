@@ -2,7 +2,7 @@
 
 from __future__ import division
 
-from EventData import Event, EventData, EVENT_SYS_CLOCK
+from EventData import Event, EventData, EVENT_SYS_CLOCK, DT_EPOCH, datetime2float
 
 import os
 import logging
@@ -29,11 +29,6 @@ LOGLEVEL_ERROR    = logging.ERROR
 LOGLEVEL_CRITICAL = logging.CRITICAL
 
 BOOL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh', True, 1]
-__dtEpoch = datetime.utcfromtimestamp(0)
-def datetime2float(dt):
-    total_seconds =  (dt - __dtEpoch).total_seconds()
-    # total_seconds will be in decimals (millisecond precision)
-    return total_seconds
 
 ########################################################################
 class MetaObj(ABC):
@@ -367,6 +362,7 @@ class Iterable(ABC):
 
         if not self._generator :
             raise StopIteration
+
         return next(self._generator)
 
     def __generate(self):

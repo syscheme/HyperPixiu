@@ -667,15 +667,15 @@ class MarketRecorder(BaseApplication):
 
         self._recorder.pushRow(category, row)
 
-
+########################################################################
 class PlaybackDay(MarketState):
 
     def __init__(self, exchange):
         """Constructor"""
         super(PlaybackDay, self).__init__(exchange)
         self.__dictPlayback ={} # dict of symbol to day-KLineData
-        self.__tickTo1min = TickToKLineMerger(self.__onKLine1min)
-        self.__klineToDay = KlineToXminMerger(self.__onKLineDay, xmin=15)
+        self.__tickTo1min = TickToKLineMerger(self.__onKLineX)
+        # self.__klineToDay = KlineToXminMerger(self.__onKLineDay, xmin=15)
 
     def __onKLineX(self, ev) :
         evd = ev.data
@@ -684,22 +684,20 @@ class PlaybackDay(MarketState):
             return
 
         evdTarget = self.__dictPlayback[evd.symbol] 
-        if self.__dayOHLC and self.__dayOHLC.asof < self.asof.replace(hour=0,minute=0,second=0,microsecond=0) :
-            self.__dayOHLC = None
+        if evdTarget and evdTarget.asof < evd.asof.replace(hour=0,minute=0,second=0,microsecond=0) :
+            self.__dictPlayback[evd.symbol] = evd
+            return
 
-        evd = ev.data
-        if not self.__dayOHLC :
-            self.__dayOHLC = evd
-            return True
+        if evd.asof < evdTarget.asof:
+            return
 
-        if evd.asof > self.__dayOHLC.asof:
-            self.__dayOHLC.high = max(self.__dayOHLC.high, evd.high)
-            self.__dayOHLC.low  = min(self.__dayOHLC.low, evd.low)
-            self.__dayOHLC.close = evd.close        
-            self.__dayOHLC.volume =0 # NOT GOOD when built up from 1min+5min: += int(evd.volume)                
+        evdTarget.high = max(evdTarget.high, evd.high)
+        evdTarget.low  = min(evdTarget.low, evd.low)
+        evdTarget.close = evd.close        
+        evdTarget.volume =0 # NOT GOOD when built up from 1min+5min: += int(evd.volume)                
 
-            self.__dayOHLC.openInterest = evd.openInterest
-            self.__dayOHLC.datetime = evd.asof
+        evdTarget.openInterest = evd.openInterest
+        evdTarget.datetime = evd.asof
 
     # -- impl of MarketState --------------------------------------------------------------
     def listOberserves(self) :
@@ -730,7 +728,7 @@ class PlaybackDay(MarketState):
         for s, p in self.__dictPlayback.items() :
             if not ret or ret > p.asof:
                 ret = p.asof
-        return ret if ret else _dtEpoch
+        return ret if ret else DT_EPOCH
 
     def dailyOHLC_sofar(self, symbol) :
         ''' 
@@ -754,7 +752,7 @@ class PlaybackDay(MarketState):
             self.__onKLineX(ev)
             return
         
-        raise "unknown event-type %s" % ev.type
+        # raise ValueError("unsupported event-type %s" % ev.type)
 
 ########################################################################
 import bz2

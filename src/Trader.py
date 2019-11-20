@@ -4,9 +4,9 @@ Trader maps to the agent in OpenAI/Gym
 '''
 from __future__ import division
 
-from EventData    import EventData
+from EventData    import EventData, datetime2float
 from MarketData   import *
-from Application  import BaseApplication, datetime2float
+from Application  import BaseApplication
 from Account      import Account, Account_AShare, PositionData, TradeData, OrderData
 '''
 from .MarketData   import MarketData

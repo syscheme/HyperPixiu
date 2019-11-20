@@ -112,9 +112,10 @@ class BackTestApp(MetaTrader):
 
         self.initData = []          # 初始化用的数据
         self.resetTest()
+        return True
 
     def doAppStep(self):
-        super(BaseTrader, self).doAppStep()
+        super(BackTestApp, self).doAppStep()
 
         try :
             ev = next(self.__pg)
@@ -196,25 +197,21 @@ class BackTestApp(MetaTrader):
         self.tradeTimeList = []          # 每笔成交时间戳
 
         # 清空限价单相关
-        self.tdDriver.limitOrderCount = 0
-        self.tdDriver.limitOrderDict.clear()
-        self._dictLimitOrders.clear()        
+        # self.tdDriver.limitOrderCount = 0
+        # self.tdDriver.limitOrderDict.clear()
         
         # 清空停止单相关
-        self.tdDriver.stopOrderCount = 0
-        self.tdDriver.stopOrderDict.clear()
-        self._dictStopOrders.clear()
+        # self.tdDriver.stopOrderCount = 0
+        # self.tdDriver.stopOrderDict.clear()
         
         # 清空成交相关
-        self.tdDriver.tradeCount = 0
-        self._dictTrades.clear()
+        # self.tdDriver.tradeCount = 0
 
         # 当前最新数据，用于模拟成交用
         self.tick = None
         self.bar  = None
-        self.__dtData   = None      # 最新数据的时间
+        self.__dtData  = None      # 最新数据的时间
 
-        self._marketstat = PerspectiveDict(self._account.exchange)
         self.__pg = None
 
         ##########################
@@ -960,7 +957,7 @@ class AccountWrapper(MetaAccount):
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendStopOrder(vtSymbol, orderType, price, volume, strategy)
     def findOrdersOfStrategy(self, strategyId, symbol=None): return self._nest.findOrdersOfStrategy(strategyId, symbol)
     
-    def _broker_datetimeAsOf(self): return self.__dtData
+    def datetimeAsOfMarket(self): return self.__dtData
     def _broker_onOrderPlaced(self, orderData): return self._nest._broker_onOrderPlaced(orderData)
     def _broker_onCancelled(self, orderData): return self._nest._broker_onCancelled(orderData)
     def _broker_onOrderDone(self, orderData): return self._nest._broker_onOrderDone(orderData)
@@ -1008,7 +1005,7 @@ class AccountWrapper(MetaAccount):
     def _broker_cancelOrder(self, orderData) :
         # simuate a cancel by orderData
         orderData.status = OrderData.STATUS_CANCELLED
-        orderData.cancelTime = self._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:3]
+        orderData.cancelTime = self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
         self._broker_onCancelled(orderData)
 
 
@@ -1290,22 +1287,22 @@ if __name__ == '__main__':
     p.loop()
     p.stop()
 
-    # me.addMarketData(mdHuobi, jsettings['marketdata'][0])
-    me.addMarketData(mdOffline, jsettings['marketdata'][0])
+    # # me.addMarketData(mdHuobi, jsettings['marketdata'][0])
+    # me.addMarketData(mdOffline, jsettings['marketdata'][0])
 
-    me.createApp(BackTestApp, jsettings['backtest'])
-    # logger.info(u'主引擎创建成功')
+    # me.createApp(BackTestApp, jsettings['backtest'])
+    # # logger.info(u'主引擎创建成功')
 
-    me.start()
+    # me.start()
 
-    # cta.loadSetting()
-    # logger.info(u'CTA策略载入成功')
+    # # cta.loadSetting()
+    # # logger.info(u'CTA策略载入成功')
     
-    # cta.initAll()
-    # logger.info(u'CTA策略初始化成功')
+    # # cta.initAll()
+    # # logger.info(u'CTA策略初始化成功')
     
-    # cta.startAll()
-    # logger.info(u'CTA策略启动成功')
+    # # cta.startAll()
+    # # logger.info(u'CTA策略启动成功')
     
-    me.loop()
-    me.stop()
+    # me.loop()
+    # me.stop()

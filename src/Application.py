@@ -811,7 +811,7 @@ class Program(object):
                             self._bRun = False
                             break
                         except Exception as ex:
-                            self.error("app[%s] step exception %s %s" % (aid, ex, traceback.format_exc()))
+                            self.error("app[%s] step exception %s %s" % (appId, ex, traceback.format_exc()))
 
                     if cApps <=0:
                         self.info("no more active apps running, update running state")

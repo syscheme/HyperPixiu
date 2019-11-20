@@ -61,13 +61,13 @@ class MetaAccount(BaseApplication):
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): raise NotImplementedError
     @abstractmethod 
     def findOrdersOfStrategy(self, strategyId, symbol=None): raise NotImplementedError
+    @abstractmethod 
+    def datetimeAsOfMarket(self): raise NotImplementedError
     
     # @abstractmethod 
     # def _broker_placeOrder(self, orderData): raise NotImplementedError
     # @abstractmethod 
     # def _broker_cancelOrder(self, orderData): raise NotImplementedError
-    # @abstractmethod 
-    # def _broker_datetimeAsOf(self): raise NotImplementedError
     # @abstractmethod 
     # def _broker_onOrderPlaced(self, orderData): raise NotImplementedError
     # @abstractmethod 
@@ -233,6 +233,11 @@ class Account(MetaAccount):
     def collectionName_trade(self): return "trade." + self.ident
 
     #----------------------------------------------------------------------
+    def datetimeAsOfMarket(self):
+        if self._marketstate :
+            return self._marketstate.asof
+        return datetime.now()
+
     def getPosition(self, symbol): # returns PositionData
         with self._lock :
             if not symbol in self._dictPositions:
@@ -394,7 +399,7 @@ class Account(MetaAccount):
         """撤单回调"""
         orderData.status = OrderData.STATUS_CANCELLED
         if len(orderData.cancelTime) <=0:
-            orderData.cancelTime = self._broker_datetimeAsOf().strftime('%H:%M:%S.%f')[:3]
+            orderData.cancelTime = self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
 
         with self._lock :
             try :
@@ -696,7 +701,7 @@ class Account(MetaAccount):
 
         pos.posAvail = newAvail
         pos.position = newTotal
-        pos.stampByTrader = self._broker_datetimeAsOf()
+        pos.stampByTrader = self.datetimeAsOfMarket()
         return True
 
     #----------------------------------------------------------------------
@@ -826,7 +831,7 @@ class Account(MetaAccount):
     # #----------------------------------------------------------------------
     # @property
     # def __logtag(self):
-    #     # asof = self._broker_datetimeAsOf()
+    #     # asof = self.datetimeAsOfMarket()
     #     # asof = asof.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] if asof else ''
     #     # return 'ACC[%s,%s] ' % (self.ident, asof)
     #     return 'ACC[%s] ' % self.ident

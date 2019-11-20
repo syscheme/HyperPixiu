@@ -1266,13 +1266,13 @@ if __name__ == '__main__':
     # p = Program(sys.argv)
     p = Program()
     p._heartbeatInterval =-1
-    SYMBOL = '000001'
+    SYMBOL = '000540' # = '000001'
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-
+    csvdir = '/mnt/d/temp' # = '/mnt/m/AShareSample'
     ps = Perspective('AShare', SYMBOL)
     histdata = PerspectiveGenerator(ps)
-    reader = hist.CsvPlayback(symbol=SYMBOL, folder='/mnt/m/AShareSample/%s' % SYMBOL, fields='date,time,open,high,low,close,volume,ammount')
+    reader = hist.CsvPlayback(symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
     histdata.adaptReader(reader, EVENT_KLINE_1MIN)
     marketstate = PerspectiveDict('AShare')
     p.addObj(marketstate)

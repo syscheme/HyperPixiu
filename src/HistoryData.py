@@ -666,7 +666,96 @@ class MarketRecorder(BaseApplication):
             pass
 
         self._recorder.pushRow(category, row)
-    
+
+
+class PlaybackDay(MarketState):
+
+    def __init__(self, exchange):
+        """Constructor"""
+        super(PlaybackDay, self).__init__(exchange)
+        self.__dictPlayback ={} # dict of symbol to day-KLineData
+        self.__tickTo1min = TickToKLineMerger(self.__onKLine1min)
+        self.__klineToDay = KlineToXminMerger(self.__onKLineDay, xmin=15)
+
+    def __onKLineX(self, ev) :
+        evd = ev.data
+        if evd.symbol not in self.__dictPlayback:
+            self.__dictPlayback[evd.symbol] = copy.copy(evd)
+            return
+
+        evdTarget = self.__dictPlayback[evd.symbol] 
+        if self.__dayOHLC and self.__dayOHLC.asof < self.asof.replace(hour=0,minute=0,second=0,microsecond=0) :
+            self.__dayOHLC = None
+
+        evd = ev.data
+        if not self.__dayOHLC :
+            self.__dayOHLC = evd
+            return True
+
+        if evd.asof > self.__dayOHLC.asof:
+            self.__dayOHLC.high = max(self.__dayOHLC.high, evd.high)
+            self.__dayOHLC.low  = min(self.__dayOHLC.low, evd.low)
+            self.__dayOHLC.close = evd.close        
+            self.__dayOHLC.volume =0 # NOT GOOD when built up from 1min+5min: += int(evd.volume)                
+
+            self.__dayOHLC.openInterest = evd.openInterest
+            self.__dayOHLC.datetime = evd.asof
+
+    # -- impl of MarketState --------------------------------------------------------------
+    def listOberserves(self) :
+        return [ s for s in self.__dictPlayback.keys()]
+
+    def addMonitor(self, symbol) :
+        ''' add a symbol to monitor
+        '''
+        raise NotImplementedError
+
+    def latestPrice(self, symbol) :
+        ''' query for latest price of the given symbol
+        @return the price
+        '''
+        if not symbol in self.__dictPlayback.keys() :
+            return 0.0
+        
+        return self.__dictPlayback[symbol].close
+
+    def getAsOf(self, symbol=None) :
+        ''' 
+        @return the datetime as of latest observing
+        '''
+        if symbol and symbol in self.__dictPlayback.keys():
+            return self.__dictPlayback[symbol].asof
+
+        ret = None
+        for s, p in self.__dictPlayback.items() :
+            if not ret or ret > p.asof:
+                ret = p.asof
+        return ret if ret else _dtEpoch
+
+    def dailyOHLC_sofar(self, symbol) :
+        ''' 
+        @return (date, open, high, low, close) as of today  
+        '''
+        if not symbol in self.__dictPlayback.keys():
+            return '', 0.0, 0.0, 0.0, 0.0, 0
+
+        kl = self.__dictPlayback[symbol]
+        return kl.date, kl.open, kl.high, kl.low, kl.close
+        
+    def updateByEvent(self, ev) :
+        ''' 
+        @event could be Event(Tick), Event(KLine
+        '''
+        if ev.type == EVENT_TICK:
+            self.__tickTo1min.push(ev)
+            return
+
+        if ev.type in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
+            self.__onKLineX(ev)
+            return
+        
+        raise "unknown event-type %s" % ev.type
+
 ########################################################################
 import bz2
 

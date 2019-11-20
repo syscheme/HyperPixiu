@@ -64,7 +64,7 @@ class EvictableStack(object):
             del(self._data[-1])
 
 ########################################################################
-class Perspective(EventData):
+class Perspective(MarketData):
     '''
     Data structure of Perspective:
     1. Ticks
@@ -76,22 +76,14 @@ class Perspective(EventData):
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol =None, KLDepth_1min=60, KLDepth_5min=240, KLDepth_1day=220, tickDepth=120):
         '''Constructor'''
-        super(Perspective, self).__init__()
+        super(Perspective, self).__init__(exchange, symbol)
 
         self._stampAsOf = None
-        self._symbol    = EventData.EMPTY_STRING
-        self._vtSymbol  = EventData.EMPTY_STRING
-        self._exchange  = exchange
-        if symbol and len(symbol)>0:
-            self._symbol = self.vtSymbol = symbol
-            if  len(exchange)>0 :
-                self._vtSymbol = '.'.join([self._symbol, self._exchange])
-
         self._stacks = {
-            EVENT_TICK:       EvictableStack(tickDepth, TickData(self._exchange, self._symbol)),
-            EVENT_KLINE_1MIN: EvictableStack(KLDepth_1min, KLineData(self._exchange, self._symbol)),
-            EVENT_KLINE_5MIN: EvictableStack(KLDepth_5min, KLineData(self._exchange, self._symbol)),
-            EVENT_KLINE_1DAY: EvictableStack(KLDepth_5min, KLineData(self._exchange, self._symbol)),
+            EVENT_TICK:       EvictableStack(tickDepth, TickData(self.exchange, self.symbol)),
+            EVENT_KLINE_1MIN: EvictableStack(KLDepth_1min, KLineData(self.exchange, self.symbol)),
+            EVENT_KLINE_5MIN: EvictableStack(KLDepth_5min, KLineData(self.exchange, self.symbol)),
+            EVENT_KLINE_1DAY: EvictableStack(KLDepth_5min, KLineData(self.exchange, self.symbol)),
         }
 
         self.__stampLast = None
@@ -132,7 +124,7 @@ class Perspective(EventData):
             if not dtAsof or dtAsof <= _dtEpoch : 
                 return None
 
-            self.__dayOHLC = KLineData(self._exchange, self._symbol)
+            self.__dayOHLC = KLineData(self.exchange, self.symbol)
             self.__dayOHLC.datetime = dtAsof.replace(hour=0,minute=0,second=0,microsecond=0)
             self.__dayOHLC.open = 0.0
             self.__dayOHLC.high = 0.0
@@ -326,13 +318,13 @@ class PerspectiveDict(MarketState):
         @event could be Event(Tick), Event(KLine), Event(Perspective)
         '''
         if EVENT_Perspective == ev.type :
-            self.__dictPerspective[ev.data._symbol] = ev.data
+            self.__dictPerspective[ev.data.symbol] = ev.data
             return
 
         if not ev.type in Perspective.EVENT_SEQ :
             return
             
-        s = ev.data._symbol
+        s = ev.data.symbol
         if not s in self.__dictPerspective.keys() :
             self.__dictPerspective[s] = Perspective(self.exchange, s)
         self.__dictPerspective[s].push(ev)

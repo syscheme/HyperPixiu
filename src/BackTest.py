@@ -8,7 +8,7 @@ from __future__ import division
 from Application import *
 from Account import *
 from Trader import *
-from HistoryData import *
+import HistoryData as hist
 from Perspective import *
 
 from datetime import datetime, timedelta
@@ -37,13 +37,18 @@ class BackTestApp(MetaTrader):
     '''
     
     #----------------------------------------------------------------------
-    def __init__(self, program, trader, **kwargs):
+    def __init__(self, program, trader, histdata, **kwargs):
         """Constructor"""
 
         super(BackTestApp, self).__init__(program, **kwargs)
-        self._nestTrader = trader
-        self._nestTraderClz = type(trader) # class of the nested Trader
-        self._account = None
+        self._initTrader = trader
+        self._initMarketState = None # to populate from _initTrader
+        self._initAcc = None # to populate from _initTrader then wrapper
+
+        self._account = None # the working account inherit from MetaTrader
+        self._workMarketState = None
+        self._wkTrader = None
+        self._wkHistData = histdata
 
         # 回测相关属性
         # -----------------------------------------
@@ -54,6 +59,7 @@ class BackTestApp(MetaTrader):
         self._btStartDate  = datetime.strptime(self.getConfig('startDate', '2000-01-01'), '%Y-%m-%d')
         self._btEndDate    = datetime.strptime(self.getConfig('endDate', '2999-12-31'), '%Y-%m-%d')
         self._startBalance = self.getConfig('startBalance', 100000)
+        self._testRounds   = self.getConfig('rounds', 1)
 
         # backtest will always clear the datapath
         self.__outdir = '%s/%s_%s' % (self.dataRoot, self.ident, datetime.now().strftime('%Y%m%dT%H%M%S'))
@@ -83,20 +89,23 @@ class BackTestApp(MetaTrader):
             return False
 
         # step 1. wrapper the Trader
-        if not self._nestTrader :
-            self._program.removeApp(self._nestTrader.ident)
-            self._program.addApp(self)
+        if not self._initTrader :
+            return False
+        
+        self._program.removeApp(self._initTrader.ident)
+        self._program.addApp(self)
+        self._initMarketState = self._initTrader._marketstate
         
         # step 1. wrapper the broker drivers of the accounts
-        originAcc = self._nestTrader.account
+        originAcc = self._initTrader.account
         if originAcc and not isinstance(originAcc, AccountWrapper):
             self._program.removeApp(originAcc.ident)
             self._initAcc = AccountWrapper(self, account=copy.copy(originAcc)) # duplicate the original account for test espoches
             self._initAcc.setCapital(self._startBalance, True)
-        else : self._initAcc = originAcc
-            # MOVED to resetTest():
+            # the following steps has been MOVED to resetTest():
             # self._account = wrapper
             # self._program.addApp(self._account)
+        else : self._initAcc = originAcc
 
         # ADJ_1. adjust the Trader._dictObjectives to append suffix MarketData.TAG_BACKTEST
         for obj in self._dictObjectives.values() :
@@ -105,48 +114,42 @@ class BackTestApp(MetaTrader):
             if len(obj["ds1min"]) >0 :
                 obj["ds1min"] += MarketData.TAG_BACKTEST
 
-        # end of adjust the Trader
-
-        self._execDate_Begin = None
-        self._execClosePrice_Begin = 0
-
-        self.initData = []          # 初始化用的数据
         self.resetTest()
         return True
 
     def doAppStep(self):
         super(BackTestApp, self).doAppStep()
 
-        try :
-            ev = next(self.__pg)
-            if not ev : return
-
-            self.OnEvent(ev) # call Trader
-            return # successfully pushed an Event
-        except StopIteration:
-            pass
+        if self._wkHistData :
+            try :
+                ev = next(self._wkHistData)
+                if not ev : return
+                self.OnEvent(ev) # call Trader
+                return # successfully pushed an Event
+            except StopIteration:
+                pass
 
         # this test should be done if reached here
-        self.info('test-round[%s] done, generating report', self.__testRoundId)
+        self.info('test-round[%d/%d] done, generating report' % (self.__testRoundId, self._testRounds))
         self.generateReport()
 
         self.__testRoundId +=1
-        if (self.__testRoundId < self.__testRounds) :
-            self.info('test-round[%s] starts', self.__testRoundId)
-            self.resetTest()
+        if (self.__testRoundId >= self._testRounds) :
+            # all tests have been done
+            self.stop()
             return
 
-        # all tests have been done
-        self.stop()
+        self.info('test-round[%s] starts', self.__testRoundId)
+        self.resetTest()
 
     def OnEvent(self, ev): 
         # step 2. 收到行情后，在启动策略前的处理
         if EVENT_TICK == ev.type:
             self.__tradeMatchingByTick(ev.data)
-        elif EVENT_KLINE_PREFIX == evtype[:len(EVENT_KLINE_PREFIX)] :
+        elif EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
             self.__tradeMatchingByKLine(ev.data)
 
-        return self._nestTrader.OnEvent(ev)
+        return self._wkTrader.OnEvent(ev)
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
@@ -154,13 +157,13 @@ class BackTestApp(MetaTrader):
     #----------------------------------------------------------------------
     # Overrides of Events handling
     def eventHdl_Order(self, ev):
-        return self._nestTrader.eventHdl_Order(ev)
+        return self._wkTrader.eventHdl_Order(ev)
             
     def eventHdl_Trade(self, ev):
-        return self._nestTrader.eventHdl_Trade(ev)
+        return self._wkTrader.eventHdl_Trade(ev)
 
     def onDayOpen(self, symbol, date):
-        return self._nestTrader.onDayOpen(symbol, date)
+        return self._wkTrader.onDayOpen(symbol, date)
 
     def proc_MarketEvent(self, evtype, symbol, data):
         self.error('proc_MarketEvent() should not be here')
@@ -172,17 +175,36 @@ class BackTestApp(MetaTrader):
 #        self._account = self._accountClass(None, tdBackTest, self._settings.account)
 #        self._account._dvrBroker._backtest= self
 #        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
+
+        self._execDate_Begin = None
+        self._execClosePrice_Begin = 0
         
+        # step 1. start over the market state
+        if self._workMarketState:
+            self._program.removeObj(self._workMarketState)
+        
+        if self._initMarketState:
+            self._workMarketState = copy.deepcopy(self._initMarketState)
+            self._program.addObj(self._workMarketState)
+
+        # step 2. create clean trader and account from self._initAcc and  
+        if self._wkTrader:
+            self._program.removeObj(self._wkTrader)
+        self._wkTrader = copy.deepcopy(self._initTrader)
+        self._program.addApp(self._wkTrader)
+        self._wkTrader._marketstate = self._workMarketState
+
         if self._account :
             self._program.removeApp(self._account)
             self._account =None
         
-        if self._initAcc :
-            self._account = copy.deepcopy(self._initAcc)
-            self._program.addApp(self._account)
-        
+        self._account = copy.deepcopy(self._initAcc)
+        self._program.addApp(self._account)
         self._account.setCapital(self._startBalance, True) # 回测时的起始本金（默认10万）
-
+        self._account._marketstate = self._workMarketState
+        self._wkTrader._account = self._account
+        self._wkHistData.resetRead()
+           
         self._execClosePrice_Begin = 0.0
         self._execEndClose = 0.0
 
@@ -190,29 +212,10 @@ class BackTestApp(MetaTrader):
         self._execEnd = None
         self._execClosePrice_Begin = 0.0
 
-        self.initData = []          # 初始化用的数据
-
-        self.resultList = []             # 交易结果列表
-        self.posList = [0]               # 每笔成交后的持仓情况        
-        self.tradeTimeList = []          # 每笔成交时间戳
-
-        # 清空限价单相关
-        # self.tdDriver.limitOrderCount = 0
-        # self.tdDriver.limitOrderDict.clear()
-        
-        # 清空停止单相关
-        # self.tdDriver.stopOrderCount = 0
-        # self.tdDriver.stopOrderDict.clear()
-        
-        # 清空成交相关
-        # self.tdDriver.tradeCount = 0
-
         # 当前最新数据，用于模拟成交用
         self.tick = None
         self.bar  = None
         self.__dtData  = None      # 最新数据的时间
-
-        self.__pg = None
 
         ##########################
         for ob in self._dictObjectives.keys() :
@@ -1277,11 +1280,18 @@ if __name__ == '__main__':
     p._heartbeatInterval =-1
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-    pdict = PerspectiveDict('AShare')
-    p.addObj(pdict)
+
+    ps = Perspective('AShare', '000001')
+    histdata = PerspectiveGenerator(ps)
+    reader = hist.CsvPlayback(symbol='000001', folder='/mnt/m/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
+    histdata.adaptReader(reader, EVENT_KLINE_1MIN)
+    marketstate = PerspectiveDict('AShare')
+    p.addObj(marketstate)
+
     tdr = p.createApp(BaseTrader, configNode ='backtest', account=acc)
+    
     print('listed all Objects: %s\n' % p.listByType(MetaObj))
-    p.createApp(BackTestApp, configNode ='backtest', trader= tdr)
+    p.createApp(BackTestApp, configNode ='backtest', trader= tdr, histdata = histdata)
 
     p.start()
     p.loop()

@@ -234,9 +234,7 @@ class Account(MetaAccount):
 
     #----------------------------------------------------------------------
     def datetimeAsOfMarket(self):
-        if self._marketstate :
-            return self._marketstate.asof
-        return datetime.now()
+        return self._marketstate.getAsOf() if self._marketstate else datetime.now()
 
     def getPosition(self, symbol): # returns PositionData
         with self._lock :

@@ -61,8 +61,12 @@ class BackTestApp(MetaTrader):
         self._startBalance = self.getConfig('startBalance', 100000)
         self._testRounds   = self.getConfig('rounds', 1)
 
+        self.__testRoundId = 0
+        self.__execStamp_appStart = datetime.now()
+        self.__execStamp_roundStart = self.__execStamp_appStart
+
         # backtest will always clear the datapath
-        self.__outdir = '%s/%s_%s' % (self.dataRoot, self.ident, datetime.now().strftime('%Y%m%dT%H%M%S'))
+        self.__outdir = '%s/%s_%s' % (self.dataRoot, self.ident, self.__execStamp_appStart.strftime('%Y%m%dT%H%M%S'))
         try :
             shutil.rmtree(self.__outdir)
             os.makedirs(self.__outdir)
@@ -94,6 +98,9 @@ class BackTestApp(MetaTrader):
         
         self._program.removeApp(self._initTrader.ident)
         self._program.addApp(self)
+        if not self._initTrader.doAppInit() :
+            return False
+
         self._initMarketState = self._initTrader._marketstate
         
         # step 1. wrapper the broker drivers of the accounts
@@ -102,7 +109,7 @@ class BackTestApp(MetaTrader):
             self._program.removeApp(originAcc.ident)
             self._initAcc = AccountWrapper(self, account=copy.copy(originAcc)) # duplicate the original account for test espoches
             self._initAcc.setCapital(self._startBalance, True)
-            # the following steps has been MOVED to resetTest():
+            # the following steps have been MOVED into resetTest():
             # self._account = wrapper
             # self._program.addApp(self._account)
         else : self._initAcc = originAcc
@@ -124,13 +131,16 @@ class BackTestApp(MetaTrader):
             try :
                 ev = next(self._wkHistData)
                 if not ev : return
+                self._workMarketState.updateByEvent(ev)
+                s = ev.data.symbol
+                self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type, self._workMarketState.getAsOf(s).strftime('%Y%m%dT%H:%M:%S'), self._workMarketState.latestPrice(s), self._workMarketState.dailyOHLC_sofar(s)))
                 self.OnEvent(ev) # call Trader
                 return # successfully pushed an Event
             except StopIteration:
                 pass
 
         # this test should be done if reached here
-        self.info('test-round[%d/%d] done, generating report' % (self.__testRoundId, self._testRounds))
+        self.info('test-round[%d/%d] done, took %s, generating report' % (self.__testRoundId, self._testRounds, str(datetime.now() - self.__execStamp_roundStart)))
         self.generateReport()
 
         self.__testRoundId +=1
@@ -139,7 +149,6 @@ class BackTestApp(MetaTrader):
             self.stop()
             return
 
-        self.info('test-round[%s] starts', self.__testRoundId)
         self.resetTest()
 
     def OnEvent(self, ev): 
@@ -176,9 +185,9 @@ class BackTestApp(MetaTrader):
 #        self._account._dvrBroker._backtest= self
 #        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
 
-        self._execDate_Begin = None
-        self._execClosePrice_Begin = 0
-        
+        self.__execStamp_roundStart = datetime.now()
+        self.info('initializing test-round[%d/%d], elapsed %s' % (self.__testRoundId, self._testRounds, str(self.__execStamp_roundStart - self.__execStamp_appStart)))
+
         # step 1. start over the market state
         if self._workMarketState:
             self._program.removeObj(self._workMarketState)
@@ -205,26 +214,37 @@ class BackTestApp(MetaTrader):
         self._wkTrader._account = self._account
         self._wkHistData.resetRead()
            
-        self._execClosePrice_Begin = 0.0
-        self._execEndClose = 0.0
-
-        self._execDate_Begin = None
-        self._execEnd = None
-        self._execClosePrice_Begin = 0.0
+        self._dataBegin_date = None
+        self._dataBegin_closeprice = 0.0
+        
+        self._dataEnd_date = None
+        self._dataEnd_closeprice = 0.0
 
         # 当前最新数据，用于模拟成交用
         self.tick = None
         self.bar  = None
         self.__dtData  = None      # 最新数据的时间
 
-        ##########################
-        for ob in self._dictObjectives.keys() :
-            self._marketstat.addMonitor(ob)
-            ps = Perspective(self._account.exchange, ob)
-            self.__pg = PerspectiveGenerator(ps)
-            hpb = hist.CsvPlayback(symbol=ob, folder=self.__outdir, fields='date,time,open,high,low,close,volume,ammount')
-            self.__pg.adaptReader(hpb, md.EVENT_KLINE_1MIN)
-            break;
+        if self._workMarketState :
+            for i in range(30) : # initially feed 20 data from histread to the marketstate
+                ev = next(self._wkHistData)
+                if not ev : continue
+                self._workMarketState.updateByEvent(ev)
+
+            if len(self._dictObjectives) <=0:
+                sl = self._workMarketState.listOberserves()
+                for symbol in sl:
+                    d = {
+                        "dsTick"  : None,
+                        "ds1min"  : None,
+                    }
+                    self._dictObjectives[symbol] = d
+
+        # step 4. subscribe account events
+        self.subscribeEvent(Account.EVENT_ORDER)
+        self.subscribeEvent(Account.EVENT_TRADE)
+
+        return True
 
     def __tradeMatchingByKLine(self, kldata):
         """收到行情后处理本地停止单（检查是否要立即发出）"""
@@ -234,9 +254,9 @@ class BackTestApp(MetaTrader):
         # if self.mode != self.BAR_MODE:
         #     return
 
-        if self._execDate_Begin ==None:
-            self._execClosePrice_Begin = kldata.close
-            self._execDate_Begin = kldata.date
+        if self._dataBegin_date ==None:
+            self._dataBegin_closeprice = kldata.close
+            self._dataBegin_date = kldata.date
 
         self.__dtData = kldata.datetime
 
@@ -264,9 +284,9 @@ class BackTestApp(MetaTrader):
         """收到行情后，在启动策略前的处理
         通常处理本地停止单（检查是否要立即发出）"""
 
-        if not self._execDate_Begin:
-            self._execDate_Begin = tkdata.date
-            self._execClosePrice_Begin = tkdata.priceTick
+        if not self._dataBegin_date:
+            self._dataBegin_date = tkdata.date
+            self._dataBegin_closeprice = tkdata.priceTick
 
         self.__dtData = tkdata.datetime
 
@@ -290,13 +310,13 @@ class BackTestApp(MetaTrader):
         df.to_csv(self._account._id+'.csv')
             
         originGain = 0.0
-        if self._execClosePrice_Begin >0 :
-            originGain = (self._execEndClose - self._execClosePrice_Begin)*100/self._execClosePrice_Begin
+        if self._dataBegin_closeprice >0 :
+            originGain = (self._dataEnd_closeprice - self._dataBegin_closeprice)*100/self._dataBegin_closeprice
 
         # 输出统计结果
         self.debug('-' * 30)
-        self.debug(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execDate_Begin, self._execClosePrice_Begin, self._execEnd, self._execEndClose, formatNumber(originGain)))
-        self.debug(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (result['startDate'], self._execClosePrice_Begin, result['endDate'], self._execEndClose))
+        self.debug(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._dataBegin_date, self._dataBegin_closeprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain)))
+        self.debug(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (result['startDate'], self._dataBegin_closeprice, result['endDate'], self._dataEnd_closeprice))
         
         self.debug(u'交易日数：\t%s (盈利%s,亏损%s)' % (result['totalDays'], result['profitDays'], result['lossDays']))
         
@@ -464,13 +484,13 @@ class BackTestApp(MetaTrader):
 
         d = self.calculateTransactions()
         originGain = 0.0
-        if self._execClosePrice_Begin >0 :
-            originGain = (self._execEndClose - self._execClosePrice_Begin)*100/self._execClosePrice_Begin
+        if self._dataBegin_closeprice >0 :
+            originGain = (self._dataEnd_closeprice - self._dataBegin_closeprice)*100/self._dataBegin_closeprice
 
         # 输出
         self.debug('-' * 30)
-        self.debug(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._execDate_Begin, self._execClosePrice_Begin, self._execEnd, self._execEndClose, formatNumber(originGain)))
-        self.debug(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (d['timeList'][0], self._execClosePrice_Begin, d['timeList'][-1], self._execEndClose))
+        self.debug(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._dataBegin_date, self._dataBegin_closeprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain)))
+        self.debug(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (d['timeList'][0], self._dataBegin_closeprice, d['timeList'][-1], self._dataEnd_closeprice))
         
         self.debug(u'总交易次数：\t%s' % formatNumber(d['totalResult'],0))        
         self.debug(u'总盈亏：\t%s' % formatNumber(d['capital']))
@@ -615,13 +635,13 @@ class BackTestApp(MetaTrader):
         # ---------------------------
         # 到最后交易日尚未平仓的交易，则以最后价格平仓
         for trade in buyTrades:
-            result = TradingResult(trade.price, trade.dt, self._execEndClose, self.__dtData, 
+            result = TradingResult(trade.price, trade.dt, self._dataEnd_closeprice, self.__dtData, 
                                    trade.volume, self._ratePer10K, self._slippage, self._account.size)
             self.resultList.append(result)
             txnstr += '%+dx%.2f' % (trade.volume, trade.price)
             
         for trade in sellTrades:
-            result = TradingResult(trade.price, trade.dt, self._execEndClose, self.__dtData, 
+            result = TradingResult(trade.price, trade.dt, self._dataEnd_closeprice, self.__dtData, 
                                    -trade.volume, self._ratePer10K, self._slippage, self._account.size)
             self.resultList.append(result)
             txnstr += '%-dx%.2f' % (trade.volume, trade.price)
@@ -1233,41 +1253,6 @@ class AccountWrapper(MetaAccount):
         self.onDayClose()
 
 
-'''
-def oldprogram() :
-    # dirname(dirname(abspath(file)))
-    settings= None
-    try :
-        conf_fn = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/BT_AShare.json'
-        settings= jsoncfg.load_config(conf_fn)
-    except Exception as e :
-        print('failed to load configure[%s]: %s' % (conf_fn, e))
-        return
-
-    me = MainRoutine(settings)
-
-    # me.addMarketData(mdHuobi, settings['marketdata'][0])
-    me.addMarketData(mdOffline, settings['marketdata'][0])
-
-    me.createApp(BackTestApp, settings['backtest'])
-    # logger.info(u'主引擎创建成功')
-
-    me.start()
-    # logger.info(u'MainRoutine starts')
-
-    # cta.loadSetting()
-    # logger.info(u'CTA策略载入成功')
-    
-    # cta.initAll()
-    # logger.info(u'CTA策略初始化成功')
-    
-    # cta.startAll()
-    # logger.info(u'CTA策略启动成功')
-    
-    me.loop()
-    me.stop()
-'''
-
 if __name__ == '__main__':
     print('-'*20)
 
@@ -1278,32 +1263,22 @@ if __name__ == '__main__':
     # p = Program(sys.argv)
     p = Program()
     p._heartbeatInterval =-1
+    SYMBOL = '000001'
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
 
-    ps = Perspective('AShare', '000001')
+    ps = Perspective('AShare', SYMBOL)
     histdata = PerspectiveGenerator(ps)
-    reader = hist.CsvPlayback(symbol='000001', folder='/mnt/m/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
+    reader = hist.CsvPlayback(symbol=SYMBOL, folder='/mnt/m/AShareSample/%s' % SYMBOL, fields='date,time,open,high,low,close,volume,ammount')
     histdata.adaptReader(reader, EVENT_KLINE_1MIN)
     marketstate = PerspectiveDict('AShare')
     p.addObj(marketstate)
 
     tdr = p.createApp(BaseTrader, configNode ='backtest', account=acc)
     
-    print('listed all Objects: %s\n' % p.listByType(MetaObj))
+    p.info('All objects registered piror to BackTestApp: %s' % p.listByType(MetaObj))
+    
     p.createApp(BackTestApp, configNode ='backtest', trader= tdr, histdata = histdata)
-
-    p.start()
-    p.loop()
-    p.stop()
-
-    # # me.addMarketData(mdHuobi, jsettings['marketdata'][0])
-    # me.addMarketData(mdOffline, jsettings['marketdata'][0])
-
-    # me.createApp(BackTestApp, jsettings['backtest'])
-    # # logger.info(u'主引擎创建成功')
-
-    # me.start()
 
     # # cta.loadSetting()
     # # logger.info(u'CTA策略载入成功')
@@ -1313,6 +1288,8 @@ if __name__ == '__main__':
     
     # # cta.startAll()
     # # logger.info(u'CTA策略启动成功')
-    
-    # me.loop()
-    # me.stop()
+
+    p.start()
+    p.loop()
+    p.stop()
+

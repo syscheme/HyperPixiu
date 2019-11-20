@@ -175,7 +175,7 @@ class BaseApplication(MetaApp):
     def getConfig(self, configName, defaultVal, pop=False) :
         try :
             if configName in self._kwargs.keys() :
-                return kwargs.pop(configName, defaultVal) if pop else self._kwargs[configName]
+                return self._kwargs.pop(configName, defaultVal) if pop else self._kwargs[configName]
 
             if self.__jsettings:
                 jn = self.__jsettings
@@ -427,28 +427,28 @@ class Iterable(ABC):
         if self._logger: 
             self.logger.debug(msg)
         else:
-            print('%s\n' % msg)
+            print('%s' % msg)
         
     def info(self, msg):
         if self._logger: 
             self.logger.info(msg)
         else:
-            print('%s\n' % msg)
+            print('%s' % msg)
 
     def warn(self, msg):
         if self._logger: 
             self.logger.warn(msg)
         else:
-            print('%s\n' % msg)
+            print('%s' % msg)
         
     def error(self, msg):
         if self._logger: 
             self.logger.error(msg)
         else:
-            print('%s\n' % msg)
+            print('%s' % msg)
 
     def logexception(self, ex):
-        self.error('%s: %s\n' % (ex, traceback.format_exc()))
+        self.error('%s: %s' % (ex, traceback.format_exc()))
 
 ########################################################################
 import sys, getopt
@@ -1001,7 +1001,7 @@ class Program(object):
         if self._logger: 
             self.logger.debug(msg)
         else:
-            print('%s\n' % msg)
+            print('%s' % msg)
         
     @abstractmethod
     def info(self, msg):
@@ -1009,7 +1009,7 @@ class Program(object):
         if self._logger: 
             self.logger.info(msg)
         else:
-            print('%s\n' % msg)
+            print('%s' % msg)
 
     @abstractmethod
     def warn(self, msg):
@@ -1017,7 +1017,7 @@ class Program(object):
         if self._logger: 
             self.logger.warn(msg)
         else:
-            print('%s\n' % msg)
+            print('%s' % msg)
         
     @abstractmethod
     def error(self, msg):
@@ -1025,7 +1025,7 @@ class Program(object):
         if self._logger: 
             self.logger.error(msg)
         else:
-            print('%s\n' % msg)
+            print('%s' % msg)
         
     @abstractmethod
     def critical(self, msg):
@@ -1033,11 +1033,11 @@ class Program(object):
         if self._logger: 
             self.logger.critical(msg)
         else:
-            print('%s\n' % msg)
+            print('%s' % msg)
 
     def logexception(self, ex):
         """报错输出+记录异常信息"""
-        self.error('%s: %s\n' % (ex, traceback.format_exc()))
+        self.error('%s: %s' % (ex, traceback.format_exc()))
 
     def eventHdlr_Log(self, event):
         """处理日志事件"""
@@ -1246,11 +1246,11 @@ if __name__ == "__main__":
             return True
 
         def OnEvent(self, event):
-            print("Foo.OnEvent %s\n" % event)
+            print("Foo.OnEvent %s" % event)
         
         def doAppStep(self):
             self.__step +=1
-            print("Foo.step %d\n" % self.__step)
+            print("Foo.step %d" % self.__step)
 
     # a = BaseApplication() #wrong
     p = Program(__file__)

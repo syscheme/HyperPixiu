@@ -276,6 +276,9 @@ class PerspectiveDict(MarketState):
         self.__dictPerspective ={} # dict of symbol to Perspective
 
     # -- impl of MarketState --------------------------------------------------------------
+    def listOberserves(self) :
+        return [ s for s in self.__dictPerspective.keys()]
+
     def addMonitor(self, symbol) :
         ''' add a symbol to monitor
         '''

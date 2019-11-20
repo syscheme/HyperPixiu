@@ -104,7 +104,7 @@ class TestHistoryData(unittest.TestCase):
             print('Psp: %s' % i.desc)
             marketstate.updateByEvent(i)
             s = i.data.symbol
-            print('-> state: asof[%s] lastPrice[%s] OHLC%s\n' % (marketstate.getAsOf(s).strftime('%Y%m%d %H:%M:%S'), marketstate.latestPrice(s), marketstate.dailyOHLC_sofar(s)))
+            print('-> state: asof[%s] symbol[%s] lastPrice[%s] OHLC%s\n' % (marketstate.getAsOf(s).strftime('%Y%m%dT%H:%M:%S'), s, marketstate.latestPrice(s), marketstate.dailyOHLC_sofar(s)))
 
     def func1(self, a=None, **kwargs):
         print('func1(a=%s, kwargs=%s)\n' %(a, kwargs))

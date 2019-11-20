@@ -378,6 +378,12 @@ class MarketState(MetaObj):
     def exchange(self) : return self._exchange
 
     @abstractmethod
+    def listOberserves(self) :
+        ''' list the symbol list that is oberserving
+        '''
+        raise NotImplementedError
+
+    @abstractmethod
     def addMonitor(self, symbol) :
         ''' add a symbol to monitor
         '''

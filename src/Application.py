@@ -355,14 +355,15 @@ class Iterable(ABC):
     def __iter__(self):
         if self.resetRead() : # alway perform reset here
             self._generator = self.__generate()
-            self._c = 0
+            self.__c = 0
             self._iterableEnd = False
         return self
 
     def __next__(self):
         if not self._generator and self.resetRead() : # not perform reset here
             self._generator = self.__generate()
-            self._c = 0
+            self.__c = 0
+            self._iterableEnd = False
 
         if not self._generator :
             raise StopIteration
@@ -374,7 +375,7 @@ class Iterable(ABC):
                 event = self.popPending()
                 if event:
                     yield event
-                    self._c +=1
+                    self.__c +=1
             except Exception:
                 pass
 
@@ -384,7 +385,7 @@ class Iterable(ABC):
                     continue
 
                 yield n
-                self._c +=1
+                self.__c +=1
             except Exception as ex:
                 self.logexception(ex)
                 self._iterableEnd = True
@@ -578,7 +579,7 @@ class Program(object):
 
     def removeObj(self, obj):
         if obj and isinstance(obj, MetaObj):
-            return __removeObj(self, obj.ident)
+            return self.__removeObj(obj.ident)
         return None
 
     def getObj(self, objId):
@@ -814,7 +815,7 @@ class Program(object):
                             self.error("app[%s] step exception %s %s" % (appId, ex, traceback.format_exc()))
 
                     if cApps <=0:
-                        self.info("no more active apps running, update running state")
+                        self.info("Program has no more active apps running, update running state")
                         self._bRun = False
                         break
                             

@@ -59,9 +59,9 @@ class BackTestApp(MetaTrader):
         self._btStartDate  = datetime.strptime(self.getConfig('startDate', '2000-01-01'), '%Y-%m-%d')
         self._btEndDate    = datetime.strptime(self.getConfig('endDate', '2999-12-31'), '%Y-%m-%d')
         self._startBalance = self.getConfig('startBalance', 100000)
-        self._testRounds   = self.getConfig('rounds', 1)
+        self._testRounds   = self.getConfig('rounds', 2)
 
-        self.__testRoundId = 0
+        self.__testRoundId = 1 # count start from 1 to ease reading
         self.__execStamp_appStart = datetime.now()
         self.__execStamp_roundStart = self.__execStamp_appStart
 
@@ -141,10 +141,13 @@ class BackTestApp(MetaTrader):
 
         # this test should be done if reached here
         self.info('test-round[%d/%d] done, took %s, generating report' % (self.__testRoundId, self._testRounds, str(datetime.now() - self.__execStamp_roundStart)))
-        self.generateReport()
+        try :
+            self.generateReport()
+        except Exception as ex:
+            self.error("generateReport() caught exception %s %s" % (ex, traceback.format_exc()))
 
         self.__testRoundId +=1
-        if (self.__testRoundId >= self._testRounds) :
+        if (self.__testRoundId > self._testRounds) :
             # all tests have been done
             self.stop()
             return

@@ -22,7 +22,6 @@ from datetime import datetime, timedelta
 from copy import copy
 from abc import ABCMeta, abstractmethod
 import traceback
-import jsoncfg # pip install json-cfg
 
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure
@@ -38,6 +37,7 @@ class MetaTrader(BaseApplication):
         self._account = None
         self._accountId = None
         self._dtData = None # datetime of data
+        self._dictObjectives = {}
 
     @property
     def account(self): return self._account # the default account
@@ -65,8 +65,7 @@ class BaseTrader(MetaTrader):
 
         self._marketstate = None
 
-        if self._jsettings :
-            self._accountId = self._jsettings.accountId(self._accountId)
+        self._accountId      = self.getConfig('accountId', self._accountId)
 
         #--------------------
         # from old 数据引擎
@@ -104,8 +103,6 @@ class BaseTrader(MetaTrader):
         # 本地停止单编号计数
         self.stopOrderCount = 0
         # stopOrderID = STOPORDERPREFIX + str(stopOrderCount)
-
-        self._dictObjectives = {}
 
         # #   part 1. those specified in the configuration
         # for s in jsoncfg.expect_array(self._settings.objectives):

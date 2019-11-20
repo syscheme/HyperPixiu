@@ -14,7 +14,6 @@ import MarketData as md
 from BackTest import *
 
 import os
-import jsoncfg # pip install json-cfg
 
 #----------------------------------------------------------------------
 def processErrorEvent(event):

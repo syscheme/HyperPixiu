@@ -51,10 +51,9 @@ class BackTestApp(MetaTrader):
         self._btEndDate   = None         # 回测数据结束日期，datetime对象, None to today or late data
         self._startBalance = 100000      # 10w
 
-        if self._jsettings:
-            self._btStartDate  = datetime.strptime(self._jsettings.startDate('2000-01-01'), '%Y-%m-%d')
-            self._btEndDate    = datetime.strptime(self._jsettings.endDate('2999-12-31'), '%Y-%m-%d')
-            self._startBalance = self._jsettings.startBalance(100000)
+        self._btStartDate  = datetime.strptime(self.getConfig('startDate', '2000-01-01'), '%Y-%m-%d')
+        self._btEndDate    = datetime.strptime(self.getConfig('endDate', '2999-12-31'), '%Y-%m-%d')
+        self._startBalance = self.getConfig('startBalance', 100000)
 
         # backtest will always clear the datapath
         self.__outdir = '%s/%s_%s' % (self.dataRoot, self.ident, datetime.now().strftime('%Y%m%dT%H%M%S'))
@@ -88,14 +87,13 @@ class BackTestApp(MetaTrader):
             self._program.removeApp(self._nestTrader.ident)
             self._program.addApp(self)
         
-        self._account = self._nestTrader.account
-
         # step 1. wrapper the broker drivers of the accounts
-        if self._account and not isinstance(self._account, AccountWrapper):
-            originAcc = self._account
+        originAcc = self._nestTrader.account
+        if originAcc and not isinstance(originAcc, AccountWrapper):
             self._program.removeApp(originAcc.ident)
-            self._initAcc = AccountWrapper(self, copy.deepcopy(originAcc)) # duplicate the original account for test espoches
+            self._initAcc = AccountWrapper(self, account=copy.copy(originAcc)) # duplicate the original account for test espoches
             self._initAcc.setCapital(self._startBalance, True)
+        else : self._initAcc = originAcc
             # MOVED to resetTest():
             # self._account = wrapper
             # self._program.addApp(self._account)
@@ -863,10 +861,10 @@ class AccountWrapper(MetaAccount):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self, program, accountId):
+    def __init__(self, program, account, **kwargs) :
         """Constructor"""
 
-        super(AccountWrapper, self).__init__(program, account.id, account.exchange, None)
+        super(AccountWrapper, self).__init__(program, **kwargs)
 
         # self._btTrader = btTrader             # refer to the BackTest engine
         self._nest  = account
@@ -883,12 +881,9 @@ class AccountWrapper(MetaAccount):
 
     #----------------------------------------------------------------------
     # impl of BaseApplication
-    #----------------------------------------------------------------------
-    @abstractmethod
     def doAppInit(self): 
         return self._nest.doAppInit()
 
-    @abstractmethod
     def doAppStep(self):
         ''' 
         this is a 'duplicated' impl of Account in order to call BackTestAcc._broker_xxxx() 
@@ -935,6 +930,8 @@ class AccountWrapper(MetaAccount):
 
         return cStep
 
+    def OnEvent(self, ev): return self._nest.OnEvent(ev)
+
     #----------------------------------------------------------------------
     # most of the methods are just forward to the self._nest
     @property
@@ -963,7 +960,7 @@ class AccountWrapper(MetaAccount):
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendStopOrder(vtSymbol, orderType, price, volume, strategy)
     def findOrdersOfStrategy(self, strategyId, symbol=None): return self._nest.findOrdersOfStrategy(strategyId, symbol)
     
-    def _broker_datetimeAsOf(self): return self._nest._broker_datetimeAsOf()
+    def _broker_datetimeAsOf(self): return self.__dtData
     def _broker_onOrderPlaced(self, orderData): return self._nest._broker_onOrderPlaced(orderData)
     def _broker_onCancelled(self, orderData): return self._nest._broker_onCancelled(orderData)
     def _broker_onOrderDone(self, orderData): return self._nest._broker_onOrderDone(orderData)

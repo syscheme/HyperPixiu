@@ -21,7 +21,6 @@ import threading
 import threading # for locker
 import copy
 import traceback
-import jsoncfg # pip install json-cfg
 # from pymongo import ASCENDING
 
 ########################################################################
@@ -34,13 +33,8 @@ class MetaAccount(BaseApplication):
         """Constructor"""
         super(MetaAccount, self).__init__(program, **kwargs)
 
-        self._exchange = 'Unknown'
-        if self._jsettings:
-            self._id = self._jsettings.accountId(self._id)
-            self._exchange = self._jsettings.exchange(self._exchange)
-
-        self._id = kwargs.pop('accountId', self._id)
-        self._exchange = kwargs.pop('exchange', self._exchange)
+        self._id = self.getConfig('accountId', self._id, True)
+        self._exchange = self.getConfig('exchange', 'Unknown', True)
 
     @property
     def exchange(self) : return self._exchange
@@ -150,12 +144,11 @@ class Account(MetaAccount):
         """
         super(Account, self).__init__(program, **kwargs)
 
-        if self._jsettings:
-            self._slippage    = self._jsettings.slippage(0.0)
-            self._ratePer10K  = self._jsettings.ratePer10K(30)
-            self._csize       = self._jsettings.contractSize(0.0)
-            self._priceTick   = self._jsettings.priceTick(0.0)
-            self._dbName      = self._jsettings.dbName(self._id) 
+        self._slippage      = self.getConfig('slippage', 0.0)
+        self._ratePer10K    = self.getConfig('ratePer10K', 30)
+        self._contractSize  = self.getConfig('contractSize', 0.0)
+        self._priceTick     = self.getConfig('priceTick', 0.0)
+        self._dbName        = self.getConfig('dbName', self._id) 
 
         self._lock = threading.Lock()
         # the app instance Id
@@ -163,13 +156,17 @@ class Account(MetaAccount):
             Account.__lastId__ +=1
             self._id = 'ACNT%d' % Account.__lastId__
 
-        self._orderId = int(datetime2float(datetime.now())) %100000000 # start with a big number
+        self._orderId = int(datetime2float(datetime.now())) % 100000000 # start with a big number
 
         self._state        = Account.STATE_CLOSE
         self._mode         = Account.BROKER_API_ASYNC
 
         self._recorder = None
         self._marketstate = None
+
+
+        if self._contractSize <=0:
+            self._contractSize =1
 
         # trader executer
         # self._dvrBroker = dvrBrokerClass(self, self._settings)
@@ -253,12 +250,12 @@ class Account(MetaAccount):
     def cashAmount(self): # returns (avail, total)
         with self._lock :
             pos = self._dictPositions[self.cashSymbol]
-            volprice = pos.price * self._csize
+            volprice = pos.price * self._contractSize
             return (pos.posAvail * volprice), (pos.position * volprice)
 
     def cashChange(self, dAvail=0, dTotal=0):
         with self._lock :
-            return self.__cashChange(dAvail, dTotal)
+            return self._cashChange(dAvail, dTotal)
 
     def insertData(self, collectionName, data) :
         if self._recorder :
@@ -491,13 +488,13 @@ class Account(MetaAccount):
                 tradeAmount = turnover + commission + slippage
                 self.__cashChange(-tradeAmount, -tradeAmount)
                 # calclulate pos.avgPrice
-                if self._csize <=0:
-                    self._csize =1
-                cost = pos.position * pos.avgPrice *self._csize
+                if self._contractSize <=0:
+                    self._contractSize =1
+                cost = pos.position * pos.avgPrice *self._contractSize
                 cost += tradeAmount
                 pos.position += trade.volume
                 if pos.position >0:
-                    pos.avgPrice = cost / pos.position /self._csize
+                    pos.avgPrice = cost / pos.position /self._contractSize
                 else: pos.avgPrice =0
 
                 # TODO: T+0 also need to increase pos.avalPos
@@ -619,14 +616,12 @@ class Account(MetaAccount):
 
         # find the marketstate
         if not self._marketstate :
-            searchKey = '.%s' % self._exchange
             for obsId in self._program.listByType(MarketState) :
-                pos = obsId.find(searchKey)
-                if pos >0 and obsId[pos:] == searchKey:
-                    self._marketstate = self._program.getObj(obsId)
-                    if self._marketstate :
-                        self.info('taking MarketState[%s]' % self._marketstate.ident)
-                        break
+                marketstate = self._program.getObj(obsId)
+                if marketstate and marketstate.exchange == self.exchange:
+                    self._marketstate = marketstate
+                    break
+
         return True
 
     def doAppStep(self):
@@ -678,30 +673,30 @@ class Account(MetaAccount):
 
         return cStep
 
-    # end of App routine
+    # end of BaseApplication routine
     #----------------------------------------------------------------------
 
-    def __cashChange(self, dAvail=0, dTotal=0): # thread unsafe
+    def _cashChange(self, dAvail=0, dTotal=0): # thread unsafe
         pos = self._dictPositions[self.cashSymbol]
-        volprice = pos.price * self._csize
+        volprice = pos.price * self._contractSize
         if pos.price <=0 :   # if cache.price not initialized
             volprice = pos.price =1
-            if self._csize >0:
-                pos.price /=self._csize
+            if self._contractSize >0:
+                pos.price /=self._contractSize
 
         dAvail /= volprice
         dTotal /= volprice
         
-        self.debug('cashChange() avail[%s%+.3f] total[%s%+.3f]' % (pos.posAvail, dAvail, pos.position, dTotal))#, pos.desc))
+        self.debug('_cashChange() avail[%s%+.3f] total[%s%+.3f]' % (pos.posAvail, dAvail, pos.position, dTotal))#, pos.desc))
         # double check if the cash account goes to negative
         newAvail, newTotal = pos.posAvail + dAvail, pos.position + dTotal
         if newAvail<0 or newTotal <0 or newAvail >(newTotal*1.05):
-            self.error('cashChange() something wrong: newAvail[%s] newTotal[%s]' % (newAvail, newTotal)) #, pos.desc))
+            self.error('_cashChange() something wrong: newAvail[%s] newTotal[%s]' % (newAvail, newTotal)) #, pos.desc))
             exit(-1)
 
         pos.posAvail = newAvail
         pos.position = newTotal
-        pos.stampByTrader = self._marketstate.asof
+        pos.stampByTrader = self._broker_datetimeAsOf()
         return True
 
     #----------------------------------------------------------------------
@@ -719,10 +714,10 @@ class Account(MetaAccount):
         volume =0
         if price > 0 :
             cash, _  = self.cashAmount()
-            volume   = round(cash / price / self._csize -0.999,0)
+            volume   = round(cash / price / self._contractSize -0.999,0)
             turnOver, commission, slippage = self.calcAmountOfTrade(symbol, price, volume)
             if cash < (turnOver + commission + slippage) :
-                volume -= int((commission + slippage) / price / self._csize) +1
+                volume -= int((commission + slippage) / price / self._contractSize) +1
             if volume <=0:
                 volume =0
         
@@ -828,18 +823,25 @@ class Account(MetaAccount):
             since = self._datePrevClose
         pass
 
-    #----------------------------------------------------------------------
-    def debug(self, msg):
-        super(Account, self).debug('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
-        
-    def info(self, msg):
-        super(Account, self).info('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
+    # #----------------------------------------------------------------------
+    # @property
+    # def __logtag(self):
+    #     # asof = self._broker_datetimeAsOf()
+    #     # asof = asof.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] if asof else ''
+    #     # return 'ACC[%s,%s] ' % (self.ident, asof)
+    #     return 'ACC[%s] ' % self.ident
 
-    def warn(self, msg):
-        super(Account, self).warn('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
+    # def debug(self, msg):
+    #     super(Account, self).debug(self.__logtag + msg)
         
-    def error(self, msg):
-        super(Account, self).error('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))
+    # def info(self, msg):
+    #     super(Account, self).info(self.__logtag + msg)
+
+    # def warn(self, msg):
+    #     super(Account, self).warn(self.__logtag + msg)
+        
+    # def error(self, msg):
+    #     super(Account, self).error(self.__logtag + msg)
 
     #----------------------------------------------------------------------
     #  account daily statistics methods
@@ -918,7 +920,7 @@ class Account_AShare(Account):
     #----------------------------------------------------------------------
     def calcAmountOfTrade(self, symbol, price, volume):
         # 交易手续费=印花税+过户费+券商交易佣金
-        volumeX1 = abs(volume) * self._csize
+        volumeX1 = abs(volume) * self._contractSize
         turnOver = price * volumeX1
 
         # 印花税: 成交金额的1‰, 目前向卖方单边征收
@@ -1173,7 +1175,7 @@ class DailyPosition(object):
         if ohlc:
             self.execOpen, self.execHigh, self.execLow, _ = ohlc
 
-        # self.calcMValue  = round(calcPosition*currentPos.price*self._csize , 2),     # 昨日收盘
+        # self.calcMValue  = round(calcPosition*currentPos.price*self._contractSize , 2),     # 昨日收盘
     def pushTrade(self, account, trade) :
         '''
         DayX bought some:

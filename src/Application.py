@@ -92,15 +92,15 @@ class BaseApplication(MetaApp):
         self.__active = False    # 工作状态
         self._threadWished = False
         self._id =""
-        self._jsettings = None
+        self.__jsettings = None
         self.__dataDir = '.'
 
         self._kwargs = kwargs
         if 'jsettings' in self._kwargs.keys():
-            self._jsettings = self._kwargs.pop('jsettings', None)
-            self._id        = self._jsettings.id(self._id)
-            self.__dataDir  = self._jsettings.dataPath(self.__dataDir)
-            self._threadWished = self._jsettings.threaded('False') in BOOL_TRUE
+            self.__jsettings = self._kwargs.pop('jsettings', None)
+            self._id        = self.__jsettings.id(self._id)
+            self.__dataDir  = self.__jsettings.dataPath(self.__dataDir)
+            self._threadWished = self.__jsettings.threaded('False') in BOOL_TRUE
 
         self._id = self._kwargs.pop('id', self._id)
         self.__dataDir  = self._kwargs.pop('dataPath', self.__dataDir)
@@ -115,6 +115,11 @@ class BaseApplication(MetaApp):
             self._id = 'P%d' % BaseApplication.__lastId__
 
         self.__gen = self._generator()
+
+    def __deepcopy__(self, other):
+        result = object.__new__(type(self))
+        result.__dict__ = copy(self.__dict__)
+        return result
 
     #----------------------------------------------------------------------
     @property
@@ -166,6 +171,21 @@ class BaseApplication(MetaApp):
 
     def _procEvent(self, event) : # called by Program
         return self.__gen.send(event)
+
+    def getConfig(self, configName, defaultVal, pop=False) :
+        try :
+            if configName in self._kwargs.keys() :
+                return kwargs.pop(configName, defaultVal) if pop else self._kwargs[configName]
+
+            if self.__jsettings:
+                jn = self.__jsettings
+                for i in configName.split('/') :
+                    jn = jn[i]
+                return jn(defaultVal)
+        except:
+            pass
+
+        return defaultVal
 
     #---- event operations ---------------------------
     def subscribeEvent(self, event) :
@@ -459,7 +479,7 @@ class Program(object):
         self._heartbeatInterval = BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # heartbeat间隔（默认1秒）
         self.__daemonize =False
         # dirname(dirname(abspath(file)))
-        self._jsettings = None
+        self.__jsettings = None
 
         try:
             opts, args = getopt.getopt(argvs[1:], "hf:o:", ["config=","outdir="])
@@ -481,9 +501,9 @@ class Program(object):
             try :
                 config_filename = os.path.abspath(config_filename)
                 print('loading configfile: %s' % config_filename)
-                self._jsettings = jsoncfg.load_config(config_filename)
-                self.__daemonize = self._jsettings.daemonize('False') in BOOL_TRUE
-                self._heartbeatInterval = int(self._jsettings.heartbeatInterval(BaseApplication.HEARTBEAT_INTERVAL_DEFAULT))
+                self.__jsettings = jsoncfg.load_config(config_filename)
+                self.__daemonize = self.__jsettings.daemonize('False') in BOOL_TRUE
+                self._heartbeatInterval = int(self.__jsettings.heartbeatInterval(BaseApplication.HEARTBEAT_INTERVAL_DEFAULT))
             except Exception as e :
                 print('failed to load configure[%s]: %s' % (confijg_filename, e))
                 sys.exit(3)
@@ -498,7 +518,7 @@ class Program(object):
         
         # 事件队列
         self.__queue = Queue()
-        self.__dictMetaObjs ={}
+        self.__dictMetaObjs = OrderedDict()
         
         # heartbeat
         self.__stampLastHB = None
@@ -508,9 +528,9 @@ class Program(object):
         self.__subscribers = {}
     
     def jsettings(self, nodeName) : 
-        if not self._jsettings : return None
-        if not nodeName or len(nodeName) <=0: return self._jsettings
-        n = self._jsettings
+        if not self.__jsettings : return None
+        if not nodeName or len(nodeName) <=0: return self.__jsettings
+        n = self.__jsettings
         try :
             for i in nodeName.split('/') :
                 n = n[i]
@@ -528,7 +548,7 @@ class Program(object):
 
     @property
     def settings(self) :
-        return self._jsettings
+        return self.__jsettings
 
     #----------------------------------------------------------------------
     def __addMetaObj(self, id, obj):
@@ -600,8 +620,8 @@ class Program(object):
 #            return None
 
         jsettings = None
-        if self._jsettings and 'configNode' in kwargs.keys():
-            jsettings = self._jsettings
+        if self.__jsettings and 'configNode' in kwargs.keys():
+            jsettings = self.__jsettings
             configNode = kwargs.pop('configNode', None)
             try :
                 for i in configNode.split('/') :
@@ -623,7 +643,7 @@ class Program(object):
         if not app or not isinstance(app, MetaApp):
             return
 
-        for et in self.__subscribers.keys() :
+        for et in self.eventTypes :
             self.unsubscribe(et, app)
 
         appId = app.theApp().ident
@@ -862,6 +882,13 @@ class Program(object):
 
     # methods about event subscription
     #----------------------------------------------------------------------
+    @property
+    def eventTypes(self):
+        ret = []
+        for t in self.__subscribers.keys() :
+            ret.append(t)
+        return ret
+
     def subscribe(self, type_, app):
         """注册事件处理函数监听"""
         if not isinstance(app, BaseApplication):
@@ -878,7 +905,7 @@ class Program(object):
         if not isinstance(app, MetaApp) or not type_ in self.__subscribers.keys():
             return
 
-        appId = app.theApp.ident
+        appId = app.theApp().ident
 
         # 如果该函数存在于列表中，则移除
         if appId in self.__subscribers[type_]:
@@ -900,7 +927,7 @@ class Program(object):
     # ----------------------------------------------------------------------
     def initLogger(self):
         """初始化日志引擎"""
-        if not self._jsettings or not jsoncfg.node_exists(self._jsettings.logger):
+        if not self.__jsettings or not jsoncfg.node_exists(self.__jsettings.logger):
             return
         
         # abbout the logger
@@ -922,10 +949,10 @@ class Program(object):
         }
 
         # 设置日志级别
-        self.setLogLevel(self._jsettings.logger.level(LOGLEVEL_DEBUG)) # LOGLEVEL_INFO))
+        self.setLogLevel(self.__jsettings.logger.level(LOGLEVEL_DEBUG)) # LOGLEVEL_INFO))
         
         # 设置输出
-        tmpval = self._jsettings.logger.console('True').lower()
+        tmpval = self.__jsettings.logger.console('True').lower()
         if tmpval in BOOL_TRUE and not self._hdlrConsole:
             """添加终端输出"""
             self._hdlrConsole = logging.StreamHandler()
@@ -937,7 +964,7 @@ class Program(object):
             nullHandler = logging.NullHandler()
             self._logger.addHandler(nullHandler)    
 
-        tmpval = self._jsettings.logger.file('True').lower()
+        tmpval = self.__jsettings.logger.file('True').lower()
         if tmpval in BOOL_TRUE and not self._hdlrFile:
             # filepath = getTempPath('vnApp' + datetime.now().strftime('%Y%m%d') + '.log')
             filepath = '/tmp/%s%s.log' % (self._progName, datetime.now().strftime('%Y%m%d'))
@@ -948,7 +975,7 @@ class Program(object):
             self._logger.addHandler(self._hdlrFile)
             
         # 注册事件监听
-        tmpval = self._jsettings.logger.loggingEvent('True').lower()
+        tmpval = self.__jsettings.logger.loggingEvent('True').lower()
         if tmpval in BOOL_TRUE :
             self._loggingEvent = True
 
@@ -1105,8 +1132,8 @@ class Program(object):
         """连接MongoDB数据库"""
         if not self._dbConn:
             # 读取MongoDB的设置
-            dbhost = self._jsettings.database.host('localhost')
-            dbport = self._jsettings.database.port(27017)
+            dbhost = self.__jsettings.database.host('localhost')
+            dbport = self.__jsettings.database.port(27017)
             if len(dbhost) <=0:
                 return
 
@@ -1120,7 +1147,7 @@ class Program(object):
                 self._dbConn.server_info()
 
                 # 如果启动日志记录，则注册日志事件监听函数
-                if self._jsettings.database.logging("") in ['True']:
+                if self.__jsettings.database.logging("") in ['True']:
                     self._eventLoop.register(LogData.EVENT_TAG, self.dbLogging)
                     
                 self.info('connected DB[%s :%s] %s'%(dbhost, dbport))

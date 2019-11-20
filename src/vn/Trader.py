@@ -102,7 +102,7 @@ class VnTrader(BaseTrader):
             # 保存策略持仓到数据库
             # goes to Account now : self._stg_flushPos(strategy)
 
-    def proc_MarketEvent(self, evtype, symbol, data):
+    def proc_MarketEvent(self, ev):
         '''processing an incoming MarketEvent'''
 
         # step 2. 收到行情后，在启动策略前的处理
@@ -129,7 +129,7 @@ class VnTrader(BaseTrader):
         # step 4. 执行完策略后的的处理，通常为综合决策
         self.OnMarketEventProcessed(evtype, symbol, data)
 
-        self.debug('proc_MarketEvent(%s) processed: %s' % (d.desc, execStgList))
+        self.debug('proc_MarketEvent(%s) processed: %s' % (ev.desc, execStgList))
 
     # end of event handling
     #----------------------------------------------------------------------

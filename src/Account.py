@@ -771,7 +771,7 @@ class Account(MetaAccount):
                     
                 self._todayResult.txnHist += "%+dx%s" % (posChange, trade.price)
 
-                self._todayResult.tradingPnl += round(posChange * (self.closePrice - trade.price) * account.size, 2)
+                self._todayResult.tradingPnl += round(posChange * (self.closePrice - trade.price) * account._contractSize, 2)
                 self._todayResult.closePosition += posChange
                 turnover, commission, slippagefee = self.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
                 self._todayResult.turnover += turnover
@@ -1173,10 +1173,10 @@ class DailyPosition(object):
         self.prevPos     = round(prevPos.position, 3)     # 昨日收盘
         self.asof        =[ currentPos.stampByTrader, currentPos.stampByBroker ]
         # 持仓部分
-        self.positionPnl = round(prevPos.position * (currentPos.price - currentPos.avgPrice) * account.size, 3)
+        self.positionPnl = round(prevPos.position * (currentPos.price - currentPos.avgPrice) * account._contractSize, 3)
 
         if ohlc:
-            self.execOpen, self.execHigh, self.execLow, _ = ohlc
+            _, self.execOpen, self.execHigh, self.execLow, _ = ohlc
 
         # self.calcMValue  = round(calcPosition*currentPos.price*self._contractSize , 2),     # 昨日收盘
     def pushTrade(self, account, trade) :
@@ -1210,7 +1210,7 @@ class DailyPosition(object):
 
         self.txns += "%+dx%s" % (posChange, trade.price)
 
-        self.tradingPnl += posChange * (self.recentPrice - trade.price) * account.size
+        self.tradingPnl += posChange * (self.recentPrice - trade.price) * account._contractSize
         self.calcPos += posChange
 
         tover, comis, slpfee = account.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
@@ -1275,7 +1275,7 @@ class DailyResult(object):
         """
         # 持仓部分
         self.openPosition = openPosition
-        self.positionPnl = round(self.openPosition * (self.closePrice - self.previousClose) * account.size, 3)
+        self.positionPnl = round(self.openPosition * (self.closePrice - self.previousClose) * account._contractSize, 3)
         self.closePosition = self.openPosition
         
         # 交易部分
@@ -1292,7 +1292,7 @@ class DailyResult(object):
                 
             self.txnHist += "%+dx%s" % (posChange, trade.price)
 
-            self.tradingPnl += round(posChange * (self.closePrice - trade.price) * account.size, 2)
+            self.tradingPnl += round(posChange * (self.closePrice - trade.price) * account._contractSize, 2)
             self.closePosition += posChange
             turnover, commission, slippagefee = account.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
             self.turnover += turnover

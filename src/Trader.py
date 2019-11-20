@@ -48,7 +48,15 @@ class MetaTrader(BaseApplication):
     @abstractmethod
     def onDayOpen(self, symbol, date): raise NotImplementedError
     @abstractmethod
-    def proc_MarketEvent(self, evtype, data): raise NotImplementedError
+    def proc_MarketEvent(self, ev): raise NotImplementedError
+
+    def openObjective(self, symbol):
+        if not symbol in self._dictObjectives.keys() :
+            self._dictObjectives[symbol] = {
+                'date' : None
+            }
+
+        return self._dictObjectives[symbol]
 
 ########################################################################
 class BaseTrader(MetaTrader):
@@ -64,7 +72,6 @@ class BaseTrader(MetaTrader):
         # self._tradeType = TRADER_TYPE_TRADING
 
         self._marketstate = None
-
         self._accountId      = self.getConfig('accountId', self._accountId)
 
         #--------------------
@@ -187,6 +194,11 @@ class BaseTrader(MetaTrader):
         '''
         dispatch the event
         '''
+        if Account.EVENT_ORDER == ev.type:
+            return self.eventHdl_Order(ev)
+        if Account.EVENT_TRADE == ev.type:
+            return self.eventHdl_Trade(ev)
+
         if MARKETDATE_EVENT_PREFIX == ev.type[:len(MARKETDATE_EVENT_PREFIX)] :
             if self._marketstate:
                 self._marketstate.updateByEvent(ev)
@@ -195,7 +207,7 @@ class BaseTrader(MetaTrader):
             tokens = (d.vtSymbol.split('.'))
             symbol = tokens[0]
             ds = tokens[1] if len(tokens) >1 else d.exchange
-            if not symbol in self._dictObjectives or ds != self._dictObjectives[symbol]['ds1min']:
+            if not symbol in self._dictObjectives.keys() : # or ds != self._dictObjectives[symbol]['ds1min']:
                 return # ignore those not interested
 
             if d.asof > (datetime.now() + timedelta(days=7)):
@@ -204,28 +216,24 @@ class BaseTrader(MetaTrader):
                 return
 
             objective = self._dictObjectives[symbol]
-            objective['ohlc'] = self.updateOHLC(objective['ohlc'] if 'ohlc' in objective.keys() else None, kline.open, kline.high, kline.low, kline.close)
+            #  objective['ohlc'] = self.updateOHLC(objective['ohlc'] if 'ohlc' in objective.keys() else None, kline.open, kline.high, kline.low, kline.close)
 
-            if objective[MetaTrader.RUNTIME_TAG_TODAY] != d.date:
+            if objective['date'] != d.date:
                 self.onDayOpen(symbol, d.date)
-                objective[MetaTrader.RUNTIME_TAG_TODAY] = d.date
-                objective['ohlc'] = self.updateOHLC(None, d.open, d.high, d.low, d.close)
+                objective['date'] = d.date
+                # objective['ohlc'] = self.updateOHLC(None, d.open, d.high, d.low, d.close)
 
             # step 1. cache into the latest, lnf DataEngine
-            self._dtData = d.asof # datetime of data
+            if not self._dtData or d.asof > self._dtData:
+                self._dtData = d.asof # datetime of data
 
             # step 2. 收到行情后，在启动策略前的处理
             # 先处理本地停止单（检查是否要立即发出） lnf ctaEngine
             try:
-                self.proc_MarketEvent(ev.type, symbol, d)
+                self.proc_MarketEvent(ev)
             except Exception as ex:
-                self.error('proc_MarketEvent(%s) caught %s: %s' % (d.desc, ex, traceback.format_exc()))
+                self.error('proc_MarketEvent %s caught %s: %s' % (ev.desc, ex, traceback.format_exc()))
             return
-
-        if Account.EVENT_ORDER == ev.type:
-            return self.eventHdl_Order(ev)
-        if Account.EVENT_TRADE == ev.type:
-            return self.eventHdl_Trade(ev)
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
@@ -262,7 +270,7 @@ class BaseTrader(MetaTrader):
             except Exception as ex:
                 self.logexception(ex)
 
-    def proc_MarketEvent(self, evtype, data):
+    def proc_MarketEvent(self, ev):
         '''processing an incoming MarketEvent'''
         pass
 

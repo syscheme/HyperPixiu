@@ -698,6 +698,9 @@ class PlaybackDay(MarketState):
 
         evdTarget.openInterest = evd.openInterest
         evdTarget.datetime = evd.asof
+        evdTarget.date = evd.date
+        evdTarget.time = evd.time
+        self.__dictPlayback[evd.symbol] = evdTarget
 
     # -- impl of MarketState --------------------------------------------------------------
     def listOberserves(self) :
@@ -735,7 +738,7 @@ class PlaybackDay(MarketState):
         @return (date, open, high, low, close) as of today  
         '''
         if not symbol in self.__dictPlayback.keys():
-            return '', 0.0, 0.0, 0.0, 0.0, 0
+            return '', 0.0, 0.0, 0.0, 0.0
 
         kl = self.__dictPlayback[symbol]
         return kl.date, kl.open, kl.high, kl.low, kl.close

@@ -183,28 +183,28 @@ class BaseApplication(MetaApp):
         return defaultVal
 
     #---- event operations ---------------------------
-    def subscribeEvent(self, event) :
+    def subscribeEvent(self, ev) :
         if not self._program:
             pass
         
-        self._program.subscribe(event, self)
+        self._program.subscribe(EnvironmentError, self)
 
     def postEventData(self, eventType, edata):
         """发出事件"""
         if not self._program:
             return
 
-        event = Event(type_= eventType)
-        event.setData(edata)
-        self.postEvent(event)
+        ev = Event(type_= eventType)
+        ev.setData(edata)
+        self.postEvent(ev)
 
-    def postEvent(self, event):
+    def postEvent(self, ev):
         """发出事件"""
-        if not event or not self._program:
+        if not ev or not self._program:
             return
 
-        self._program.publish(event)
-        self.debug('posted event[%s]' % event.dict_['type_'])
+        self._program.publish(ev)
+        self.debug('posted event[%s]' % ev.type)
 
     #---logging -----------------------
     def log(self, level, msg):

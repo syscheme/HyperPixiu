@@ -177,7 +177,7 @@ class BackTestApp(MetaTrader):
     def onDayOpen(self, symbol, date):
         return self._wkTrader.onDayOpen(symbol, date)
 
-    def proc_MarketEvent(self, evtype, symbol, data):
+    def proc_MarketEvent(self, ev):
         self.error('proc_MarketEvent() should not be here')
 
     #------------------------------------------------
@@ -234,14 +234,10 @@ class BackTestApp(MetaTrader):
                 if not ev : continue
                 self._workMarketState.updateByEvent(ev)
 
-            if len(self._dictObjectives) <=0:
+            if len(self._wkTrader._dictObjectives) <=0:
                 sl = self._workMarketState.listOberserves()
                 for symbol in sl:
-                    d = {
-                        "dsTick"  : None,
-                        "ds1min"  : None,
-                    }
-                    self._dictObjectives[symbol] = d
+                    self._wkTrader.openObjective(symbol)
 
         # step 4. subscribe account events
         self.subscribeEvent(Account.EVENT_ORDER)
@@ -953,7 +949,8 @@ class AccountWrapper(MetaAccount):
 
         return cStep
 
-    def OnEvent(self, ev): return self._nest.OnEvent(ev)
+    def OnEvent(self, ev):
+        return self._nest.OnEvent(ev)
 
     #----------------------------------------------------------------------
     # most of the methods are just forward to the self._nest

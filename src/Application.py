@@ -176,6 +176,13 @@ class BaseApplication(MetaApp):
                 jn = self.__jsettings
                 for i in configName.split('/') :
                     jn = jn[i]
+
+                if defaultVal :
+                    if isinstance(defaultVal, list):
+                        return jsoncfg.expect_array(jn(defaultVal))
+                    if dict(defaultVal, dict):
+                        return jsoncfg.expect_object(jn(defaultVal))
+
                 return jn(defaultVal)
         except:
             pass

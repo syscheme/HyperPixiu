@@ -10,6 +10,7 @@ from Account import *
 from Trader import *
 import HistoryData as hist
 from Perspective import *
+import vn.Trader as vn
 
 from datetime import datetime, timedelta
 from collections import OrderedDict
@@ -77,15 +78,23 @@ class BackTestApp(MetaTrader):
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
+    @property
+    def ident(self) :
+        str = self.__class__.__name__
+        if self._wkTrader :
+            str += '/' + self._wkTrader.ident
+        else : str += '.' +self._id
+        return str
+
     def debug(self, message):
         """输出内容"""
         if self.__dtData:
-            message = 'AsOf[%s] ' % str(self.__dtData)  + message
+            message = '@%s ' % self.__dtData.strftime('%Y%m%dT%H%M%S') + message
         super(BackTestApp, self).debug(message)
     
     def log(self, level, message):
         if self.__dtData:
-            message = 'AsOf[%s] ' % str(self.__dtData)  + message
+            message = '@%s ' % self.__dtData.strftime('%Y%m%dT%H%M%S') + message
         super(BackTestApp, self).log(level, message)
 
     def doAppInit(self): # return True if succ
@@ -96,9 +105,11 @@ class BackTestApp(MetaTrader):
         if not self._initTrader :
             return False
         
+        self.info('doAppInit() taking trader-template[%s]' % (self._initTrader.ident))
         self._program.removeApp(self._initTrader.ident)
         self._program.addApp(self)
         if not self._initTrader.doAppInit() :
+            self.info('doAppInit() failed to initialize trader-template[%s]' % (self._initTrader.ident))
             return False
 
         self._initMarketState = self._initTrader._marketstate
@@ -109,17 +120,18 @@ class BackTestApp(MetaTrader):
             self._program.removeApp(originAcc.ident)
             self._initAcc = AccountWrapper(self, account=copy.copy(originAcc)) # duplicate the original account for test espoches
             self._initAcc.setCapital(self._startBalance, True)
+            self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d] as template' % (originAcc.ident, self._initAcc.ident, self._startBalance))
             # the following steps have been MOVED into resetTest():
             # self._account = wrapper
             # self._program.addApp(self._account)
         else : self._initAcc = originAcc
 
-        # ADJ_1. adjust the Trader._dictObjectives to append suffix MarketData.TAG_BACKTEST
-        for obj in self._dictObjectives.values() :
-            if len(obj["dsTick"]) >0 :
-                obj["dsTick"] += MarketData.TAG_BACKTEST
-            if len(obj["ds1min"]) >0 :
-                obj["ds1min"] += MarketData.TAG_BACKTEST
+        # # ADJ_1. adjust the Trader._dictObjectives to append suffix MarketData.TAG_BACKTEST
+        # for obj in self._dictObjectives.values() :
+        #     if len(obj["dsTick"]) >0 :
+        #         obj["dsTick"] += MarketData.TAG_BACKTEST
+        #     if len(obj["ds1min"]) >0 :
+        #         obj["ds1min"] += MarketData.TAG_BACKTEST
 
         self.resetTest()
         return True
@@ -133,7 +145,7 @@ class BackTestApp(MetaTrader):
                 if not ev : return
                 self._workMarketState.updateByEvent(ev)
                 s = ev.data.symbol
-                self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type, self._workMarketState.getAsOf(s).strftime('%Y%m%dT%H:%M:%S'), self._workMarketState.latestPrice(s), self._workMarketState.dailyOHLC_sofar(s)))
+                self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type[len(MARKETDATE_EVENT_PREFIX):], self._workMarketState.getAsOf(s).strftime('%Y%m%dT%H%M'), self._workMarketState.latestPrice(s), self._workMarketState.dailyOHLC_sofar(s)))
                 self.OnEvent(ev) # call Trader
                 return # successfully pushed an Event
             except StopIteration:
@@ -1266,7 +1278,7 @@ if __name__ == '__main__':
     SYMBOL = '000001' # '000540' '000001'
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-    csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
+    csvdir = '/mnt/m/AShareSample' # '/mnt/m/AShareSample'
     ps = Perspective('AShare', SYMBOL)
     csvreader = hist.CsvPlayback(symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
     histdata = PerspectiveGenerator(ps)
@@ -1275,11 +1287,12 @@ if __name__ == '__main__':
     marketstate = hist.PlaybackDay('AShare') # = PerspectiveDict('AShare')
     p.addObj(marketstate)
 
-    tdr = p.createApp(BaseTrader, configNode ='backtest', account=acc)
+    btdr = p.createApp(BaseTrader, configNode ='backtest', account=acc)
+    vntdr = p.createApp(vn.VnTrader, configNode ='backtest', account=acc)
     
-    p.info('All objects registered piror to BackTestApp: %s' % p.listByType(MetaObj))
+    p.info('all objects registered piror to BackTestApp: %s' % p.listByType(MetaObj))
     
-    p.createApp(BackTestApp, configNode ='backtest', trader= tdr, histdata=csvreader) #histdata = histdata)
+    p.createApp(BackTestApp, configNode ='backtest', trader=vntdr, histdata=csvreader) #histdata = histdata)
 
     # # cta.loadSetting()
     # # logger.info(u'CTA策略载入成功')

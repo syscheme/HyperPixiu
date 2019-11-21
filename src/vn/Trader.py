@@ -1,22 +1,23 @@
 # encoding: UTF-8
 '''
-Trader maps to the agent in OpenAI/Gym
 '''
 
-from ../Trader import BaseTrader
+from Trader import BaseTrader
+from MarketData import *
 
 ########################################################################
 class VnTrader(BaseTrader):
     '''vnpy-like trader driven by strategies'''
 
-    def __init__(self, program, settings):
+    def __init__(self, program, **kwargs):
         """Constructor"""
 
-        super(VnTrader, self).__init__(program, settings)
+        super(VnTrader, self).__init__(program, **kwargs)
 
         # 保存策略实例的字典
         # key为策略名称，value为策略实例，注意策略名称不允许重复
-        self._dictStrategies = {}
+        self.__dictStrategies = {}
+        self.__strategieCfgs = self.getConfig('strategies', [])
 
         # 保存数据的字典和列表
         self._settingfilePath = self.dataRoot + 'stgdata.dat'
@@ -24,12 +25,12 @@ class VnTrader(BaseTrader):
         # 保存vtSymbol和策略实例映射的字典（用于推送tick数据）
         # 由于可能多个strategy交易同一个vtSymbol，因此key为vtSymbol
         # value为包含所有相关strategy对象的list
-        self._idxSymbolToStrategy = {}
+        self.__idxSymbolToStrategy = {}
         
         # 保存vtOrderID和strategy对象映射的字典（用于推送order和trade数据）
         # key为vtOrderID，value为strategy对象
-        self._idxOrderToStategy = {}
-        self._idxStrategyToOrder = {}
+        self.__idxOrderToStategy = {}
+        self.__idxStrategyToOrder = {}
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -38,14 +39,14 @@ class VnTrader(BaseTrader):
             return False
 
         self.debug('collected %s interested symbols, adopting strategies' % len(self._dictObjectives))
-        self.strategies_LoadAll(self._settings.strategies)
+        self.strategies_LoadAll()
 
         # step 1. subscribe all interested market data
-
-        self._account.onStart()
+        # self._account.onStart()
 
         # step 2. call allstrategy.onInit()
         self.strategies_Start()
+        return True
 
     def stop(self):
         """退出程序前调用，保证正常退出"""        
@@ -59,45 +60,43 @@ class VnTrader(BaseTrader):
 
    #----------------------------------------------------------------------
     # about the event handling
-    #----------------------------------------------------------------------
-    @abstractmethod    # usually back test will overwrite this
     def onDayOpen(self, symbol, date):
 
         super(VnTrader, self).onDayOpen(symbol, date)
 
         # step1. notify stategies
-        if symbol in self._idxSymbolToStrategy:
+        if symbol in self.__idxSymbolToStrategy:
             # 逐个推送到策略实例中
-            l = self._idxSymbolToStrategy[symbol]
+            l = self.__idxSymbolToStrategy[symbol]
             self.debug('onDayOpen(%s) dispatching to %d strategies' % (symbol, len(l)))
             for strategy in l:
                 self._stg_call(strategy, strategy.onDayOpen, date)
 
-    def eventHdl_Order(self, event):
+    def eventHdl_Order(self, ev):
         """处理委托事件"""
-        order = event.data        
+        order = ev.data        
 
         # step 3. 逐个推送到策略实例中 lnf DataEngine
-        if not order.brokerOrderId in self._idxOrderToStategy:
+        if not order.brokerOrderId in self.__idxOrderToStategy:
             return
 
-        strategy = self._idxOrderToStategy[order.brokerOrderId]            
+        strategy = self.__idxOrderToStategy[order.brokerOrderId]            
             
         # 如果委托已经完成（拒单、撤销、全成），则从活动委托集合中移除
         if order.status == MetaTrader.FINISHED_STATUS:
-            s = self._idxStrategyToOrder[strategy.id]
+            s = self.__idxStrategyToOrder[strategy.id]
             if order.brokerOrderId in s:
                 s.remove(order.brokerOrderId)
             
         self._stg_call(strategy, strategy.onOrder, order)
 
-    def eventHdl_Trade(self, event):
+    def eventHdl_Trade(self, ev):
         """处理成交事件"""
-        trade = event.data
+        trade = ev.data
         
         # step 3. 将成交推送到策略对象中 lnf ctaEngine
-        if trade.orderID in self._idxOrderToStategy:
-            strategy = self._idxOrderToStategy[trade.orderID]
+        if trade.orderID in self.__idxOrderToStategy:
+            strategy = self.__idxOrderToStategy[trade.orderID]
             self._stg_call(strategy, strategy.onTrade, trade)
             # 保存策略持仓到数据库
             # goes to Account now : self._stg_flushPos(strategy)
@@ -107,27 +106,27 @@ class VnTrader(BaseTrader):
 
         # step 2. 收到行情后，在启动策略前的处理
         # 先处理本地停止单（检查是否要立即发出） lnf ctaEngine
-        if md.EVENT_TICK == evtype:
-            self.processStopOrdersByTick(d)
-        elif EVENT_KLINE_PREFIX == evtype[:len(EVENT_KLINE_PREFIX)] :
-            self.processStopOrdersByKLine(d)
+        if EVENT_TICK == ev.type:
+            self.processStopOrdersByTick(ev.data)
+        elif EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
+            self.processStopOrdersByKLine(ev.data)
         else: return
 
         # step 3. 推送tick到对应的策略实例进行处理 lnf ctaEngine
         execStgList = []
-        if symbol in self._idxSymbolToStrategy:
+        if ev.data.symbol in self.__idxSymbolToStrategy:
             # 逐个推送到策略实例中
-            l = self._idxSymbolToStrategy[symbol]
+            l = self.__idxSymbolToStrategy[ev.data.symbol]
             for strategy in l:
                 try:
-                    f = strategy.onTick if md.EVENT_TICK == evtype else strategy.onBar
-                    self._stg_call(strategy, f, d)
+                    f = strategy.onTick if md.EVENT_TICK == ev.type else strategy.onBar
+                    self._stg_call(strategy, f, ev.data)
                     execStgList.append(strategy.id)
                 except Exception as ex:
                     self.error('proc_MarketData(%s) [%s] caught %s: %s' % (d.desc, strategy.id, ex, traceback.format_exc()))
 
         # step 4. 执行完策略后的的处理，通常为综合决策
-        self.OnMarketEventProcessed(evtype, symbol, data)
+        self.OnMarketEventProcessed(ev)
 
         self.debug('proc_MarketEvent(%s) processed: %s' % (ev.desc, execStgList))
 
@@ -136,27 +135,26 @@ class VnTrader(BaseTrader):
 
     #----------------------------------------------------------------------
     #  Strategy methods
-    #----------------------------------------------------------------------
-    def strategies_LoadAll(self, settingList):
+    def strategies_LoadAll(self):
         """读取策略配置"""
-        self.debug('loading all strategies')
-        for s in jsoncfg.expect_array(settingList):
+        self.debug('loading all strategies: %s' % self.__strategieCfgs)
+        for s in self.__strategieCfgs :
             self._stg_load(s)
             
-        self.debug('loaded strategies: %s' % self._dictStrategies.keys())
+        self.info('loaded strategies: %s' % self.__dictStrategies.keys())
 
     def strategies_List(self):
         """查询所有策略名称"""
-        return self._dictStrategies.keys()        
+        return self.__dictStrategies.keys()        
 
     def strategies_Start(self):
         """全部初始化"""
-        for n in self._dictStrategies.values():
+        for n in self.__dictStrategies.values():
             self._stg_start(n['strategy'])    
 
     def strategies_Stop(self):
         """全部停止"""
-        for n in self._dictStrategies.values():
+        for n in self.__dictStrategies.values():
             self._stg_stop(n['strategy'])
 
     def strategies_Save(self):
@@ -164,7 +162,7 @@ class VnTrader(BaseTrader):
         with open(self._settingfilePath, 'w') as f:
             l = []
             
-            for strategy in self._dictStrategies.values():
+            for strategy in self.__dictStrategies.values():
                 setting = {}
                 for param in strategy.paramList:
                     setting[param] = strategy.__getattribute__(param)
@@ -173,6 +171,8 @@ class VnTrader(BaseTrader):
             jsonL = json.dumps(l, indent=4)
             f.write(jsonL)
 
+    #----------------------------------------------------------------------
+    # private methods
     def _stg_start(self, strategy):
         """启动策略"""
         if strategy.inited and not strategy.trading:
@@ -190,7 +190,6 @@ class VnTrader(BaseTrader):
         """载入策略, setting schema:
             {
                 "name" : "BBand", // strategy name equals to class name
-                "symbols": ["ethusdt"],
                 "weights": { // weights to affect decisions, in range of [0-100] each
                     "long" : 100, // optimisti
                     "short": 100, // pessimistic
@@ -199,56 +198,60 @@ class VnTrader(BaseTrader):
                 // the following is up to the stategy class
             },
         """
-        className = setting.name()
 
         # 获取策略类
-        strategyClass = STRATEGY_CLASS.get(className, None)
+        strategyClass =None
+        className = setting['name']
+        try :
+            strategyClass = STRATEGY_CLASS.get(className, None)
+        except:
+            self.error('failed to find strategy-class：%s' %className)
+            return
+
         if not strategyClass:
-            self.error(u'找不到策略类：%s' %className)
+            self.error('failed to find strategy-class：%s' %className)
             return
         
         # 创建策略实例
-        symbols = []
-        for s in jsoncfg.expect_array(setting.symbols):
-            symbol = s('')
-            if len(symbol) <=0:
+        for s in self._dictObjectives.keys():
+            strategy = None
+            try :
+                strategy = strategyClass(self, s, self._account, setting)
+                sid = strategy.id
+                if strategy.id in self.__dictStrategies:  # 防止策略重名
+                    self.error('strategy-instance[%s] exists' % strategy.id)
+                    continue
+
+                self.__dictStrategies[strategy.id] = {
+                    'weights' : setting['weights'],
+                    'strategy' : strategy
+                }
+
+                # 创建委托号列表
+                self.__idxStrategyToOrder[strategy.id] = set()
+
+                # 保存Tick映射关系
+                if s in self.__idxSymbolToStrategy:
+                    l = self.__idxSymbolToStrategy[s]
+                else:
+                    l = []
+                    self.__idxSymbolToStrategy[s] = l
+                l.append(strategy)
+            except:
                 continue
-            if '*' == symbol:
-                symbols = []
-            symbols.append(symbol)
-        if len(symbols) <=0:
-            symbols = self._dictObjectives.keys()
-        
-        for s in symbols:
-            strategy = strategyClass(self, s, self._account, setting)
-            if strategy.id in self._dictStrategies:  # 防止策略重名
-                self.error(u'策略实例重名：%s' %id)
-                continue
 
-            self._dictStrategies[strategy.id] = {
-                'weights' : setting.weights({}),
-                'strategy' : strategy
-            }
-
-            # 创建委托号列表
-            self._idxStrategyToOrder[strategy.id] = set()
-
-            # 保存Tick映射关系
-            if s in self._idxSymbolToStrategy:
-                l = self._idxSymbolToStrategy[s]
-            else:
-                l = []
-                self._idxSymbolToStrategy[s] = l
-            l.append(strategy)
-
-            self._stg_call(strategy, strategy.onInit)
-            strategy.inited = True
-            self.info('initialized strategy[%s]' %strategy.id)
+            try :
+                self._stg_call(strategy, strategy.onInit)
+                strategy.inited = True
+                self.info('initialized strategy[%s]' % strategy.id)
+            except:
+                del(self.__dictStrategies[strategy.id])
+                del(self.__idxStrategyToOrder[strategy.id])
 
     def _stg_allVars(self, name):
         """获取策略当前的变量字典"""
-        if name in self._dictStrategies:
-            strategy = self._dictStrategies[name]
+        if name in self.__dictStrategies:
+            strategy = self.__dictStrategies[name]
             varDict = OrderedDict()
             
             for key in strategy.varList:
@@ -261,8 +264,8 @@ class VnTrader(BaseTrader):
     
     def _stg_allParams(self, name):
         """获取策略的参数字典"""
-        if name in self._dictStrategies:
-            strategy = self._dictStrategies[name]
+        if name in self.__dictStrategies:
+            strategy = self.__dictStrategies[name]
             paramDict = OrderedDict()
             
             for key in strategy.paramList:  
@@ -291,9 +294,9 @@ class VnTrader(BaseTrader):
             self.error(content)
     #----------------------------------------------------------------------
     def ordersOfStrategy(self, strategyId, symbol=None):
-        if not strategyId in self._idxStrategyToOrder :
+        if not strategyId in self.__idxStrategyToOrder :
             return []
-        l = self._idxStrategyToOrder[strategyId]
+        l = self.__idxStrategyToOrder[strategyId]
         if not symbol:
             return l
         
@@ -306,19 +309,16 @@ class VnTrader(BaseTrader):
     def postStrategyEvent(self, strategyId) :
         pass
 
-    @abstractmethod    # usually back test will overwrite this
-    def OnMarketEventProcessed(self, evtype, symbol, data) :
+    def OnMarketEventProcessed(self, ev) :
         """执行完策略后的的处理，通常为综合决策"""
         pass
 
     # normal Trader cares StopOrders
-    @abstractmethod
     def processStopOrdersByTick(self, tick):
         """收到行情后处理本地停止单（检查是否要立即发出）"""
         pass
 
     # normal Trader cares StopOrders
-    @abstractmethod
     def processStopOrdersByKLine(self, kline):
         """收到行情后处理本地停止单（检查是否要立即发出）"""
         pass

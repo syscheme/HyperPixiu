@@ -164,7 +164,6 @@ class Account(MetaAccount):
         self._recorder = None
         self._marketstate = None
 
-
         if self._contractSize <=0:
             self._contractSize =1
 
@@ -174,7 +173,7 @@ class Account(MetaAccount):
         self._dateToday      = None # date of previous close
         self._datePrevClose  = None # date of previous close
         self._prevPositions = {} # dict from symbol to previous PositionData
-        #TODO self._todayResult = DailyResult(self._dateToday, )
+        self._todayResult = None
 
         self._dictOutgoingOrders = {} # the outgoing orders dict from reqId to OrderData that has not been confirmed with broker's orderId
         self._lstOrdersToCancel = []
@@ -781,7 +780,7 @@ class Account(MetaAccount):
             # 汇总
             self._todayResult.totalPnl = round(self._todayResult.tradingPnl + self._todayResult.positionPnl, 2)
             self._todayResult.netPnl = round(self._todayResult.totalPnl - self._todayResult.commission - self._todayResult.slippage, 2)
-            self.info('onDayClose() summed %s trades: %s' % (len(tl), self._todayResult.txnHist))
+            self.info('onDayClose() summed %s trades: %s' % (len(self._dictTrades), self._todayResult.txnHist))
 
             # part 2. record the daily result and positions
             if self._recorder:
@@ -806,7 +805,7 @@ class Account(MetaAccount):
             self.onDayClose()
 
         self._dateToday = newDate
-        #TODO self._todayResult = DailyResult(self._dateToday, )
+        self._todayResult = DailyResult(self._dateToday, closePrice=0)
 
         self._dictTrades.clear() # clean the trade list
         # shift the positions, must do copy each PositionData

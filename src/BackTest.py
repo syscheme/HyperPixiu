@@ -189,9 +189,30 @@ class BackTestApp(MetaTrader):
     def OnEvent(self, ev): 
         # step 2. 收到行情后，在启动策略前的处理
         if EVENT_TICK == ev.type:
-            self.__tradeMatchingByTick(ev.data)
+            tkdata = ev.data
+            if not self._dataBegin_date:
+                self._dataBegin_date = tkdata.date
+                self._dataBegin_closeprice = tkdata.priceTick
+
+            self.__dtData = tkdata.datetime
+            if not self._dataEnd_date or self._dataEnd_date <= tkdata.date :
+                self._dataEnd_date = tkdata.date
+                self._dataEnd_closeprice = tkdata.close
+
+            self._account.tradeMatchingByTick(tkdata)
+
         elif EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
-            self.__tradeMatchingByKLine(ev.data)
+            kldata = ev.data
+            if self._dataBegin_date ==None:
+                self._dataBegin_closeprice = kldata.close
+                self._dataBegin_date = kldata.date
+
+            self.__dtData = kldata.datetime
+            if not self._dataEnd_date or self._dataEnd_date <= kldata.date :
+                self._dataEnd_date = kldata.date
+                self._dataEnd_closeprice = kldata.close
+
+            self._account.tradeMatchingByKLine(kldata)
 
         return self.__wkTrader.OnEvent(ev)
 
@@ -276,61 +297,6 @@ class BackTestApp(MetaTrader):
         self.subscribeEvent(Account.EVENT_TRADE)
 
         return True
-
-    def __tradeMatchingByKLine(self, kldata):
-        """收到行情后处理本地停止单（检查是否要立即发出）"""
-
-        # TODO check if received the END signal of backtest data
-
-        # if self.mode != self.BAR_MODE:
-        #     return
-
-        if self._dataBegin_date ==None:
-            self._dataBegin_closeprice = kldata.close
-            self._dataBegin_date = kldata.date
-
-        self.__dtData = kldata.datetime
-
-        # 先确定会撮合成交的价格
-        bestPrice          = round(((kldata.open + kldata.close) *4 + kldata.high + kldata.low) /10, 2)
-
-        buyCrossPrice      = kldata.low        # 若买入方向限价单价格高于该价格，则会成交
-        sellCrossPrice     = kldata.high      # 若卖出方向限价单价格低于该价格，则会成交
-        maxCrossVolume     = kldata.volume
-        buyBestCrossPrice  = bestPrice       # 在当前时间点前发出的买入委托可能的最优成交价
-        sellBestCrossPrice = bestPrice       # 在当前时间点前发出的卖出委托可能的最优成交价
-        
-        # 张跌停封板
-        if buyCrossPrice <= kldata.open*0.9 :
-            buyCrossPrice =0
-        if sellCrossPrice >= kldata.open*1.1 :
-            sellCrossPrice =0
-
-        # 先撮合限价单
-        self._account.crossLimitOrder(kldata.symbol, kldata.datetime, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
-        # 再撮合停止单
-        self._account.crossStopOrder(kldata.symbol, kldata.datetime, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
-
-    def __tradeMatchingByTick(self, tkdata):
-        """收到行情后，在启动策略前的处理
-        通常处理本地停止单（检查是否要立即发出）"""
-
-        if not self._dataBegin_date:
-            self._dataBegin_date = tkdata.date
-            self._dataBegin_closeprice = tkdata.priceTick
-
-        self.__dtData = tkdata.datetime
-
-        # 先确定会撮合成交的价格
-        buyCrossPrice      = tkdata.a1P
-        sellCrossPrice     = tkdata.b1P
-        buyBestCrossPrice  = tkdata.a1P
-        sellBestCrossPrice = tkdata.b1P
-
-        # 先撮合限价单
-        self._account.crossLimitOrder(tkdata.symbol, self.__dtData, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3)) # to determine maxCrossVolume from Tick, maxCrossVolume)
-        # 再撮合停止单
-        self._account.crossStopOrder(tkdata.symbol, self.__dtData, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3)) # to determine maxCrossVolume from Tick, maxCrossVolume)
 
     #----------------------------------------------------------------------
     def generateReport(self, df=None, result=None):
@@ -1099,7 +1065,50 @@ class AccountWrapper(MetaAccount):
         pass
 
     #----------------------------------------------------------------------
-    def crossLimitOrder(self, symbol, dt, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume=-1):
+    def tradeMatchingByKLine(self, kldata):
+        """收到行情后处理本地停止单（检查是否要立即发出）"""
+
+        # TODO check if received the END signal of backtest data
+
+        # if self.mode != self.BAR_MODE:
+        #     return
+
+        # 先确定会撮合成交的价格
+        bestPrice          = round(((kldata.open + kldata.close) *4 + kldata.high + kldata.low) /10, 2)
+
+        buyCrossPrice      = kldata.low        # 若买入方向限价单价格高于该价格，则会成交
+        sellCrossPrice     = kldata.high      # 若卖出方向限价单价格低于该价格，则会成交
+        maxCrossVolume     = kldata.volume
+        buyBestCrossPrice  = bestPrice       # 在当前时间点前发出的买入委托可能的最优成交价
+        sellBestCrossPrice = bestPrice       # 在当前时间点前发出的卖出委托可能的最优成交价
+        
+        # 张跌停封板
+        if buyCrossPrice <= kldata.open*0.9 :
+            buyCrossPrice =0
+        if sellCrossPrice >= kldata.open*1.1 :
+            sellCrossPrice =0
+
+        # 先撮合限价单
+        self.__crossLimitOrder(kldata.symbol, kldata.datetime, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
+        # 再撮合停止单
+        self.__crossStopOrder(kldata.symbol, kldata.datetime, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
+
+    def tradeMatchingByTick(self, tkdata):
+        """收到行情后，在启动策略前的处理
+        通常处理本地停止单（检查是否要立即发出）"""
+
+        # 先确定会撮合成交的价格
+        buyCrossPrice      = tkdata.a1P
+        sellCrossPrice     = tkdata.b1P
+        buyBestCrossPrice  = tkdata.a1P
+        sellBestCrossPrice = tkdata.b1P
+
+        # 先撮合限价单
+        self.__crossLimitOrder(tkdata.symbol, self.__dtData, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3)) # to determine maxCrossVolume from Tick, maxCrossVolume)
+        # 再撮合停止单
+        self.__crossStopOrder(tkdata.symbol, self.__dtData, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3)) # to determine maxCrossVolume from Tick, maxCrossVolume)
+
+    def __crossLimitOrder(self, symbol, dt, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume=-1):
         """基于最新数据撮合限价单
         A limit order is an order placed with a brokerage to execute a buy or 
         sell transaction at a set number of shares and at a specified limit
@@ -1174,7 +1183,7 @@ class AccountWrapper(MetaAccount):
             self._broker_onTrade(t)
 
     #----------------------------------------------------------------------
-    def crossStopOrder(self, symbol, dt, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume=-1): 
+    def __crossStopOrder(self, symbol, dt, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume=-1): 
         """基于最新数据撮合停止单
             A stop order is an order to buy or sell a security when its price moves past
             a particular point, ensuring a higher probability of achieving a predetermined 

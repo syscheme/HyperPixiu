@@ -408,7 +408,7 @@ class CsvPlayback(Playback):
                 if extname == 'bz2':
                     self._importStream = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
                 else:
-                    self._importStream = file(fn, 'rt')
+                    self._importStream = open(fn, 'rt')
 
                 self._reader = csv.DictReader(self._importStream, self._fieldnames, lineterminator='\n') if 'csv' in fn else self._importStream
                 if not self._reader:

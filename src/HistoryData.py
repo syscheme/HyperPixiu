@@ -320,9 +320,9 @@ class CsvPlayback(Playback):
 
         self._csvfiles =[]
         self._cvsToEvent = DictToKLine(self._category, symbol)
-        # self._merger1minTo5min =None
-        self._merger1minTo5min = KlineToXminMerger(self._cbMergedKLine5min, xmin=5)
-        self._merger5minTo1Day = KlineToXminMerger(self._cbMergedKLine1Day, xmin=60*24-10)
+
+        self._merger1minTo5min = None
+        self._merger5minTo1Day = None
         self._dtEndOfDay = None
 
 #        if not self._fields and 'mdKL' in self._category:
@@ -351,6 +351,9 @@ class CsvPlayback(Playback):
 
         self._csvfiles =[]
         self._reader =None
+        self._merger1minTo5min = KlineToXminMerger(self._cbMergedKLine5min, xmin=5)
+        self._merger5minTo1Day = KlineToXminMerger(self._cbMergedKLine1Day, xmin=60*24-10)
+        self._dtEndOfDay = None
 
         # # filter the csv files
         prev = ""

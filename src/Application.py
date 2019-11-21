@@ -36,14 +36,25 @@ class MetaObj(ABC):
 
     def __init__(self):
         self._id = None
+        self._oseqId = MetaObj.__nextOSeqId()
 
     @property
     def ident(self) :
         if not self._id or len(self._id)<=0 :
-            MetaObj.__lastId__ +=1
-            self._id = 'O%d' % MetaObj.__lastId__
+            self._id = 'O%d' % self._oseqId
 
         return '%s.%s' % (self.__class__.__name__, self._id)
+
+    def __nextOSeqId():
+        MetaObj.__lastId__ +=1
+        return MetaObj.__lastId__
+
+    def __copy__(self):
+        result = object.__new__(type(self))
+        result.__dict__ = copy(self.__dict__)
+        result._oseqId = MetaObj.__nextOSeqId()
+        return result
+
 
 ########################################################################
 class MetaApp(MetaObj):
@@ -74,7 +85,6 @@ class MetaApp(MetaObj):
 ########################################################################
 class BaseApplication(MetaApp):
 
-    __lastId__ =100
     HEARTBEAT_INTERVAL_DEFAULT = 5 # 5sec
     
     #----------------------------------------------------------------------
@@ -103,11 +113,6 @@ class BaseApplication(MetaApp):
 
         if '/' != self.__dataDir[-1]:
             self.__dataDir +='/'
-
-        # the app instance Id
-        if len(self._id)<=0 :
-            BaseApplication.__lastId__ +=1
-            self._id = 'P%d' % BaseApplication.__lastId__
 
         self.__gen = self._generator()
 
@@ -523,6 +528,7 @@ class Program(object):
         # 事件队列
         self.__queue = Queue()
         self.__dictMetaObjs = OrderedDict()
+        self.__activeApps = []
         
         # heartbeat
         self.__stampLastHB = None
@@ -560,7 +566,6 @@ class Program(object):
         # 创建应用实例
         self.__dictMetaObjs[id] = obj
         self.__dict__[id] = self.__dictMetaObjs[id]
-        self.__activeApps = []
         self.debug('obj[%s] added' % id)
         return obj
 
@@ -703,7 +708,6 @@ class Program(object):
         '''
 
         self.debug('starting applications')
-        self.__activeApps = []
         for appId in self.listByType(MetaApp) :
             app = self.getObj(appId)
             if app == None:

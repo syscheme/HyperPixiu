@@ -19,7 +19,7 @@ import logging
 import json   # to save params
 from collections import OrderedDict
 from datetime import datetime, timedelta
-from copy import copy
+from copy import copy, deepcopy
 from abc import ABCMeta, abstractmethod
 import traceback
 
@@ -38,6 +38,12 @@ class MetaTrader(BaseApplication):
         self._accountId = None
         self._dtData = None # datetime of data
         self._dictObjectives = {}
+
+    def __deepcopy__(self, other):
+        result = object.__new__(type(self))
+        result.__dict__ = copy(self.__dict__)
+        result._dictObjectives = deepcopy(self._dictObjectives)
+        return result
 
     @property
     def account(self): return self._account # the default account

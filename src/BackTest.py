@@ -20,7 +20,7 @@ import copy
 
 # import pymongo
 import pandas as pd
-# import numpy as np
+import numpy as np
 # import matplotlib.pyplot as plt
 import shutil
 
@@ -170,6 +170,8 @@ class BackTestApp(MetaTrader):
                 pass
 
         # this test should be done if reached here
+        self.debug('hist-read: end of playback')
+        self._account.OnPlaybackEnd()
         self.info('test-round[%d/%d] done, processed %d events took %s, generating report' % (self.__testRoundId, self._testRounds, self.__testRoundcEvs, str(datetime.now() - self.__execStamp_roundStart)))
         try :
             self.generateReport()
@@ -208,7 +210,7 @@ class BackTestApp(MetaTrader):
                     self._dataBegin_closeprice = evd.close
 
         if matchNeeded :
-            self._account.matchingTrades(ev)
+            self._account.matchTrades(ev)
 
         return self.__wkTrader.OnEvent(ev)
 
@@ -304,43 +306,48 @@ class BackTestApp(MetaTrader):
             self.error('no summary result given: %s' % result)
             return
 
-        if df :
-            df.to_csv('%s/%s_R%d.csv' %(self.dataRoot, self.ident, self.__testRoundId))
+        if not df is None:
+            csvfile = '%s%s_R%d.csv' %(self.dataRoot, self.ident, self.__testRoundId)
+            try :
+                os.makedirs(os.path.dirname(csvfile))
+            except:
+                pass
+            df.to_csv(csvfile)
             
         originGain = 0.0
         if self._dataBegin_closeprice >0 :
             originGain = (self._dataEnd_closeprice - self._dataBegin_closeprice)*100 / self._dataBegin_closeprice
 
         # 输出统计结果
-        self.debug('-' * 30)
-        self.info(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._dataBegin_date, self._dataBegin_closeprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain)))
-        self.info(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (result['startDate'], self._dataBegin_closeprice, result['endDate'], self._dataEnd_closeprice))
+        self.debug('%s_R%d' %(self.ident, self.__testRoundId) + '-' * 20)
+        self.info(u'    回放始末: %s(close:%.2f) ~ %s(close:%.2f): %s%%'  %(self._dataBegin_date, self._dataBegin_closeprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain)))
+        self.info(u'    交易始末: %s(close:%.2f) ~ %s(close:%.2f)' % (result['startDate'], self._dataBegin_closeprice, result['endDate'], self._dataEnd_closeprice))
         
-        self.info(u'交易日数：\t%s (盈利%s,亏损%s)' % (result['totalDays'], result['profitDays'], result['lossDays']))
+        self.info(u'    交易日数: %s (盈利%s, 亏损%s)' % (result['totalDays'], result['profitDays'], result['lossDays']))
         
-        self.info(u'起始资金：\t%s' % formatNumber(self._startBalance))
-        self.info(u'结束资金：\t%s' % formatNumber(result['endBalance']))
+        self.info(u'    起始资金: %s' % formatNumber(self._startBalance))
+        self.info(u'    结束资金: %s' % formatNumber(result['endBalance']))
     
-        self.info(u'总收益率：\t%s%%' % formatNumber(result['totalReturn']))
-        self.info(u'年化收益：\t%s%%' % formatNumber(result['annualizedReturn']))
-        self.info(u'总盈亏：\t%s' % formatNumber(result['totalNetPnl']))
-        self.info(u'最大回撤: \t%s' % formatNumber(result['maxDrawdown']))   
-        self.info(u'百分比最大回撤: %s%%' % formatNumber(result['maxDdPercent']))   
+        self.info(u'    总收益率: %s%%' % formatNumber(result['totalReturn']))
+        self.info(u'    年化收益: %s%%' % formatNumber(result['annualizedReturn']))
+        self.info(u'      总盈亏: %s' % formatNumber(result['totalNetPnl']))
+        self.info(u'    最大回撤: %s' % formatNumber(result['maxDrawdown']))   
+        self.info(u'  最大回撤率: %s%%' % formatNumber(result['maxDdPercent']))   
         
-        self.info(u'总手续费：\t%s' % formatNumber(result['totalCommission']))
-        self.info(u'总滑点：\t%s' % formatNumber(result['totalSlippage']))
-        self.info(u'总成交金额：\t%s' % formatNumber(result['totalTurnover']))
-        self.info(u'总成交笔数：\t%s' % formatNumber(result['totalTradeCount'],0))
+        self.info(u'    总手续费: %s' % formatNumber(result['totalCommission']))
+        self.info(u'      总滑点: %s' % formatNumber(result['totalSlippage']))
+        self.info(u'  总成交金额: %s' % formatNumber(result['totalTurnover']))
+        self.info(u'  总成交笔数: %s' % formatNumber(result['totalTradeCount'],0))
         
-        self.info(u'日均盈亏：\t%s' % formatNumber(result['dailyNetPnl']))
-        self.info(u'日均手续费：\t%s' % formatNumber(result['dailyCommission']))
-        self.info(u'日均滑点：\t%s' % formatNumber(result['dailySlippage']))
-        self.info(u'日均成交金额：\t%s' % formatNumber(result['dailyTurnover']))
-        self.info(u'日均成交笔数：\t%s' % formatNumber(result['dailyTradeCount']))
+        self.info(u'    日均盈亏: %s' % formatNumber(result['dailyNetPnl']))
+        self.info(u'  日均手续费: %s' % formatNumber(result['dailyCommission']))
+        self.info(u'    日均滑点: %s' % formatNumber(result['dailySlippage']))
+        self.info(u'日均成交金额: %s' % formatNumber(result['dailyTurnover']))
+        self.info(u'日均成交笔数: %s' % formatNumber(result['dailyTradeCount']))
         
-        self.info(u'日均收益率：\t%s%%' % formatNumber(result['dailyReturn']))
-        self.info(u'收益标准差：\t%s%%' % formatNumber(result['returnStd']))
-        self.info(u'夏普率：\t%s' % formatNumber(result['sharpeRatio']))
+        self.info(u'  日均收益率: %s%%' % formatNumber(result['dailyReturn']))
+        self.info(u'  收益标准差: %s%%' % formatNumber(result['returnStd']))
+        self.info(u'      夏普率: %s' % formatNumber(result['sharpeRatio']))
         
         self.plotResult(df)
 
@@ -487,21 +494,21 @@ class BackTestApp(MetaTrader):
 
         # 输出
         self.debug('-' * 30)
-        self.debug(u'回放日期：\t%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._dataBegin_date, self._dataBegin_closeprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain)))
-        self.debug(u'交易日期：\t%s(close:%.2f)~%s(close:%.2f)' % (d['timeList'][0], self._dataBegin_closeprice, d['timeList'][-1], self._dataEnd_closeprice))
+        self.debug(u'回放日期  :%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._dataBegin_date, self._dataBegin_closeprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain)))
+        self.debug(u'交易日期  :%s(close:%.2f)~%s(close:%.2f)' % (d['timeList'][0], self._dataBegin_closeprice, d['timeList'][-1], self._dataEnd_closeprice))
         
-        self.debug(u'总交易次数：\t%s' % formatNumber(d['totalResult'],0))        
-        self.debug(u'总盈亏：\t%s' % formatNumber(d['capital']))
+        self.debug(u'总交易次数  :%s' % formatNumber(d['totalResult'],0))        
+        self.debug(u'总盈亏  :%s' % formatNumber(d['capital']))
         self.debug(u'最大回撤: \t%s' % formatNumber(min(d['drawdownList'])))                
         
-        self.debug(u'平均每笔盈利：\t%s' %formatNumber(d['capital']/d['totalResult']))
-        self.debug(u'平均每笔滑点：\t%s' %formatNumber(d['totalSlippage']/d['totalResult']))
-        self.debug(u'平均每笔佣金：\t%s' %formatNumber(d['totalCommission']/d['totalResult']))
+        self.debug(u'平均每笔盈利  :%s' %formatNumber(d['capital']/d['totalResult']))
+        self.debug(u'平均每笔滑点  :%s' %formatNumber(d['totalSlippage']/d['totalResult']))
+        self.debug(u'平均每笔佣金  :%s' %formatNumber(d['totalCommission']/d['totalResult']))
         
         self.debug(u'胜率\t\t%s%%' %formatNumber(d['winningRate']))
         self.debug(u'盈利交易平均值\t%s' %formatNumber(d['averageWinning']))
         self.debug(u'亏损交易平均值\t%s' %formatNumber(d['averageLosing']))
-        self.debug(u'盈亏比：\t%s' %formatNumber(d['profitLossRatio']))
+        self.debug(u'盈亏比  :%s' %formatNumber(d['profitLossRatio']))
 
         # self.plotBacktestingResult(d)
     #----------------------------------------------------------------------
@@ -751,12 +758,13 @@ def sumupDailyResults(startBalance, dayResultDict):
         return None, 'NULL dayResultDict'
 
     columns ={}
-    for k in dayResultDict[0].__dict__.keys() :
-        if k == 'tradeList' : # to exclude some columns
-            continue
-        columns[k] =[]
-
     for dr in dayResultDict.values():
+        if len(columns) <=0 :
+            for k in dr.__dict__.keys() :
+                if 'tradeList' == k : # to exclude some columns
+                    continue
+                columns[k] =[]
+
         for k, v in dr.__dict__.items() :
             if k in columns :
                 columns[k].append(v)
@@ -1064,36 +1072,7 @@ class AccountWrapper(MetaAccount):
         """考虑到回测中不允许向数据库插入数据，防止实盘交易中的一些代码出错"""
         pass
 
-    #----------------------------------------------------------------------
-    def tradeMatchingByKLine(self, kldata):
-        """收到行情后处理本地停止单（检查是否要立即发出）"""
-
-        # TODO check if received the END signal of backtest data
-
-        # if self.mode != self.BAR_MODE:
-        #     return
-
-        # 先确定会撮合成交的价格
-        bestPrice          = round(((kldata.open + kldata.close) *4 + kldata.high + kldata.low) /10, 2)
-
-        buyCrossPrice      = kldata.low        # 若买入方向限价单价格高于该价格，则会成交
-        sellCrossPrice     = kldata.high      # 若卖出方向限价单价格低于该价格，则会成交
-        maxCrossVolume     = kldata.volume
-        buyBestCrossPrice  = bestPrice       # 在当前时间点前发出的买入委托可能的最优成交价
-        sellBestCrossPrice = bestPrice       # 在当前时间点前发出的卖出委托可能的最优成交价
-        
-        # 张跌停封板
-        if buyCrossPrice <= kldata.open*0.9 :
-            buyCrossPrice =0
-        if sellCrossPrice >= kldata.open*1.1 :
-            sellCrossPrice =0
-
-        # 先撮合限价单
-        self.__crossLimitOrder(kldata.symbol, kldata.datetime, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
-        # 再撮合停止单
-        self.__crossStopOrder(kldata.symbol, kldata.datetime, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
-
-    def matchingTrades(self, ev):
+    def matchTrades(self, ev):
         ''' 模拟撮合成交 '''
 
         symbol = None
@@ -1288,12 +1267,12 @@ class AccountWrapper(MetaAccount):
         #         self.strategy.onOrder(order)
         #         self.strategy.onTrade(trade)
 
-    def onTestEnd(self) :
+    def OnPlaybackEnd(self) :
         # ---------------------------
         # 结算日
         # ---------------------------
         # step 1 到最后交易日尚未平仓的交易，则以最后价格平仓
-        self._btTrader.debug('onTestEnd() faking trade to flush out all positions')
+        self._nest.debug('OnPlaybackEnd() faking trade to flush out all positions')
         currentPositions = self.getAllPositions()
         for symbol, pos in currentPositions.items() :
             if symbol == self.cashSymbol:
@@ -1314,10 +1293,10 @@ class AccountWrapper(MetaAccount):
             trade.dt     = self._btTrader._dtData
 
             self._broker_onTrade(trade)
-            self._btTrader.debug('onTestEnd() faked trade: %s' % trade.desc)
+            self._nest.debug('OnPlaybackEnd() faked trade: %s' % trade.desc)
 
         # step 2 enforce a day-close
-        self._btTrader.debug('onTestEnd() enforcing a day-close')
+        self._nest.debug('OnPlaybackEnd() enforcing a day-close')
         self.onDayClose()
 
 

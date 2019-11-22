@@ -5,7 +5,13 @@
 '''
 
 import numpy as np
-# import talib
+
+# https://mrjbq7.github.io/ta-lib/install.html
+# cd /tmp ; wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz ; tar xfvz ta-lib-0.4.0-src.tar.gz ; cd ta-lib
+# ./configure --prefix=/usr ; make ; sudo make install
+# sudo pip install TA-Lib
+# check where the libta_lib.so is installed, ensure it is on LD_LIBRARY_PATH
+import talib
 
 from Account import *
 from Application import *

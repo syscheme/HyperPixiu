@@ -535,6 +535,8 @@ class Program(object):
         # __subscribers字典，用来保存对应的事件到appId的订阅关系
         # 其中每个键对应的值是一个列表，列表中保存了对该事件进行监听的appId
         self.__subscribers = {}
+
+        self.info('='*10 + ' %s(%d) starts ' %(self._progName, self._pid)  + '='*10)
     
     def jsettings(self, nodeName) : 
         if not self.__jsettings : return None
@@ -981,8 +983,7 @@ class Program(object):
             self._logger.addHandler(self._hdlrFile)
             
         # 注册事件监听
-        tmpval = self.__jsettings.logger.loggingEvent('True').lower()
-        if tmpval in BOOL_TRUE :
+        if self.__jsettings.logger.loggingEvent('True').lower() in BOOL_TRUE :
             self._loggingEvent = True
 
     def setLogLevel(self, level):

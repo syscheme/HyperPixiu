@@ -304,6 +304,10 @@ class BackTestApp(MetaTrader):
         if df is None:
             df, result = sumupDailyResults(self._startBalance, self._account.dailyResultDict)
 
+        if not result or not isinstance(result, dict) :
+            self.error('no summary result given: %s' % result)
+            return
+
         if df :
             df.to_csv('%s/%s_R%d.csv' %(self.dataRoot, self.ident, self.__testRoundId))
             

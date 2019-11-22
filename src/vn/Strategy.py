@@ -5,23 +5,22 @@
 '''
 
 import numpy as np
-import talib
+# import talib
 
-from .Account import *
-from .MainRoutine import *
-from .MarketData import TickData, KLineData, TickToKLineMerger, KlineToXminMerger
-from .EventChannel import EventChannel, EventData, datetime2float
-
+from Account import *
+from Application import *
+from MarketData import TickData, KLineData, TickToKLineMerger, KlineToXminMerger
+# from .EventChannel import EventChannel, EventData, datetime2float
 
 ########################################################################
-class Strategy(object):
+class Strategy(MetaObj):
     # 策略类的名称和作者
     className = 'Strategy'
     author = EventData.EMPTY_UNICODE
     
-    # MongoDB数据库的名称，K线数据库默认为1分钟
-    tickDbName = TICK_DB_NAME
-    barDbName = MINUTE_DB_NAME
+    # # MongoDB数据库的名称，K线数据库默认为1分钟
+    # tickDbName = TICK_DB_NAME
+    # barDbName = MINUTE_DB_NAME
     
     # 策略的基本参数
     name = EventData.EMPTY_UNICODE           # 策略实例名称
@@ -49,8 +48,8 @@ class Strategy(object):
 
     #----------------------------------------------------------------------
     def __init__(self, trader, account, setting):
-        """Constructor"""
-        self.account = account
+        '''Constructor'''
+        self._account = account
         self._trader = trader
 
         # 设置策略的参数
@@ -70,74 +69,77 @@ class Strategy(object):
     def id(self):
         return self._id
     
+    @property
+    def priceTick(self):
+        '''查询最小价格变动'''
+        return self._account.getPriceTick(self)
+
     #----------------------------------------------------------------------
+    @abstractmethod
     def onInit(self):
-        """初始化策略（必须由用户继承实现）"""
+        '''初始化策略（必须由用户继承实现）'''
         raise NotImplementedError
     
-    #----------------------------------------------------------------------
+    @abstractmethod
     def onStart(self):
-        """启动策略（必须由用户继承实现）"""
+        '''启动策略（必须由用户继承实现）'''
         raise NotImplementedError
     
-    #----------------------------------------------------------------------
+    @abstractmethod
     def onStop(self):
-        """停止策略（必须由用户继承实现）"""
+        '''停止策略（必须由用户继承实现）'''
         raise NotImplementedError
 
-    #----------------------------------------------------------------------
+    @abstractmethod
     def onTick(self, tick):
-        """收到行情TICK推送（必须由用户继承实现）"""
+        '''收到行情TICK推送（必须由用户继承实现）'''
         raise NotImplementedError
 
-    #----------------------------------------------------------------------
+    @abstractmethod
     def onOrder(self, order):
-        """收到委托变化推送（必须由用户继承实现）"""
+        '''收到委托变化推送（必须由用户继承实现）'''
         raise NotImplementedError
     
-    #----------------------------------------------------------------------
+    @abstractmethod
     def onTrade(self, trade):
-        """收到成交推送（必须由用户继承实现）"""
+        '''收到成交推送（必须由用户继承实现）'''
         raise NotImplementedError
     
-    #----------------------------------------------------------------------
+    @abstractmethod
     def onBar(self, bar):
-        """收到Bar推送（必须由用户继承实现）"""
+        '''收到Bar推送（必须由用户继承实现）'''
         raise NotImplementedError
     
-    #----------------------------------------------------------------------
+    @abstractmethod
     def onDayOpen(self, date):
-        """收到交易日开始推送"""
+        '''收到交易日开始推送'''
         pass
 
-    #----------------------------------------------------------------------
+    @abstractmethod
     def onStopOrder(self, so):
-        """收到停止单推送（必须由用户继承实现）"""
+        '''收到停止单推送（必须由用户继承实现）'''
         raise NotImplementedError
     
     #----------------------------------------------------------------------
     def _buy(self, symbol, price, volume, stop=False):
-        """买开"""
-        return self.sendOrder(OrderData.ORDER_BUY, symbol, price, volume, stop)
+        '''买开'''
+        return self.__sendOrder(OrderData.ORDER_BUY, symbol, price, volume, stop)
     
     #----------------------------------------------------------------------
     def _sell(self, symbol, price, volume, stop=False):
-        """卖平"""
-        return self.sendOrder(OrderData.ORDER_SELL, symbol, price, volume, stop)       
+        '''卖平'''
+        return self.__sendOrder(OrderData.ORDER_SELL, symbol, price, volume, stop)       
 
-    #----------------------------------------------------------------------
     def _short(self, symbol, price, volume, stop=False):
-        """卖开"""
-        return self.sendOrder(OrderData.ORDER_SHORT, symbol, price, volume, stop)          
+        '''卖开'''
+        return self.__sendOrder(OrderData.ORDER_SHORT, symbol, price, volume, stop)          
  
-    #----------------------------------------------------------------------
     def _cover(self, symbol, price, volume, stop=False):
-        """买平"""
-        return self.sendOrder(OrderData.ORDER_COVER, symbol, price, volume, stop)
+        '''买平'''
+        return self.__sendOrder(OrderData.ORDER_COVER, symbol, price, volume, stop)
         
-    #----------------------------------------------------------------------
-    def sendOrder(self, orderType, symbol, price, volume, stop=False):
-        """发送委托"""
+    def __sendOrder(self, orderType, symbol, price, volume, stop=False):
+        '''发送委托'''
         if not self.trading:
             # 交易停止时发单返回空字符串
             return []
@@ -145,28 +147,26 @@ class Strategy(object):
         # 如果stop为True，则意味着发本地停止单
         # self.log(u'sendOrder:%s %.2fx%d>%s' %(orderType, price, volume, stop))
         if stop:
-            vtOrderIDList = self.account.sendStopOrder(symbol, orderType, price, volume, self)
+            vtOrderIDList = self._account.sendStopOrder(symbol, orderType, price, volume, self)
         else:
-            vtOrderIDList = self.account.sendOrder(symbol, orderType, price, volume, self) 
+            vtOrderIDList = self._account.sendOrder(symbol, orderType, price, volume, self) 
 
         return vtOrderIDList
         
-    #----------------------------------------------------------------------
     def cancelOrder(self, vtOrderID):
-        """撤单"""
+        '''撤单'''
         # 如果发单号为空字符串，则不进行后续操作
         if not vtOrderID:
             return
         
         if OrderData.STOPORDERPREFIX in vtOrderID:
-            self.account.cancelStopOrder(vtOrderID)
+            self._account.cancelStopOrder(vtOrderID)
         else:
-            self.account.cancelOrder(vtOrderID)
+            self._account.cancelOrder(vtOrderID)
             
-    #----------------------------------------------------------------------
     def cancelAll(self, symbol=None):
-        """全部撤单"""
-        l = self.account.findOrdersOfStrategy(self._id, symbol)
+        '''全部撤单'''
+        l = self._account.findOrdersOfStrategy(self._id, symbol)
 
         orderIdList = []
         for o in l:
@@ -174,37 +174,37 @@ class Strategy(object):
         if len(orderIdList) <=0:
             return
             
-        self.account.batchCancel(orderIdList)
+        self._account.batchCancel(orderIdList)
         self.log2(LOGLEVEL_INFO, 'cancelAll() symbol[%s] order-batch: %s' %(symbol, orderIdList))
     
     #----------------------------------------------------------------------
     def log2(self, loglevel, content):
-        """记录CTA日志"""
+        '''记录CTA日志'''
         self._trader.log(loglevel, 'stg[%s] %s' %(self._id, content))
 
     def log(self, content):
-        """记录CTA日志"""
+        '''记录CTA日志'''
         self.log2(LOGLEVEL_DEBUG, content)
         
     #----------------------------------------------------------------------
     def putEvent(self):
-        """发出策略状态变化事件"""
+        '''发出策略状态变化事件'''
         self._trader.postStrategyEvent(self.name)
         
     #----------------------------------------------------------------------
     def getEngineType(self):
-        """查询当前运行的环境"""
-        return self.account.engineType
+        '''查询当前运行的环境'''
+        return self._account.engineType
     
     #----------------------------------------------------------------------
     def saveSyncData(self):
-        """保存策略的持仓情况到数据库"""
+        '''保存策略的持仓情况到数据库'''
         # if not self.trading : # or not self._trader:
         #     return
 
         # flt = {'name': self.name,
         #        'vtSymbol': self.vtSymbol,
-        #        'account': self.account.ident
+        #        'account': self._account.ident
         #        }
         
         # d = copy(flt)
@@ -215,7 +215,7 @@ class Strategy(object):
         # self._trader.log(u'策略%s同步数据保存成功，当前持仓%s' %(strategy.name, strategy.pos))
 
     # def loadSyncData(self, strategy):
-    #     """从数据库载入策略的持仓情况"""
+    #     '''从数据库载入策略的持仓情况'''
     #     flt = {'name': self.name,
     #            'vtSymbol': self.vtSymbol,
     #            'account': account.ident
@@ -232,10 +232,6 @@ class Strategy(object):
     #             strategy.__setattr__(key, d[key])
     
     #----------------------------------------------------------------------
-    @property
-    def priceTick(self):
-        """查询最小价格变动"""
-        return self.account.getPriceTick(self)
         
 ########################################################################
 class StrategyOfSymbol(Strategy):
@@ -243,7 +239,7 @@ class StrategyOfSymbol(Strategy):
 
     #----------------------------------------------------------------------
     def __init__(self, trader, symbol, account, setting):
-        """Constructor"""
+        '''Constructor'''
         super(StrategyOfSymbol, self).__init__(trader, account, setting)
         self._symbol = symbol
 
@@ -257,19 +253,19 @@ class StrategyOfSymbol(Strategy):
 
     #----------------------------------------------------------------------
     def buy(self, price, volume, stop=False):
-        """买开"""
+        '''买开'''
         return super(StrategyOfSymbol, self)._buy(self._symbol, price, volume, stop)
 
     def sell(self, price, volume, stop=False):
-        """卖平"""
+        '''卖平'''
         return super(StrategyOfSymbol, self)._sell(self._symbol, price, volume, stop)
 
     def short(self, symbol, price, volume, stop=False):
-        """卖开"""
+        '''卖开'''
         return super(StrategyOfSymbol, self)._short(self._symbol, price, volume, stop)
 
     def cover(self, symbol, price, volume, stop=False):
-        """买平"""
+        '''买平'''
         return super(StrategyOfSymbol, self)._cover(self._symbol, price, volume, stop)
         
     def cancelAll(self):
@@ -277,24 +273,24 @@ class StrategyOfSymbol(Strategy):
 
     #----------------------------------------------------------------------
     def insertTick(self, tick):
-        """向数据库中插入tick数据"""
-        self.account.insertData(self.tickDbName, self._symbol, tick)
+        '''向数据库中插入tick数据'''
+        self._account.insertData(self.tickDbName, self._symbol, tick)
     
     def insertBar(self, bar):
-        """向数据库中插入bar数据"""
-        self.account.insertData(self.barDbName, self._symbol, bar)
+        '''向数据库中插入bar数据'''
+        self._account.insertData(self.barDbName, self._symbol, bar)
         
     def loadTick(self, days):
-        """读取tick数据"""
-        return self.account.loadTick(self.tickDbName, self._symbol, days)
+        '''读取tick数据'''
+        return self._account.loadTick(self.tickDbName, self._symbol, days)
     
     def loadBar(self, days):
-        """读取bar数据"""
-        return self.account.loadBar(self.barDbName, self._symbol, days)
+        '''读取bar数据'''
+        return self._account.loadBar(self.barDbName, self._symbol, days)
 
 ########################################################################
 class TargetPosTemplate(Strategy):
-    """
+    '''
     允许直接通过修改目标持仓来实现交易的策略模板
     
     开发策略时，无需再调用buy/sell/cover/short这些具体的委托指令，
@@ -310,7 +306,7 @@ class TargetPosTemplate(Strategy):
     super(TestStrategy, self).onTick(tick)
     
     其他方法类同。
-    """
+    '''
     
     className = 'TargetPosTemplate'
     author = u'量衍投资'
@@ -330,12 +326,12 @@ class TargetPosTemplate(Strategy):
 
     #----------------------------------------------------------------------
     def __init__(self, account, setting):
-        """Constructor"""
+        '''Constructor'''
         super(TargetPosTemplate, self).__init__(account, setting)
         
     #----------------------------------------------------------------------
     def onTick(self, tick):
-        """收到行情推送"""
+        '''收到行情推送'''
         self.lastTick = tick
         
         # 实盘模式下，启动交易后，需要根据tick的实时推送执行自动开平仓操作
@@ -344,26 +340,26 @@ class TargetPosTemplate(Strategy):
         
     #----------------------------------------------------------------------
     def onBar(self, bar):
-        """收到K线推送"""
+        '''收到K线推送'''
         self.lastBar = bar
     
     #----------------------------------------------------------------------
     def onOrder(self, order):
-        """收到委托推送"""
+        '''收到委托推送'''
         if order.status == OrderData.STATUS_ALLTRADED or order.status == OrderData.STATUS_CANCELLED:
             if order.vtOrderID in self.orderList:
                 self.orderList.remove(order.vtOrderID)
     
     #----------------------------------------------------------------------
     def setTargetPos(self, symbol, targetPos):
-        """设置目标仓位"""
+        '''设置目标仓位'''
         self.targetPos = targetPos
         
         self.trade()
         
     #----------------------------------------------------------------------
     def trade(self, symbol):
-        """执行交易"""
+        '''执行交易'''
         # 先撤销之前的委托
         self.cancelAll(symbol)
         
@@ -433,15 +429,15 @@ class TargetPosTemplate(Strategy):
 
 ########################################################################
 class ArrayManager(object):
-    """
+    '''
     K线序列管理工具，负责：
     1. K线时间序列的维护
     2. 常用技术指标的计算
-    """
+    '''
 
     #----------------------------------------------------------------------
     def __init__(self, size=100):
-        """Constructor"""
+        '''Constructor'''
         self.count = 0                      # 缓存计数
         self.size = size                    # 缓存大小
         self.inited = False                 # True if count>=size
@@ -454,7 +450,7 @@ class ArrayManager(object):
         
     #----------------------------------------------------------------------
     def updateBar(self, bar):
-        """更新K线"""
+        '''更新K线'''
         self.count += 1
         if not self.inited and self.count >= self.size:
             self.inited = True
@@ -474,36 +470,36 @@ class ArrayManager(object):
     #----------------------------------------------------------------------
     @property
     def open(self):
-        """获取开盘价序列"""
+        '''获取开盘价序列'''
         return self.openArray
         
     #----------------------------------------------------------------------
     @property
     def high(self):
-        """获取最高价序列"""
+        '''获取最高价序列'''
         return self.highArray
     
     #----------------------------------------------------------------------
     @property
     def low(self):
-        """获取最低价序列"""
+        '''获取最低价序列'''
         return self.lowArray
     
     #----------------------------------------------------------------------
     @property
     def close(self):
-        """获取收盘价序列"""
+        '''获取收盘价序列'''
         return self.closeArray
     
     #----------------------------------------------------------------------
     @property    
     def volume(self):
-        """获取成交量序列"""
+        '''获取成交量序列'''
         return self.volumeArray
     
     #----------------------------------------------------------------------
     def sma(self, n, array=False):
-        """简单均线"""
+        '''简单均线'''
         result = talib.SMA(self.close, n)
         if array:
             return result
@@ -511,7 +507,7 @@ class ArrayManager(object):
         
     #----------------------------------------------------------------------
     def std(self, n, array=False):
-        """标准差"""
+        '''标准差'''
         result = talib.STDDEV(self.close, n)
         if array:
             return result
@@ -519,7 +515,7 @@ class ArrayManager(object):
     
     #----------------------------------------------------------------------
     def cci(self, n, array=False):
-        """CCI指标"""
+        '''CCI指标'''
         result = talib.CCI(self.high, self.low, self.close, n)
         if array:
             return result
@@ -527,7 +523,7 @@ class ArrayManager(object):
         
     #----------------------------------------------------------------------
     def atr(self, n, array=False):
-        """ATR指标"""
+        '''ATR指标'''
         result = talib.ATR(self.high, self.low, self.close, n)
         if array:
             return result
@@ -535,7 +531,7 @@ class ArrayManager(object):
         
     #----------------------------------------------------------------------
     def rsi(self, n, array=False):
-        """RSI指标"""
+        '''RSI指标'''
         result = talib.RSI(self.close, n)
         if array:
             return result
@@ -543,7 +539,7 @@ class ArrayManager(object):
     
     #----------------------------------------------------------------------
     def macd(self, fastPeriod, slowPeriod, signalPeriod, array=False):
-        """MACD指标"""
+        '''MACD指标'''
         macd, signal, hist = talib.MACD(self.close, fastPeriod,
                                         slowPeriod, signalPeriod)
         if array:
@@ -552,7 +548,7 @@ class ArrayManager(object):
     
     #----------------------------------------------------------------------
     def adx(self, n, array=False):
-        """ADX指标"""
+        '''ADX指标'''
         result = talib.ADX(self.high, self.low, self.close, n)
         if array:
             return result
@@ -560,7 +556,7 @@ class ArrayManager(object):
     
     #----------------------------------------------------------------------
     def boll(self, n, dev, array=False):
-        """布林通道"""
+        '''布林通道'''
         mid = self.sma(n, array)
         std = self.std(n, array)
         
@@ -571,7 +567,7 @@ class ArrayManager(object):
     
     #----------------------------------------------------------------------
     def keltner(self, n, dev, array=False):
-        """肯特纳通道"""
+        '''肯特纳通道'''
         mid = self.sma(n, array)
         atr = self.atr(n, array)
         
@@ -582,43 +578,42 @@ class ArrayManager(object):
     
     #----------------------------------------------------------------------
     def donchian(self, n, array=False):
-        """唐奇安通道"""
+        '''唐奇安通道'''
         up = talib.MAX(self.high, n)
         down = talib.MIN(self.low, n)
         
         if array:
             return up, down
         return up[-1], down[-1]
-    
 
 ########################################################################
 class AShSignal(object):
-    """
+    '''
     CTA策略信号，负责纯粹的信号生成（目标仓位），不参与具体交易管理
-    """
+    '''
 
     #----------------------------------------------------------------------
     def __init__(self):
-        """Constructor"""
+        '''Constructor'''
         self.signalPos = 0      # 信号仓位
     
     #----------------------------------------------------------------------
     def onBar(self, bar):
-        """K线推送"""
+        '''K线推送'''
         pass
     
     #----------------------------------------------------------------------
     def onTick(self, tick):
-        """Tick推送"""
+        '''Tick推送'''
         pass
         
     #----------------------------------------------------------------------
     def setSignalPos(self, pos):
-        """设置信号仓位"""
+        '''设置信号仓位'''
         self.signalPos = pos
         
     #----------------------------------------------------------------------
     def getSignalPos(self):
-        """获取信号仓位"""
+        '''获取信号仓位'''
         return self.signalPos
         

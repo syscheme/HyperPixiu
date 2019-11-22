@@ -55,7 +55,6 @@ class MetaObj(ABC):
         result._oseqId = MetaObj.__nextOSeqId()
         return result
 
-
 ########################################################################
 class MetaApp(MetaObj):
 
@@ -940,7 +939,7 @@ class Program(object):
         # abbout the logger
         # ----------------------------------------------------------------------
         self._logger   = logging.getLogger()        
-        self._logfmtr  = logging.Formatter('%(asctime)s  %(levelname)s: %(message)s')
+        self._logfmtr  = logging.Formatter('%(asctime)s %(levelname)s\t%(message)s')
         self._loglevel = LOGLEVEL_CRITICAL
         
         self._hdlrConsole = None
@@ -1096,7 +1095,7 @@ class Program(object):
 '''
     #----------------------------------------------------------------------
     def addMarketData(self, dsModule, settings):
-        '''添加底层接口'''
+        # 添加底层接口
 
         # 创建接口实例
         clsName = dsModule.__class__.__name__
@@ -1115,7 +1114,7 @@ class Program(object):
         return md
 
     def getMarketData(self, dsName, exchange=None):
-        '''获取接口'''
+        # 获取接口
         if dsName in self._dictMarketDatas:
             return self._dictMarketDatas[dsName]
         else:
@@ -1123,7 +1122,7 @@ class Program(object):
             return None
 
     def subscribeMarketData(self, subscribeReq, dsName):
-        '''订阅特定接口的行情'''
+        # 订阅特定接口的行情
         ds = self.getMarketData(dsName)
         
         if ds:
@@ -1136,7 +1135,7 @@ class Program(object):
         return self._dbConn
 
     def dbConnect(self):
-        '''连接MongoDB数据库'''
+        # 连接MongoDB数据库
         if not self._dbConn:
             # 读取MongoDB的设置
             dbhost = self.__jsettings.database.host('localhost')
@@ -1166,7 +1165,7 @@ class Program(object):
     #----------------------------------------------------------------------
     @abstractmethod
     def configIndex(self, dbName, collectionName, definition, unique=False):
-        '''向MongoDB中定义index'''
+        # 向MongoDB中定义index
         if not self._dbConn:
             self.error(text.DATA_INSERT_FAILED)
             return
@@ -1178,7 +1177,7 @@ class Program(object):
 
     @abstractmethod
     def dbInsert(self, dbName, collectionName, d):
-        '''向MongoDB中插入数据，d是具体数据'''
+        # 向MongoDB中插入数据，d是具体数据
         if not self._dbConn:
             self.error(text.DATA_INSERT_FAILED)
             return
@@ -1191,7 +1190,7 @@ class Program(object):
 
     @abstractmethod
     def dbQuery(self, dbName, collectionName, d, sortKey='', sortDirection=ASCENDING):
-        '''从MongoDB中读取数据，d是查询要求，返回的是数据库查询的指针'''
+        # 从MongoDB中读取数据，d是查询要求，返回的是数据库查询的指针
         if not self._dbConn:
             self.error(text.DATA_QUERY_FAILED)   
             return []
@@ -1212,7 +1211,7 @@ class Program(object):
         
     @abstractmethod
     def dbUpdate(self, dbName, collectionName, d, flt, upsert=True):
-        '''向MongoDB中更新数据，d是具体数据，flt是过滤条件，upsert代表若无是否要插入'''
+        # 向MongoDB中更新数据，d是具体数据，flt是过滤条件，upsert代表若无是否要插入
         if not self._dbConn:
             self.error(text.DATA_UPDATE_FAILED)        
             return
@@ -1223,7 +1222,7 @@ class Program(object):
 
     #----------------------------------------------------------------------
     def dbLogging(self, event):
-        '''向MongoDB中插入日志'''
+        # 向MongoDB中插入日志
         log = event.data
         d = {
             'content': log.logContent,
@@ -1234,7 +1233,7 @@ class Program(object):
     
     #----------------------------------------------------------------------
     def getAllGatewayDetails(self):
-        '''查询引擎中所有底层接口的信息'''
+        # 查询引擎中所有底层接口的信息
         return self._dlstMarketDatas
 
 ''' 

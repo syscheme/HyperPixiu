@@ -1,6 +1,6 @@
 # encoding: UTF-8
 
-"""
+'''
 感谢Darwin Quant贡献的策略思路。
 知乎专栏原文：https://zhuanlan.zhihu.com/p/24448511
 
@@ -25,17 +25,17 @@
 注意CCI指标主要用来判断100到-100范围之外的行情趋势,在这之间的趋势分析应用 CCI指标没有作用和意义,可以选择KDJ指标来分析.另外CCI指标是进行短线操作的投资者比较实用的武器,可以很快帮助交易者找到准确的交易信号. [2] 
 
 
-"""
+'''
 
 from __future__ import division
 
-from ..Strategy import StrategyOfSymbol, ArrayManager
-from ..MarketData import TickData, KLineData, TickToKLineMerger, KlineToXminMerger
+from .Strategy import StrategyOfSymbol, ArrayManager
+from MarketData import TickData, KLineData, TickToKLineMerger, KlineToXminMerger
 
 
 ########################################################################
 class stgBBand(StrategyOfSymbol):
-    """基于布林通道的交易策略"""
+    '''基于布林通道的交易策略'''
 
     className = 'BBand'
     author = u'用Python的交易员'
@@ -93,7 +93,7 @@ class stgBBand(StrategyOfSymbol):
 
     #----------------------------------------------------------------------
     def __init__(self, trader, symbol, account, setting):
-        """Constructor"""
+        '''Constructor'''
         super(stgBBand, self).__init__(trader, symbol, account, setting)
 
         # 创建K线合成器对象
@@ -105,11 +105,11 @@ class stgBBand(StrategyOfSymbol):
         
     #----------------------------------------------------------------------
     def onBar_L2(self, bar):
-        """"""
+        ''''''
         
     #----------------------------------------------------------------------
     def onInit(self):
-        """初始化策略（必须由用户继承实现）"""
+        '''初始化策略（必须由用户继承实现）'''
         self.log(u'%s策略初始化, perloading %ddays' %(self.name, self.initDays))
         
         # 载入历史数据，并采用回放计算的方式初始化策略数值
@@ -124,30 +124,30 @@ class stgBBand(StrategyOfSymbol):
 
     #----------------------------------------------------------------------
     def onStart(self):
-        """启动策略（必须由用户继承实现）"""
+        '''启动策略（必须由用户继承实现）'''
         self.log(u'%s策略启动' %self.name)
         self.putEvent()
 
     #----------------------------------------------------------------------
     def onStop(self):
-        """停止策略（必须由用户继承实现）"""
+        '''停止策略（必须由用户继承实现）'''
         self.log(u'%s策略停止' %self.name)
         self.putEvent()
 
     #----------------------------------------------------------------------
     def onTick(self, tick):
-        """收到行情TICK推送（必须由用户继承实现）""" 
+        '''收到行情TICK推送（必须由用户继承实现）''' 
         self._tick2kline.pushTick(tick)
         self.bg.updateTick(tick)
 
     #----------------------------------------------------------------------
     def onBar(self, bar):
-        """收到Bar推送（必须由用户继承实现）"""
+        '''收到Bar推送（必须由用户继承实现）'''
         self._klineTo15min.pushKLine(bar)
     
     #----------------------------------------------------------------------
     def onXminBar(self, bar):
-        """收到X分钟K线"""
+        '''收到X分钟K线'''
 
         # 全撤之前发出的委托
         self.log(u'onXminBar() cancelling all previous orders')
@@ -159,7 +159,7 @@ class stgBBand(StrategyOfSymbol):
             return
 
         # 计算指标数值
-        cash, cashTotal = self.account.cashAmount()
+        cash, cashTotal = self._account.cashAmount()
         self.log('onXminBar() evaluating factors with cash[%s/%s]' % (cash, cashTotal))
         if cashTotal <0:
             return
@@ -188,7 +188,7 @@ class stgBBand(StrategyOfSymbol):
         dCCI = self.cciValue - self._lastCCI
         dATR = self.atrValue - self._lastATR
 
-        maxBuy, maxSell = self.account.maxOrderVolume(bar.symbol, bar.close)
+        maxBuy, maxSell = self._account.maxOrderVolume(bar.symbol, bar.close)
         posDesc ='%s/%s,ca%.2f,pwr%s/%s' % (self._posAvail, self.pos, cash, maxBuy, maxSell)
         barDesc = '%.2f,%.2f,%.2f,%.2f' % (bar.open, bar.close, bar.high, bar.low)
         measureDesc = 'bband[%.2f~%.2f] cci[%d->%d] atr:%.2f' % (self.bollDown, self.bollUp, self._lastCCI, self.cciValue, self.atrValue)
@@ -226,7 +226,7 @@ class stgBBand(StrategyOfSymbol):
             toBuy  =0
 
         # determine buy ability according to the available cash
-        # maxBuy = (bar.close*1.01) * self.fixedSize * self.account.size
+        # maxBuy = (bar.close*1.01) * self.fixedSize * self._account.size
         # if maxBuy >0:
         #     maxBuy = cash /maxBuy
         # else:
@@ -274,7 +274,7 @@ class stgBBand(StrategyOfSymbol):
 
     #----------------------------------------------------------------------
     def onOrder(self, order):
-        """收到委托变化推送（必须由用户继承实现）"""
+        '''收到委托变化推送（必须由用户继承实现）'''
         if order.status == STATUS_ALLTRADED :
             # self.totalCash is comfirmed reduced
             pass
@@ -296,6 +296,6 @@ class stgBBand(StrategyOfSymbol):
 
     #----------------------------------------------------------------------
     def onStopOrder(self, so):
-        """停止单推送"""
+        '''停止单推送'''
         pass
     

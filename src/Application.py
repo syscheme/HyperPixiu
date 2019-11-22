@@ -89,7 +89,7 @@ class BaseApplication(MetaApp):
     
     #----------------------------------------------------------------------
     def __init__(self, program, **kwargs):
-        """Constructor"""
+        '''Constructor'''
 
         super(BaseApplication, self).__init__()
         
@@ -202,7 +202,7 @@ class BaseApplication(MetaApp):
         self._program.subscribe(EnvironmentError, self)
 
     def postEventData(self, eventType, edata):
-        """发出事件"""
+        '''发出事件'''
         if not self._program:
             return
 
@@ -211,7 +211,7 @@ class BaseApplication(MetaApp):
         self.postEvent(ev)
 
     def postEvent(self, ev):
-        """发出事件"""
+        '''发出事件'''
         if not ev or not self._program:
             return
 
@@ -228,33 +228,33 @@ class BaseApplication(MetaApp):
         self._program.debug('APP['+self.ident +'] ' + msg)
         
     def info(self, msg):
-        """正常输出"""
+        '''正常输出'''
         if not self._program: return
         self._program.info('APP['+self.ident +'] ' + msg)
 
     def warn(self, msg):
-        """警告信息"""
+        '''警告信息'''
         if not self._program: return
         self._program.warn('APP['+self.ident +'] ' + msg)
         
     def error(self, msg):
-        """报错输出"""
+        '''报错输出'''
         if not self._program: return
         self._program.error('APP['+self.ident +'] ' + msg)
         
     def critical(self, msg):
-        """影响程序运行的严重错误"""
+        '''影响程序运行的严重错误'''
         if not self._program: return
         self._program.critical('APP['+self.ident +'] ' + msg)
 
     def logexception(self, ex):
-        """报错输出+记录异常信息"""
+        '''报错输出+记录异常信息'''
         if not self._program: return
         self._program.logexception('APP['+self.ident +'] %s: %s' % (ex, traceback.format_exc()))
 
     #----------------------------------------------------------------------
     def logError(self, eventType, content):
-        """处理错误事件"""
+        '''处理错误事件'''
         if not self._program: return
     # TODO   error = event.data
     #    self._lstErrors.append(error)
@@ -265,7 +265,7 @@ import threading
 class ThreadedAppWrapper(MetaApp):
     #----------------------------------------------------------------------
     def __init__(self, app, maxinterval=BaseApplication.HEARTBEAT_INTERVAL_DEFAULT):
-        """Constructor"""
+        '''Constructor'''
 
         super(ThreadedAppWrapper, self).__init__()
 
@@ -277,7 +277,7 @@ class ThreadedAppWrapper(MetaApp):
 
     #----------------------------------------------------------------------
     def __run(self):
-        """执行连接 and receive"""
+        '''执行连接 and receive'''
         while self._app and self._app.isActive:
             nextSleep = self._maxinterval
             try :
@@ -330,14 +330,14 @@ class ThreadedAppWrapper(MetaApp):
     
 ########################################################################
 class Singleton(type):
-    """
+    '''
     单例，应用方式:静态变量 __metaclass__ = Singleton
-    """
+    '''
     _instances = {}
 
     #----------------------------------------------------------------------
     def __call__(cls, *args, **kwargs):
-        """调用"""
+        '''调用'''
         if cls not in cls._instances:
             cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
             
@@ -345,12 +345,12 @@ class Singleton(type):
 
 ########################################################################
 class Iterable(ABC):
-    """ A metaclass of Iterable
-    """
+    ''' A metaclass of Iterable
+    '''
     def __init__(self):
-        """Initialisation function. The API (kwargs) should be defined in
+        '''Initialisation function. The API (kwargs) should be defined in
         the function _generator.
-        """
+        '''
         super(Iterable, self).__init__()
         self._generator = None
         self._logger = None
@@ -415,8 +415,8 @@ class Iterable(ABC):
     #--- new methods  -----------------------
     @abstractmethod
     def resetRead(self):
-        """For this generator, we want to rewind only when the end of the data is reached.
-        """
+        '''For this generator, we want to rewind only when the end of the data is reached.
+        '''
         pass
 
     @abstractmethod
@@ -475,9 +475,9 @@ class Program(object):
 
     #----------------------------------------------------------------------
     def __init__(self, argvs=None) : # setting_filename=None):
-        """Constructor
+        '''Constructor
            usage: Program(sys.argv)
-        """
+        '''
         if not argvs or len(argvs) <1:
             argvs = sys.argv
 
@@ -562,7 +562,7 @@ class Program(object):
 
     #----------------------------------------------------------------------
     def __addMetaObj(self, id, obj):
-        """添加上层应用"""
+        '''添加上层应用'''
         # 创建应用实例
         self.__dictMetaObjs[id] = obj
         self.__dict__[id] = self.__dictMetaObjs[id]
@@ -579,7 +579,7 @@ class Program(object):
         return o
 
     def addObj(self, obj):
-        """添加上层应用"""
+        '''添加上层应用'''
         if not obj or not isinstance(obj, MetaObj):
             return None
         
@@ -608,7 +608,7 @@ class Program(object):
         return ret
 
     def addApp(self, app, displayName=None):
-        """添加上层应用"""
+        '''添加上层应用'''
         if not isinstance(app, MetaApp):
             return
 
@@ -623,7 +623,7 @@ class Program(object):
         return app
 
     def createApp(self, appModule, **kwargs):
-        """添加上层应用"""
+        '''添加上层应用'''
 
 #        if not isinstance(appModule, BaseApplication) :
 #            return None
@@ -662,14 +662,14 @@ class Program(object):
         return self.__removeObj(appId)
 
     def getApp(self, appId):
-        """获取APP对象"""
+        '''获取APP对象'''
         o = self.__dictMetaObjs[appId]
         return o.theApp() if isinstance(o, MetaApp) else None
 
     def listApps(self, type=BaseApplication):
-        """list app object of a given type and its children
+        '''list app object of a given type and its children
         @return a list of appId
-        """
+        '''
         ret = []
         for aid, app in self.__dictMetaObjs.items():
             if not app or not isinstance(app, MetaApp) or not isinstance(app.theApp(), type):
@@ -728,7 +728,7 @@ class Program(object):
         self.info('main-program started %d apps: %s' % (len(self.__activeApps), self.__activeApps))
 
     def stop(self):
-        """退出程序前调用，保证正常退出"""        
+        '''退出程序前调用，保证正常退出'''        
         self._bRun = False
 
         '''
@@ -864,14 +864,13 @@ class Program(object):
             sys.stderr.write("first fork failed!!"+e.strerror)
             os._exit(1)
     
-        ''' 子进程， 由于父进程已经退出，所以子进程变为孤儿进程，由init收养
-        setsid使子进程成为新的会话首进程，和进程组的组长，与原来的进程组、控制终端和登录会话脱离。
-        '''
+        # 子进程， 由于父进程已经退出，所以子进程变为孤儿进程，由init收养
+        # setsid使子进程成为新的会话首进程，和进程组的组长，与原来的进程组、控制终端和登录会话脱离。
         os.setsid()
 
-        '''防止在类似于临时挂载的文件系统下运行，例如/mnt文件夹下，这样守护进程一旦运行，临时挂载的文件系统就无法卸载了，这里我们推荐把当前工作目录切换到根目录下'''
+        # 防止在类似于临时挂载的文件系统下运行，例如/mnt文件夹下，这样守护进程一旦运行，临时挂载的文件系统就无法卸载了，这里我们推荐把当前工作目录切换到根目录下'''
         os.chdir("/")
-        '''设置用户创建文件的默认权限，设置的是权限“补码”，这里将文件权限掩码设为0，使得用户创建的文件具有最大的权限。否则，默认权限是从父进程继承得来的'''
+        # 设置用户创建文件的默认权限，设置的是权限“补码”，这里将文件权限掩码设为0，使得用户创建的文件具有最大的权限。否则，默认权限是从父进程继承得来的'''
         os.umask(0)
     
         try:
@@ -898,7 +897,7 @@ class Program(object):
         return ret
 
     def subscribe(self, type_, app):
-        """注册事件处理函数监听"""
+        '''注册事件处理函数监听'''
         if not isinstance(app, BaseApplication):
             return
         if not type_ in self.__subscribers.keys() :
@@ -909,7 +908,7 @@ class Program(object):
             self.__subscribers[type_].append(app.ident)
             
     def unsubscribe(self, type_, app):
-        """注销事件处理函数监听"""
+        '''注销事件处理函数监听'''
         if not isinstance(app, MetaApp) or not type_ in self.__subscribers.keys():
             return
 
@@ -924,7 +923,7 @@ class Program(object):
             del self.__subscribers[type_]  
 
     def publish(self, event):
-        """向事件队列中存入事件"""
+        '''向事件队列中存入事件'''
         self.__queue.put(event)
 
     @property
@@ -934,7 +933,7 @@ class Program(object):
     # methods about logging
     # ----------------------------------------------------------------------
     def initLogger(self):
-        """初始化日志引擎"""
+        '''初始化日志引擎'''
         if not self.__jsettings or not jsoncfg.node_exists(self.__jsettings.logger):
             return
         
@@ -961,8 +960,9 @@ class Program(object):
         
         # 设置输出
         tmpval = self.__jsettings.logger.console('True').lower()
+        logdir = self.__jsettings.logger.dir('/tmp')
         if tmpval in BOOL_TRUE and not self._hdlrConsole:
-            """添加终端输出"""
+            # 添加终端输出
             self._hdlrConsole = logging.StreamHandler()
             self._hdlrConsole.setLevel(self._loglevel)
             self._hdlrConsole.setFormatter(self._logfmtr)
@@ -974,8 +974,7 @@ class Program(object):
 
         tmpval = self.__jsettings.logger.file('True').lower()
         if tmpval in BOOL_TRUE and not self._hdlrFile:
-            # filepath = getTempPath('vnApp' + datetime.now().strftime('%Y%m%d') + '.log')
-            filepath = '/tmp/%s%s.log' % (self._progName, datetime.now().strftime('%Y%m%d'))
+            filepath = '%s/%s.%s.log' % (logdir, self._progName, datetime.now().strftime('%Y%m%d'))
             self._hdlrFile = TimedRotatingFileHandler(filepath, when='W5', backupCount=9) # when='W5' for Satday, 'D' daily, 'midnight' rollover at midnight
            #  = RotatingFileHandler(filepath, maxBytes=100*1024*1024, backupCount=9) # now 100MB*10,  = logging.FileHandler(filepath)
             self._hdlrFile.setLevel(self._loglevel)
@@ -988,7 +987,7 @@ class Program(object):
             self._loggingEvent = True
 
     def setLogLevel(self, level):
-        """设置日志级别"""
+        '''设置日志级别'''
         if self._logger ==None:
             return
 
@@ -1005,7 +1004,7 @@ class Program(object):
 
     @abstractmethod
     def debug(self, msg):
-        """开发时用"""
+        '''开发时用'''
         if self._logger: 
             self.logger.debug(msg)
         else:
@@ -1013,7 +1012,7 @@ class Program(object):
         
     @abstractmethod
     def info(self, msg):
-        """正常输出"""
+        '''正常输出'''
         if self._logger: 
             self.logger.info(msg)
         else:
@@ -1021,7 +1020,7 @@ class Program(object):
 
     @abstractmethod
     def warn(self, msg):
-        """警告信息"""
+        '''警告信息'''
         if self._logger: 
             self.logger.warn(msg)
         else:
@@ -1029,7 +1028,7 @@ class Program(object):
         
     @abstractmethod
     def error(self, msg):
-        """报错输出"""
+        '''报错输出'''
         if self._logger: 
             self.logger.error(msg)
         else:
@@ -1037,18 +1036,18 @@ class Program(object):
         
     @abstractmethod
     def critical(self, msg):
-        """影响程序运行的严重错误"""
+        '''影响程序运行的严重错误'''
         if self._logger: 
             self.logger.critical(msg)
         else:
             print('%s' % msg)
 
     def logexception(self, ex):
-        """报错输出+记录异常信息"""
+        '''报错输出+记录异常信息'''
         self.error('%s: %s' % (ex, traceback.format_exc()))
 
     def eventHdlr_Log(self, event):
-        """处理日志事件"""
+        '''处理日志事件'''
         if not self._logger: return
         log = event.data
         function = self._loglevelFunctionDict[log.logLevel]     # 获取日志级别对应的处理函数
@@ -1056,9 +1055,9 @@ class Program(object):
         function(msg)
 
     def eventHdlr_Error(self, event):
-        """
+        '''
         处理错误事件
-        """
+        '''
         if not self._logger: return
 
         error = event.data
@@ -1066,7 +1065,7 @@ class Program(object):
 
     #----------------------------------------------------------------------
     def getTempPath(name):
-        """获取存放临时文件的路径"""
+        '''获取存放临时文件的路径'''
         tempPath = os.path.join(os.getcwd(), 'temp')
         if not os.path.exists(tempPath):
             os.makedirs(tempPath)
@@ -1084,7 +1083,7 @@ class Program(object):
 
     @abstractmethod
     def loadObject(self, category, id):
-        """读取对象"""
+        '''读取对象'''
         try :
             fn = '%s/objects/%s' % (self.dataRoot, category)
             f = shelve.open(fn)
@@ -1097,7 +1096,7 @@ class Program(object):
 '''
     #----------------------------------------------------------------------
     def addMarketData(self, dsModule, settings):
-        """添加底层接口"""
+        '''添加底层接口'''
 
         # 创建接口实例
         clsName = dsModule.__class__.__name__
@@ -1116,7 +1115,7 @@ class Program(object):
         return md
 
     def getMarketData(self, dsName, exchange=None):
-        """获取接口"""
+        '''获取接口'''
         if dsName in self._dictMarketDatas:
             return self._dictMarketDatas[dsName]
         else:
@@ -1124,7 +1123,7 @@ class Program(object):
             return None
 
     def subscribeMarketData(self, subscribeReq, dsName):
-        """订阅特定接口的行情"""
+        '''订阅特定接口的行情'''
         ds = self.getMarketData(dsName)
         
         if ds:
@@ -1137,7 +1136,7 @@ class Program(object):
         return self._dbConn
 
     def dbConnect(self):
-        """连接MongoDB数据库"""
+        '''连接MongoDB数据库'''
         if not self._dbConn:
             # 读取MongoDB的设置
             dbhost = self.__jsettings.database.host('localhost')
@@ -1167,7 +1166,7 @@ class Program(object):
     #----------------------------------------------------------------------
     @abstractmethod
     def configIndex(self, dbName, collectionName, definition, unique=False):
-        """向MongoDB中定义index"""
+        '''向MongoDB中定义index'''
         if not self._dbConn:
             self.error(text.DATA_INSERT_FAILED)
             return
@@ -1179,7 +1178,7 @@ class Program(object):
 
     @abstractmethod
     def dbInsert(self, dbName, collectionName, d):
-        """向MongoDB中插入数据，d是具体数据"""
+        '''向MongoDB中插入数据，d是具体数据'''
         if not self._dbConn:
             self.error(text.DATA_INSERT_FAILED)
             return
@@ -1192,7 +1191,7 @@ class Program(object):
 
     @abstractmethod
     def dbQuery(self, dbName, collectionName, d, sortKey='', sortDirection=ASCENDING):
-        """从MongoDB中读取数据，d是查询要求，返回的是数据库查询的指针"""
+        '''从MongoDB中读取数据，d是查询要求，返回的是数据库查询的指针'''
         if not self._dbConn:
             self.error(text.DATA_QUERY_FAILED)   
             return []
@@ -1213,7 +1212,7 @@ class Program(object):
         
     @abstractmethod
     def dbUpdate(self, dbName, collectionName, d, flt, upsert=True):
-        """向MongoDB中更新数据，d是具体数据，flt是过滤条件，upsert代表若无是否要插入"""
+        '''向MongoDB中更新数据，d是具体数据，flt是过滤条件，upsert代表若无是否要插入'''
         if not self._dbConn:
             self.error(text.DATA_UPDATE_FAILED)        
             return
@@ -1224,7 +1223,7 @@ class Program(object):
 
     #----------------------------------------------------------------------
     def dbLogging(self, event):
-        """向MongoDB中插入日志"""
+        '''向MongoDB中插入日志'''
         log = event.data
         d = {
             'content': log.logContent,
@@ -1235,7 +1234,7 @@ class Program(object):
     
     #----------------------------------------------------------------------
     def getAllGatewayDetails(self):
-        """查询引擎中所有底层接口的信息"""
+        '''查询引擎中所有底层接口的信息'''
         return self._dlstMarketDatas
 
 ''' 

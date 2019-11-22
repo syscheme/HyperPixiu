@@ -13,9 +13,9 @@ from MarketData import TickData, KLineData, TickToKLineMerger, KlineToXminMerger
 # from .EventChannel import EventChannel, EventData, datetime2float
 
 ########################################################################
-class Strategy(MetaObj):
+class BaseStrategy(MetaObj):
     # 策略类的名称和作者
-    className = 'Strategy'
+    className = 'BaseStrategy'
     author = EventData.EMPTY_UNICODE
     
     # # MongoDB数据库的名称，K线数据库默认为1分钟
@@ -234,7 +234,7 @@ class Strategy(MetaObj):
     #----------------------------------------------------------------------
         
 ########################################################################
-class StrategyOfSymbol(Strategy):
+class StrategyOfSymbol(BaseStrategy):
     ''' per symbol+account 策略类 '''
 
     #----------------------------------------------------------------------
@@ -289,7 +289,7 @@ class StrategyOfSymbol(Strategy):
         return self._account.loadBar(self.barDbName, self._symbol, days)
 
 ########################################################################
-class TargetPosTemplate(Strategy):
+class TargetPosTemplate(BaseStrategy):
     '''
     允许直接通过修改目标持仓来实现交易的策略模板
     

@@ -29,7 +29,7 @@
 
 from __future__ import division
 
-from .Strategy import StrategyOfSymbol, ArrayManager
+from .BaseStrategy import StrategyOfSymbol, ArrayManager
 from MarketData import TickData, KLineData, TickToKLineMerger, KlineToXminMerger
 
 

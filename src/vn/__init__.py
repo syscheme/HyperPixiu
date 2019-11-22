@@ -14,7 +14,7 @@ STRATEGY_PREFFIX = 'stg'
 STRATEGY_PREFFIX_LEN = len(STRATEGY_PREFFIX)
 
 #----------------------------------------------------------------------
-def loadStrategyModule(moduleName):
+def __loadStrategyModule(moduleName):
     """使用importlib动态载入模块"""
     try:
         module = importlib.import_module(moduleName)
@@ -39,4 +39,4 @@ for root, subdirs, files in os.walk(path):
 
         # 模块名称需要模块路径前缀
         moduleName = __name__ + '.' + name[:-3]
-        loadStrategyModule(moduleName)
+        __loadStrategyModule(moduleName)

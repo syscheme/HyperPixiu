@@ -207,118 +207,50 @@ class GymTrader(BaseTrader):
         positions = self._account.getAllPositions()
         cashAvail, cashTotal = self._account.cashAmount()
         totalCapital = cashTotal
+
+        # TODO: the first version only support one symbol to play, so simply take the first symbol in the positions        
+        symbol = None # TODO: should take the __dictOberserves
+        latestPrice = 0
+        posAvail =0
         for s, pos in positions.values() :
+            symbol =  s
+            latestPrice = pos.price
+            posAvailVol = pos.posAvail
             totalCapital += pos.price * pos.position * self._account.contractSize
+            break
 
         reward = - self._timeCostYrRate # initialize with a time cost
         # reward = - totalCapital *self._timeCostYrRate/100/365
+
+        if not symbol or latestPrice <=0:
+            action = self.ACTIONS[ACTION_HOLD]
+
+        if totalCapital <=0:
+            done = True
 
         # step 2. perform the action buy/sell/hold by driving self._account
         if all(action == self.ACTIONS[ACTION_BUY]):
-            volume = determine the volume to buy
-            price = determine the price
-            vtOrderIDList = self._account.sendOrder(self._symbol, OrderData.ORDER_BUY, price, volume, strategy=None)
-            commission = calcluate the commission fee
-            reward -= commission
-            if positions[self._symbol] ==0:
-                self._entry_price = calculate based on price and commision # TODO maybe after the order is comfirmed
-        elif all(action == self.ACTIONS[ACTION_SELL]):
-            volume = determine the volume to buy
-            price = determine the price
-            vtOrderIDList = self._account.sendOrder(self._symbol, OrderData.ORDER_SELL, price, volume, strategy=None)
-            commission = calcluate the commission fee
-            reward -= commission
-            if positions[self._symbol] ==0:
-                self._exit_price = calculate based on price and commision # TODO maybe after the order is comfirmed
-                instant_pnl = self._entry_price - self._exit_price
-                self._entry_price = 0
-        '''
+            # TODO: the first version only support FULL-BUY and FULL-SELL
+            price  = latestPrice + self._account.priceTick
+            volume = round(cashAvail / latestPrice / self._account.contractSize, 0)
+            vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, price, volume, strategy=None)
+            turnover, commission, slippage = self._account.calcAmountOfTrade(symbol, price, volume)
+            reward -= commission + slippage # TODO maybe after the order is comfirmed
+        elif all(action == self.ACTIONS[ACTION_SELL]) and posAvail >0:
+            price  = latestPrice - self._account.priceTick
+            if price <= self._account.priceTick :
+                price = self._account.priceTick 
 
-    def step(self, action):
-        '''Take an action (buy/sell/hold) and computes the immediate reward.
+            volume = - posAvail
+            vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, price, volume, strategy=None)
+            turnover, commission, slippage = self._account.calcAmountOfTrade(symbol, price, volume)
+            reward -= commission + slippage # TODO maybe after the order is comfirmed
+            # if positions[self._symbol] ==0:
+            #     self._exit_price = calculate based on price and commision # TODO maybe after the order is comfirmed
+            #     instant_pnl = self._entry_price - self._exit_price
+            #     self._entry_price = 0
 
-        @param action (numpy.array): Action to be taken, one-hot encoded.
-
-        Returns:
-            tuple:
-                - observation (numpy.array): Agent's observation of the current environment.
-                - reward (float) : Amount of reward returned after previous action.
-                - done (bool): Whether the episode has ended, in which case further step() calls will return undefined results.
-                - info (dict): Contains auxiliary diagnostic information (helpful for debugging, and sometimes learning).
-        '''
-        assert any([(action == x).all() for x in self.ACTIONS.values()])
-        self._action = action
-        self.__stepId += 1
-        done = False
-        instant_pnl = 0
-        info = {}
-
-        # step 1. collected information from the account
-        positions = self._account.getAllPositions()
-        cashAvail, cashTotal = self._account.cashAmount()
-        totalCapital = cashTotal
-        for s, pos in positions.values() :
-            totalCapital += pos.price * pos.position * self._account.contractSize
-
-        reward = - self._timeCostYrRate # initialize with a time cost
-        # reward = - totalCapital *self._timeCostYrRate/100/365
-
-        ''' step 2. perform the action buy/sell/hold
-        TODO: drive self._account refer to vnAccount.step
-        if all(action == self.ACTIONS[ACTION_BUY]):
-            volume = determine the volume to buy
-            price = determine the price
-            vtOrderIDList = self._account.sendOrder(self._symbol, OrderData.ORDER_BUY, price, volume, strategy=None)
-            commission = calcluate the commission fee
-            reward -= commission
-            if positions[self._symbol] ==0:
-                self._entry_price = calculate based on price and commision # TODO maybe after the order is comfirmed
-        elif all(action == self.ACTIONS[ACTION_SELL]):
-            volume = determine the volume to buy
-            price = determine the price
-            vtOrderIDList = self._account.sendOrder(self._symbol, OrderData.ORDER_SELL, price, volume, strategy=None)
-            commission = calcluate the commission fee
-            reward -= commission
-            if positions[self._symbol] ==0:
-                self._exit_price = calculate based on price and commision # TODO maybe after the order is comfirmed
-                instant_pnl = self._entry_price - self._exit_price
-                self._entry_price = 0
-        '''
-
-        if all(action == self.ACTIONS[ACTION_BUY]):
-            reward -= self._trading_fee
-            if all(self._position == self.POS_DIRECTIONS[OrderData.DIRECTION_NONE]):
-                self._position = self.POS_DIRECTIONS[OrderData.DIRECTION_LONG]
-                self._entry_price = calc_spread(
-                    self._prices_history[-1], self._spread_coefficients)[1]  # Ask
-            elif all(self._position == self.POS_DIRECTIONS[OrderData.DIRECTION_SHORT]):
-                self._exit_price = calc_spread(
-                    self._prices_history[-1], self._spread_coefficients)[1]  # Ask
-                instant_pnl = self._entry_price - self._exit_price
-                self._position = self.POS_DIRECTIONS[OrderData.DIRECTION_NONE]
-                self._entry_price = 0
-        elif all(action == self.ACTIONS[ACTION_SELL]):
-            reward -= self._trading_fee
-            if all(self._position == self.POS_DIRECTIONS[OrderData.DIRECTION_NONE]):
-                self._position = self.POS_DIRECTIONS[OrderData.DIRECTION_SHORT]
-                self._entry_price = calc_spread(
-                    self._prices_history[-1], self._spread_coefficients)[0]  # Bid
-            elif all(self._position == self.POS_DIRECTIONS[OrderData.DIRECTION_LONG]):
-                self._exit_price = calc_spread(
-                    self._prices_history[-1], self._spread_coefficients)[0]  # Bid
-                instant_pnl = self._exit_price - self._entry_price
-                self._position = self.POS_DIRECTIONS[OrderData.DIRECTION_NONE]
-                self._entry_price = 0
-
-        ''' step 2.1. build up the account_state (numpy.array) based on
-            postions, cache amount, maybe a sum-up
-       
-        self._account_state = ...
-        '''
-
-        ''' step 3. calculate the rewards
-        TODO: drive self._account refer to vnAccount.step
-        '''
+        # step 3. calculate the rewards
         reward += instant_pnl
         self._total_pnl += instant_pnl
         self._total_reward += reward

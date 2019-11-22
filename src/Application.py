@@ -351,8 +351,8 @@ class Iterable(ABC):
         the function _generator.
         '''
         super(Iterable, self).__init__()
-        self._generator = None
-        self._logger = None
+        self.__gen = None
+        self.__logger = None
         self._iterableEnd = False
 
         # 事件队列
@@ -360,21 +360,21 @@ class Iterable(ABC):
 
     def __iter__(self):
         if self.resetRead() : # alway perform reset here
-            self._generator = self.__generate()
+            self.__gen = self.__generate()
             self.__c = 0
             self._iterableEnd = False
         return self
 
     def __next__(self):
-        if not self._generator and self.resetRead() : # not perform reset here
-            self._generator = self.__generate()
+        if not self.__gen and self.resetRead() : # not perform reset here
+            self.__gen = self.__generate()
             self.__c = 0
             self._iterableEnd = False
 
-        if not self._generator :
+        if not self.__gen :
             raise StopIteration
 
-        return next(self._generator)
+        return next(self.__gen)
 
     def __generate(self):
         while not self._iterableEnd :
@@ -398,7 +398,7 @@ class Iterable(ABC):
                 self._iterableEnd = True
                 break
 
-        self._generator=None
+        self.__gen=None
         raise StopIteration
 
     @property
@@ -428,30 +428,30 @@ class Iterable(ABC):
     #---logging -----------------------
     def setLogger(self, logger):
         if logger and isinstance(logger, logging.Logger):
-            self._logger = logger
+            self.__logger = logger
         self.enquePending(ev, block = True)
 
     def debug(self, msg):
-        if self._logger: 
-            self.logger.debug(msg)
+        if self.__logger: 
+            self.__logger.debug(msg)
         else:
             print('%s' % msg)
         
     def info(self, msg):
-        if self._logger: 
-            self.logger.info(msg)
+        if self.__logger: 
+            self.__logger.info(msg)
         else:
             print('%s' % msg)
 
     def warn(self, msg):
-        if self._logger: 
-            self.logger.warn(msg)
+        if self.__logger: 
+            self.__logger.warn(msg)
         else:
             print('%s' % msg)
         
     def error(self, msg):
-        if self._logger: 
-            self.logger.error(msg)
+        if self.__logger: 
+            self.__logger.error(msg)
         else:
             print('%s' % msg)
 
@@ -521,7 +521,7 @@ class Program(object):
         self._runStartDate = datetime.now().strftime('%Y%m%d')
 
         # 日志引擎实例
-        self._logger = None
+        self.__logger = None
         self.initLogger()
         
         # 事件队列
@@ -551,7 +551,7 @@ class Program(object):
 
     @property
     def logger(self) : 
-        return self._logger
+        return self.__logger
 
     @property
     def threadless(self) :
@@ -940,9 +940,9 @@ class Program(object):
         
         # abbout the logger
         # ----------------------------------------------------------------------
-        self._logger   = logging.getLogger()        
-        self._logfmtr  = logging.Formatter('%(asctime)s %(levelname)s\t%(message)s')
-        self._loglevel = LOGLEVEL_CRITICAL
+        self.__logger   = logging.getLogger()        
+        LOGFMT  = logging.Formatter('%(asctime)s %(levelname)s\t%(message)s')
+        self.__loglevel = LOGLEVEL_CRITICAL
         
         self._hdlrConsole = None
         self._hdlrFile = None
@@ -956,31 +956,43 @@ class Program(object):
             LOGLEVEL_CRITICAL: self.critical,
         }
 
+        STR2LEVEL = {
+            'debug' : LOGLEVEL_DEBUG,
+            'info' : LOGLEVEL_INFO,
+            'warn' : LOGLEVEL_WARN,
+            'error' : LOGLEVEL_ERROR,
+            'critical' : LOGLEVEL_CRITICAL,
+        }
+
+
         # 设置日志级别
-        self.setLogLevel(self.__jsettings.logger.level(LOGLEVEL_DEBUG)) # LOGLEVEL_INFO))
+        level = self.__jsettings.logger.level(LOGLEVEL_DEBUG)
+        if str(level).lower() in STR2LEVEL.keys():
+            level = STR2LEVEL[str(level).lower()]
+        self.setLogLevel(level) # LOGLEVEL_INFO))
         
         # 设置输出
-        tmpval = self.__jsettings.logger.console('False').lower()
+        echoToConsole = self.__jsettings.logger.console('True').lower() in BOOL_TRUE
         logdir = self.__jsettings.logger.dir('/tmp')
-        if tmpval in BOOL_TRUE and not self._hdlrConsole:
+        if echoToConsole and not self._hdlrConsole:
             # 添加终端输出
             self._hdlrConsole = logging.StreamHandler()
-            self._hdlrConsole.setLevel(LOGLEVEL_INFO)
-            self._hdlrConsole.setFormatter(self._logfmtr)
-            self._logger.addHandler(self._hdlrConsole)
+            self._hdlrConsole.setLevel(self.__loglevel)
+            self._hdlrConsole.setFormatter(LOGFMT)
+            self.__logger.addHandler(self._hdlrConsole)
         else :
             # 添加NullHandler防止无handler的错误输出
             nullHandler = logging.NullHandler()
-            self._logger.addHandler(nullHandler)    
+            self.__logger.addHandler(nullHandler)    
 
         tmpval = self.__jsettings.logger.file('True').lower()
         if tmpval in BOOL_TRUE and not self._hdlrFile:
             filepath = '%s/%s.%s.log' % (logdir, self._progName, datetime.now().strftime('%Y%m%d'))
             self._hdlrFile = TimedRotatingFileHandler(filepath, when='W5', backupCount=9) # when='W5' for Satday, 'D' daily, 'midnight' rollover at midnight
            #  = RotatingFileHandler(filepath, maxBytes=100*1024*1024, backupCount=9) # now 100MB*10,  = logging.FileHandler(filepath)
-            self._hdlrFile.setLevel(self._loglevel)
-            self._hdlrFile.setFormatter(self._logfmtr)
-            self._logger.addHandler(self._hdlrFile)
+            self._hdlrFile.setLevel(self.__loglevel)
+            self._hdlrFile.setFormatter(LOGFMT)
+            self.__logger.addHandler(self._hdlrFile)
             
         # 注册事件监听
         if self.__jsettings.logger.loggingEvent('True').lower() in BOOL_TRUE :
@@ -988,11 +1000,11 @@ class Program(object):
 
     def setLogLevel(self, level):
         '''设置日志级别'''
-        if self._logger ==None:
+        if self.__logger ==None:
             return
 
-        self._logger.setLevel(level)
-        self._loglevel = level
+        self.__logger.setLevel(level)
+        self.__loglevel = level
     
     @abstractmethod
     def log(self, level, msg):
@@ -1005,40 +1017,40 @@ class Program(object):
     @abstractmethod
     def debug(self, msg):
         '''开发时用'''
-        if self._logger: 
-            self.logger.debug(msg)
+        if self.__logger: 
+            self.__logger.debug(msg)
         else:
             print('%s' % msg)
         
     @abstractmethod
     def info(self, msg):
         '''正常输出'''
-        if self._logger: 
-            self.logger.info(msg)
+        if self.__logger: 
+            self.__logger.info(msg)
         else:
             print('%s' % msg)
 
     @abstractmethod
     def warn(self, msg):
         '''警告信息'''
-        if self._logger: 
-            self.logger.warn(msg)
+        if self.__logger: 
+            self.__logger.warn(msg)
         else:
             print('%s' % msg)
         
     @abstractmethod
     def error(self, msg):
         '''报错输出'''
-        if self._logger: 
-            self.logger.error(msg)
+        if self.__logger: 
+            self.__logger.error(msg)
         else:
             print('%s' % msg)
         
     @abstractmethod
     def critical(self, msg):
         '''影响程序运行的严重错误'''
-        if self._logger: 
-            self.logger.critical(msg)
+        if self.__logger: 
+            self.__logger.critical(msg)
         else:
             print('%s' % msg)
 
@@ -1048,7 +1060,7 @@ class Program(object):
 
     def eventHdlr_Log(self, event):
         '''处理日志事件'''
-        if not self._logger: return
+        if not self.__logger: return
         log = event.data
         function = self._loglevelFunctionDict[log.logLevel]     # 获取日志级别对应的处理函数
         msg = '\t'.join([log.dsName, log.logContent])
@@ -1058,7 +1070,7 @@ class Program(object):
         '''
         处理错误事件
         '''
-        if not self._logger: return
+        if not self.__logger: return
 
         error = event.data
         self.error(u'错误代码：%s，错误信息：%s' %(error.errorID, error.errorMsg))

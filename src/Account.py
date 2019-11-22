@@ -248,11 +248,10 @@ class Account(MetaAccount):
     def getAllPositions(self): # returns PositionData
         with self._lock :
             for s, pos in self._dictPositions.items() :
-                if self.cashSymbol == s:
-                    continue
-                price = self._marketstate.latestPrice(pos.symbol)
-                if price >0:
-                    pos.price = price
+                if self.cashSymbol != s:
+                    price = self._marketstate.latestPrice(pos.symbol)
+                    if price >0:
+                        pos.price = price
             allpos = copy.deepcopy(self._dictPositions)
             del allpos[self.cashSymbol]
             return allpos
@@ -265,7 +264,7 @@ class Account(MetaAccount):
 
     def cashChange(self, dAvail=0, dTotal=0):
         with self._lock :
-            return self._cashChange(dAvail, dTotal)
+            return self.__cashChange(dAvail, dTotal)
 
     def insertData(self, collectionName, data) :
         if self._recorder :
@@ -686,7 +685,7 @@ class Account(MetaAccount):
     # end of BaseApplication routine
     #----------------------------------------------------------------------
 
-    def _cashChange(self, dAvail=0, dTotal=0): # thread unsafe
+    def __cashChange(self, dAvail=0, dTotal=0): # thread unsafe
         pos = self._dictPositions[self.cashSymbol]
         volprice = pos.price * self._contractSize
         if pos.price <=0 :   # if cache.price not initialized
@@ -697,11 +696,11 @@ class Account(MetaAccount):
         dAvail /= volprice
         dTotal /= volprice
         
-        self.debug('_cashChange() avail[%s%+.3f] total[%s%+.3f]' % (pos.posAvail, dAvail, pos.position, dTotal))#, pos.desc))
+        self.debug('__cashChange() avail[%s%+.3f] total[%s%+.3f]' % (pos.posAvail, dAvail, pos.position, dTotal))#, pos.desc))
         # double check if the cash account goes to negative
         newAvail, newTotal = pos.posAvail + dAvail, pos.position + dTotal
         if newAvail<0 or newTotal <0 or newAvail >(newTotal*1.05):
-            self.error('_cashChange() something wrong: newAvail[%s] newTotal[%s]' % (newAvail, newTotal)) #, pos.desc))
+            self.error('__cashChange() something wrong: newAvail[%s] newTotal[%s]' % (newAvail, newTotal)) #, pos.desc))
             exit(-1)
 
         pos.posAvail = newAvail
@@ -859,7 +858,7 @@ class Account(MetaAccount):
     def calcDailyPositions(self):
         """今日交易的结果"""
 
-        tradesOfSymbol = { self.cashSymbol: [] }        # 成交列表
+        tradesOfSymbol = {} # { self.cashSymbol: [] }        # 成交列表
         with self._lock :
             for t in self._dictTrades.values():
                 if len(t.symbol) <=0:
@@ -876,7 +875,6 @@ class Account(MetaAccount):
                 tradesOfSymbol[s] = [] # fill a dummy trade list
 
         for s in tradesOfSymbol.keys():
-
             currentPos = currentPositions[s]
             ohlc =  self._marketstate.dailyOHLC_sofar(s)
 
@@ -921,7 +919,7 @@ class Account_AShare(Account):
         if not 'exchange' in kwargs.keys() :
             kwargs['exchange'] ='AShare'
         if not 'contractSize' in kwargs.keys() :
-            kwargs['contractSize'] =1000
+            kwargs['contractSize'] =100
         if not 'priceTick' in kwargs.keys() :
             kwargs['priceTick'] = 0.01
 

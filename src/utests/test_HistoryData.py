@@ -92,19 +92,19 @@ class TestHistoryData(unittest.TestCase):
     def test_Perspective(self):
         ps = psp.Perspective('AShare', '000001')
         histdata = psp.PerspectiveGenerator(ps)
-        reader = hist.CsvPlayback(symbol='000001', folder='/mnt/m/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
+        reader = hist.CsvPlayback(symbol='000001', folder='/mnt/e/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
         histdata.adaptReader(reader, md.EVENT_KLINE_1MIN)
         marketstate = psp.PerspectiveDict('AShare')
 
         for i in histdata :
             if psp.EVENT_Perspective != i.type :
-                print('evnt: %s' % i.desc) 
+                p.debug('evnt: %s' % i.desc) 
                 continue
 
             print('Psp: %s' % i.desc)
             marketstate.updateByEvent(i)
             s = i.data.symbol
-            print('-> state: asof[%s] symbol[%s] lastPrice[%s] OHLC%s\n' % (marketstate.getAsOf(s).strftime('%Y%m%dT%H:%M:%S'), s, marketstate.latestPrice(s), marketstate.dailyOHLC_sofar(s)))
+            p.debug('-> state: asof[%s] symbol[%s] lastPrice[%s] OHLC%s\n' % (marketstate.getAsOf(s).strftime('%Y%m%dT%H:%M:%S'), s, marketstate.latestPrice(s), marketstate.dailyOHLC_sofar(s)))
 
     def func1(self, a=None, **kwargs):
         print('func1(a=%s, kwargs=%s)\n' %(a, kwargs))

@@ -219,7 +219,7 @@ class PerspectiveGenerator(Iterable):
     def __init__(self, perspective):
         super(PerspectiveGenerator, self).__init__()
         self._perspective = perspective
-        self._generator = None
+        self.__gen = None
 
         self._readers = {
             EVENT_TICK:       None,

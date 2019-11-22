@@ -1,13 +1,13 @@
 # encoding: UTF-8
 
-"""
+'''
 In this example we demonstrate how to implement a DQN agent and
 train it to trade optimally on a periodic price signal.
 Training time is short and results are unstable.
 Do not hesitate to run several times and/or tweak parameters to get better results.
 Inspired from https://github.com/keon/deep-q-learning
-"""
-from envTrading import envTrading
+'''
+from gym.GymTrader import GymTrader
 
 import random
 
@@ -47,8 +47,8 @@ class DQNAgent(object): # TODO: inherit from Trader as an application
         self.i = 0
 
     def _build_brain(self):
-        """Build the agent's brain
-        """
+        '''Build the agent's brain
+        '''
         brain = Sequential()
         neurons_per_layer = 24
         activation = "relu"
@@ -61,8 +61,8 @@ class DQNAgent(object): # TODO: inherit from Trader as an application
         return brain
 
     def act(self, state):
-        """Acting Policy of the DQNAgent
-        """
+        '''Acting Policy of the DQNAgent
+        '''
         action = np.zeros(self.action_size)
         if np.random.rand() <= self.epsilon:
             action[random.randrange(self.action_size)] = 1
@@ -73,8 +73,8 @@ class DQNAgent(object): # TODO: inherit from Trader as an application
         return action
 
     def observe(self, state, action, reward, next_state, done, warming_up=False):
-        """Memory Management and training of the agent
-        """
+        '''Memory Management and training of the agent
+        '''
         self.i = (self.i + 1) % self.memory_size
         self.memory[self.i] = (state, action, reward, next_state, done)
         if (not warming_up) and (self.i % self.train_interval) == 0:
@@ -93,10 +93,10 @@ class DQNAgent(object): # TODO: inherit from Trader as an application
                                   verbose=False)
 
     def _get_batches(self):
-        """Selecting a batch of memory
+        '''Selecting a batch of memory
            Split it into categorical subbatches
            Process action_batch into a position vector
-        """
+        '''
         batch = np.array(random.sample(self.memory, self.batch_size))
         state_batch = np.concatenate(batch[:, 0])\
             .reshape(self.batch_size, self.state_size)
@@ -131,14 +131,14 @@ if __name__ == "__main__":
                                 history_length=history_length,
                                 episode_length=episode_length)
                                 
-    state = environment.reset()
+    state = environment.gymReset()
     # Instantiating the agent
     memory_size = 3000
     state_size = len(state)
     gamma = 0.96
     epsilon_min = 0.01
     batch_size = 64
-    action_size = len(envTrading._actions)
+    action_size = len(envTrading.ACTIONS)
     train_interval = 10
     learning_rate = 0.001
     agent = DQNAgent(state_size=state_size,
@@ -161,7 +161,7 @@ if __name__ == "__main__":
 
     # Training the agent
     for ep in range(episodes):
-        state = environment.reset()
+        state = environment.gymReset()
         rew = 0
         for _ in range(episode_length):
             action = agent.act(state)
@@ -177,7 +177,7 @@ if __name__ == "__main__":
     
     # Running the agent
     done = False
-    state = environment.reset()
+    state = environment.gymReset()
     while not done:
         action = agent.act(state)
         state, _, done, info = environment.step(action)

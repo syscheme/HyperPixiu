@@ -213,6 +213,10 @@ class Account(MetaAccount):
         return self._priceTick
 
     @property
+    def contractSize(self):
+        return self._contractSize
+
+    @property
     def dbName(self):
         return self._dbName
 
@@ -243,11 +247,15 @@ class Account(MetaAccount):
 
     def getAllPositions(self): # returns PositionData
         with self._lock :
-            for pos in self._dictPositions.values() :
+            for s, pos in self._dictPositions.items() :
+                if self.cashSymbol == s:
+                    continue
                 price = self._marketstate.latestPrice(pos.symbol)
                 if price >0:
                     pos.price = price
-            return copy.deepcopy(self._dictPositions)
+            allpos = copy.deepcopy(self._dictPositions)
+            del allpos[self.cashSymbol]
+            return allpos
 
     def cashAmount(self): # returns (avail, total)
         with self._lock :
@@ -967,23 +975,23 @@ class OrderData(EventData):
     STOPORDERPREFIX = 'SO#'
 
     # 涉及到的交易方向类型
-    ORDER_BUY   = u'BUY'   # u'买开' 是指投资者对未来价格趋势看涨而采取的交易手段，买进持有看涨合约，意味着帐户资金买进合约而冻结
-    ORDER_SELL  = u'SELL'  # u'卖平' 是指投资者对未来价格趋势不看好而采取的交易手段，而将原来买进的看涨合约卖出，投资者资金帐户解冻
-    ORDER_SHORT = u'SHORT' # u'卖开' 是指投资者对未来价格趋势看跌而采取的交易手段，卖出看跌合约。卖出开仓，帐户资金冻结
-    ORDER_COVER = u'COVER' # u'买平' 是指投资者将持有的卖出合约对未来行情不再看跌而补回以前卖出合约，与原来的卖出合约对冲抵消退出市场，帐户资金解冻
+    ORDER_BUY   = 'BUY'   # u'买开' 是指投资者对未来价格趋势看涨而采取的交易手段，买进持有看涨合约，意味着帐户资金买进合约而冻结
+    ORDER_SELL  = 'SELL'  # u'卖平' 是指投资者对未来价格趋势不看好而采取的交易手段，而将原来买进的看涨合约卖出，投资者资金帐户解冻
+    ORDER_SHORT = 'SHORT' # u'卖开' 是指投资者对未来价格趋势看跌而采取的交易手段，卖出看跌合约。卖出开仓，帐户资金冻结
+    ORDER_COVER = 'COVER' # u'买平' 是指投资者将持有的卖出合约对未来行情不再看跌而补回以前卖出合约，与原来的卖出合约对冲抵消退出市场，帐户资金解冻
 
     # 本地停止单状态
-    STOPORDER_WAITING   = u'WAITING'   #u'等待中'
-    STOPORDER_CANCELLED = u'CANCELLED' #u'已撤销'
-    STOPORDER_TRIGGERED = u'TRIGGERED' #u'已触发'
+    STOPORDER_WAITING   = 'WAITING'   #u'等待中'
+    STOPORDER_CANCELLED = 'CANCELLED' #u'已撤销'
+    STOPORDER_TRIGGERED = 'TRIGGERED' #u'已触发'
 
     # 方向常量
-    DIRECTION_NONE = u'none'
-    DIRECTION_LONG = u'long'
-    DIRECTION_SHORT = u'short'
-    DIRECTION_UNKNOWN = u'unknown'
-    DIRECTION_NET = u'net'
-    DIRECTION_SELL = u'sell'      # IB接口
+    DIRECTION_NONE = 'none'
+    DIRECTION_LONG = 'long'
+    DIRECTION_SHORT = 'short'
+    DIRECTION_UNKNOWN = 'unknown'
+    DIRECTION_NET =  'net'
+    DIRECTION_SELL = 'sell'      # IB接口
     DIRECTION_COVEREDSHORT = u'covered short'    # 证券期权
 
     # 开平常量

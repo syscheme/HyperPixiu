@@ -964,6 +964,8 @@ class AccountWrapper(MetaAccount):
     @property
     def priceTick(self): return self._nest.priceTick
     @property
+    def contractSize(self): return self._nest.contractSize
+    @property
     def cashSymbol(self): return self._nest.cashSymbol
     @property
     def dbName(self): return self._nest.dbName

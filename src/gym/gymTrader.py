@@ -1,8 +1,13 @@
 # encoding: UTF-8
+'''
+gymTrader impls BaseTrader and represent itself as a Gym Environment
+'''
 
-from gym import GymEnv
+# from gym import GymEnv
+from Trader import BaseTrader
 
-import matplotlib as mpl
+from abc import ABC, abstractmethod
+import matplotlib as mpl # pip install matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -17,7 +22,7 @@ mpl.rcParams.update(
 )
 
 ########################################################################
-class TradingEnv(GymEnv):
+class GymTrader(BaseTrader):
     """Class for a discrete (buy/hold/sell) spread trading environment.
     """
 
@@ -32,6 +37,14 @@ class TradingEnv(GymEnv):
         'long': np.array([0, 1, 0]),
         'short': np.array([0, 0, 1])
     }
+
+    def __init__(self, program, **kwargs):
+        """Constructor
+        @param envAccount (AccountGEnv): the account env to observe and drive
+        @param envMarket (MarketGEnv): the market env to observe
+        @param timeCostYrRate (float%): the time interest cost of the capital
+        """
+        super(GymTrader, self).__init__(program, **kwargs)
 
     def __init__(self, envAccount, envMarket, spread_coefficients, episode_length=10000, timeCostYrRate=0.0) :
         """Initialisation function

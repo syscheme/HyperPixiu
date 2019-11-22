@@ -960,12 +960,12 @@ class Program(object):
         self.setLogLevel(self.__jsettings.logger.level(LOGLEVEL_DEBUG)) # LOGLEVEL_INFO))
         
         # 设置输出
-        tmpval = self.__jsettings.logger.console('True').lower()
+        tmpval = self.__jsettings.logger.console('False').lower()
         logdir = self.__jsettings.logger.dir('/tmp')
         if tmpval in BOOL_TRUE and not self._hdlrConsole:
             # 添加终端输出
             self._hdlrConsole = logging.StreamHandler()
-            self._hdlrConsole.setLevel(self._loglevel)
+            self._hdlrConsole.setLevel(LOGLEVEL_INFO)
             self._hdlrConsole.setFormatter(self._logfmtr)
             self._logger.addHandler(self._hdlrConsole)
         else :

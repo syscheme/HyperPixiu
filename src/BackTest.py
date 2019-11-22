@@ -10,7 +10,7 @@ from Account import *
 from Trader import *
 import HistoryData as hist
 from Perspective import *
-import vn.Trader as vn
+import vn.VnTrader as vn
 
 from datetime import datetime, timedelta
 from collections import OrderedDict

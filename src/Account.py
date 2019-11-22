@@ -787,7 +787,11 @@ class Account(MetaAccount):
             # 汇总
             self._todayResult.totalPnl = round(self._todayResult.tradingPnl + self._todayResult.positionPnl, 2)
             self._todayResult.netPnl = round(self._todayResult.totalPnl - self._todayResult.commission - self._todayResult.slippage, 2)
-            self.info('onDayClose() summed %s trades: %s' % (len(self._dictTrades), self._todayResult.txnHist))
+            cTds = len(self._dictTrades)
+            if cTds >0 :
+                self.info('onDayClose() %s summed %s trades: %s' % (self._dateToday, cTds, self._todayResult.txnHist))
+            else:
+                self.debug('onDayClose() %s no trades' % (self._dateToday))
 
             # part 2. record the daily result and positions
             if self._recorder:

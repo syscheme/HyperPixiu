@@ -346,13 +346,16 @@ class Singleton(type):
 class Iterable(ABC):
     ''' A metaclass of Iterable
     '''
-    def __init__(self):
+    def __init__(self, **kwargs):
         '''Initialisation function. The API (kwargs) should be defined in
         the function _generator.
         '''
         super(Iterable, self).__init__()
         self.__gen = None
-        self.__logger = None
+        self.__program = None
+        if 'program' in kwargs.keys():
+            self.__program = kwargs['program']
+
         self._iterableEnd = False
 
         # 事件队列
@@ -426,34 +429,25 @@ class Iterable(ABC):
         return None
 
     #---logging -----------------------
-    def setLogger(self, logger):
-        if logger and isinstance(logger, logging.Logger):
-            self.__logger = logger
-        self.enquePending(ev, block = True)
+    def setProgram(self, program):
+        if program and isinstance(program, Program):
+            self.__program = program
 
     def debug(self, msg):
-        if self.__logger: 
-            self.__logger.debug(msg)
-        else:
-            print('%s' % msg)
+        if not self.__program: return
+        self.__program.debug(self.__class__.__name__ +' ' + msg)
         
     def info(self, msg):
-        if self.__logger: 
-            self.__logger.info(msg)
-        else:
-            print('%s' % msg)
+        if not self.__program: return
+        self.__program.info(self.__class__.__name__ +' ' + msg)
 
     def warn(self, msg):
-        if self.__logger: 
-            self.__logger.warn(msg)
-        else:
-            print('%s' % msg)
+        if not self.__program: return
+        self.__program.warn(self.__class__.__name__ +' ' + msg)
         
     def error(self, msg):
-        if self.__logger: 
-            self.__logger.error(msg)
-        else:
-            print('%s' % msg)
+        if not self.__program: return
+        self.__program.error(self.__class__.__name__ +' ' + msg)
 
     def logexception(self, ex):
         self.error('%s: %s' % (ex, traceback.format_exc()))

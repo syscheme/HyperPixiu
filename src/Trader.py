@@ -224,7 +224,7 @@ class BaseTrader(MetaTrader):
             objective = self._dictObjectives[symbol]
             #  objective['ohlc'] = self.updateOHLC(objective['ohlc'] if 'ohlc' in objective.keys() else None, kline.open, kline.high, kline.low, kline.close)
 
-            if objective['date'] != d.date:
+            if not objective['date'] or d.date > objective['date'] :
                 self.onDayOpen(symbol, d.date)
                 objective['date'] = d.date
                 # objective['ohlc'] = self.updateOHLC(None, d.open, d.high, d.low, d.close)

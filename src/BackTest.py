@@ -1316,7 +1316,7 @@ if __name__ == '__main__':
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
     csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
     ps = Perspective('AShare', SYMBOL)
-    csvreader = hist.CsvPlayback(symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
+    csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
     histdata = PerspectiveGenerator(ps)
     histdata.adaptReader(csvreader, EVENT_KLINE_1MIN)
     

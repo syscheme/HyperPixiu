@@ -260,11 +260,11 @@ class Playback(Iterable):
     DUMMY_DATE_START = '19900101T000000'
     DUMMY_DATE_END   = '39991231T000000'
 
-    def __init__(self, symbol, startDate =DUMMY_DATE_START, endDate=DUMMY_DATE_END, category =None, exchange=None):
+    def __init__(self, symbol, startDate =DUMMY_DATE_START, endDate=DUMMY_DATE_END, category =None, exchange=None, **kwargs):
         """Initialisation function. The API (kwargs) should be defined in
         the function _generator.
         """
-        super(Playback, self).__init__()
+        super(Playback, self).__init__(**kwargs)
         self._symbol = symbol
         self._category = category if category else EVENT_KLINE_1MIN
         self._exchange = exchange if exchange else 'na'
@@ -302,6 +302,8 @@ class Playback(Iterable):
         self.__lastMarketClk = self.__lastMarketClk.replace(minute=0, second=0, microsecond=0)
         evdMH = MarketData(self._exchange, self._symbol)
         evdMH.datetime = self.__lastMarketClk
+        evdMH.date = evdMH.datetime.strftime('%Y%m%d')
+        evdMH.time = evdMH.datetime.strftime('%H:%M:%S')
         evMH = Event(EVENT_MARKET_HOUR)
         evMH.setData(evdMH)
         self.enquePending(evMH)
@@ -312,9 +314,9 @@ class CsvPlayback(Playback):
     DIGITS=set('0123456789')
 
     #----------------------------------------------------------------------
-    def __init__(self, symbol, folder, fields, category =None, startDate =Playback.DUMMY_DATE_START, endDate=Playback.DUMMY_DATE_END) :
+    def __init__(self, symbol, folder, fields, category =None, startDate =Playback.DUMMY_DATE_START, endDate=Playback.DUMMY_DATE_END, **kwargs) :
 
-        super(CsvPlayback, self).__init__(symbol, startDate, endDate, category)
+        super(CsvPlayback, self).__init__(symbol, startDate, endDate, category, **kwargs)
         self._folder = folder
         self._fields = fields
 
@@ -403,7 +405,7 @@ class CsvPlayback(Playback):
                 fn = self._csvfiles[0]
                 del(self._csvfiles[0])
 
-                self.debug('openning input file %s' % (fn))
+                self.info('openning input file %s' % (fn))
                 extname = fn.split('.')[-1]
                 if extname == 'bz2':
                     self._importStream = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')

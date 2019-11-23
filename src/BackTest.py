@@ -21,7 +21,7 @@ import copy
 # import pymongo
 import pandas as pd
 import numpy as np
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 import shutil
 
 # 如果安装了seaborn则设置为白色风格
@@ -68,7 +68,7 @@ class BackTestApp(MetaTrader):
         self.__execStamp_roundStart = self.__execStamp_appStart
 
         # backtest will always clear the datapath
-        self.__outdir = '%s/%s_%s' % (self.dataRoot, self.ident, self.__execStamp_appStart.strftime('%Y%m%dT%H%M%S'))
+        self.__outdir = '%s/%s%s' % (self.dataRoot, self.ident, self.__execStamp_appStart.strftime('%Y%m%dT%H%M%S'))
         try :
             shutil.rmtree(self.__outdir)
             os.makedirs(self.__outdir)
@@ -76,6 +76,10 @@ class BackTestApp(MetaTrader):
             pass
 
         self.__dtData = self._btStartDate
+
+    @property
+    def roundId(self) :
+        return 'R' + str(self.__testRoundId).zfill(4)
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -298,62 +302,97 @@ class BackTestApp(MetaTrader):
         return True
 
     #----------------------------------------------------------------------
-    def generateReport(self, df=None, summary=None):
+    def generateReport(self, tradeDays=None, summary=None):
         """显示按日统计的交易结果"""
-        if df is None:
-            df, summary = calculateSummary(self._startBalance, self._account.dailyResultDict)
+        if tradeDays is None:
+            tradeDays, summary = calculateSummary(self._startBalance, self._account.dailyResultDict)
 
         if not summary or not isinstance(summary, dict) :
             self.error('no summary given: %s' % summary)
             return
 
-        if not df is None:
-            csvfile = 'out/%s%s_%sR%d.csv' %(self.dataRoot, self.ident, self.__execStamp_appStart.strftime('%Y%m%dT%H%M%S'), self.__testRoundId)
+        if not tradeDays is None:
+            csvfile = '%s/%s_DR.csv' %(self.__outdir, self.roundId)
             try :
                 os.makedirs(os.path.dirname(csvfile))
             except:
                 pass
-            df.to_csv(csvfile)
+            tradeDays.to_csv(csvfile)
             
         originGain = 0.0
         if self._dataBegin_closeprice >0 :
             originGain = (self._dataEnd_closeprice - self._dataBegin_closeprice)*100 / self._dataBegin_closeprice
 
         # 输出统计结果
-        self.debug('%s_R%d' %(self.ident, self.__testRoundId) + '-' * 20)
-        self.info(u'    回放始末: %s(close:%.2f) ~ %s(close:%.2f): %s%%'  %(self._dataBegin_date, self._dataBegin_closeprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain)))
-        self.info(u'    交易始末: %s(close:%.2f) ~ %s(close:%.2f)' % (summary['startDate'], self._dataBegin_closeprice, summary['endDate'], self._dataEnd_closeprice))
+        strReport = '%s_R%d took %s' %(self.ident, self.__testRoundId, str(datetime.now() - self.__execStamp_roundStart))
+        strReport += u'\n    回放始末: %s(close:%.2f) ~ %s(close:%.2f): %s%%'  % (self._dataBegin_date, self._dataBegin_closeprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain))
+        strReport += u'\n    交易始末: %s(close:%.2f) ~ %s(close:%.2f)' % (summary['startDate'], self._dataBegin_closeprice, summary['endDate'], self._dataEnd_closeprice)
         
-        self.info(u'    交易日数: %s (盈利%s, 亏损%s)' % (summary['totalDays'], summary['profitDays'], summary['lossDays']))
+        strReport += u'\n    交易日数: %s (盈利%s, 亏损%s)' % (summary['totalDays'], summary['profitDays'], summary['lossDays'])
         
-        self.info(u'    起始资金: %s' % formatNumber(self._startBalance))
-        self.info(u'    结束资金: %s' % formatNumber(summary['endBalance']))
+        strReport += u'\n    起始资金: %s' % formatNumber(self._startBalance)
+        strReport += u'\n    结束资金: %s' % formatNumber(summary['endBalance'])
     
-        self.info(u'    总收益率: %s%%' % formatNumber(summary['totalReturn']))
-        self.info(u'    年化收益: %s%%' % formatNumber(summary['annualizedReturn']))
-        self.info(u'      总盈亏: %s' % formatNumber(summary['totalNetPnl']))
-        self.info(u'    最大回撤: %s' % formatNumber(summary['maxDrawdown']))   
-        self.info(u'  最大回撤率: %s%%' % formatNumber(summary['maxDdPercent']))   
+        strReport += u'\n    总收益率: %s%%' % formatNumber(summary['totalReturn'])
+        strReport += u'\n    年化收益: %s%%' % formatNumber(summary['annualizedReturn'])
+        strReport += u'\n      总盈亏: %s' % formatNumber(summary['totalNetPnl'])
+        strReport += u'\n    最大回撤: %s' % formatNumber(summary['maxDrawdown'])   
+        strReport += u'\n  最大回撤率: %s%%' % formatNumber(summary['maxDdPercent'])
+        strReport += u'\n  收益标准差: %s%%' % formatNumber(summary['returnStd'])
+        strReport += u'\n      夏普率: %s' % formatNumber(summary['sharpeRatio'])
         
-        self.info(u'    总手续费: %s' % formatNumber(summary['totalCommission']))
-        self.info(u'      总滑点: %s' % formatNumber(summary['totalSlippage']))
-        self.info(u'  总成交金额: %s' % formatNumber(summary['totalTurnover']))
-        self.info(u'  总成交笔数: %s' % formatNumber(summary['totalTradeCount'],0))
+        strReport += u'\n    总手续费: %s' % formatNumber(summary['totalCommission'])
+        strReport += u'\n      总滑点: %s' % formatNumber(summary['totalSlippage'])
+        strReport += u'\n  总成交金额: %s' % formatNumber(summary['totalTurnover'])
+        strReport += u'\n  总成交笔数: %s' % formatNumber(summary['totalTradeCount'],0)
         
-        self.info(u'    日均盈亏: %s' % formatNumber(summary['dailyNetPnl']))
-        self.info(u'  日均手续费: %s' % formatNumber(summary['dailyCommission']))
-        self.info(u'    日均滑点: %s' % formatNumber(summary['dailySlippage']))
-        self.info(u'日均成交金额: %s' % formatNumber(summary['dailyTurnover']))
-        self.info(u'日均成交笔数: %s' % formatNumber(summary['dailyTradeCount']))
+        strReport += u'\n    日均盈亏: %s' % formatNumber(summary['dailyNetPnl'])
+        strReport += u'\n  日均手续费: %s' % formatNumber(summary['dailyCommission'])
+        strReport += u'\n    日均滑点: %s' % formatNumber(summary['dailySlippage'])
+        strReport += u'\n日均成交金额: %s' % formatNumber(summary['dailyTurnover'])
+        strReport += u'\n日均成交笔数: %s' % formatNumber(summary['dailyTradeCount'])
+        strReport += u'\n  日均收益率: %s%%' % formatNumber(summary['dailyReturn'])
+
+        '''
+        strReport += u'\n%10s: %-8s(close:%.2f) ~ %-8s(close:%.2f): %s%%' % ('回放始末', self._dataBegin_date, self._dataBegin_closeprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain))
+        strReport += u'\n%10s: %s(close:%.2f) ~ %s(close:%.2f)'           % ('交易始末', summary['startDate'], self._dataBegin_closeprice, summary['endDate'], self._dataEnd_closeprice)
+        strReport += u'\n%10s: %s (盈利%s, 亏损%s)' % ('交易日数', summary['totalDays'], summary['profitDays'], summary['lossDays'])
         
-        self.info(u'  日均收益率: %s%%' % formatNumber(summary['dailyReturn']))
-        self.info(u'  收益标准差: %s%%' % formatNumber(summary['returnStd']))
-        self.info(u'      夏普率: %s' % formatNumber(summary['sharpeRatio']))
+        strReport += u'\n%10s: %s'   % ('起始资金', formatNumber(self._startBalance))
+        strReport += u'\n%10s: %s'   % ('结束资金', formatNumber(summary['endBalance']))
+    
+        strReport += u'\n%10s: %s%%' % (u'总收益率',   formatNumber(summary['totalReturn']))
+        strReport += u'\n%10s: %s%%' % (u'年化收益',   formatNumber(summary['annualizedReturn']))
+        strReport += u'\n%10s: %s'   % (u'总盈亏',     formatNumber(summary['totalNetPnl']))
+        strReport += u'\n%10s: %s'   % (u'最大回撤',   formatNumber(summary['maxDrawdown']))
+        strReport += u'\n%10s: %s%%' % (u'最大回撤率', formatNumber(summary['maxDdPercent']))
+        strReport += u'\n%10s: %s%%' % (u'收益标准差', formatNumber(summary['returnStd']))
+        strReport += u'\n%10s: %s'   % (u'夏普率',     formatNumber(summary['sharpeRatio']))
         
-        self.plotResult(df)
+        strReport += u'\n%10s: %s'   % (u'总手续费',   formatNumber(summary['totalCommission']))
+        strReport += u'\n%10s: %s'   % (u'总滑点',     formatNumber(summary['totalSlippage']))
+        strReport += u'\n%10s: %s'   % (u'总成交金额', formatNumber(summary['totalTurnover']))
+        strReport += u'\n%10s: %s'   % (u'总成交笔数', formatNumber(summary['totalTradeCount'],0))
+        
+        strReport += u'\n%10s: %s'   % (u'日均盈亏',   formatNumber(summary['dailyNetPnl']))
+        strReport += u'\n%10s: %s'   % (u'日均手续费', formatNumber(summary['dailyCommission']))
+        strReport += u'\n%10s: %s'   % (u'日均滑点',   formatNumber(summary['dailySlippage']))
+        strReport += u'\n%10s: %s'   % (u'日均成交金额', formatNumber(summary['dailyTurnover']))
+        strReport += u'\n%10s: %s'   % (u'日均成交笔数', formatNumber(summary['dailyTradeCount']))
+        strReport += u'\n%10s: %s%%' % (u'日均收益率', formatNumber(summary['dailyReturn']))
+        '''
+
+        with open('%s/%s_summary.txt' %(self.__outdir, self.roundId),'wt') as rptfile:
+            rptfile.write(strReport)
+
+        self.info('%s_%s summary:' %(self.ident, self.roundId))
+        for line in strReport.splitlines():
+            self.info(line)
+        
+        self.plotResult(tradeDays)
 
     #----------------------------------------------------------------------
-    def plotResult(self, df):
+    def plotResult(self, tradeDays):
         # 绘图
         plt.rcParams['agg.path.chunksize'] =10000
 
@@ -361,21 +400,21 @@ class BackTestApp(MetaTrader):
         
         pBalance = plt.subplot(4, 1, 1)
         pBalance.set_title(self._id + ' Balance')
-        df['balance'].plot(legend=True)
+        tradeDays['balance'].plot(legend=True)
         
         pDrawdown = plt.subplot(4, 1, 2)
         pDrawdown.set_title('Drawdown')
-        pDrawdown.fill_between(range(len(df)), df['drawdown'].values)
+        pDrawdown.fill_between(range(len(tradeDays)), tradeDays['drawdown'].values)
         
         pPnl = plt.subplot(4, 1, 3)
         pPnl.set_title('Daily Pnl') 
-        df['netPnl'].plot(kind='bar', legend=False, grid=False, xticks=[])
+        tradeDays['netPnl'].plot(kind='bar', legend=False, grid=False, xticks=[])
 
         pKDE = plt.subplot(4, 1, 4)
         pKDE.set_title('Daily Pnl Distribution')
-        df['netPnl'].hist(bins=50)
+        tradeDays['netPnl'].hist(bins=50)
         
-        plt.savefig('DR-%s.png' % self._account._id, dpi=400, bbox_inches='tight')
+        plt.savefig('%s/%s_DR.png' %(self.__outdir, self.roundId), dpi=400, bbox_inches='tight')
         plt.show()
         plt.close()
        
@@ -1329,7 +1368,7 @@ if __name__ == '__main__':
     
     p.info('all objects registered piror to BackTestApp: %s' % p.listByType(MetaObj))
     
-    p.createApp(BackTestApp, configNode ='backtest', rounds=5, trader=vntdr, histdata=csvreader) #histdata = histdata)
+    p.createApp(BackTestApp, configNode ='backtest', trader=vntdr, histdata=csvreader) #histdata = histdata)
 
     # # cta.loadSetting()
     # # logger.info(u'CTA策略载入成功')

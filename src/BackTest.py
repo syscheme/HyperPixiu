@@ -182,8 +182,8 @@ class BackTestApp(MetaTrader):
         self.__testRoundId +=1
         if (self.__testRoundId > self._testRounds) :
             # all tests have been done
-            self.info('all %d test-round have been done, took %s, stopping app' % (self._testRounds, str(datetime.now() - self.__execStamp_appStart)))
             self.stop()
+            self.info('all %d test-round have been done, took %s, app stopped. obj-in-program: %s' % (self._testRounds, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
             return
 
         self.resetTest()
@@ -240,7 +240,7 @@ class BackTestApp(MetaTrader):
 #        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
 
         self.__execStamp_roundStart = datetime.now()
-        self.info('initializing test-round[%d/%d], elapsed %s' % (self.__testRoundId, self._testRounds, str(self.__execStamp_roundStart - self.__execStamp_appStart)))
+        self.debug('initializing test-round[%d/%d], elapsed %s obj-in-program: %s' % (self.__testRoundId, self._testRounds, str(self.__execStamp_roundStart - self.__execStamp_appStart), self._program.listByType(MetaObj)))
 
         # step 1. start over the market state
         if self.__wkMarketState:
@@ -294,6 +294,7 @@ class BackTestApp(MetaTrader):
         self.subscribeEvent(Account.EVENT_ORDER)
         self.subscribeEvent(Account.EVENT_TRADE)
 
+        self.info('reset for test-round[%d/%d] test-round, obj-in-program: %s' % (self._testRounds, self._testRounds, self._program.listByType(MetaObj)))
         return True
 
     #----------------------------------------------------------------------
@@ -1323,7 +1324,7 @@ if __name__ == '__main__':
     marketstate = hist.PlaybackDay('AShare') # = PerspectiveDict('AShare')
     p.addObj(marketstate)
 
-    btdr = p.createApp(BaseTrader, configNode ='backtest', account=acc)
+    # btdr = p.createApp(BaseTrader, configNode ='backtest', account=acc)
     vntdr = p.createApp(vn.VnTrader, configNode ='backtest', account=acc)
     
     p.info('all objects registered piror to BackTestApp: %s' % p.listByType(MetaObj))

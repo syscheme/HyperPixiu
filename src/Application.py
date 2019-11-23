@@ -658,6 +658,8 @@ class Program(object):
 
     def getApp(self, appId):
         '''获取APP对象'''
+        if not appId in self.__dictMetaObjs.keys():
+            return None
         o = self.__dictMetaObjs[appId]
         return o.theApp() if isinstance(o, MetaApp) else None
 
@@ -735,7 +737,8 @@ class Program(object):
         
         # 停止上层应用引擎
         for appId in self.__activeApps :
-            self.getApp(appId).stop()
+            app = self.getApp(appId)
+            if app: app.stop()
         
         # # 保存数据引擎里的合约数据到硬盘
         # self.dataEngine.saveContracts()

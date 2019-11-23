@@ -298,13 +298,13 @@ class BackTestApp(MetaTrader):
         return True
 
     #----------------------------------------------------------------------
-    def generateReport(self, df=None, result=None):
+    def generateReport(self, df=None, summary=None):
         """显示按日统计的交易结果"""
         if df is None:
-            df, result = sumupDailyResults(self._startBalance, self._account.dailyResultDict)
+            df, summary = calculateSummary(self._startBalance, self._account.dailyResultDict)
 
-        if not result or not isinstance(result, dict) :
-            self.error('no summary result given: %s' % result)
+        if not summary or not isinstance(summary, dict) :
+            self.error('no summary given: %s' % summary)
             return
 
         if not df is None:
@@ -322,33 +322,33 @@ class BackTestApp(MetaTrader):
         # 输出统计结果
         self.debug('%s_R%d' %(self.ident, self.__testRoundId) + '-' * 20)
         self.info(u'    回放始末: %s(close:%.2f) ~ %s(close:%.2f): %s%%'  %(self._dataBegin_date, self._dataBegin_closeprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain)))
-        self.info(u'    交易始末: %s(close:%.2f) ~ %s(close:%.2f)' % (result['startDate'], self._dataBegin_closeprice, result['endDate'], self._dataEnd_closeprice))
+        self.info(u'    交易始末: %s(close:%.2f) ~ %s(close:%.2f)' % (summary['startDate'], self._dataBegin_closeprice, summary['endDate'], self._dataEnd_closeprice))
         
-        self.info(u'    交易日数: %s (盈利%s, 亏损%s)' % (result['totalDays'], result['profitDays'], result['lossDays']))
+        self.info(u'    交易日数: %s (盈利%s, 亏损%s)' % (summary['totalDays'], summary['profitDays'], summary['lossDays']))
         
         self.info(u'    起始资金: %s' % formatNumber(self._startBalance))
-        self.info(u'    结束资金: %s' % formatNumber(result['endBalance']))
+        self.info(u'    结束资金: %s' % formatNumber(summary['endBalance']))
     
-        self.info(u'    总收益率: %s%%' % formatNumber(result['totalReturn']))
-        self.info(u'    年化收益: %s%%' % formatNumber(result['annualizedReturn']))
-        self.info(u'      总盈亏: %s' % formatNumber(result['totalNetPnl']))
-        self.info(u'    最大回撤: %s' % formatNumber(result['maxDrawdown']))   
-        self.info(u'  最大回撤率: %s%%' % formatNumber(result['maxDdPercent']))   
+        self.info(u'    总收益率: %s%%' % formatNumber(summary['totalReturn']))
+        self.info(u'    年化收益: %s%%' % formatNumber(summary['annualizedReturn']))
+        self.info(u'      总盈亏: %s' % formatNumber(summary['totalNetPnl']))
+        self.info(u'    最大回撤: %s' % formatNumber(summary['maxDrawdown']))   
+        self.info(u'  最大回撤率: %s%%' % formatNumber(summary['maxDdPercent']))   
         
-        self.info(u'    总手续费: %s' % formatNumber(result['totalCommission']))
-        self.info(u'      总滑点: %s' % formatNumber(result['totalSlippage']))
-        self.info(u'  总成交金额: %s' % formatNumber(result['totalTurnover']))
-        self.info(u'  总成交笔数: %s' % formatNumber(result['totalTradeCount'],0))
+        self.info(u'    总手续费: %s' % formatNumber(summary['totalCommission']))
+        self.info(u'      总滑点: %s' % formatNumber(summary['totalSlippage']))
+        self.info(u'  总成交金额: %s' % formatNumber(summary['totalTurnover']))
+        self.info(u'  总成交笔数: %s' % formatNumber(summary['totalTradeCount'],0))
         
-        self.info(u'    日均盈亏: %s' % formatNumber(result['dailyNetPnl']))
-        self.info(u'  日均手续费: %s' % formatNumber(result['dailyCommission']))
-        self.info(u'    日均滑点: %s' % formatNumber(result['dailySlippage']))
-        self.info(u'日均成交金额: %s' % formatNumber(result['dailyTurnover']))
-        self.info(u'日均成交笔数: %s' % formatNumber(result['dailyTradeCount']))
+        self.info(u'    日均盈亏: %s' % formatNumber(summary['dailyNetPnl']))
+        self.info(u'  日均手续费: %s' % formatNumber(summary['dailyCommission']))
+        self.info(u'    日均滑点: %s' % formatNumber(summary['dailySlippage']))
+        self.info(u'日均成交金额: %s' % formatNumber(summary['dailyTurnover']))
+        self.info(u'日均成交笔数: %s' % formatNumber(summary['dailyTradeCount']))
         
-        self.info(u'  日均收益率: %s%%' % formatNumber(result['dailyReturn']))
-        self.info(u'  收益标准差: %s%%' % formatNumber(result['returnStd']))
-        self.info(u'      夏普率: %s' % formatNumber(result['sharpeRatio']))
+        self.info(u'  日均收益率: %s%%' % formatNumber(summary['dailyReturn']))
+        self.info(u'  收益标准差: %s%%' % formatNumber(summary['returnStd']))
+        self.info(u'      夏普率: %s' % formatNumber(summary['sharpeRatio']))
         
         self.plotResult(df)
 
@@ -399,7 +399,7 @@ class BackTestApp(MetaTrader):
     #         self.initStrategy(strategyClass, setting)
     #         self.runBacktesting()
 
-    #         df, d = sumupDailyResults(self._startBalance, self._account.dailyResultDict)
+    #         df, d = calculateSummary(self._startBalance, self._account.dailyResultDict)
     #         try:
     #             targetValue = d[targetName]
     #         except KeyError:
@@ -748,7 +748,7 @@ class OptimizationSetting(object):
         self.optimizeTarget = target
 
 #----------------------------------------------------------------------
-def sumupDailyResults(startBalance, dayResultDict):
+def calculateSummary(startBalance, dayResultDict):
     '''
     @param dayResultDict - OrderedDict of account DailyResult during the date-window
     @return panda dataframe of formated-'DailyResult', summary-stat
@@ -871,7 +871,7 @@ def optimize(strategyClass, setting, targetName,
     account.initStrategy(strategyClass, setting)
     account.runBacktesting()
     
-    df, d = sumupDailyResults(startBalance, account.dailyResultDict)
+    df, d = calculateSummary(startBalance, account.dailyResultDict)
     try:
         targetValue = d[targetName]
     except KeyError:

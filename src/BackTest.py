@@ -294,7 +294,7 @@ class BackTestApp(MetaTrader):
         self.subscribeEvent(Account.EVENT_ORDER)
         self.subscribeEvent(Account.EVENT_TRADE)
 
-        self.info('reset for test-round[%d/%d] test-round, obj-in-program: %s' % (self._testRounds, self._testRounds, self._program.listByType(MetaObj)))
+        self.info('reset for test-round[%d/%d] test-round, obj-in-program: %s' % (self.__testRoundId, self._testRounds, self._program.listByType(MetaObj)))
         return True
 
     #----------------------------------------------------------------------
@@ -308,7 +308,7 @@ class BackTestApp(MetaTrader):
             return
 
         if not df is None:
-            csvfile = '%s%s_R%d.csv' %(self.dataRoot, self.ident, self.__testRoundId)
+            csvfile = 'out/%s%s_%sR%d.csv' %(self.dataRoot, self.ident, self.__execStamp_appStart.strftime('%Y%m%dT%H%M%S'), self.__testRoundId)
             try :
                 os.makedirs(os.path.dirname(csvfile))
             except:
@@ -1329,7 +1329,7 @@ if __name__ == '__main__':
     
     p.info('all objects registered piror to BackTestApp: %s' % p.listByType(MetaObj))
     
-    p.createApp(BackTestApp, configNode ='backtest', trader=vntdr, histdata=csvreader) #histdata = histdata)
+    p.createApp(BackTestApp, configNode ='backtest', rounds=5, trader=vntdr, histdata=csvreader) #histdata = histdata)
 
     # # cta.loadSetting()
     # # logger.info(u'CTA策略载入成功')

@@ -110,7 +110,7 @@ class DQNAgent(object): # TODO: inherit from Trader as an application
         action_batch = np.where(action_batch == 1)
         return state_batch, action_batch, reward_batch, next_state_batch, done_batch
 
-
+'''
 ########################################################################
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
@@ -185,3 +185,4 @@ if __name__ == "__main__":
             done = True
         else:
             environment.render()
+'''

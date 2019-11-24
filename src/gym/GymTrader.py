@@ -7,6 +7,7 @@ from __future__ import division
 # from gym import GymEnv
 from Account import Account, OrderData, Account_AShare
 from Trader import MetaTrader, BaseTrader
+import gym
 
 from abc import ABC, abstractmethod
 import matplotlib as mpl # pip install matplotlib
@@ -44,16 +45,21 @@ class GymTrader(BaseTrader):
         OrderData.DIRECTION_SHORT: np.array([0, 0, 1])
     }
 
-    def __init__(self, program, **kwargs):
+    def __init__(self, program, agentClass=None, **kwargs):
         '''Constructor
         '''
-        super(GymTrader, self).__init__(program, agent, **kwargs) # redirect to BaseTrader, who will adopt account and so on
+        self._agentClass = agentClass
+        super(GymTrader, self).__init__(program, **kwargs) # redirect to BaseTrader, who will adopt account and so on
 
         self._timeCostYrRate = self.getConfig('timeCostYrRate', 0)
         #TODO: the separate the Trader for real account and training account
         
         self.__1st_render = True
-        self._agent = agent
+
+        if self._agentClass is None :
+            agentType = self.getConfig('agent/type', None, True)
+            if not agentType and agentType in gym.GYMAGENT_CLASS.keys():
+                self._agentClazz = gym.GYMAGENT_CLASS[agentType]
 
         # self.n_actions = 3
         # self._prices_history = []
@@ -81,9 +87,9 @@ class GymTrader(BaseTrader):
     def OnEvent(self, ev): 
         # step 2. 收到行情后，在启动策略前的处理
         self._marketState.updateByEvent(ev)
-        self._action = self._agent.act(self._gymState)
+        self._action = self._agent.gymAct(self._gymState)
         next_state, reward, done, _ = self.gymStep(self._action)
-        loss = self._agent.observe(self._gymState, self._action, reward, next_state, done)
+        loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, done)
         self._gymState = next_state
 
     #------------------------------------------------
@@ -318,6 +324,59 @@ class GymTrader(BaseTrader):
             posValueSubtotal += pos.position * pos.price * self._account.contractSize
 
         return positions + posValueSubtotal
+
+########################################################################
+class MetaAgent(ABC): # TODO:
+    def __init__(self, gymTrader,
+                 # action_size,
+                 # episodes,
+                 # episode_length,
+                 memory_size=2000,
+                 train_interval=10,
+                 gamma=0.95,
+                 learning_rate=0.001,
+                 batch_size=64,
+                 epsilon_min=0.01,
+                 **kwargs):
+
+        super(MetaAgent, self).__init__()
+
+        self.__stateSize = state_size
+        self.__actionSize = len(type(gymTrader).ACTIONS)
+        self.__memorySize = memory_size
+        self.__memory = [None] * memory_size
+        self.__idxMem = 0
+        self.__gamma = gamma
+        self.__epsilon = 1.0
+        self.__epsilonMin = epsilon_min
+        self.__epsilonDecrement = (self.__epsilon - epsilon_min) * train_interval / (episodes * episode_length)  # linear decrease rate
+        self.__learningRate = learning_rate
+        self.__trainInterval = train_interval
+        self.__batchSize = batch_size
+
+        self.__brain = None # self.__brain = self.buildBrain()
+
+    @abstractmethod
+    def buildBrain(self):
+        '''
+        @return the brain built to set to self.__brain
+        '''
+        raise NotImplementedError
+
+    @abstractmethod
+    def gymAct(self, state):
+        '''
+        @return one of self.__gymTrader.ACTIONS
+        '''
+        raise NotImplementedError
+
+    @abstractmethod
+    def gymObserve(self, state, action, reward, next_state, done, warming_up=False):
+        '''Memory Management and training of the agent
+        @return tuple:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch
+        '''
+        raise NotImplementedError
 
 ########################################################################
 class GymTrainer(MetaTrader):

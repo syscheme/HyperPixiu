@@ -34,7 +34,7 @@ class Recorder(BaseApplication):
     """数据记录, the base DR is implmented as a csv Recorder
         configuration:
             "datarecorder": {
-                "dbNamePrefix": "dr", // the preffix of DB name to save: <dbNamePrefix>Tick, <dbNamePrefix>K1min
+                "dbNamePrefix": "dr", // the prefix of DB name to save: <dbNamePrefix>Tick, <dbNamePrefix>K1min
             }
     """
      
@@ -109,7 +109,7 @@ class CsvRecorder(Recorder):
     configuration:
         "datarecorder": {
             ...
-            "dbNamePrefix": "dr", // the preffix of DB name to save: <dbNamePrefix>Tick, <dbNamePrefix>K1min
+            "dbNamePrefix": "dr", // the prefix of DB name to save: <dbNamePrefix>Tick, <dbNamePrefix>K1min
 
             // for csv recorder
             "min2flush" : 0.3,

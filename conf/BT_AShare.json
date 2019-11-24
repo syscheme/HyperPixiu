@@ -48,10 +48,11 @@
     "backtest": { // the configuration schema is extending "trader"
         "accountId" : "blah",
         "startCapitial": 100000,
+        // "rounds":30,
     
 
         // the following are same as "trader"
-        "dbNamePrefixHist" : "dr", // the preffix of DB name where to read history data from: <dbNamePrefixHist>Tick, <dbNamePrefixHist>K1min
+        "dbNamePrefixHist" : "dr", // the prefix of DB name where to read history data from: <dbNamePrefixHist>Tick, <dbNamePrefixHist>K1min
         "objectives": [
             { 
                 "symbol": "600019", 

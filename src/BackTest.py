@@ -47,7 +47,7 @@ class BackTestApp(MetaTrader):
         self._initAcc = None # to populate from _initTrader then wrapper
 
         self._account = None # the working account inherit from MetaTrader
-        self.__wkMarketState = None
+        self._marketState = None
         self.__wkTrader = None
         self.__wkHistData = histdata
 
@@ -93,9 +93,9 @@ class BackTestApp(MetaTrader):
 
     def stop(self):
         """退出程序前调用，保证正常退出"""
-        if self.__wkMarketState:
-            self._program.removeObj(self.__wkMarketState)
-        self.__wkMarketState = None
+        if self._marketState:
+            self._program.removeObj(self._marketState)
+        self._marketState = None
 
         # step 2. create clean trader and account from self._initAcc and  
         if self.__wkTrader:
@@ -139,6 +139,7 @@ class BackTestApp(MetaTrader):
         originAcc = self._initTrader.account
         if originAcc and not isinstance(originAcc, AccountWrapper):
             self._program.removeApp(originAcc.ident)
+            originAcc._trader = self # adopt the account by pointing its._trader to self
             self._initAcc = AccountWrapper(self, account=copy.copy(originAcc)) # duplicate the original account for test espoches
             self._initAcc.setCapital(self._startBalance, True)
             self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d] as template' % (originAcc.ident, self._initAcc.ident, self._startBalance))
@@ -164,9 +165,9 @@ class BackTestApp(MetaTrader):
             try :
                 ev = next(self.__wkHistData)
                 if not ev : return
-                self.__wkMarketState.updateByEvent(ev)
+                self._marketState.updateByEvent(ev)
                 s = ev.data.symbol
-                self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type[len(MARKETDATE_EVENT_PREFIX):], self.__wkMarketState.getAsOf(s).strftime('%Y%m%dT%H%M'), self.__wkMarketState.latestPrice(s), self.__wkMarketState.dailyOHLC_sofar(s)))
+                self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type[len(MARKETDATE_EVENT_PREFIX):], self._marketState.getAsOf(s).strftime('%Y%m%dT%H%M'), self._marketState.latestPrice(s), self._marketState.dailyOHLC_sofar(s)))
                 self.OnEvent(ev) # call Trader
                 self.__testRoundcEvs += 1
                 return # successfully pushed an Event
@@ -247,19 +248,19 @@ class BackTestApp(MetaTrader):
         self.debug('initializing test-round[%d/%d], elapsed %s obj-in-program: %s' % (self.__testRoundId, self._testRounds, str(self.__execStamp_roundStart - self.__execStamp_appStart), self._program.listByType(MetaObj)))
 
         # step 1. start over the market state
-        if self.__wkMarketState:
-            self._program.removeObj(self.__wkMarketState)
+        if self._marketState:
+            self._program.removeObj(self._marketState)
         
         if self._initMarketState:
-            self.__wkMarketState = copy.deepcopy(self._initMarketState)
-            self._program.addObj(self.__wkMarketState)
+            self._marketState = copy.deepcopy(self._initMarketState)
+            self._program.addObj(self._marketState)
 
         # step 2. create clean trader and account from self._initAcc and  
         if self.__wkTrader:
             self._program.removeObj(self.__wkTrader)
         self.__wkTrader = copy.deepcopy(self._initTrader)
         self._program.addApp(self.__wkTrader)
-        self.__wkTrader._marketstate = self.__wkMarketState
+        self.__wkTrader._marketstate = self._marketState
 
         if self._account :
             self._program.removeApp(self._account)
@@ -268,7 +269,7 @@ class BackTestApp(MetaTrader):
         self._account = copy.deepcopy(self._initAcc)
         self._program.addApp(self._account)
         self._account.setCapital(self._startBalance, True) # 回测时的起始本金（默认10万）
-        self._account._marketstate = self.__wkMarketState
+        self._account._marketstate = self._marketState
         self.__wkTrader._account = self._account
         self.__wkHistData.resetRead()
            
@@ -283,14 +284,14 @@ class BackTestApp(MetaTrader):
         self.bar  = None
         self.__dtData  = None      # 最新数据的时间
 
-        if self.__wkMarketState :
+        if self._marketState :
             for i in range(30) : # initially feed 20 data from histread to the marketstate
                 ev = next(self.__wkHistData)
                 if not ev : continue
-                self.__wkMarketState.updateByEvent(ev)
+                self._marketState.updateByEvent(ev)
 
             if len(self.__wkTrader._dictObjectives) <=0:
-                sl = self.__wkMarketState.listOberserves()
+                sl = self._marketState.listOberserves()
                 for symbol in sl:
                     self.__wkTrader.openObjective(symbol)
 
@@ -309,7 +310,7 @@ class BackTestApp(MetaTrader):
 
         if not summary or not isinstance(summary, dict) :
             self.error('no summary given: %s' % summary)
-            return
+            return 
 
         if not tradeDays is None:
             csvfile = '%s/%s_DR.csv' %(self.__outdir, self.roundId)

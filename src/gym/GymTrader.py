@@ -2,9 +2,11 @@
 '''
 GymTrader impls BaseTrader and represent itself as a Gym Environment
 '''
+from __future__ import division
 
 # from gym import GymEnv
-from Trader import BaseTrader
+from Account import Account, OrderData, Account_AShare
+from Trader import MetaTrader, BaseTrader
 
 from abc import ABC, abstractmethod
 import matplotlib as mpl # pip install matplotlib
@@ -176,9 +178,7 @@ class GymTrader(BaseTrader):
         self._total_pnl += instant_pnl
         self._total_reward += reward
 
-        ''' step 4. market observation and determine game over upon:
-            a) market observation rearched end
-            b) the account is well lost
+        ''' step 4. composing info for tracing
 
         try :
             self._market_state = self._envMarket.next()
@@ -363,6 +363,7 @@ class GymTrainer(MetaTrader):
         originAcc = self._initTrader.account
         if originAcc and not isinstance(originAcc, AccountWrapper):
             self._program.removeApp(originAcc.ident)
+            originAcc._trader = self # adopt the account by pointing its._trader to self
             self._initAcc = AccountWrapper(self, account=copy.copy(originAcc)) # duplicate the original account for test espoches
             self._initAcc.setCapital(self._startBalance, True)
             self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d] as template' % (originAcc.ident, self._initAcc.ident, self._startBalance))
@@ -419,7 +420,8 @@ class GymTrainer(MetaTrader):
         if EVENT_TICK == ev.type or EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
             self._account.matchTrades(ev)
 
-        self.__wkTrader.OnEvent(ev)
+        self.__wkTrader.OnEvent(ev) # to perform the gym step
+
         if not self._dataBegin_date:
             self._dataBegin_date = self.__wkTrader.marketState.stateAsOf(symbol)
         
@@ -504,113 +506,30 @@ class GymTrainer(MetaTrader):
         return __wkTrader.gymReset()
 
 
-"""
-########################################################################
-class AccountGEnv(GymEnv):
-    '''Class for a sub-env based on a trading account
-    '''
-    def __init__(self, envTrading, account):
-        '''Constructor
-            @param envTrading (TradingEnv) the master TradingEnv
-            @param account (nvApp.Account) the account to observe and drive
-        '''
-        self._envTrading = envTrading
-        self._account = account
-        self.gymReset()
+if __name__ == '__main__':
+    from Application import Program
+    from Account import Account_AShare
+    import HistoryData as hist
+    import sys, os
 
-    def reset(self):
-        '''Reset the account
-            1) for a real trading account, there is likely nothing to do at this step, maybe perform a reconnecting
-            2) for a training or backtest account, reset the context data
+    sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/Gym_AShare.json']
+    p = Program()
+    p._heartbeatInterval =-1
+    SYMBOL = '000001' # '000540' '000001'
 
-        Returns:
-            observation (numpy.array) collected from self._account consists of 
-               a) positions: total and available to act
-               b) cash amount: total and available to act
-               c) ?? maybe the outgoing and/or failed orders
-        '''
-        self._total_reward = 0
-        self._total_pnl = 0
-        self._entry_price = 0
-        self._exit_price = 0
-        self._current_value = 0
-        self.__closed_plot = False
+    acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
+    csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
+    csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
+    # marketstate = PerspectiveDict('AShare')
+    # p.addObj(marketstate)
 
-        # load all the history data in the memory
-        for i in range(self._history_length):
-            self._prices_history.append(self._data_generator.next())
+    gymtdr = p.createApp(GymTrader, configNode ='trainer', account=acc)
+    
+    p.info('all objects registered piror to GymTrainer: %s' % p.listByType())
+    
+    p.createApp(GymTrainer, configNode ='trainer', trader=gymtdr, histdata=csvreader)
 
-        observation = self.__build_gym_observation()
-        self._shapeOfState = observation.shape
-        self._action = self.ACTIONS[ACTION_HOLD]
-        return observation
+    p.start()
+    p.loop()
+    p.stop()
 
-    @abstractmethod
-    def __build_gym_observation(self):
-        '''collect observation
-            mostly call self._account to collect
-        Returns:
-            numpy.array: observation array.
-        '''
-        pass
-        ''' TODO:
-        call the account to collection postions, cache amount,
-        sum-up to update self._current_value and so on
-        '''
-
-        return np.concatenate(
-            [prices for prices in self._prices_history[-self._history_length:]] +
-            [
-                np.array([self._entry_price]),
-                np.array(self._position)
-            ]
-        )
-
-
-########################################################################
-class MarketGEnv(GymEnv):
-    '''class for a sub-env based on a trading markets
-    '''
-
-    def __init__(self, envTrading, perspectiveId):
-        '''Constructor
-            @param envTrading (TradingEnv) the master TradingEnv
-            @param account (nvApp.Account) the account to observe and drive
-        '''
-        self._envTrading = envTrading
-        self._perspectiveId = perspectiveId
-        self.gymReset()
-
-    def reset(self, perspectiveId):
-        '''Reset the market data
-            1) for a real trading market, it is the time to rebuild the CURRENT market perspective
-            2) for a training or backtest, reset the market history data
-
-        Returns:
-            observation (numpy.array): converted from one of the market perspective classes, 
-                which should be identified by unique class ids
-        '''
-
-        ''' TODO:
-        perspectiveClazz = perspective.find(self._perspectiveId)
-        self._histdata = perspectiveClazz(startTime=..., endTime=...) 
-        '''
-
-        _iteration = 0
-        self._data_generator.rewind()
-        self._total_reward = 0
-        self._total_pnl = 0
-        self._position = self.POS_DIRECTIONS[OrderData.DIRECTION_NONE]
-        self._entry_price = 0
-        self._exit_price = 0
-        self.__closed_plot = False
-
-        # load all the history data in the memory
-        for i in range(self._history_length):
-            self._prices_history.append(self._data_generator.next())
-
-        observation = self.__build_gym_observation()
-        self._shapeOfState = observation.shape
-        self._action = self.ACTIONS[ACTION_HOLD]
-        return observation
-"""

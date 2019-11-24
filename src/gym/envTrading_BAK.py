@@ -79,7 +79,7 @@ class TradingEnv(GymEnv):
         #     self._prices_history.append(self._data_generator.next())
 
         observation = self._get_observation()
-        self.state_shape = observation.shape
+        self._shapeOfState = observation.shape
         self._action = self._actions['hold']
         return observation
 
@@ -330,7 +330,7 @@ class AccountGEnv(GymEnv):
             self._prices_history.append(self._data_generator.next())
 
         observation = self._get_observation()
-        self.state_shape = observation.shape
+        self._shapeOfState = observation.shape
         self._action = self._actions['hold']
         return observation
 
@@ -399,6 +399,6 @@ class MarketGEnv(GymEnv):
             self._prices_history.append(self._data_generator.next())
 
         observation = self._get_observation()
-        self.state_shape = observation.shape
+        self._shapeOfState = observation.shape
         self._action = self._actions['hold']
         return observation

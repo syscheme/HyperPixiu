@@ -507,7 +507,7 @@ class Program(object):
                 self.__daemonize = self.__jsettings.daemonize('False') in BOOL_TRUE
                 self._heartbeatInterval = int(self.__jsettings.heartbeatInterval(BaseApplication.HEARTBEAT_INTERVAL_DEFAULT))
             except Exception as e :
-                print('failed to load configure[%s]: %s' % (confijg_filename, e))
+                print('failed to load configure[%s]: %s' % (config_filename, e))
                 sys.exit(3)
 
         self._shelvefn = '%s/%s.sobj' % (self._outdir, self._progName)
@@ -590,7 +590,7 @@ class Program(object):
             return self.__dictMetaObjs[objId]
         return None
 
-    def listByType(self, type):
+    def listByType(self, type=MetaObj):
         if issubclass(type, BaseApplication) :
             return self.listApps(type)
 

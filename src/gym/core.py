@@ -9,7 +9,7 @@ class GymEnv(metaclass=ABCMeta):
 
     def __init__(self):
         self.n_actions = None
-        self.state_shape = None
+        self._shapeOfState = None
 
     @abstractmethod
     def step(self, action):

@@ -162,7 +162,7 @@ class Account(MetaAccount):
         self._mode         = Account.BROKER_API_ASYNC
 
         self._recorder = None
-        self._marketstate = None
+        self._trader = None
 
         if self._contractSize <=0:
             self._contractSize =1
@@ -202,7 +202,8 @@ class Account(MetaAccount):
 
     @property
     def marketState(self):
-        return self._marketstate
+        if self._trader:
+            return self._trader.marketState
 
     @property
     def cashSymbol(self):
@@ -237,7 +238,7 @@ class Account(MetaAccount):
 
     #----------------------------------------------------------------------
     def datetimeAsOfMarket(self):
-        return self._marketstate.getAsOf() if self._marketstate else datetime.now()
+        return self.marketState.getAsOf() if self.marketState else datetime.now()
 
     def getPosition(self, symbol): # returns PositionData
         with self._lock :
@@ -249,7 +250,7 @@ class Account(MetaAccount):
         with self._lock :
             for s, pos in self._dictPositions.items() :
                 if self.cashSymbol != s:
-                    price = self._marketstate.latestPrice(pos.symbol)
+                    price = self.marketState.latestPrice(pos.symbol)
                     if price >0:
                         pos.price = price
             allpos = copy.deepcopy(self._dictPositions)
@@ -623,13 +624,13 @@ class Account(MetaAccount):
             self._recorder.configIndex(self.collectionName_trade, [('brokerTradeId', ASCENDING)], True)
             self._recorder.configIndex(self.collectionName_dpos,  [('date', ASCENDING), ('symbol', ASCENDING)], True)
 
-        # find the marketstate
-        if not self._marketstate :
-            for obsId in self._program.listByType(MarketState) :
-                marketstate = self._program.getObj(obsId)
-                if marketstate and marketstate.exchange == self.exchange:
-                    self._marketstate = marketstate
-                    break
+        # # find the marketstate
+        # if not self.marketState :
+        #     for obsId in self._program.listByType(MarketState) :
+        #         marketstate = self._program.getObj(obsId)
+        #         if marketstate and marketstate.exchange == self.exchange:
+        #             self._marketstate = marketstate
+        #             break
 
         return True
 
@@ -863,6 +864,9 @@ class Account(MetaAccount):
         """今日交易的结果"""
 
         tradesOfSymbol = {} # { self.cashSymbol: [] }        # 成交列表
+        if not self._trader:
+            return [], tradesOfSymbol
+
         with self._lock :
             for t in self._dictTrades.values():
                 if len(t.symbol) <=0:
@@ -880,7 +884,7 @@ class Account(MetaAccount):
 
         for s in tradesOfSymbol.keys():
             currentPos = currentPositions[s]
-            ohlc =  self._marketstate.dailyOHLC_sofar(s)
+            ohlc =  self.marketState.dailyOHLC_sofar(s)
 
             if s in self._prevPositions:
                 with self._lock :

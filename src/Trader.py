@@ -38,6 +38,7 @@ class MetaTrader(BaseApplication):
         self._accountId = None
         self._dtData = None # datetime of data
         self._dictObjectives = {}
+        self._marketstate = None
 
     def __deepcopy__(self, other):
         result = object.__new__(type(self))
@@ -47,6 +48,8 @@ class MetaTrader(BaseApplication):
 
     @property
     def account(self): return self._account # the default account
+    @property
+    def marketState(self): return self._marketstate # the default account
     @abstractmethod
     def eventHdl_Order(self, event): raise NotImplementedError
     @abstractmethod
@@ -77,7 +80,6 @@ class BaseTrader(MetaTrader):
         # 引擎类型为实盘
         # self._tradeType = TRADER_TYPE_TRADING
 
-        self._marketstate = None
         self._accountId      = self.getConfig('accountId', self._accountId)
 
         #--------------------
@@ -160,11 +162,13 @@ class BaseTrader(MetaTrader):
             self.error('no account adopted')
             return False
 
+        self._account._trader = self
+
         # TODO part 2. scan those in the positions of Accounts, and also put into _dictObjectives
 
         # step 2. associate the marketstate
-        if not self._marketstate :
-            self._marketstate = self._account.marketState
+        # if not self._marketstate :
+        #     self._marketstate = self._account.marketState
 
         if not self._marketstate :
             for obsId in self._program.listByType(MarketState) :

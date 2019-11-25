@@ -7,7 +7,7 @@ Training time is short and results are unstable.
 Do not hesitate to run several times and/or tweak parameters to get better results.
 Inspired from https://github.com/keon/deep-q-learning
 '''
-from gym.GymTrader import GymTrader
+from .GymTrader import GymTrader, MetaAgent
 
 import random
 
@@ -18,53 +18,30 @@ from keras.optimizers import Adam
 from abc import ABCMeta, abstractmethod
 
 ########################################################################
-class DQNAgent(object): # TODO: inherit from Trader as an application
-    def __init__(self,
-                 state_size,
-                 action_size,
-                 episodes,
-                 episode_length,
-                 memory_size=2000,
-                 train_interval=100,
-                 gamma=0.95,
-                 learning_rate=0.001,
-                 batch_size=64,
-                 epsilon_min=0.01
-                 ):
-        self.state_size = state_size
-        self.action_size = action_size
-        self.memory_size = memory_size
-        self.memory = [None] * memory_size
-        self.gamma = gamma
-        self.epsilon = 1.0
-        self.epsilon_min = epsilon_min
-        self.epsilon_decrement = (self.epsilon - epsilon_min)\
-            * train_interval / (episodes * episode_length)  # linear decrease rate
-        self.learning_rate = learning_rate
-        self.train_interval = train_interval
-        self.batch_size = batch_size
-        self.brain = self._build_brain()
-        self.i = 0
+class agentDQN(MetaAgent):
+    def __init__(self, gymTrader, **kwargs):
+        super(agentDQN, self).__init__(gymTrader, **kwargs)
 
-    def _build_brain(self):
+    def buildBrain(self):
         '''Build the agent's brain
         '''
-        brain = Sequential()
+        self._brain = Sequential()
         neurons_per_layer = 24
         activation = "relu"
-        brain.add(Dense(neurons_per_layer,
+        self._brain.add(Dense(neurons_per_layer,
                         input_dim=self.state_size,
                         activation=activation))
-        brain.add(Dense(neurons_per_layer, activation=activation))
-        brain.add(Dense(self.action_size, activation='linear'))
-        brain.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
-        return brain
+        self._brain.add(Dense(neurons_per_layer, activation=activation))
+        self._brain.add(Dense(self.action_size, activation='linear'))
+        self._brain.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
+        return self._brain
 
-    def act(self, state):
-        '''Acting Policy of the DQNAgent
+    def gymAct(self, state):
+        '''Acting Policy of the agentDQN
+        @return one of self.__gymTrader.ACTIONS
         '''
         action = np.zeros(self.action_size)
-        if np.random.rand() <= self.epsilon:
+        if np.random.rand() <= self._epsilon:
             action[random.randrange(self.action_size)] = 1
         else:
             state = state.reshape(1, self.state_size)
@@ -72,14 +49,16 @@ class DQNAgent(object): # TODO: inherit from Trader as an application
             action[np.argmax(act_values[0])] = 1
         return action
 
-    def observe(self, state, action, reward, next_state, done, warming_up=False):
+    def gymObserve(self, state, action, reward, next_state, done, warming_up=False):
         '''Memory Management and training of the agent
+        @return tuple:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch
         '''
-        self.i = (self.i + 1) % self.memory_size
-        self.memory[self.i] = (state, action, reward, next_state, done)
-        if (not warming_up) and (self.i % self.train_interval) == 0:
-            if self.epsilon > self.epsilon_min:
-                self.epsilon -= self.epsilon_decrement
+        self._idxMem = (self._idxMem + 1) % self._memorySize
+        self._memory[self._idxMem] = (state, action, reward, next_state, done)
+        if (not warming_up) and (self._idxMem % self._trainInterval) == 0:
+            if self._epsilon > self._epsilonMin:
+                self._epsilon -= self._epsilonDecrement
             state, action, reward, next_state, done = self._get_batches()
             reward += (self.gamma
                        * np.logical_not(done)
@@ -97,7 +76,7 @@ class DQNAgent(object): # TODO: inherit from Trader as an application
            Split it into categorical subbatches
            Process action_batch into a position vector
         '''
-        batch = np.array(random.sample(self.memory, self.batch_size))
+        batch = np.array(random.sample(self._memory, self.batch_size))
         state_batch = np.concatenate(batch[:, 0])\
             .reshape(self.batch_size, self.state_size)
         action_batch = np.concatenate(batch[:, 1])\
@@ -141,7 +120,7 @@ if __name__ == "__main__":
     action_size = len(envTrading.ACTIONS)
     train_interval = 10
     learning_rate = 0.001
-    agent = DQNAgent(state_size=state_size,
+    agent = agentDQN(state_size=state_size,
                      action_size=action_size,
                      memory_size=memory_size,
                      episodes=episodes,

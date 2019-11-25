@@ -7,7 +7,7 @@ from __future__ import division
 # from gym import GymEnv
 from Account import Account, OrderData, Account_AShare
 from Trader import MetaTrader, BaseTrader
-import gym
+import hpGym
 
 from abc import ABC, abstractmethod
 import matplotlib as mpl # pip install matplotlib
@@ -48,18 +48,19 @@ class GymTrader(BaseTrader):
     def __init__(self, program, agentClass=None, **kwargs):
         '''Constructor
         '''
-        self._agentClass = agentClass
         super(GymTrader, self).__init__(program, **kwargs) # redirect to BaseTrader, who will adopt account and so on
 
+        self.__agent = None
         self._timeCostYrRate = self.getConfig('timeCostYrRate', 0)
         #TODO: the separate the Trader for real account and training account
         
-        self.__1st_render = True
+        self.__1stRender = True
 
-        if self._agentClass is None :
-            agentType = self.getConfig('agent/type', None, True)
-            if not agentType and agentType in gym.GYMAGENT_CLASS.keys():
-                self._agentClazz = gym.GYMAGENT_CLASS[agentType]
+        agentType = self.getConfig('agent/type', 'DQN')
+        if agentType and agentType in hpGym.GYMAGENT_CLASS.keys():
+            AGENTCLASS = hpGym.GYMAGENT_CLASS[agentType]
+            agentKwArgs = self.getConfig('agent', {})
+            self.__agent = AGENTCLASS(self, jsettings=self.subConfig('agent'), **agentKwArgs)
 
         # self.n_actions = 3
         # self._prices_history = []
@@ -225,7 +226,7 @@ class GymTrader(BaseTrader):
         @param savefig (bool): Whether to save the figure as an image or not.
         @param filename (str): Name of the image file.
         """
-        if self.__1st_render:
+        if self.__1stRender:
             self._f, self._ax = plt.subplots(
                 len(self._spread_coefficients) + int(len(self._spread_coefficients) > 1),
                 sharex=True
@@ -235,7 +236,7 @@ class GymTrader(BaseTrader):
                 self._ax = [self._ax]
 
             self._f.set_size_inches(12, 6)
-            self.__1st_render = False
+            self.__1stRender = False
             self._f.canvas.mpl_connect('close_event', self._handle_close)
 
         if len(self._spread_coefficients) > 1:
@@ -327,39 +328,60 @@ class GymTrader(BaseTrader):
 
 ########################################################################
 class MetaAgent(ABC): # TODO:
-    def __init__(self, gymTrader,
-                 # action_size,
-                 # episodes,
-                 # episode_length,
-                 memory_size=2000,
-                 train_interval=10,
-                 gamma=0.95,
-                 learning_rate=0.001,
-                 batch_size=64,
-                 epsilon_min=0.01,
-                 **kwargs):
+    def __init__(self, gymTrader, **kwargs):
 
         super(MetaAgent, self).__init__()
 
-        self.__stateSize = state_size
-        self.__actionSize = len(type(gymTrader).ACTIONS)
-        self.__memorySize = memory_size
-        self.__memory = [None] * memory_size
-        self.__idxMem = 0
-        self.__gamma = gamma
-        self.__epsilon = 1.0
-        self.__epsilonMin = epsilon_min
-        self.__epsilonDecrement = (self.__epsilon - epsilon_min) * train_interval / (episodes * episode_length)  # linear decrease rate
-        self.__learningRate = learning_rate
-        self.__trainInterval = train_interval
-        self.__batchSize = batch_size
+        self.__kwargs = kwargs
+        self.__jsettings = None
+        if 'jsettings' in self.__kwargs.keys():
+            self.__jsettings = self.__kwargs.pop('jsettings', None)
 
-        self.__brain = None # self.__brain = self.buildBrain()
+        self._gymTrader = gymTrader
+        self._stateSize = self._gymTrader.stateSize
+        self._actionSize = len(type(gymTrader).ACTIONS)
+
+        self._memorySize = getConfig('memorySize', 2000)
+        self._memory = [None] * memory_size
+        self._idxMem = 0
+
+        self._trainInterval = getConfig('trainInterval', 10)
+        self._learningRate = getConfig('learningRate', 0.001)
+        self._batchSize = getConfig('batchSize', 64)
+
+        self._gamma = getConfig('gamma', 0.95)
+        self._epsilon = getConfig('epsilon', 1.0)
+        self._epsilonMin = getConfig('epsilonMin', 0.01)
+        self._epsilonDecrement = (self._epsilon - self._epsilonMin) * self._trainInterval / (episodes * episode_length)  # linear decrease rate
+
+        self._brain = None # self._brain = self.buildBrain()
+
+    def getConfig(self, configName, defaultVal) :
+        try :
+            if configName in self._kwargs.keys() :
+                return self._kwargs[configName]
+
+            if self.__jsettings:
+                jn = self.__jsettings
+                for i in configName.split('/') :
+                    jn = jn[i]
+
+                if defaultVal :
+                    if isinstance(defaultVal, list):
+                        return jsoncfg.expect_array(jn(defaultVal))
+                    if isinstance(defaultVal, dict):
+                        return jsoncfg.expect_object(jn(defaultVal))
+
+                return jn(defaultVal)
+        except:
+            pass
+
+        return defaultVal
 
     @abstractmethod
     def buildBrain(self):
         '''
-        @return the brain built to set to self.__brain
+        @return the brain built to set to self._brain
         '''
         raise NotImplementedError
 

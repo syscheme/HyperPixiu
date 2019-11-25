@@ -194,6 +194,17 @@ class BaseApplication(MetaApp):
 
         return defaultVal
 
+    def subConfig(self, subName) :
+        jn = None
+        try :
+            if self.__jsettings:
+                jn = self.__jsettings
+                for i in subName.split('/') :
+                    jn = jn[i]
+        except:
+            jn = None
+        return jn
+
     #---- event operations ---------------------------
     def subscribeEvent(self, ev) :
         if not self._program:

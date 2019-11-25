@@ -46,11 +46,11 @@ class CapturedToKLine(object):
         kl.low = float(csvrow['low'])
         kl.close = float(csvrow['close'])
         kl.volume = float(csvrow['volume'])
-        kl.date = datetime.strptime(csvrow['date'], '%Y/%m/%d').strftime('%Y%m%d')
+        kl.date = datetime.strptime(csvrow['date'], '%Y/%m/%d').strftime('%Y-%m-%d')
         kl.time = csvrow['time']+":00"
         
-        kl.datetime = datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:%S')
-        dataOf = kl.datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:00')
+        kl.datetime = datetime.strptime(kl.date + 'T' + kl.time, '%Y-%m-%dT%H:%M:%S')
+        dataOf = kl.datetime
         self.OnKLine(eventType, kl, dataOf)
 
 ########################################################################
@@ -71,11 +71,11 @@ class McCvsToKLine(CapturedToKLine):
         kl.low = float(csvrow['Low'])
         kl.close = float(csvrow['Close'])
         kl.volume = float(csvrow['TotalVolume'])
-        kl.date = datetime.strptime(csvrow['Date'], '%Y-%m-%d').strftime('%Y%m%d')
+        kl.date = datetime.strptime(csvrow['Date'], '%Y-%m-%d').strftime('%Y-%m-%d')
         kl.time = csvrow['Time']+":00"
         
-        kl.datetime = datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:%S')
-        dataOf = kl.datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:00')
+        kl.datetime = datetime.strptime(kl.date + 'T' + kl.time, '%Y-%m-%dT%H:%M:%S')
+        dataOf = kl.datetime
         self.OnKLine(eventType, kl, dataOf)
 
 ########################################################################
@@ -117,11 +117,11 @@ class TaobaoCvsToEvent(DataToEvent):
             eData.low = float(csvrow['low'])
             eData.close = float(csvrow['close'])
             eData.volume = float(csvrow['volume'])
-            eData.date = datetime.strptime(csvrow['date'], '%Y/%m/%d').strftime('%Y%m%d')
+            eData.date = datetime.strptime(csvrow['date'], '%Y/%m/%d').strftime('%Y-%m-%d')
             eData.time = csvrow['time']+":00"
         
-        eData.datetime = datetime.strptime(eData.date + ' ' + eData.time, '%Y%m%d %H:%M:%S')
-        dataOf = eData.datetime.strptime(eData.date + ' ' + eData.time, '%Y%m%d %H:%M:00')
+        eData.datetime = datetime.strptime(eData.date + 'T' + eData.time, '%Y-%m-%dT%H:%M:%S')
+        dataOf = eData.datetime
         self._cbMarketEvent(eventType, eData, dataOf)
 
 ########################################################################

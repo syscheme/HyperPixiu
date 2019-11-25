@@ -53,7 +53,7 @@ class MarketData(EventData):
     def asof(self) :
         if not self.datetime :
             try :
-                self.datetime = datetime.strptime(self.date + ' ' + self.time, '%Y%m%d %H:%M:%S')
+                self.datetime = datetime.strptime(self.date + 'T' + self.time, '%Y-%m-%dT%H:%M:%S')
             except:
                 self.datetime = DT_EPOCH
                 
@@ -165,11 +165,11 @@ class DictToKLine(object):
         kl.low = float(row['low'])
         kl.close = float(row['close'])
         kl.volume = float(row['volume'])
-        kl.date = datetime.strptime(row['date'], '%Y/%m/%d').strftime('%Y%m%d')
+        kl.date = datetime.strptime(row['date'], '%Y/%m/%d').strftime('%Y-%m-%d')
         kl.time = row['time']+":00"
         
-        kl.datetime = datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:%S')
-        dataOf = kl.datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:00')
+        kl.datetime = datetime.strptime(kl.date + 'T' + kl.time, '%Y-%m-%dT%H:%M:%S')
+        dataOf = kl.datetime.strptime(kl.date + 'T' + kl.time, '%Y-%m-%dT%H:%M:00')
         ev = Event(type_=self._type)
         ev.setData(kl)
         return ev
@@ -192,11 +192,11 @@ class McCvsToKLine(DictToKLine):
         kl.low = float(csvrow['Low'])
         kl.close = float(csvrow['Close'])
         kl.volume = float(csvrow['TotalVolume'])
-        kl.date = datetime.strptime(csvrow['Date'], '%Y-%m-%d').strftime('%Y%m%d')
+        kl.date = datetime.strptime(csvrow['Date'], '%Y-%m-%d').strftime('%Y-%m-%d')
         kl.time = csvrow['Time']+":00"
         
-        kl.datetime = datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:%S')
-        dataOf = kl.datetime.strptime(kl.date + ' ' + kl.time, '%Y%m%d %H:%M:00')
+        kl.datetime = datetime.strptime(kl.date + 'T' + kl.time, '%Y-%m-%dT%H:%M:%S')
+        dataOf = kl.datetime.replace(second=0)
         ev = Event(type_=self._type)
         ev.setData(kl)
         return ev
@@ -226,7 +226,7 @@ class TickToKLineMerger(object):
             if kline.datetime.minute != tick.datetime.minute:
                 # 生成上一分钟K线的时间戳
                 kline.datetime = kline.datetime.replace(second=0, microsecond=0)  # 将秒和微秒设为0
-                kline.date = kline.datetime.strftime('%Y%m%d')
+                kline.date = kline.datetime.strftime('%Y-%m-%d')
                 kline.time = kline.datetime.strftime('%H:%M:%S.%f')
             
                 # 推送已经结束的上一分钟K线
@@ -297,7 +297,7 @@ class KlineToXminMerger(object):
         # 尚未创建对象
         if self._klineWk:
             if kline.datetime > self._klineWk.datetime :
-                self._klineWk.date = self._klineWk.datetime.strftime('%Y%m%d')
+                self._klineWk.date = self._klineWk.datetime.strftime('%Y-%m-%d')
                 self._klineWk.time = self._klineWk.datetime.strftime('%H:%M:%S.%f')
                     
                 # 推送, X分钟策略计算和决策
@@ -316,8 +316,8 @@ class KlineToXminMerger(object):
                 timeTil = kline.datetime + timedelta(minutes=self._xmin)
                 timeTil = timeTil.replace(minute=int(timeTil.minute/self._xmin)*self._xmin, second=0, microsecond=0)
                 self._klineWk.datetime = timeTil    # 以x分钟K线末作为X分钟线的时间戳
-            self._klineWk.date = self._klineWk.datetime.strftime('%Y%m%d')
-            self._klineWk.time = self._klineWk.datetime.strftime('%H%M%S')
+            self._klineWk.date = self._klineWk.datetime.strftime('%Y-%m-%d')
+            self._klineWk.time = self._klineWk.datetime.strftime('%H:%M:%S')
         else:                                   
             # 累加更新老一分钟的K线数据
             self._klineWk.high = max(self._klineWk.high, kline.high)

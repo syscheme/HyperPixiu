@@ -97,7 +97,7 @@ class BaseApplication(MetaApp):
         self._threadWished = False
         self._id =""
         self.__jsettings = None
-        self.__dataDir = '.'
+        self.__dataDir = './out'
 
         self._kwargs = kwargs
         if 'jsettings' in self._kwargs.keys():
@@ -476,7 +476,7 @@ class Program(object):
 
         self._pid = os.getpid() # process id
         self._progName = os.path.basename(argvs[0])[0:-3] # cut off the .py extname
-        self._outdir = '.' #TODO
+        self._outdir = './out' #TODO
         self._threadless = True
         self._heartbeatInterval = BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # heartbeat间隔（默认1秒）
         self.__daemonize =False
@@ -512,7 +512,7 @@ class Program(object):
 
         self._shelvefn = '%s/%s.sobj' % (self._outdir, self._progName)
         # 记录今日日期
-        self._runStartDate = datetime.now().strftime('%Y%m%d')
+        self._runStartDate = datetime.now().strftime('%Y-%m-%d')
 
         # 日志引擎实例
         self.__logger = None

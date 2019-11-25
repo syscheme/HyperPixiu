@@ -302,7 +302,7 @@ class Playback(Iterable):
         self.__lastMarketClk = self.__lastMarketClk.replace(minute=0, second=0, microsecond=0)
         evdMH = MarketData(self._exchange, self._symbol)
         evdMH.datetime = self.__lastMarketClk
-        evdMH.date = evdMH.datetime.strftime('%Y%m%d')
+        evdMH.date = evdMH.datetime.strftime('%Y-%m-%d')
         evdMH.time = evdMH.datetime.strftime('%H:%M:%S')
         evMH = Event(EVENT_MARKET_HOUR)
         evMH.setData(evdMH)
@@ -655,8 +655,8 @@ class MarketRecorder(BaseApplication):
 
         if not eData.datetime : # 生成datetime对象
             try :
-                eData.datetime = datetime.strptime(' '.join([eData.date, eData.time]), '%Y%m%d %H:%M:%S')
-                eData.datetime = datetime.strptime(' '.join([eData.date, eData.time]), '%Y%m%d %H:%M:%S.%f')
+                eData.datetime = datetime.strptime('T'.join([eData.date, eData.time]), '%Y-%m-%dT%H:%M:%S')
+                eData.datetime = datetime.strptime('T'.join([eData.date, eData.time]), '%Y-%m-%dT%H:%M:%S.%f')
             except:
                 pass
 

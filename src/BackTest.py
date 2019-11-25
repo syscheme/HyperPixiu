@@ -327,8 +327,8 @@ class BackTestApp(MetaTrader):
 
         # 输出统计结果
         strReport = '%s_R%d took %s' %(self.ident, self.__testRoundId, str(datetime.now() - self.__execStamp_roundStart))
-        strReport += u'\n    回放始末: %s ~ %s'  % (self._btStartDate.strftime('%Y%m%d'), self._btEndDate.strftime('%Y%m%d'))
-        strReport += u'\n  交易日始末: %-8s(close:%.2f) ~ %-8s(close:%.2f): %s日 %s%%' % (summary['startDate'], self._dataBegin_closeprice, summary['endDate'], self._dataEnd_closeprice, summary['totalDays'], formatNumber(originGain))
+        strReport += u'\n    回放始末: %-10s ~ %-10s'  % (self._btStartDate.strftime('%Y-%m-%d'), self._btEndDate.strftime('%Y-%m-%d'))
+        strReport += u'\n  交易日始末: %-10s(close:%.2f) ~ %-10s(close:%.2f): %s日 %s%%' % (summary['startDate'], self._dataBegin_closeprice, summary['endDate'], self._dataEnd_closeprice, summary['totalDays'], formatNumber(originGain))
         strReport += u'\n    盈亏日数: 盈利%s, 亏损%s'  % (summary['profitDays'], summary['lossDays'])
         
         strReport += u'\n    起始资金: %s' % formatNumber(self._startBalance)

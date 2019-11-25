@@ -152,8 +152,8 @@ class Perspective(MarketData):
             #TODO sumup EVENT_TICK
 
         # self.__dayOHLC.datetime = self.asof.replace(hour=23,minute=59,second=59,mircosecond=0)
-        self.__dayOHLC.date = self.__dayOHLC.datetime.strftime('%Y%m%d')
-        self.__dayOHLC.time = self.__dayOHLC.datetime.strftime('%H%M%S')
+        self.__dayOHLC.date = self.__dayOHLC.datetime.strftime('%Y-%m-%d')
+        self.__dayOHLC.time = self.__dayOHLC.datetime.strftime('%H:%M:%S')
         return self.__dayOHLC
 
     def push(self, ev) :

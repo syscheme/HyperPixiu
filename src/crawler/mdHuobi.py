@@ -427,7 +427,7 @@ class HuobiToEvent(DataToEvent):
                     edata.volume = t['vol']
 
                     edata.datetime = datetime.fromtimestamp(t['id'])
-                    edata.date = edata.datetime.date().strftime('%Y%m%d')
+                    edata.date = edata.datetime.date().strftime('%Y-%m-%d')
                     edata.time = edata.datetime.time().strftime('%H:%M:%S')
 
                     event = Event(type_=eventType)
@@ -451,7 +451,7 @@ class HuobiToEvent(DataToEvent):
                 self._dictTicks[symbol] = tick
                 
             tick.datetime = datetime.fromtimestamp(line['ts']/1000)
-            tick.date = tick.datetime.strftime('%Y%m%d')
+            tick.date = tick.datetime.strftime('%Y-%m-%d')
             tick.time = tick.datetime.strftime('%H:%M:%S.%f')
 
             bids = line['tick']['bids']
@@ -487,7 +487,7 @@ class HuobiToEvent(DataToEvent):
                 self._dictTicks[symbol] = tick
 
             tick.datetime = datetime.fromtimestamp(line['ts']/1000)
-            tick.date = tick.datetime.strftime('%Y%m%d')
+            tick.date = tick.datetime.strftime('%Y-%m-%d')
             tick.time = tick.datetime.strftime('%H:%M:%S.%f')
 
             t = line['tick']

@@ -27,6 +27,7 @@ LOGLEVEL_INFO     = logging.INFO
 LOGLEVEL_WARN     = logging.WARN
 LOGLEVEL_ERROR    = logging.ERROR
 LOGLEVEL_CRITICAL = logging.CRITICAL
+LOGFMT_GENERAL = '%(asctime)s %(levelname)s\t%(message)s'
 
 BOOL_STRVAL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh', True, 1]
 
@@ -633,10 +634,13 @@ class Program(object):
             except:
                 jsettings = None
 
-        if jsettings :
-            kwargs =  {**kwargs, 'jsettings': jsettings }
+        try :
+            if jsettings :
+                kwargs =  {**kwargs, 'jsettings': jsettings }
+        except:
+            pass
 
-        app = appModule(self, **kwargs)
+        app = appModule(program=self, **kwargs)
         if not app: return
         if app._threadWished :
             app = ThreadedAppWrapper(app)
@@ -938,7 +942,7 @@ class Program(object):
         # abbout the logger
         # ----------------------------------------------------------------------
         self.__logger   = logging.getLogger()        
-        LOGFMT  = logging.Formatter('%(asctime)s %(levelname)s\t%(message)s')
+        LOGFMT  = logging.Formatter(LOGFMT_GENERAL)
         self.__loglevel = LOGLEVEL_CRITICAL
         
         self._hdlrConsole = None
@@ -1199,7 +1203,7 @@ class Program(object):
         self.debug('dbInsert() %s[%s] added: %s' % (dbName, collectionName, d))
 
     @abstractmethod
-    def dbQuery(self, dbName, collectionName, d, sortKey='', sortDirection=ASCENDING):
+    def dbQuery(self, dbName, collectionName, d, sortKey='', sortDirection=INDEX_ASCENDING):
         # 从MongoDB中读取数据，d是查询要求，返回的是数据库查询的指针
         if not self._dbConn:
             self.error(text.DATA_QUERY_FAILED)   

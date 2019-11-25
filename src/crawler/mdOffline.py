@@ -400,7 +400,7 @@ if __name__ == '__main__':
 
     me.addMarketData(mdOffline, settings['offlinedata'][0])
     recorder = me.createApp(DataRecorder, settings['datarecorder'])  
-    # recorder = me.createApp(CsvRecorder, settings['datarecorder'])
+    # recorder = me.createApp(TaggedCsvRecorder, settings['datarecorder'])
     # me.createApp(Zipper, settings['datarecorder'])
     me.info(u'主引擎创建成功')
 

@@ -10,7 +10,7 @@ from Application  import BaseApplication
 from MarketData  import MarketState
 import HistoryData  as hist
 
-# from .DataRecorder import CsvRecorder, MongoRecorder
+# from .DataRecorder import TaggedCsvRecorder, MongoRecorder
 
 from abc import ABCMeta, abstractmethod
 from datetime import datetime, timedelta
@@ -27,6 +27,8 @@ import traceback
 class MetaAccount(BaseApplication):
     ''' to make sure the child impl don't miss neccessary methods
     '''
+
+    INDEX_ASCENDING = 'ASC' # ASCENDING
 
     #----------------------------------------------------------------------
     def __init__(self, program, **kwargs):
@@ -615,14 +617,15 @@ class Account(MetaAccount):
                     if self._recorder : break
 
         if self._recorder :
-            self.info('taking recoder[%s]' % self._recoder.ident)
-            self._recCatgDPosition = 'ACC/dpos.%s' %(self._id)
-            self._recorder.setDataDir(self.dataRoot)
-            self._recorder.registerCollection(self._recCatgDPosition, params= {'index': [('date', ASCENDING), ('time', ASCENDING)], 'columns' : ['date','symbol']})
+            self.info('taking recoder[%s]' % self._recorder.ident)
+            self._recCatgDPosition = 'dpos'
+            # self._recorder.registerCollection(self._recCatgDPosition, params= {'index': [('date', Account.INDEX_ASCENDING), ('time', INDEX_ASCENDING)], 'columns' : DailyPosition.recordColumns.split(',')})
+            columnnames = DailyPosition.recordColumns()
+            self._recorder.registerCollection(self._recCatgDPosition, params= {'columns' : DailyPosition.recordColumns().split(',')})
 
-            # ensure the DB collection has the index applied
-            self._recorder.configIndex(self.collectionName_trade, [('brokerTradeId', ASCENDING)], True)
-            self._recorder.configIndex(self.collectionName_dpos,  [('date', ASCENDING), ('symbol', ASCENDING)], True)
+            # # ensure the DB collection has the index applied
+            # self._recorder.configIndex(self.collectionName_trade, [('brokerTradeId', INDEX_ASCENDING)], True)
+            # self._recorder.configIndex(self.collectionName_dpos,  [('date', INDEX_ASCENDING), ('symbol', INDEX_ASCENDING)], True)
 
         # # find the marketstate
         # if not self.marketState :
@@ -796,7 +799,7 @@ class Account(MetaAccount):
 
             # part 2. record the daily result and positions
             if self._recorder:
-                self._recorder.pushRow(self.collectionName_dailyresult, self._todayResult)
+                self._recorder.pushRow('dailyresult', self._todayResult)
 
                 # 2.2 the positions
                 for dpos in positions:
@@ -1172,6 +1175,10 @@ class DailyPosition(object):
         self.txns        = EventData.EMPTY_STRING
         self.asof        = []
 
+    def recordColumns() :
+        # return 'date,closePrice,previousClose,tcBuy,tcSell,openPosition,closePosition,tradingPnl,positionPnl,totalPnl,turnover,commission,slippage,netPnl,txnHist,balance,return,highlevel,drawdown,ddPercent'
+        return 'date,symbol,recentPrice,avgPrice,recentPos,posAvail,calcPos,calcMValue,prevClose,prevPos,execOpen,execHigh,execLow,turnover,commission,_slippage,tradingPnl,positionPnl,dailyPnl,netPnl,cBuy,cSell,txns'
+    
     def initPositions(self, account, symbol, currentPos, prevPos, ohlc =None):
         """Constructor"""
 

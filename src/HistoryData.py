@@ -41,16 +41,17 @@ class Recorder(BaseApplication):
     DEFAULT_DBPrefix = 'dr'
 
     #----------------------------------------------------------------------
-    def __init__(self, program, settings):
+    def __init__(self, program, **kwargs):
         """Constructor"""
-        super(Recorder, self).__init__(program, settings)
-        self._dbNamePrefix = settings.dbNamePrefix(Recorder.DEFAULT_DBPrefix) if settings else Recorder.DEFAULT_DBPrefix
+        super(Recorder, self).__init__(program, **kwargs)
+
+        self._dbNamePrefix = self.getConfig('dbNamePrefix', Recorder.DEFAULT_DBPrefix)
 
         # 配置字典
         self._dictDR = OrderedDict() # categroy -> { fieldnames, ....}
 
         # 负责执行数据库插入的单独线程相关
-        self._queRowsToRecord = Queue()  # 队列 of (category, Data)
+        self.__queRowsToRecord = Queue()  # 队列 of (category, Data)
 
     def setDataDir(self, dataDir):
         if len(dataDir) > 3:
@@ -67,7 +68,7 @@ class Recorder(BaseApplication):
         cStep =0
         while self.isActive:
             try:
-                category, row = self._queRowsToRecord.get(block=False, timeout=0.05)
+                category, row = self.__queRowsToRecord.get(block=False, timeout=0.05)
                 self._saveRow(category, row)
                 cStep +=1
             except: # Empty:
@@ -75,9 +76,13 @@ class Recorder(BaseApplication):
 
         return cStep >0
 
+    def OnEvent(self, event):
+        pass # do nothing for Recorder unless it is an auto-recorder
+
     #----------------------------------------------------------------------
     def pushRow(self, category, row):
-        self._queRowsToRecord.put((category, row))
+        if not isinstance()r
+        self.__queRowsToRecord.put((category, row))
 
     @abstractmethod
     def configIndex(self, category, definition, unique=False):
@@ -91,7 +96,7 @@ class Recorder(BaseApplication):
 
     def registerCollection(self, category, params= {}):
         '''
-           for example recorder.registerCollection(self._recCatgDPosition, params= {'index': [('date', ASCENDING), ('time', ASCENDING)], 'columns' : ['date','symbol']})
+           for example Account will call recorder.registerCollection('DailyPosition', params= {'index': [('date', INDEX_ASCENDING), ('time', INDEX_ASCENDING)], 'columns' : ['date','symbol']})
         '''
         if not category in self._dictDR.keys() :
             self._dictDR[category] = OrderedDict()
@@ -104,110 +109,130 @@ class Recorder(BaseApplication):
 
 ########################################################################
 import csv
-class CsvRecorder(Recorder):
-    """数据记录引擎,
+import logging
+import sys, os
+class TaggedCsvRecorder(Recorder):
+    '''
+    This recorder write lines like csv but put a TAG as record-type at the beginning of line
     configuration:
         "datarecorder": {
             ...
             "dbNamePrefix": "dr", // the prefix of DB name to save: <dbNamePrefix>Tick, <dbNamePrefix>K1min
 
             // for csv recorder
-            "min2flush" : 0.3,
-            "days2roll" : 1.0,
+            "minFlushInterval" : 0.3,
+            "daysToRoll" : 1.0,
             "days2archive"  : 0.0028,
         }
-    """
+    '''
+
+    LOGFMT_GENERAL = '%(message)s' # the writer simply take logger to output file   
 
     #----------------------------------------------------------------------
-    def __init__(self, program, settings):
+    def __init__(self, program, **kwargs):
         """Constructor"""
-        super(CsvRecorder, self).__init__(program, settings)
+        super(TaggedCsvRecorder, self).__init__(program, **kwargs)
 
-        self._min2flush  = settings.min2flush(1.0)
-        self._days2roll  = settings.days2roll(1.0)
-        self._days2zip   = settings.days2archive(7.0)
-        if self._days2zip < self._days2roll *2:
-            self._days2zip = self._days2roll *2
+        self._minFlushInterval = self.getConfig('minFlushInterval', 1)
+        self._daysToRoll  = self.getConfig('daysToRoll', 1)
+        self._daysToZip   = self.getConfig('daysToZip', 7)
+        self._filename    = self.getConfig('filename', self._program._progName +'.csv')
+        tmp = min(self._daysToRoll *2, self._daysToRoll +2)
+        if self._daysToZip < tmp:
+            self._daysToZip = tmp
+
+        # employing the logger
+        self.__logger   = logging.getLogger()
+        self.__1stRow   = True     
+        
+        filepath = '%s/%s' % (self.dataRoot, self._filename)
+        try :
+            statinfo = os.stat(filepath)
+            if statinfo and statinfo.st_size >10:
+                self.__1stRow = False
+        except :
+            pass
+
+        self._hdlrFile = logging.handlers.RotatingFileHandler(filepath, maxBytes=20*1024*1024, backupCount=10) # now 20MB
+        self._hdlrFile.rotator  = self.__rotator
+        self._hdlrFile.namer    = self.__rotating_namer
+        self._hdlrFile.setLevel(logging.DEBUG)
+        self._hdlrFile.setFormatter(logging.Formatter('%(message)s')) # only the message itself with NO stamp and so on
+        self.__logger.addHandler(self._hdlrFile)
+
+    def __rotating_namer(name):
+        return name + ".gz"
+
+    def __rotator(source, dest):
+        self.__1stRow   = True     
+        with open(source, "rb") as sf:
+            data = sf.read()
+            compressed = zlib.compress(data, 9)
+            with open(dest, "wb") as df:
+                df.write(compressed)
+        os.remove(source)
+
+    # impl of BaseApplication
+    #----------------------------------------------------------------------
+    def doAppInit(self): # return True if succ
+        if not super(TaggedCsvRecorder, self).doAppInit() :
+            return False
+
+        if not self.__logger :
+            return False
+
+        return True
 
     # impl/overwrite of Recorder
     #----------------------------------------------------------------------
-    def registerCollection(self, category, params= {}):
-        coll = super(CsvRecorder, self).registerCollection(category, params)
-
-        # perform the csv registration
-        pos = category.rfind('/')
-        if pos >0:
-            dir = self._dbNamePrefix + category[:pos]
-            fn  = category[pos+1:]
-        else:
-            dir =""
-            fn = self._dbNamePrefix + category
-
-        coll['dir'] = '%s/%s' % (self.dataRoot, dir)
-        coll['fn'] = fn
-        coll['f'] = None
-        coll['c'] = 0
-        coll['o'] = None
-        if params:
-            coll['params'] = params
-
-        self._checkAndRoll(coll)
-
-        return coll
-
-    @abstractmethod
     def configIndex(self, category, definition, unique=False):
         """定义某category collection的index"""
         pass # nothing to do as csv doesn't support index
 
     def _saveRow(self, category, row) :
-        collection =  self.findCollection(category)
-        if not collection:
-            self.debug('collection[%s] not registered, ignore' % category)
-            return
+        columns = None
+        if self.__1stRow :
+            for k, v in self._dictDR.items:
+                if not 'params' in v.keys() or not 'columns' in v['params'].keys():
+                    continue
+                if k == category:
+                    columns = v['params']['columns']
+                headerLine = ('%s#,' % k) + ','.join(v['params']['columns'])
+                self.__logger.info(headerLine)
 
-        if not 'w' in collection.keys():
-            colnames = []
-            orderedcols = []
-            if 'params' in collection and 'columns' in collection['params']:
-                orderedcols = collection['params']['columns']
-                
-            tmp = row.keys()
-            for i in orderedcols:
-                if i in tmp:
-                    colnames.append(i)
-                    tmp.remove(i)
+        if not columns and category in self._dictDR.keys():
+            columns = self._dictDR[category]['params']['columns']
 
-            tmp.sort()
-            colnames += tmp
-            collection['w'] =csv.DictWriter(collection['f'], colnames)
-
-        w = collection['w']
-        
-        if collection['c'] <=0:
-            w.writeheader()
-            collection['c'] +=1
-            self.debug('catg[%s/%s] header saved' % (collection['dir'], collection['fn']))
-
-        w.writerow(row)
-        collection['c'] +=1
-        self.debug('catg[%s/%s] row saved: %s' % (collection['dir'], collection['fn'], row))
-
-        self._checkAndRoll(collection)
+        cols = []
+        if columns :
+            for col in columns:
+                try :
+                    v = row[col]
+                except:
+                    v=''
+                cols.append(v)
+        else:
+            self.warn('category[%s] registration not found, simply output the row' % category)
+            for k, v in row.items():
+                cols.append(v)
+            
+        line += '%s,%s' % (category, ','.join(cols))
+        self.__logger.info(line)
+        return line
 
     # --private methods----------------------------------------------------------------
-    def _checkAndRoll(self, collection) :
+    def __checkAndRoll(self, collection) :
 
         dtNow = datetime.now()
         if collection['f'] :
-            if not 'flush' in collection.keys() or (collection['flush']+timedelta(minutes=self._min2flush)) < dtNow:
+            if not 'flush' in collection.keys() or (collection['flush']+timedelta(minutes=self._minFlushInterval)) < dtNow:
                 collection['f'].flush()
                 collection['flush'] =dtNow
                 self.debug('flushed: %s/%s' % (collection['dir'], collection['fn']))
 
             if collection['o'] :
-                dtToRoll = collection['o']+timedelta(hours=self._days2roll*24)
-                if self._days2roll >=1 and (self._days2roll-int(self._days2roll)) <1/24 : # make the roll occur at midnight
+                dtToRoll = collection['o']+timedelta(hours=self._daysToRoll*24)
+                if self._daysToRoll >=1 and (self._daysToRoll-int(self._daysToRoll)) <1/24 : # make the roll occur at midnight
                     dtToRoll = datetime(dtToRoll.year, dtToRoll.month, dtToRoll.day, 23, 59, 59, 999999)
 
                 if dtToRoll > dtNow :
@@ -215,7 +240,7 @@ class CsvRecorder(Recorder):
 
                 self.debug('rolling %s/%s' % (collection['dir'], collection['fn']))
         
-        stampToZip = (dtNow - timedelta(hours=self._days2zip*24)).strftime('%Y%m%dT%H%M%S')
+        stampToZip = (dtNow - timedelta(hours=self._daysToZip*24)).strftime('%Y%m%dT%H%M%S')
         stampThis   = dtNow.strftime('%Y%m%dT%H%M%S')
         try :
             os.makedirs(collection['dir'])
@@ -496,7 +521,7 @@ class MongoRecorder(Recorder):
         if params:
             coll['params'] = params
             if 'index' in params.keys():
-                # self.configIndex(collectionName, [('date', ASCENDING), ('time', ASCENDING)], True, dbName) #self._dbNamePrefix +e
+                # self.configIndex(collectionName, [('date', INDEX_ASCENDING), ('time', INDEX_ASCENDING)], True, dbName) #self._dbNamePrefix +e
                 self.configIndex(cn, params['index'], True, dbName) #self._dbNamePrefix +e
 
         return coll
@@ -560,7 +585,7 @@ class MongoPlayback(Playback):
             return False
 
         flt = {'datetime':{'$gte':startDate}}
-        self._lst = self.dbQuery(node['coll']['collectionName'], flt, 'datetime', ASCENDING, node['coll']['dbName'])
+        self._lst = self.dbQuery(node['coll']['collectionName'], flt, 'datetime', INDEX_ASCENDING, node['coll']['dbName'])
 
 ########################################################################
 class MarketRecorder(BaseApplication):
@@ -583,7 +608,7 @@ class MarketRecorder(BaseApplication):
             if rectype == 'mongo' :
                 self._recorder = MongoRecorder(program, settings)
             else:
-                self._recorder = CsvRecorder(program, settings)
+                self._recorder = TaggedCsvRecorder(program, settings)
 
     #----------------------------------------------------------------------
     # impl of BaseApplication
@@ -632,7 +657,7 @@ class MarketRecorder(BaseApplication):
                         dsrc.subscribe(symbol, eventType)
 
                 self.subscribeEvent(eventType, self.onMarketEvent)
-                self._recorder.registerCollection(category, params= {'ds': ds, 'index': [('date', ASCENDING), ('time', ASCENDING)], 'columns' : self.CSV_LEADING_COLUMNS})
+                self._recorder.registerCollection(category, params= {'ds': ds, 'index': [('date', INDEX_ASCENDING), ('time', INDEX_ASCENDING)], 'columns' : self.CSV_LEADING_COLUMNS})
 
             except Exception as e:
                 self.logexception(e)

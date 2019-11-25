@@ -30,6 +30,10 @@
         },
     ],
 
+    "recorder": {
+        "id": "blah"
+    },
+    
     "account": { // account settings
         "id": "blah",
         "broker": "AShare",
@@ -48,8 +52,8 @@
     "backtest": { // the configuration schema is extending "trader"
         "accountId" : "blah",
         "startCapitial": 100000,
-        // "rounds":30,
-    
+        "rounds":10,
+        // "plotReport": "yes",
 
         // the following are same as "trader"
         "dbNamePrefixHist" : "dr", // the prefix of DB name where to read history data from: <dbNamePrefixHist>Tick, <dbNamePrefixHist>K1min

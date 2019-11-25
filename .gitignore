@@ -1,70 +1,35 @@
-# C++源代码
-ipch/
-Release/
+out/
+_build/
+temp/*
+tmp/*
+log/*
+logs/*
+build/
+.idea/
+.vscode/
+dist/
 
-*.sdf
-*.suo
-*.exp
-*.pdb
-*.cd
+*.temp
+*.vt
+*.log
+*.log
+*.bak
+*.BAK
+*~
+Untitled*.*
 
-# Python编译文件
+# Python outputs
 *.pyc
 *.pyo
 *.png
 .~*
 
+*.csv
+
 # WingIDE文件
 *.wpr
 *.wpu
-Huobi.json
 
 # 压缩文件
 *.zip
 *.bz2
-
-# API的.con文件
-*.con
-
-# visual studio
-*.opensdf
-
-# 本地持久化文件
-*.vn
-
-# 其他文件
-*.dump
-*.vssettings
-*.klg
-*.lkc
-
-# 不想同步的
-*.local
-*.temp
-*.vt
-*.log
-temp/*
-tmp/*
-log/*
-logs/*
-*.log
-*~
-*.tar.*
-*.zip
-Untitled*.*
-*.csv
-
-vn.ctp/build/*
-vn.lts/build/*
-.idea
-.vscode
-.gitignore
-
-vn.trader/ctaAlgo/data/*
-vn.trader/build/*
-vn.trader/dist/*
-*.bak
-
-A601000.BollChannel.csv
-vnApp/conf/Huobi.json
-doc/_build/*

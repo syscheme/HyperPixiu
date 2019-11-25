@@ -81,7 +81,8 @@ class Recorder(BaseApplication):
 
     #----------------------------------------------------------------------
     def pushRow(self, category, row):
-        if not isinstance()r
+        if row and not isinstance(row, dict) :
+            row = row.__dict__
         self.__queRowsToRecord.put((category, row))
 
     @abstractmethod
@@ -192,7 +193,7 @@ class TaggedCsvRecorder(Recorder):
     def _saveRow(self, category, row) :
         columns = None
         if self.__1stRow :
-            for k, v in self._dictDR.items:
+            for k, v in self._dictDR.items():
                 if not 'params' in v.keys() or not 'columns' in v['params'].keys():
                     continue
                 if k == category:
@@ -212,7 +213,11 @@ class TaggedCsvRecorder(Recorder):
                     v=''
                 cols.append(v)
         else:
-            self.warn('category[%s] registration not found, simply output the row' % category)
+            self.warn('category[%s] registration not found, simply taking the current row' % category)
+            colnames = row.keys()
+            self._dictDR[category] = { 'params':{'columns': colnames} }
+            headerLine = ('%s#,' % category) + ','.join(colnames)
+            self.__logger.info(headerLine)
             for k, v in row.items():
                 cols.append(v)
             

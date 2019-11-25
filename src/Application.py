@@ -28,7 +28,7 @@ LOGLEVEL_WARN     = logging.WARN
 LOGLEVEL_ERROR    = logging.ERROR
 LOGLEVEL_CRITICAL = logging.CRITICAL
 
-BOOL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh', True, 1]
+BOOL_STRVAL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh', True, 1]
 
 ########################################################################
 class MetaObj(ABC):
@@ -104,11 +104,11 @@ class BaseApplication(MetaApp):
             self.__jsettings = self._kwargs.pop('jsettings', None)
             self._id        = self.__jsettings.id(self._id)
             self.__dataDir  = self.__jsettings.dataPath(self.__dataDir)
-            self._threadWished = self.__jsettings.threaded('False') in BOOL_TRUE
+            self._threadWished = self.__jsettings.threaded('False').lower() in BOOL_STRVAL_TRUE
 
         self._id = self._kwargs.pop('id', self._id)
         self.__dataDir  = self._kwargs.pop('dataPath', self.__dataDir)
-        self._threadWished = self._kwargs.pop('threaded', self._threadWished) in BOOL_TRUE
+        self._threadWished = self._kwargs.pop('threaded', str(self._threadWished)).lower() in BOOL_STRVAL_TRUE
 
         if '/' != self.__dataDir[-1]:
             self.__dataDir +='/'
@@ -504,7 +504,7 @@ class Program(object):
                 config_filename = os.path.abspath(config_filename)
                 print('loading configfile: %s' % config_filename)
                 self.__jsettings = jsoncfg.load_config(config_filename)
-                self.__daemonize = self.__jsettings.daemonize('False') in BOOL_TRUE
+                self.__daemonize = self.__jsettings.daemonize('False').lower() in BOOL_STRVAL_TRUE
                 self._heartbeatInterval = int(self.__jsettings.heartbeatInterval(BaseApplication.HEARTBEAT_INTERVAL_DEFAULT))
             except Exception as e :
                 print('failed to load configure[%s]: %s' % (config_filename, e))
@@ -969,7 +969,7 @@ class Program(object):
         self.setLogLevel(level) # LOGLEVEL_INFO))
         
         # 设置输出
-        echoToConsole = self.__jsettings.logger.console('True').lower() in BOOL_TRUE
+        echoToConsole = self.__jsettings.logger.console('True').lower() in BOOL_STRVAL_TRUE
         logdir = self.__jsettings.logger.dir('/tmp')
         if echoToConsole and not self._hdlrConsole:
             # 添加终端输出
@@ -983,7 +983,7 @@ class Program(object):
             self.__logger.addHandler(nullHandler)    
 
         tmpval = self.__jsettings.logger.file('True').lower()
-        if tmpval in BOOL_TRUE and not self._hdlrFile:
+        if tmpval in BOOL_STRVAL_TRUE and not self._hdlrFile:
             filepath = '%s/%s.%s.log' % (logdir, self._progName, datetime.now().strftime('%Y%m%d'))
             self._hdlrFile = TimedRotatingFileHandler(filepath, when='W5', backupCount=9) # when='W5' for Satday, 'D' daily, 'midnight' rollover at midnight
            #  = RotatingFileHandler(filepath, maxBytes=100*1024*1024, backupCount=9) # now 100MB*10,  = logging.FileHandler(filepath)
@@ -992,7 +992,7 @@ class Program(object):
             self.__logger.addHandler(self._hdlrFile)
             
         # 注册事件监听
-        if self.__jsettings.logger.loggingEvent('True').lower() in BOOL_TRUE :
+        if self.__jsettings.logger.loggingEvent('True').lower() in BOOL_STRVAL_TRUE :
             self._loggingEvent = True
 
     def setLogLevel(self, level):

@@ -61,6 +61,7 @@ class BackTestApp(MetaTrader):
         self._btEndDate    = datetime.strptime(self.getConfig('endDate', '2999-12-31'), '%Y-%m-%d')
         self._startBalance = self.getConfig('startBalance', 100000)
         self._testRounds   = self.getConfig('rounds', 1)
+        self._plotReport   = self.getConfig('plotReport', 'False').lower() in BOOL_STRVAL_TRUE
 
         self.__testRoundId = 1 # count start from 1 to ease reading
         self.__testRoundcEvs =0
@@ -326,14 +327,18 @@ class BackTestApp(MetaTrader):
 
         # 输出统计结果
         strReport = '%s_R%d took %s' %(self.ident, self.__testRoundId, str(datetime.now() - self.__execStamp_roundStart))
-        strReport += u'\n    回放始末: %s(close:%.2f) ~ %s(close:%.2f): %s%%'  % (self._dataBegin_date, self._dataBegin_closeprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain))
-        strReport += u'\n    交易始末: %s(close:%.2f) ~ %s(close:%.2f)' % (summary['startDate'], self._dataBegin_closeprice, summary['endDate'], self._dataEnd_closeprice)
-        
-        strReport += u'\n    交易日数: %s (盈利%s, 亏损%s)' % (summary['totalDays'], summary['profitDays'], summary['lossDays'])
+        strReport += u'\n    回放始末: %s ~ %s'  % (self._btStartDate.strftime('%Y%m%d'), self._btEndDate.strftime('%Y%m%d'))
+        strReport += u'\n  交易日始末: %-8s(close:%.2f) ~ %-8s(close:%.2f): %s日 %s%%' % (summary['startDate'], self._dataBegin_closeprice, summary['endDate'], self._dataEnd_closeprice, summary['totalDays'], formatNumber(originGain))
+        strReport += u'\n    盈亏日数: 盈利%s, 亏损%s'  % (summary['profitDays'], summary['lossDays'])
         
         strReport += u'\n    起始资金: %s' % formatNumber(self._startBalance)
         strReport += u'\n    结束资金: %s' % formatNumber(summary['endBalance'])
     
+        strReport += u'\n  总成交笔数: %s' % formatNumber(summary['totalTradeCount'],0)
+        strReport += u'\n    总手续费: %s' % formatNumber(summary['totalCommission'])
+        strReport += u'\n      总滑点: %s' % formatNumber(summary['totalSlippage'])
+        strReport += u'\n  总成交金额: %s' % formatNumber(summary['totalTurnover'])
+
         strReport += u'\n    总收益率: %s%%' % formatNumber(summary['totalReturn'])
         strReport += u'\n    年化收益: %s%%' % formatNumber(summary['annualizedReturn'])
         strReport += u'\n      总盈亏: %s' % formatNumber(summary['totalNetPnl'])
@@ -341,11 +346,6 @@ class BackTestApp(MetaTrader):
         strReport += u'\n  最大回撤率: %s%%' % formatNumber(summary['maxDdPercent'])
         strReport += u'\n  收益标准差: %s%%' % formatNumber(summary['returnStd'])
         strReport += u'\n      夏普率: %s' % formatNumber(summary['sharpeRatio'])
-        
-        strReport += u'\n    总手续费: %s' % formatNumber(summary['totalCommission'])
-        strReport += u'\n      总滑点: %s' % formatNumber(summary['totalSlippage'])
-        strReport += u'\n  总成交金额: %s' % formatNumber(summary['totalTurnover'])
-        strReport += u'\n  总成交笔数: %s' % formatNumber(summary['totalTradeCount'],0)
         
         strReport += u'\n    日均盈亏: %s' % formatNumber(summary['dailyNetPnl'])
         strReport += u'\n  日均手续费: %s' % formatNumber(summary['dailyCommission'])
@@ -356,7 +356,7 @@ class BackTestApp(MetaTrader):
 
         '''
         strReport += u'\n%10s: %-8s(close:%.2f) ~ %-8s(close:%.2f): %s%%' % ('回放始末', self._dataBegin_date, self._dataBegin_closeprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain))
-        strReport += u'\n%10s: %s(close:%.2f) ~ %s(close:%.2f)'           % ('交易始末', summary['startDate'], self._dataBegin_closeprice, summary['endDate'], self._dataEnd_closeprice)
+        strReport += u'\n%10s: %-8s(close:%.2f) ~ %-8s(close:%.2f)'       % ('交易始末', summary['startDate'], self._dataBegin_closeprice, summary['endDate'], self._dataEnd_closeprice)
         strReport += u'\n%10s: %s (盈利%s, 亏损%s)' % ('交易日数', summary['totalDays'], summary['profitDays'], summary['lossDays'])
         
         strReport += u'\n%10s: %s'   % ('起始资金', formatNumber(self._startBalance))
@@ -390,7 +390,8 @@ class BackTestApp(MetaTrader):
         for line in strReport.splitlines():
             self.info(line)
         
-        self.plotResult(tradeDays)
+        if self._plotReport :
+            self.plotResult(tradeDays)
 
     #----------------------------------------------------------------------
     def plotResult(self, tradeDays):
@@ -799,6 +800,7 @@ def calculateSummary(startBalance, dayResultDict):
         return None, 'NULL dayResultDict'
 
     columns ={}
+    cDaysHaveTrade =0
     for dr in dayResultDict.values():
         if len(columns) <=0 :
             for k in dr.__dict__.keys() :
@@ -810,7 +812,7 @@ def calculateSummary(startBalance, dayResultDict):
             if k in columns :
                 columns[k].append(v)
             
-    df = pd.DataFrame.from_dict(columns)
+    df = pd.DataFrame.from_dict(columns).set_index('date')
 
     # step 2. append the DataFrame with new columns [balance, return, highlevel, drawdown, ddPercent]
     df['balance'] = df['netPnl'].cumsum() + startBalance
@@ -823,9 +825,9 @@ def calculateSummary(startBalance, dayResultDict):
     startDate = df.index[0]
     endDate = df.index[-1]
 
-    totalDays = len(df)
+    totalDays  = len(df)
     profitDays = len(df[df['netPnl']>0])
-    lossDays = len(df[df['netPnl']<0])
+    lossDays   = len(df[df['netPnl']<0])
     
     endBalance   = round(df['balance'].iloc[-1],2)
     maxDrawdown  = round(df['drawdown'].min(),2)
@@ -1049,10 +1051,12 @@ class AccountWrapper(MetaAccount):
     # must be duplicated other than forwarding to _nest def doAppStep(self) : return self._nest.doAppStep()
     def onDayClose(self):
         self._nest.onDayClose()
+
         # save the calculated daily result into the this wrapper for late calculating
-        self.__dailyResultDict[self._nest._datePrevClose] = self._nest._todayResult
-        self.__previousClose = self._nest._todayResult.closePrice
-        self.__openPosition = self._nest._todayResult.openPosition
+        if self._nest._datePrevClose :
+            self.__dailyResultDict[self._nest._datePrevClose] = self._nest._todayResult
+            self.__previousClose = self._nest._todayResult.closePrice
+            self.__openPosition = self._nest._todayResult.openPosition
 
     def onTimer(self, dt): return self._nest.onTimer(dt)
     # def saveDB(self): return self._nest.saveDB()
@@ -1085,6 +1089,9 @@ class AccountWrapper(MetaAccount):
     def onDayOpen(self, newDate):
         # instead that the true Account is able to sync with broker,
         # Backtest should perform cancel to restore available/frozen positions
+        if self._nest._dateToday and newDate != self._nest._dateToday :
+            self.onDayClose()
+
         clist = []
         with self._nest._lock :
             # A share will not keep yesterday's order alive
@@ -1097,6 +1104,7 @@ class AccountWrapper(MetaAccount):
         if len(clist) >0:
             self.batchCancel(clist)
             self._nest.debug('BT.onDayOpen() batchCancelled: %s' % clist)
+
         self._nest.onDayOpen(newDate)
 
     #----------------------------------------------------------------------
@@ -1355,7 +1363,7 @@ if __name__ == '__main__':
     SYMBOL = '000001' # '000540' '000001'
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-    csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
+    csvdir = '/mnt/m/AShareSample' # '/mnt/m/AShareSample'
     ps = Perspective('AShare', SYMBOL)
     csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
     histdata = PerspectiveGenerator(ps)

@@ -771,10 +771,10 @@ class Account(MetaAccount):
 
                 if trade.direction == OrderData.DIRECTION_LONG:
                     posChange = trade.volume
-                    self.tcBuy += 1
+                    self._todayResult.tcBuy += 1
                 else:
                     posChange = -trade.volume
-                    self.tcSell += 1
+                    self._todayResult.tcSell += 1
                     
                 self._todayResult.txnHist += "%+dx%s" % (posChange, trade.price)
 
@@ -1273,45 +1273,44 @@ class DailyResult(object):
         
         self.txnHist = ""
 
-    #----------------------------------------------------------------------
-    def addTrade(self, trade):
-        """添加交易"""
-        self.tradeList.append(trade)
-
-    #----------------------------------------------------------------------
-    def calculatePnl(self, account, openPosition=0):
-        """
-        计算盈亏
-        size: 合约乘数
-        rate：手续费率
-        slippage：滑点点数
-        """
-        # 持仓部分
-        self.openPosition = openPosition
-        self.positionPnl = round(self.openPosition * (self.closePrice - self.previousClose) * account._contractSize, 3)
-        self.closePosition = self.openPosition
+    # #----------------------------------------------------------------------
+    # def addTrade(self, trade):
+    #     """添加交易"""
+    #     self.tradeList.append(trade)
+    # #----------------------------------------------------------------------
+    # def calculatePnl(self, account, openPosition=0):
+    #     """
+    #     计算盈亏
+    #     size: 合约乘数
+    #     rate：手续费率
+    #     slippage：滑点点数
+    #     """
+    #     # 持仓部分
+    #     self.openPosition = openPosition
+    #     self.positionPnl = round(self.openPosition * (self.closePrice - self.previousClose) * account._contractSize, 3)
+    #     self.closePosition = self.openPosition
         
-        # 交易部分
-        self.tcBuy = 0
-        self.tcSell = 0
+    #     # 交易部分
+    #     self.tcBuy = 0
+    #     self.tcSell = 0
         
-        for trade in self.tradeList:
-            if trade.direction == OrderData.DIRECTION_LONG:
-                posChange = trade.volume
-                self.tcBuy += 1
-            else:
-                posChange = -trade.volume
-                self.tcSell += 1
+    #     for trade in self.tradeList:
+    #         if trade.direction == OrderData.DIRECTION_LONG:
+    #             posChange = trade.volume
+    #             self.tcBuy += 1
+    #         else:
+    #             posChange = -trade.volume
+    #             self.tcSell += 1
                 
-            self.txnHist += "%+dx%s" % (posChange, trade.price)
+    #         self.txnHist += "%+dx%s" % (posChange, trade.price)
 
-            self.tradingPnl += round(posChange * (self.closePrice - trade.price) * account._contractSize, 2)
-            self.closePosition += posChange
-            turnover, commission, slippagefee = account.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
-            self.turnover += turnover
-            self.commission += commission
-            self.slippage += slippagefee
+    #         self.tradingPnl += round(posChange * (self.closePrice - trade.price) * account._contractSize, 2)
+    #         self.closePosition += posChange
+    #         turnover, commission, slippagefee = account.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
+    #         self.turnover += turnover
+    #         self.commission += commission
+    #         self.slippage += slippagefee
         
-        # 汇总
-        self.totalPnl = round(self.tradingPnl + self.positionPnl, 2)
-        self.netPnl = round(self.totalPnl - self.commission - self.slippage, 2)
+    #     # 汇总
+    #     self.totalPnl = round(self.tradingPnl + self.positionPnl, 2)
+    #     self.netPnl = round(self.totalPnl - self.commission - self.slippage, 2)

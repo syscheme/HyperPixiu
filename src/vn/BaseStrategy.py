@@ -280,11 +280,11 @@ class StrategyOfSymbol(BaseStrategy):
     #----------------------------------------------------------------------
     def insertTick(self, tick):
         '''向数据库中插入tick数据'''
-        self._account.insertData(self.tickDbName, self._symbol, tick)
+        self._account.record(self.tickDbName, self._symbol, tick)
     
     def insertBar(self, bar):
         '''向数据库中插入bar数据'''
-        self._account.insertData(self.barDbName, self._symbol, bar)
+        self._account.record(self.barDbName, self._symbol, bar)
         
     def loadTick(self, days):
         '''读取tick数据'''

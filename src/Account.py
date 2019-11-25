@@ -50,7 +50,7 @@ class MetaAccount(BaseApplication):
     @abstractmethod 
     def cashChange(self, dAvail=0, dTotal=0): raise NotImplementedError
     @abstractmethod 
-    def insertData(self, dbName, collectionName, data): raise NotImplementedError
+    def record(self, dbName, collectionName, data): raise NotImplementedError
     @abstractmethod 
     def postEvent_Order(self, orderData): raise NotImplementedError
     @abstractmethod 
@@ -126,10 +126,15 @@ class Account(MetaAccount):
     """
     __lastId__ =10000
 
+    RECCATE_ORDER       = 'Order'    # 报单历史记录, data=OrderData
+    RECCATE_TRADE       = 'Trade'    # 报单回报历史记录, data=TradeData
+    RECCATE_DAILYPOS    = 'DPos'     # 每日持仓历史记录, data=DailyPosition
+    RECCATE_DAILYRESULT = 'DRes'     # 每日结果历史记录, data=DailyPosition
+
     EVENT_PREFIX   = EVENT_NAME_PREFIX + 'acc'
-    EVENT_ORDER    = EVENT_PREFIX +'Order'    # 报单事件, data=OrderData
-    EVENT_TRADE    = EVENT_PREFIX +'Trade'    # 报单回报事件, data=TradeData
-    EVENT_DAILYPOS = EVENT_PREFIX +'DPos'     # 每日持仓事件, data=DailyPosition
+    EVENT_ORDER    = EVENT_PREFIX + RECCATE_ORDER    # 报单事件, data=OrderData
+    EVENT_TRADE    = EVENT_PREFIX + RECCATE_TRADE    # 报单回报事件, data=TradeData
+    EVENT_DAILYPOS = EVENT_PREFIX + RECCATE_DAILYPOS     # 每日持仓事件, data=DailyPosition
 
     # state of Account
     STATE_OPEN  = 'open'   # during trading hours
@@ -269,9 +274,9 @@ class Account(MetaAccount):
         with self._lock :
             return self.__cashChange(dAvail, dTotal)
 
-    def insertData(self, collectionName, data) :
+    def record(self, category, row) :
         if self._recorder :
-            self._recorder.pushRow(collectionName, data)
+            return self._recorder.pushRow(category, row)
 
     def postEvent_Order(self, orderData):
         self.postEventData(Account.EVENT_ORDER, copy.copy(orderData))
@@ -621,7 +626,8 @@ class Account(MetaAccount):
             self._recCatgDPosition = 'dpos'
             # self._recorder.registerCollection(self._recCatgDPosition, params= {'index': [('date', Account.INDEX_ASCENDING), ('time', INDEX_ASCENDING)], 'columns' : DailyPosition.recordColumns.split(',')})
             columnnames = DailyPosition.recordColumns()
-            self._recorder.registerCollection(self._recCatgDPosition, params= {'columns' : DailyPosition.recordColumns().split(',')})
+            self._recorder.registerCollection(Account.RECCATE_DAILYPOS, params= {'columns' : DailyPosition.recordColumns().split(',')})
+            self._recorder.registerCollection(Account.RECCATE_DAILYRESULT, params= {'columns' : 'date,closePrice,previousClose,tcBuy,tcSell,openPosition,closePosition,tradingPnl,positionPnl,totalPnl,turnover,commission,slippage,netPnl,txnHist'.split(',')})
 
             # # ensure the DB collection has the index applied
             # self._recorder.configIndex(self.collectionName_trade, [('brokerTradeId', INDEX_ASCENDING)], True)
@@ -769,8 +775,7 @@ class Account(MetaAccount):
                     continue
 
                 cTrades +=1
-                if self._recorder:
-                    self._recorder.pushRow(self.collectionName_trade, trade.__dict__)
+                self.record(Account.RECCATE_TRADE, trade)
 
                 if trade.direction == OrderData.DIRECTION_LONG:
                     posChange = trade.volume
@@ -798,14 +803,14 @@ class Account(MetaAccount):
                 self.debug('onDayClose() %s no trades' % (self._dateToday))
 
             # part 2. record the daily result and positions
-            if self._recorder:
-                self._recorder.pushRow('dailyresult', self._todayResult)
+            self.record(Account.RECCATE_DAILYRESULT, self._todayResult)
 
                 # 2.2 the positions
+            if len(positions) >0:
                 for dpos in positions:
                     # self._trader.dbUpdate(self.collectionName_dpos, dpos, {'date':dpos['date'], 'symbol':dpos['symbol']})
-                    self._recorder.pushRow(self.collectionName_dpos, dpos)
-                self.info('saveDataOfDay() saved positions into DB: %s' % positions)
+                    line = self.record(Account.RECCATE_DAILYPOS, dpos)
+                self.info('saveDataOfDay() saved %d positions into DB')
 
         self._datePrevClose = self._dateToday
         self._dateToday = None
@@ -902,14 +907,7 @@ class Account(MetaAccount):
                 dpos.pushTrade(self, trade)
 
             dpos.close()
-
-            if self._recorder :
-                row = dpos.__dict__
-                try :
-                    del row['datetime']
-                except:
-                    pass
-                self._recorder.pushRow(self._recCatgDPosition, row)
+            self.record(Account.RECCATE_DAILYPOS, dpos)
 
             self.postEventData(Account.EVENT_DAILYPOS, dpos)
             result.append(dpos.__dict__)

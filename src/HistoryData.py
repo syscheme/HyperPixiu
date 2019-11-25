@@ -71,7 +71,10 @@ class Recorder(BaseApplication):
                 category, row = self.__queRowsToRecord.get(block=False, timeout=0.05)
                 self._saveRow(category, row)
                 cStep +=1
-            except: # Empty:
+            except Empty:
+                break
+            except Exception as ex: # Empty:
+                self.logexception(ex)
                 break
 
         return cStep >0
@@ -143,7 +146,7 @@ class TaggedCsvRecorder(Recorder):
             self._daysToZip = tmp
 
         # employing the logger
-        self.__logger   = logging.getLogger()
+        self.__fakedcsv   = logging.Logger(name=self.ident) #getLogger()
         self.__1stRow   = True     
         
         filepath = '%s/%s' % (self.dataRoot, self._filename)
@@ -159,7 +162,7 @@ class TaggedCsvRecorder(Recorder):
         self._hdlrFile.namer    = self.__rotating_namer
         self._hdlrFile.setLevel(logging.DEBUG)
         self._hdlrFile.setFormatter(logging.Formatter('%(message)s')) # only the message itself with NO stamp and so on
-        self.__logger.addHandler(self._hdlrFile)
+        self.__fakedcsv.addHandler(self._hdlrFile)
 
     def __rotating_namer(name):
         return name + ".gz"
@@ -179,7 +182,7 @@ class TaggedCsvRecorder(Recorder):
         if not super(TaggedCsvRecorder, self).doAppInit() :
             return False
 
-        if not self.__logger :
+        if not self.__fakedcsv :
             return False
 
         return True
@@ -193,13 +196,14 @@ class TaggedCsvRecorder(Recorder):
     def _saveRow(self, category, row) :
         columns = None
         if self.__1stRow :
+            self.__1stRow = False
             for k, v in self._dictDR.items():
                 if not 'params' in v.keys() or not 'columns' in v['params'].keys():
                     continue
                 if k == category:
                     columns = v['params']['columns']
-                headerLine = ('%s#,' % k) + ','.join(v['params']['columns'])
-                self.__logger.info(headerLine)
+                headerLine = ('!%s,' % k) + ','.join(v['params']['columns'])
+                self.__fakedcsv.info(headerLine)
 
         if not columns and category in self._dictDR.keys():
             columns = self._dictDR[category]['params']['columns']
@@ -216,13 +220,14 @@ class TaggedCsvRecorder(Recorder):
             self.warn('category[%s] registration not found, simply taking the current row' % category)
             colnames = row.keys()
             self._dictDR[category] = { 'params':{'columns': colnames} }
-            headerLine = ('%s#,' % category) + ','.join(colnames)
-            self.__logger.info(headerLine)
-            for k, v in row.items():
-                cols.append(v)
+            headerLine = ('!%s,' % category) + ','.join(colnames)
+            self.__fakedcsv.info(headerLine)
+            cols=row.values()
+            # for k, v in row.items():
+            #     cols.append(v)
             
-        line += '%s,%s' % (category, ','.join(cols))
-        self.__logger.info(line)
+        line = '%s,%s' % (category, ','.join([str(c) for c in cols]))
+        self.__fakedcsv.info(line)
         return line
 
     # --private methods----------------------------------------------------------------

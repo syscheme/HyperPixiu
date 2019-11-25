@@ -1020,7 +1020,7 @@ class AccountWrapper(MetaAccount):
     def getAllPositions(self): return self._nest.getAllPositions() # returns PositionData
     def cashAmount(self): return self._nest.cashAmount() # returns (avail, total)
     def cashChange(self, dAvail=0, dTotal=0): return self._nest.cashChange(dAvail, dTotal)
-    def insertData(self, dbName, collectionName, data): return self._nest.insertData(dbName, collectionName, data)
+    def record(self, dbName, collectionName, data): return self._nest.record(dbName, collectionName, data)
     def postEvent_Order(self, orderData): return self._nest.postEvent_Order(orderData)
     def sendOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendOrder(vtSymbol, orderType, price, volume, strategy)
     def cancelOrder(self, brokerOrderId): return self._nest.cancelOrder(brokerOrderId)
@@ -1115,7 +1115,7 @@ class AccountWrapper(MetaAccount):
         self.cashChange(dAvail, dCap)
      
     #----------------------------------------------------------------------
-    def insertData(self, dbName, collectionName, data):
+    def record(self, dbName, collectionName, data):
         """考虑到回测中不允许向数据库插入数据，防止实盘交易中的一些代码出错"""
         pass
 
@@ -1360,7 +1360,7 @@ if __name__ == '__main__':
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
     acc = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder')
-    csvdir = '/mnt/d/AShareSample' # '/mnt/m/AShareSample'
+    csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
     ps = Perspective('AShare', SYMBOL)
     csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
     histdata = PerspectiveGenerator(ps)

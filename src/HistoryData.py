@@ -363,7 +363,9 @@ class CsvPlayback(Playback):
             files.sort()
             for name in files:
                 stk = name.split('.')
-                if not 'csv' in stk or self._symbol.lower() != name[:len(self._symbol)].lower():
+                if len(stk) <=1 or not 'csv' in stk or self._symbol.lower() != name[:len(self._symbol)].lower():
+                    continue
+                if not stk[-1].lower() in ['csv', 'bz2'] :
                     continue
 
                 fn = '%s/%s' % (self._folder, name)
@@ -383,6 +385,7 @@ class CsvPlayback(Playback):
         if len(prev) >0:
             self._csvfiles = [prev] + self._csvfiles
         
+        self.info('associated file list: %s' % self._csvfiles)
         return len(self._csvfiles) >0
 
     def readNext(self):

@@ -44,7 +44,7 @@ class BackTestApp(MetaTrader):
         super(BackTestApp, self).__init__(program, **kwargs)
         self._initTrader = trader
         self._initMarketState = None # to populate from _initTrader
-        self._initAcc = None # to populate from _initTrader then wrapper
+        self._originAcc = None # to populate from _initTrader then wrapper
 
         self._account = None # the working account inherit from MetaTrader
         self._marketState = None
@@ -98,7 +98,7 @@ class BackTestApp(MetaTrader):
             self._program.removeObj(self._marketState)
         self._marketState = None
 
-        # step 2. create clean trader and account from self._initAcc and  
+        # step 2. create clean trader and account from self._account and  
         if self.__wkTrader:
             self._program.removeApp(self.__wkTrader)
         self.__wkTrader = None
@@ -135,19 +135,9 @@ class BackTestApp(MetaTrader):
             return False
 
         self._initMarketState = self._initTrader._marketstate
-        
-        # step 1. wrapper the broker drivers of the accounts
-        originAcc = self._initTrader.account
-        if originAcc and not isinstance(originAcc, AccountWrapper):
-            self._program.removeApp(originAcc.ident)
-            originAcc._trader = self # adopt the account by pointing its._trader to self
-            self._initAcc = AccountWrapper(self, account=copy.copy(originAcc)) # duplicate the original account for test espoches
-            self._initAcc.setCapital(self._startBalance, True)
-            self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d] as template' % (originAcc.ident, self._initAcc.ident, self._startBalance))
-            # the following steps have been MOVED into resetTest():
-            # self._account = wrapper
-            # self._program.addApp(self._account)
-        else : self._initAcc = originAcc
+        self._originAcc = self._initTrader.account
+        if self._originAcc and not isinstance(self._originAcc, AccountWrapper):
+            self._program.removeApp(self._originAcc.ident)
 
         # # ADJ_1. adjust the Trader._dictObjectives to append suffix MarketData.TAG_BACKTEST
         # for obj in self._dictObjectives.values() :
@@ -256,7 +246,7 @@ class BackTestApp(MetaTrader):
             self._marketState = copy.deepcopy(self._initMarketState)
             self._program.addObj(self._marketState)
 
-        # step 2. create clean trader and account from self._initAcc and  
+        # step 2. create clean trader and account from self._account and  
         if self.__wkTrader:
             self._program.removeObj(self.__wkTrader)
         self.__wkTrader = copy.deepcopy(self._initTrader)
@@ -267,11 +257,17 @@ class BackTestApp(MetaTrader):
             self._program.removeApp(self._account)
             self._account =None
         
-        self._account = copy.deepcopy(self._initAcc)
-        self._program.addApp(self._account)
-        self._account.setCapital(self._startBalance, True) # 回测时的起始本金（默认10万）
-        self._account._marketstate = self._marketState
-        self.__wkTrader._account = self._account
+        # step 3. wrapper the broker drivers of the accounts
+        if self._originAcc and not isinstance(self._originAcc, AccountWrapper):
+            self._program.removeApp(self._originAcc.ident)
+            self._account = AccountWrapper(self, account=copy.copy(self._originAcc)) # duplicate the original account for test espoches
+            self._account._trader = self # adopt the account by pointing its._trader to self
+            self._account.setCapital(self._startBalance, True)
+            self._program.addApp(self._account)
+            self._account._marketstate = self._marketState
+            self.__wkTrader._account = self._account
+            self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d]' % (self._originAcc.ident, self._account.ident, self._startBalance))
+
         self.__wkHistData.resetRead()
            
         self._dataBegin_date = None

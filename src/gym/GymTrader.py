@@ -390,7 +390,7 @@ class GymTrainer(MetaTrader):
 
         self._initTrader = trader
         self._initMarketState = None # to populate from _initTrader
-        self._initAcc = None # to populate from _initTrader then wrapper
+        self._originAcc = None # to populate from _initTrader then wrapper
 
         self._account = None # the working account inherit from MetaTrader
         self._marketState = None
@@ -419,17 +419,10 @@ class GymTrainer(MetaTrader):
         self._initMarketState = self._initTrader._marketstate
         
         # step 1. wrapper the broker drivers of the accounts
+        self._originAcc = self._initTrader.account
         originAcc = self._initTrader.account
-        if originAcc and not isinstance(originAcc, AccountWrapper):
-            self._program.removeApp(originAcc.ident)
-            originAcc._trader = self # adopt the account by pointing its._trader to self
-            self._initAcc = AccountWrapper(self, account=copy.copy(originAcc)) # duplicate the original account for test espoches
-            self._initAcc.setCapital(self._startBalance, True)
-            self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d] as template' % (originAcc.ident, self._initAcc.ident, self._startBalance))
-            # the following steps have been MOVED into resetTest():
-            # self._account = wrapper
-            # self._program.addApp(self._account)
-        else : self._initAcc = originAcc
+        if self._originAcc and not isinstance(self._originAcc, AccountWrapper):
+            self._program.removeApp(self._originAcc.ident)
 
         self.gymReset()
         return True
@@ -534,11 +527,17 @@ class GymTrainer(MetaTrader):
             self._program.removeApp(self._account)
             self._account =None
         
-        self._account = copy.deepcopy(self._initAcc)
-        self._program.addApp(self._account)
-        self._account.setCapital(self._startBalance, True) # 回测时的起始本金（默认10万）
-        self._account._marketstate = self._marketState
-        self.__wkTrader._account = self._account
+        # step 3. wrapper the broker drivers of the accounts
+        if self._originAcc and not isinstance(self._originAcc, AccountWrapper):
+            self._program.removeApp(self._originAcc.ident)
+            self._account = AccountWrapper(self, account=copy.copy(self._originAcc)) # duplicate the original account for test espoches
+            self._account._trader = self # adopt the account by pointing its._trader to self
+            self._account.setCapital(self._startBalance, True)
+            self._program.addApp(self._account)
+            self._account._marketstate = self._marketState
+            self.__wkTrader._account = self._account
+            self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d]' % (self._originAcc.ident, self._account.ident, self._startBalance))
+
         self.__wkHistData.resetRead()
            
         self._dataBegin_date = None

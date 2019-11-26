@@ -636,9 +636,9 @@ class Program(object):
 #            return None
 
         jsettings = None
-        if self.__jsettings and 'configNode' in kwargs.keys():
+        configNode = kwargs.pop('configNode', '')
+        if self.__jsettings and len(configNode)>0:
             jsettings = self.__jsettings
-            configNode = kwargs.pop('configNode', None)
             try :
                 for i in configNode.split('/') :
                     jsettings = jsettings[i]
@@ -943,22 +943,33 @@ class Program(object):
     def pendingSize(self):
         return self.__queue.qsize()
 
+    def getConfig(self, configName, defaultVal, pop=False) :
+        try :
+            if configName in self._kwargs.keys() :
+                return self._kwargs.pop(configName, defaultVal) if pop else self._kwargs[configName]
+
+            if self.__jsettings:
+                jn = self.__jsettings
+                for i in configName.split('/') :
+                    jn = jn[i]
+
+                if defaultVal :
+                    if isinstance(defaultVal, list):
+                        return jsoncfg.expect_array(jn(defaultVal))
+                    if isinstance(defaultVal, dict):
+                        return jsoncfg.expect_object(jn(defaultVal))
+
+                return jn(defaultVal)
+        except:
+            pass
+
+        return defaultVal
+
     # methods about logging
     # ----------------------------------------------------------------------
     def initLogger(self):
         '''初始化日志引擎'''
-        if not self.__jsettings or not jsoncfg.node_exists(self.__jsettings.logger):
-            return
-        
-        # abbout the logger
-        # ----------------------------------------------------------------------
-        self.__logger   = logging.getLogger()        
-        LOGFMT  = logging.Formatter(LOGFMT_GENERAL)
-        self.__loglevel = LOGLEVEL_CRITICAL
-        
-        self._hdlrConsole = None
-        self._hdlrFile = None
-        
+
         # 日志级别函数映射
         self._loglevelFunctionDict = {
             LOGLEVEL_DEBUG:    self.debug,
@@ -976,16 +987,35 @@ class Program(object):
             'critical' : LOGLEVEL_CRITICAL,
         }
 
+        level = STR2LEVEL['info']
+        echoToConsole = True
+        logdir = '/tmp'
+        filename = '%s.%s.log' % (self._progName, datetime.now().strftime('%Y%m%d'))
+        loggingEvent = 'True'
 
+        if self.__jsettings and jsoncfg.node_exists(self.__jsettings.logger):
+            level = self.__jsettings.logger.level(level)
+            if str(level).lower() in STR2LEVEL.keys():
+                level = STR2LEVEL[str(level).lower()]
+        
+            echoToConsole = self.__jsettings.logger.console(str(echoToConsole)).lower() in BOOL_STRVAL_TRUE
+            logdir = self.__jsettings.logger.dir(logdir)
+            filename = self.__jsettings.logger.filename(filename)
+            loggingEvent = self.__jsettings.logger.loggingEvent(str(loggingEvent)).lower() in BOOL_STRVAL_TRUE
+        
+        # abbout the logger
+        # ----------------------------------------------------------------------
+        self.__logger   = logging.getLogger()        
+        LOGFMT  = logging.Formatter(LOGFMT_GENERAL)
+        self.__loglevel = LOGLEVEL_CRITICAL
+        
+        self._hdlrConsole = None
+        self._hdlrFile = None
+        
         # 设置日志级别
-        level = self.__jsettings.logger.level(LOGLEVEL_DEBUG)
-        if str(level).lower() in STR2LEVEL.keys():
-            level = STR2LEVEL[str(level).lower()]
         self.setLogLevel(level) # LOGLEVEL_INFO))
         
         # 设置输出
-        echoToConsole = self.__jsettings.logger.console('True').lower() in BOOL_STRVAL_TRUE
-        logdir = self.__jsettings.logger.dir('/tmp')
         if echoToConsole and not self._hdlrConsole:
             # 添加终端输出
             self._hdlrConsole = logging.StreamHandler()
@@ -997,9 +1027,8 @@ class Program(object):
             nullHandler = logging.NullHandler()
             self.__logger.addHandler(nullHandler)    
 
-        tmpval = self.__jsettings.logger.file('True').lower()
-        if tmpval in BOOL_STRVAL_TRUE and not self._hdlrFile:
-            filepath = '%s/%s.%s.log' % (logdir, self._progName, datetime.now().strftime('%Y%m%d'))
+        if filename and len(filename) >0:
+            filepath = '%s/%s.log' % (logdir, filename)
             self._hdlrFile = TimedRotatingFileHandler(filepath, when='W5', backupCount=9) # when='W5' for Satday, 'D' daily, 'midnight' rollover at midnight
            #  = RotatingFileHandler(filepath, maxBytes=100*1024*1024, backupCount=9) # now 100MB*10,  = logging.FileHandler(filepath)
             self._hdlrFile.setLevel(self.__loglevel)
@@ -1007,8 +1036,7 @@ class Program(object):
             self.__logger.addHandler(self._hdlrFile)
             
         # 注册事件监听
-        if self.__jsettings.logger.loggingEvent('True').lower() in BOOL_STRVAL_TRUE :
-            self._loggingEvent = True
+        self._loggingEvent = True
 
     def setLogLevel(self, level):
         '''设置日志级别'''

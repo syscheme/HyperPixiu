@@ -31,9 +31,9 @@ class SinaCrawler(MarketCrawler):
     TIMEOUT = 5
     TICK_BATCH_SIZE = 100
 
-    def __init__(self, program, settings):
+    def __init__(self, program, **kwargs):
         """Constructor"""
-        super(SinaCrawler, self).__init__(program, settings)
+        super(SinaCrawler, self).__init__(program, **kwargs)
         self._steps = [self.__gstep_pollTicks, self.__gstep_pollKL5min, self.__gstep_pollKL1day]
 
         self._proxies = {}

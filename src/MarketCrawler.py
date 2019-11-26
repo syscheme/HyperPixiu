@@ -18,10 +18,10 @@ class MarketCrawler(BaseApplication):
     __lastId__ =100
 
     #----------------------------------------------------------------------
-    def __init__(self, program, settings):
+    def __init__(self, program, **kwargs):
         '''Constructor
         '''
-        super(MarketCrawler, self).__init__(program, settings)
+        super(MarketCrawler, self).__init__(program, **kwargs)
 
         self._symbolsToPoll = []
         # the MarketData instance Id

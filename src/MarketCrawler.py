@@ -122,13 +122,12 @@ class MarketCrawler(BaseApplication):
         @return True if busy at this step
         '''
         self._stepAsOf = datetime2float(datetime.now())
-        busy = False
+        cBusy = 0
         cStepped =0
 
         for s in self._steps:
             cStepped +=1
-            if s() :
-                busy = True
+            cBusy += s()
             # if not s in self.__genSteps.keys() or not self.__genSteps[s] :
             #     self.__genSteps[s] = s()
             # try :
@@ -136,8 +135,10 @@ class MarketCrawler(BaseApplication):
             #         busy = True
             # except StopIteration:
             #     self.__genSteps[s] = None
+        if self._threadWished and cBusy<=0:
+            sleep(0.5)
 
-        return busy
+        return (cBusy >0)
 
     def stop(self):
         super(MarketCrawler, self).stop()

@@ -65,8 +65,11 @@ class SinaCrawler(MarketCrawler):
     # sub-steps
     def __step_poll1st(self):
         self.__END_OF_TODAY = datetime2float(datetime.now().replace(hour=15, minute=1))
+        return 0
 
     def __step_pollTicks(self):
+        
+        cBusy =0 
         #step 1. build up self.__tickBatches if necessary
         if (not self.__tickBatches or len(self.__tickBatches)<=0) and len(self._symbolsToPoll) >0:
             self.__tickBatches = []
@@ -81,7 +84,7 @@ class SinaCrawler(MarketCrawler):
 
         batches = len(self.__tickBatches)
         if batches <=0:
-            return False;
+            return cBusy
             
         #step 2. check if to yield time
         self.__idxTickBatch = self.__idxTickBatch % batches
@@ -89,7 +92,7 @@ class SinaCrawler(MarketCrawler):
             # yield some time in order not to poll SiNA too frequently
             if self.__nextStamp_PollTick and (self._stepAsOf < self.__nextStamp_PollTick 
                 or self.__nextStamp_PollTick > self.__END_OF_TODAY):
-                return False
+                return cBusy
 
             self.__nextStamp_PollTick = self._stepAsOf +0.7
 
@@ -100,13 +103,14 @@ class SinaCrawler(MarketCrawler):
         httperr, result = self.GET_RecentTicks(self.__tickBatches[idxBtch])
         if httperr !=200:
             self.error("step_pollTicks() GET_RecentTicks failed, err(%s) bth:%s" %(httperr, bth))
-            return False
+            return cBusy
             
         # succ at previous batch here
         if len(result) <=0 : 
             self.__nextStamp_PollTick + 60*10 # likely after a trade-day closed 10min
 
         for tk in result:
+            cBusy +=1
             s = tk.symbol
             if not s in self.__cacheKLs.keys():
                 self.__cacheKLs[s] = Perspective('AShare', symbol =s, KLDepth_1min=0, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
@@ -114,13 +118,14 @@ class SinaCrawler(MarketCrawler):
             ev = Event(EVENT_TICK)
             ev.setData(tk)
             psp.push(ev)
+            self.debug("step_pollTicks() pushed tick %s into psp" %(tk.desc))
             updated.append(s)
             
-        self.debug("step_pollTicks() btch[%d/%d] cached %s" %(idxBtch, batches, updated))
-        return True
+        self.info("step_pollTicks() btch[%d/%d] cached %s into psp" %(idxBtch, batches, updated))
+        return cBusy
 
     def __step_pollKline(self):
-        
+        cBusy =0       
         s = None
         if len(self._symbolsToPoll) >0:
             self.__idxKL = self.__idxKL % len(self._symbolsToPoll)
@@ -128,16 +133,11 @@ class SinaCrawler(MarketCrawler):
         self.__idxKL += 1
 
         if not s or len(s) <=0:
-            return False
+            return cBusy
 
         if not s in self.__cacheKLs.keys():
             self.__cacheKLs[s] = Perspective('AShare', symbol=s, KLDepth_1min=0, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
 
-            #     EVENT_KLINE_5MIN: EvictableStack(self._depth_5min, KLineData('AShare', s)),
-            #     EVENT_KLINE_1DAY: EvictableStack(self._depth_1day, KLineData('AShare', s)),
-            # }
-
-        cQueries = 0
         psp = self.__cacheKLs[s]
         for evType in [EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
             minutes = SinaCrawler.MINs_OF_EVENT[evType]
@@ -157,15 +157,15 @@ class SinaCrawler(MarketCrawler):
                 continue
 
             # succ at query
-            cQueries +=1
             for i in result:
+                cBusy +=1
                 ev = Event(evType)
                 ev.setData(i)
                 psp.push(ev)
 
-            self.debug("step_pollKline(%s:%s) merged %s-KLs into stack, psp now: %s" %(s, evType, len(result), psp.desc))
+            self.info("step_pollKline(%s:%s) merged %s-KLs into stack, psp now: %s" %(s, evType, len(result), psp.desc))
 
-        return (cQueries >0)
+        return cBusy
 
     # end of sub-steps
     #------------------------------------------------
@@ -197,6 +197,7 @@ class SinaCrawler(MarketCrawler):
             httperr = response.status_code
             if httperr == 200:
                 return httperr, response.text
+
             errmsg += 'err(%s)' % httperr
         except Exception as e:
             errmsg += 'exception：%s' % e
@@ -300,9 +301,9 @@ class SinaCrawler(MarketCrawler):
             tickdata.volume = float(d['volume'])
             tickdata.total = float(d['total'])
 
-            # tickdata.time = EventData.EMPTY_STRING                # 时间 11:20:56.5
-            # tickdata.date = EventData.EMPTY_STRING                # 日期 20151009
-            # tickdata.datetime = None                    # python的datetime时间对象
+            tickdata.datetime = datetime.strptime(d['date'] + 'T' + d['time'], '%Y-%m-%dT%H:%M:%S')
+            tickdata.date = tickdata.datetime.strftime('%Y-%m-%d')
+            tickdata.time = tickdata.datetime.strftime('%H:%M:%S')
             
             tickdata.open = float(d['open'])
             tickdata.high = float(d['high'])

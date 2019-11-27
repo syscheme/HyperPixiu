@@ -12,7 +12,7 @@ class TestCrawler(unittest.TestCase):
         conffile = os.path.realpath(conffile) + '/conf/utests.json'
         sys.argv += ['-f', conffile]
         p = Program()
-        p._heartbeatInterval =-1
+        p._heartbeatInterval =0.2 # yield at idle for 200msec
 
         mc = p.createApp(SinaCrawler, configNode ='SinaCrawler') # md = SinaCrawler(p, None);
         # _, result = md.searchKLines("000002", EVENT_KLINE_5MIN)

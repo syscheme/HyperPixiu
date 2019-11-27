@@ -491,7 +491,6 @@ class Program(object):
         self._pid = os.getpid() # process id
         self._progName = os.path.basename(argvs[0])[0:-3] # cut off the .py extname
         self._outdir = './out' #TODO
-        self._threadless = True
         self._heartbeatInterval = BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # heartbeat间隔（默认1秒）
         self.__daemonize =False
         # dirname(dirname(abspath(file)))
@@ -560,10 +559,6 @@ class Program(object):
     @property
     def logger(self) : 
         return self.__logger
-
-    @property
-    def threadless(self) :
-        return self._threadless
 
     @property
     def settings(self) :
@@ -705,21 +700,6 @@ class Program(object):
             self.daemonize()
 
         self._bRun =True
-        '''
-        self.dbConnect()
-        
-        self.debug('starting market data subscribers')
-        for (k, ds) in self._dictMarketDatas.items():
-            if ds == None:
-                continue
-
-            if self.threadless :
-                ds.connect()
-                self.debug('market subscriber[%s] connected' % k)
-            else :
-                ds.start()
-                self.debug('market subscriber[%s] started' % k)
-        '''
 
         self.debug('starting applications')
         for appId in self.listByType(MetaApp) :

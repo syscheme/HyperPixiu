@@ -1,8 +1,10 @@
 from Application import Program
+from MarketData import TickData, KLineData, EVENT_TICK, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
 import unittest
 
 from crawler.crawlSina import *
 import sys, os
+import HistoryData as hist
 
 hs300s= [
         "600000","600008","600009","600010","600011","600015","600016","600018","600019","600023",
@@ -47,7 +49,11 @@ class TestCrawler(unittest.TestCase):
         p = Program()
         p._heartbeatInterval =0.2 # yield at idle for 200msec
 
-        mc = p.createApp(SinaCrawler, configNode ='SinaCrawler') # md = SinaCrawler(p, None);
+        rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder')
+        rec.registerCategory(EVENT_TICK, params={'columns': TickData.COLUMNS})
+        rec.registerCategory(EVENT_KLINE_5MIN, params={'columns': KLineData.COLUMNS})
+        rec.registerCategory(EVENT_KLINE_1DAY, params={'columns': KLineData.COLUMNS})
+        mc = p.createApp(SinaCrawler, configNode ='SinaCrawler', recorder=rec) # md = SinaCrawler(p, None);
         # _, result = md.searchKLines("000002", EVENT_KLINE_5MIN)
         # _, result = md.getRecentTicks('sh601006,sh601005,sh000001,sz000001')
         # _, result = md.getSplitRate('sh601006')

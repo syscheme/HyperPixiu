@@ -177,8 +177,9 @@ class Perspective(MarketData):
         return self.__dayOHLC
 
     def push(self, ev) :
-        if not self.__push(ev) :
-            return False
+        ev = self.__push(ev)
+        if not ev :
+            return None
 
         if self.__dayOHLC and self.__dayOHLC.asof < self.asof.replace(hour=0,minute=0,second=0,microsecond=0) :
             self.__dayOHLC = None
@@ -186,7 +187,7 @@ class Perspective(MarketData):
         evd = ev.data
         if not self.__dayOHLC :
             self.__dayOHLC = evd
-            return True
+            return ev
 
         if evd.asof > self.__dayOHLC.asof:
             self.__dayOHLC.high = max(self.__dayOHLC.high, evd.high)
@@ -197,11 +198,14 @@ class Perspective(MarketData):
             self.__dayOHLC.openInterest = evd.openInterest
             self.__dayOHLC.datetime = evd.asof
 
-        return True
+        return ev
 
     def __push(self, ev) :
-        if not ev.type in self._stacks.keys():
-            return False
+        '''
+        @return the ev that has been successully pushed into the proper stack, otherwise None
+        '''
+        if not ev or not ev.type in self._stacks.keys():
+            return None
 
         latestevd = self._stacks[ev.type].top
         if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
@@ -209,10 +213,10 @@ class Perspective(MarketData):
             self.__focusLast = ev.type
             if not self.__stampLast or self.__stampLast < ev.data.datetime :
                 self.__stampLast = ev.data.datetime
-            return True
+            return ev
         
         if not ev.data.exchange or latestevd.exchange and not '_k2x' in latestevd.exchange and not '_t2k' in latestevd.exchange :
-            return False # not overwritable
+            return None # not overwritable
 
         self.__focusLast = ev.type
         for i in range(len(self._stacks[ev.type])) :
@@ -220,17 +224,16 @@ class Perspective(MarketData):
                 continue
             if ev.data.datetime == self._stacks[ev.type][i] :
                 self._stacks[ev.type][i] = ev.data
-                return True
             else :
                 self._stacks[ev.type].insert(i, ev.data)
                 while self._stacks[ev.type].evictSize >=0 and self._stacks[ev.type].size > self._stacks[ev.type].evictSize:
                     del(self._stacks[ev.type]._data[-1])
-                return True
+            return ev
         
         self._stacks[ev.type].insert(-1, ev.data)
         while self._stacks[ev.type].evictSize >=0 and self._stacks[ev.type].size > self._stacks[ev.type].evictSize:
             del(self._stacks[ev.type]._data[-1])
-        return True
+        return ev
 
 ########################################################################
 class PerspectiveGenerator(Iterable):

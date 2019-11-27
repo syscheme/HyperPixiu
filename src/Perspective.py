@@ -97,7 +97,7 @@ class Perspective(MarketData):
         return str
 
     @property
-    def asof(self) : return getAsOf(None)
+    def asof(self) : return self.getAsOf(None)
 
     def getAsOf(self, evType=None) :
         if not evType or not evType in self._stacks.keys():
@@ -180,7 +180,7 @@ class Perspective(MarketData):
         if not self.__push(ev) :
             return False
 
-        if self.__dayOHLC and self.__dayOHLC.asof < self.asof().replace(hour=0,minute=0,second=0,microsecond=0) :
+        if self.__dayOHLC and self.__dayOHLC.asof < self.asof.replace(hour=0,minute=0,second=0,microsecond=0) :
             self.__dayOHLC = None
 
         evd = ev.data

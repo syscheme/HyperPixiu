@@ -118,10 +118,10 @@ class SinaCrawler(MarketCrawler):
             ev = Event(EVENT_TICK)
             ev.setData(tk)
             psp.push(ev)
-            self.debug("step_pollTicks() pushed tick %s into psp" %(tk.desc))
+            self.debug("step_pollTicks() pushed tick %s into psp, now: %s" %(tk.desc, psp.desc))
             updated.append(s)
             
-        self.info("step_pollTicks() btch[%d/%d] cached %s into psp" %(idxBtch, batches, updated))
+        self.info("step_pollTicks() btch[%d/%d] cached %d tick-of-symbols into psp: %s" %(idxBtch, batches, len(updated), updated))
         return cBusy
 
     def __step_pollKline(self):

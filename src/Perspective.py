@@ -22,24 +22,24 @@ class EvictableStack(object):
     def __init__(self, evictSize=0, nildata=None):
         '''Constructor'''
         super(EvictableStack, self).__init__()
-        self._data =[]
-        self._evictSize = evictSize
-        self._dataNIL = copy.copy(nildata) if nildata else None
-        # if self._dataNIL and self._evictSize and self._evictSize >0 :
-        #     for i in range(self._evictSize) :
-        #         self._data.insert(0, nildata)
+        self.__data =[]
+        self.__evictSize = evictSize
+        self.__dataNIL = copy.copy(nildata) if nildata else None
+        # if self.__dataNIL and self.__evictSize and self.__evictSize >0 :
+        #     for i in range(self.__evictSize) :
+        #         self.__data.insert(0, nildata)
 
     @property
     def top(self):
-        return self._data[0] if len(self._data) >0 else None
+        return self.__data[0] if len(self.__data) >0 else None
 
     @property
     def evictSize(self):
-        return self._evictSize if self._evictSize else -1
+        return self.__evictSize if self.__evictSize else -1
 
     @property
     def size(self):
-        return len(self._data) if self._data else 0
+        return len(self.__data) if self.__data else 0
 
     @property
     def exportList(self):
@@ -48,19 +48,19 @@ class EvictableStack(object):
     def _exportList(self, nilFilled=False):
         if nilFilled :
             fillsize = (self.evictSize - self.size) if self.evictSize >=0 else 0
-            return self._data + [self._dataNIL] *fillsize
-        return self._data
+            return self.__data + [self.__dataNIL] *fillsize
+        return self.__data
 
     def overwrite(self, item):
-        self._data[0] =item
+        self.__data[0] =item
 
     # no pop here: def pop(self):
-    #    del(self._data[-1])
+    #    del(self.__data[-1])
 
     def push(self, item):
-        self._data.insert(0, item)
+        self.__data.insert(0, item)
         while self.evictSize >=0 and self.size > self.evictSize:
-            del(self._data[-1])
+            del(self.__data[-1])
 
 ########################################################################
 class Perspective(MarketData):

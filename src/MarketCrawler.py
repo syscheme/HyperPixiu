@@ -50,8 +50,7 @@ class MarketCrawler(BaseApplication):
     # inqueries to some market data
     # https://www.cnblogs.com/bradleon/p/6106595.html
     def query(self, symbol, eventType, since, cortResp=None):
-        """查询请求""" 
-        '''
+        ''' 查询请求
         will call cortResp.send(csvline) when the result comes
         '''
         scale =1200
@@ -124,15 +123,19 @@ class MarketCrawler(BaseApplication):
         '''
         self._stepAsOf = datetime2float(datetime.now())
         busy = False
+        cStepped =0
 
         for s in self._steps:
-            if not s in self.__genSteps.keys() or not self.__genSteps[s] :
-                self.__genSteps[s] = s()
-            try :
-                if next(self.__genSteps[s]) :
-                    busy = True
-            except StopIteration:
-                self.__genSteps[s] = None
+            cStepped +=1
+            if s() :
+                busy = True
+            # if not s in self.__genSteps.keys() or not self.__genSteps[s] :
+            #     self.__genSteps[s] = s()
+            # try :
+            #     if next(self.__genSteps[s]) :
+            #         busy = True
+            # except StopIteration:
+            #     self.__genSteps[s] = None
 
         return busy
 

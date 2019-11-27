@@ -90,9 +90,11 @@ class TestHistoryData(unittest.TestCase):
             print('Row: %s\n' % i.desc)
 
     def test_Perspective(self):
+        p = Program()
+        p._heartbeatInterval =-1
         ps = psp.Perspective('AShare', '000001')
         histdata = psp.PerspectiveGenerator(ps)
-        reader = hist.CsvPlayback(symbol='000001', folder='/mnt/e/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
+        reader = hist.CsvPlayback(symbol='000001', folder='/mnt/m/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
         histdata.adaptReader(reader, md.EVENT_KLINE_1MIN)
         marketstate = psp.PerspectiveDict('AShare')
 

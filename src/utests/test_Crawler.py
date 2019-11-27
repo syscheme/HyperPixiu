@@ -1,17 +1,20 @@
+from Application import Program
 import unittest
 
 from crawler.crawlSina import *
-
-import os
-PROGNAME = os.path.basename(__file__)[0:-3]
+import sys, os
 
 class TestCrawler(unittest.TestCase):
+    import sys, os
 
     def test_Sina(self):
+        conffile = os.path.dirname(os.path.abspath(__file__)) + '/../..'
+        conffile = os.path.realpath(conffile) + '/conf/utests.json'
+        sys.argv += ['-f', conffile]
         p = Program()
         p._heartbeatInterval =-1
 
-        mc = p.createApp(SinaCrawler, configNode ='sina') # md = SinaCrawler(p, None);
+        mc = p.createApp(SinaCrawler, configNode ='SinaCrawler') # md = SinaCrawler(p, None);
         # _, result = md.searchKLines("000002", EVENT_KLINE_5MIN)
         # _, result = md.getRecentTicks('sh601006,sh601005,sh000001,sz000001')
         # _, result = md.getSplitRate('sh601006')

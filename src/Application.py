@@ -408,6 +408,8 @@ class Iterable(ABC):
 
                 yield n
                 self.__c +=1
+            except StopIteration:
+                break
             except Exception as ex:
                 self.logexception(ex)
                 self._iterableEnd = True
@@ -991,7 +993,7 @@ class Program(object):
         echoToConsole = True
         logdir = '/tmp'
         filename = '%s.%s.log' % (self._progName, datetime.now().strftime('%Y%m%d'))
-        loggingEvent = 'True'
+        loggingEvent = True
 
         if self.__jsettings and jsoncfg.node_exists(self.__jsettings.logger):
             level = self.__jsettings.logger.level(level)

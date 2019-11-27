@@ -82,7 +82,7 @@ class Perspective(MarketData):
             EVENT_TICK:       EvictableStack(tickDepth, TickData(self.exchange, self.symbol)),
             EVENT_KLINE_1MIN: EvictableStack(KLDepth_1min, KLineData(self.exchange, self.symbol)),
             EVENT_KLINE_5MIN: EvictableStack(KLDepth_5min, KLineData(self.exchange, self.symbol)),
-            EVENT_KLINE_1DAY: EvictableStack(KLDepth_5min, KLineData(self.exchange, self.symbol)),
+            EVENT_KLINE_1DAY: EvictableStack(KLDepth_1day, KLineData(self.exchange, self.symbol)),
         }
 
         self.__stampLast = None
@@ -97,8 +97,28 @@ class Perspective(MarketData):
         return str
 
     @property
-    def asof(self) :
-        return self.__stampLast if self.__stampLast else DT_EPOCH
+    def asof(self) : return getAsOf(None)
+
+    def getAsOf(self, evType=None) :
+        if not evType or not evType in self._stacks.keys():
+            return self.__stampLast if self.__stampLast else DT_EPOCH
+        
+        stack = self._stacks[evType]
+        return DT_EPOCH if stack.size <=0 else stack.top.asof
+
+    def sizesOf(self, evType=None) :
+        if not evType or len(evType) <=0:
+            size =0
+            esize =0
+            for k in self._stacks.keys():
+                size += self._stacks[k].size
+                esize += self._stacks[k].evcitSize
+            return size, esize
+
+        if evType in self._stacks.keys():
+            return self._stacks[evType].size, self._stacks[evType].evictSize
+
+        return 0, 0
 
     @property
     def focus(self) :
@@ -160,7 +180,7 @@ class Perspective(MarketData):
         if not self.__push(ev) :
             return False
 
-        if self.__dayOHLC and self.__dayOHLC.asof < self.asof.replace(hour=0,minute=0,second=0,microsecond=0) :
+        if self.__dayOHLC and self.__dayOHLC.asof < self.asof().replace(hour=0,minute=0,second=0,microsecond=0) :
             self.__dayOHLC = None
 
         evd = ev.data

@@ -5,7 +5,7 @@ from __future__ import division
 from MarketCrawler import *
 from EventData import Event, datetime2float
 from MarketData import KLineData, TickData, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
-from Perspective import EvictableStack
+from Perspective import Perspective
 
 import requests # pip3 install requests
 from copy import copy
@@ -48,14 +48,15 @@ class SinaCrawler(MarketCrawler):
 
         self._proxies = {}
 
+        self._depth_ticks  = self.getConfig('depth/ticks', 120)
+        self._depth_5min   = self.getConfig('depth/5min',  96)
+        self._depth_1day  = self.getConfig('depth/1day',   220)
+
         self.__tickBatches = None
         self.__idxTickBatch = 0
-        self.__cacheTicks  = {} # dict of symbol to TickData
         self.__nextStamp_PollTick = None
 
-        self.__cacheKLs = {} # dict of symbol to { event: EvictableStack<KLineData>}
-        self.__kldepth_5min = 100
-        self.__kldepth_1day = 200
+        self.__cacheKLs = {} # dict of symbol to Perspective
         self.__idxKL = 0
 
         self.__step_poll1st() # perform an init-step
@@ -104,10 +105,17 @@ class SinaCrawler(MarketCrawler):
         # succ at previous batch here
         if len(result) <=0 : 
             self.__nextStamp_PollTick + 60*10 # likely after a trade-day closed 10min
-        for tk in result:
-            self.__cacheTicks[tk.symbol] = tk
-            updated.append(tk.symbol)
 
+        for tk in result:
+            s = tk.symbol
+            if not s in self.__cacheKLs.keys():
+                self.__cacheKLs[s] = Perspective('AShare', symbol =s, KLDepth_1min=0, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
+            psp = self.__cacheKLs[s]
+            ev = Event(EVENT_TICK)
+            ev.setData(tk)
+            psp.push(ev)
+            updated.append(s)
+            
         self.debug("step_pollTicks() btch[%d/%d] cached %s" %(idxBtch, batches, updated))
         return True
 
@@ -123,25 +131,25 @@ class SinaCrawler(MarketCrawler):
             return False
 
         if not s in self.__cacheKLs.keys():
-            self.__cacheKLs[s] = {
-                EVENT_KLINE_5MIN: EvictableStack(self.__kldepth_5min, KLineData('AShare', s)),
-                EVENT_KLINE_1DAY: EvictableStack(self.__kldepth_1day, KLineData('AShare', s)),
-            }
+            self.__cacheKLs[s] = Perspective('AShare', symbol=s, KLDepth_1min=0, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
+
+            #     EVENT_KLINE_5MIN: EvictableStack(self._depth_5min, KLineData('AShare', s)),
+            #     EVENT_KLINE_1DAY: EvictableStack(self._depth_1day, KLineData('AShare', s)),
+            # }
 
         cQueries = 0
+        psp = self.__cacheKLs[s]
         for evType in [EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
             minutes = SinaCrawler.MINs_OF_EVENT[evType]
-            stack = self.__cacheKLs[s][evType]
+            etimatedNext = datetime2float(psp.getAsOf(evType)) + minutes*60 -1
+            self.__END_OF_TODAY = datetime2float(datetime.now().replace(hour=15, minute=1))
+            if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
+                continue
 
-            if stack.size >0 :
-                etimatedNext = datetime2float(stack.top.asof) + minutes*60 -1
-                self.__END_OF_TODAY = datetime2float(datetime.now().replace(hour=15, minute=1))
-                if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
-                    continue
-
-            lines = 10
-            if stack.size <=0 : # this is an initial stack, then determine the max days to poll
-                lines += self.__cacheKLs[s][evType].evictSize
+            size, lines = psp.sizesOf(evType)
+            if size >0:
+                lines = 0
+            lines +=10
 
             httperr, result = self.GET_RecentKLines(s, minutes, lines)
             if httperr !=200:
@@ -151,9 +159,11 @@ class SinaCrawler(MarketCrawler):
             # succ at query
             cQueries +=1
             for i in result:
-                self.__cacheKLs[s][evType].push(i)
+                ev = Event(evType)
+                ev.setData(i)
+                psp.push(ev)
 
-            self.debug("step_pollKline(%s:%s) merged %s-KLs into stack, now %d in cache asof %s" %(s, evType, len(result), self.__cacheKLs[s][evType].size, self.__cacheKLs[s][evType].top.asof))
+            self.debug("step_pollKline(%s:%s) merged %s-KLs into stack, psp now: %s" %(s, evType, len(result), psp.desc))
 
         return (cQueries >0)
 

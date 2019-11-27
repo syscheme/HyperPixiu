@@ -159,7 +159,7 @@ class TaggedCsvRecorder(Recorder):
         except :
             pass
 
-        self._hdlrFile = logging.handlers.RotatingFileHandler(filepath, maxBytes=10*1024*1024, backupCount=20) # 10MB about to 2MB after bzip2
+        self._hdlrFile = logging.handlers.RotatingFileHandler(filepath, maxBytes=20*1024*1024, backupCount=50) # 10MB about to 2MB after bzip2
         self._hdlrFile.rotator  = self.__rotator
         self._hdlrFile.namer    = self.__rotating_namer
         self._hdlrFile.setLevel(logging.DEBUG)
@@ -167,7 +167,7 @@ class TaggedCsvRecorder(Recorder):
         self.__fakedcsv.addHandler(self._hdlrFile)
 
     def __rotating_namer(self, name):
-        return name + ".bz2"
+        return name + "_%s.bz2" % datetime.now().strftime('%Y%m%dT%H')
 
     def __rotator(self, source, dest):
         self.__1stRow   = True     

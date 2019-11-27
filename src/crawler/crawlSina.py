@@ -139,11 +139,11 @@ class SinaCrawler(MarketCrawler):
                 if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
                     continue
 
-            days = 2
+            lines = 10
             if stack.size <=0 : # this is an initial stack, then determine the max days to poll
-                days = self.__cacheKLs[s][evType].evictSize * minutes /4/60 # AShare only open for 4hours per day
+                lines += self.__cacheKLs[s][evType].evictSize
 
-            httperr, result = self.GET_RecentKLines(s, minutes, days)
+            httperr, result = self.GET_RecentKLines(s, minutes, lines)
             if httperr !=200:
                 self.error("step_pollKline(%s:%s) failed, err(%s)" %(s, evType, httperr))
                 continue
@@ -194,16 +194,16 @@ class SinaCrawler(MarketCrawler):
         self.error(errmsg)
         return httperr, errmsg
 
-    def GET_RecentKLines(self, symbol, minutes=1200, deltaDays=2):
+    def GET_RecentKLines(self, symbol, minutes=1200, lines=10): # deltaDays=2)
         '''"查询 KLINE
         will call cortResp.send(csvline) when the result comes
         '''
 
         if minutes <5: minutes=5 # sina only allow minimal 5min-KLines
-        if deltaDays <1: deltaDays=1
-        symbol = SinaCrawler.fixupSymbolPrefix(symbol)
-        now_datetime = datetime.now()
-        lines = deltaDays * 4 * 60 / minutes
+        # if deltaDays <1: deltaDays=1
+        # symbol = SinaCrawler.fixupSymbolPrefix(symbol)
+        # now_datetime = datetime.now()
+        # lines = deltaDays * 4 * 60 / minutes
 
         url = "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=%s&scale=%s&datalen=%d" % (symbol, minutes, lines)
         httperr, text = self.__sinaGET(url, 'GET_RecentKLines')

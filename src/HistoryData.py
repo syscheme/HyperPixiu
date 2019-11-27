@@ -25,7 +25,7 @@ if sys.version_info <(3,):
     from Queue import Queue, Empty
 else:
     from queue import Queue, Empty
-from pymongo.errors import DuplicateKeyError
+import bz2
 
 EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
 
@@ -159,21 +159,21 @@ class TaggedCsvRecorder(Recorder):
         except :
             pass
 
-        self._hdlrFile = logging.handlers.RotatingFileHandler(filepath, maxBytes=20*1024*1024, backupCount=10) # now 20MB
+        self._hdlrFile = logging.handlers.RotatingFileHandler(filepath, maxBytes=10*1024*1024, backupCount=20) # 10MB about to 2MB after bzip2
         self._hdlrFile.rotator  = self.__rotator
         self._hdlrFile.namer    = self.__rotating_namer
         self._hdlrFile.setLevel(logging.DEBUG)
         self._hdlrFile.setFormatter(logging.Formatter('%(message)s')) # only the message itself with NO stamp and so on
         self.__fakedcsv.addHandler(self._hdlrFile)
 
-    def __rotating_namer(name):
-        return name + ".gz"
+    def __rotating_namer(self, name):
+        return name + ".bz2"
 
-    def __rotator(source, dest):
+    def __rotator(self, source, dest):
         self.__1stRow   = True     
         with open(source, "rb") as sf:
             data = sf.read()
-            compressed = zlib.compress(data, 9)
+            compressed = bz2.compress(data, 9)
             with open(dest, "wb") as df:
                 df.write(compressed)
         os.remove(source)

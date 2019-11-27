@@ -6,7 +6,7 @@ from EventData import Event, EventData, EVENT_SYS_CLOCK, DT_EPOCH, datetime2floa
 
 import os
 import logging
-from logging.handlers import TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler
 from collections import OrderedDict, defaultdict
 from datetime import datetime
 import time
@@ -17,6 +17,7 @@ import traceback
 import shelve
 import jsoncfg # pip install json-cfg
 import json
+import bz2
 
 ########################################################################
 # 常量定义
@@ -1009,16 +1010,31 @@ class Program(object):
             nullHandler = logging.NullHandler()
             self.__logger.addHandler(nullHandler)    
 
+        if '/' != logdir[-1]: logdir +='/'
+
         if filename and len(filename) >0:
-            filepath = '%s/%s.log' % (logdir, filename)
-            self._hdlrFile = TimedRotatingFileHandler(filepath, when='W5', backupCount=9) # when='W5' for Satday, 'D' daily, 'midnight' rollover at midnight
-           #  = RotatingFileHandler(filepath, maxBytes=100*1024*1024, backupCount=9) # now 100MB*10,  = logging.FileHandler(filepath)
+            filepath = '%s%s' % (logdir, filename)
+            self._hdlrFile = RotatingFileHandler(filepath, maxBytes=50*1024*1024, backupCount=20) # 50MB about to 10MB after bzip2
+            # = TimedRotatingFileHandler(filepath, when='W5', backupCount=9) # when='W5' for Satday, 'D' daily, 'midnight' rollover at midnight
+            self._hdlrFile.rotator  = self.__rotator
+            self._hdlrFile.namer    = self.__rotating_namer
             self._hdlrFile.setLevel(self.__loglevel)
             self._hdlrFile.setFormatter(LOGFMT)
             self.__logger.addHandler(self._hdlrFile)
             
         # 注册事件监听
         self._loggingEvent = True
+
+    def __rotating_namer(self, name):
+        return name + ".bz2"
+
+    def __rotator(self, source, dest):
+        with open(source, "rb") as sf:
+            data = sf.read()
+            compressed = bz2.compress(data, 9)
+            with open(dest, "wb") as df:
+                df.write(compressed)
+        os.remove(source)
 
     def setLogLevel(self, level):
         '''设置日志级别'''

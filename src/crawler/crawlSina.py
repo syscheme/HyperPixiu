@@ -133,7 +133,7 @@ class SinaCrawler(MarketCrawler):
             self.info("step_pollTicks() btch[%d/%d] cached %d new-tick of %d/%d symbols into psp: %s" %(idxBtch +1, batches, cMerged, len(result), len(self.__tickBatches[idxBtch]), ','.join(updated)))
         else :
             if not stampNow.hour in [9, 10, 11, 13, 14] and not stampNow.minute in [28,29,30,31,58,59,0]:
-                self.__nextStamp_PollTick += 61 - stampNow.second
+                self.__nextStamp_PollTick += timedelta(seconds=61 - stampNow.second)
                 self.info("step_pollTicks() btch[%d/%d] no new ticks during off-market time, extended sleep time" %(idxBtch +1, batches))
             else :
                 self.debug("step_pollTicks() btch[%d/%d] no new ticks updated" %(idxBtch +1, batches))
@@ -196,10 +196,10 @@ class SinaCrawler(MarketCrawler):
 
             stampNow = datetime.now()
             if cMerged >0:
-                self.info("step_pollKline(%s:%s) symb[%d/%d] merged %d/%d KLs into stack, took %s, psp now: %s" %(s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampTmp), psp.desc))
+                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" %(s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampTmp), psp.desc))
             elif not stampNow.hour in [9, 10, 11, 13, 14] :
-                self.__stampYieldTill_KL += 60*2
-                self.info("step_pollKline(%s:%s) symb[%d/%d] no new KLs during off-time of AShare, actively yielding 2min to avoid 456" %(s, evType, self.__idxKL, cSyms, cMerged))
+                self.__stampYieldTill_KL = stampNow + timedelta(minutes=2)
+                self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-time of AShare, actively yielding 2min to avoid 456" %(s, evType, self.__idxKL, cSyms, cMerged))
 
             stampTmp = stampNow
 

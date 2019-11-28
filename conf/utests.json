@@ -5,10 +5,12 @@
         // "console": "False",
         // "file": "True",
         // "event": { "log": "True", "error": "True" } // whether to post the log into event channel
+        // "dir": "path/to/the/dir"
     },
 
     "recorder": {
-        "id": "blah"
+        "id": "blah",
+        // "dataDir": "/tmp/data"
     },
 
     "marketdata": [ // in the case that marketdata is collected thru local subscribers

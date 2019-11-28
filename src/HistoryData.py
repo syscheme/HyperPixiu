@@ -142,7 +142,7 @@ class TaggedCsvRecorder(Recorder):
         self._minFlushInterval = self.getConfig('minFlushInterval', 1)
         self._daysToRoll  = self.getConfig('daysToRoll', 1)
         self._daysToZip   = self.getConfig('daysToZip', 7)
-        self._filename    = self.getConfig('filename', self._program._progName +'.tcsv')
+        self._filename    = self.getConfig('filename', '%s_%s.tcsv' % (self._program._progName, datetime.now().strftime('%Y%m%d%H%M')))
         tmp = min(self._daysToRoll *2, self._daysToRoll +2)
         if self._daysToZip < tmp:
             self._daysToZip = tmp
@@ -159,15 +159,15 @@ class TaggedCsvRecorder(Recorder):
         except :
             pass
 
-        self._hdlrFile = logging.handlers.RotatingFileHandler(filepath, maxBytes=20*1024*1024, backupCount=50) # 10MB about to 2MB after bzip2
-        self._hdlrFile.rotator  = self.__rotator
-        self._hdlrFile.namer    = self.__rotating_namer
-        self._hdlrFile.setLevel(logging.DEBUG)
-        self._hdlrFile.setFormatter(logging.Formatter('%(message)s')) # only the message itself with NO stamp and so on
-        self.__fakedcsv.addHandler(self._hdlrFile)
+        self.__hdlrFile = logging.handlers.RotatingFileHandler(filepath, maxBytes=20*1024*1024, backupCount=50) # 10MB about to 2MB after bzip2
+        self.__hdlrFile.rotator  = self.__rotator
+        self.__hdlrFile.namer    = self.__rotating_namer
+        self.__hdlrFile.setLevel(logging.DEBUG)
+        self.__hdlrFile.setFormatter(logging.Formatter('%(message)s')) # only the message itself with NO stamp and so on
+        self.__fakedcsv.addHandler(self.__hdlrFile)
 
     def __rotating_namer(self, name):
-        return name + "_%s.bz2" % datetime.now().strftime('%Y%m%dT%H')
+        return name + ".bz2"
 
     def __rotator(self, source, dest):
         self.__1stRow   = True     

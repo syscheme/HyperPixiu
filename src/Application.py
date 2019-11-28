@@ -105,11 +105,11 @@ class BaseApplication(MetaApp):
         if 'jsettings' in self._kwargs.keys():
             self.__jsettings = self._kwargs.pop('jsettings', None)
             self._id        = self.__jsettings.id(self._id)
-            self.__dataDir  = self.__jsettings.dataPath(self.__dataDir)
+            self.__dataDir  = self.__jsettings.dataDir(self.__dataDir)
             self._threadWished = self.__jsettings.threaded('False').lower() in BOOL_STRVAL_TRUE
 
         self._id = self._kwargs.pop('id', self._id)
-        self.__dataDir  = self._kwargs.pop('dataPath', self.__dataDir)
+        self.__dataDir  = self._kwargs.pop('dataDir', self.__dataDir)
         self._threadWished = self._kwargs.pop('threaded', str(self._threadWished)).lower() in BOOL_STRVAL_TRUE
 
         if '/' != self.__dataDir[-1]:
@@ -969,6 +969,7 @@ class Program(object):
             'error' : LOGLEVEL_ERROR,
             'critical' : LOGLEVEL_CRITICAL,
         }
+        self.__loglevel = LOGLEVEL_CRITICAL
 
         level = STR2LEVEL['info']
         echoToConsole = True
@@ -984,27 +985,26 @@ class Program(object):
             echoToConsole = self.__jsettings.logger.console(str(echoToConsole)).lower() in BOOL_STRVAL_TRUE
             logdir = self.__jsettings.logger.dir(logdir)
             filename = self.__jsettings.logger.filename(filename)
-            loggingEvent = self.__jsettings.logger.loggingEvent(str(loggingEvent)).lower() in BOOL_STRVAL_TRUE
+            loggingEvent = self.__jsettings.logger.event(str(loggingEvent)).lower() in BOOL_STRVAL_TRUE
         
         # abbout the logger
         # ----------------------------------------------------------------------
         self.__logger   = logging.getLogger()        
         LOGFMT  = logging.Formatter(LOGFMT_GENERAL)
-        self.__loglevel = LOGLEVEL_CRITICAL
         
-        self._hdlrConsole = None
-        self._hdlrFile = None
+        self.__hdlrConsole = None
+        self.__hdlrFile = None
         
         # 设置日志级别
         self.setLogLevel(level) # LOGLEVEL_INFO))
         
         # 设置输出
-        if echoToConsole and not self._hdlrConsole:
+        if echoToConsole and not self.__hdlrConsole:
             # 添加终端输出
-            self._hdlrConsole = logging.StreamHandler()
-            self._hdlrConsole.setLevel(self.__loglevel)
-            self._hdlrConsole.setFormatter(LOGFMT)
-            self.__logger.addHandler(self._hdlrConsole)
+            self.__hdlrConsole = logging.StreamHandler()
+            self.__hdlrConsole.setLevel(self.__loglevel)
+            self.__hdlrConsole.setFormatter(LOGFMT)
+            self.__logger.addHandler(self.__hdlrConsole)
         else :
             # 添加NullHandler防止无handler的错误输出
             nullHandler = logging.NullHandler()
@@ -1014,13 +1014,13 @@ class Program(object):
 
         if filename and len(filename) >0:
             filepath = '%s%s' % (logdir, filename)
-            self._hdlrFile = RotatingFileHandler(filepath, maxBytes=50*1024*1024, backupCount=20) # 50MB about to 10MB after bzip2
+            self.__hdlrFile = RotatingFileHandler(filepath, maxBytes=50*1024*1024, backupCount=20) # 50MB about to 10MB after bzip2
             # = TimedRotatingFileHandler(filepath, when='W5', backupCount=9) # when='W5' for Satday, 'D' daily, 'midnight' rollover at midnight
-            self._hdlrFile.rotator  = self.__rotator
-            self._hdlrFile.namer    = self.__rotating_namer
-            self._hdlrFile.setLevel(self.__loglevel)
-            self._hdlrFile.setFormatter(LOGFMT)
-            self.__logger.addHandler(self._hdlrFile)
+            self.__hdlrFile.rotator  = self.__rotator
+            self.__hdlrFile.namer    = self.__rotating_namer
+            self.__hdlrFile.setLevel(self.__loglevel)
+            self.__hdlrFile.setFormatter(LOGFMT)
+            self.__logger.addHandler(self.__hdlrFile)
             
         # 注册事件监听
         self._loggingEvent = True

@@ -50,7 +50,7 @@ class SinaCrawler(MarketCrawler):
 
         self._depth_ticks  = self.getConfig('depth/ticks', 120) # covers 2min at least, if we have TickTo1min built in
         self._depth_5min   = self.getConfig('depth/5min',  96)  # 48lines during an AShare day, 96 to cover two days
-        self._depth_1day   = self.getConfig('depth/1day',  270) # for exmaple, there are 268 trading-days in AShare market during YR2018, so take 280 to keep a year
+        self._depth_1day   = self.getConfig('depth/1day',  260) # for exmaple, there are 245 trading-days in AShare market during YR2018, so take 280 to keep a year
         self._secYield456  = self.getConfig('yield456',    230)
 
         self.__tickBatches = None
@@ -133,7 +133,7 @@ class SinaCrawler(MarketCrawler):
             self.info("step_pollTicks() btch[%d/%d] cached %d new-tick of %d/%d symbols into psp: %s" %(idxBtch +1, batches, cMerged, len(result), len(self.__tickBatches[idxBtch]), ','.join(updated)))
         else :
             if not stampNow.hour in [9, 10, 11, 13, 14] and not stampNow.minute in [28,29,30,31,58,59,0]:
-                self.__nextStamp_PollTick += timedelta(seconds=61 - stampNow.second)
+                self.__nextStamp_PollTick += timedelta(seconds= (61 - stampNow.second))
                 self.info("step_pollTicks() btch[%d/%d] no new ticks during off-market time, extended sleep time" %(idxBtch +1, batches))
             else :
                 self.debug("step_pollTicks() btch[%d/%d] no new ticks updated" %(idxBtch +1, batches))

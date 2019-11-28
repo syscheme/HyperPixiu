@@ -9,7 +9,7 @@ from Perspective import Perspective
 
 import requests # pip3 install requests
 from copy import copy
-from datetime import datetime
+from datetime import datetime, timedelta
 import demjson # pip3 install demjson
 
 import re
@@ -25,7 +25,7 @@ class SinaCrawler(MarketCrawler):
     }
 
     TIMEOUT = 5
-    TICK_BATCH_SIZE = 100
+    TICK_BATCH_SIZE = 200
     NEXTSTAMP_KLINE_5MIN = 'nstamp.'+EVENT_KLINE_5MIN
     NEXTSTAMP_KLINE_1DAY = 'nstamp.'+EVENT_KLINE_1DAY
     IDX_KLINE_5MIN = 'idx.'+EVENT_KLINE_5MIN
@@ -51,6 +51,7 @@ class SinaCrawler(MarketCrawler):
         self._depth_ticks  = self.getConfig('depth/ticks', 120)
         self._depth_5min   = self.getConfig('depth/5min',  96)
         self._depth_1day  = self.getConfig('depth/1day',   220)
+        self._secYield456  = self.getConfig('yield456',    60)
 
         self.__tickBatches = None
         self.__idxTickBatch = 0
@@ -58,6 +59,7 @@ class SinaCrawler(MarketCrawler):
 
         self.__cacheKLs = {} # dict of symbol to Perspective
         self.__idxKL = 0
+        self.__stampSinaYield =None #
 
         self.__step_poll1st() # perform an init-step
 
@@ -123,14 +125,15 @@ class SinaCrawler(MarketCrawler):
                 self._recorder.pushRow(ev.type, ev.data)
             updated.append(s)
             
-        self.info("step_pollTicks() btch[%d/%d] cached %d tick-of-symbols into psp: %s" %(idxBtch +1, batches, len(updated), updated))
+        self.info("step_pollTicks() btch[%d/%d] cached %d/%d tick-of-symbols into psp" %(idxBtch +1, batches, len(updated), len(self.__tickBatches[idxBtch])))
         return cBusy
 
     def __step_pollKline(self):
         cBusy =0       
         s = None
-        if len(self._symbolsToPoll) >0:
-            self.__idxKL = self.__idxKL % len(self._symbolsToPoll)
+        cSyms = len(self._symbolsToPoll)
+        if cSyms >0:
+            self.__idxKL = self.__idxKL % cSyms
             s = self._symbolsToPoll[self.__idxKL]
         self.__idxKL += 1
 
@@ -141,10 +144,15 @@ class SinaCrawler(MarketCrawler):
             self.__cacheKLs[s] = Perspective('AShare', symbol=s, KLDepth_1min=0, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
 
         psp = self.__cacheKLs[s]
+        stampTmp = datetime.now()
+        if self.__stampSinaYield and stampTmp < self.__stampSinaYield:
+            self.debug("step_pollKline(%s) symb[%d/%d] yield per SINA(456), %s left" %(s, self.__idxKL, cSyms, self.__stampSinaYield -stampTmp))
+            return cBusy
+
         for evType in [EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
             minutes = SinaCrawler.MINs_OF_EVENT[evType]
             etimatedNext = datetime2float(psp.getAsOf(evType)) + minutes*60 -1
-            self.__END_OF_TODAY = datetime2float(datetime.now().replace(hour=15, minute=1))
+            self.__END_OF_TODAY = datetime2float(stampTmp.replace(hour=15, minute=1))
             if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
                 continue
 
@@ -156,6 +164,9 @@ class SinaCrawler(MarketCrawler):
             httperr, result = self.GET_RecentKLines(s, minutes, lines)
             if httperr !=200:
                 self.error("step_pollKline(%s:%s) failed, err(%s)" %(s, evType, httperr))
+                if httperr == 456:
+                    self.__stampSinaYield = datetime.now() + timedelta(seconds=self._secYield456)
+                    self.warn("step_pollKline(%s:%s) SINA complained err(%s), yielding %ssec" %(s, evType, httperr, self._secYield456))
                 continue
 
             # succ at query
@@ -167,7 +178,9 @@ class SinaCrawler(MarketCrawler):
                 if ev and self._recorder:
                     self._recorder.pushRow(ev.type, ev.data)
 
-            self.info("step_pollKline(%s:%s) merged %s-KLs into stack, psp now: %s" %(s, evType, len(result), psp.desc))
+            stampNow = datetime.now()
+            self.info("step_pollKline(%s:%s) symb[%d/%d] merged %s-KLs into stack, took %s, psp now: %s" %(s, evType, self.__idxKL, cSyms, len(result), (stampNow-stampTmp), psp.desc))
+            stampTmp = stampNow
 
         return cBusy
 

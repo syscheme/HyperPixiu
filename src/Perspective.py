@@ -93,7 +93,7 @@ class Perspective(MarketData):
     def desc(self) :
         str = '%s@%s> ' % (self.focus, self.getAsOf(self.focus).strftime('%Y-%m-%dT%H:%M:%S'))
         for i in [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
-            str += '%sX%d, ' % (i[4:], self._stacks[i].size)
+            str += '%sX%d/%d, ' % (i[4:], self._stacks[i].size, self._stacks[i].evictSize)
         return str
 
     @property

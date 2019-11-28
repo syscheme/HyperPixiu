@@ -1072,7 +1072,7 @@ class Program(object):
     def warn(self, msg):
         '''警告信息'''
         if self.__logger: 
-            self.__logger.warn(msg)
+            self.__logger.warning(msg)
         else:
             print('%s' % msg)
         

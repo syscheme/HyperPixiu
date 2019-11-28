@@ -29,6 +29,9 @@ EVENT_MARKET_HOUR   = MARKETDATE_EVENT_PREFIX + 'Hr'
 class MarketData(EventData):
     """Tick行情数据类"""
 
+    #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
+    COLUMNS = 'symbol,exchange,date,time'
+
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol =None):
         """Constructor"""
@@ -59,9 +62,13 @@ class MarketData(EventData):
                 
         return self.datetime
 
+
 ########################################################################
 class TickData(MarketData):
     """Tick行情数据类"""
+
+    #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
+    COLUMNS = 'symbol,exchange,date,time,price,volume,open,high,low,prevClose,upperLimit,lowerLimit,b1P,b2P,b3P,b4P,b5P,b1V,b2V,b3V,b4V,b5V,a1P,a2P,a3P,a4P,a5P,a1V,a2V,a3V,a4V,a5V,total'
 
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol =None):
@@ -116,6 +123,9 @@ class TickData(MarketData):
 ########################################################################
 class KLineData(MarketData):
     """K线数据"""
+
+    #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
+    COLUMNS = 'symbol,exchange,date,time,open,high,low,close,volume,openInterest'
 
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol =None):

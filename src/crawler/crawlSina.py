@@ -9,8 +9,8 @@ from Perspective import Perspective
 
 import requests # pip3 install requests
 from copy import copy
-from datetime import datetime , timedelta
-import demjson # pip3 install demjso
+from datetime import datetime
+import demjson # pip3 install demjson
 
 import re
 
@@ -36,9 +36,9 @@ class SinaCrawler(MarketCrawler):
             EVENT_KLINE_1DAY: 240,
         }
 
-    def __init__(self, program, **kwargs):
+    def __init__(self, program, recorder=None, **kwargs):
         """Constructor"""
-        super(SinaCrawler, self).__init__(program, **kwargs)
+        super(SinaCrawler, self).__init__(program, recorder, **kwargs)
         
         # SinaCrawler take multiple HTTP requests to collect data, each of them may take different
         # duration to complete, so this crawler should be threaded
@@ -117,11 +117,13 @@ class SinaCrawler(MarketCrawler):
             psp = self.__cacheKLs[s]
             ev = Event(EVENT_TICK)
             ev.setData(tk)
-            psp.push(ev)
+            ev = psp.push(ev)
             self.debug("step_pollTicks() pushed tick %s into psp, now: %s" %(tk.desc, psp.desc))
+            if ev and self._recorder:
+                self._recorder.pushRow(ev.type, ev.data)
             updated.append(s)
             
-        self.info("step_pollTicks() btch[%d/%d] cached %d tick-of-symbols into psp: %s" %(idxBtch, batches, len(updated), updated))
+        self.info("step_pollTicks() btch[%d/%d] cached %d tick-of-symbols into psp: %s" %(idxBtch +1, batches, len(updated), updated))
         return cBusy
 
     def __step_pollKline(self):
@@ -161,7 +163,9 @@ class SinaCrawler(MarketCrawler):
                 cBusy +=1
                 ev = Event(evType)
                 ev.setData(i)
-                psp.push(ev)
+                ev = psp.push(ev)
+                if ev and self._recorder:
+                    self._recorder.pushRow(ev.type, ev.data)
 
             self.info("step_pollKline(%s:%s) merged %s-KLs into stack, psp now: %s" %(s, evType, len(result), psp.desc))
 

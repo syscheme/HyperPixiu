@@ -10,8 +10,6 @@ from Application  import BaseApplication
 from MarketData  import MarketState
 import HistoryData  as hist
 
-# from .DataRecorder import TaggedCsvRecorder, MongoRecorder
-
 from abc import ABCMeta, abstractmethod
 from datetime import datetime, timedelta
 from collections import OrderedDict
@@ -623,11 +621,9 @@ class Account(MetaAccount):
 
         if self._recorder :
             self.info('taking recoder[%s]' % self._recorder.ident)
-            self._recCatgDPosition = 'dpos'
-            # self._recorder.registerCollection(self._recCatgDPosition, params= {'index': [('date', Account.INDEX_ASCENDING), ('time', INDEX_ASCENDING)], 'columns' : DailyPosition.recordColumns.split(',')})
-            columnnames = DailyPosition.recordColumns()
-            self._recorder.registerCollection(Account.RECCATE_DAILYPOS, params= {'columns' : DailyPosition.recordColumns().split(',')})
-            self._recorder.registerCollection(Account.RECCATE_DAILYRESULT, params= {'columns' : 'date,closePrice,previousClose,tcBuy,tcSell,openPosition,closePosition,tradingPnl,positionPnl,totalPnl,turnover,commission,slippage,netPnl,txnHist'.split(',')})
+            # self._recorder.registerCategory(self._recCatgDPosition, params= {'index': [('date', Account.INDEX_ASCENDING), ('time', INDEX_ASCENDING)], 'columns' : DailyResult.COLUMNS})
+            self._recorder.registerCategory(Account.RECCATE_DAILYPOS, params= {'columns' : DailyPosition.COLUMNS})
+            self._recorder.registerCategory(Account.RECCATE_DAILYRESULT, params= {'columns' : DailyResult.COLUMNS})
 
             # # ensure the DB collection has the index applied
             # self._recorder.configIndex(self.collectionName_trade, [('brokerTradeId', INDEX_ASCENDING)], True)
@@ -1143,6 +1139,9 @@ class PositionData(EventData):
 class DailyPosition(object):
     """每日交易的结果"""
 
+    #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
+    COLUMNS = 'date,symbol,recentPrice,avgPrice,recentPos,posAvail,calcPos,calcMValue,prevClose,prevPos,execOpen,execHigh,execLow,turnover,commission,_slippage,tradingPnl,positionPnl,dailyPnl,netPnl,cBuy,cSell,txns'
+
     def __init__(self):
         """Constructor"""
         self.symbol      = EventData.EMPTY_STRING
@@ -1173,10 +1172,6 @@ class DailyPosition(object):
         self.txns        = EventData.EMPTY_STRING
         self.asof        = []
 
-    def recordColumns() :
-        # return 'date,closePrice,previousClose,tcBuy,tcSell,openPosition,closePosition,tradingPnl,positionPnl,totalPnl,turnover,commission,slippage,netPnl,txnHist,balance,return,highlevel,drawdown,ddPercent'
-        return 'date,symbol,recentPrice,avgPrice,recentPos,posAvail,calcPos,calcMValue,prevClose,prevPos,execOpen,execHigh,execLow,turnover,commission,_slippage,tradingPnl,positionPnl,dailyPnl,netPnl,cBuy,cSell,txns'
-    
     def initPositions(self, account, symbol, currentPos, prevPos, ohlc =None):
         """Constructor"""
 
@@ -1251,6 +1246,9 @@ class DailyPosition(object):
 ########################################################################
 class DailyResult(object):
     """每日交易的结果"""
+
+    #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
+    COLUMNS = 'date,closePrice,previousClose,tcBuy,tcSell,openPosition,closePosition,tradingPnl,positionPnl,totalPnl,turnover,commission,slippage,netPnl,txnHist'
 
     #----------------------------------------------------------------------
     def __init__(self, date, closePrice):

@@ -59,6 +59,9 @@ class EventData(object):
     EMPTY_INT = 0
     EMPTY_FLOAT = 0.0
 
+    #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
+    COLUMNS = 'datetime'
+
     #----------------------------------------------------------------------
     def __init__(self):
         """Constructor"""

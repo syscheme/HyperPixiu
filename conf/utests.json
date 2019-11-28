@@ -7,11 +7,8 @@
         // "event": { "log": "True", "error": "True" } // whether to post the log into event channel
     },
 
-    "database": {
-        "host": "mongo-vnpy",
-        // "console": "False",
-        // "file": "True",
-        // "event": { "log": "True", "error": "True" } // whether to post the log into event channel
+    "recorder": {
+        "id": "blah"
     },
 
     "marketdata": [ // in the case that marketdata is collected thru local subscribers
@@ -30,10 +27,6 @@
         },
     ],
 
-    "recorder": {
-        "id": "blah"
-    },
-    
     "account": { // account settings
         "id": "blah",
         "broker": "AShare",

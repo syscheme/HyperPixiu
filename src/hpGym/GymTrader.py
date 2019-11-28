@@ -338,7 +338,7 @@ class MetaAgent(ABC): # TODO:
             self.__jsettings = self.__kwargs.pop('jsettings', None)
 
         self._gymTrader = gymTrader
-        self._stateSize = self._gymTrader.stateSize
+        self._stateSize = len(self._gymTrader.gymReset())
         self._actionSize = len(type(gymTrader).ACTIONS)
 
         self._memorySize = getConfig('memorySize', 2000)

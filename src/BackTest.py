@@ -1359,7 +1359,7 @@ if __name__ == '__main__':
     SYMBOL = '000540' # '000001' # '000540' '000001'
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-    acc = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder')
+    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder')
     csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
     ps = Perspective('AShare', SYMBOL)
     csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')

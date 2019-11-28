@@ -25,7 +25,7 @@ if sys.version_info <(3,):
     from Queue import Queue, Empty
 else:
     from queue import Queue, Empty
-from pymongo.errors import DuplicateKeyError
+import bz2
 
 EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
 
@@ -98,10 +98,12 @@ class Recorder(BaseApplication):
         # coll = self.findCollection(self, category)
         raise NotImplementedError
 
-    def registerCollection(self, category, params= {}):
+    def registerCategory(self, category, params= {}):
         '''
-           for example Account will call recorder.registerCollection('DailyPosition', params= {'index': [('date', INDEX_ASCENDING), ('time', INDEX_ASCENDING)], 'columns' : ['date','symbol']})
+           for example Account will call recorder.registerCategory('DailyPosition', params= {'index': [('date', INDEX_ASCENDING), ('time', INDEX_ASCENDING)], 'columns' : ['date','symbol']})
         '''
+        if 'columns' in params.keys() and isinstance(params['columns'], str) :
+            params['columns'] = params['columns'].split(',')
         if not category in self._dictDR.keys() :
             self._dictDR[category] = OrderedDict()
         coll = self._dictDR[category]
@@ -140,7 +142,7 @@ class TaggedCsvRecorder(Recorder):
         self._minFlushInterval = self.getConfig('minFlushInterval', 1)
         self._daysToRoll  = self.getConfig('daysToRoll', 1)
         self._daysToZip   = self.getConfig('daysToZip', 7)
-        self._filename    = self.getConfig('filename', self._program._progName +'.csv')
+        self._filename    = self.getConfig('filename', self._program._progName +'.tcsv')
         tmp = min(self._daysToRoll *2, self._daysToRoll +2)
         if self._daysToZip < tmp:
             self._daysToZip = tmp
@@ -149,7 +151,7 @@ class TaggedCsvRecorder(Recorder):
         self.__fakedcsv   = logging.Logger(name=self.ident) #getLogger()
         self.__1stRow   = True     
         
-        filepath = '%s/%s' % (self.dataRoot, self._filename)
+        filepath = '%s%s' % (self.dataRoot, self._filename)
         try :
             statinfo = os.stat(filepath)
             if statinfo and statinfo.st_size >10:
@@ -157,21 +159,21 @@ class TaggedCsvRecorder(Recorder):
         except :
             pass
 
-        self._hdlrFile = logging.handlers.RotatingFileHandler(filepath, maxBytes=20*1024*1024, backupCount=10) # now 20MB
+        self._hdlrFile = logging.handlers.RotatingFileHandler(filepath, maxBytes=10*1024*1024, backupCount=20) # 10MB about to 2MB after bzip2
         self._hdlrFile.rotator  = self.__rotator
         self._hdlrFile.namer    = self.__rotating_namer
         self._hdlrFile.setLevel(logging.DEBUG)
         self._hdlrFile.setFormatter(logging.Formatter('%(message)s')) # only the message itself with NO stamp and so on
         self.__fakedcsv.addHandler(self._hdlrFile)
 
-    def __rotating_namer(name):
-        return name + ".gz"
+    def __rotating_namer(self, name):
+        return name + ".bz2"
 
-    def __rotator(source, dest):
+    def __rotator(self, source, dest):
         self.__1stRow   = True     
         with open(source, "rb") as sf:
             data = sf.read()
-            compressed = zlib.compress(data, 9)
+            compressed = bz2.compress(data, 9)
             with open(dest, "wb") as df:
                 df.write(compressed)
         os.remove(source)
@@ -514,8 +516,8 @@ class MongoRecorder(Recorder):
 
     # impl/overwrite of Recorder
     #----------------------------------------------------------------------
-    def registerCollection(self, category, params= {}):
-        coll = super(MongoRecorder, self).registerCollection(category, params)
+    def registerCategory(self, category, params= {}):
+        coll = super(MongoRecorder, self).registerCategory(category, params)
 
         # perform the registration
         pos = category.rfind('/')
@@ -601,9 +603,8 @@ class MongoPlayback(Playback):
 class MarketRecorder(BaseApplication):
     """数据记录引擎, the base DR is implmented as a csv Recorder"""
      
-    #close,date,datetime,high,low,open,openInterest,time,volume
-    #,date,datetime,high,price,volume,low,lowerLimit,openInterest,open,prevClose,time,upperLimit,volume
-    CSV_LEADING_COLUMNS=['datetime','price','close', 'volume', 'high','low','open']
+    #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
+    COLUMNS = 'datetime,price,close,volume,high,low,open'
 
     #----------------------------------------------------------------------
     def __init__(self, program, settings, recorder=None):
@@ -667,7 +668,7 @@ class MarketRecorder(BaseApplication):
                         dsrc.subscribe(symbol, eventType)
 
                 self.subscribeEvent(eventType, self.onMarketEvent)
-                self._recorder.registerCollection(category, params= {'ds': ds, 'index': [('date', INDEX_ASCENDING), ('time', INDEX_ASCENDING)], 'columns' : self.CSV_LEADING_COLUMNS})
+                self._recorder.registerCategory(category, params= {'ds': ds, 'index': [('date', INDEX_ASCENDING), ('time', INDEX_ASCENDING)], 'columns' : MarketRecorder.COLUMNS})
 
             except Exception as e:
                 self.logexception(e)

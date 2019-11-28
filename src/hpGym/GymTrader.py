@@ -6,6 +6,7 @@ from __future__ import division
 
 # from gym import GymEnv
 from Account import Account, OrderData, Account_AShare
+from Application import MetaObj
 from Trader import MetaTrader, BaseTrader
 import hpGym
 
@@ -25,7 +26,7 @@ mpl.rcParams.update(
 )
 
 ########################################################################
-class MetaAgent(ABC): # TODO:
+class MetaAgent(MetaObj): # TODO:
     def __init__(self, gymTrader, **kwargs):
 
         super(MetaAgent, self).__init__()
@@ -191,8 +192,7 @@ class GymTrader(BaseTrader):
         '''Take an action (buy/sell/hold) and computes the immediate reward.
 
         @param action (numpy.array): Action to be taken, one-hot encoded.
-
-        Returns:
+        @returns:
             tuple:
                 - observation (numpy.array): Agent's observation of the current environment.
                 - reward (float) : Amount of reward returned after previous action.

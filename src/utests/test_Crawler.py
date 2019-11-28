@@ -1,10 +1,11 @@
 from Application import Program
 from MarketData import TickData, KLineData, EVENT_TICK, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
+import HistoryData as hist
+
 import unittest
 
 from crawler.crawlSina import *
 import sys, os
-import HistoryData as hist
 
 hs300s= [
         "600000","600008","600009","600010","600011","600015","600016","600018","600019","600023",

@@ -6,6 +6,7 @@ from __future__ import division
 
 # from gym import GymEnv
 from Account import Account, OrderData, Account_AShare
+from Application import MetaObj
 from Trader import MetaTrader, BaseTrader
 import hpGym
 
@@ -23,6 +24,80 @@ mpl.rcParams.update(
         "lines.markersize": 8
     }
 )
+
+########################################################################
+class MetaAgent(MetaObj): # TODO:
+    def __init__(self, gymTrader, **kwargs):
+
+        super(MetaAgent, self).__init__()
+
+        self.__kwargs = kwargs
+        self.__jsettings = None
+        if 'jsettings' in self.__kwargs.keys():
+            self.__jsettings = self.__kwargs.pop('jsettings', None)
+
+        self._gymTrader = gymTrader
+        self._stateSize = len(self._gymTrader.gymReset())
+        self._actionSize = len(type(gymTrader).ACTIONS)
+
+        self._memorySize = getConfig('memorySize', 2000)
+        self._memory = [None] * memory_size
+        self._idxMem = 0
+
+        self._trainInterval = getConfig('trainInterval', 10)
+        self._learningRate = getConfig('learningRate', 0.001)
+        self._batchSize = getConfig('batchSize', 64)
+
+        self._gamma = getConfig('gamma', 0.95)
+        self._epsilon = getConfig('epsilon', 1.0)
+        self._epsilonMin = getConfig('epsilonMin', 0.01)
+        self._epsilonDecrement = (self._epsilon - self._epsilonMin) * self._trainInterval / (episodes * episode_length)  # linear decrease rate
+
+        self._brain = None # self._brain = self.buildBrain()
+
+    def getConfig(self, configName, defaultVal) :
+        try :
+            if configName in self._kwargs.keys() :
+                return self._kwargs[configName]
+
+            if self.__jsettings:
+                jn = self.__jsettings
+                for i in configName.split('/') :
+                    jn = jn[i]
+
+                if defaultVal :
+                    if isinstance(defaultVal, list):
+                        return jsoncfg.expect_array(jn(defaultVal))
+                    if isinstance(defaultVal, dict):
+                        return jsoncfg.expect_object(jn(defaultVal))
+
+                return jn(defaultVal)
+        except:
+            pass
+
+        return defaultVal
+
+    @abstractmethod
+    def buildBrain(self):
+        '''
+        @return the brain built to set to self._brain
+        '''
+        raise NotImplementedError
+
+    @abstractmethod
+    def gymAct(self, state):
+        '''
+        @return one of self.__gymTrader.ACTIONS
+        '''
+        raise NotImplementedError
+
+    @abstractmethod
+    def gymObserve(self, state, action, reward, next_state, done, warming_up=False):
+        '''Memory Management and training of the agent
+        @return tuple:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch
+        '''
+        raise NotImplementedError
 
 ########################################################################
 class GymTrader(BaseTrader):
@@ -93,8 +168,11 @@ class GymTrader(BaseTrader):
         loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, done)
         self._gymState = next_state
 
+    # end of impl/overwrite of BaseApplication
+    #----------------------------------------------------------------------
+
     #------------------------------------------------
-    # GymEnv related methods
+    # GymEnv related entries
     def gymReset(self) :
         '''
         reset the gym environment, will be called when each episode starts
@@ -105,7 +183,7 @@ class GymTrader(BaseTrader):
         self.__closed_plot = False
         self.__stepNo = 0
 
-        observation = self.__build_gym_observation()
+        observation = self.makeupGymObservation()
         self._shapeOfState = observation.shape
         self._action = self.ACTIONS[ACTION_HOLD]
         return observation
@@ -114,8 +192,7 @@ class GymTrader(BaseTrader):
         '''Take an action (buy/sell/hold) and computes the immediate reward.
 
         @param action (numpy.array): Action to be taken, one-hot encoded.
-
-        Returns:
+        @returns:
             tuple:
                 - observation (numpy.array): Agent's observation of the current environment.
                 - reward (float) : Amount of reward returned after previous action.
@@ -214,14 +291,11 @@ class GymTrader(BaseTrader):
             then return
         observation = np.concatenate((self._account_state, self._market_state))
         '''
-        observation = self.__build_gym_observation()
+        observation = self.makeupGymObservation()
         return observation, reward, done, info
     
-    def _handle_close(self, evt):
-        self.__closed_plot = True
-
-    def render(self, savefig=False, filename='myfig'):
-        """Matlplotlib rendering of each step.
+    def gymRender(self, savefig=False, filename='myfig'):
+        """Matlplotlib gymRendering of each step.
 
         @param savefig (bool): Whether to save the figure as an image or not.
         @param filename (str): Name of the image file.
@@ -237,7 +311,7 @@ class GymTrader(BaseTrader):
 
             self._f.set_size_inches(12, 6)
             self.__1stRender = False
-            self._f.canvas.mpl_connect('close_event', self._handle_close)
+            self._f.canvas.mpl_connect('close_event', self.__OnRenderClosed)
 
         if len(self._spread_coefficients) > 1:
             # TODO: To be checked
@@ -278,14 +352,17 @@ class GymTrader(BaseTrader):
         if savefig:
             plt.savefig(filename)
 
-    def __build_gym_observation(self):
+    # end of GymEnv entries
+    #------------------------------------------------
+
+    def makeupGymObservation(self):
         """Concatenate all necessary elements to create the observation.
 
         Returns:
             numpy.array: observation array.
         """
-        account_state = self._account.__build_gym_observation()
-        market_state = self._envMarket.__build_gym_observation()
+        account_state = self._account.makeupGymObservation()
+        market_state = self._envMarket.makeupGymObservation()
         return np.concatenate((account_state, market_state))
         # return np.concatenate(
         #     [prices for prices in self._prices_history[-self._history_length:]] +
@@ -307,6 +384,10 @@ class GymTrader(BaseTrader):
 
     #----------------------------------------------------------------------
     # access to the account observed
+
+    def __OnRenderClosed(self, evt):
+        self.__closed_plot = True
+
     def getAccountState(self) :
         ''' get the account capitial including cash and positions
         '''
@@ -326,79 +407,6 @@ class GymTrader(BaseTrader):
 
         return positions + posValueSubtotal
 
-########################################################################
-class MetaAgent(ABC): # TODO:
-    def __init__(self, gymTrader, **kwargs):
-
-        super(MetaAgent, self).__init__()
-
-        self.__kwargs = kwargs
-        self.__jsettings = None
-        if 'jsettings' in self.__kwargs.keys():
-            self.__jsettings = self.__kwargs.pop('jsettings', None)
-
-        self._gymTrader = gymTrader
-        self._stateSize = len(self._gymTrader.gymReset())
-        self._actionSize = len(type(gymTrader).ACTIONS)
-
-        self._memorySize = getConfig('memorySize', 2000)
-        self._memory = [None] * memory_size
-        self._idxMem = 0
-
-        self._trainInterval = getConfig('trainInterval', 10)
-        self._learningRate = getConfig('learningRate', 0.001)
-        self._batchSize = getConfig('batchSize', 64)
-
-        self._gamma = getConfig('gamma', 0.95)
-        self._epsilon = getConfig('epsilon', 1.0)
-        self._epsilonMin = getConfig('epsilonMin', 0.01)
-        self._epsilonDecrement = (self._epsilon - self._epsilonMin) * self._trainInterval / (episodes * episode_length)  # linear decrease rate
-
-        self._brain = None # self._brain = self.buildBrain()
-
-    def getConfig(self, configName, defaultVal) :
-        try :
-            if configName in self._kwargs.keys() :
-                return self._kwargs[configName]
-
-            if self.__jsettings:
-                jn = self.__jsettings
-                for i in configName.split('/') :
-                    jn = jn[i]
-
-                if defaultVal :
-                    if isinstance(defaultVal, list):
-                        return jsoncfg.expect_array(jn(defaultVal))
-                    if isinstance(defaultVal, dict):
-                        return jsoncfg.expect_object(jn(defaultVal))
-
-                return jn(defaultVal)
-        except:
-            pass
-
-        return defaultVal
-
-    @abstractmethod
-    def buildBrain(self):
-        '''
-        @return the brain built to set to self._brain
-        '''
-        raise NotImplementedError
-
-    @abstractmethod
-    def gymAct(self, state):
-        '''
-        @return one of self.__gymTrader.ACTIONS
-        '''
-        raise NotImplementedError
-
-    @abstractmethod
-    def gymObserve(self, state, action, reward, next_state, done, warming_up=False):
-        '''Memory Management and training of the agent
-        @return tuple:
-            state_batch, action_batch, reward_batch, next_state_batch, done_batch
-        '''
-        raise NotImplementedError
 
 ########################################################################
 class GymTrainer(MetaTrader):
@@ -503,7 +511,7 @@ class GymTrainer(MetaTrader):
     #----------------------------------------------------------------------
     
     #----------------------------------------------------------------------
-    # Overrides of Events handling
+    # Overrides of events handling of Trader
     def eventHdl_Order(self, ev):
         return self.__wkTrader.eventHdl_Order(ev)
             
@@ -515,6 +523,9 @@ class GymTrainer(MetaTrader):
 
     def proc_MarketEvent(self, ev):
         self.error('proc_MarketEvent() should not be here')
+
+    # end of Trader routine
+    #----------------------------------------------------------------------
 
     #------------------------------------------------
     # GymEnv related methods

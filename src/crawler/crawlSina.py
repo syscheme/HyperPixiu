@@ -9,7 +9,7 @@ from Perspective import Perspective
 
 import requests # pip3 install requests
 from copy import copy
-from datetime import datetime
+from datetime import datetime, timedelta
 import demjson # pip3 install demjson
 
 import re
@@ -25,7 +25,7 @@ class SinaCrawler(MarketCrawler):
     }
 
     TIMEOUT = 5
-    TICK_BATCH_SIZE = 100
+    TICK_BATCH_SIZE = 200
     NEXTSTAMP_KLINE_5MIN = 'nstamp.'+EVENT_KLINE_5MIN
     NEXTSTAMP_KLINE_1DAY = 'nstamp.'+EVENT_KLINE_1DAY
     IDX_KLINE_5MIN = 'idx.'+EVENT_KLINE_5MIN
@@ -48,9 +48,10 @@ class SinaCrawler(MarketCrawler):
 
         self._proxies = {}
 
-        self._depth_ticks  = self.getConfig('depth/ticks', 120)
-        self._depth_5min   = self.getConfig('depth/5min',  96)
-        self._depth_1day  = self.getConfig('depth/1day',   220)
+        self._depth_ticks  = self.getConfig('depth/ticks', 120) # covers 2min at least, if we have TickTo1min built in
+        self._depth_5min   = self.getConfig('depth/5min',  96)  # 48lines during an AShare day, 96 to cover two days
+        self._depth_1day   = self.getConfig('depth/1day',  260) # for exmaple, there are 245 trading-days in AShare market during YR2018, so take 280 to keep a year
+        self._secYield456  = self.getConfig('yield456',    230)
 
         self.__tickBatches = None
         self.__idxTickBatch = 0
@@ -58,6 +59,8 @@ class SinaCrawler(MarketCrawler):
 
         self.__cacheKLs = {} # dict of symbol to Perspective
         self.__idxKL = 0
+
+        self.__stampYieldTill_KL = None #
 
         self.__step_poll1st() # perform an init-step
 
@@ -109,6 +112,7 @@ class SinaCrawler(MarketCrawler):
         if len(result) <=0 : 
             self.__nextStamp_PollTick + 60*10 # likely after a trade-day closed 10min
 
+        cMerged =0
         for tk in result:
             cBusy +=1
             s = tk.symbol
@@ -120,17 +124,28 @@ class SinaCrawler(MarketCrawler):
             ev = psp.push(ev)
             self.debug("step_pollTicks() pushed tick %s into psp, now: %s" %(tk.desc, psp.desc))
             if ev and self._recorder:
+                cMerged +=1
                 self._recorder.pushRow(ev.type, ev.data)
-            updated.append(s)
+                updated.append(s)
             
-        self.info("step_pollTicks() btch[%d/%d] cached %d tick-of-symbols into psp: %s" %(idxBtch +1, batches, len(updated), updated))
+        stampNow = datetime.now()
+        if cMerged >0:
+            self.info("step_pollTicks() btch[%d/%d] cached %d new-tick of %d/%d symbols into psp: %s" %(idxBtch +1, batches, cMerged, len(result), len(self.__tickBatches[idxBtch]), ','.join(updated)))
+        else :
+            if not stampNow.hour in [9, 10, 11, 13, 14] and not stampNow.minute in [28,29,30,31,58,59,0]:
+                self.__nextStamp_PollTick += timedelta(seconds= (61 - stampNow.second))
+                self.info("step_pollTicks() btch[%d/%d] no new ticks during off-market time, extended sleep time" %(idxBtch +1, batches))
+            else :
+                self.debug("step_pollTicks() btch[%d/%d] no new ticks updated" %(idxBtch +1, batches))
+
         return cBusy
 
     def __step_pollKline(self):
         cBusy =0       
         s = None
-        if len(self._symbolsToPoll) >0:
-            self.__idxKL = self.__idxKL % len(self._symbolsToPoll)
+        cSyms = len(self._symbolsToPoll)
+        if cSyms >0:
+            self.__idxKL = self.__idxKL % cSyms
             s = self._symbolsToPoll[self.__idxKL]
         self.__idxKL += 1
 
@@ -141,10 +156,15 @@ class SinaCrawler(MarketCrawler):
             self.__cacheKLs[s] = Perspective('AShare', symbol=s, KLDepth_1min=0, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
 
         psp = self.__cacheKLs[s]
+        stampTmp = datetime.now()
+        if self.__stampYieldTill_KL and stampTmp < self.__stampYieldTill_KL:
+            self.debug("step_pollKline(%s) symb[%d/%d] yield per SINA(456), %s left" %(s, self.__idxKL, cSyms, self.__stampYieldTill_KL -stampTmp))
+            return cBusy
+
         for evType in [EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
             minutes = SinaCrawler.MINs_OF_EVENT[evType]
-            etimatedNext = datetime2float(psp.getAsOf(evType)) + minutes*60 -1
-            self.__END_OF_TODAY = datetime2float(datetime.now().replace(hour=15, minute=1))
+            etimatedNext = datetime2float(psp.getAsOf(evType)) + 60*(minutes if minutes < 240 else int(minutes /240)*60*24) -1
+            self.__END_OF_TODAY = datetime2float(stampTmp.replace(hour=15, minute=1))
             if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
                 continue
 
@@ -156,18 +176,32 @@ class SinaCrawler(MarketCrawler):
             httperr, result = self.GET_RecentKLines(s, minutes, lines)
             if httperr !=200:
                 self.error("step_pollKline(%s:%s) failed, err(%s)" %(s, evType, httperr))
+                if httperr == 456:
+                    self.__stampYieldTill_KL = datetime.now() + timedelta(seconds=self._secYield456)
+                    self.warn("step_pollKline(%s:%s) SINA complained err(%s), yielding %ssec" %(s, evType, httperr, self._secYield456))
+                    return cBusy
+
                 continue
 
             # succ at query
+            cMerged =0
             for i in result:
                 cBusy +=1
                 ev = Event(evType)
                 ev.setData(i)
                 ev = psp.push(ev)
                 if ev and self._recorder:
+                    cMerged +=1
                     self._recorder.pushRow(ev.type, ev.data)
 
-            self.info("step_pollKline(%s:%s) merged %s-KLs into stack, psp now: %s" %(s, evType, len(result), psp.desc))
+            stampNow = datetime.now()
+            if cMerged >0:
+                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" %(s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampTmp), psp.desc))
+            elif not stampNow.hour in [9, 10, 11, 13, 14] :
+                self.__stampYieldTill_KL = stampNow + timedelta(minutes=2)
+                self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-time of AShare, actively yielding 2min to avoid 456" %(s, evType, self.__idxKL, cSyms, cMerged))
+
+            stampTmp = stampNow
 
         return cBusy
 

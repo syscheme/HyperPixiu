@@ -189,13 +189,19 @@ class Perspective(MarketData):
             return True
 
         if evd.asof > self.__dayOHLC.asof:
-            self.__dayOHLC.high = max(self.__dayOHLC.high, evd.high)
-            self.__dayOHLC.low  = min(self.__dayOHLC.low, evd.low)
-            self.__dayOHLC.close = evd.close        
-            self.__dayOHLC.volume =0 # NOT GOOD when built up from 1min+5min: += int(evd.volume)                
-
-            self.__dayOHLC.openInterest = evd.openInterest
-            self.__dayOHLC.datetime = evd.asof
+            if isinstance(evd, KLineData):
+                self.__dayOHLC.close = float(evd.close)
+                self.__dayOHLC.high = max(self.__dayOHLC.high, self.__dayOHLC.close)
+                self.__dayOHLC.low  = min(self.__dayOHLC.low, self.__dayOHLC.close)
+                # self.__dayOHLC.volume =0 # NOT GOOD when built up from 1min+5min: += int(evd.volume)                
+                self.__dayOHLC.openInterest = float(evd.openInterest)
+                self.__dayOHLC.datetime = evd.asof
+            elif isinstance(evd, TickData):
+                self.__dayOHLC.close = float(evd.price)
+                self.__dayOHLC.high = max(self.__dayOHLC.high, self.__dayOHLC.close)
+                self.__dayOHLC.low = min(self.__dayOHLC.low, self.__dayOHLC.close)
+                self.__dayOHLC.datetime = evd.datetime  
+                self.__dayOHLC.openInterest = evd.openInterest
 
         return True
 

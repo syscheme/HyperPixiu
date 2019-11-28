@@ -1,4 +1,5 @@
 from Application import Program
+from HistoryData import TaggedCsvRecorder
 import unittest
 
 from crawler.crawlSina import *
@@ -47,7 +48,8 @@ class TestCrawler(unittest.TestCase):
         p = Program()
         p._heartbeatInterval =0.2 # yield at idle for 200msec
 
-        mc = p.createApp(SinaCrawler, configNode ='SinaCrawler') # md = SinaCrawler(p, None);
+        rec = p.createApp(TaggedCsvRecorder, configNode ='recorder') # md = SinaCrawler(p, None);
+        mc = p.createApp(SinaCrawler, configNode ='SinaCrawler', recorder=rec) # md = SinaCrawler(p, None);
         # _, result = md.searchKLines("000002", EVENT_KLINE_5MIN)
         # _, result = md.getRecentTicks('sh601006,sh601005,sh000001,sz000001')
         # _, result = md.getSplitRate('sh601006')

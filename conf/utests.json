@@ -1,7 +1,7 @@
 // configuration of a BackTest
 {
     "logger": {
-        "level": "debug", //40
+        "level": "info", //40
         // "console": "False",
         // "file": "True",
         // "event": { "log": "True", "error": "True" } // whether to post the log into event channel

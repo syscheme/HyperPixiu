@@ -48,9 +48,9 @@ class SinaCrawler(MarketCrawler):
 
         self._proxies = {}
 
-        self._depth_ticks  = self.getConfig('depth/ticks', 120)
-        self._depth_5min   = self.getConfig('depth/5min',  96)
-        self._depth_1day   = self.getConfig('depth/1day',  220)
+        self._depth_ticks  = self.getConfig('depth/ticks', 120) # covers 2min at least, if we have TickTo1min built in
+        self._depth_5min   = self.getConfig('depth/5min',  96)  # 48lines during an AShare day, 96 to cover two days
+        self._depth_1day   = self.getConfig('depth/1day',  270) # for exmaple, there are 268 trading-days in AShare market during YR2018, so take 280 to keep a year
         self._secYield456  = self.getConfig('yield456',    230)
 
         self.__tickBatches = None

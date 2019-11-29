@@ -159,7 +159,7 @@ class TaggedCsvRecorder(Recorder):
         except :
             pass
 
-        self.__hdlrFile = logging.handlers.RotatingFileHandler(filepath, maxBytes=20*1024*1024, backupCount=50) # 10MB about to 2MB after bzip2
+        self.__hdlrFile = logging.handlers.RotatingFileHandler(filepath, maxBytes=20*1024*1024, backupCount=50) # 20MB about to 3MB after bzip2
         self.__hdlrFile.rotator  = self.__rotator
         self.__hdlrFile.namer    = self.__rotating_namer
         self.__hdlrFile.setLevel(logging.DEBUG)

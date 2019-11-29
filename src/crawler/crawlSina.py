@@ -133,7 +133,7 @@ class SinaCrawler(MarketCrawler):
             self.info("step_pollTicks() btch[%d/%d] cached %d new-tick of %d/%d symbols into psp: %s" %(idxBtch +1, batches, cMerged, len(result), len(self.__tickBatches[idxBtch]), ','.join(updated)))
         else :
             if not stampNow.hour in [9, 10, 11, 13, 14] and not stampNow.minute in [28,29,30,31,58,59,0]:
-                self.__nextStamp_PollTick += timedelta(seconds= (61 - stampNow.second))
+                self.__nextStamp_PollTick += (61 - stampNow.second)
                 self.info("step_pollTicks() btch[%d/%d] no new ticks during off-market time, extended sleep time" %(idxBtch +1, batches))
             else :
                 self.debug("step_pollTicks() btch[%d/%d] no new ticks updated" %(idxBtch +1, batches))

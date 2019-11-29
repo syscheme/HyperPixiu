@@ -358,3 +358,8 @@ class PerspectiveDict(MarketState):
         if not s in self.__dictPerspective.keys() :
             self.__dictPerspective[s] = Perspective(self.exchange, s)
         self.__dictPerspective[s].push(ev)
+
+    def snapshot(self) :
+        '''@return an array_like data as snapshot, maybe [] or numpy.array
+        '''
+        return [] # TODO

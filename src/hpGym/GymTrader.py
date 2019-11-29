@@ -208,7 +208,7 @@ class GymTrader(BaseTrader):
 
         # step 1. collected information from the account
         cashAvail, cashTotal, positions = self.getAccountState()
-        capitalBeforeStep = summrizeAccount(positions, cashTotal)
+        capitalBeforeStep = __summrizeAccount(positions, cashTotal)
 
         # TODO: the first version only support one symbol to play, so simply take the first symbol in the positions        
         symbol = None # TODO: should take the __dictOberserves
@@ -256,7 +256,7 @@ class GymTrader(BaseTrader):
             #     self._entry_price = 0
 
         # step 3. calculate the rewards
-        capitalAfterStep = self.summrizeAccount() # most likely the cashAmount changed due to comission
+        capitalAfterStep = self.__summrizeAccount() # most likely the cashAmount changed due to comission
         instant_pnl = capitalAfterStep - capitalBeforeStep
         reward += instant_pnl
         self._total_pnl += instant_pnl
@@ -356,21 +356,35 @@ class GymTrader(BaseTrader):
     #------------------------------------------------
 
     def makeupGymObservation(self):
-        """Concatenate all necessary elements to create the observation.
+        '''Concatenate all necessary elements to create the observation.
 
         Returns:
             numpy.array: observation array.
-        """
-        account_state = self._account.makeupGymObservation()
-        market_state = self._envMarket.makeupGymObservation()
+        '''
+        # part 1. build up the account_state
+        cashAvail, cashTotal, positions = self.getAccountState()
+        capitalBeforeStep = self.__summrizeAccount(positions, cashTotal)
+        stateCapital = [cashAvail, cashTotal, capitalBeforeStep]
+        # POS_COLS = PositionData.COLUMNS.split(',')
+        # del(POS_COLS['exchange', 'stampByTrader', 'stampByBroker'])
+        # del(POS_COLS['symbol']) # TODO: this version only support single Symbol, so regardless field symbol
+        POS_COLS = 'position,posAvail,price,avgPrice'
+        statePOS = [0.0,0.0,0.0,0.0] # supposed to be [[0.0,0.0,0.0,0.0],...] when mutliple-symbols
+        for s, pos in positions.items() :
+            # row = []
+            # for c in POS_COLS:
+            #     row.append(pos.__dict__[c])
+            # statePOS.append(row)
+            statePOS = [pos.position, pos.posAvailVol, pos.price, pos.avgPrice]
+            break
+
+        account_state = np.concatenate([stateCapital + statePOS], axis=0)
+
+        # part 2. build up the market_state
+        market_state = self._marketState.snapshot()
+
+        # return the concatenation of account_state and market_state as gymEnv sate
         return np.concatenate((account_state, market_state))
-        # return np.concatenate(
-        #     [prices for prices in self._prices_history[-self._history_length:]] +
-        #     [
-        #         np.array([self._entry_price]),
-        #         np.array(self._position)
-        #     ]
-        # )
 
     @staticmethod
     def random_action_fun():
@@ -391,21 +405,24 @@ class GymTrader(BaseTrader):
     def getAccountState(self) :
         ''' get the account capitial including cash and positions
         '''
+        if not self._account:
+            return 0.0, 0.0, {}
+
         positions = self._account.getAllPositions()
         cashAvail, cashTotal = self._account.cashAmount()
         return cashAvail, cashTotal, positions
 
-    def summrizeAccount(self, positions=None, cashTotal=0) :
+    def __summrizeAccount(self, positions=None, cashTotal=0) :
         ''' sum up the account capitial including cash and positions
         '''
         if positions is None:
             _, cashTotal, positions = self.getAccountState()
 
         posValueSubtotal =0
-        for pos in positions:
+        for s, pos in positions.items():
             posValueSubtotal += pos.position * pos.price * self._account.contractSize
 
-        return positions + posValueSubtotal
+        return cashTotal + posValueSubtotal
 
 
 ########################################################################

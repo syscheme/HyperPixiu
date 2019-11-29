@@ -428,3 +428,8 @@ class MarketState(MetaObj):
         '''
         raise NotImplementedError
 
+    @abstractmethod
+    def snapshot(self) :
+        '''@return an array_like data as snapshot, maybe [] or numpy.array
+        '''
+        raise NotImplementedError

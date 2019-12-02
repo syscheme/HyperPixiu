@@ -16,7 +16,7 @@ from keras.layers import Dense
 from keras.models import Sequential
 from keras.optimizers import Adam
 from keras.models import model_from_json
-from keras.callbacks import ModelCheckPoint
+from keras.callbacks import ModelCheckpoint
 
 from abc import ABCMeta, abstractmethod
 
@@ -35,16 +35,16 @@ class agentDQN(MetaAgent):
             neurons_per_layer = 24
             activation = "relu"
             self._brain.add(Dense(neurons_per_layer,
-                            input_dim=self.state_size,
+                            input_dim=self._stateSize,
                             activation=activation))
             self._brain.add(Dense(neurons_per_layer, activation=activation))
-            self._brain.add(Dense(self.action_size, activation='linear'))
+            self._brain.add(Dense(self._actionSize, activation='linear'))
 
         self.__wkBrainId = 'DQN00000'
         self._brain.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
 
         # checkpointPath ='best.h5'
-        # checkpoint = ModelCheckPoint(filepath=checkpointPath, monitor='val_acc', verbose=1, save_best_only=True, save_weights_only=True, mode='max', period=1)
+        # checkpoint = ModelCheckpoint(filepath=checkpointPath, monitor='val_acc', verbose=1, save_best_only=True, save_weights_only=True, mode='max', period=1)
         # self._brain.flt(x, Y...., callbacks=[checkpoint])
         # more additiona, to customize the checkpoint other than max(val_acc), such as max(mean(y_pred))
         #    import keras.backend as K
@@ -54,6 +54,9 @@ class agentDQN(MetaAgent):
         #    ModelCheckpoint(..., monitor='val_mean_pred', mode='max', period=1)
 
         return self._brain
+
+    def isReady(self) :
+        return super(agentDQN, self).isReady()
 
     def saveBrain(self, brainId=None) :
         ''' save the current brain into the dataRoot
@@ -84,7 +87,7 @@ class agentDQN(MetaAgent):
         ''' load the previous saved brain
         @param a unique brainId must be given
         '''
-        if not self._trader.dataRoot 
+        if not self._trader.dataRoot :
             raise ValueError("Null trader")
         if not brainId or len(brainId) <=0:
             raise ValueError("empty brainId")
@@ -107,17 +110,17 @@ class agentDQN(MetaAgent):
         except:
             pass
 
-        retun brain
+        return brain
 
     def gymAct(self, state):
         '''Acting Policy of the agentDQN
         @return one of self.__gymTrader.ACTIONS
         '''
-        action = np.zeros(self.action_size)
+        action = np.zeros(self._actionSize)
         if np.random.rand() <= self._epsilon:
-            action[random.randrange(self.action_size)] = 1
+            action[random.randrange(self._actionSize)] = 1
         else:
-            state = state.reshape(1, self.state_size)
+            state = state.reshape(1, self._stateSize)
             act_values = self._brain.predict(state)
             action[np.argmax(act_values[0])] = 1
 
@@ -129,7 +132,7 @@ class agentDQN(MetaAgent):
             state_batch, action_batch, reward_batch, next_state_batch, done_batch
         '''
         self.__idxMem = (self.__idxMem + 1) % self._memorySize
-        self.__memory[self.__idxMem] = (state, action, reward, next_state, done)
+        self._memory[self.__idxMem] = (state, action, reward, next_state, done)
         if warming_up:
             return None, None, None, None, None
 
@@ -156,11 +159,11 @@ class agentDQN(MetaAgent):
            Split it into categorical subbatches
            Process action_batch into a position vector
         '''
-        batch = np.array(random.sample(self.__memory, self.batch_size))
-        state_batch = np.concatenate(batch[:, 0]).reshape(self.batch_size, self.state_size)
-        action_batch = np.concatenate(batch[:, 1]).reshape(self.batch_size, self.action_size)
+        batch = np.array(random.sample(self._memory, self.batch_size))
+        state_batch = np.concatenate(batch[:, 0]).reshape(self.batch_size, self._stateSize)
+        action_batch = np.concatenate(batch[:, 1]).reshape(self.batch_size, self._actionSize)
         reward_batch = batch[:, 2]
-        next_state_batch = np.concatenate(batch[:, 3]).reshape(self.batch_size, self.state_size)
+        next_state_batch = np.concatenate(batch[:, 3]).reshape(self.batch_size, self._stateSize)
         done_batch = batch[:, 4]
 
         # action processing

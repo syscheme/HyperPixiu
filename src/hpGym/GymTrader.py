@@ -45,7 +45,6 @@ class MetaAgent(MetaObj): # TODO:
 
         self._memorySize = self.getConfig('memorySize', 2000)
         self._memory = [None] * self._memorySize
-        self.__memory = []
         self.__idxMem = 0
 
         self._trainInterval = self.getConfig('trainInterval', 10)
@@ -62,7 +61,7 @@ class MetaAgent(MetaObj): # TODO:
 
     @abstractmethod
     def isReady(self) :
-        return not None in self.__memory
+        return not None in self._memory
 
     def getConfig(self, configName, defaultVal) :
         try :
@@ -149,7 +148,7 @@ class GymTrader(BaseTrader):
         '''
         super(GymTrader, self).__init__(program, **kwargs) # redirect to BaseTrader, who will adopt account and so on
 
-        self.__agent = None
+        self._agent = None
         self._timeCostYrRate = self.getConfig('timeCostYrRate', 0)
         #TODO: the separate the Trader for real account and training account
         
@@ -161,6 +160,7 @@ class GymTrader(BaseTrader):
 
         # step 1. GymTrader always take PerspectiveDict as the market state
         self._marketState = PerspectiveDict(None)
+        self._gymState = None
  
         # self.n_actions = 3
         # self._prices_history = []
@@ -181,11 +181,11 @@ class GymTrader(BaseTrader):
         self._account._marketState = self._marketState
 
         agentKwArgs = self.getConfig('agent', {})
-        self.__agent = self._AGENTCLASS(self, jsettings=self.subConfig('agent'), **agentKwArgs)
-        
+        self._agent = self._AGENTCLASS(self, jsettings=self.subConfig('agent'), **agentKwArgs)
         # gymReset() will be called by agent above, self._gymState = self.gymReset() # will perform self._action = ACTIONS[ACTION_HOLD]
-        while not self._agent.isReady :
-            action = self.__agent.gymAct(self._gymState)
+
+        while not self._agent.isReady() :
+            action = self._agent.gymAct(self._gymState)
             next_state, reward, done, _ = self.gymStep(action)
             self._agent.gymObserve(self._gymState, action, reward, next_state, done, warming_up=True) # regardless state-stepping, rewards and loss here
 
@@ -223,6 +223,7 @@ class GymTrader(BaseTrader):
         observation = self.makeupGymObservation()
         self._shapeOfState = observation.shape
         self._action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
+        self._gymState = observation
         return observation
 
     def gymStep(self, action) :
@@ -245,7 +246,7 @@ class GymTrader(BaseTrader):
 
         # step 1. collected information from the account
         cashAvail, cashTotal, positions = self.getAccountState()
-        capitalBeforeStep = __summrizeAccount(positions, cashTotal)
+        capitalBeforeStep = self.__summrizeAccount(positions, cashTotal)
 
         # TODO: the first version only support one symbol to play, so simply take the first symbol in the positions        
         symbol = None # TODO: should take the __dictOberserves
@@ -262,14 +263,14 @@ class GymTrader(BaseTrader):
         # reward = - capitalBeforeStep *self._timeCostYrRate/100/365
 
         if not symbol or latestPrice <=0:
-            action = self.ACTIONS[ACTION_HOLD]
+            action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
             return
 
         if capitalBeforeStep <=0:
             done = True
 
         # step 2. perform the action buy/sell/hold by driving self._account
-        if all(action == self.ACTIONS[ACTION_BUY]):
+        if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]):
             # TODO: the first version only support FULL-BUY and FULL-SELL
             price  = latestPrice + self._account.priceTick
             volume = round(cashAvail / latestPrice / self._account.contractSize, 0)
@@ -277,7 +278,7 @@ class GymTrader(BaseTrader):
             # cash will be updated in callback onOrderPlaced()
             # turnover, commission, slippage = self._account.calcAmountOfTrade(symbol, price, volume)
             # reward -= commission + slippage # TODO maybe after the order is comfirmed
-        elif all(action == self.ACTIONS[ACTION_SELL]) and posAvail >0:
+        elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]) and posAvail >0:
             price  = latestPrice - self._account.priceTick
             if price <= self._account.priceTick :
                 price = self._account.priceTick 
@@ -500,23 +501,6 @@ class GymTrainer(BackTestApp):
 
         
     # end of BaseApplication routine
-    #----------------------------------------------------------------------
-    
-    #----------------------------------------------------------------------
-    # Overrides of events handling of Trader to redirect events
-    def eventHdl_Order(self, ev):
-        return self.__wkTrader.eventHdl_Order(ev)
-            
-    def eventHdl_Trade(self, ev):
-        return self.__wkTrader.eventHdl_Trade(ev)
-
-    def onDayOpen(self, symbol, date):
-        return self.__wkTrader.onDayOpen(symbol, date)
-
-    def proc_MarketEvent(self, ev):
-        self.error('proc_MarketEvent() should not be here')
-
-    # end of Trader routine
     #----------------------------------------------------------------------
 
     #------------------------------------------------

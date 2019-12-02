@@ -196,7 +196,7 @@ class SinaCrawler(MarketCrawler):
                 self.error("step_pollKline(%s:%s) failed, err(%s)" %(s, evType, httperr))
                 if httperr == 456:
                     self.__stampYieldTill_KL = datetime.now() + timedelta(seconds=self._secYield456)
-                    self.warn("step_pollKline(%s:%s) SINA complained err(%s), yielding %ssec" %(s, evType, httperr, self._secYield456))
+                    self.warn("step_pollKline(%s:%s) [%d/%d]sym SINA complained err(%s), yielding %ssec" %(s, evType, self.__idxKL, cSyms, httperr, self._secYield456))
                     return cBusy
 
                 continue

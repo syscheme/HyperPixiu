@@ -63,8 +63,8 @@ class BackTestApp(MetaTrader):
         self._testRounds   = self.getConfig('rounds', 1)
         self._plotReport   = self.getConfig('plotReport', 'False').lower() in BOOL_STRVAL_TRUE
 
-        self.__testRoundId = 1 # count start from 1 to ease reading
-        self.__testRoundcEvs =0
+        self.__episodeNo = 1 # count start from 1 to ease reading
+        self.__stepNoInEpisode =0
         self.__execStamp_appStart = datetime.now()
         self.__execStamp_roundStart = self.__execStamp_appStart
 
@@ -80,7 +80,7 @@ class BackTestApp(MetaTrader):
 
     @property
     def roundId(self) :
-        return 'R' + str(self.__testRoundId).zfill(4)
+        return 'R' + str(self.__episodeNo).zfill(4)
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -146,7 +146,7 @@ class BackTestApp(MetaTrader):
         #     if len(obj["ds1min"]) >0 :
         #         obj["ds1min"] += MarketData.TAG_BACKTEST
 
-        self.resetTest()
+        self.resetEpisode()
         return True
 
     def doAppStep(self):
@@ -160,7 +160,7 @@ class BackTestApp(MetaTrader):
                 s = ev.data.symbol
                 self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type[len(MARKETDATE_EVENT_PREFIX):], self._marketState.getAsOf(s).strftime('%Y%m%dT%H%M'), self._marketState.latestPrice(s), self._marketState.dailyOHLC_sofar(s)))
                 self.OnEvent(ev) # call Trader
-                self.__testRoundcEvs += 1
+                self.__stepNoInEpisode += 1
                 return # successfully pushed an Event
             except StopIteration:
                 pass
@@ -168,21 +168,20 @@ class BackTestApp(MetaTrader):
         # this test should be done if reached here
         self.debug('hist-read: end of playback')
         self._account.OnPlaybackEnd()
-        self.info('test-round[%d/%d] done, processed %d events took %s, generating report' % (self.__testRoundId, self._testRounds, self.__testRoundcEvs, str(datetime.now() - self.__execStamp_roundStart)))
+        self.info('episode[%d/%d] done, processed %d events took %s, generating report' % (self.__episodeNo, self._testRounds, self.__stepNoInEpisode, str(datetime.now() - self.__execStamp_roundStart)))
         try :
             self.generateReport()
         except Exception as ex:
             self.error("generateReport() caught exception %s %s" % (ex, traceback.format_exc()))
 
-        self.__testRoundcEvs =0
-        self.__testRoundId +=1
-        if (self.__testRoundId > self._testRounds) :
+        self.__episodeNo +=1
+        if (self.__episodeNo > self._testRounds) :
             # all tests have been done
             self.stop()
-            self.info('all %d test-round have been done, took %s, app stopped. obj-in-program: %s' % (self._testRounds, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
+            self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._testRounds, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
             return
 
-        self.resetTest()
+        self.resetEpisode()
 
     def OnEvent(self, ev): 
         # step 2. 收到行情后，在启动策略前的处理
@@ -230,13 +229,14 @@ class BackTestApp(MetaTrader):
     #------------------------------------------------
     # 数据回放结果计算相关
 
-    def resetTest(self) :
+    def resetEpisode(self) :
 #        self._account = self._accountClass(None, tdBackTest, self._settings.account)
 #        self._account._dvrBroker._backtest= self
 #        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
 
         self.__execStamp_roundStart = datetime.now()
-        self.debug('initializing test-round[%d/%d], elapsed %s obj-in-program: %s' % (self.__testRoundId, self._testRounds, str(self.__execStamp_roundStart - self.__execStamp_appStart), self._program.listByType(MetaObj)))
+        self.__stepNoInEpisode =0
+        self.debug('initializing episode[%d/%d], elapsed %s obj-in-program: %s' % (self.__episodeNo, self._testRounds, str(self.__execStamp_roundStart - self.__execStamp_appStart), self._program.listByType(MetaObj)))
 
         # step 1. start over the market state
         if self._marketState:
@@ -296,7 +296,7 @@ class BackTestApp(MetaTrader):
         self.subscribeEvent(Account.EVENT_ORDER)
         self.subscribeEvent(Account.EVENT_TRADE)
 
-        self.info('reset for test-round[%d/%d] test-round, obj-in-program: %s' % (self.__testRoundId, self._testRounds, self._program.listByType(MetaObj)))
+        self.info('reset for episode[%d/%d], obj-in-program: %s' % (self.__episodeNo, self._testRounds, self._program.listByType(MetaObj)))
         return True
 
     #----------------------------------------------------------------------
@@ -322,7 +322,7 @@ class BackTestApp(MetaTrader):
             originGain = (self._dataEnd_closeprice - self._dataBegin_closeprice)*100 / self._dataBegin_closeprice
 
         # 输出统计结果
-        strReport = '%s_R%d took %s' %(self.ident, self.__testRoundId, str(datetime.now() - self.__execStamp_roundStart))
+        strReport = '%s_R%d took %s' %(self.ident, self.__episodeNo, str(datetime.now() - self.__execStamp_roundStart))
         strReport += u'\n    回放始末: %-10s ~ %-10s'  % (self._btStartDate.strftime('%Y-%m-%d'), self._btEndDate.strftime('%Y-%m-%d'))
         strReport += u'\n  交易日始末: %-10s(close:%.2f) ~ %-10s(close:%.2f): %s日 %s%%' % (summary['startDate'], self._dataBegin_closeprice, summary['endDate'], self._dataEnd_closeprice, summary['totalDays'], formatNumber(originGain))
         strReport += u'\n    盈亏日数: 盈利%s, 亏损%s'  % (summary['profitDays'], summary['lossDays'])
@@ -1356,11 +1356,11 @@ if __name__ == '__main__':
     sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/BT_AShare.json']
     p = Program()
     p._heartbeatInterval =-1
-    SYMBOL = '000540' # '000001' # '000540' '000001'
+    SYMBOL = '000001' # '000001' # '000540' '000001'
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
     rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder')
-    csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
+    csvdir = '/mnt/m/AShareSample' # '/mnt/m/AShareSample'
     ps = Perspective('AShare', SYMBOL)
     csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
     histdata = PerspectiveGenerator(ps)

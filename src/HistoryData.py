@@ -157,7 +157,10 @@ class TaggedCsvRecorder(Recorder):
             if statinfo and statinfo.st_size >10:
                 self.__1stRow = False
         except :
-            pass
+            try :
+                os.makedirs(os.path.dirname(filepath))
+            except:
+                pass
 
         self.__hdlrFile = logging.handlers.RotatingFileHandler(filepath, maxBytes=20*1024*1024, backupCount=50) # 20MB about to 3MB after bzip2
         self.__hdlrFile.rotator  = self.__rotator
@@ -798,7 +801,12 @@ class PlaybackDay(MarketState):
         if ev.type in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
             self.__onKLineX(ev)
             return
-        
+
+    def snapshot(self) :
+        '''@return an array_like data as snapshot, maybe [] or numpy.array
+        '''
+        raise NotImplementedError
+
         # raise ValueError("unsupported event-type %s" % ev.type)
 
 ########################################################################

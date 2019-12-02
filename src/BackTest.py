@@ -167,12 +167,7 @@ class BackTestApp(MetaTrader):
 
         # this test should be done if reached here
         self.debug('hist-read: end of playback')
-        self._account.OnPlaybackEnd()
-        self.info('episode[%d/%d] done, processed %d events took %s, generating report' % (self.__episodeNo, self._episodes, self.__stepNoInEpisode, str(datetime.now() - self.__execStamp_episodeStart)))
-        try :
-            self.generateReport()
-        except Exception as ex:
-            self.error("generateReport() caught exception %s %s" % (ex, traceback.format_exc()))
+        self.OnEpisodeDone()
 
         self.__episodeNo +=1
         if (self.__episodeNo > self._episodes) :
@@ -228,6 +223,14 @@ class BackTestApp(MetaTrader):
 
     #------------------------------------------------
     # 数据回放结果计算相关
+
+    def OnEpisodeDone(self):
+        self._account.OnPlaybackEnd()
+        self.info('OnEpisodeDone() episode[%d/%d], processed %d events took %s, generating report' % (self.__episodeNo, self._episodes, self.__stepNoInEpisode, str(datetime.now() - self.__execStamp_episodeStart)))
+        try :
+            self.generateReport()
+        except Exception as ex:
+            self.error("generateReport() caught exception %s %s" % (ex, traceback.format_exc()))
 
     def resetEpisode(self) :
 #        self._account = self._accountClass(None, tdBackTest, self._settings.account)

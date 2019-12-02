@@ -22,7 +22,7 @@ class agentDQN(MetaAgent):
     def __init__(self, gymTrader, **kwargs):
         super(agentDQN, self).__init__(gymTrader, **kwargs)
 
-    def buildBrain(self):
+    def buildBrain(self): #TODO param brainId to load json/HD5 from dataRoot/brainId
         '''Build the agent's brain
         '''
         self._brain = Sequential()
@@ -45,8 +45,9 @@ class agentDQN(MetaAgent):
             action[random.randrange(self.action_size)] = 1
         else:
             state = state.reshape(1, self.state_size)
-            act_values = self.brain.predict(state)
+            act_values = self._brain.predict(state)
             action[np.argmax(act_values[0])] = 1
+
         return action
 
     def gymObserve(self, state, action, reward, next_state, done, warming_up=False):
@@ -54,37 +55,38 @@ class agentDQN(MetaAgent):
         @return tuple:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch
         '''
-        self._idxMem = (self._idxMem + 1) % self._memorySize
-        self._memory[self._idxMem] = (state, action, reward, next_state, done)
-        if (not warming_up) and (self._idxMem % self._trainInterval) == 0:
+        self.__idxMem = (self.__idxMem + 1) % self._memorySize
+        self.__memory[self.__idxMem] = (state, action, reward, next_state, done)
+        if (not warming_up) and (self.__idxMem % self._trainInterval) == 0:
             if self._epsilon > self._epsilonMin:
                 self._epsilon -= self.__epsilonDecrement
-            state, action, reward, next_state, done = self._get_batches()
+
+            state, action, reward, next_state, done = self.__get_batches()
             reward += (self.gamma
                        * np.logical_not(done)
-                       * np.amax(self.brain.predict(next_state),
+                       * np.amax(self._brain.predict(next_state),
                                  axis=1))
-            q_target = self.brain.predict(state)
+
+            q_target = self._brain.predict(state)
             q_target[action[0], action[1]] = reward
-            return self.brain.fit(state, q_target,
+
+            return self._brain.fit(state, q_target,
                                   batch_size=self.batch_size,
                                   epochs=1,
                                   verbose=False)
 
-    def _get_batches(self):
+    def __get_batches(self):
         '''Selecting a batch of memory
            Split it into categorical subbatches
            Process action_batch into a position vector
         '''
-        batch = np.array(random.sample(self._memory, self.batch_size))
-        state_batch = np.concatenate(batch[:, 0])\
-            .reshape(self.batch_size, self.state_size)
-        action_batch = np.concatenate(batch[:, 1])\
-            .reshape(self.batch_size, self.action_size)
+        batch = np.array(random.sample(self.__memory, self.batch_size))
+        state_batch = np.concatenate(batch[:, 0]).reshape(self.batch_size, self.state_size)
+        action_batch = np.concatenate(batch[:, 1]).reshape(self.batch_size, self.action_size)
         reward_batch = batch[:, 2]
-        next_state_batch = np.concatenate(batch[:, 3])\
-            .reshape(self.batch_size, self.state_size)
+        next_state_batch = np.concatenate(batch[:, 3]).reshape(self.batch_size, self.state_size)
         done_batch = batch[:, 4]
+
         # action processing
         action_batch = np.where(action_batch == 1)
         return state_batch, action_batch, reward_batch, next_state_batch, done_batch

@@ -8,7 +8,7 @@ from __future__ import division
 from Account import Account, OrderData, Account_AShare
 from Application import MetaObj
 from Trader import MetaTrader, BaseTrader
-from BackTest import AccountWrapper
+from BackTest import BackTestApp, AccountWrapper
 from Perspective import PerspectiveDict
 import hpGym
 
@@ -45,18 +45,23 @@ class MetaAgent(MetaObj): # TODO:
 
         self._memorySize = self.getConfig('memorySize', 2000)
         self._memory = [None] * self._memorySize
-        self._idxMem = 0
+        self.__memory = []
+        self.__idxMem = 0
 
         self._trainInterval = self.getConfig('trainInterval', 10)
         self._learningRate = self.getConfig('learningRate', 0.001)
         self._batchSize = self.getConfig('batchSize', 64)
 
         self._gamma = self.getConfig('gamma', 0.95)
-        self._epsilon = self.getConfig('epsilon', 1.0)
+        self._epsilon = self.getConfig('epsilon', 1.0) # rand() <= self._epsilon will trigger a random explore
         self._epsilonMin = self.getConfig('epsilonMin', 0.01)
         #TODO ?? self.__epsilonDecrement = (self._epsilon - self._epsilonMin) * self._trainInterval / (self._epsilon * episode_length)  # linear decrease rate
 
         self._brain = None # self._brain = self.buildBrain()
+
+    @abstractmethod
+    def isReady(self) :
+        return not None in self.__memory
 
     def getConfig(self, configName, defaultVal) :
         try :
@@ -161,12 +166,19 @@ class GymTrader(BaseTrader):
 
         agentKwArgs = self.getConfig('agent', {})
         self.__agent = self._AGENTCLASS(self, jsettings=self.subConfig('agent'), **agentKwArgs)
+        
         # gymReset() will be called by agent above, self._gymState = self.gymReset() # will perform self._action = ACTIONS[ACTION_HOLD]
+        while not self._agent.isReady :
+            action = self.__agent.gymAct(self._gymState)
+            next_state, reward, done, _ = self.gymStep(action)
+            self._agent.gymObserve(self._gymState, action, reward, next_state, done, warming_up=True) # regardless state-stepping, rewards and loss here
+
         return True
 
     def doAppStep(self):
         super(GymTrader, self).doAppStep()
-        # seems nothing else to do
+        # perform some dummy steps in order to fill agent._memory[]
+
 
     def OnEvent(self, ev): 
         # step 2. 收到行情后，在启动策略前的处理
@@ -175,6 +187,7 @@ class GymTrader(BaseTrader):
         next_state, reward, done, _ = self.gymStep(self._action)
         loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, done)
         self._gymState = next_state
+        # self._total_reward += reward has already been performed in above self.gymStep()
 
     # end of impl/overwrite of BaseApplication
     #----------------------------------------------------------------------
@@ -434,90 +447,25 @@ class GymTrader(BaseTrader):
 
 
 ########################################################################
-class GymTrainer(MetaTrader):
+class GymTrainer(BackTestApp):
     '''
     GymTrader extends GymTrader by reading history and perform training
     '''
     def __init__(self, program, trader, histdata, **kwargs):
         '''Constructor
         '''
-        super(GymTrainer, self).__init__(program, **kwargs)
-
-        self._initTrader = trader
-        self._initMarketState = None # to populate from _initTrader, must be a PespectiveDict
-        self._originAcc = None # to populate from _initTrader then wrapper
-
-        self._account = None # the working account inherit from MetaTrader
-        self._marketState = None
-
+        super(GymTrainer, self).__init__(program, trader, histdata, **kwargs)
         self._iterationsPerEpisode = self.getConfig('iterationsPerEpisode', 1)
-
-        self.__wkTrader = None
-        self.__wkHistData = histdata
-        self.__episodeNo =0
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
     def doAppInit(self): # return True if succ
-        if not super(GymTrainer, self).doAppInit() :
-            return False
 
-        # step 1. wrapper the Trader
+        # make sure GymTrainer is ONLY wrappering GymTrader
         if not self._initTrader or not isinstance(self._initTrader, GymTrader) :
             return False
-        
-        self.info('doAppInit() taking trader-template[%s]' % (self._initTrader.ident))
-        self._program.removeApp(self._initTrader.ident)
-        self._program.addApp(self)
-        if not self._initTrader.doAppInit() :
-            self.info('doAppInit() failed to initialize trader-template[%s]' % (self._initTrader.ident))
-            return False
 
-        self._initMarketState = self._initTrader._marketState
-        
-        # step 1. wrapper the broker drivers of the accounts
-        self._originAcc = self._initTrader.account
-        originAcc = self._initTrader.account
-        if self._originAcc and not isinstance(self._originAcc, AccountWrapper):
-            self._program.removeApp(self._originAcc.ident)
-
-        self.gymReset()
-        return True
-
-    def doAppStep(self):
-        super(BackTestApp, self).doAppStep()
-
-        if self.__wkHistData :
-            try :
-                ev = next(self.__wkHistData)
-                if not ev : return
-                self._marketState.updateByEvent(ev)
-                s = ev.data.symbol
-                self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type[len(MARKETDATE_EVENT_PREFIX):], self._marketState.getAsOf(s).strftime('%Y%m%dT%H%M'), self._marketState.latestPrice(s), self._marketState.dailyOHLC_sofar(s)))
-                self.OnEvent(ev) # call Trader
-                self.__stepNoInEpisode += 1
-                return # successfully pushed an Event
-            except StopIteration:
-                pass
-
-        # this test should be done if reached here
-        self.debug('hist-read: end of playback')
-        self._account.OnPlaybackEnd()
-        self.info('episode[%d/%d] done, processed %d events took %s, generating report' % (self.__episodeNo, self._episodes, self.__stepNoInEpisode, str(datetime.now() - self.__execStamp_episodeStart)))
-        try :
-            self.generateReport()
-        except Exception as ex:
-            self.error("generateReport() caught exception %s %s" % (ex, traceback.format_exc()))
-
-        self.__stepNoInEpisode =0
-        self.__episodeNo +=1
-        if (self.__episodeNo > self._episodes) :
-            # all tests have been done
-            self.stop()
-            self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._episodes, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
-            return
-
-        self.resetEpisode()
+        return super(GymTrainer, self).doAppInit()
 
     def OnEvent(self, ev): 
         symbol  = None
@@ -532,13 +480,14 @@ class GymTrainer(MetaTrader):
         self.__wkTrader.OnEvent(ev) # to perform the gym step
 
         if not self._dataBegin_date:
-            self._dataBegin_date = self.__wkTrader.marketState.stateAsOf(symbol)
+            self._dataBegin_date = self.__wkTrader.marketState.getAsOf(symbol)
+
         
     # end of BaseApplication routine
     #----------------------------------------------------------------------
     
     #----------------------------------------------------------------------
-    # Overrides of events handling of Trader
+    # Overrides of events handling of Trader to redirect events
     def eventHdl_Order(self, ev):
         return self.__wkTrader.eventHdl_Order(ev)
             
@@ -555,73 +504,23 @@ class GymTrainer(MetaTrader):
     #----------------------------------------------------------------------
 
     #------------------------------------------------
-    # GymEnv related methods
-    def gymReset(self) :
+    # BackTest related entries
+    def OnEpisodeDone(self):
+        super(GymTrainer, self).OnEpisodeDone()
+        self.info('OnEpisodeDone() trained episode[%d/%d], total-reward[%s] epsilon[%s] loss[%d]' % (self.__episodeNo, self._episodes, 
+            round(self.__wkTrader._total_reward, 2), round(self.__wkTrader._agent.epsilon, 2), round(self.__wkTrader.loss.history["loss"][0], 4) ))
+
+        # maybe self.__wkTrader.gymRender()
+
+    def resetEpisode(self) :
         '''
         reset the gym environment, will be called when each episode starts
         reset the trading environment / rewards / data generator...
         @return:
             observation (numpy.array): observation of the state
         '''
-        self.__execStamp_episodeStart = datetime.datetime.now()
-        
-        self.info('gymReset() episode[%d/%d], elapsed %s' % (self.__episodeNo, self._episodes, str(self.__execStamp_episodeStart - self.__execStamp_appStart)))
-
-        # step 1. start over the market state
-        if not self._marketState:
-            self._marketState
-            self._program.removeObj(self._marketState)
-        
-        if self._initMarketState:
-            self._marketState = copy.deepcopy(self._initMarketState)
-            self._program.addObj(self._marketState)
-
-        # step 2. create clean trader and account from self._initAcc and  
-        if self.__wkTrader:
-            self._program.removeObj(self.__wkTrader)
-        self.__wkTrader = copy.deepcopy(self._initTrader)
-        self._program.addApp(self.__wkTrader)
-        self.__wkTrader._marketState = self._marketState
-
-        if self._account :
-            self._program.removeApp(self._account)
-            self._account =None
-        
-        # step 3. wrapper the broker drivers of the accounts
-        if self._originAcc and not isinstance(self._originAcc, AccountWrapper):
-            self._program.removeApp(self._originAcc.ident)
-            self._account = AccountWrapper(self, account=copy.copy(self._originAcc)) # duplicate the original account for test espoches
-            self._account._trader = self # adopt the account by pointing its._trader to self
-            self._account.setCapital(self._startBalance, True)
-            self._program.addApp(self._account)
-            self._account._marketState = self._marketState
-            self.__wkTrader._account = self._account
-            self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d]' % (self._originAcc.ident, self._account.ident, self._startBalance))
-
-        self.__wkHistData.resetRead()
-           
-        self._dataBegin_date = None
-        self._dataBegin_closeprice = 0.0
-        
-        self._dataEnd_date = None
-        self._dataEnd_closeprice = 0.0
-
-        if self._marketState :
-            for i in range(30) : # initially feed 20 data from histread to the marketstate
-                ev = next(self.__wkHistData)
-                if not ev : continue
-                self._marketState.updateByEvent(ev)
-
-            if len(self.__wkTrader._dictObjectives) <=0:
-                sl = self._marketState.listOberserves()
-                for symbol in sl:
-                    self.__wkTrader.openObjective(symbol)
-
-        # step 4. subscribe account events
-        self.subscribeEvent(Account.EVENT_ORDER)
-        self.subscribeEvent(Account.EVENT_TRADE)
-
-        return __wkTrader.gymReset()
+        super(GymTrainer, self).resetEpisode()
+        return self.__wkTrader.gymReset()
 
 if __name__ == '__main__':
     from Application import Program

@@ -173,13 +173,16 @@ class TaggedCsvRecorder(Recorder):
         return name + ".bz2"
 
     def __rotator(self, source, dest):
-        self.__1stRow   = True     
+        self.__1stRow   = True
+        stampStart = datetime.now()     
         with open(source, "rb") as sf:
             data = sf.read()
             compressed = bz2.compress(data, 9)
             with open(dest, "wb") as df:
                 df.write(compressed)
         os.remove(source)
+        self.info('rotated %s to %s, took %d' % (source, dest, (datetime.now() - stampStart)))
+
 
     # impl of BaseApplication
     #----------------------------------------------------------------------

@@ -52,7 +52,7 @@
     "backtest": { // the configuration schema is extending "trader"
         "accountId" : "blah",
         "startCapitial": 100000,
-        "rounds":10,
+        "episodes":10,
         // "plotReport": "yes",
 
         // the following are same as "trader"

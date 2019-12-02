@@ -60,13 +60,13 @@ class BackTestApp(MetaTrader):
         self._btStartDate  = datetime.strptime(self.getConfig('startDate', '2000-01-01'), '%Y-%m-%d')
         self._btEndDate    = datetime.strptime(self.getConfig('endDate', '2999-12-31'), '%Y-%m-%d')
         self._startBalance = self.getConfig('startBalance', 100000)
-        self._testRounds   = self.getConfig('rounds', 1)
+        self._episodes     = self.getConfig('episodes', 1)
         self._plotReport   = self.getConfig('plotReport', 'False').lower() in BOOL_STRVAL_TRUE
 
         self.__episodeNo = 1 # count start from 1 to ease reading
         self.__stepNoInEpisode =0
         self.__execStamp_appStart = datetime.now()
-        self.__execStamp_roundStart = self.__execStamp_appStart
+        self.__execStamp_episodeStart = self.__execStamp_appStart
 
         # backtest will always clear the datapath
         self.__outdir = '%s/%s%s' % (self.dataRoot, self.ident, self.__execStamp_appStart.strftime('%Y%m%dT%H%M%S'))
@@ -79,8 +79,8 @@ class BackTestApp(MetaTrader):
         self.__dtData = self._btStartDate
 
     @property
-    def roundId(self) :
-        return 'R' + str(self.__episodeNo).zfill(4)
+    def episodeId(self) :
+        return 'E' + str(self.__episodeNo).zfill(6)
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -168,17 +168,17 @@ class BackTestApp(MetaTrader):
         # this test should be done if reached here
         self.debug('hist-read: end of playback')
         self._account.OnPlaybackEnd()
-        self.info('episode[%d/%d] done, processed %d events took %s, generating report' % (self.__episodeNo, self._testRounds, self.__stepNoInEpisode, str(datetime.now() - self.__execStamp_roundStart)))
+        self.info('episode[%d/%d] done, processed %d events took %s, generating report' % (self.__episodeNo, self._episodes, self.__stepNoInEpisode, str(datetime.now() - self.__execStamp_episodeStart)))
         try :
             self.generateReport()
         except Exception as ex:
             self.error("generateReport() caught exception %s %s" % (ex, traceback.format_exc()))
 
         self.__episodeNo +=1
-        if (self.__episodeNo > self._testRounds) :
+        if (self.__episodeNo > self._episodes) :
             # all tests have been done
             self.stop()
-            self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._testRounds, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
+            self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._episodes, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
             return
 
         self.resetEpisode()
@@ -234,9 +234,9 @@ class BackTestApp(MetaTrader):
 #        self._account._dvrBroker._backtest= self
 #        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
 
-        self.__execStamp_roundStart = datetime.now()
+        self.__execStamp_episodeStart = datetime.now()
         self.__stepNoInEpisode =0
-        self.debug('initializing episode[%d/%d], elapsed %s obj-in-program: %s' % (self.__episodeNo, self._testRounds, str(self.__execStamp_roundStart - self.__execStamp_appStart), self._program.listByType(MetaObj)))
+        self.debug('initializing episode[%d/%d], elapsed %s obj-in-program: %s' % (self.__episodeNo, self._episodes, str(self.__execStamp_episodeStart - self.__execStamp_appStart), self._program.listByType(MetaObj)))
 
         # step 1. start over the market state
         if self._marketState:
@@ -296,7 +296,7 @@ class BackTestApp(MetaTrader):
         self.subscribeEvent(Account.EVENT_ORDER)
         self.subscribeEvent(Account.EVENT_TRADE)
 
-        self.info('reset for episode[%d/%d], obj-in-program: %s' % (self.__episodeNo, self._testRounds, self._program.listByType(MetaObj)))
+        self.info('reset for episode[%d/%d], obj-in-program: %s' % (self.__episodeNo, self._episodes, self._program.listByType(MetaObj)))
         return True
 
     #----------------------------------------------------------------------
@@ -310,7 +310,7 @@ class BackTestApp(MetaTrader):
             return 
 
         if not tradeDays is None:
-            csvfile = '%s/%s_DR.csv' %(self.__outdir, self.roundId)
+            csvfile = '%s/%s_DR.csv' %(self.__outdir, self.episodeId)
             try :
                 os.makedirs(os.path.dirname(csvfile))
             except:
@@ -322,7 +322,7 @@ class BackTestApp(MetaTrader):
             originGain = (self._dataEnd_closeprice - self._dataBegin_closeprice)*100 / self._dataBegin_closeprice
 
         # 输出统计结果
-        strReport = '%s_R%d took %s' %(self.ident, self.__episodeNo, str(datetime.now() - self.__execStamp_roundStart))
+        strReport = '%s_R%d took %s' %(self.ident, self.__episodeNo, str(datetime.now() - self.__execStamp_episodeStart))
         strReport += u'\n    回放始末: %-10s ~ %-10s'  % (self._btStartDate.strftime('%Y-%m-%d'), self._btEndDate.strftime('%Y-%m-%d'))
         strReport += u'\n  交易日始末: %-10s(close:%.2f) ~ %-10s(close:%.2f): %s日 %s%%' % (summary['startDate'], self._dataBegin_closeprice, summary['endDate'], self._dataEnd_closeprice, summary['totalDays'], formatNumber(originGain))
         strReport += u'\n    盈亏日数: 盈利%s, 亏损%s'  % (summary['profitDays'], summary['lossDays'])
@@ -379,10 +379,10 @@ class BackTestApp(MetaTrader):
         strReport += u'\n%10s: %s%%' % (u'日均收益率', formatNumber(summary['dailyReturn']))
         '''
 
-        with open('%s/%s_summary.txt' %(self.__outdir, self.roundId),'wt') as rptfile:
+        with open('%s/%s_summary.txt' %(self.__outdir, self.episodeId),'wt') as rptfile:
             rptfile.write(strReport)
 
-        self.info('%s_%s summary:' %(self.ident, self.roundId))
+        self.info('%s_%s summary:' %(self.ident, self.episodeId))
         for line in strReport.splitlines():
             self.info(line)
         
@@ -412,7 +412,7 @@ class BackTestApp(MetaTrader):
         pKDE.set_title('Daily Pnl Distribution')
         tradeDays['netPnl'].hist(bins=50)
         
-        plt.savefig('%s/%s_DR.png' %(self.__outdir, self.roundId), dpi=400, bbox_inches='tight')
+        plt.savefig('%s/%s_DR.png' %(self.__outdir, self.episodeId), dpi=400, bbox_inches='tight')
         plt.show()
         plt.close()
        

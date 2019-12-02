@@ -503,7 +503,7 @@ class GymTrainer(MetaTrader):
         # this test should be done if reached here
         self.debug('hist-read: end of playback')
         self._account.OnPlaybackEnd()
-        self.info('episode[%d/%d] done, processed %d events took %s, generating report' % (self.__episodeNo, self._testRounds, self.__stepNoInEpisode, str(datetime.now() - self.__execStamp_roundStart)))
+        self.info('episode[%d/%d] done, processed %d events took %s, generating report' % (self.__episodeNo, self._episodes, self.__stepNoInEpisode, str(datetime.now() - self.__execStamp_episodeStart)))
         try :
             self.generateReport()
         except Exception as ex:
@@ -511,10 +511,10 @@ class GymTrainer(MetaTrader):
 
         self.__stepNoInEpisode =0
         self.__episodeNo +=1
-        if (self.__episodeNo > self._testRounds) :
+        if (self.__episodeNo > self._episodes) :
             # all tests have been done
             self.stop()
-            self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._testRounds, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
+            self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._episodes, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
             return
 
         self.resetEpisode()
@@ -565,7 +565,7 @@ class GymTrainer(MetaTrader):
         '''
         self.__execStamp_episodeStart = datetime.datetime.now()
         
-        self.info('gymReset() episode[%d/%d], elapsed %s' % (self.__episodeNo, self._testRounds, str(self.__execStamp_episodeStart - self.__execStamp_appStart)))
+        self.info('gymReset() episode[%d/%d], elapsed %s' % (self.__episodeNo, self._episodes, str(self.__execStamp_episodeStart - self.__execStamp_appStart)))
 
         # step 1. start over the market state
         if not self._marketState:

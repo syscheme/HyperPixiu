@@ -8,12 +8,15 @@ from __future__ import division
 from Account import Account, OrderData, Account_AShare
 from Application import MetaObj
 from Trader import MetaTrader, BaseTrader
+from BackTest import AccountWrapper
+from Perspective import PerspectiveDict
 import hpGym
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 import matplotlib as mpl # pip install matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import datetime
 
 plt.style.use('dark_background')
 mpl.rcParams.update(
@@ -40,18 +43,18 @@ class MetaAgent(MetaObj): # TODO:
         self._stateSize = len(self._gymTrader.gymReset())
         self._actionSize = len(type(gymTrader).ACTIONS)
 
-        self._memorySize = getConfig('memorySize', 2000)
-        self._memory = [None] * memory_size
+        self._memorySize = self.getConfig('memorySize', 2000)
+        self._memory = [None] * self._memorySize
         self._idxMem = 0
 
-        self._trainInterval = getConfig('trainInterval', 10)
-        self._learningRate = getConfig('learningRate', 0.001)
-        self._batchSize = getConfig('batchSize', 64)
+        self._trainInterval = self.getConfig('trainInterval', 10)
+        self._learningRate = self.getConfig('learningRate', 0.001)
+        self._batchSize = self.getConfig('batchSize', 64)
 
-        self._gamma = getConfig('gamma', 0.95)
-        self._epsilon = getConfig('epsilon', 1.0)
-        self._epsilonMin = getConfig('epsilonMin', 0.01)
-        self._epsilonDecrement = (self._epsilon - self._epsilonMin) * self._trainInterval / (episodes * episode_length)  # linear decrease rate
+        self._gamma = self.getConfig('gamma', 0.95)
+        self._epsilon = self.getConfig('epsilon', 1.0)
+        self._epsilonMin = self.getConfig('epsilonMin', 0.01)
+        #TODO ?? self.__epsilonDecrement = (self._epsilon - self._epsilonMin) * self._trainInterval / (self._epsilon * episode_length)  # linear decrease rate
 
         self._brain = None # self._brain = self.buildBrain()
 
@@ -133,10 +136,11 @@ class GymTrader(BaseTrader):
 
         agentType = self.getConfig('agent/type', 'DQN')
         if agentType and agentType in hpGym.GYMAGENT_CLASS.keys():
-            AGENTCLASS = hpGym.GYMAGENT_CLASS[agentType]
-            agentKwArgs = self.getConfig('agent', {})
-            self.__agent = AGENTCLASS(self, jsettings=self.subConfig('agent'), **agentKwArgs)
+            self._AGENTCLASS = hpGym.GYMAGENT_CLASS[agentType]
 
+        # step 1. GymTrader always take PerspectiveDict as the market state
+        self._marketState = PerspectiveDict(None)
+ 
         # self.n_actions = 3
         # self._prices_history = []
 
@@ -145,15 +149,19 @@ class GymTrader(BaseTrader):
     def doAppInit(self): # return True if succ
         if not super(GymTrader, self).doAppInit() :
             return False
+
+        if not self._AGENTCLASS :
+            return False
+
         # the self._account should be good here
 
         # step 1. GymTrader always take PerspectiveDict as the market state
-        self._marketState = self._account._marketState
-        if not self._marketState or not isinstance(self._marketState, PerspectiveDict):
-            self._marketState = PerspectiveDict(self._account.exchange)
-            self._account._marketState = self._marketState
+        self._marketState._exchange = self._account.exchange
+        self._account._marketState = self._marketState
 
-        self._gymState = self.gymReset() # will perform self._action = ACTIONS[ACTION_HOLD]
+        agentKwArgs = self.getConfig('agent', {})
+        self.__agent = self._AGENTCLASS(self, jsettings=self.subConfig('agent'), **agentKwArgs)
+        # gymReset() will be called by agent above, self._gymState = self.gymReset() # will perform self._action = ACTIONS[ACTION_HOLD]
         return True
 
     def doAppStep(self):
@@ -183,9 +191,9 @@ class GymTrader(BaseTrader):
         self.__closed_plot = False
         self.__stepNo = 0
 
-        observation = self.makeupGymObservation()
+         observation = self.makeupGymObservation()
         self._shapeOfState = observation.shape
-        self._action = self.ACTIONS[ACTION_HOLD]
+        self._action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
         return observation
 
     def gymStep(self, action) :
@@ -463,7 +471,7 @@ class GymTrainer(MetaTrader):
             self.info('doAppInit() failed to initialize trader-template[%s]' % (self._initTrader.ident))
             return False
 
-        self._initMarketState = self._initTrader._marketstate
+        self._initMarketState = self._initTrader._marketState
         
         # step 1. wrapper the broker drivers of the accounts
         self._originAcc = self._initTrader.account
@@ -553,7 +561,7 @@ class GymTrainer(MetaTrader):
         @return:
             observation (numpy.array): observation of the state
         '''
-        self.__execStamp_episodeStart = datetime.now()
+        self.__execStamp_episodeStart = datetime.datetime.now()
         
         self.info('gymReset() episode[%d/%d], elapsed %s' % (self.__testRoundId, self._testRounds, str(self.__execStamp_episodeStart - self.__execStamp_appStart)))
 
@@ -571,7 +579,7 @@ class GymTrainer(MetaTrader):
             self._program.removeObj(self.__wkTrader)
         self.__wkTrader = copy.deepcopy(self._initTrader)
         self._program.addApp(self.__wkTrader)
-        self.__wkTrader._marketstate = self._marketState
+        self.__wkTrader._marketState = self._marketState
 
         if self._account :
             self._program.removeApp(self._account)
@@ -584,7 +592,7 @@ class GymTrainer(MetaTrader):
             self._account._trader = self # adopt the account by pointing its._trader to self
             self._account.setCapital(self._startBalance, True)
             self._program.addApp(self._account)
-            self._account._marketstate = self._marketState
+            self._account._marketState = self._marketState
             self.__wkTrader._account = self._account
             self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d]' % (self._originAcc.ident, self._account.ident, self._startBalance))
 

@@ -134,7 +134,7 @@ class BackTestApp(MetaTrader):
             self.info('doAppInit() failed to initialize trader-template[%s]' % (self._initTrader.ident))
             return False
 
-        self._initMarketState = self._initTrader._marketstate
+        self._initMarketState = self._initTrader._marketState
         self._originAcc = self._initTrader.account
         if self._originAcc and not isinstance(self._originAcc, AccountWrapper):
             self._program.removeApp(self._originAcc.ident)
@@ -251,7 +251,7 @@ class BackTestApp(MetaTrader):
             self._program.removeObj(self.__wkTrader)
         self.__wkTrader = copy.deepcopy(self._initTrader)
         self._program.addApp(self.__wkTrader)
-        self.__wkTrader._marketstate = self._marketState
+        self.__wkTrader._marketState = self._marketState
 
         if self._account :
             self._program.removeApp(self._account)
@@ -264,7 +264,7 @@ class BackTestApp(MetaTrader):
             self._account._trader = self # adopt the account by pointing its._trader to self
             self._account.setCapital(self._startBalance, True)
             self._program.addApp(self._account)
-            self._account._marketstate = self._marketState
+            self._account._marketState = self._marketState
             self.__wkTrader._account = self._account
             self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d]' % (self._originAcc.ident, self._account.ident, self._startBalance))
 

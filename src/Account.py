@@ -634,7 +634,7 @@ class Account(MetaAccount):
         #     for obsId in self._program.listByType(MarketState) :
         #         marketstate = self._program.getObj(obsId)
         #         if marketstate and marketstate.exchange == self.exchange:
-        #             self._marketstate = marketstate
+        #             self._marketState = marketstate
         #             break
 
         return True

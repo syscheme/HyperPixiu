@@ -38,7 +38,7 @@ class MetaTrader(BaseApplication):
         self._accountId = None
         self._dtData = None # datetime of data
         self._dictObjectives = {}
-        self._marketstate = None
+        self._marketState = None
 
     def __deepcopy__(self, other):
         result = object.__new__(type(self))
@@ -49,7 +49,7 @@ class MetaTrader(BaseApplication):
     @property
     def account(self): return self._account # the default account
     @property
-    def marketState(self): return self._marketstate # the default account
+    def marketState(self): return self._marketState # the default account
     @abstractmethod
     def eventHdl_Order(self, event): raise NotImplementedError
     @abstractmethod
@@ -167,29 +167,29 @@ class BaseTrader(MetaTrader):
         # TODO part 2. scan those in the positions of Accounts, and also put into _dictObjectives
 
         # step 2. associate the marketstate
-        # if not self._marketstate :
-        #     self._marketstate = self._account.marketState
+        # if not self._marketState :
+        #     self._marketState = self._account.marketState
 
-        if not self._marketstate :
+        if not self._marketState :
             for obsId in self._program.listByType(MarketState) :
                 marketstate = self._program.getObj(obsId)
                 if marketstate and marketstate.exchange == self._account.exchange:
-                    self._marketstate = marketstate
+                    self._marketState = marketstate
                     break
                 
-        if not self._marketstate :
+        if not self._marketState :
             self.error('no MarketState found')
             return False
 
-        self.info('taking MarketState[%s]' % self._marketstate.ident)
+        self.info('taking MarketState[%s]' % self._marketState.ident)
 
         # step 3. subscribe the market events
         self.subscribeEvent(EVENT_TICK)
         self.subscribeEvent(EVENT_KLINE_1MIN)
 
-        if self._marketstate :
+        if self._marketState :
             for symbol in self._dictObjectives.keys():
-                self._marketstate.addMonitor(self, symbol)
+                self._marketState.addMonitor(self, symbol)
 
         # step 4. subscribe account events
         self.subscribeEvent(Account.EVENT_ORDER)
@@ -210,8 +210,8 @@ class BaseTrader(MetaTrader):
             return self.eventHdl_Trade(ev)
 
         if MARKETDATE_EVENT_PREFIX == ev.type[:len(MARKETDATE_EVENT_PREFIX)] :
-            if self._marketstate:
-                self._marketstate.updateByEvent(ev)
+            if self._marketState:
+                self._marketState.updateByEvent(ev)
 
             d = ev.data
             tokens = (d.vtSymbol.split('.'))

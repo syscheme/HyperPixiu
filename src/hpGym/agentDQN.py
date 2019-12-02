@@ -58,7 +58,7 @@ class agentDQN(MetaAgent):
         self._memory[self._idxMem] = (state, action, reward, next_state, done)
         if (not warming_up) and (self._idxMem % self._trainInterval) == 0:
             if self._epsilon > self._epsilonMin:
-                self._epsilon -= self._epsilonDecrement
+                self._epsilon -= self.__epsilonDecrement
             state, action, reward, next_state, done = self._get_batches()
             reward += (self.gamma
                        * np.logical_not(done)

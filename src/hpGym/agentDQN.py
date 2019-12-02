@@ -24,9 +24,13 @@ from abc import ABCMeta, abstractmethod
 class agentDQN(MetaAgent):
     def __init__(self, gymTrader, **kwargs):
         super(agentDQN, self).__init__(gymTrader, **kwargs)
-        self._trader = gymTrader
 
     def buildBrain(self): #TODO param brainId to load json/HD5 from dataRoot/brainId
+        '''Build the agent's brain
+        '''
+        return self.buildBrain_00000()
+
+    def buildBrain_00000(self): #TODO param brainId to load json/HD5 from dataRoot/brainId
         '''Build the agent's brain
         '''
         self._brain = self.loadBrain('DQN00000')
@@ -41,7 +45,7 @@ class agentDQN(MetaAgent):
             self._brain.add(Dense(self._actionSize, activation='linear'))
 
         self.__wkBrainId = 'DQN00000'
-        self._brain.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
+        self._brain.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
 
         # checkpointPath ='best.h5'
         # checkpoint = ModelCheckpoint(filepath=checkpointPath, monitor='val_acc', verbose=1, save_best_only=True, save_weights_only=True, mode='max', period=1)
@@ -62,7 +66,7 @@ class agentDQN(MetaAgent):
         ''' save the current brain into the dataRoot
         @param a unique brainId must be given
         '''
-        if not self._trader.dataRoot or not self._brain :
+        if not self._gymTrader.dataRoot or not self._brain :
             raise ValueError("Null brain or Null trader")
         if not brainId or len(brainId) <=0:
             if self.__wkBrainId and len(brainId) >0:
@@ -70,7 +74,7 @@ class agentDQN(MetaAgent):
             else : raise ValueError("empty brainId")
 
         try :
-            brainDir = '%s%s/' % (self._trader.dataRoot, brainId)
+            brainDir = '%s%s/' % (self._gymTrader.dataRoot, brainId)
             os.makedirs(brainDir)
         except:
             pass
@@ -87,13 +91,13 @@ class agentDQN(MetaAgent):
         ''' load the previous saved brain
         @param a unique brainId must be given
         '''
-        if not self._trader.dataRoot :
+        if not self._gymTrader :
             raise ValueError("Null trader")
         if not brainId or len(brainId) <=0:
             raise ValueError("empty brainId")
 
         try :
-            brainDir = '%s%s/' % (self._trader.dataRoot, brainId)
+            brainDir = '%s%s/' % (self._gymTrader.dataRoot, brainId)
             os.makedirs(brainDir)
         except:
             pass
@@ -131,39 +135,38 @@ class agentDQN(MetaAgent):
         @return tuple:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch
         '''
-        self.__idxMem = (self.__idxMem + 1) % self._memorySize
-        self._memory[self.__idxMem] = (state, action, reward, next_state, done)
-        if warming_up:
+        self._idxMem = (self._idxMem + 1) % self._memorySize
+        self._memory[self._idxMem] = (state, action, reward, next_state, done)
+        if warming_up or 0 != (self._idxMem % self._trainInterval):
             return None, None, None, None, None
 
-        if (self.__idxMem % self._trainInterval) == 0:
-            if self._epsilon > self._epsilonMin:
-                self._epsilon -= self.__epsilonDecrement
+        # TODO: if self._epsilon > self._epsilonMin:
+        #     self._epsilon -= self.__epsilonDecrement
 
-            state, action, reward, next_state, done = self.__get_batches()
-            reward += (self.gamma
-                       * np.logical_not(done)
-                       * np.amax(self._brain.predict(next_state),
-                                 axis=1))
+        state, action, reward, next_state, done = self.__get_batches()
+        reward += (self._gamma
+                    * np.logical_not(done)
+                    * np.amax(self._brain.predict(next_state),
+                                axis=1))
 
-            q_target = self._brain.predict(state)
-            q_target[action[0], action[1]] = reward
+        q_target = self._brain.predict(state)
+        q_target[action[0], action[1]] = reward
 
-            return self._brain.fit(state, q_target,
-                                  batch_size=self.batch_size,
-                                  epochs=1,
-                                  verbose=False)
+        return self._brain.fit(state, q_target,
+                                batch_size=self._batchSize,
+                                epochs=1,
+                                verbose=False)
 
     def __get_batches(self):
         '''Selecting a batch of memory
            Split it into categorical subbatches
            Process action_batch into a position vector
         '''
-        batch = np.array(random.sample(self._memory, self.batch_size))
-        state_batch = np.concatenate(batch[:, 0]).reshape(self.batch_size, self._stateSize)
-        action_batch = np.concatenate(batch[:, 1]).reshape(self.batch_size, self._actionSize)
+        batch = np.array(random.sample(self._memory, self._batchSize))
+        state_batch = np.concatenate(batch[:, 0]).reshape(self._batchSize, self._stateSize)
+        action_batch = np.concatenate(batch[:, 1]).reshape(self._batchSize, self._actionSize)
         reward_batch = batch[:, 2]
-        next_state_batch = np.concatenate(batch[:, 3]).reshape(self.batch_size, self._stateSize)
+        next_state_batch = np.concatenate(batch[:, 3]).reshape(self._batchSize, self._stateSize)
         done_batch = batch[:, 4]
 
         # action processing

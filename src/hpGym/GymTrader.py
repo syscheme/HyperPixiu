@@ -8,8 +8,10 @@ from __future__ import division
 from Account import Account, OrderData, Account_AShare
 from Application import MetaObj
 from Trader import MetaTrader, BaseTrader
-from BackTest import BackTestApp, AccountWrapper
+from BackTest import BackTestApp
 from Perspective import PerspectiveDict
+from MarketData import EVENT_TICK, EVENT_KLINE_PREFIX
+
 import hpGym
 
 from abc import abstractmethod
@@ -45,7 +47,7 @@ class MetaAgent(MetaObj): # TODO:
 
         self._memorySize = self.getConfig('memorySize', 2000)
         self._memory = [None] * self._memorySize
-        self.__idxMem = 0
+        self._idxMem = 0
 
         self._trainInterval = self.getConfig('trainInterval', 10)
         self._learningRate = self.getConfig('learningRate', 0.001)
@@ -56,8 +58,8 @@ class MetaAgent(MetaObj): # TODO:
         self._epsilonMin = self.getConfig('epsilonMin', 0.01)
         #TODO ?? self.__epsilonDecrement = (self._epsilon - self._epsilonMin) * self._trainInterval / (self._epsilon * episode_length)  # linear decrease rate
 
-        self._brain = None # self._brain = self.buildBrain()
         self.__wkBrainId = None
+        self._brain = self.buildBrain()
 
     @abstractmethod
     def isReady(self) :
@@ -161,7 +163,9 @@ class GymTrader(BaseTrader):
         # step 1. GymTrader always take PerspectiveDict as the market state
         self._marketState = PerspectiveDict(None)
         self._gymState = None
- 
+        self._total_pnl = 0.0
+        self._total_reward = 0.0
+
         # self.n_actions = 3
         # self._prices_history = []
 
@@ -219,6 +223,8 @@ class GymTrader(BaseTrader):
         '''
         self.__closed_plot = False
         self.__stepNo = 0
+        self._total_pnl = 0.0
+        self._total_reward = 0.0
 
         observation = self.makeupGymObservation()
         self._shapeOfState = observation.shape
@@ -264,10 +270,9 @@ class GymTrader(BaseTrader):
 
         if not symbol or latestPrice <=0:
             action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
-            return
 
-        if capitalBeforeStep <=0:
-            done = True
+        #TODO?? if capitalBeforeStep <=0:
+        #    done = True
 
         # step 2. perform the action buy/sell/hold by driving self._account
         if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]):
@@ -313,17 +318,18 @@ class GymTrader(BaseTrader):
         if self.__closed_plot:
             info['status'] = 'Closed plot'
 
+        # try:
+        #     self._prices_history.append(self._data_generator.next())
+        # except StopIteration:
+        #     done = True
+        #     info['status'] = 'No more data.'
+        # if self.__stepNo >= self._iterationsPerEpisode:
+        #     done = True
+        #     info['status'] = 'Time out.'
+        # if self.__closed_plot:
+        #     info['status'] = 'Closed plot'
+
         '''
-        try:
-            self._prices_history.append(self._data_generator.next())
-        except StopIteration:
-            done = True
-            info['status'] = 'No more data.'
-        if self.__stepNo >= self._iterationsPerEpisode:
-            done = True
-            info['status'] = 'Time out.'
-        if self.__closed_plot:
-            info['status'] = 'Closed plot'
 
         ''' step 5. combine account and market observations as final observations,
             then return
@@ -494,10 +500,10 @@ class GymTrainer(BackTestApp):
         if EVENT_TICK == ev.type or EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
             self._account.matchTrades(ev)
 
-        self.__wkTrader.OnEvent(ev) # to perform the gym step
+        self.wkTrader.OnEvent(ev) # to perform the gym step
 
         if not self._dataBegin_date:
-            self._dataBegin_date = self.__wkTrader.marketState.getAsOf(symbol)
+            self._dataBegin_date = self.wkTrader.marketState.getAsOf(symbol)
 
         
     # end of BaseApplication routine
@@ -508,9 +514,9 @@ class GymTrainer(BackTestApp):
     def OnEpisodeDone(self):
         super(GymTrainer, self).OnEpisodeDone()
         self.info('OnEpisodeDone() trained episode[%d/%d], total-reward[%s] epsilon[%s] loss[%d]' % (self.__episodeNo, self._episodes, 
-            round(self.__wkTrader._total_reward, 2), round(self.__wkTrader._agent.epsilon, 2), round(self.__wkTrader.loss.history["loss"][0], 4) ))
+            round(self.wkTrader._total_reward, 2), round(self.wkTrader._agent.epsilon, 2), round(self.wkTrader.loss.history["loss"][0], 4) ))
 
-        # maybe self.__wkTrader.gymRender()
+        # maybe self.wkTrader.gymRender()
 
     def resetEpisode(self) :
         '''
@@ -520,7 +526,7 @@ class GymTrainer(BackTestApp):
             observation (numpy.array): observation of the state
         '''
         super(GymTrainer, self).resetEpisode()
-        return self.__wkTrader.gymReset()
+        return self.wkTrader.gymReset()
 
 if __name__ == '__main__':
     from Application import Program
@@ -534,7 +540,7 @@ if __name__ == '__main__':
     SYMBOL = '000001' # '000540' '000001'
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-    csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
+    csvdir = '/mnt/m/AShareSample' # '/mnt/m/AShareSample'
     csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
     # marketstate = PerspectiveDict('AShare')
     # p.addObj(marketstate)

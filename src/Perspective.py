@@ -29,6 +29,12 @@ class EvictableStack(object):
         #     for i in range(self.__evictSize) :
         #         self.__data.insert(0, nildata)
 
+    def __getitem__(self, index):
+        return self.__data[index]
+
+    def __setitem__(self, index, value):
+        self.__data[index] = value
+    
     @property
     def top(self):
         return self.__data[0] if len(self.__data) >0 else None
@@ -224,7 +230,7 @@ class Perspective(MarketData):
             return None # not overwritable
 
         self.__focusLast = ev.type
-        for i in range(len(self.__stacks[ev.type])) :
+        for i in range(self.__stacks[ev.type].size) :
             if ev.data.datetime > self.__stacks[ev.type][i].datetime :
                 continue
             if ev.data.datetime == self.__stacks[ev.type][i] :

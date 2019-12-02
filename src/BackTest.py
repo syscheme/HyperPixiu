@@ -82,6 +82,10 @@ class BackTestApp(MetaTrader):
     def episodeId(self) :
         return 'E' + str(self.__episodeNo).zfill(6)
 
+    @property
+    def wkTrader(self) :
+        return self.__wkTrader
+
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
     @property

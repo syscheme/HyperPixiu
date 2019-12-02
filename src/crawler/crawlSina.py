@@ -36,6 +36,8 @@ class SinaCrawler(MarketCrawler):
             EVENT_KLINE_1DAY: 240,
         }
 
+    SINA_KLQUERY_INTERVAL_MIN = timedelta(microseconds=400*1000) // 400msec, the minimal interval between two KL query in order not to trigger SINA 456
+
     def __init__(self, program, recorder=None, **kwargs):
         """Constructor"""
         super(SinaCrawler, self).__init__(program, recorder, **kwargs)
@@ -166,6 +168,12 @@ class SinaCrawler(MarketCrawler):
         if cSyms >0:
             self.__idxKL = self.__idxKL % cSyms
             s = self._symbolsToPoll[self.__idxKL]
+
+        stampStart = datetime.now()
+        if self.__stampYieldTill_KL and stampStart < self.__stampYieldTill_KL:
+            self.debug("step_pollKline(%s) symb[%d/%d] yield per SINA(456), %s left" %(s, self.__idxKL, cSyms, self.__stampYieldTill_KL -stampStart))
+            return cBusy
+
         self.__idxKL += 1
 
         if not s or len(s) <=0:
@@ -176,15 +184,11 @@ class SinaCrawler(MarketCrawler):
             self.__cacheKLs[s] = Perspective('AShare', symbol=s, KLDepth_1min=0, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
 
         psp = self.__cacheKLs[s]
-        stampTmp = datetime.now()
-        if self.__stampYieldTill_KL and stampTmp < self.__stampYieldTill_KL:
-            self.debug("step_pollKline(%s) symb[%d/%d] yield per SINA(456), %s left" %(s, self.__idxKL, cSyms, self.__stampYieldTill_KL -stampTmp))
-            return cBusy
 
         for evType in [EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
             minutes = SinaCrawler.MINs_OF_EVENT[evType]
             etimatedNext = datetime2float(psp.getAsOf(evType)) + 60*(minutes if minutes < 240 else int(minutes /240)*60*24) -1
-            self.__END_OF_TODAY = datetime2float(stampTmp.replace(hour=15, minute=1))
+            self.__END_OF_TODAY = datetime2float(stampStart.replace(hour=15, minute=1))
             if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
                 continue
 
@@ -208,6 +212,7 @@ class SinaCrawler(MarketCrawler):
                 continue
 
             # succ at query
+            self.__stampYieldTill_KL = stampStart + SINA_KLQUERY_INTERVAL_MIN
             cMerged =0
             for i in result:
                 cBusy +=1
@@ -220,12 +225,12 @@ class SinaCrawler(MarketCrawler):
 
             stampNow = datetime.now()
             if cMerged >0:
-                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" %(s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampTmp), psp.desc))
+                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" %(s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), psp.desc))
             elif not SinaCrawler.duringTradeHours(stampNow):
                 self.__stampYieldTill_KL = stampNow + timedelta(minutes=2)
                 self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-time of AShare, actively yielding 2min to avoid 456" %(s, evType, self.__idxKL, cSyms))
 
-            stampTmp = stampNow
+            stampStart = stampNow
 
         return cBusy
 

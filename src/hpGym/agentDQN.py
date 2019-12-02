@@ -15,26 +15,99 @@ import numpy as np
 from keras.layers import Dense
 from keras.models import Sequential
 from keras.optimizers import Adam
+from keras.models import model_from_json
+from keras.callbacks import ModelCheckPoint
+
 from abc import ABCMeta, abstractmethod
 
 ########################################################################
 class agentDQN(MetaAgent):
     def __init__(self, gymTrader, **kwargs):
         super(agentDQN, self).__init__(gymTrader, **kwargs)
+        self._trader = gymTrader
 
     def buildBrain(self): #TODO param brainId to load json/HD5 from dataRoot/brainId
         '''Build the agent's brain
         '''
-        self._brain = Sequential()
-        neurons_per_layer = 24
-        activation = "relu"
-        self._brain.add(Dense(neurons_per_layer,
-                        input_dim=self.state_size,
-                        activation=activation))
-        self._brain.add(Dense(neurons_per_layer, activation=activation))
-        self._brain.add(Dense(self.action_size, activation='linear'))
+        self._brain = self.loadBrain('DQN00000')
+        if not self._brain :
+            self._brain = Sequential()
+            neurons_per_layer = 24
+            activation = "relu"
+            self._brain.add(Dense(neurons_per_layer,
+                            input_dim=self.state_size,
+                            activation=activation))
+            self._brain.add(Dense(neurons_per_layer, activation=activation))
+            self._brain.add(Dense(self.action_size, activation='linear'))
+
+        self.__wkBrainId = 'DQN00000'
         self._brain.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
+
+        # checkpointPath ='best.h5'
+        # checkpoint = ModelCheckPoint(filepath=checkpointPath, monitor='val_acc', verbose=1, save_best_only=True, save_weights_only=True, mode='max', period=1)
+        # self._brain.flt(x, Y...., callbacks=[checkpoint])
+        # more additiona, to customize the checkpoint other than max(val_acc), such as max(mean(y_pred))
+        #    import keras.backend as K
+        #    def mean_pred(y_true, y_pred):
+        #        return K.mean(y_pred)
+        #    model.compile(..., metrics=['accuracy', mean_pred])
+        #    ModelCheckpoint(..., monitor='val_mean_pred', mode='max', period=1)
+
         return self._brain
+
+    def saveBrain(self, brainId=None) :
+        ''' save the current brain into the dataRoot
+        @param a unique brainId must be given
+        '''
+        if not self._trader.dataRoot or not self._brain :
+            raise ValueError("Null brain or Null trader")
+        if not brainId or len(brainId) <=0:
+            if self.__wkBrainId and len(brainId) >0:
+                brainId = brainId
+            else : raise ValueError("empty brainId")
+
+        try :
+            brainDir = '%s%s/' % (self._trader.dataRoot, brainId)
+            os.makedirs(brainDir)
+        except:
+            pass
+
+        # step 1. save the model file in json
+        model_json = self._brain.to_json()
+        with open('%smodel.json' % brainDir, 'w') as mjson:
+            mjson.write(model_json)
+        
+        # step 2. save the weights of the model
+        self._brain.save('%smodel.json.h5' % brainDir)
+        
+    def loadBrain(self, brainId) :
+        ''' load the previous saved brain
+        @param a unique brainId must be given
+        '''
+        if not self._trader.dataRoot 
+            raise ValueError("Null trader")
+        if not brainId or len(brainId) <=0:
+            raise ValueError("empty brainId")
+
+        try :
+            brainDir = '%s%s/' % (self._trader.dataRoot, brainId)
+            os.makedirs(brainDir)
+        except:
+            pass
+
+        brain = None
+        # step 1. read the model file in json
+        try :
+            with open('%smodel.json' % brainDir, 'r') as mjson:
+                model_json = mjson.read()
+            brain = model_from_json(model_json)
+
+            # step 2. read the weights of the model
+            brain.load_weights('%smodel.json.h5' % brainDir)
+        except:
+            pass
+
+        retun brain
 
     def gymAct(self, state):
         '''Acting Policy of the agentDQN
@@ -57,7 +130,10 @@ class agentDQN(MetaAgent):
         '''
         self.__idxMem = (self.__idxMem + 1) % self._memorySize
         self.__memory[self.__idxMem] = (state, action, reward, next_state, done)
-        if (not warming_up) and (self.__idxMem % self._trainInterval) == 0:
+        if warming_up:
+            return None, None, None, None, None
+
+        if (self.__idxMem % self._trainInterval) == 0:
             if self._epsilon > self._epsilonMin:
                 self._epsilon -= self.__epsilonDecrement
 

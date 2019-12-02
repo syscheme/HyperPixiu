@@ -58,6 +58,7 @@ class MetaAgent(MetaObj): # TODO:
         #TODO ?? self.__epsilonDecrement = (self._epsilon - self._epsilonMin) * self._trainInterval / (self._epsilon * episode_length)  # linear decrease rate
 
         self._brain = None # self._brain = self.buildBrain()
+        self.__wkBrainId = None
 
     @abstractmethod
     def isReady(self) :
@@ -107,6 +108,21 @@ class MetaAgent(MetaObj): # TODO:
         '''
         raise NotImplementedError
 
+    @abstractmethod
+    def saveBrain(self, brainId =None) :
+        ''' save the current brain into the dataRoot
+        @param a unique brainId must be given
+        '''
+        raise NotImplementedError
+        
+    @abstractmethod
+    def loadBrain(self, brainId) :
+        ''' load the previous saved brain
+        @param a unique brainId must be given
+        '''
+        raise NotImplementedError
+
+
 ########################################################################
 class GymTrader(BaseTrader):
     '''
@@ -138,7 +154,7 @@ class GymTrader(BaseTrader):
         #TODO: the separate the Trader for real account and training account
         
         self.__1stRender = True
-
+        self._AGENTCLASS = None
         agentType = self.getConfig('agent/type', 'DQN')
         if agentType and agentType in hpGym.GYMAGENT_CLASS.keys():
             self._AGENTCLASS = hpGym.GYMAGENT_CLASS[agentType]

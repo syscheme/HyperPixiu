@@ -134,15 +134,15 @@ class GymTrader(BaseTrader):
     ACTION_HOLD = 'HOLD'
 
     ACTIONS = {
-        ACTION_HOLD: np.array([1, 0, 0]),
-        ACTION_BUY:  np.array([0, 1, 0]),
-        ACTION_SELL: np.array([0, 0, 1])
+        ACTION_HOLD: np.array([1, 0, 0]).astype('float32'),
+        ACTION_BUY:  np.array([0, 1, 0]).astype('float32'),
+        ACTION_SELL: np.array([0, 0, 1]).astype('float32')
     }
 
     POS_DIRECTIONS = {
-        OrderData.DIRECTION_NONE:  np.array([1, 0, 0]),
-        OrderData.DIRECTION_LONG:  np.array([0, 1, 0]),
-        OrderData.DIRECTION_SHORT: np.array([0, 0, 1])
+        OrderData.DIRECTION_NONE:  np.array([1, 0, 0]).astype('float32'),
+        OrderData.DIRECTION_LONG:  np.array([0, 1, 0]).astype('float32'),
+        OrderData.DIRECTION_SHORT: np.array([0, 0, 1]).astype('float32')
     }
 
     def __init__(self, program, agentClass=None, **kwargs):
@@ -428,7 +428,8 @@ class GymTrader(BaseTrader):
         market_state = self._marketState.snapshot('000001')
 
         # return the concatenation of account_state and market_state as gymEnv sate
-        return np.concatenate((account_state, market_state))
+        ret = np.concatenate((account_state, market_state))
+        return ret.astype('float32')
 
     @staticmethod
     def random_action_fun():

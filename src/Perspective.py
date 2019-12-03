@@ -17,6 +17,12 @@ import copy
 
 EVENT_Perspective  = MARKETDATE_EVENT_PREFIX + 'Persp'   # 错误回报事件
 
+DEFAULT_DEPTH_TICK = 0
+# DEFAULT_DEPTH_TICK = 120
+DEFAULT_DEPTH_1min = 30
+DEFAULT_DEPTH_5min = 96
+DEFAULT_DEPTH_1day = 260
+
 ########################################################################
 class EvictableStack(object):
     def __init__(self, evictSize=0, nildata=None):
@@ -41,7 +47,8 @@ class EvictableStack(object):
 
     @property
     def evictSize(self):
-        return self.__evictSize if self.__evictSize else -1
+        if self.__evictSize <0 : self.__evictSize =0
+        return self.__evictSize
 
     @property
     def size(self):
@@ -91,7 +98,7 @@ class Perspective(MarketData):
     KLVOLS_TO_EXP = 'volume'
 
     #----------------------------------------------------------------------
-    def __init__(self, exchange, symbol =None, KLDepth_1min=60, KLDepth_5min=96, KLDepth_1day=260, tickDepth=120):
+    def __init__(self, exchange, symbol=None, KLDepth_1min=DEFAULT_DEPTH_1min, KLDepth_5min=DEFAULT_DEPTH_5min, KLDepth_1day=DEFAULT_DEPTH_1day, tickDepth=DEFAULT_DEPTH_TICK) :
         '''Constructor'''
         super(Perspective, self).__init__(exchange, symbol)
 
@@ -112,16 +119,6 @@ class Perspective(MarketData):
         for i in Perspective.EVENT_SEQ :
             str += '%sX%d/%d,' % (i[len(MARKETDATE_EVENT_PREFIX):], self._stacks[i].size, self._stacks[i].evictSize)
         return str
-
-    __snapsize=0
-    @staticmethod
-    def snapsize() :
-        if Perspective.__snapsize <=0:
-            for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]:
-                Perspective.__snapsize += self.__stacks[et].evictSize
-            Perspective.__snapsize *= 4
-            Perspective.__snapsize += self.__stacks[EVENT_TICK].evictSize * len((TICKPRICES_TO_EXP +',' + TICKVOLS_TO_EXP).split(','))
-        return Perspective.__snapsize
 
     @property
     def asof(self) : return self.getAsOf(None)
@@ -255,10 +252,10 @@ class Perspective(MarketData):
         for i in range(self._stacks[ev.type].size) :
             if ev.data.datetime > self._stacks[ev.type][i].datetime :
                 continue
-            if ev.data.datetime == self.__stacks[ev.type][i].datetime :
-                self.__stacks[ev.type][i] = ev.data
+            if ev.data.datetime == self._stacks[ev.type][i].datetime :
+                self._stacks[ev.type][i] = ev.data
             else :
-                self.__stacks[ev.type].insert(i, ev.data)
+                self._stacks[ev.type].insert(i, ev.data)
             return ev
         
         self._stacks[ev.type].insert(-1, ev.data)
@@ -266,40 +263,54 @@ class Perspective(MarketData):
             del(self._stacks[ev.type]._data[-1])
         return ev
 
+    TICK_FLOATS=7
+    KLINE_FLOATS=5
+
+    @property
+    def snapshotSize(self):
+        klsize = sum([self._stacks[et].evictSize for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] ])
+        return Perspective.TICK_FLOATS *self._stacks[EVENT_TICK].evictSize + Perspective.KLINE_FLOATS *klsize
+
     @property
     def snapshot(self):
-        result = [0.0] * Perspective.snapsize()
-        if len(self.__stacks[EVENT_KLINE_1DAY]) <=0:
-            return result # snapshot not available
+        if self._stacks[EVENT_KLINE_1DAY].size <=0:
+            return [0.0] * self.snapshotSize # snapshot not available
         
-        price_baseline = self.__stacks[EVENT_KLINE_1DAY].top.close
-        vol_baseline = self.__stacks[EVENT_KLINE_1DAY].top.volume
+        klbaseline = self._stacks[EVENT_KLINE_1DAY].top
+        return self.toFloats(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume)
+    
+    @abstractmethod
+    def toFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+        '''
+        @return float[] for numpy
+        '''
+        if baseline_Price <=0: baseline_Price=1.0
+        if baseline_Volume <=0: baseline_Volume=1.0
+        
+        result = []
 
         # part 1, EVENT_TICK
-        stk = self.__stacks[EVENT_TICK]
-        NULLROW = [0.0] * (len(TICKPRICES_TO_EXP) +len(TICKVOLS_TO_EXP))
+        stk = self._stacks[EVENT_TICK]
         for i in range(stk.evictSize):
-            if price_baseline <=0 or vol_baseline<=0 or i >= stk.size:
-                result += NULLROW
-                continue
-
-            mdata = stk[i].__dict__
-            result += [float(mdata[f])/price_baseline for f in TICKPRICES_TO_EXP]
-            result += [float(mdata[f])/vol_baseline for f in TICKVOLS_TO_EXP]
+            if i >= stk.size:
+                result += [0.0] * Perspective.TICK_FLOATS
+            else:
+                v = stk[i].toFloats(baseline_Price=baseline_Price, baseline_Volume= baseline_Volume)
+                Perspective.TICK_FLOATS = len(v)
+                result += v
 
         for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]:
-            stk = self.__stacks[et]
+            stk = self._stacks[et]
             for i in range(stk.evictSize):
-                if price_baseline <=0 or vol_baseline<=0 or i >= stk.size:
-                    result += NULLROW
-                    continue
-
-                mdata = stk[i].__dict__
-                result += [float(mdata[f])/price_baseline for f in KLPRICES_TO_EXP]
-                result += [float(mdata[f])/vol_baseline for f in KLVOLS_TO_EXP]
+                if i >= stk.size:
+                    result += [0.0] * Perspective.KLINE_FLOATS
+                else:
+                    v = stk[i].toFloats(baseline_Price=baseline_Price, baseline_Volume= baseline_Volume)
+                    Perspective.KLINE_FLOATS = len(v)
+                    result += v
 
         return result
-    
+
     def __data2export(self, mdata, fields) :
         fdata = []
         for f in fields:
@@ -425,10 +436,14 @@ class PerspectiveDict(MarketState):
             self.__dictPerspective[s] = Perspective(self.exchange, s)
         self.__dictPerspective[s].push(ev)
 
+    __dummy = None
     def snapshot(self, symbol=None) :
         '''@return an array_like data as snapshot, maybe [] or numpy.array
         '''
         if symbol and symbol in self.__dictPerspective.keys():
             return self.__dictPerspective[symbol].snapshot
-        return [0.0] * Perspective.snapsize()
+
+        if not PerspectiveDict.__dummy:
+            PerspectiveDict.__dummy = Perspective(self.exchange, 'Dummy')
+        return [0.0] * PerspectiveDict.__dummy.snapshotSize
 

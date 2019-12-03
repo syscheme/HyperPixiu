@@ -62,6 +62,12 @@ class MarketData(EventData):
                 
         return self.datetime
 
+    @abstractmethod
+    def toFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+        '''
+        @return float[] for numpy
+        '''
+        raise NotImplementedError
 
 ########################################################################
 class TickData(MarketData):
@@ -120,6 +126,41 @@ class TickData(MarketData):
     def desc(self) :
         return 'tick.%s@%s_%dx%s' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S'), self.volume,round(self.price,2))
 
+    def __calculateLean(self, X, Y):
+        lenX = len(X)        
+        if lenX >= len(Y):
+            return 0
+
+        sums= [Y[i] *X[i] for i in range(lenX)]
+        xsqr= [x*x for x in range(lenX)]
+        lean = sum([(sums[i]/xsqr[i]) if xsqr[i]>0 else 0.0 for i in range(lenX)])
+        return lean
+
+    @abstractmethod
+    def toFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+        '''
+        @return float[] for numpy
+        '''
+        if baseline_Price <=0: baseline_Price=1.0
+        if baseline_Volume <=0: baseline_Volume=1.0
+
+        leanAsks = self.__calculateLean(X=[(x- self.price) \
+            for x in [self.a1P, self.a1P, self.a1P, self.a1P, self.a1P]],
+            Y=[self.a1V, self.a1V, self.a1V, self.a1V, self.a1V])
+
+        leanBids = self.__calculateLean(X=[(x- self.price) \
+            for x in [self.b1P, self.b1P, self.b1P, self.b1P, self.b1P] ],
+            Y=[self.b1V, self.b1V, self.b1V, self.b1V, self.b1V])
+
+        return [
+            float(self.open/baseline_Price), 
+            float(self.high/baseline_Price), 
+            float(self.low/baseline_Price), 
+            float(self.price/baseline_Price), 
+            float(self.volume/baseline_Volume),
+            float(leanAsks), float(leanBids)
+            ]
+
 ########################################################################
 class KLineData(MarketData):
     """K线数据"""
@@ -149,6 +190,22 @@ class KLineData(MarketData):
     def OHLCV(self) :
         return self.open, self.high, self.low, self.close, self.volume
     '''
+
+    @abstractmethod
+    def toFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+        '''
+        @return float[] for numpy
+        '''
+        if baseline_Price <=0: baseline_Price=1.0
+        if baseline_Volume <=0: baseline_Volume=1.0
+
+        return [
+            float(self.open/baseline_Price), 
+            float(self.high/baseline_Price), 
+            float(self.low/baseline_Price), 
+            float(self.close/baseline_Price), 
+            float(self.volume/baseline_Volume)
+            ]
 
 ########################################################################
 class DictToKLine(object):

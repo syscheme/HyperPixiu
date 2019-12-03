@@ -55,6 +55,7 @@ class SinaCrawler(MarketCrawler):
         self._depth_1day   = self.getConfig('depth/1day',  260) # for exmaple, thereTrue are 245 trading-days in AShare market during YR2018, so take 280 to keep a year
         self._secYield456  = self.getConfig('yield456',    230)
         self.__excludeAt404= self.getConfig('excludeAt404',True)
+        symbols            = self.getConfig('symbolsToCrawl', [])
 
         self.__tickBatches = None
         self.__idxTickBatch = 0
@@ -66,6 +67,9 @@ class SinaCrawler(MarketCrawler):
         self.__stampYieldTill_KL = None #
 
         self.__step_poll1st() # perform an init-step
+
+        if len(symbols) >0:
+            self.subscribe(symbols)
 
     def duringTradeHours(dt =None) : # to test if the time is in 9:28 ~11:32 and 13:00 ~15:00
         if not dt:
@@ -238,6 +242,9 @@ class SinaCrawler(MarketCrawler):
     #------------------------------------------------
 
     def subscribe(self, symbols):
+        if isinstance(symbols, str):
+            symbols = symbols.split(',')
+
         ret = super(SinaCrawler, self).subscribe([SinaCrawler.fixupSymbolPrefix(s) for s in symbols])
 
         # reset the intermedia vars

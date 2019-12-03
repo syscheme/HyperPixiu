@@ -79,11 +79,11 @@ class Perspective(MarketData):
     '''
     EVENT_SEQ =  [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]
     #----------------------------------------------------------------------
-    def __init__(self, exchange, symbol =None, KLDepth_1min=60, KLDepth_5min=240, KLDepth_1day=220, tickDepth=120):
+    def __init__(self, exchange, symbol =None, KLDepth_1min=60, KLDepth_5min=96, KLDepth_1day=260, tickDepth=120):
         '''Constructor'''
         super(Perspective, self).__init__(exchange, symbol)
 
-        self.__stacks = {
+        self._stacks = {
             EVENT_TICK:       EvictableStack(tickDepth, TickData(self.exchange, self.symbol)),
             EVENT_KLINE_1MIN: EvictableStack(KLDepth_1min, KLineData(self.exchange, self.symbol)),
             EVENT_KLINE_5MIN: EvictableStack(KLDepth_5min, KLineData(self.exchange, self.symbol)),
@@ -97,31 +97,31 @@ class Perspective(MarketData):
     @property
     def desc(self) :
         str = '%s@%s> ' % (self.focus, self.getAsOf(self.focus).strftime('%Y-%m-%dT%H:%M:%S'))
-        for i in [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
-            str += '%sX%d/%d,' % (i[4:], self.__stacks[i].size, self.__stacks[i].evictSize)
+        for i in Perspective.EVENT_SEQ :
+            str += '%sX%d/%d,' % (i[len(MARKETDATE_EVENT_PREFIX):], self._stacks[i].size, self._stacks[i].evictSize)
         return str
 
     @property
     def asof(self) : return self.getAsOf(None)
 
     def getAsOf(self, evType=None) :
-        if not evType or not evType in self.__stacks.keys():
+        if not evType or not evType in self._stacks.keys():
             return self.__stampLast if self.__stampLast else DT_EPOCH
         
-        stack = self.__stacks[evType]
+        stack = self._stacks[evType]
         return DT_EPOCH if stack.size <=0 else stack.top.asof
 
     def sizesOf(self, evType=None) :
         if not evType or len(evType) <=0:
             size =0
             esize =0
-            for k in self.__stacks.keys():
-                size += self.__stacks[k].size
-                esize += self.__stacks[k].evcitSize
+            for k in self._stacks.keys():
+                size += self._stacks[k].size
+                esize += self._stacks[k].evcitSize
             return size, esize
 
-        if evType in self.__stacks.keys():
-            return self.__stacks[evType].size, self.__stacks[evType].evictSize
+        if evType in self._stacks.keys():
+            return self._stacks[evType].size, self._stacks[evType].evictSize
 
         return 0, 0
 
@@ -131,7 +131,7 @@ class Perspective(MarketData):
 
     @property
     def latestPrice(self) :
-        stk = self.__stacks[self.__focusLast]
+        stk = self._stacks[self.__focusLast]
         if stk or stk.size >0:
             return stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
 
@@ -156,7 +156,7 @@ class Perspective(MarketData):
             self.__dayOHLC.volume=0
 
             for et in [EVENT_KLINE_5MIN, EVENT_KLINE_1MIN]:
-                lst = self.__stacks[et]._exportList()
+                lst = self._stacks[et]._exportList()
                 if len(lst) <=0:
                     continue
                 lst.reverse()
@@ -215,12 +215,12 @@ class Perspective(MarketData):
         '''
         @return the ev that has been successully pushed into the proper stack, otherwise None
         '''
-        if not ev or not ev.type in self.__stacks.keys():
+        if not ev or not ev.type in self._stacks.keys():
             return None
 
-        latestevd = self.__stacks[ev.type].top
+        latestevd = self._stacks[ev.type].top
         if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
-            self.__stacks[ev.type].push(ev.data)
+            self._stacks[ev.type].push(ev.data)
             self.__focusLast = ev.type
             if not self.__stampLast or self.__stampLast < ev.data.datetime :
                 self.__stampLast = ev.data.datetime
@@ -230,20 +230,20 @@ class Perspective(MarketData):
             return None # not overwritable
 
         self.__focusLast = ev.type
-        for i in range(self.__stacks[ev.type].size) :
-            if ev.data.datetime > self.__stacks[ev.type][i].datetime :
+        for i in range(self._stacks[ev.type].size) :
+            if ev.data.datetime > self._stacks[ev.type][i].datetime :
                 continue
-            if ev.data.datetime == self.__stacks[ev.type][i] :
-                self.__stacks[ev.type][i] = ev.data
+            if ev.data.datetime == self._stacks[ev.type][i] :
+                self._stacks[ev.type][i] = ev.data
             else :
-                self.__stacks[ev.type].insert(i, ev.data)
-                while self.__stacks[ev.type].evictSize >=0 and self.__stacks[ev.type].size > self.__stacks[ev.type].evictSize:
-                    del(self.__stacks[ev.type]._data[-1])
+                self._stacks[ev.type].insert(i, ev.data)
+                while self._stacks[ev.type].evictSize >=0 and self._stacks[ev.type].size > self._stacks[ev.type].evictSize:
+                    del(self._stacks[ev.type]._data[-1])
             return ev
         
-        self.__stacks[ev.type].insert(-1, ev.data)
-        while self.__stacks[ev.type].evictSize >=0 and self.__stacks[ev.type].size > self.__stacks[ev.type].evictSize:
-            del(self.__stacks[ev.type]._data[-1])
+        self._stacks[ev.type].insert(-1, ev.data)
+        while self._stacks[ev.type].evictSize >=0 and self._stacks[ev.type].size > self._stacks[ev.type].evictSize:
+            del(self._stacks[ev.type]._data[-1])
         return ev
 
 ########################################################################

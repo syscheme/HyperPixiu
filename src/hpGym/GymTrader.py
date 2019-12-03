@@ -425,7 +425,7 @@ class GymTrader(BaseTrader):
         account_state = np.concatenate([stateCapital + statePOS], axis=0)
 
         # part 2. build up the market_state
-        market_state = self._marketState.snapshot()
+        market_state = self._marketState.snapshot('000001')
 
         # return the concatenation of account_state and market_state as gymEnv sate
         return np.concatenate((account_state, market_state))
@@ -540,7 +540,7 @@ if __name__ == '__main__':
     SYMBOL = '000001' # '000540' '000001'
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-    csvdir = '/mnt/m/AShareSample' # '/mnt/m/AShareSample'
+    csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
     csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
     # marketstate = PerspectiveDict('AShare')
     # p.addObj(marketstate)

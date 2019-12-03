@@ -60,6 +60,13 @@ class EvictableStack(object):
     def overwrite(self, item):
         self.__data[0] =item
 
+    def insert(self, index, item):
+        if index <0 or index >= len(self.__data):
+            return
+        self.__data[index] =item
+        while self.evictSize >=0 and self.size > self.evictSize:
+            del(self.__data[-1])
+
     # no pop here: def pop(self):
     #    del(self.__data[-1])
 
@@ -78,6 +85,11 @@ class Perspective(MarketData):
     4. 1day KLines
     '''
     EVENT_SEQ =  [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]
+    TICKPRICES_TO_EXP = 'price,open,high,low,b1P,b2P,b3P,b4P,b5P,a1P,a2P,a3P,a4P,a5P'
+    TICKVOLS_TO_EXP   = 'volume,b1V,b2V,b3V,b4V,b5V,a1V,a2V,a3V,a4V,a5V'
+    KLPRICES_TO_EXP = 'open,high,low,close'
+    KLVOLS_TO_EXP = 'volume'
+
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol =None, KLDepth_1min=60, KLDepth_5min=240, KLDepth_1day=220, tickDepth=120):
         '''Constructor'''
@@ -100,6 +112,16 @@ class Perspective(MarketData):
         for i in [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
             str += '%sX%d/%d,' % (i[4:], self.__stacks[i].size, self.__stacks[i].evictSize)
         return str
+
+    __snapsize=0
+    @staticmethod
+    def snapsize() :
+        if Perspective.__snapsize <=0:
+            for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]:
+                Perspective.__snapsize += self.__stacks[et].evictSize
+            Perspective.__snapsize *= 4
+            Perspective.__snapsize += self.__stacks[EVENT_TICK].evictSize * len((TICKPRICES_TO_EXP +',' + TICKVOLS_TO_EXP).split(','))
+        return Perspective.__snapsize
 
     @property
     def asof(self) : return self.getAsOf(None)
@@ -226,25 +248,63 @@ class Perspective(MarketData):
                 self.__stampLast = ev.data.datetime
             return ev
         
-        if not ev.data.exchange or latestevd.exchange and not '_k2x' in latestevd.exchange and not '_t2k' in latestevd.exchange :
+        if not ev.data.exchange or (latestevd.exchange and not ('_k2x' in latestevd.exchange or '_t2k' in latestevd.exchange)) :
             return None # not overwritable
 
         self.__focusLast = ev.type
         for i in range(self.__stacks[ev.type].size) :
             if ev.data.datetime > self.__stacks[ev.type][i].datetime :
                 continue
-            if ev.data.datetime == self.__stacks[ev.type][i] :
+            if ev.data.datetime == self.__stacks[ev.type][i].datetime :
                 self.__stacks[ev.type][i] = ev.data
             else :
                 self.__stacks[ev.type].insert(i, ev.data)
-                while self.__stacks[ev.type].evictSize >=0 and self.__stacks[ev.type].size > self.__stacks[ev.type].evictSize:
-                    del(self.__stacks[ev.type]._data[-1])
             return ev
         
         self.__stacks[ev.type].insert(-1, ev.data)
         while self.__stacks[ev.type].evictSize >=0 and self.__stacks[ev.type].size > self.__stacks[ev.type].evictSize:
             del(self.__stacks[ev.type]._data[-1])
         return ev
+
+    @property
+    def snapshot(self):
+        result = [0.0] * Perspective.snapsize()
+        if len(self.__stacks[EVENT_KLINE_1DAY]) <=0:
+            return result # snapshot not available
+        
+        price_baseline = self.__stacks[EVENT_KLINE_1DAY].top.close
+        vol_baseline = self.__stacks[EVENT_KLINE_1DAY].top.volume
+
+        # part 1, EVENT_TICK
+        stk = self.__stacks[EVENT_TICK]
+        NULLROW = [0.0] * (len(TICKPRICES_TO_EXP) +len(TICKVOLS_TO_EXP))
+        for i in range(stk.evictSize):
+            if price_baseline <=0 or vol_baseline<=0 or i >= stk.size:
+                result += NULLROW
+                continue
+
+            mdata = stk[i].__dict__
+            result += [float(mdata[f])/price_baseline for f in TICKPRICES_TO_EXP]
+            result += [float(mdata[f])/vol_baseline for f in TICKVOLS_TO_EXP]
+
+        for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]:
+            stk = self.__stacks[et]
+            for i in range(stk.evictSize):
+                if price_baseline <=0 or vol_baseline<=0 or i >= stk.size:
+                    result += NULLROW
+                    continue
+
+                mdata = stk[i].__dict__
+                result += [float(mdata[f])/price_baseline for f in KLPRICES_TO_EXP]
+                result += [float(mdata[f])/vol_baseline for f in KLVOLS_TO_EXP]
+
+        return result
+    
+    def __data2export(self, mdata, fields) :
+        fdata = []
+        for f in fields:
+            fdata.append(float(mdata.__dict__[f]))
+        return fdata
 
 ########################################################################
 class PerspectiveGenerator(Iterable):
@@ -365,7 +425,10 @@ class PerspectiveDict(MarketState):
             self.__dictPerspective[s] = Perspective(self.exchange, s)
         self.__dictPerspective[s].push(ev)
 
-    def snapshot(self) :
+    def snapshot(self, symbol=None) :
         '''@return an array_like data as snapshot, maybe [] or numpy.array
         '''
-        return [] # TODO
+        if symbol and symbol in self.__dictPerspective.keys():
+            return self.__dictPerspective[symbol].snapshot
+        return [0.0] * Perspective.snapsize()
+

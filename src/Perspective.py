@@ -372,11 +372,11 @@ class PerspectiveGenerator(Iterable):
         return None
 
 ########################################################################
-class PerspectiveDict(MarketState):
+class PerspectiveState(MarketState):
 
     def __init__(self, exchange):
         """Constructor"""
-        super(PerspectiveDict, self).__init__(exchange)
+        super(PerspectiveState, self).__init__(exchange)
         self.__dictPerspective ={} # dict of symbol to Perspective
 
     # -- impl of MarketState --------------------------------------------------------------
@@ -443,7 +443,7 @@ class PerspectiveDict(MarketState):
         if symbol and symbol in self.__dictPerspective.keys():
             return self.__dictPerspective[symbol].snapshot
 
-        if not PerspectiveDict.__dummy:
-            PerspectiveDict.__dummy = Perspective(self.exchange, 'Dummy')
-        return [0.0] * PerspectiveDict.__dummy.snapshotSize
+        if not PerspectiveState.__dummy:
+            PerspectiveState.__dummy = Perspective(self.exchange, 'Dummy')
+        return [0.0] * PerspectiveState.__dummy.snapshotSize
 

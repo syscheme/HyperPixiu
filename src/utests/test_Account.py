@@ -16,7 +16,7 @@ class TestAccount(unittest.TestCase):
         p._heartbeatInterval =-1
 
         p.createApp(Account_AShare)
-        pdict = psp.PerspectiveDict('AShare')
+        pdict = psp.PerspectiveState('AShare')
         p.addObj(pdict)
         print('listed all Objects: %s\n' % p.listByType(MetaObj))
 
@@ -29,7 +29,7 @@ class TestAccount(unittest.TestCase):
         p._heartbeatInterval =-1
 
         acc = p.createApp(Account_AShare)
-        pdict = psp.PerspectiveDict('AShare')
+        pdict = psp.PerspectiveState('AShare')
         p.addObj(pdict)
         tdr = p.createApp(BaseTrader)
         print('listed all Objects: %s\n' % p.listByType(MetaObj))

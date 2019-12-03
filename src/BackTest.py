@@ -1373,7 +1373,7 @@ if __name__ == '__main__':
     histdata = PerspectiveGenerator(ps)
     histdata.adaptReader(csvreader, EVENT_KLINE_1MIN)
     
-    marketstate = hist.PlaybackDay('AShare') # = PerspectiveDict('AShare')
+    marketstate = hist.PlaybackDay('AShare') # = PerspectiveState('AShare')
     p.addObj(marketstate)
 
     # btdr = p.createApp(BaseTrader, configNode ='backtest', account=acc)

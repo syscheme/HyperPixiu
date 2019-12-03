@@ -101,7 +101,7 @@ class TestHistoryData(unittest.TestCase):
         reader.setProgram(p)
 
         histdata.adaptReader(reader, md.EVENT_KLINE_1MIN)
-        marketstate = psp.PerspectiveDict('AShare')
+        marketstate = psp.PerspectiveState('AShare')
 
         for i in histdata :
             if psp.EVENT_Perspective != i.type :

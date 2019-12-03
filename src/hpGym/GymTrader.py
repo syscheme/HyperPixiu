@@ -9,7 +9,7 @@ from Account import Account, OrderData, Account_AShare
 from Application import MetaObj
 from Trader import MetaTrader, BaseTrader
 from BackTest import BackTestApp
-from Perspective import PerspectiveDict
+from Perspective import PerspectiveState
 from MarketData import EVENT_TICK, EVENT_KLINE_PREFIX
 
 import hpGym
@@ -160,8 +160,8 @@ class GymTrader(BaseTrader):
         if agentType and agentType in hpGym.GYMAGENT_CLASS.keys():
             self._AGENTCLASS = hpGym.GYMAGENT_CLASS[agentType]
 
-        # step 1. GymTrader always take PerspectiveDict as the market state
-        self._marketState = PerspectiveDict(None)
+        # step 1. GymTrader always take PerspectiveState as the market state
+        self._marketState = PerspectiveState(None)
         self._gymState = None
         self._total_pnl = 0.0
         self._total_reward = 0.0
@@ -180,7 +180,7 @@ class GymTrader(BaseTrader):
 
         # the self._account should be good here
 
-        # step 1. GymTrader always take PerspectiveDict as the market state
+        # step 1. GymTrader always take PerspectiveState as the market state
         self._marketState._exchange = self._account.exchange
         self._account._marketState = self._marketState
 
@@ -543,7 +543,7 @@ if __name__ == '__main__':
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
     csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
     csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
-    # marketstate = PerspectiveDict('AShare')
+    # marketstate = PerspectiveState('AShare')
     # p.addObj(marketstate)
 
     gymtdr = p.createApp(GymTrader, configNode ='trainer', account=acc)

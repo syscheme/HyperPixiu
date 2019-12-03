@@ -36,7 +36,7 @@ class SinaCrawler(MarketCrawler):
             EVENT_KLINE_1DAY: 240,
         }
 
-    SINA_KLQUERY_INTERVAL_MIN = timedelta(microseconds=400*1000) # 400msec, the minimal interval between two KL query in order not to trigger SINA 456
+    SINA_KLQUERY_INTERVAL_MIN = timedelta(microseconds=600*1000) # 600msec, the minimal interval between two KL query in order not to trigger SINA 456
 
     def __init__(self, program, recorder=None, **kwargs):
         """Constructor"""

@@ -54,14 +54,14 @@ class TestCrawler(unittest.TestCase):
         rec.registerCategory(EVENT_TICK, params={'columns': TickData.COLUMNS})
         rec.registerCategory(EVENT_KLINE_5MIN, params={'columns': KLineData.COLUMNS})
         rec.registerCategory(EVENT_KLINE_1DAY, params={'columns': KLineData.COLUMNS})
-        mc = p.createApp(SinaCrawler, configNode ='SinaCrawler', recorder=rec) # md = SinaCrawler(p, None);
+        mc = p.createApp(SinaCrawler, configNode ='crawler', recorder=rec) # md = SinaCrawler(p, None);
         # _, result = md.searchKLines("000002", EVENT_KLINE_5MIN)
         # _, result = md.getRecentTicks('sh601006,sh601005,sh000001,sz000001')
         # _, result = md.getSplitRate('sh601006')
         # print(result)
 
         # mc.subscribe(['601006','sh601005','sh000001','000001'])
-        mc.subscribe(hs300s)
+        # mc.subscribe(hs300s)
 
         p.start()
         p.loop()

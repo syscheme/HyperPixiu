@@ -356,7 +356,7 @@ class Singleton(type):
         return cls._instances[cls]
 
 ########################################################################
-class Iterable(ABC):
+class Iterable(MetaObj):
     ''' A metaclass of Iterable
     '''
     def __init__(self, **kwargs):
@@ -410,6 +410,7 @@ class Iterable(ABC):
                 yield n
                 self.__c +=1
             except StopIteration:
+                self.info('reached the end')
                 break
             except Exception as ex:
                 self.logexception(ex)

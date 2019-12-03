@@ -181,7 +181,7 @@ class TaggedCsvRecorder(Recorder):
             with open(dest, "wb") as df:
                 df.write(compressed)
         os.remove(source)
-        self.info('rotated %s to %s, took %d' % (source, dest, (datetime.now() - stampStart)))
+        self.info('rotated %s to %s, took %s' % (source, dest, (datetime.now() - stampStart)))
 
 
     # impl of BaseApplication

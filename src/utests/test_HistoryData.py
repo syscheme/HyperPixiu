@@ -93,17 +93,22 @@ class TestHistoryData(unittest.TestCase):
         p = Program()
         p._heartbeatInterval =-1
         ps = psp.Perspective('AShare', '000001')
+        
         histdata = psp.PerspectiveGenerator(ps)
+        histdata.setProgram(p)
+
         reader = hist.CsvPlayback(symbol='000001', folder='/mnt/m/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
+        reader.setProgram(p)
+
         histdata.adaptReader(reader, md.EVENT_KLINE_1MIN)
         marketstate = psp.PerspectiveDict('AShare')
 
         for i in histdata :
             if psp.EVENT_Perspective != i.type :
-                p.debug('evnt: %s' % i.desc) 
+                p.info('evnt: %s' % i.desc) 
                 continue
 
-            print('Psp: %s' % i.desc)
+            p.info('Psp: %s' % i.desc)
             marketstate.updateByEvent(i)
             s = i.data.symbol
             p.debug('-> state: asof[%s] symbol[%s] lastPrice[%s] OHLC%s\n' % (marketstate.getAsOf(s).strftime('%Y%m%dT%H:%M:%S'), s, marketstate.latestPrice(s), marketstate.dailyOHLC_sofar(s)))

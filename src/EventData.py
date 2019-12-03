@@ -47,7 +47,7 @@ class Event:
 
     @property
     def desc(self) :
-        return '%s@%s:%s' % (self.__type, self.data.asof.strftime('%Y%m%dT%H%M%S'), self.data.desc)
+        return '%s@%s/%s' % (self.__type, self.data.asof.strftime('%Y-%m-%dT%H:%M:%S'), self.data.desc)
 
 ########################################################################
 class EventData(object):

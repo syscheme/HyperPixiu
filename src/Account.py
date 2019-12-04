@@ -387,13 +387,16 @@ class Account(MetaAccount):
         """委托回调"""
         # order placed, move it from _dictOutgoingOrders to _dictLimitOrders
         with self._lock :
-            del self._dictOutgoingOrders[orderData.reqId]
+            try :
+                del self._dictOutgoingOrders[orderData.reqId]
+            except: pass
+
             if OrderData.STOPORDERPREFIX in orderData.reqId :
                 self._dictStopOrders[orderData.brokerOrderId] = orderData
             else :
                 self._dictLimitOrders[orderData.brokerOrderId] = orderData
 
-        self.info('order[%s] has been placed, brokerOrderId[%s]' % (orderData.desc, orderData.brokerOrderId))
+        self.info('order[%s] has been placed, got brokerOrderId[%s]' % (orderData.desc, orderData.brokerOrderId))
 
         if orderData.direction == OrderData.DIRECTION_LONG:
             turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.totalVolume)
@@ -488,6 +491,7 @@ class Account(MetaAccount):
             pos.price      = trade.price
             pos.direction  = trade.direction      # 持仓方向
             # pos.frozen =  # 冻结数量
+            strPrevPos = '%s/%s' % (pos.posAvail, pos.position)
 
             # update the position of symbol and its average cost
             if trade.direction != OrderData.DIRECTION_LONG:
@@ -497,7 +501,7 @@ class Account(MetaAccount):
                 self.__cashChange(tradeAmount, tradeAmount)
 
                 pos.position -= trade.volume
-                pos.posAvail  -= trade.volume
+                pos.posAvail -= trade.volume
             else :
                 turnover, commission, slippage = self.calcAmountOfTrade(s, trade.price, trade.volume)
                 tradeAmount = turnover + commission + slippage
@@ -515,8 +519,9 @@ class Account(MetaAccount):
                 # TODO: T+0 also need to increase pos.avalPos
                 
             pos.stampByTrader = trade.dt  # the current position is calculated based on trade
-            self.info('broker_onTrade() processed: %s=>pos' % (trade.desc))#, pos.desc))
-
+        
+        cashAvail, cashTotal = self.cashAmount()
+        self.info('broker_onTrade() trade[%s] processed, pos[%s->%s/%s] cash[%.2f/%.2f]' % (trade.desc, strPrevPos, pos.posAvail, pos.position, cashAvail, cashTotal))#, pos.desc))
         self.postEventData(Account.EVENT_TRADE, copy.copy(trade))
 
     def _broker_onOpenOrders(self, dictOrders):
@@ -701,13 +706,13 @@ class Account(MetaAccount):
 
         dAvail /= volprice
         dTotal /= volprice
+        strTxn = 'avail[%s%+.3f] total[%s%+.3f]' % (pos.posAvail, dAvail, pos.position, dTotal)
         
-        self.debug('__cashChange() avail[%s%+.3f] total[%s%+.3f]' % (pos.posAvail, dAvail, pos.position, dTotal))#, pos.desc))
+        self.debug('__cashChange() %s' % strTxn)
         # double check if the cash account goes to negative
         newAvail, newTotal = pos.posAvail + dAvail, pos.position + dTotal
         if newAvail<0 or newTotal <0 or newAvail >(newTotal*1.05):
-            self.error('__cashChange() something wrong: newAvail[%s] newTotal[%s]' % (newAvail, newTotal)) #, pos.desc))
-            exit(-1)
+            raise ValueError('__cashChange() txn[%s] something wrong: newAvail[%s] newTotal[%s]' % (strTxn, newAvail, newTotal))
 
         pos.posAvail = newAvail
         pos.position = newTotal
@@ -767,7 +772,7 @@ class Account(MetaAccount):
         with self._lock :
             # part 1. 汇总 the confirmed trades, and save
             for trade in self._dictTrades.values():
-                if self._dateToday != trade.dt.date():
+                if trade.dt and self._dateToday != trade.dt.date():
                     continue
 
                 cTrades +=1
@@ -782,7 +787,7 @@ class Account(MetaAccount):
                     
                 self._todayResult.txnHist += "%+dx%s" % (posChange, trade.price)
 
-                self._todayResult.tradingPnl += round(posChange * (self.closePrice - trade.price) * account._contractSize, 2)
+                self._todayResult.tradingPnl += round(posChange * (self._marketState.latestPrice(trade.symbol) - trade.price) * self._contractSize, 2)
                 self._todayResult.closePosition += posChange
                 turnover, commission, slippagefee = self.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
                 self._todayResult.turnover += turnover
@@ -806,7 +811,7 @@ class Account(MetaAccount):
                 for dpos in positions:
                     # self._trader.dbUpdate(self.collectionName_dpos, dpos, {'date':dpos['date'], 'symbol':dpos['symbol']})
                     line = self.record(Account.RECCATE_DAILYPOS, dpos)
-                self.info('saveDataOfDay() saved %d positions into DB')
+                self.debug('saveDataOfDay() saved %d positions into DB' % len(positions))
 
         self._datePrevClose = self._dateToday
         self._dateToday = None
@@ -947,7 +952,7 @@ class Account_AShare(Account):
             transfer = int((volumeX1+999)/1000)
             
         #3.券商交易佣金 最高为成交金额的3‰，最低5元起，单笔交易佣金不满5元按5元收取。
-        commission = max(turnOver * self._ratePer10K, 5)
+        commission = max(turnOver * self._ratePer10K /10000, 5)
 
         return turnOver, tax + transfer + commission, volumeX1 * self._slippage
 
@@ -966,7 +971,9 @@ class Account_AShare(Account):
             for pos in self._dictPositions.values():
                 if self.cashSymbol == pos.symbol:
                     continue
-                self.debug('onDayOpen() shifting pos[%s] %s to avail %s' % (pos.symbol, pos.position, pos.posAvail))
+
+                if pos.position != pos.posAvail :
+                    self.info('onDayOpen() %s shifting %s pos[%s] into avail-pos[%s]' % (self._dateToday, pos.symbol, pos.position, pos.posAvail))
                 pos.posAvail = pos.position
 
         #TODO: sync with broker
@@ -989,21 +996,21 @@ class OrderData(EventData):
     STOPORDER_TRIGGERED = 'TRIGGERED' #u'已触发'
 
     # 方向常量
-    DIRECTION_NONE = 'none'
-    DIRECTION_LONG = 'long'
-    DIRECTION_SHORT = 'short'
-    DIRECTION_UNKNOWN = 'unknown'
-    DIRECTION_NET =  'net'
-    DIRECTION_SELL = 'sell'      # IB接口
-    DIRECTION_COVEREDSHORT = u'covered short'    # 证券期权
+    DIRECTION_NONE = 'NONE'
+    DIRECTION_LONG = 'LONG'
+    DIRECTION_SHORT = 'SHORT'
+    DIRECTION_UNKNOWN = 'UNKNOWN'
+    DIRECTION_NET =  'NET'
+    DIRECTION_SELL = 'SELL'  # IB接口
+    DIRECTION_COVEREDSHORT = 'COVERED_SHORT'    # 证券期权
 
     # 开平常量
-    OFFSET_NONE = u'none'
-    OFFSET_OPEN = u'open'
-    OFFSET_CLOSE = u'close'
-    OFFSET_CLOSETODAY = u'close today'
-    OFFSET_CLOSEYESTERDAY = u'close yesterday'
-    OFFSET_UNKNOWN = u'unknown'
+    OFFSET_NONE = 'none'
+    OFFSET_OPEN = 'open'
+    OFFSET_CLOSE = 'close'
+    OFFSET_CLOSETODAY = 'close today'
+    OFFSET_CLOSEYESTERDAY = 'close yesterday'
+    OFFSET_UNKNOWN = 'unknown'
 
     # 状态常量
     STATUS_CREATED    = 'created'
@@ -1050,7 +1057,7 @@ class OrderData(EventData):
 
     @property
     def desc(self) :
-        return '%s(%s)-%s: %dx%s' % (self.direction, self.symbol, self.reqId, self.totalVolume, self.price)
+        return 'O%s:%s(%s) %dx%s' % (self.reqId, self.direction, self.symbol, self.totalVolume, self.price)
 
 # ########################################################################
 # take the same as OrderData
@@ -1107,7 +1114,7 @@ class TradeData(EventData):
    
     @property
     def desc(self) :
-        return '%s(%s)-%s: %dx%s' % (self.direction, self.symbol, self.brokerTradeId, self.volume, self.price)
+        return 'T%s:%s(%s) %dx%s' % (self.brokerTradeId, self.direction, self.symbol, self.volume, round(self.price, 3))
 
 ########################################################################
 class PositionData(EventData):
@@ -1192,8 +1199,8 @@ class DailyPosition(object):
         # 持仓部分
         self.positionPnl = round(prevPos.position * (currentPos.price - currentPos.avgPrice) * account._contractSize, 3)
 
-        if ohlc:
-            _, self.execOpen, self.execHigh, self.execLow, _ = ohlc
+        # TODO if ohlc:
+        #     _, self.execOpen, self.execHigh, self.execLow, _ = ohlc
 
         # self.calcMValue  = round(calcPosition*currentPos.price*self._contractSize , 2),     # 昨日收盘
     def pushTrade(self, account, trade) :

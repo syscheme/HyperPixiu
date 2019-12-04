@@ -154,6 +154,7 @@ class GymTrader(BaseTrader):
 
         self._agent = None
         self._timeCostYrRate = self.getConfig('timeCostYrRate', 0)
+        self._tradeSymbol    = self.getConfig('tradeSymbol', '000001')
         #TODO: the separate the Trader for real account and training account
         
         self.__1stRender = True
@@ -264,17 +265,16 @@ class GymTrader(BaseTrader):
         # step 1. collected information from the account
         cashAvail, cashTotal, positions = self.getAccountState()
         capitalBeforeStep = self.__summrizeAccount(positions, cashTotal)
+        if capitalBeforeStep <1000 : 
+            self._quitEpisode =True
 
         # TODO: the first version only support one symbol to play, so simply take the first symbol in the positions        
-        symbol = None # TODO: should take the __dictOberserves
-        latestPrice = 0
+        symbol = self._tradeSymbol # TODO: should take the __dictOberserves
+        latestPrice = self._marketState.latestPrice(symbol)
         posAvail =0
-        for s, pos in positions.values() :
-            symbol =  s
-            latestPrice = pos.price
-            posAvailVol = pos.posAvail
-            capitalBeforeStep += pos.price * pos.position * self._account.contractSize
-            break
+        if symbol in positions.keys() :
+            pos = positions[symbol]
+            posAvail = pos.posAvail
 
         reward = - self._timeCostYrRate # initialize with a time cost
         # reward = - capitalBeforeStep *self._timeCostYrRate/100/365
@@ -288,18 +288,19 @@ class GymTrader(BaseTrader):
         # step 2. perform the action buy/sell/hold by driving self._account
         if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]):
             # TODO: the first version only support FULL-BUY and FULL-SELL
-            price  = latestPrice + self._account.priceTick
-            volume = round(cashAvail / latestPrice / self._account.contractSize, 0)
-            vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, price, volume, strategy=None)
+            price  = round(latestPrice + self._account.priceTick, 2)
+            volume = round((cashAvail-1000) / latestPrice / self._account.contractSize, 0)
+            if volume >0:
+                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, price, volume, strategy=None)
             # cash will be updated in callback onOrderPlaced()
             # turnover, commission, slippage = self._account.calcAmountOfTrade(symbol, price, volume)
             # reward -= commission + slippage # TODO maybe after the order is comfirmed
         elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]) and posAvail >0:
-            price  = latestPrice - self._account.priceTick
+            price  = round(latestPrice - self._account.priceTick, 2)
             if price <= self._account.priceTick :
                 price = self._account.priceTick 
 
-            volume = - posAvail
+            volume = posAvail
             vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, price, volume, strategy=None)
             # cash will be updated in callback onOrderPlaced()
             # turnover, commission, slippage = self._account.calcAmountOfTrade(symbol, price, volume)
@@ -430,7 +431,7 @@ class GymTrader(BaseTrader):
             # for c in POS_COLS:
             #     row.append(pos.__dict__[c])
             # statePOS.append(row)
-            statePOS = [pos.position, pos.posAvailVol, pos.price, pos.avgPrice]
+            statePOS = [pos.position, pos.posAvail, pos.price, pos.avgPrice]
             break
 
         account_state = np.concatenate([stateCapital + statePOS], axis=0)

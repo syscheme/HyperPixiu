@@ -76,7 +76,8 @@ class BackTestApp(MetaTrader):
         except:
             pass
 
-        self.__dtData = self._btStartDate
+        self._dtData = self._btStartDate
+        self._quitEpisode = False
 
     @property
     def episodeId(self) :
@@ -114,13 +115,13 @@ class BackTestApp(MetaTrader):
 
     def debug(self, message):
         """输出内容"""
-        if self.__dtData:
-            message = '@%s ' % self.__dtData.strftime('%Y%m%dT%H%M%S') + message
+        if self._dtData:
+            message = '@%s ' % self._dtData.strftime('%Y%m%dT%H%M%S') + message
         super(BackTestApp, self).debug(message)
     
     def log(self, level, message):
-        if self.__dtData:
-            message = '@%s ' % self.__dtData.strftime('%Y%m%dT%H%M%S') + message
+        if self._dtData:
+            message = '@%s ' % self._dtData.strftime('%Y%m%dT%H%M%S') + message
         super(BackTestApp, self).log(level, message)
 
     def doAppInit(self): # return True if succ
@@ -151,12 +152,14 @@ class BackTestApp(MetaTrader):
         #         obj["ds1min"] += MarketData.TAG_BACKTEST
 
         self.resetEpisode()
+        _quitEpisode = False
         return True
 
     def doAppStep(self):
         super(BackTestApp, self).doAppStep()
+        self._account.doAppStep()
 
-        if self.__wkHistData :
+        if self.__wkHistData and not self._quitEpisode:
             try :
                 ev = next(self.__wkHistData)
                 if not ev : return
@@ -166,11 +169,11 @@ class BackTestApp(MetaTrader):
                 self.OnEvent(ev) # call Trader
                 self.__stepNoInEpisode += 1
                 return # successfully pushed an Event
+
             except StopIteration:
-                pass
+                self.debug('hist-read: end of playback')
 
         # this test should be done if reached here
-        self.debug('hist-read: end of playback')
         self.OnEpisodeDone()
 
         self.__episodeNo +=1
@@ -181,13 +184,14 @@ class BackTestApp(MetaTrader):
             return
 
         self.resetEpisode()
+        self._quitEpisode =True
 
     def OnEvent(self, ev): 
         # step 2. 收到行情后，在启动策略前的处理
         evd = ev.data
         matchNeeded = False
-        if not self.__dtData or self.__dtData < evd.asof :
-            self.__dtData = evd.asof
+        if not self._dtData or self._dtData < evd.asof :
+            self._dtData = evd.asof
             self._dataEnd_date = evd.date
             if EVENT_TICK == ev.type:
                 self._dataEnd_closeprice = evd.priceTick
@@ -267,7 +271,7 @@ class BackTestApp(MetaTrader):
         # step 3. wrapper the broker drivers of the accounts
         if self._originAcc and not isinstance(self._originAcc, AccountWrapper):
             self._program.removeApp(self._originAcc.ident)
-            self._account = AccountWrapper(self, account=copy.copy(self._originAcc)) # duplicate the original account for test espoches
+            self._account = AccountWrapper(self._program, btTrader =self, account=copy.copy(self._originAcc)) # duplicate the original account for test espoches
             self._account._trader = self # adopt the account by pointing its._trader to self
             self._account.setCapital(self._startBalance, True)
             self._program.addApp(self._account)
@@ -286,7 +290,7 @@ class BackTestApp(MetaTrader):
         # 当前最新数据，用于模拟成交用
         self.tick = None
         self.bar  = None
-        self.__dtData  = None      # 最新数据的时间
+        self._dtData  = None      # 最新数据的时间
 
         if self._marketState :
             for i in range(30) : # initially feed 20 data from histread to the marketstate
@@ -685,13 +689,13 @@ class BackTestApp(MetaTrader):
         # ---------------------------
         # 到最后交易日尚未平仓的交易，则以最后价格平仓
         for trade in buyTrades:
-            result = TradingResult(trade.price, trade.dt, self._dataEnd_closeprice, self.__dtData, 
+            result = TradingResult(trade.price, trade.dt, self._dataEnd_closeprice, self._dtData, 
                                    trade.volume, self._ratePer10K, self._slippage, self._account.size)
             self.resultList.append(result)
             txnstr += '%+dx%.2f' % (trade.volume, trade.price)
             
         for trade in sellTrades:
-            result = TradingResult(trade.price, trade.dt, self._dataEnd_closeprice, self.__dtData, 
+            result = TradingResult(trade.price, trade.dt, self._dataEnd_closeprice, self._dtData, 
                                    -trade.volume, self._ratePer10K, self._slippage, self._account.size)
             self.resultList.append(result)
             txnstr += '%-dx%.2f' % (trade.volume, trade.price)
@@ -933,13 +937,14 @@ class AccountWrapper(MetaAccount):
     """
 
     #----------------------------------------------------------------------
-    def __init__(self, program, account, **kwargs) :
+    def __init__(self, program, btTrader, account, **kwargs) :
         """Constructor"""
 
         super(AccountWrapper, self).__init__(program, **kwargs)
 
-        # self._btTrader = btTrader             # refer to the BackTest engine
+        self._btTrader = btTrader   # refer to the BackTest App
         self._nest  = account
+        # self._nest._mode = Account.BROKER_API_SYNC
         self._tradeCount = 0
 
         # 日线回测结果计算用
@@ -966,7 +971,7 @@ class AccountWrapper(MetaAccount):
         cStep =0
 
         with self._nest._lock:
-            outgoingOrders = copy.deepcopy(self._nest._dictOutgoingOrders.values())
+            outgoingOrders = copy.deepcopy(list(self._nest._dictOutgoingOrders.values()))
 
             # find out he orderData by brokerOrderId
             for odid in self._nest._lstOrdersToCancel :
@@ -1029,13 +1034,13 @@ class AccountWrapper(MetaAccount):
     def cashChange(self, dAvail=0, dTotal=0): return self._nest.cashChange(dAvail, dTotal)
     def record(self, dbName, collectionName, data): return self._nest.record(dbName, collectionName, data)
     def postEvent_Order(self, orderData): return self._nest.postEvent_Order(orderData)
-    def sendOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendOrder(vtSymbol, orderType, price, volume, strategy)
+    # def sendOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendOrder(vtSymbol, orderType, price, volume, strategy)
     def cancelOrder(self, brokerOrderId): return self._nest.cancelOrder(brokerOrderId)
     def batchCancel(self, brokerOrderIds): return self._nest.batchCancel(brokerOrderIds)
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendStopOrder(vtSymbol, orderType, price, volume, strategy)
     def findOrdersOfStrategy(self, strategyId, symbol=None): return self._nest.findOrdersOfStrategy(strategyId, symbol)
     
-    def datetimeAsOfMarket(self): return self.__dtData
+    def datetimeAsOfMarket(self): return self._dtData
     def _broker_onOrderPlaced(self, orderData): return self._nest._broker_onOrderPlaced(orderData)
     def _broker_onCancelled(self, orderData): return self._nest._broker_onCancelled(orderData)
     def _broker_onOrderDone(self, orderData): return self._nest._broker_onOrderDone(orderData)
@@ -1074,6 +1079,36 @@ class AccountWrapper(MetaAccount):
     #------------------------------------------------
     # overwrite of Account
     #------------------------------------------------    
+    def sendOrder(self, symbol, orderType, price, volume, strategy):
+        source = 'ACCOUNT'
+        if strategy:
+            source = strategy.id
+
+        orderData = OrderData(self)
+        # 代码编号相关
+        orderData.symbol      = symbol
+        orderData.exchange    = self._exchange
+        orderData.price       = self.roundToPriceTick(price) # 报单价格
+        orderData.totalVolume = volume    # 报单总数量
+        orderData.source      = source
+
+        # 报单方向
+        if orderType == OrderData.ORDER_BUY:
+            orderData.direction = OrderData.DIRECTION_LONG
+            orderData.offset = OrderData.OFFSET_OPEN
+        elif orderType == OrderData.ORDER_SELL:
+            orderData.direction = OrderData.DIRECTION_SHORT
+            orderData.offset = OrderData.OFFSET_CLOSE
+        elif orderType == OrderData.ORDER_SHORT:
+            orderData.direction = OrderData.DIRECTION_SHORT
+            orderData.offset = OrderData.OFFSET_OPEN
+        elif orderType == OrderData.ORDER_COVER:
+            orderData.direction = OrderData.DIRECTION_LONG
+            orderData.offset = OrderData.OFFSET_CLOSE     
+
+        self._broker_placeOrder(orderData)
+        return orderData.reqId
+
     def _broker_placeOrder(self, orderData):
         """发单"""
         orderData.brokerOrderId = "$" + orderData.reqId
@@ -1136,7 +1171,7 @@ class AccountWrapper(MetaAccount):
         if EVENT_TICK == ev.type:
             tkdata = ev.data
             symbol = tkdata.symbol
-            self.__dtData = tkdata.datetime
+            self._dtData = tkdata.datetime
             buyCrossPrice      = tkdata.a1P
             sellCrossPrice     = tkdata.b1P
             buyBestCrossPrice  = tkdata.a1P
@@ -1144,7 +1179,7 @@ class AccountWrapper(MetaAccount):
         elif EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
             kldata = ev.data
             symbol = kldata.symbol
-            self.__dtData = kldata.datetime
+            self._dtData = kldata.datetime
             bestPrice          = round(((kldata.open + kldata.close) *4 + kldata.high + kldata.low) /10, 2)
 
             buyCrossPrice      = kldata.low        # 若买入方向限价单价格高于该价格，则会成交
@@ -1219,7 +1254,7 @@ class AccountWrapper(MetaAccount):
                 trade.volume    = order.totalVolume
                 trade.dt        = self._btTrader._dtData
                 # trade.tradeTime = self._btTrader._dtData.strftime('%H:%M:%S')
-                # trade.dt = self.__dtData
+                # trade.dt = self._dtData
                 if buyCross:
                     trade.price = min(order.price, buyBestCrossPrice)
                 else:
@@ -1293,8 +1328,8 @@ class AccountWrapper(MetaAccount):
         #         trade.direction = so.direction
         #         trade.offset = so.offset
         #         trade.volume = so.volume
-        #         trade.tradeTime = self.__dtData.strftime('%H:%M:%S')
-        #         trade.dt = self.__dtData
+        #         trade.tradeTime = self._dtData.strftime('%H:%M:%S')
+        #         trade.dt = self._dtData
                     
         #         self._dictTrades[tradeID] = trade
                     
@@ -1325,13 +1360,18 @@ class AccountWrapper(MetaAccount):
         # ---------------------------
         # 结算日
         # ---------------------------
+        # step 1 fake a if newDate == self._dateToday
+        fakedTomorrow = (datetime.strptime(self._nest._dateToday, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d') if self._nest._dateToday else '2999-12-31'
+        self._nest.info('OnPlaybackEnd() faking a day-open(%s)' % fakedTomorrow)
+        self.onDayOpen(fakedTomorrow)
+
         # step 1 到最后交易日尚未平仓的交易，则以最后价格平仓
-        self._nest.debug('OnPlaybackEnd() faking trade to flush out all positions')
+        self._nest.info('OnPlaybackEnd() faking trades to clean all positions into cash')
         currentPositions = self.getAllPositions()
         for symbol, pos in currentPositions.items() :
             if symbol == self.cashSymbol:
                 continue
-            
+
             # fake a sold-succ trade into self._dictTrades
             self._tradeCount += 1            # 成交编号自增1
             trade = TradeData(self._nest)
@@ -1342,16 +1382,12 @@ class AccountWrapper(MetaAccount):
             trade.orderID = 'O' + trade.orderReq
             trade.direction = OrderData.DIRECTION_SHORT
             trade.offset = OrderData.OFFSET_CLOSE
-            trade.price  = self._btTrader.latestPrice(trade.symbol)
-            trade.volume = pos.position
+            trade.price  = pos.price
+            trade.volume = pos.posAvail
             trade.dt     = self._btTrader._dtData
 
             self._broker_onTrade(trade)
-            self._nest.debug('OnPlaybackEnd() faked trade: %s' % trade.desc)
-
-        # step 2 enforce a day-close
-        self._nest.debug('OnPlaybackEnd() enforcing a day-close')
-        self.onDayClose()
+            self._nest.info('OnPlaybackEnd() faked a trade: %s' % trade.desc)
 
 
 if __name__ == '__main__':

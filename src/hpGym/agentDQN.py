@@ -165,8 +165,7 @@ class agentDQN(MetaAgent):
         # class_weight：字典，将不同的类别映射为不同的权值，该参数用来在训练过程中调整损失函数（只能用于训练）
         # sample_weight：权值的numpy array，用于在训练时调整损失函数（仅用于训练）。可以传递一个1D的与样本等长的向量用于对样本进行1对1的加权，或者在面对时序数据时，传递一个的形式为（samples，sequence_length）的矩阵来为每个时间步上的样本赋不同的权。这种情况下请确定在编译模型时添加了sample_weight_mode=’temporal’。
         # initial_epoch: 从该参数指定的epoch开始训练，在继续之前的训练时有用。
-        return self._brain.fit(x=state, y=q_target, epochs=1,
-                            batch_size=self._batchSize, verbose=0)
+        return self._brain.fit(x=state, y=q_target, epochs=1, batch_size=self._batchSize, verbose=0)
 
     def __get_batches(self):
         '''Selecting a batch of memory

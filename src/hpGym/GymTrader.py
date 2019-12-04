@@ -30,6 +30,8 @@ mpl.rcParams.update(
     }
 )
 
+DUMMY_LOSS = 999999.9
+
 ########################################################################
 class MetaAgent(MetaObj): # TODO:
     def __init__(self, gymTrader, **kwargs):
@@ -163,11 +165,15 @@ class GymTrader(BaseTrader):
         # step 1. GymTrader always take PerspectiveState as the market state
         self._marketState = PerspectiveState(None)
         self._gymState = None
+        self.__recentLoss = None
         self._total_pnl = 0.0
         self._total_reward = 0.0
 
         # self.n_actions = 3
         # self._prices_history = []
+    @property
+    def loss(self) :
+        return round(self.__recentLoss.history["loss"][0], 6) if self.__recentLoss else DUMMY_LOSS
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -200,14 +206,19 @@ class GymTrader(BaseTrader):
         # perform some dummy steps in order to fill agent._memory[]
 
 
-    def OnEvent(self, ev): 
-        # step 2. 收到行情后，在启动策略前的处理
-        self._marketState.updateByEvent(ev)
+    def proc_MarketEvent(self, ev):
+        '''processing an incoming MarketEvent'''
+
         self._action = self._agent.gymAct(self._gymState)
         next_state, reward, done, _ = self.gymStep(self._action)
+    
         loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, done)
+        if loss: self.__recentLoss =loss
+
         self._gymState = next_state
         # self._total_reward += reward has already been performed in above self.gymStep()
+
+        self.debug('proc_MarketEvent(%s) processed' % (ev.desc))
 
     # end of impl/overwrite of BaseApplication
     #----------------------------------------------------------------------
@@ -480,6 +491,7 @@ class GymTrainer(BackTestApp):
         '''
         super(GymTrainer, self).__init__(program, trader, histdata, **kwargs)
         self._iterationsPerEpisode = self.getConfig('iterationsPerEpisode', 1)
+        self.__lossOfLastEpisode = DUMMY_LOSS
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -514,8 +526,10 @@ class GymTrainer(BackTestApp):
     # BackTest related entries
     def OnEpisodeDone(self):
         super(GymTrainer, self).OnEpisodeDone()
-        self.info('OnEpisodeDone() trained episode[%d/%d], total-reward[%s] epsilon[%s] loss[%d]' % (self.__episodeNo, self._episodes, 
-            round(self.wkTrader._total_reward, 2), round(self.wkTrader._agent.epsilon, 2), round(self.wkTrader.loss.history["loss"][0], 4) ))
+        self.info('OnEpisodeDone() trained episode[%s/%d], total-reward[%s] epsilon[%s] loss[%s->%s]' % (self.episodeId, self._episodes, 
+            round(self.wkTrader._total_reward, 2), round(self.wkTrader._agent._epsilon, 2), self.__lossOfLastEpisode, self.wkTrader.loss))
+
+        self.__lossOfLastEpisode = self.wkTrader.loss
 
         # maybe self.wkTrader.gymRender()
 

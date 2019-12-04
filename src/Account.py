@@ -763,8 +763,6 @@ class Account(MetaAccount):
         self.debug('onDayClose() calculating daily result')
         cTrades =0
         positions, _ = self.calcDailyPositions()
-        if not self._todayResult and self._dateToday :
-            self._todayResult = DailyResult(self._dateToday, closePrice=0)
 
         with self._lock :
             # part 1. 汇总 the confirmed trades, and save

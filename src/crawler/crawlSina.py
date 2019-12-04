@@ -305,7 +305,7 @@ class SinaCrawler(MarketCrawler):
         jsonData = demjson.decode(text)
 
         for kl in jsonData :
-            kldata = KLineData("ASHARE", symbol)
+            kldata = KLineData("AShare", symbol)
             kldata.open = kl['open']             # OHLC
             kldata.high = kl['high']             # OHLC
             kldata.low = kl['low']             # OHLC
@@ -370,7 +370,7 @@ class SinaCrawler(MarketCrawler):
 
             ncols = min([len(HEADERS), len(row)])
             d = {HEADERS[i]:row[i] for i in range(ncols)}
-            tickdata = TickData("ASHARE", s)
+            tickdata = TickData("AShare", s)
             tickdata.price = float(d['price'])
             tickdata.volume = float(d['volume'])
             tickdata.total = float(d['total'])

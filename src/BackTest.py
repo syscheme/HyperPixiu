@@ -203,9 +203,9 @@ class BackTestApp(MetaTrader):
             if not self._dataBegin_date:
                 self._dataBegin_date = evd.date
                 if EVENT_TICK == ev.type:
-                    self._dataBegin_closeprice = evd.price
+                    self._dataBegin_openprice = evd.price
                 elif EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
-                    self._dataBegin_closeprice = evd.close
+                    self._dataBegin_openprice = evd.close
 
         if matchNeeded :
             self._account.matchTrades(ev)
@@ -282,7 +282,7 @@ class BackTestApp(MetaTrader):
         self.__wkHistData.resetRead()
            
         self._dataBegin_date = None
-        self._dataBegin_closeprice = 0.0
+        self._dataBegin_openprice = 0.0
         
         self._dataEnd_date = None
         self._dataEnd_closeprice = 0.0
@@ -329,14 +329,15 @@ class BackTestApp(MetaTrader):
             tradeDays.to_csv(csvfile)
             
         originGain = 0.0
-        if self._dataBegin_closeprice >0 :
-            originGain = (self._dataEnd_closeprice - self._dataBegin_closeprice)*100 / self._dataBegin_closeprice
+        if self._dataBegin_openprice >0 :
+            originGain = (self._dataEnd_closeprice - self._dataBegin_openprice)*100 / self._dataBegin_openprice
 
         # 输出统计结果
         strReport = leadingReportPage if leadingReportPage else ''
         strReport += '\n%s_R%d took %s' %(self.ident, self.__episodeNo, str(datetime.now() - self.__execStamp_episodeStart))
         strReport += u'\n    回放始末: %-10s ~ %-10s'  % (self._btStartDate.strftime('%Y-%m-%d'), self._btEndDate.strftime('%Y-%m-%d'))
-        strReport += u'\n  交易日始末: %-10s(close:%.2f) ~ %-10s(close:%.2f): %s日 %s%%' % (summary['startDate'], self._dataBegin_closeprice, summary['endDate'], self._dataEnd_closeprice, summary['totalDays'], formatNumber(originGain))
+        strReport += u'\n  交易日始末: %-10s(open:%.2f) ~ %-10s(close:%.2f): %s/%s日 %s%%' % (summary['startDate'], self._dataBegin_openprice, summary['endDate'], self._dataEnd_closeprice, 
+                            summary['daysHaveTrade'], summary['totalDays'], formatNumber(originGain))
         strReport += u'\n    盈亏日数: 盈利%s, 亏损%s'  % (summary['profitDays'], summary['lossDays'])
         
         strReport += u'\n    起始资金: %-12s' % formatNumber(self._startBalance,2)
@@ -363,8 +364,8 @@ class BackTestApp(MetaTrader):
         strReport += u'\n  收益标准差: %s%%' % formatNumber(summary['returnStd'])
 
         '''
-        strReport += u'\n%10s: %-8s(close:%.2f) ~ %-8s(close:%.2f): %s%%' % ('回放始末', self._dataBegin_date, self._dataBegin_closeprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain))
-        strReport += u'\n%10s: %-8s(close:%.2f) ~ %-8s(close:%.2f)'       % ('交易始末', summary['startDate'], self._dataBegin_closeprice, summary['endDate'], self._dataEnd_closeprice)
+        strReport += u'\n%10s: %-8s(close:%.2f) ~ %-8s(close:%.2f): %s%%' % ('回放始末', self._dataBegin_date, self._dataBegin_openprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain))
+        strReport += u'\n%10s: %-8s(close:%.2f) ~ %-8s(close:%.2f)'       % ('交易始末', summary['startDate'], self._dataBegin_openprice, summary['endDate'], self._dataEnd_closeprice)
         strReport += u'\n%10s: %s (盈利%s, 亏损%s)' % ('交易日数', summary['totalDays'], summary['profitDays'], summary['lossDays'])
         
         strReport += u'\n%10s: %s'   % ('起始资金', formatNumber(self._startBalance))
@@ -539,13 +540,13 @@ class BackTestApp(MetaTrader):
 
         d = self.calculateTransactions()
         originGain = 0.0
-        if self._dataBegin_closeprice >0 :
-            originGain = (self._dataEnd_closeprice - self._dataBegin_closeprice)*100/self._dataBegin_closeprice
+        if self._dataBegin_openprice >0 :
+            originGain = (self._dataEnd_closeprice - self._dataBegin_openprice)*100/self._dataBegin_openprice
 
         # 输出
         self.debug('-' * 30)
-        self.debug(u'回放日期  :%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._dataBegin_date, self._dataBegin_closeprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain)))
-        self.debug(u'交易日期  :%s(close:%.2f)~%s(close:%.2f)' % (d['timeList'][0], self._dataBegin_closeprice, d['timeList'][-1], self._dataEnd_closeprice))
+        self.debug(u'回放日期  :%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._dataBegin_date, self._dataBegin_openprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain)))
+        self.debug(u'交易日期  :%s(close:%.2f)~%s(close:%.2f)' % (d['timeList'][0], self._dataBegin_openprice, d['timeList'][-1], self._dataEnd_closeprice))
         
         self.debug(u'总交易次数  :%s' % formatNumber(d['totalResult'],0))        
         self.debug(u'总盈亏  :%s' % formatNumber(d['capital']))
@@ -836,6 +837,7 @@ def calculateSummary(startBalance, dayResultDict):
     totalDays  = len(df)
     profitDays = len(df[df['netPnl']>0])
     lossDays   = len(df[df['netPnl']<0])
+    cDaysHaveTrade = len(df[df['tcBuy'] + df['tcSell'] >0])
     
     endBalance   = round(df['balance'].iloc[-1],2)
     maxDrawdown  = round(df['drawdown'].min(),2)
@@ -890,7 +892,8 @@ def calculateSummary(startBalance, dayResultDict):
         'annualizedReturn': annualizedReturn,
         'dailyReturn': dailyReturn,
         'returnStd': returnStd,
-        'sharpeRatio': sharpeRatio
+        'sharpeRatio': sharpeRatio,
+        'daysHaveTrade': cDaysHaveTrade
     }
     
     return df, summary

@@ -496,7 +496,7 @@ class GymTrainer(BackTestApp):
 
         if not self._dataBegin_date:
             self._dataBegin_date = self._dataEnd_date
-            self._dataBegin_closeprice = self._dataEnd_closeprice
+            self._dataBegin_openprice = self._dataEnd_closeprice
 
         
     # end of BaseApplication routine

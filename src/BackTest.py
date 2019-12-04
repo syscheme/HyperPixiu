@@ -77,7 +77,7 @@ class BackTestApp(MetaTrader):
             pass
 
         self._dtData = self._btStartDate
-        self._quitEpisode = False
+        self._episodeDone = False
 
     @property
     def episodeId(self) :
@@ -159,7 +159,7 @@ class BackTestApp(MetaTrader):
         super(BackTestApp, self).doAppStep()
         self._account.doAppStep()
 
-        if self.__wkHistData and not self._quitEpisode:
+        if self.__wkHistData and not self._episodeDone:
             try :
                 ev = next(self.__wkHistData)
                 if not ev : return
@@ -171,7 +171,7 @@ class BackTestApp(MetaTrader):
                 return # successfully pushed an Event
 
             except StopIteration:
-                self.debug('hist-read: end of playback')
+                self.info('hist-read: end of playback')
 
         # this test should be done if reached here
         self.OnEpisodeDone()
@@ -184,7 +184,7 @@ class BackTestApp(MetaTrader):
             return
 
         self.resetEpisode()
-        self._quitEpisode =True
+        self._episodeDone =False
 
     def OnEvent(self, ev): 
         # step 2. 收到行情后，在启动策略前的处理
@@ -194,7 +194,7 @@ class BackTestApp(MetaTrader):
             self._dtData = evd.asof
             self._dataEnd_date = evd.date
             if EVENT_TICK == ev.type:
-                self._dataEnd_closeprice = evd.priceTick
+                self._dataEnd_closeprice = evd.price
                 matchNeeded = True
             elif EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
                 self._dataEnd_closeprice = evd.close
@@ -203,7 +203,7 @@ class BackTestApp(MetaTrader):
             if not self._dataBegin_date:
                 self._dataBegin_date = evd.date
                 if EVENT_TICK == ev.type:
-                    self._dataBegin_closeprice = evd.priceTick
+                    self._dataBegin_closeprice = evd.price
                 elif EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
                     self._dataBegin_closeprice = evd.close
 
@@ -232,11 +232,11 @@ class BackTestApp(MetaTrader):
     #------------------------------------------------
     # 数据回放结果计算相关
 
-    def OnEpisodeDone(self):
+    def OnEpisodeDone(self, leadingReportPage=''):
         self._account.OnPlaybackEnd()
         self.info('OnEpisodeDone() episode[%d/%d], processed %d events took %s, generating report' % (self.__episodeNo, self._episodes, self.__stepNoInEpisode, str(datetime.now() - self.__execStamp_episodeStart)))
         try :
-            self.generateReport()
+            self.generateReport(leadingReportPage)
         except Exception as ex:
             self.error("generateReport() caught exception %s %s" % (ex, traceback.format_exc()))
 
@@ -311,7 +311,7 @@ class BackTestApp(MetaTrader):
         return True
 
     #----------------------------------------------------------------------
-    def generateReport(self, tradeDays=None, summary=None):
+    def generateReport(self, leadingReportPage='', tradeDays=None, summary=None):
         """显示按日统计的交易结果"""
         if tradeDays is None:
             tradeDays, summary = calculateSummary(self._startBalance, self._account.dailyResultDict)
@@ -333,26 +333,26 @@ class BackTestApp(MetaTrader):
             originGain = (self._dataEnd_closeprice - self._dataBegin_closeprice)*100 / self._dataBegin_closeprice
 
         # 输出统计结果
-        strReport = '%s_R%d took %s' %(self.ident, self.__episodeNo, str(datetime.now() - self.__execStamp_episodeStart))
+        strReport = leadingReportPage if leadingReportPage else ''
+        strReport += '\n%s_R%d took %s' %(self.ident, self.__episodeNo, str(datetime.now() - self.__execStamp_episodeStart))
         strReport += u'\n    回放始末: %-10s ~ %-10s'  % (self._btStartDate.strftime('%Y-%m-%d'), self._btEndDate.strftime('%Y-%m-%d'))
         strReport += u'\n  交易日始末: %-10s(close:%.2f) ~ %-10s(close:%.2f): %s日 %s%%' % (summary['startDate'], self._dataBegin_closeprice, summary['endDate'], self._dataEnd_closeprice, summary['totalDays'], formatNumber(originGain))
         strReport += u'\n    盈亏日数: 盈利%s, 亏损%s'  % (summary['profitDays'], summary['lossDays'])
         
-        strReport += u'\n    起始资金: %s' % formatNumber(self._startBalance)
-        strReport += u'\n    结束资金: %s' % formatNumber(summary['endBalance'])
+        strReport += u'\n    起始资金: %-12s' % formatNumber(self._startBalance,2)
+        strReport += u'\n    结束资金: %-12s' % formatNumber(summary['endBalance'])
     
+        strReport += u'\n  总成交金额: %-12s' % formatNumber(summary['totalTurnover'])
         strReport += u'\n  总成交笔数: %s' % formatNumber(summary['totalTradeCount'],0)
         strReport += u'\n    总手续费: %s' % formatNumber(summary['totalCommission'])
         strReport += u'\n      总滑点: %s' % formatNumber(summary['totalSlippage'])
-        strReport += u'\n  总成交金额: %s' % formatNumber(summary['totalTurnover'])
 
+        strReport += u'\n      总盈亏: %s' % formatNumber(summary['totalNetPnl'])
         strReport += u'\n    总收益率: %s%%' % formatNumber(summary['totalReturn'])
         strReport += u'\n    年化收益: %s%%' % formatNumber(summary['annualizedReturn'])
-        strReport += u'\n      总盈亏: %s' % formatNumber(summary['totalNetPnl'])
         strReport += u'\n    最大回撤: %s' % formatNumber(summary['maxDrawdown'])   
         strReport += u'\n  最大回撤率: %s%%' % formatNumber(summary['maxDdPercent'])
-        strReport += u'\n  收益标准差: %s%%' % formatNumber(summary['returnStd'])
-        strReport += u'\n      夏普率: %s' % formatNumber(summary['sharpeRatio'])
+        strReport += u'\n      夏普率: %s' % formatNumber(summary['sharpeRatio'], 3)
         
         strReport += u'\n    日均盈亏: %s' % formatNumber(summary['dailyNetPnl'])
         strReport += u'\n  日均手续费: %s' % formatNumber(summary['dailyCommission'])
@@ -360,6 +360,7 @@ class BackTestApp(MetaTrader):
         strReport += u'\n日均成交金额: %s' % formatNumber(summary['dailyTurnover'])
         strReport += u'\n日均成交笔数: %s' % formatNumber(summary['dailyTradeCount'])
         strReport += u'\n  日均收益率: %s%%' % formatNumber(summary['dailyReturn'])
+        strReport += u'\n  收益标准差: %s%%' % formatNumber(summary['returnStd'])
 
         '''
         strReport += u'\n%10s: %-8s(close:%.2f) ~ %-8s(close:%.2f): %s%%' % ('回放始末', self._dataBegin_date, self._dataBegin_closeprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain))
@@ -895,13 +896,6 @@ def calculateSummary(startBalance, dayResultDict):
     return df, summary
 
 #----------------------------------------------------------------------
-def formatNumber(n, dec=2):
-    """格式化数字到字符串"""
-    rn = round(n, dec)      # 保留两位小数
-    return format(rn, ',')  # 加上千分符
-    
-
-#----------------------------------------------------------------------
 def optimize(strategyClass, setting, targetName,
              mode, startDate, initDays, endDate,
              dbName, symbol):
@@ -1216,7 +1210,9 @@ class AccountWrapper(MetaAccount):
 
         trades = []
         finishedOrders = []
+        pendingOrders =[]
 
+        strCrossed =''
         with self._nest._lock:
             for orderID, order in self._nest._dictLimitOrders.items():
                 if order.symbol != symbol:
@@ -1237,6 +1233,7 @@ class AccountWrapper(MetaAccount):
                 
                 # 如果发生了成交
                 if not buyCross and not sellCross:
+                    pendingOrders.append(order)
                     continue
 
                 # 推送成交数据
@@ -1267,12 +1264,17 @@ class AccountWrapper(MetaAccount):
                 if order.tradedVolume < order.totalVolume :
                     order.status = OrderData.STATUS_PARTTRADED
                 finishedOrders.append(order)
+                strCrossed += 'O[%s]->T[%s],' % (order.desc, trade.desc)
 
-                self._nest.info('crossLimitOrder() crossed order[%s] to trade[%s]'% (order.desc, trade.desc))
+        if len(finishedOrders)>0:
+            strPendings = ''
+            for o in pendingOrders:
+                strPendings += 'O[%s],' % o.desc
+            self._nest.info('crossLimitOrder() crossed %d orders:%s; %d pendings:%s'% (len(finishedOrders), strCrossed, len(pendingOrders), strPendings))
 
         for o in finishedOrders:
             self._broker_onOrderDone(o)
-
+            
         for t in trades:
             self._broker_onTrade(t)
 

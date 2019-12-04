@@ -56,7 +56,7 @@ class MetaAgent(MetaObj): # TODO:
         self._batchSize = self.getConfig('batchSize', 64)
 
         self._gamma = self.getConfig('gamma', 0.95)
-        self._epsilon = self.getConfig('epsilon', 1.0) # rand() <= self._epsilon will trigger a random explore
+        self._epsilon = self.getConfig('epsilon', 1) # rand()[0,1) <= self._epsilon will trigger a random explore
         self._epsilonMin = self.getConfig('epsilonMin', 0.01)
         #TODO ?? self.__epsilonDecrement = (self._epsilon - self._epsilonMin) * self._trainInterval / (self._epsilon * episode_length)  # linear decrease rate
 
@@ -125,7 +125,6 @@ class MetaAgent(MetaObj): # TODO:
         '''
         raise NotImplementedError
 
-
 ########################################################################
 class GymTrader(BaseTrader):
     '''
@@ -169,6 +168,7 @@ class GymTrader(BaseTrader):
         self.__recentLoss = None
         self._total_pnl = 0.0
         self._total_reward = 0.0
+        self._capOfLastStep = 0.0
 
         # self.n_actions = 3
         # self._prices_history = []
@@ -206,18 +206,17 @@ class GymTrader(BaseTrader):
         super(GymTrader, self).doAppStep()
         # perform some dummy steps in order to fill agent._memory[]
 
-
     def proc_MarketEvent(self, ev):
         '''processing an incoming MarketEvent'''
 
         self._action = self._agent.gymAct(self._gymState)
-        next_state, reward, done, _ = self.gymStep(self._action)
+        next_state, reward, self._episodeDone, _ = self.gymStep(self._action)
     
-        loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, done)
+        loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, self._episodeDone)
         if loss: self.__recentLoss =loss
 
         self._gymState = next_state
-        # self._total_reward += reward has already been performed in above self.gymStep()
+        self._total_reward += reward
 
         self.debug('proc_MarketEvent(%s) processed' % (ev.desc))
 
@@ -237,6 +236,7 @@ class GymTrader(BaseTrader):
         self.__stepNo = 0
         self._total_pnl = 0.0
         self._total_reward = 0.0
+        self._capOfLastStep = self.__summrizeAccount()
 
         observation = self.makeupGymObservation()
         self._shapeOfState = observation.shape
@@ -259,63 +259,38 @@ class GymTrader(BaseTrader):
         self._action = action
         self.__stepNo += 1
         done = False
-        instant_pnl = 0
+        instant_pnl = 0.0
+        reward =0.0
         info = {}
 
         # step 1. collected information from the account
         cashAvail, cashTotal, positions = self.getAccountState()
         capitalBeforeStep = self.__summrizeAccount(positions, cashTotal)
-        if capitalBeforeStep <1000 : 
-            self._quitEpisode =True
 
         # TODO: the first version only support one symbol to play, so simply take the first symbol in the positions        
         symbol = self._tradeSymbol # TODO: should take the __dictOberserves
         latestPrice = self._marketState.latestPrice(symbol)
-        posAvail =0
-        if symbol in positions.keys() :
-            pos = positions[symbol]
-            posAvail = pos.posAvail
 
-        reward = - self._timeCostYrRate # initialize with a time cost
-        # reward = - capitalBeforeStep *self._timeCostYrRate/100/365
-
-        if not symbol or latestPrice <=0:
-            action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
-
-        #TODO?? if capitalBeforeStep <=0:
-        #    done = True
-
-        # step 2. perform the action buy/sell/hold by driving self._account
-        if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]):
-            # TODO: the first version only support FULL-BUY and FULL-SELL
-            price  = round(latestPrice + self._account.priceTick, 2)
-            volume = round((cashAvail-1000) / latestPrice / self._account.contractSize, 0)
-            if volume >0:
-                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, price, volume, strategy=None)
-            # cash will be updated in callback onOrderPlaced()
-            # turnover, commission, slippage = self._account.calcAmountOfTrade(symbol, price, volume)
-            # reward -= commission + slippage # TODO maybe after the order is comfirmed
-        elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]) and posAvail >0:
-            price  = round(latestPrice - self._account.priceTick, 2)
-            if price <= self._account.priceTick :
-                price = self._account.priceTick 
-
-            volume = posAvail
-            vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, price, volume, strategy=None)
-            # cash will be updated in callback onOrderPlaced()
-            # turnover, commission, slippage = self._account.calcAmountOfTrade(symbol, price, volume)
-            # reward -= commission + slippage # TODO maybe after the order is comfirmed
-            # if positions[self._symbol] ==0:
-            #     self._exit_price = calculate based on price and commision # TODO maybe after the order is comfirmed
-            #     instant_pnl = self._entry_price - self._exit_price
-            #     self._entry_price = 0
+        maxBuy, maxSell = self._account.maxOrderVolume(symbol, latestPrice)
+        # TODO: the first version only support FULL-BUY and FULL-SELL
+        if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]) :
+            if maxBuy >0 :
+                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, strategy=None)
+            else: reward -=  100 # penalty: is the agent blind to buy with no cash? :)
+        elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]):
+            if  maxSell >0:
+                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, strategy=None)
+            else: reward -=  100 # penalty: is the agent blind to sell with no position? :)
 
         # step 3. calculate the rewards
         capitalAfterStep = self.__summrizeAccount() # most likely the cashAmount changed due to comission
+        if capitalAfterStep < 50000 : 
+            done =True
+
         instant_pnl = capitalAfterStep - capitalBeforeStep
-        reward += instant_pnl
+        reward      = capitalAfterStep - self._capOfLastStep
         self._total_pnl += instant_pnl
-        self._total_reward += reward
+        self._capOfLastStep = capitalAfterStep
 
         ''' step 4. composing info for tracing
 
@@ -504,7 +479,7 @@ class GymTrainer(BackTestApp):
 
         return super(GymTrainer, self).doAppInit()
 
-    def OnEvent(self, ev): 
+    def OnEvent(self, ev): # this overwrite BackTest's because there are some different needs
         symbol  = None
         try :
             symbol = ev.data.symbol
@@ -516,8 +491,12 @@ class GymTrainer(BackTestApp):
 
         self.wkTrader.OnEvent(ev) # to perform the gym step
 
+        self._dataEnd_date = self.wkTrader.marketState.getAsOf(symbol)
+        self._dataEnd_closeprice = self.wkTrader.marketState.latestPrice(symbol)
+
         if not self._dataBegin_date:
-            self._dataBegin_date = self.wkTrader.marketState.getAsOf(symbol)
+            self._dataBegin_date = self._dataEnd_date
+            self._dataBegin_closeprice = self._dataEnd_closeprice
 
         
     # end of BaseApplication routine
@@ -525,10 +504,22 @@ class GymTrainer(BackTestApp):
 
     #------------------------------------------------
     # BackTest related entries
-    def OnEpisodeDone(self):
-        super(GymTrainer, self).OnEpisodeDone()
-        self.info('OnEpisodeDone() trained episode[%s/%d], total-reward[%s] epsilon[%s] loss[%s->%s]' % (self.episodeId, self._episodes, 
-            round(self.wkTrader._total_reward, 2), round(self.wkTrader._agent._epsilon, 2), self.__lossOfLastEpisode, self.wkTrader.loss))
+    def OnEpisodeDone(self, leadingReportPage=''):
+        
+
+        strReport = leadingReportPage if leadingReportPage else ''
+        strSummary = '\nepisode[%s/%d], total-reward[%s] epsilon[%s] loss[%s->%s]' % (self.episodeId, self._episodes, 
+            round(self.wkTrader._total_reward, 2), round(self.wkTrader._agent._epsilon, 2), self.__lossOfLastEpisode, self.wkTrader.loss)
+
+        super(GymTrainer, self).OnEpisodeDone(strReport + strSummary)
+
+        self.info('OnEpisodeDone() trained %s' % strSummary)
+
+        # decrease epsilon if improved
+        if self.wkTrader.loss < self.__lossOfLastEpisode :
+            self.wkTrader._agent._epsilon -= self.wkTrader._agent._epsilon/4
+            if self.wkTrader._agent._epsilon < self.wkTrader._agent._epsilonMin :
+                self.wkTrader._agent._epsilon = self.wkTrader._agent._epsilonMin
 
         self.__lossOfLastEpisode = self.wkTrader.loss
 

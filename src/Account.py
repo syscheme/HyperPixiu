@@ -21,6 +21,12 @@ import copy
 import traceback
 # from pymongo import ASCENDING
 
+#----------------------------------------------------------------------
+def formatNumber(n, dec=2):
+    """格式化数字到字符串"""
+    rn = round(n, dec)      # 保留两位小数
+    return format(rn, ',')  # 加上千分符
+
 ########################################################################
 class MetaAccount(BaseApplication):
     ''' to make sure the child impl don't miss neccessary methods
@@ -712,7 +718,7 @@ class Account(MetaAccount):
         # double check if the cash account goes to negative
         newAvail, newTotal = pos.posAvail + dAvail, pos.position + dTotal
         if newAvail<0 or newTotal <0 or newAvail >(newTotal*1.05):
-            raise ValueError('__cashChange() txn[%s] something wrong: newAvail[%s] newTotal[%s]' % (strTxn, newAvail, newTotal))
+            raise ValueError('__cashChange(%s) something wrong: newAvail[%s] newTotal[%s]' % (strTxn, newAvail, newTotal))
 
         pos.posAvail = newAvail
         pos.position = newTotal
@@ -734,7 +740,7 @@ class Account(MetaAccount):
         volume =0
         if price > 0 :
             cash, _  = self.cashAmount()
-            volume   = round(cash / price / self._contractSize -0.999,0)
+            volume   = round(cash / (price + self._priceTick) / self._contractSize -0.999, 0)
             turnOver, commission, slippage = self.calcAmountOfTrade(symbol, price, volume)
             if cash < (turnOver + commission + slippage) :
                 volume -= int((commission + slippage) / price / self._contractSize) +1
@@ -799,9 +805,9 @@ class Account(MetaAccount):
             self._todayResult.netPnl = round(self._todayResult.totalPnl - self._todayResult.commission - self._todayResult.slippage, 2)
             cTds = len(self._dictTrades)
             if cTds >0 :
-                self.info('onDayClose() %s summed %s trades: %s' % (self._dateToday, cTds, self._todayResult.txnHist))
+                self.info('onDayClose(%s) summed %s trades: %s' % (self._dateToday, cTds, self._todayResult.txnHist))
             else:
-                self.debug('onDayClose() %s no trades' % (self._dateToday))
+                self.debug('onDayClose(%s) no trades' % (self._dateToday))
 
             # part 2. record the daily result and positions
             self.record(Account.RECCATE_DAILYRESULT, self._todayResult)
@@ -817,7 +823,7 @@ class Account(MetaAccount):
         self._dateToday = None
         
         self._state = Account.STATE_CLOSE
-        self.debug('onDayClose() saved positions, updated state')
+        self.debug('onDayClose(%s) saved positions, updated state' % self._dateToday)
 
     def onDayOpen(self, newDate):
         if Account.STATE_OPEN == self._state:
@@ -973,7 +979,7 @@ class Account_AShare(Account):
                     continue
 
                 if pos.position != pos.posAvail :
-                    self.info('onDayOpen() %s shifting %s pos[%s] into avail-pos[%s]' % (self._dateToday, pos.symbol, pos.position, pos.posAvail))
+                    self.info('onDayOpen(%s) shifting %s pos[%s] into avail-pos[%s]' % (self._dateToday, pos.symbol, pos.position, pos.posAvail))
                 pos.posAvail = pos.position
 
         #TODO: sync with broker

@@ -354,13 +354,6 @@ class BaseTrader(MetaTrader):
     #----------------------------------------------------------------------
     # about the positions
     #----------------------------------------------------------------------
-    # def getAllPositions(self):
-    #     """获取所有持仓"""
-    #     poslist = []
-    #     for acc in self._dictAccounts.values():
-    #         poslist.append(acc.getAllPositions())
-    #     return poslist
-
     # def getPositionDetail(self, symbol):
     #     """查询持仓细节"""
     #     poslist = []

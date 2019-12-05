@@ -999,7 +999,6 @@ class AccountWrapper(MetaAccount):
     @property
     def collectionName_trade(self): return self._nest.collectionName_dpos
     def getPosition(self, symbol): return self._nest.getPosition(symbol) # returns PositionData
-    def getAllPositions(self): return self._nest.getAllPositions() # returns PositionData
     def cashAmount(self): return self._nest.cashAmount() # returns (avail, total)
     def positionState(self) : return self._nest.positionState()
     def summrizeBalance(self, positions=None, cashTotal=0) : return self._nest.summrizeBalance(positions=positions, cashTotal=cashTotal)
@@ -1345,7 +1344,7 @@ class AccountWrapper(MetaAccount):
 
         # step 1 到最后交易日尚未平仓的交易，则以最后价格平仓
         self._nest.info('OnPlaybackEnd() faking trades to clean all positions into cash')
-        currentPositions = self.getAllPositions()
+        cashAvail, cashTotal, currentPositions = self.positionState()
         for symbol, pos in currentPositions.items() :
             if symbol == self.cashSymbol:
                 continue

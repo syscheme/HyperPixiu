@@ -52,10 +52,6 @@ class MetaAccount(BaseApplication):
     @abstractmethod 
     def getPosition(self, symbol): raise NotImplementedError
     @abstractmethod 
-    def getAllPositions(self): raise NotImplementedError
-    @abstractmethod 
-    def cashAmount(self): raise NotImplementedError
-    @abstractmethod 
     def positionState(self) :
         ''' get the account capitial including cash and positions
         @return tuple:
@@ -64,6 +60,9 @@ class MetaAccount(BaseApplication):
             positions [PositionData]
         '''
         raise NotImplementedError
+
+    @abstractmethod 
+    def cashAmount(self): raise NotImplementedError
     @abstractmethod 
     def summrizeBalance(self, positions=None, cashTotal=0) :
         ''' sum up the account capitial including cash and positions
@@ -269,11 +268,20 @@ class Account(MetaAccount):
         @return tuple:
             cashAvail
             cashTotal
-            positions [PositionData]
+            positions {symbol:PositionData}
         '''
-        positions = self.getAllPositions()
         cashAvail, cashTotal = self.cashAmount()
-        return cashAvail, cashTotal, positions
+
+        allpos ={}
+        with self._lock :
+            for s, pos in self._dictPositions.items() :
+                if self.cashSymbol != s:
+                    price = self.trader.marketState.latestPrice(pos.symbol)
+                    if price >0:
+                        pos.price = price
+            allpos = copy.deepcopy(self._dictPositions)
+            del allpos[self.cashSymbol]
+        return cashAvail, cashTotal, allpos
 
     def summrizeBalance(self, positions=None, cashTotal=0) :
         ''' sum up the account capitial including cash and positions
@@ -297,17 +305,6 @@ class Account(MetaAccount):
             if not symbol in self._dictPositions:
                 return PositionData()
             return copy.copy(self._dictPositions[symbol])
-
-    def getAllPositions(self): # returns PositionData
-        with self._lock :
-            for s, pos in self._dictPositions.items() :
-                if self.cashSymbol != s:
-                    price = self.trader.marketState.latestPrice(pos.symbol)
-                    if price >0:
-                        pos.price = price
-            allpos = copy.deepcopy(self._dictPositions)
-            del allpos[self.cashSymbol]
-            return allpos
 
     def cashAmount(self): # returns (avail, total)
         with self._lock :
@@ -881,7 +878,7 @@ class Account(MetaAccount):
 
         self._dictTrades.clear() # clean the trade list
         # shift the positions, must do copy each PositionData
-        self._prevPositions = self.getAllPositions()
+        _, _, self._prevPositions = self.positionState()
         self._state = Account.STATE_OPEN
         self.debug('onDayOpen() shift pos to dict _prevPositions, updated state')
     
@@ -937,7 +934,7 @@ class Account(MetaAccount):
                 tradesOfSymbol[t.symbol].append(t)
 
         result = []
-        currentPositions = self.getAllPositions() # this is a duplicated copy, so thread-safe
+        cashAvail, cashTotal, currentPositions = self.positionState() # this is a duplicated copy, so thread-safe
         for s in currentPositions.keys():
             if not s in tradesOfSymbol.keys():
                 tradesOfSymbol[s] = [] # fill a dummy trade list

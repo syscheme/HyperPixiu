@@ -50,6 +50,7 @@ class BackTestApp(MetaTrader):
         self._marketState = None
         self.__wkTrader = None
         self.__wkHistData = histdata
+        self._recorder = self._initTrader.recorder
 
         # 回测相关属性
         # -----------------------------------------
@@ -969,9 +970,6 @@ class AccountWrapper(MetaAccount):
         if (len(ordersToCancel) + len(outgoingOrders)) >0:
             self.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
 
-        if cStep<=0 and self._nest._recorder :
-            cStep += self._nest._recorder.step()
-
         return cStep
 
     def OnEvent(self, ev):
@@ -1003,7 +1001,7 @@ class AccountWrapper(MetaAccount):
     def positionState(self) : return self._nest.positionState()
     def summrizeBalance(self, positions=None, cashTotal=0) : return self._nest.summrizeBalance(positions=positions, cashTotal=cashTotal)
     def cashChange(self, dAvail=0, dTotal=0): return self._nest.cashChange(dAvail, dTotal)
-    def record(self, dbName, collectionName, data): return self._nest.record(dbName, collectionName, data)
+    def record(self, category, data): return self._nest.record(category, data)
     def postEvent_Order(self, orderData): return self._nest.postEvent_Order(orderData)
     # def sendOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendOrder(vtSymbol, orderType, price, volume, strategy)
     def cancelOrder(self, brokerOrderId): return self._nest.cancelOrder(brokerOrderId)
@@ -1126,11 +1124,6 @@ class AccountWrapper(MetaAccount):
 
         self.cashChange(dAvail, dCap)
      
-    #----------------------------------------------------------------------
-    def record(self, dbName, collectionName, data):
-        """考虑到回测中不允许向数据库插入数据，防止实盘交易中的一些代码出错"""
-        pass
-
     def matchTrades(self, ev):
         ''' 模拟撮合成交 '''
 

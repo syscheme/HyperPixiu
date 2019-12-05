@@ -32,13 +32,14 @@ class MetaTrader(BaseApplication):
     FINISHED_STATUS = [OrderData.STATUS_ALLTRADED, OrderData.STATUS_REJECTED, OrderData.STATUS_CANCELLED]
     RUNTIME_TAG_TODAY = '$today'
 
-    def __init__(self, program, **kwargs) :
+    def __init__(self, program, recorder =None, **kwargs) :
         super(MetaTrader, self).__init__(program, **kwargs)
         self._account = None
         self._accountId = None
         self._dtData = None # datetime of data
         self._dictObjectives = {}
         self._marketState = None
+        self._recorder =recorder
 
     def __deepcopy__(self, other):
         result = object.__new__(type(self))
@@ -50,6 +51,9 @@ class MetaTrader(BaseApplication):
     def account(self): return self._account # the default account
     @property
     def marketState(self): return self._marketState # the default account
+    @property
+    def recorder(self): return self._recorder
+
     @abstractmethod
     def eventHdl_Order(self, event): raise NotImplementedError
     @abstractmethod
@@ -81,7 +85,6 @@ class BaseTrader(MetaTrader):
         # self._tradeType = TRADER_TYPE_TRADING
 
         self._accountId      = self.getConfig('accountId', self._accountId)
-
         #--------------------
         # from old 数据引擎
 

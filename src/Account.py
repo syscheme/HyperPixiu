@@ -71,7 +71,7 @@ class MetaAccount(BaseApplication):
     @abstractmethod 
     def cashChange(self, dAvail=0, dTotal=0): raise NotImplementedError
     @abstractmethod 
-    def record(self, dbName, collectionName, data): raise NotImplementedError
+    def record(self, category, row): raise NotImplementedError
     @abstractmethod 
     def postEvent_Order(self, orderData): raise NotImplementedError
     @abstractmethod 
@@ -192,7 +192,6 @@ class Account(MetaAccount):
         self._mode         = Account.BROKER_API_ASYNC
 
         self._recorder = None
-
         if self._contractSize <=0:
             self._contractSize =1
 
@@ -228,11 +227,6 @@ class Account(MetaAccount):
     @property
     def recorder(self):
         return self._recorder
-
-    # @property
-    # def marketState(self):
-    #     if self.__trader:
-    #         return self.__trader.marketState
 
     @property
     def cashSymbol(self):
@@ -297,7 +291,6 @@ class Account(MetaAccount):
 
         return cashTotal + posValueSubtotal
 
-
     #----------------------------------------------------------------------
     def datetimeAsOfMarket(self):
         return self.trader.marketState.getAsOf() if self.trader.marketState else datetime.now()
@@ -319,6 +312,9 @@ class Account(MetaAccount):
             return self.__cashChange(dAvail, dTotal)
 
     def record(self, category, row) :
+        if not self._recorder and self.trader :
+            self._recorder = self.trader.recorder
+        
         if self._recorder :
             return self._recorder.pushRow(category, row)
 
@@ -456,6 +452,7 @@ class Account(MetaAccount):
             self.__cashChange(-(turnover + commission + slippage))
 
         self.postEvent_Order(orderData)
+        self.record(Account.RECCATE_ORDER, orderData)
 
     def _broker_cancelOrder(self, brokerOrderId):
         """撤单"""
@@ -576,6 +573,7 @@ class Account(MetaAccount):
         cashAvail, cashTotal = self.cashAmount()
         self.info('broker_onTrade() trade[%s] processed, pos[%s->%s/%s] cash[%.2f/%.2f]' % (trade.desc, strPrevPos, pos.posAvail, pos.position, cashAvail, cashTotal))#, pos.desc))
         self.postEventData(Account.EVENT_TRADE, copy.copy(trade))
+        self.record(Account.RECCATE_TRADE, trade)
 
     def _broker_onOpenOrders(self, dictOrders):
         """枚举订单回调"""
@@ -679,8 +677,9 @@ class Account(MetaAccount):
 
         if self._recorder :
             self.info('taking recoder[%s]' % self._recorder.ident)
-            # self._recorder.registerCategory(self._recCatgDPosition, params= {'index': [('date', Account.INDEX_ASCENDING), ('time', INDEX_ASCENDING)], 'columns' : DailyResult.COLUMNS})
-            self._recorder.registerCategory(Account.RECCATE_DAILYPOS, params= {'columns' : DailyPosition.COLUMNS})
+            self._recorder.registerCategory(Account.RECCATE_ORDER,       params= {'columns' : OrderData.COLUMNS})
+            self._recorder.registerCategory(Account.RECCATE_TRADE,       params= {'columns' : TradeData.COLUMNS})
+            self._recorder.registerCategory(Account.RECCATE_DAILYPOS,    params= {'columns' : DailyPosition.COLUMNS})
             self._recorder.registerCategory(Account.RECCATE_DAILYRESULT, params= {'columns' : DailyResult.COLUMNS})
 
             # # ensure the DB collection has the index applied
@@ -830,7 +829,6 @@ class Account(MetaAccount):
                     continue
 
                 cTrades +=1
-                self.record(Account.RECCATE_TRADE, trade)
 
                 if trade.direction == OrderData.DIRECTION_LONG:
                     posChange = trade.volume
@@ -1083,6 +1081,9 @@ class OrderData(EventData):
     STATUS_FINISHED   = [STATUS_ALLTRADED, STATUS_PARTCANCEL]
     STATUS_CLOSED     = STATUS_FINISHED + [STATUS_CANCELLED]
 
+    #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
+    COLUMNS = 'datetime,symbol,exchange,reqId,brokerOrderId,direction,price,totalVolume,tradedVolume,offset,status,stampSubmitted,stampCanceled,stampFinished,source'
+
     #----------------------------------------------------------------------
     def __init__(self, account, stopOrder=False, reqId = None):
         """Constructor"""
@@ -1145,6 +1146,9 @@ class TradeData(EventData):
     # STATUS_CANCELLED  = u'CANCELLED' # u'已撤销'
     # STATUS_REJECTED   = u'REJECTED' # u'拒单'
     # STATUS_UNKNOWN    = u'UNKNOWN' # u'未知'
+
+    #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
+    COLUMNS = 'datetime,symbol,exchange,tradeID,brokerTradeId,direction,orderID,price,volume,offset'
 
     #----------------------------------------------------------------------
     def __init__(self, account):

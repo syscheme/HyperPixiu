@@ -528,13 +528,14 @@ if __name__ == '__main__':
     SYMBOL = '000001' # '000540' '000001'
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-    # csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
-    csvdir = 'e:/AShareSample'
+    csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
+    # csvdir = 'e:/AShareSample'
     csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
     # marketstate = PerspectiveState('AShare')
     # p.addObj(marketstate)
+    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder')
 
-    gymtdr = p.createApp(GymTrader, configNode ='trainer', account=acc)
+    gymtdr = p.createApp(GymTrader, configNode ='trainer', account=acc, recorder=rec)
     
     p.info('all objects registered piror to GymTrainer: %s' % p.listByType())
     

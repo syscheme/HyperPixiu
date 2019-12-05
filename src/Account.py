@@ -41,9 +41,13 @@ class MetaAccount(BaseApplication):
 
         self._id = self.getConfig('accountId', self._id, True)
         self._exchange = self.getConfig('exchange', 'Unknown', True)
+        self.__trader = None
 
     @property
     def exchange(self) : return self._exchange
+    @property
+    def trader(self): return self.__trader
+    def hostTrader(self, trader): self.__trader = trader
 
     @abstractmethod 
     def getPosition(self, symbol): raise NotImplementedError
@@ -51,6 +55,20 @@ class MetaAccount(BaseApplication):
     def getAllPositions(self): raise NotImplementedError
     @abstractmethod 
     def cashAmount(self): raise NotImplementedError
+    @abstractmethod 
+    def positionState(self) :
+        ''' get the account capitial including cash and positions
+        @return tuple:
+            cashAvail
+            cashTotal
+            positions [PositionData]
+        '''
+        raise NotImplementedError
+    @abstractmethod 
+    def summrizeBalance(self, positions=None, cashTotal=0) :
+        ''' sum up the account capitial including cash and positions
+        '''
+        raise NotImplementedError
     @abstractmethod 
     def cashChange(self, dAvail=0, dTotal=0): raise NotImplementedError
     @abstractmethod 
@@ -173,7 +191,6 @@ class Account(MetaAccount):
         self._mode         = Account.BROKER_API_ASYNC
 
         self._recorder = None
-        self._trader = None
 
         if self._contractSize <=0:
             self._contractSize =1
@@ -211,10 +228,10 @@ class Account(MetaAccount):
     def recorder(self):
         return self._recorder
 
-    @property
-    def marketState(self):
-        if self._trader:
-            return self._trader.marketState
+    # @property
+    # def marketState(self):
+    #     if self.__trader:
+    #         return self.__trader.marketState
 
     @property
     def cashSymbol(self):
@@ -247,9 +264,33 @@ class Account(MetaAccount):
     @property
     def collectionName_trade(self): return "trade." + self.ident
 
+    def positionState(self) :
+        ''' get the account capitial including cash and positions
+        @return tuple:
+            cashAvail
+            cashTotal
+            positions [PositionData]
+        '''
+        positions = self.getAllPositions()
+        cashAvail, cashTotal = self.cashAmount()
+        return cashAvail, cashTotal, positions
+
+    def summrizeBalance(self, positions=None, cashTotal=0) :
+        ''' sum up the account capitial including cash and positions
+        '''
+        if positions is None:
+            _, cashTotal, positions = self.positionState()
+
+        posValueSubtotal =0
+        for s, pos in positions.items():
+            posValueSubtotal += pos.position * pos.price * self.contractSize
+
+        return cashTotal + posValueSubtotal
+
+
     #----------------------------------------------------------------------
     def datetimeAsOfMarket(self):
-        return self.marketState.getAsOf() if self.marketState else datetime.now()
+        return self.trader.marketState.getAsOf() if self.trader.marketState else datetime.now()
 
     def getPosition(self, symbol): # returns PositionData
         with self._lock :
@@ -261,7 +302,7 @@ class Account(MetaAccount):
         with self._lock :
             for s, pos in self._dictPositions.items() :
                 if self.cashSymbol != s:
-                    price = self.marketState.latestPrice(pos.symbol)
+                    price = self.trader.marketState.latestPrice(pos.symbol)
                     if price >0:
                         pos.price = price
             allpos = copy.deepcopy(self._dictPositions)
@@ -641,7 +682,7 @@ class Account(MetaAccount):
             # self._recorder.configIndex(self.collectionName_dpos,  [('date', INDEX_ASCENDING), ('symbol', INDEX_ASCENDING)], True)
 
         # # find the marketstate
-        # if not self.marketState :
+        # if not self.trader.marketState :
         #     for obsId in self._program.listByType(MarketState) :
         #         marketstate = self._program.getObj(obsId)
         #         if marketstate and marketstate.exchange == self.exchange:
@@ -774,9 +815,10 @@ class Account(MetaAccount):
         self.debug('onDayClose() calculating daily result')
         cTrades =0
         positions, _ = self.calcDailyPositions()
+        self._todayResult.endBalance = self.summrizeBalance()
 
+        # part 1. 汇总 the confirmed trades, and save
         with self._lock :
-            # part 1. 汇总 the confirmed trades, and save
             for trade in self._dictTrades.values():
                 if trade.dt and self._dateToday != trade.dt.date():
                     continue
@@ -791,33 +833,35 @@ class Account(MetaAccount):
                     posChange = -trade.volume
                     self._todayResult.tcSell += 1
                     
-                self._todayResult.txnHist += "%+dx%s" % (posChange, trade.price)
+                self._todayResult.txnHist += "%+dx%s@%s" % (posChange, trade.symbol, formatNumber(trade.price,3))
 
                 self._todayResult.tradingPnl += round(posChange * (self._marketState.latestPrice(trade.symbol) - trade.price) * self._contractSize, 2)
-                self._todayResult.closePosition += posChange
                 turnover, commission, slippagefee = self.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
                 self._todayResult.turnover += turnover
                 self._todayResult.commission += commission
                 self._todayResult.slippage += slippagefee
 
-            # 汇总
             self._todayResult.totalPnl = round(self._todayResult.tradingPnl + self._todayResult.positionPnl, 2)
             self._todayResult.netPnl = round(self._todayResult.totalPnl - self._todayResult.commission - self._todayResult.slippage, 2)
+
             cTds = len(self._dictTrades)
             if cTds >0 :
                 self.info('onDayClose(%s) summed %s trades: %s' % (self._dateToday, cTds, self._todayResult.txnHist))
             else:
                 self.debug('onDayClose(%s) no trades' % (self._dateToday))
 
-            # part 2. record the daily result and positions
-            self.record(Account.RECCATE_DAILYRESULT, self._todayResult)
+        #TODO # part 2. summarize the positions
+        # self._todayResult.positionPnl=0
+        # if len(positions) >0:
+        #     for dpos in positions:
+        #         # self.trader.dbUpdate(self.collectionName_dpos, dpos, {'date':dpos['date'], 'symbol':dpos['symbol']})
+        #         line = self.record(Account.RECCATE_DAILYPOS, dpos)
+        #         self._todayResult.positionPnl += round(self.openPosition * (self.closePrice - self.previousClose) * account.size, 3)
+        #         self.closePosition = self.openPosition
+        #     self.debug('saveDataOfDay() saved %d positions into DB' % len(positions))
 
-                # 2.2 the positions
-            if len(positions) >0:
-                for dpos in positions:
-                    # self._trader.dbUpdate(self.collectionName_dpos, dpos, {'date':dpos['date'], 'symbol':dpos['symbol']})
-                    line = self.record(Account.RECCATE_DAILYPOS, dpos)
-                self.debug('saveDataOfDay() saved %d positions into DB' % len(positions))
+        # part 3. record the daily result and positions
+        self.record(Account.RECCATE_DAILYRESULT, self._todayResult)
 
         self._datePrevClose = self._dateToday
         self._dateToday = None
@@ -831,8 +875,9 @@ class Account(MetaAccount):
                 return
             self.onDayClose()
 
+        prevBalance = self._todayResult.endBalance if self._todayResult else self.summrizeBalance()
         self._dateToday = newDate
-        self._todayResult = DailyResult(self._dateToday, closePrice=0)
+        self._todayResult = DailyResult(self._dateToday, startBalance=prevBalance)
 
         self._dictTrades.clear() # clean the trade list
         # shift the positions, must do copy each PositionData
@@ -879,7 +924,7 @@ class Account(MetaAccount):
         """今日交易的结果"""
 
         tradesOfSymbol = {} # { self.cashSymbol: [] }        # 成交列表
-        if not self._trader:
+        if not self.trader:
             return [], tradesOfSymbol
 
         with self._lock :
@@ -899,7 +944,7 @@ class Account(MetaAccount):
 
         for s in tradesOfSymbol.keys():
             currentPos = currentPositions[s]
-            ohlc =  self.marketState.dailyOHLC_sofar(s)
+            ohlc =  self.trader.marketState.dailyOHLC_sofar(s)
 
             if s in self._prevPositions:
                 with self._lock :
@@ -1150,7 +1195,7 @@ class PositionData(EventData):
         # self.ydPosition     = EventData.EMPTY_INT         # 昨持仓
         # self.positionProfit = EventData.EMPTY_FLOAT       # 持仓盈亏
         self.stampByTrader   = EventData.EMPTY_INT         # 该持仓数是基于Trader的计算
-        self.stampByBroker = EventData.EMPTY_INT        # 该持仓数是基于与broker的数据同步
+        self.stampByBroker   = EventData.EMPTY_INT        # 该持仓数是基于与broker的数据同步
 
 ########################################################################
 class DailyPosition(object):
@@ -1171,13 +1216,13 @@ class DailyPosition(object):
         self.calcMValue  = EventData.EMPTY_FLOAT # MarketValue
         self.prevClose   = EventData.EMPTY_FLOAT     # 昨日收盘
         self.prevPos     = EventData.EMPTY_FLOAT    # 昨日收盘
-        self.execOpen  = EventData.EMPTY_FLOAT
-        self.execHigh  = EventData.EMPTY_FLOAT 
-        self.execLow   = EventData.EMPTY_FLOAT
+        self.execOpen    = EventData.EMPTY_FLOAT
+        self.execHigh    = EventData.EMPTY_FLOAT 
+        self.execLow     = EventData.EMPTY_FLOAT
                 
         self.turnover    = EventData.EMPTY_FLOAT        # 成交量
         self.commission  = EventData.EMPTY_FLOAT       # 手续费
-        self._slippage    = EventData.EMPTY_FLOAT         # 滑点
+        self._slippage   = EventData.EMPTY_FLOAT         # 滑点
 
         self.tradingPnl  = EventData.EMPTY_FLOAT    # 交易盈亏
         self.positionPnl = EventData.EMPTY_FLOAT     # 持仓盈亏
@@ -1265,26 +1310,21 @@ class DailyResult(object):
     '''每日交易的结果'''
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
-    COLUMNS = 'date,closePrice,previousClose,tcBuy,tcSell,openPosition,closePosition,tradingPnl,positionPnl,totalPnl,turnover,commission,slippage,netPnl,txnHist'
+    COLUMNS = 'date,startBalance,tcBuy,tcSell,tradingPnl,positionPnl,totalPnl,turnover,commission,slippage,netPnl,endBalance,txnHist'
 
     #----------------------------------------------------------------------
-    def __init__(self, date, closePrice):
+    def __init__(self, date, startBalance=0):
         """Constructor"""
 
         self.date = date                # 日期
-        self.closePrice = closePrice    # 当日收盘价
-        self.previousClose = 0          # 昨日收盘价
-        
+        self.startBalance = round(startBalance,2)  # 开始资产
+        self.tcBuy = 0                  # 成交数量
+        self.tcSell = 0                 # 成交数量
         self.tradeList = []             # 成交列表
-        self.tcBuy = 0             # 成交数量
-        self.tcSell = 0             # 成交数量
-        
-        self.openPosition = 0           # 开盘时的持仓
-        self.closePosition = 0          # 收盘时的持仓
-        
         self.tradingPnl = 0             # 交易盈亏
         self.positionPnl = 0            # 持仓盈亏
         self.totalPnl = 0               # 总盈亏
+        self.endBalance = self.startBalance  # 结束资产
         
         self.turnover = 0               # 成交量
         self.commission = 0             # 手续费

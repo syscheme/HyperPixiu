@@ -272,7 +272,7 @@ class BackTestApp(MetaTrader):
         if self._originAcc and not isinstance(self._originAcc, AccountWrapper):
             self._program.removeApp(self._originAcc.ident)
             self._account = AccountWrapper(self._program, btTrader =self, account=copy.copy(self._originAcc)) # duplicate the original account for test espoches
-            self._account._trader = self # adopt the account by pointing its._trader to self
+            self._account.hostTrader(self) # adopt the account by pointing its._trader to self
             self._account.setCapital(self._startBalance, True)
             self._program.addApp(self._account)
             self._account._marketState = self._marketState
@@ -363,40 +363,12 @@ class BackTestApp(MetaTrader):
         strReport += u'\n  日均收益率: %s%%' % formatNumber(summary['dailyReturn'])
         strReport += u'\n  收益标准差: %s%%' % formatNumber(summary['returnStd'])
 
-        '''
-        strReport += u'\n%10s: %-8s(close:%.2f) ~ %-8s(close:%.2f): %s%%' % ('回放始末', self._dataBegin_date, self._dataBegin_openprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain))
-        strReport += u'\n%10s: %-8s(close:%.2f) ~ %-8s(close:%.2f)'       % ('交易始末', summary['startDate'], self._dataBegin_openprice, summary['endDate'], self._dataEnd_closeprice)
-        strReport += u'\n%10s: %s (盈利%s, 亏损%s)' % ('交易日数', summary['totalDays'], summary['profitDays'], summary['lossDays'])
-        
-        strReport += u'\n%10s: %s'   % ('起始资金', formatNumber(self._startBalance))
-        strReport += u'\n%10s: %s'   % ('结束资金', formatNumber(summary['endBalance']))
-    
-        strReport += u'\n%10s: %s%%' % (u'总收益率',   formatNumber(summary['totalReturn']))
-        strReport += u'\n%10s: %s%%' % (u'年化收益',   formatNumber(summary['annualizedReturn']))
-        strReport += u'\n%10s: %s'   % (u'总盈亏',     formatNumber(summary['totalNetPnl']))
-        strReport += u'\n%10s: %s'   % (u'最大回撤',   formatNumber(summary['maxDrawdown']))
-        strReport += u'\n%10s: %s%%' % (u'最大回撤率', formatNumber(summary['maxDdPercent']))
-        strReport += u'\n%10s: %s%%' % (u'收益标准差', formatNumber(summary['returnStd']))
-        strReport += u'\n%10s: %s'   % (u'夏普率',     formatNumber(summary['sharpeRatio']))
-        
-        strReport += u'\n%10s: %s'   % (u'总手续费',   formatNumber(summary['totalCommission']))
-        strReport += u'\n%10s: %s'   % (u'总滑点',     formatNumber(summary['totalSlippage']))
-        strReport += u'\n%10s: %s'   % (u'总成交金额', formatNumber(summary['totalTurnover']))
-        strReport += u'\n%10s: %s'   % (u'总成交笔数', formatNumber(summary['totalTradeCount'],0))
-        
-        strReport += u'\n%10s: %s'   % (u'日均盈亏',   formatNumber(summary['dailyNetPnl']))
-        strReport += u'\n%10s: %s'   % (u'日均手续费', formatNumber(summary['dailyCommission']))
-        strReport += u'\n%10s: %s'   % (u'日均滑点',   formatNumber(summary['dailySlippage']))
-        strReport += u'\n%10s: %s'   % (u'日均成交金额', formatNumber(summary['dailyTurnover']))
-        strReport += u'\n%10s: %s'   % (u'日均成交笔数', formatNumber(summary['dailyTradeCount']))
-        strReport += u'\n%10s: %s%%' % (u'日均收益率', formatNumber(summary['dailyReturn']))
-        '''
-
         with open('%s/%s_summary.txt' %(self.__outdir, self.episodeId),'wt') as rptfile:
             rptfile.write(strReport)
 
         self.info('%s_%s summary:' %(self.ident, self.episodeId))
         for line in strReport.splitlines():
+            if len(line) <2: continue
             self.info(line)
         
         if self._plotReport :
@@ -824,10 +796,10 @@ def calculateSummary(startBalance, dayResultDict):
     df = pd.DataFrame.from_dict(columns).set_index('date')
 
     # step 2. append the DataFrame with new columns [balance, return, highlevel, drawdown, ddPercent]
-    df['balance'] = df['netPnl'].cumsum() + startBalance
-    df['return'] = (np.log(df['balance']) - np.log(df['balance'].shift(1))).fillna(0)
-    df['highlevel'] = df['balance'].rolling(min_periods=1,window=len(df),center=False).max()
-    df['drawdown'] = df['balance'] - df['highlevel']
+    # df['balance'] = df['netPnl'].cumsum() + startBalance
+    df['return'] = (np.log(df['endBalance']) - np.log(df['endBalance'].shift(1))).fillna(0)
+    df['highlevel'] = df['endBalance'].rolling(min_periods=1,window=len(df),center=False).max()
+    df['drawdown'] = df['endBalance'] - df['highlevel']
     df['ddPercent'] = df['drawdown'] / df['highlevel'] * 100
     
     # step 3. calculate the overall performance summary
@@ -839,7 +811,7 @@ def calculateSummary(startBalance, dayResultDict):
     lossDays   = len(df[df['netPnl']<0])
     cDaysHaveTrade = len(df[df['tcBuy'] + df['tcSell'] >0])
     
-    endBalance   = round(df['balance'].iloc[-1],2)
+    endBalance   = round(df['endBalance'].iloc[-1],2)
     maxDrawdown  = round(df['drawdown'].min(),2)
     maxDdPercent = round(df['ddPercent'].min(),2)
     
@@ -946,8 +918,6 @@ class AccountWrapper(MetaAccount):
 
         # 日线回测结果计算用
         self.__dailyResultDict = OrderedDict()
-        self.__previousClose = 0
-        self.__openPosition = 0
 
     @property
     def dailyResultDict(self):
@@ -1010,6 +980,9 @@ class AccountWrapper(MetaAccount):
     #----------------------------------------------------------------------
     # most of the methods are just forward to the self._nest
     @property
+    def trader(self): return self._nest.trader
+    def hostTrader(self, trader): self._nest.hostTrader(trader)
+    @property
     def priceTick(self): return self._nest.priceTick
     @property
     def contractSize(self): return self._nest.contractSize
@@ -1028,6 +1001,8 @@ class AccountWrapper(MetaAccount):
     def getPosition(self, symbol): return self._nest.getPosition(symbol) # returns PositionData
     def getAllPositions(self): return self._nest.getAllPositions() # returns PositionData
     def cashAmount(self): return self._nest.cashAmount() # returns (avail, total)
+    def positionState(self) : return self._nest.positionState()
+    def summrizeBalance(self, positions=None, cashTotal=0) : return self._nest.summrizeBalance(positions=positions, cashTotal=cashTotal)
     def cashChange(self, dAvail=0, dTotal=0): return self._nest.cashChange(dAvail, dTotal)
     def record(self, dbName, collectionName, data): return self._nest.record(dbName, collectionName, data)
     def postEvent_Order(self, orderData): return self._nest.postEvent_Order(orderData)
@@ -1060,8 +1035,6 @@ class AccountWrapper(MetaAccount):
         # save the calculated daily result into the this wrapper for late calculating
         if self._nest._datePrevClose :
             self.__dailyResultDict[self._nest._datePrevClose] = self._nest._todayResult
-            self.__previousClose = self._nest._todayResult.closePrice
-            self.__openPosition = self._nest._todayResult.openPosition
 
     def onTimer(self, dt): return self._nest.onTimer(dt)
     # def saveDB(self): return self._nest.saveDB()

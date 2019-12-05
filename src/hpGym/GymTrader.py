@@ -236,7 +236,7 @@ class GymTrader(BaseTrader):
         self.__stepNo = 0
         self._total_pnl = 0.0
         self._total_reward = 0.0
-        self._capOfLastStep = self.__summrizeAccount()
+        self._capOfLastStep = self._account.summrizeBalance()
 
         observation = self.makeupGymObservation()
         self._shapeOfState = observation.shape
@@ -264,8 +264,8 @@ class GymTrader(BaseTrader):
         info = {}
 
         # step 1. collected information from the account
-        cashAvail, cashTotal, positions = self.getAccountState()
-        capitalBeforeStep = self.__summrizeAccount(positions, cashTotal)
+        cashAvail, cashTotal, positions = self._account.positionState()
+        capitalBeforeStep = self._account.summrizeBalance(positions, cashTotal)
 
         # TODO: the first version only support one symbol to play, so simply take the first symbol in the positions        
         symbol = self._tradeSymbol # TODO: should take the __dictOberserves
@@ -283,7 +283,7 @@ class GymTrader(BaseTrader):
             else: reward -=  100 # penalty: is the agent blind to sell with no position? :)
 
         # step 3. calculate the rewards
-        capitalAfterStep = self.__summrizeAccount() # most likely the cashAmount changed due to comission
+        capitalAfterStep = self._account.summrizeBalance() # most likely the cashAmount changed due to comission
         if capitalAfterStep < 50000 : 
             done =True
 
@@ -393,8 +393,8 @@ class GymTrader(BaseTrader):
             numpy.array: observation array.
         '''
         # part 1. build up the account_state
-        cashAvail, cashTotal, positions = self.getAccountState()
-        capitalBeforeStep = self.__summrizeAccount(positions, cashTotal)
+        cashAvail, cashTotal, positions = self._account.positionState()
+        capitalBeforeStep = self._account.summrizeBalance(positions, cashTotal)
         stateCapital = [cashAvail, cashTotal, capitalBeforeStep]
         # POS_COLS = PositionData.COLUMNS.split(',')
         # del(POS_COLS['exchange', 'stampByTrader', 'stampByBroker'])
@@ -433,29 +433,6 @@ class GymTrader(BaseTrader):
 
     def __OnRenderClosed(self, evt):
         self.__closed_plot = True
-
-    def getAccountState(self) :
-        ''' get the account capitial including cash and positions
-        '''
-        if not self._account:
-            return 0.0, 0.0, {}
-
-        positions = self._account.getAllPositions()
-        cashAvail, cashTotal = self._account.cashAmount()
-        return cashAvail, cashTotal, positions
-
-    def __summrizeAccount(self, positions=None, cashTotal=0) :
-        ''' sum up the account capitial including cash and positions
-        '''
-        if positions is None:
-            _, cashTotal, positions = self.getAccountState()
-
-        posValueSubtotal =0
-        for s, pos in positions.items():
-            posValueSubtotal += pos.position * pos.price * self._account.contractSize
-
-        return cashTotal + posValueSubtotal
-
 
 ########################################################################
 class GymTrainer(BackTestApp):

@@ -162,7 +162,7 @@ class BaseTrader(MetaTrader):
             self.error('no account adopted')
             return False
 
-        self._account._trader = self
+        self._account.hostTrader(self)
 
         # TODO part 2. scan those in the positions of Accounts, and also put into _dictObjectives
 

@@ -24,6 +24,10 @@ from abc import ABCMeta, abstractmethod
 class agentDQN(MetaAgent):
     def __init__(self, gymTrader, **kwargs):
         super(agentDQN, self).__init__(gymTrader, **kwargs)
+        self.__sampleSize = self._batchSize *32
+        self.__sampleCache = [None] * self.__sampleSize
+        self.__sampleIdx = 0
+        self.__realDataNum =0
 
     def buildBrain(self): #TODO param brainId to load json/HD5 from dataRoot/brainId
         '''Build the agent's brain
@@ -60,7 +64,10 @@ class agentDQN(MetaAgent):
         return self._brain
 
     def isReady(self) :
-        return super(agentDQN, self).isReady()
+        if not super(agentDQN, self).isReady():
+            return False
+            
+        return not None in self.__sampleCache
 
     def saveBrain(self, brainId=None) :
         ''' save the current brain into the dataRoot
@@ -136,9 +143,14 @@ class agentDQN(MetaAgent):
         @return tuple:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch
         '''
-        self._idxMem = (self._idxMem + 1) % self._memorySize
-        self._memory[self._idxMem] = (state, action, reward, next_state, done)
-        if warming_up or 0 != (self._idxMem % self._trainInterval):
+        self.__sampleIdx = (self.__sampleIdx + 1) % self.__sampleSize
+        self.__sampleCache[self.__sampleIdx] = (state, action, reward, next_state, done)
+        if warming_up:
+            self.__realDataNum =0
+            return None
+
+        self.__realDataNum += 1
+        if 0 != (self.__sampleIdx % self._trainInterval):
             return None
 
         # TODO: if self._epsilon > self._epsilonMin:
@@ -168,15 +180,54 @@ class agentDQN(MetaAgent):
         return self._brain.fit(x=state, y=q_target, epochs=1, batch_size=self._batchSize, verbose=0)
 
     def __get_batches(self):
-        '''Selecting a batch of memory
-           Split it into categorical subbatches
+        '''Selecting a batch of memory, split it into categorical subbatches
            Process action_batch into a position vector
         '''
-        batch = np.array(random.sample(self._memory, self._batchSize))
-        state_batch = np.concatenate(batch[:, 0]).reshape(self._batchSize, self._stateSize)
-        action_batch = np.concatenate(batch[:, 1]).reshape(self._batchSize, self._actionSize)
+        sizeToBatch = self._batchSize
+        if self.__realDataNum >= self.__sampleSize:
+            sizeToBatch = self.__sampleSize
+            self.__realDataNum = self.__sampleSize
+
+        batch = np.array(random.sample(self.__sampleCache, sizeToBatch))
+        state_batch = np.concatenate(batch[:, 0]).reshape(sizeToBatch, self._stateSize)
+        action_batch = np.concatenate(batch[:, 1]).reshape(sizeToBatch, self._actionSize)
         reward_batch = batch[:, 2]
-        next_state_batch = np.concatenate(batch[:, 3]).reshape(self._batchSize, self._stateSize)
+        next_state_batch = np.concatenate(batch[:, 3]).reshape(sizeToBatch, self._stateSize)
+        done_batch = batch[:, 4]
+
+        # action processing
+        action_batch = np.where(action_batch == 1)
+        return state_batch, action_batch, reward_batch, next_state_batch, done_batch
+
+    def __get_batches_TODO(self):
+        '''Selecting a batch of memory, split it into categorical subbatches
+           Process action_batch into a position vector
+        '''
+        sizeToBatch = self._batchSize
+        if self.__realDataNum <=0:
+            sizeToBatch = self._batchSize
+            batch = np.array(random.sample(self.__sampleCache, sizeToBatch)).astype('float32')    
+        else:
+            if self.__realDataNum >= self.__sampleSize:
+                sizeToBatch = self.__sampleSize
+                self.__realDataNum = self.__sampleSize
+            else :
+                sizeToBatch = int((self.__realDataNum +self._batchSize -1) /self._batchSize) * self._batchSize
+
+            idxStart = (self.__sampleIdx + self.__sampleSize - sizeToBatch +1) % self.__sampleSize
+            if self.__sampleIdx <= idxStart:
+                a =self.__sampleCache[idxStart :]
+                b= self.__sampleCache[: self.__sampleIdx+1]
+                c= a+b
+                batch = np.array(c, dtype=np.float32)
+            else : 
+                c = self.__sampleCache[idxStart : self.__sampleIdx+1]
+                batch = np.concatenate(c).astype('float32')
+            
+        state_batch = np.concatenate(batch[:, 0]).reshape(sizeToBatch, self._stateSize)
+        action_batch = np.concatenate(batch[:, 1]).reshape(sizeToBatch, self._actionSize)
+        reward_batch = batch[:, 2]
+        next_state_batch = np.concatenate(batch[:, 3]).reshape(sizeToBatch, self._stateSize)
         done_batch = batch[:, 4]
 
         # action processing

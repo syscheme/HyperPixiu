@@ -47,25 +47,20 @@ class MetaAgent(MetaObj): # TODO:
         self._stateSize = len(self._gymTrader.gymReset())
         self._actionSize = len(type(gymTrader).ACTIONS)
 
-        self._memorySize = self.getConfig('memorySize', 2000)
-        self._memory = [None] * self._memorySize
-        self._idxMem = 0
+        self._batchSize = self.getConfig('batchSize',   128)
 
         self._trainInterval = self.getConfig('trainInterval', 10)
         self._learningRate = self.getConfig('learningRate', 0.001)
-        self._batchSize = self.getConfig('batchSize', 64)
 
         self._gamma = self.getConfig('gamma', 0.95)
         self._epsilon = self.getConfig('epsilon', 1) # rand()[0,1) <= self._epsilon will trigger a random explore
         self._epsilonMin = self.getConfig('epsilonMin', 0.01)
-        #TODO ?? self.__epsilonDecrement = (self._epsilon - self._epsilonMin) * self._trainInterval / (self._epsilon * episode_length)  # linear decrease rate
 
         self.__wkBrainId = None
         self._brain = self.buildBrain()
 
     @abstractmethod
-    def isReady(self) :
-        return not None in self._memory
+    def isReady(self) : return True
 
     def getConfig(self, configName, defaultVal) :
         try :

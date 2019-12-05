@@ -25,7 +25,12 @@ class agentDQN(MetaAgent):
     def __init__(self, gymTrader, **kwargs):
         super(agentDQN, self).__init__(gymTrader, **kwargs)
         self.__sampleSize = self._batchSize *32
-        self.__sampleCache = [None] * self.__sampleSize
+        if self.__sampleSize <1024:
+            self.__sampleSize = 1024
+        if self.__sampleSize >10240:
+            self.__sampleSize = 10240
+
+        self.__sampleCache = [None] * self._batchSize
         self.__sampleIdx = 0
         self.__realDataNum =0
 
@@ -143,8 +148,14 @@ class agentDQN(MetaAgent):
         @return tuple:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch
         '''
-        self.__sampleIdx = (self.__sampleIdx + 1) % self.__sampleSize
-        self.__sampleCache[self.__sampleIdx] = (state, action, reward, next_state, done)
+        self.__sampleIdx = self.__sampleIdx % self.__sampleSize
+        if self.__sampleIdx >= len(self.__sampleCache) :
+            self.__sampleCache.append((state, action, reward, next_state, done))
+            self.__sampleIdx = len(self.__sampleCache)
+        else :
+            self.__sampleCache[self.__sampleIdx] = (state, action, reward, next_state, done)
+            self.__sampleIdx +=1
+
         if warming_up:
             self.__realDataNum =0
             return None
@@ -159,8 +170,7 @@ class agentDQN(MetaAgent):
         state, action, reward, next_state, done = self.__get_batches()
         reward += (self._gamma
                     * np.logical_not(done)
-                    * np.amax(self._brain.predict(next_state),
-                                axis=1))
+                    * np.amax(self._brain.predict(next_state), axis=1))
 
         q_target = self._brain.predict(state)
         q_target[action[0], action[1]] = reward
@@ -177,17 +187,13 @@ class agentDQN(MetaAgent):
         # class_weight：字典，将不同的类别映射为不同的权值，该参数用来在训练过程中调整损失函数（只能用于训练）
         # sample_weight：权值的numpy array，用于在训练时调整损失函数（仅用于训练）。可以传递一个1D的与样本等长的向量用于对样本进行1对1的加权，或者在面对时序数据时，传递一个的形式为（samples，sequence_length）的矩阵来为每个时间步上的样本赋不同的权。这种情况下请确定在编译模型时添加了sample_weight_mode=’temporal’。
         # initial_epoch: 从该参数指定的epoch开始训练，在继续之前的训练时有用。
-        return self._brain.fit(x=state, y=q_target, epochs=1, batch_size=self._batchSize, verbose=0)
+        return self._brain.fit(x=state, y=q_target, epochs=2, batch_size=self._batchSize, verbose=0)
 
     def __get_batches(self):
         '''Selecting a batch of memory, split it into categorical subbatches
            Process action_batch into a position vector
         '''
         sizeToBatch = self._batchSize
-        if self.__realDataNum >= self.__sampleSize:
-            sizeToBatch = self.__sampleSize
-            self.__realDataNum = self.__sampleSize
-
         batch = np.array(random.sample(self.__sampleCache, sizeToBatch))
         state_batch = np.concatenate(batch[:, 0]).reshape(sizeToBatch, self._stateSize)
         action_batch = np.concatenate(batch[:, 1]).reshape(sizeToBatch, self._actionSize)

@@ -400,7 +400,8 @@ class CsvPlayback(Playback):
         self._merger5minTo1Day = KlineToXminMerger(self._cbMergedKLine1Day, xmin=60*24-10)
         self._dtEndOfDay = None
 
-        # # filter the csv files
+        # filter the csv files
+        self.debug('search dir %s for csv files' % self._folder)
         prev = ""
         for _, _, files in os.walk(self._folder):
             files.sort()
@@ -412,6 +413,7 @@ class CsvPlayback(Playback):
                     continue
 
                 fn = '%s/%s' % (self._folder, name)
+                self.debug('checking if file %s is valid' % fn)
                 stampstr = stk[0][len(self._symbol):]
                 pos = next((i for i, ch  in enumerate(stampstr) if ch in CsvPlayback.DIGITS), None)
                 if not pos :

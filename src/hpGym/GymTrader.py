@@ -47,7 +47,7 @@ class MetaAgent(MetaObj): # TODO:
         self._stateSize = len(self._gymTrader.gymReset())
         self._actionSize = len(type(gymTrader).ACTIONS)
 
-        self._batchSize = self.getConfig('batchSize',   128)
+        self._batchSize = self.getConfig('batchSize', 128)
 
         self._trainInterval = self.getConfig('trainInterval', 10)
         self._learningRate = self.getConfig('learningRate', 0.001)
@@ -190,6 +190,9 @@ class GymTrader(BaseTrader):
         self._agent = self._AGENTCLASS(self, jsettings=self.subConfig('agent'), **agentKwArgs)
         # gymReset() will be called by agent above, self._gymState = self.gymReset() # will perform self._action = ACTIONS[ACTION_HOLD]
 
+        # self.__stampActStart = datetime.datetime.now()
+        # self.__stampActEnd = self.__stampActStart
+
         while not self._agent.isReady() :
             action = self._agent.gymAct(self._gymState)
             next_state, reward, done, _ = self.gymStep(action)
@@ -207,12 +210,16 @@ class GymTrader(BaseTrader):
         self._action = self._agent.gymAct(self._gymState)
         next_state, reward, self._episodeDone, _ = self.gymStep(self._action)
     
+        # self.__stampActStart = datetime.datetime.now()
+        # waited = self.__stampActStart - self.__stampActEnd
         loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, self._episodeDone)
         if loss: self.__recentLoss =loss
+        # self.__stampActEnd = datetime.datetime.now()
 
         self._gymState = next_state
         self._total_reward += reward
 
+        # self.info('proc_MarketEvent(%s) processed took %s, from last-round %s' % (ev.desc, (self.__stampActEnd - self.__stampActStart), waited))
         self.debug('proc_MarketEvent(%s) processed' % (ev.desc))
 
     # end of impl/overwrite of BaseApplication
@@ -270,10 +277,12 @@ class GymTrader(BaseTrader):
         # TODO: the first version only support FULL-BUY and FULL-SELL
         if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]) :
             if maxBuy >0 :
+                self._account.cancelAllOrders()
                 vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, strategy=None)
             else: reward -=  100 # penalty: is the agent blind to buy with no cash? :)
         elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]):
             if  maxSell >0:
+                self._account.cancelAllOrders()
                 vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, strategy=None)
             else: reward -=  100 # penalty: is the agent blind to sell with no position? :)
 
@@ -519,7 +528,8 @@ if __name__ == '__main__':
     SYMBOL = '000001' # '000540' '000001'
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-    csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
+    # csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
+    csvdir = 'e:/AShareSample'
     csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
     # marketstate = PerspectiveState('AShare')
     # p.addObj(marketstate)

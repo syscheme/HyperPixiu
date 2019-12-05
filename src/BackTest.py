@@ -1008,6 +1008,7 @@ class AccountWrapper(MetaAccount):
     # def sendOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendOrder(vtSymbol, orderType, price, volume, strategy)
     def cancelOrder(self, brokerOrderId): return self._nest.cancelOrder(brokerOrderId)
     def batchCancel(self, brokerOrderIds): return self._nest.batchCancel(brokerOrderIds)
+    def cancelAllOrders(self): return self._nest.cancelAllOrders()
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendStopOrder(vtSymbol, orderType, price, volume, strategy)
     def findOrdersOfStrategy(self, strategyId, symbol=None): return self._nest.findOrdersOfStrategy(strategyId, symbol)
     

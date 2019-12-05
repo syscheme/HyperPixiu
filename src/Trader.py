@@ -23,8 +23,8 @@ from copy import copy, deepcopy
 from abc import ABCMeta, abstractmethod
 import traceback
 
-from pymongo import MongoClient, ASCENDING
-from pymongo.errors import ConnectionFailure
+# from pymongo import MongoClient, ASCENDING
+# from pymongo.errors import ConnectionFailure
 
 ########################################################################
 class MetaTrader(BaseApplication):

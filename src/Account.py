@@ -81,6 +81,8 @@ class MetaAccount(BaseApplication):
     @abstractmethod 
     def batchCancel(self, brokerOrderIds): raise NotImplementedError
     @abstractmethod 
+    def cancelAllOrders(self): raise NotImplementedError
+    @abstractmethod 
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): raise NotImplementedError
     @abstractmethod 
     def findOrdersOfStrategy(self, strategyId, symbol=None): raise NotImplementedError
@@ -419,6 +421,13 @@ class Account(MetaAccount):
     def batchCancel(self, brokerOrderIds):
         for o in brokerOrderIds:
             self.cancelOrder(o)
+
+    def cancelAllOrders(self):
+        batch = []
+        with self._lock :
+            batch = self._dictOutgoingOrders.keys()
+        self.batchCancel(batch)
+
     #----------------------------------------------------------------------
 
     #----------------------------------------------------------------------

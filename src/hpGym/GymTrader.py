@@ -509,8 +509,8 @@ class GymTrainer(BackTestApp):
         wkdays = self.__bestEpisode_wkdays
         try :
             wkdays = int(self._episodeSummary['daysHaveTrade'])
-            # opendays = int(self._episodeSummary['totalDays'])
-            if self.__bestEpisode_wkdays >0 and wkdays >= self.__bestEpisode_wkdays : # and wkdays >opendays/4:
+            opendays = int(self._episodeSummary['totalDays'])
+            if self.__bestEpisode_wkdays >0 and wkdays >= self.__bestEpisode_wkdays and wkdays >(opendays/5):
                 rewardMean = self.wkTrader._total_reward/wkdays
                 rewardMeanBest = self.__bestEpisode_reward/self.__bestEpisode_wkdays
                 if rewardMean > rewardMeanBest:

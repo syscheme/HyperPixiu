@@ -50,6 +50,7 @@ class BackTestApp(MetaTrader):
         self._marketState = None
         self.__wkTrader = None
         self.__wkHistData = histdata
+        
         self._recorder = self._initTrader.recorder
 
         # 回测相关属性
@@ -70,10 +71,13 @@ class BackTestApp(MetaTrader):
         self.__execStamp_episodeStart = self.__execStamp_appStart
 
         # backtest will always clear the datapath
-        self.__outdir = '%s/%s%s' % (self.dataRoot, self.ident, self.__execStamp_appStart.strftime('%Y%m%dT%H%M%S'))
+        self._initTrader._outDir = '%s%s%s' % (self.dataRoot, self.ident, self.program.progId)
         try :
-            shutil.rmtree(self.__outdir)
-            os.makedirs(self.__outdir)
+            shutil.rmtree(self._initTrader._outDir)
+        except:
+            pass
+        try :
+            os.makedirs(self._initTrader._outDir)
         except:
             pass
 
@@ -87,6 +91,10 @@ class BackTestApp(MetaTrader):
     @property
     def wkTrader(self) :
         return self.__wkTrader
+
+    @property
+    def outdir(self) :
+        return self._initTrader._outDir
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -160,6 +168,8 @@ class BackTestApp(MetaTrader):
         super(BackTestApp, self).doAppStep()
         self._account.doAppStep()
 
+        reachedEnd = False
+
         if self.__wkHistData and not self._episodeDone:
             try :
                 ev = next(self.__wkHistData)
@@ -172,14 +182,15 @@ class BackTestApp(MetaTrader):
                 return # successfully pushed an Event
 
             except StopIteration:
+                reachedEnd = True
                 self.info('hist-read: end of playback')
 
         # this test should be done if reached here
-        self.OnEpisodeDone()
+        self.OnEpisodeDone(reachedEnd)
 
         # print the summary report
         strReport = self.formatSummary()
-        with open('%s/%s_summary.txt' %(self.__outdir, self.episodeId),'wt') as rptfile:
+        with open('%s/%s_summary.txt' %(self._initTrader._outDir, self.episodeId),'wt') as rptfile:
             rptfile.write(strReport)
 
         self.info('%s_%s summary:' %(self.ident, self.episodeId))
@@ -244,7 +255,7 @@ class BackTestApp(MetaTrader):
     #------------------------------------------------
     # 数据回放结果计算相关
 
-    def OnEpisodeDone(self, leadingReportPage=''):
+    def OnEpisodeDone(self, reachedEnd=True):
 
         tradeDays, summary = calculateSummary(self._startBalance, self._account.dailyResultDict)
 
@@ -256,7 +267,7 @@ class BackTestApp(MetaTrader):
         else: self._episodeSummary = {**self._episodeSummary, **summary}
 
         if not tradeDays is None:
-            csvfile = '%s/%s_DR.csv' %(self.__outdir, self.episodeId)
+            csvfile = '%s/%s_DR.csv' %(self._initTrader._outDir, self.episodeId)
             try :
                 os.makedirs(os.path.dirname(csvfile))
             except:
@@ -276,6 +287,10 @@ class BackTestApp(MetaTrader):
         self.__stepNoInEpisode =0
         self.debug('initializing episode[%d/%d], elapsed %s obj-in-program: %s' % (self.__episodeNo, self._episodes, str(self.__execStamp_episodeStart - self.__execStamp_appStart), self._program.listByType(MetaObj)))
 
+        # if self._recorder:
+        #     self._program.removeApp(self._recorder)
+        # self._recorder = self._program.createApp(hist.TaggedCsvRecorder, filepath ='%s/BT_%s.tcsv' % (self._initTrader._outDir, self.episodeId))
+
         # step 1. start over the market state
         if self._marketState:
             self._program.removeObj(self._marketState)
@@ -290,6 +305,7 @@ class BackTestApp(MetaTrader):
         self.__wkTrader = copy.deepcopy(self._initTrader)
         self._program.addApp(self.__wkTrader)
         self.__wkTrader._marketState = self._marketState
+        # self.__wkTrader._recorder = self._recorder
 
         if self._account :
             self._program.removeApp(self._account)
@@ -305,7 +321,7 @@ class BackTestApp(MetaTrader):
             self._account._marketState = self._marketState
             self.__wkTrader._account = self._account
             self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d]' % (self._originAcc.ident, self._account.ident, self._startBalance))
-
+        
         self.__wkHistData.resetRead()
            
         self._dataBegin_date = None
@@ -334,7 +350,7 @@ class BackTestApp(MetaTrader):
         self.subscribeEvent(Account.EVENT_ORDER)
         self.subscribeEvent(Account.EVENT_TRADE)
 
-        self.info('reset for episode[%d/%d], obj-in-program: %s' % (self.__episodeNo, self._episodes, self._program.listByType(MetaObj)))
+        self.info('resetEpisode() reset for episode[%d/%d], obj-in-program: %s' % (self.__episodeNo, self._episodes, self._program.listByType(MetaObj)))
         return True
 
     #----------------------------------------------------------------------
@@ -352,7 +368,7 @@ class BackTestApp(MetaTrader):
             originGain = (self._dataEnd_closeprice - self._dataBegin_openprice)*100 / self._dataBegin_openprice
 
         # 输出统计结果
-        strReport  = '\n%s_R%d took %s' %(self.ident, self.__episodeNo, str(datetime.now() - self.__execStamp_episodeStart))
+        strReport  = '\n%s_R%d/%d took %s' %(self.ident, self.__episodeNo, self._episodes, str(datetime.now() - self.__execStamp_episodeStart))
         strReport += u'\n    回放始末: %-10s ~ %-10s'  % (self._btStartDate.strftime('%Y-%m-%d'), self._btEndDate.strftime('%Y-%m-%d'))
         strReport += u'\n  交易日始末: %-10s(open:%.2f) ~ %-10s(close:%.2f): %s日 %s%%' % (summary['startDate'], self._dataBegin_openprice, summary['endDate'], self._dataEnd_closeprice, summary['totalDays'], formatNumber(originGain))
         strReport += u'\n    交易日数: %s (盈利%s, 亏损%s) %s ~ %s +%s' % (summary['daysHaveTrade'], summary['profitDays'], summary['lossDays'], 
@@ -406,7 +422,7 @@ class BackTestApp(MetaTrader):
         pKDE.set_title('Daily Pnl Distribution')
         tradeDays['netPnl'].hist(bins=50)
         
-        plt.savefig('%s/%s_DR.png' %(self.__outdir, self.episodeId), dpi=400, bbox_inches='tight')
+        plt.savefig('%s%s_DR.png' %(self._initTrader._outDir, self.episodeId), dpi=400, bbox_inches='tight')
         plt.show()
         plt.close()
        

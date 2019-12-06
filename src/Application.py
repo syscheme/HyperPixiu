@@ -490,8 +490,8 @@ class Program(object):
         if not argvs or len(argvs) <1:
             argvs = sys.argv
 
-        self._pid = os.getpid() # process id
-        self._progName = os.path.basename(argvs[0])[0:-3] # cut off the .py extname
+        self.__pid = os.getpid() # process id
+        self.__progName = os.path.basename(argvs[0])[0:-3] # cut off the .py extname
         self._outdir = './out' #TODO
         self._heartbeatInterval = BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # heartbeat间隔（默认1秒）
         self.__daemonize =False
@@ -501,13 +501,13 @@ class Program(object):
         try:
             opts, args = getopt.getopt(argvs[1:], "hf:o:", ["config=","outdir="])
         except getopt.GetoptError :
-            print('%s.py -f <config-file> -o <outputdir>' % self._progName)
+            print('%s.py -f <config-file> -o <outputdir>' % self.__progName)
             sys.exit(2)
 
         config_filename = None
         for opt, arg in opts:
             if opt == '-h':
-                print('%s.py -f <config-file> -o <outputdir>' % self._progName)
+                print('%s.py -f <config-file> -o <outputdir>' % self.__progName)
                 sys.exit()
             elif opt in ("-f", "--ifile"):
                 config_filename = arg
@@ -525,7 +525,7 @@ class Program(object):
                 print('failed to load configure[%s]: %s' % (config_filename, e))
                 sys.exit(3)
 
-        self._shelvefn = '%s/%s.sobj' % (self._outdir, self._progName)
+        self._shelvefn = '%s/%s.sobj' % (self._outdir, self.__progName)
         # 记录今日日期
         self._runStartDate = datetime.now().strftime('%Y-%m-%d')
 
@@ -545,7 +545,7 @@ class Program(object):
         # 其中每个键对应的值是一个列表，列表中保存了对该事件进行监听的appId
         self.__subscribers = {}
 
-        self.info('='*10 + ' %s(%d) starts ' %(self._progName, self._pid)  + '='*10)
+        self.info('='*10 + ' %s(%d) starts ' %(self.__progName, self.__pid)  + '='*10)
     
     def jsettings(self, nodeName) : 
         if not self.__jsettings : return None
@@ -561,6 +561,10 @@ class Program(object):
     @property
     def logger(self) : 
         return self.__logger
+
+    @property
+    def progId(self) : 
+        return '%s_%s' % (self.__progName, self.__pid)
 
     @property
     def settings(self) :
@@ -854,8 +858,8 @@ class Program(object):
         sys.stderr = open(stderr,'a+')
         
         try:
-            self._pid = os.fork()
-            if self._pid > 0:        #parrent
+            self.__pid = os.fork()
+            if self.__pid > 0:        #parrent
                 os._exit(0)
         except OSError as e:
             sys.stderr.write("first fork failed!!"+e.strerror)
@@ -871,8 +875,8 @@ class Program(object):
         os.umask(0)
     
         try:
-            self._pid = os.fork()     #第二次进行fork,为了防止会话首进程意外获得控制终端
-            if self._pid > 0:
+            self.__pid = os.fork()     #第二次进行fork,为了防止会话首进程意外获得控制终端
+            if self.__pid > 0:
                 os._exit(0)     #父进程退出
         except OSError as e:
             sys.stderr.write("second fork failed!!"+e.strerror)
@@ -881,7 +885,7 @@ class Program(object):
         # 孙进程
         #   for i in range(3,64):  # 关闭所有可能打开的不需要的文件，UNP中这样处理，但是发现在python中实现不需要。
         #       os.close(i)
-        sys.stdout.write("Daemon has been created! with self._pid: %d\n" % os.getpid())
+        sys.stdout.write("Daemon has been created! with self.__pid: %d\n" % os.getpid())
         sys.stdout.flush()  #由于这里我们使用的是标准IO，回顾APUE第五章，这里应该是行缓冲或全缓冲，因此要调用flush，从内存中刷入日志文件。\
 
     # methods about event subscription
@@ -975,7 +979,7 @@ class Program(object):
         level = STR2LEVEL['info']
         echoToConsole = True
         logdir = '/tmp'
-        filename = '%s.%s.log' % (self._progName, datetime.now().strftime('%Y%m%d'))
+        filename = '%s.%s_%s.log' % (self.__progName, datetime.now().strftime('%m%d'), self.__pid)
         loggingEvent = True
 
         if self.__jsettings and jsoncfg.node_exists(self.__jsettings.logger):

@@ -85,6 +85,7 @@ class BaseTrader(MetaTrader):
         # self._tradeType = TRADER_TYPE_TRADING
 
         self._accountId      = self.getConfig('accountId', self._accountId)
+        self._outDir         = self.getConfig('outDir', self.dataRoot)
         #--------------------
         # from old 数据引擎
 

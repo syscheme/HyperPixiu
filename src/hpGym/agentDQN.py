@@ -19,6 +19,7 @@ from keras.models import model_from_json
 from keras.callbacks import ModelCheckpoint
 
 from abc import ABCMeta, abstractmethod
+import os
 
 ########################################################################
 class agentDQN(MetaAgent):
@@ -50,6 +51,7 @@ class agentDQN(MetaAgent):
         '''
         if not brainId or len(brainId) <=0 :
             brainId = agentDQN.DEFAULT_BRAIN_ID
+            self._gymTrader.warn('taking default brain[%s]' % (brainId))
 
         self._brain = self.loadBrain(brainId)
         if not self._brain :
@@ -59,6 +61,7 @@ class agentDQN(MetaAgent):
                 builder = self.__brainDict[brainId]
 
             if builder:
+                self._gymTrader.info('no pre-saved brain[%s], building a new one' % (brainId))
                 self._brain = builder()
 
         if self._brain:
@@ -109,11 +112,12 @@ class agentDQN(MetaAgent):
             raise ValueError("Null brain or Null trader")
 
         try :
-            brainDir = '%s%s/' % (self._gymTrader.dataRoot, brainId)
+            brainDir = '%s%s/' % (self._outDir, brainId)
             os.makedirs(brainDir)
         except:
             pass
 
+        self._gymTrader.debug('saving brain[%s] at %s' % (brainId, brainDir))
         # step 1. save the model file in json
         model_json = self._brain.to_json()
         with open('%smodel.json' % brainDir, 'w') as mjson:
@@ -121,6 +125,7 @@ class agentDQN(MetaAgent):
         
         # step 2. save the weights of the model
         self._brain.save('%smodel.json.h5' % brainDir)
+        self._gymTrader.info('saved brain[%s] with weights' % (brainDir))
         
     def loadBrain(self, brainId) :
         ''' load the previous saved brain
@@ -134,19 +139,22 @@ class agentDQN(MetaAgent):
 
         brainDir = '%s%s/' % (self._gymTrader.dataRoot, brainId)
         brain = None
-        try :
+        try : 
             # step 1. read the model file in json
+            self._gymTrader.debug('loading saved brain from %s' %brainDir)
             with open('%smodel.json' % brainDir, 'r') as mjson:
                 model_json = mjson.read()
             brain = model_from_json(model_json)
 
             # step 2. read the weights of the model
+            self._gymTrader.debug('loading saved brain weight from %s' %brainDir)
             brain.load_weights('%smodel.json.h5' % brainDir)
 
             # step 3. if load weight successfully, do not start over to mess-up the trained model by
             # limiting epsilon
             self._epsilon = min([self._epsilon*0.7, self._epsilonMin *20, 0.5])
             self._learningRate = min([self._learningRate/2, 0.001])
+            self._gymTrader.info('loaded brain from %s, take initial epsilon[%s] learningRate[%s]' % (brainDir, self._epsilon, self._learningRate))
         except:
             pass
 

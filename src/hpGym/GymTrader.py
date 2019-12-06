@@ -60,6 +60,10 @@ class MetaAgent(MetaObj): # TODO:
         if self._trainInterval < 10:
             self._trainInterval =10
 
+        self._outDir = self.getConfig('outDir', self._gymTrader.dataRoot)
+        if '/' != self._outDir[-1]:
+            self._outDir +='/'
+
         self._brain = self.buildBrain(self._wkBrainId)
 
     @abstractmethod
@@ -67,8 +71,8 @@ class MetaAgent(MetaObj): # TODO:
 
     def getConfig(self, configName, defaultVal) :
         try :
-            if configName in self._kwargs.keys() :
-                return self._kwargs[configName]
+            if configName in self.__kwargs.keys() :
+                return self.__kwargs[configName]
 
             if self.__jsettings:
                 jn = self.__jsettings
@@ -190,6 +194,7 @@ class GymTrader(BaseTrader):
         self._account._marketState = self._marketState
 
         agentKwArgs = self.getConfig('agent', {})
+        agentKwArgs = {**agentKwArgs, 'outDir': self._outDir }
         self._agent = self._AGENTCLASS(self, jsettings=self.subConfig('agent'), **agentKwArgs)
         # gymReset() will be called by agent above, self._gymState = self.gymReset() # will perform self._action = ACTIONS[ACTION_HOLD]
 
@@ -284,12 +289,12 @@ class GymTrader(BaseTrader):
             if maxBuy >0 :
                 self._account.cancelAllOrders()
                 vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, strategy=None)
-            else: reward -=  100 # penalty: is the agent blind to buy with no cash? :)
+            else: reward -= 1 # penalty: is the agent blind to buy with no cash? :)
         elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]):
             if  maxSell >0:
                 self._account.cancelAllOrders()
                 vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, strategy=None)
-            else: reward -=  100 # penalty: is the agent blind to sell with no position? :)
+            else: reward -= 1 # penalty: is the agent blind to sell with no position? :)
 
         # step 3. calculate the rewards
         cash, posvalue = self._account.summrizeBalance() # most likely the cashAmount changed due to comission
@@ -298,7 +303,7 @@ class GymTrader(BaseTrader):
             done =True
 
         instant_pnl = capitalAfterStep - capitalBeforeStep
-        reward      = capitalAfterStep - self._capOfLastStep
+        reward      += capitalAfterStep - self._capOfLastStep
         self._total_pnl += instant_pnl
         self._capOfLastStep = capitalAfterStep
 
@@ -501,8 +506,8 @@ class GymTrainer(BackTestApp):
 
     #------------------------------------------------
     # BackTest related entries
-    def OnEpisodeDone(self):
-        super(GymTrainer, self).OnEpisodeDone()
+    def OnEpisodeDone(self, reachedEnd=True):
+        super(GymTrainer, self).OnEpisodeDone(reachedEnd)
 
         # determin whether it is a best episode
         isBest = False
@@ -517,7 +522,7 @@ class GymTrainer(BackTestApp):
         except:
             pass
 
-        if endLazyDays < (opendays /2): # at least have trade during the 2nd half
+        if reachedEnd and endLazyDays < (opendays /2): # at least have trade during the 2nd half
             if self.__bestEpisode_wkdays >0 and wkdays >= self.__bestEpisode_wkdays:
                 rewardMean = self.wkTrader._total_reward/wkdays
                 rewardMeanBest = self.__bestEpisode_reward/self.__bestEpisode_wkdays
@@ -528,7 +533,7 @@ class GymTrainer(BackTestApp):
                 isBest = (self.wkTrader.loss < self.__bestEpisode_loss)
 
         # save brain and decrease epsilon if improved
-        if not self._episodeDone and isBest:
+        if reachedEnd and isBest:
             if self.__bestEpisode_loss < DUMMY_BIG_VAL: # do not save for the first episode
                 self.wkTrader._agent.saveBrain()
                 self.__stampLastSaveBrain = datetime.datetime.now()
@@ -556,7 +561,7 @@ class GymTrainer(BackTestApp):
             'idOfBest'    : self.__bestEpisode_Id,
             'rewardOfBest': round(self.__bestEpisode_reward,2),
             'daysOfBest'  : self.__bestEpisode_wkdays,
-            'lastSaveBrain': self.__stampLastSaveBrain
+            'lastSaveBrain': self.__stampLastSaveBrain.strftime('%Y%m%dT%H%M%S') if isinstance(self.__stampLastSaveBrain, datetime.datetime) else self.__stampLastSaveBrain
         }
         self._episodeSummary = {**self._episodeSummary, **mySummary}
 
@@ -582,7 +587,7 @@ class GymTrainer(BackTestApp):
         strReport += '\n totalReward: %s'  % summary['totalReward']
         strReport += '\n     epsilon: %s'  % summary['epsilon']
         strReport += '\n        loss: %s <-last %s' % (summary['loss'], summary['lastLoss'])
-        strReport += '\n    bestLoss: %s <-(%s: %sd reward=%s, saved=%s)' % (summary['bestLoss'], summary['idOfBest'], summary['daysOfBest'], summary['rewardOfBest'], summary['lastSaveBrain'])
+        strReport += '\n    bestLoss: %s <-(%s: %sd reward=%s @%s)' % (summary['bestLoss'], summary['idOfBest'], summary['daysOfBest'], summary['rewardOfBest'], summary['lastSaveBrain'])
         return strReport
 
 if __name__ == '__main__':

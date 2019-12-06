@@ -142,7 +142,8 @@ class TaggedCsvRecorder(Recorder):
         self._minFlushInterval = self.getConfig('minFlushInterval', 1)
         self._daysToRoll  = self.getConfig('daysToRoll', 1)
         self._daysToZip   = self.getConfig('daysToZip', 7)
-        self._filename    = self.getConfig('filename', '%s_%s.tcsv' % (self._program._progName, datetime.now().strftime('%Y%m%d%H%M')))
+        filename          = self.getConfig('filename', '%s_%s.tcsv' % (self._program.progId, datetime.now().strftime('%m%d')))
+        self._filepath    = self.getConfig('filepath', '%s%s' % (self.dataRoot, filename))
         tmp = min(self._daysToRoll *2, self._daysToRoll +2)
         if self._daysToZip < tmp:
             self._daysToZip = tmp
@@ -151,18 +152,17 @@ class TaggedCsvRecorder(Recorder):
         self.__fakedcsv   = logging.Logger(name=self.ident) #getLogger()
         self.__1stRow   = True     
         
-        filepath = '%s%s' % (self.dataRoot, self._filename)
         try :
-            statinfo = os.stat(filepath)
+            statinfo = os.stat(self._filepath)
             if statinfo and statinfo.st_size >10:
                 self.__1stRow = False
         except :
             try :
-                os.makedirs(os.path.dirname(filepath))
+                os.makedirs(os.path.dirname(self._filepath))
             except:
                 pass
 
-        self.__hdlrFile = logging.handlers.RotatingFileHandler(filepath, maxBytes=20*1024*1024, backupCount=50) # 20MB about to 3MB after bzip2
+        self.__hdlrFile = logging.handlers.RotatingFileHandler(self._filepath, maxBytes=20*1024*1024, backupCount=50) # 20MB about to 3MB after bzip2
         self.__hdlrFile.rotator  = self.__rotator
         self.__hdlrFile.namer    = self.__rotating_namer
         self.__hdlrFile.setLevel(logging.DEBUG)

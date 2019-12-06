@@ -763,7 +763,7 @@ class Account(MetaAccount):
         self.debug('__cashChange() %s' % strTxn)
         # double check if the cash account goes to negative
         newAvail, newTotal = pos.posAvail + dAvail, pos.position + dTotal
-        if newAvail<0 or newTotal <0 or newAvail >(newTotal*1.05):
+        if newAvail<-0.5 or newTotal <-0.5 or newAvail >(newTotal*1.05): # because some err at float calculating
             raise ValueError('__cashChange(%s) something wrong: newAvail[%s] newTotal[%s]' % (strTxn, newAvail, newTotal))
 
         pos.posAvail = newAvail

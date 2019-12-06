@@ -146,6 +146,7 @@ class agentDQN(MetaAgent):
             # step 3. if load weight successfully, do not start over to mess-up the trained model by
             # limiting epsilon
             self._epsilon = min([self._epsilon*0.7, self._epsilonMin *20, 0.5])
+            self._learningRate = min([self._learningRate/2, 0.001])
         except:
             pass
 

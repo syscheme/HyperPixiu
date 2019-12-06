@@ -211,11 +211,11 @@ class GymTrader(BaseTrader):
         '''processing an incoming MarketEvent'''
 
         self._action = self._agent.gymAct(self._gymState)
-        next_state, reward, self._episodeDone, _ = self.gymStep(self._action)
+        next_state, reward, done, _ = self.gymStep(self._action)
     
         # self.__stampActStart = datetime.datetime.now()
         # waited = self.__stampActStart - self.__stampActEnd
-        loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, self._episodeDone)
+        loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, done)
         if loss: self.__recentLoss =loss
         # self.__stampActEnd = datetime.datetime.now()
 
@@ -458,6 +458,7 @@ class GymTrainer(BackTestApp):
         self.__lastEpisode_loss = DUMMY_BIG_VAL
 
         self.__bestEpisode_Id = -1
+        self.__bestEpisode_wkdays = 0
         self.__bestEpisode_loss = DUMMY_BIG_VAL
         self.__bestEpisode_reward = -DUMMY_BIG_VAL
         self.__stampLastSaveBrain = '0000'
@@ -491,6 +492,9 @@ class GymTrainer(BackTestApp):
             self._dataBegin_date = self._dataEnd_date
             self._dataBegin_openprice = self._dataEnd_closeprice
 
+        if self.wkTrader._total_reward < - (self._startBalance/2):
+            self._episodeDone = True
+            self.error('episode[%s] has done: totalReward[%s] lost half of startBalance' % (self.episodeId, self.wkTrader._total_reward))
         
     # end of BaseApplication routine
     #----------------------------------------------------------------------
@@ -500,13 +504,38 @@ class GymTrainer(BackTestApp):
     def OnEpisodeDone(self):
         super(GymTrainer, self).OnEpisodeDone()
 
+        # determin whether it is a best episode
+        isBest = False
+        wkdays = self.__bestEpisode_wkdays
+        try :
+            wkdays = int(self._episodeSummary['daysHaveTrade'])
+            # opendays = int(self._episodeSummary['totalDays'])
+            if self.__bestEpisode_wkdays >0 and wkdays >= self.__bestEpisode_wkdays : # and wkdays >opendays/4:
+                rewardMean = self.wkTrader._total_reward/wkdays
+                rewardMeanBest = self.__bestEpisode_reward/self.__bestEpisode_wkdays
+                if rewardMean > rewardMeanBest:
+                    isBest = True
+        except:
+            pass
+
+        if not isBest :
+            isBest = (self.wkTrader.loss < self.__bestEpisode_loss)
+
         # save brain and decrease epsilon if improved
-        if self.wkTrader.loss < self.__bestEpisode_loss :
+        if not self._episodeDone and isBest:
+            if self.__bestEpisode_loss < DUMMY_BIG_VAL: # do not save for the first episode
+                self.wkTrader._agent.saveBrain()
+                self.__stampLastSaveBrain = datetime.datetime.now()
+
+            self.__bestEpisode_wkdays = wkdays
             self.__bestEpisode_loss = self.wkTrader.loss
             self.__bestEpisode_Id = self.episodeId
             self.__bestEpisode_reward = self.wkTrader._total_reward
-            self.wkTrader._agent.saveBrain()
-            self.__stampLastSaveBrain = datetime.datetime.now()
+
+            # decrease agent's learningRate and epsilon
+            self.wkTrader._agent._learningRate *=0.8
+            if self.wkTrader._agent._learningRate < 0.00001 : 
+                self.wkTrader._agent._learningRate = 0.00001
 
             self.wkTrader._agent._epsilon -= self.wkTrader._agent._epsilon/4
             if self.wkTrader._agent._epsilon < self.wkTrader._agent._epsilonMin :
@@ -520,6 +549,7 @@ class GymTrainer(BackTestApp):
             'bestLoss'    : self.__bestEpisode_loss,
             'idOfBest'    : self.__bestEpisode_Id,
             'rewardOfBest': round(self.__bestEpisode_reward,2),
+            'daysOfBest'  : self.__bestEpisode_wkdays,
             'lastSaveBrain': self.__stampLastSaveBrain
         }
         self._episodeSummary = {**self._episodeSummary, **mySummary}
@@ -546,7 +576,7 @@ class GymTrainer(BackTestApp):
         strReport += '\n totalReward: %s'  % summary['totalReward']
         strReport += '\n     epsilon: %s'  % summary['epsilon']
         strReport += '\n        loss: %s <-last %s' % (summary['loss'], summary['lastLoss'])
-        strReport += '\n    bestLoss: %s <-(%s: reward=%s, saved=%s)' % (summary['bestLoss'], summary['idOfBest'], summary['rewardOfBest'], summary['lastSaveBrain'])
+        strReport += '\n    bestLoss: %s <-(%s: %sd reward=%s, saved=%s)' % (summary['bestLoss'], summary['idOfBest'], summary['daysOfBest'], summary['rewardOfBest'], summary['lastSaveBrain'])
         return strReport
 
 if __name__ == '__main__':

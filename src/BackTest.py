@@ -354,9 +354,8 @@ class BackTestApp(MetaTrader):
         # 输出统计结果
         strReport  = '\n%s_R%d took %s' %(self.ident, self.__episodeNo, str(datetime.now() - self.__execStamp_episodeStart))
         strReport += u'\n    回放始末: %-10s ~ %-10s'  % (self._btStartDate.strftime('%Y-%m-%d'), self._btEndDate.strftime('%Y-%m-%d'))
-        strReport += u'\n  交易日始末: %-10s(open:%.2f) ~ %-10s(close:%.2f): %s日 %s%%' % (summary['startDate'], self._dataBegin_openprice, summary['endDate'], self._dataEnd_closeprice, 
-                            summary['daysHaveTrade'], formatNumber(originGain))
-        strReport += u'\n    交易日数: %s (盈利%s, 亏损%s)'  % (summary['totalDays'], summary['profitDays'], summary['lossDays'])
+        strReport += u'\n  交易日始末: %-10s(open:%.2f) ~ %-10s(close:%.2f): %s日 %s%%' % (summary['startDate'], self._dataBegin_openprice, summary['endDate'], self._dataEnd_closeprice, summary['totalDays'], formatNumber(originGain))
+        strReport += u'\n    交易日数: %s (盈利%s, 亏损%s)'  % (summary['daysHaveTrade'], summary['profitDays'], summary['lossDays'])
         
         strReport += u'\n    起始资金: %-12s' % formatNumber(self._startBalance,2)
         strReport += u'\n    结束资金: %-12s' % formatNumber(summary['endBalance'])

@@ -507,19 +507,25 @@ class GymTrainer(BackTestApp):
         # determin whether it is a best episode
         isBest = False
         wkdays = self.__bestEpisode_wkdays
+        opendays =0
+        endLazyDays = opendays
         try :
             wkdays = int(self._episodeSummary['daysHaveTrade'])
             opendays = int(self._episodeSummary['totalDays'])
-            if self.__bestEpisode_wkdays >0 and wkdays >= self.__bestEpisode_wkdays and wkdays >(opendays/5):
+            endLazyDays = opendays
+            endLazyDays = int(self._episodeSummary['endLazyDays'])
+        except:
+            pass
+
+        if endLazyDays < (opendays /2): # at least have trade during the 2nd half
+            if self.__bestEpisode_wkdays >0 and wkdays >= self.__bestEpisode_wkdays:
                 rewardMean = self.wkTrader._total_reward/wkdays
                 rewardMeanBest = self.__bestEpisode_reward/self.__bestEpisode_wkdays
                 if rewardMean > rewardMeanBest:
                     isBest = True
-        except:
-            pass
 
-        if not isBest :
-            isBest = (self.wkTrader.loss < self.__bestEpisode_loss)
+            if not isBest:
+                isBest = (self.wkTrader.loss < self.__bestEpisode_loss)
 
         # save brain and decrease epsilon if improved
         if not self._episodeDone and isBest:

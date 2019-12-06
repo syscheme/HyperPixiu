@@ -818,9 +818,12 @@ def calculateSummary(startBalance, dayResultDict):
     totalDays  = len(df)
     profitDays = len(df[df['netPnl']>0])
     lossDays   = len(df[df['netPnl']<0])
-    cDaysHaveTrade = len(df[df['tcBuy'] + df['tcSell'] >0])
+    daysHaveTrades = df[(df['tcBuy'] + df['tcSell']) >0].index
+    tradeDay_1st = daysHaveTrades[0] if len(daysHaveTrades) >0 else None
+    tradeDay_last  = daysHaveTrades[-1] if len(daysHaveTrades) >0 else None
+    endLazyDays = totalDays - df.index.get_loc(tradeDay_last) -1 if tradeDay_last else totalDays
     
-    endBalance   = round(df['endBalance'].iloc[-1],2)
+    endBalance   = round(df['endBalance'].iloc[-1], 2)
     maxDrawdown  = round(df['drawdown'].min(),2)
     maxDdPercent = round(df['ddPercent'].min(),2)
     
@@ -874,7 +877,10 @@ def calculateSummary(startBalance, dayResultDict):
         'dailyReturn': dailyReturn,
         'returnStd': returnStd,
         'sharpeRatio': sharpeRatio,
-        'daysHaveTrade': cDaysHaveTrade
+        'daysHaveTrade': len(daysHaveTrades),
+        'tradeDay_1st': tradeDay_1st,
+        'tradeDay_last': tradeDay_last,
+        'endLazyDays' : endLazyDays
     }
     
     return df, summary

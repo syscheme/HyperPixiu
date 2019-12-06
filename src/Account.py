@@ -289,7 +289,7 @@ class Account(MetaAccount):
         for s, pos in positions.items():
             posValueSubtotal += pos.position * pos.price * self.contractSize
 
-        return cashTotal + posValueSubtotal
+        return cashTotal, posValueSubtotal
 
     #----------------------------------------------------------------------
     def datetimeAsOfMarket(self):
@@ -820,7 +820,8 @@ class Account(MetaAccount):
         self.debug('onDayClose() calculating daily result')
         cTrades =0
         positions, _ = self.calcDailyPositions()
-        self._todayResult.endBalance = self.summrizeBalance()
+        self._todayResult.cash, self._todayResult.posValue = self.summrizeBalance()
+        self._todayResult.endBalance = self._todayResult.cash + self._todayResult.posValue
 
         # part 1. 汇总 the confirmed trades, and save
         with self._lock :
@@ -879,13 +880,23 @@ class Account(MetaAccount):
                 return
             self.onDayClose()
 
-        prevBalance = self._todayResult.endBalance if self._todayResult else self.summrizeBalance()
-        self._dateToday = newDate
+        # shift the positions, must do copy each PositionData
+        cashAvail, cashTotal, self._prevPositions = self.positionState()
+        posCap =0
+
+        if self._todayResult :
+            prevBalance = self._todayResult.endBalance
+            posCap = self._todayResult.posValue
+        else :
+            _, posCap = self.summrizeBalance(positions=self._prevPositions, cashTotal=cashTotal)
+            prevBalance =  cashTotal + posCap
+
         self._todayResult = DailyResult(self._dateToday, startBalance=prevBalance)
+        self._todayResult.cash, self._todayResult.posValue = cashTotal, posCap
+
+        self._dateToday = newDate
 
         self._dictTrades.clear() # clean the trade list
-        # shift the positions, must do copy each PositionData
-        _, _, self._prevPositions = self.positionState()
         self._state = Account.STATE_OPEN
         self.debug('onDayOpen() shift pos to dict _prevPositions, updated state')
     
@@ -1320,7 +1331,7 @@ class DailyResult(object):
     '''每日交易的结果'''
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
-    COLUMNS = 'date,startBalance,tcBuy,tcSell,tradingPnl,positionPnl,totalPnl,turnover,commission,slippage,netPnl,endBalance,txnHist'
+    COLUMNS = 'date,startBalance,tcBuy,tcSell,tradingPnl,positionPnl,totalPnl,turnover,commission,slippage,netPnl,posValue,cash,endBalance,txnHist'
 
     #----------------------------------------------------------------------
     def __init__(self, date, startBalance=0):
@@ -1334,6 +1345,8 @@ class DailyResult(object):
         self.tradingPnl = 0             # 交易盈亏
         self.positionPnl = 0            # 持仓盈亏
         self.totalPnl = 0               # 总盈亏
+        self.posValue = 0               # 总持仓市值
+        self.cash     = 0               # 总现金
         self.endBalance = self.startBalance  # 结束资产
         
         self.turnover = 0               # 成交量

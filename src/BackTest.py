@@ -177,6 +177,17 @@ class BackTestApp(MetaTrader):
         # this test should be done if reached here
         self.OnEpisodeDone()
 
+        # print the summary report
+        strReport = self.formatSummary()
+        with open('%s/%s_summary.txt' %(self.__outdir, self.episodeId),'wt') as rptfile:
+            rptfile.write(strReport)
+
+        self.info('%s_%s summary:' %(self.ident, self.episodeId))
+        for line in strReport.splitlines():
+            if len(line) <2: continue
+            self.info(line)
+
+        # prepare for the next episode
         self.__episodeNo +=1
         if (self.__episodeNo > self._episodes) :
             # all tests have been done
@@ -236,16 +247,29 @@ class BackTestApp(MetaTrader):
     def OnEpisodeDone(self, leadingReportPage=''):
         self._account.OnPlaybackEnd()
         self.info('OnEpisodeDone() episode[%d/%d], processed %d events took %s, generating report' % (self.__episodeNo, self._episodes, self.__stepNoInEpisode, str(datetime.now() - self.__execStamp_episodeStart)))
-        try :
-            self.generateReport(leadingReportPage)
-        except Exception as ex:
-            self.error("generateReport() caught exception %s %s" % (ex, traceback.format_exc()))
+
+        tradeDays, summary = calculateSummary(self._startBalance, self._account.dailyResultDict)
+        if not summary or not isinstance(summary, dict) :
+            self.error('no summary given: %s' % summary)
+        else: self._episodeSummary = {**self._episodeSummary, **summary}
+
+        if not tradeDays is None:
+            csvfile = '%s/%s_DR.csv' %(self.__outdir, self.episodeId)
+            try :
+                os.makedirs(os.path.dirname(csvfile))
+            except:
+                pass
+
+            tradeDays.to_csv(csvfile)
+            if self._plotReport :
+                self.plotResult(tradeDays)
 
     def resetEpisode(self) :
 #        self._account = self._accountClass(None, tdBackTest, self._settings.account)
 #        self._account._dvrBroker._backtest= self
 #        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
 
+        self._episodeSummary = {}
         self.__execStamp_episodeStart = datetime.now()
         self.__stepNoInEpisode =0
         self.debug('initializing episode[%d/%d], elapsed %s obj-in-program: %s' % (self.__episodeNo, self._episodes, str(self.__execStamp_episodeStart - self.__execStamp_appStart), self._program.listByType(MetaObj)))
@@ -312,30 +336,21 @@ class BackTestApp(MetaTrader):
         return True
 
     #----------------------------------------------------------------------
-    def generateReport(self, leadingReportPage='', tradeDays=None, summary=None):
+    def formatSummary(self, summary=None):
         """显示按日统计的交易结果"""
-        if tradeDays is None:
-            tradeDays, summary = calculateSummary(self._startBalance, self._account.dailyResultDict)
-
-        if not summary or not isinstance(summary, dict) :
+        if not summary :
+            summary = self._episodeSummary
+        if isinstance(summary, str) : return summary
+        if not isinstance(summary, dict) :
             self.error('no summary given: %s' % summary)
-            return 
+            return ''
 
-        if not tradeDays is None:
-            csvfile = '%s/%s_DR.csv' %(self.__outdir, self.episodeId)
-            try :
-                os.makedirs(os.path.dirname(csvfile))
-            except:
-                pass
-            tradeDays.to_csv(csvfile)
-            
         originGain = 0.0
         if self._dataBegin_openprice >0 :
             originGain = (self._dataEnd_closeprice - self._dataBegin_openprice)*100 / self._dataBegin_openprice
 
         # 输出统计结果
-        strReport = leadingReportPage if leadingReportPage else ''
-        strReport += '\n%s_R%d took %s' %(self.ident, self.__episodeNo, str(datetime.now() - self.__execStamp_episodeStart))
+        strReport  = '\n%s_R%d took %s' %(self.ident, self.__episodeNo, str(datetime.now() - self.__execStamp_episodeStart))
         strReport += u'\n    回放始末: %-10s ~ %-10s'  % (self._btStartDate.strftime('%Y-%m-%d'), self._btEndDate.strftime('%Y-%m-%d'))
         strReport += u'\n  交易日始末: %-10s(open:%.2f) ~ %-10s(close:%.2f): %s/%s日 %s%%' % (summary['startDate'], self._dataBegin_openprice, summary['endDate'], self._dataEnd_closeprice, 
                             summary['daysHaveTrade'], summary['totalDays'], formatNumber(originGain))
@@ -363,17 +378,8 @@ class BackTestApp(MetaTrader):
         strReport += u'\n日均成交笔数: %s' % formatNumber(summary['dailyTradeCount'])
         strReport += u'\n  日均收益率: %s%%' % formatNumber(summary['dailyReturn'])
         strReport += u'\n  收益标准差: %s%%' % formatNumber(summary['returnStd'])
-
-        with open('%s/%s_summary.txt' %(self.__outdir, self.episodeId),'wt') as rptfile:
-            rptfile.write(strReport)
-
-        self.info('%s_%s summary:' %(self.ident, self.episodeId))
-        for line in strReport.splitlines():
-            if len(line) <2: continue
-            self.info(line)
         
-        if self._plotReport :
-            self.plotResult(tradeDays)
+        return strReport
 
     #----------------------------------------------------------------------
     def plotResult(self, tradeDays):

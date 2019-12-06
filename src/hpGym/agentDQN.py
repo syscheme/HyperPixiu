@@ -134,14 +134,18 @@ class agentDQN(MetaAgent):
 
         brainDir = '%s%s/' % (self._gymTrader.dataRoot, brainId)
         brain = None
-        # step 1. read the model file in json
         try :
+            # step 1. read the model file in json
             with open('%smodel.json' % brainDir, 'r') as mjson:
                 model_json = mjson.read()
             brain = model_from_json(model_json)
 
             # step 2. read the weights of the model
             brain.load_weights('%smodel.json.h5' % brainDir)
+
+            # step 3. if load weight successfully, do not start over to mess-up the trained model by
+            # limiting epsilon
+            self._epsilon = min([self._epsilon*0.7, self._epsilonMin *20, 0.5])
         except:
             pass
 

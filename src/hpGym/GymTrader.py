@@ -30,7 +30,7 @@ mpl.rcParams.update(
     }
 )
 
-DUMMY_LOSS = 999999.9
+DUMMY_BIG_VAL = 999999.9
 
 ########################################################################
 class MetaAgent(MetaObj): # TODO:
@@ -172,7 +172,7 @@ class GymTrader(BaseTrader):
         # self._prices_history = []
     @property
     def loss(self) :
-        return round(self.__recentLoss.history["loss"][0], 6) if self.__recentLoss else DUMMY_LOSS
+        return round(self.__recentLoss.history["loss"][0], 6) if self.__recentLoss else DUMMY_BIG_VAL
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -241,7 +241,8 @@ class GymTrader(BaseTrader):
         self.__stepNo = 0
         self._total_pnl = 0.0
         self._total_reward = 0.0
-        self._capOfLastStep = self._account.summrizeBalance()
+        cash, posvalue = self._account.summrizeBalance()
+        self._capOfLastStep = cash + posvalue
 
         observation = self.makeupGymObservation()
         self._shapeOfState = observation.shape
@@ -270,7 +271,8 @@ class GymTrader(BaseTrader):
 
         # step 1. collected information from the account
         cashAvail, cashTotal, positions = self._account.positionState()
-        capitalBeforeStep = self._account.summrizeBalance(positions, cashTotal)
+        _, posvalue = self._account.summrizeBalance(positions, cashTotal)
+        capitalBeforeStep = cashTotal + posvalue
 
         # TODO: the first version only support one symbol to play, so simply take the first symbol in the positions        
         symbol = self._tradeSymbol # TODO: should take the __dictOberserves
@@ -290,7 +292,8 @@ class GymTrader(BaseTrader):
             else: reward -=  100 # penalty: is the agent blind to sell with no position? :)
 
         # step 3. calculate the rewards
-        capitalAfterStep = self._account.summrizeBalance() # most likely the cashAmount changed due to comission
+        cash, posvalue = self._account.summrizeBalance() # most likely the cashAmount changed due to comission
+        capitalAfterStep = cash + posvalue
         if capitalAfterStep < 50000 : 
             done =True
 
@@ -401,7 +404,8 @@ class GymTrader(BaseTrader):
         '''
         # part 1. build up the account_state
         cashAvail, cashTotal, positions = self._account.positionState()
-        capitalBeforeStep = self._account.summrizeBalance(positions, cashTotal)
+        _, posvalue = self._account.summrizeBalance(positions, cashTotal)
+        capitalBeforeStep = cashTotal + posvalue
         stateCapital = [cashAvail, cashTotal, capitalBeforeStep]
         # POS_COLS = PositionData.COLUMNS.split(',')
         # del(POS_COLS['exchange', 'stampByTrader', 'stampByBroker'])
@@ -451,7 +455,11 @@ class GymTrainer(BackTestApp):
         '''
         super(GymTrainer, self).__init__(program, trader, histdata, **kwargs)
         self._iterationsPerEpisode = self.getConfig('iterationsPerEpisode', 1)
-        self.__lossOfLastEpisode = DUMMY_LOSS
+        self.__lastEpisode_loss = DUMMY_BIG_VAL
+
+        self.__bestEpisode_Id = -1
+        self.__bestEpisode_loss = DUMMY_BIG_VAL
+        self.__bestEpisode_reward = -DUMMY_BIG_VAL
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -488,27 +496,32 @@ class GymTrainer(BackTestApp):
 
     #------------------------------------------------
     # BackTest related entries
-    def OnEpisodeDone(self, leadingReportPage=''):
-        
-
-        strReport = leadingReportPage if leadingReportPage else ''
-        strSummary = '\nepisode[%s/%d], total-reward[%s] epsilon[%s] loss[%s->%s]' % (self.episodeId, self._episodes, 
-            round(self.wkTrader._total_reward, 2), round(self.wkTrader._agent._epsilon, 2), self.__lossOfLastEpisode, self.wkTrader.loss)
-
-        super(GymTrainer, self).OnEpisodeDone(strReport + strSummary)
-
-        self.info('OnEpisodeDone() trained %s' % strSummary)
+    def OnEpisodeDone(self):
+        super(GymTrainer, self).OnEpisodeDone()
+        mySummary = {
+            'totalReward' : round(self.wkTrader._total_reward, 2),
+            'epsilon' : round(self.wkTrader._agent._epsilon, 4),
+            'loss': self._episodes,
+            'lastLoss': self.__lastEpisode_loss,
+            'lastLoss': self.__lastEpisode_loss,
+            'bestLoss': self.__bestEpisode_loss,
+            'idOfBest': self.__bestEpisode_Id,
+            'rewardOfBest': self.__bestEpisode_reward
+        }
+        self._episodeSummary = {**self._episodeSummary, **mySummary}
 
         # save brain and decrease epsilon if improved
-        if self.wkTrader.loss < self.__lossOfLastEpisode :
+        if self.wkTrader.loss < self.__bestEpisode_loss :
+            self.__bestEpisode_loss = self.wkTrader.loss
+            self.__bestEpisode_Id = self.episodeId
+            self.__bestEpisode_reward = self.wkTrader._total_reward
             self.wkTrader._agent.saveBrain()
 
             self.wkTrader._agent._epsilon -= self.wkTrader._agent._epsilon/4
             if self.wkTrader._agent._epsilon < self.wkTrader._agent._epsilonMin :
                 self.wkTrader._agent._epsilon = self.wkTrader._agent._epsilonMin
 
-        self.__lossOfLastEpisode = self.wkTrader.loss
-
+        self.__lastEpisode_loss = self.wkTrader.loss
         # maybe self.wkTrader.gymRender()
 
     def resetEpisode(self) :
@@ -520,6 +533,18 @@ class GymTrainer(BackTestApp):
         '''
         super(GymTrainer, self).resetEpisode()
         return self.wkTrader.gymReset()
+
+    def formatSummary(self, summary=None):
+        strReport = super(GymTrainer, self).formatSummary(summary)
+        if not isinstance(summary, dict) :
+            summary = self._episodeSummary
+
+        strReport += '\n\n' + '-'*20
+        strReport += '\n totalReward: %s'  % summary['totalReward']
+        strReport += '\n     epsilon: %s'  % summary['epsilon']
+        strReport += '\n        loss: %s ~ %s' % (summary['lastLoss'], summary['loss'])
+        strReport += '\n    bestLoss: %s <- (episode %s, reward %s)' % (summary['bestLoss'], summary['idOfBest'], summary['rewardOfBest'])
+        return strReport
 
 if __name__ == '__main__':
     from Application import Program

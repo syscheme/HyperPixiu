@@ -547,7 +547,7 @@ class GymTrainer(BackTestApp):
         strReport += '\n     epsilon: %s'  % summary['epsilon']
         strReport += '\n        loss: %s <-last %s' % (summary['loss'], summary['lastLoss'])
         strReport += '\n    bestLoss: %s <-(%s: reward=%s)' % (summary['bestLoss'], summary['idOfBest'], summary['rewardOfBest'])
-        strReport += '\n   saveBrain: %s %s'  % (summary['bestLoss'], summary['lastSaveBrain'])
+        strReport += '\n   saveBrain: %s %s'  % (summary['idOfBest'], summary['lastSaveBrain'])
         return strReport
 
 if __name__ == '__main__':

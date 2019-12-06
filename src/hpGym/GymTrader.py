@@ -521,6 +521,12 @@ if __name__ == '__main__':
     from Account import Account_AShare
     import HistoryData as hist
     import sys, os
+    # from keras.backend.tensorflow_backend import set_session
+    # import tensorflow as tf
+
+    # config = tf.ConfigProto()
+    # config.gpu_options.allow_growth=True
+    # set_session(tf.Session(config=config))
 
     sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/Gym_AShare.json']
     p = Program()

@@ -519,7 +519,7 @@ class GymTrainer(BackTestApp):
             'lastLoss'    : self.__lastEpisode_loss,
             'bestLoss'    : self.__bestEpisode_loss,
             'idOfBest'    : self.__bestEpisode_Id,
-            'rewardOfBest': self.__bestEpisode_reward,
+            'rewardOfBest': round(self.__bestEpisode_reward,2),
             'lastSaveBrain': self.__stampLastSaveBrain
         }
         self._episodeSummary = {**self._episodeSummary, **mySummary}
@@ -546,8 +546,7 @@ class GymTrainer(BackTestApp):
         strReport += '\n totalReward: %s'  % summary['totalReward']
         strReport += '\n     epsilon: %s'  % summary['epsilon']
         strReport += '\n        loss: %s <-last %s' % (summary['loss'], summary['lastLoss'])
-        strReport += '\n    bestLoss: %s <-(%s: reward=%s)' % (summary['bestLoss'], summary['idOfBest'], summary['rewardOfBest'])
-        strReport += '\n   saveBrain: %s %s'  % (summary['idOfBest'], summary['lastSaveBrain'])
+        strReport += '\n    bestLoss: %s <-(%s: reward=%s, saved=%s)' % (summary['bestLoss'], summary['idOfBest'], summary['rewardOfBest'], summary['lastSaveBrain'])
         return strReport
 
 if __name__ == '__main__':

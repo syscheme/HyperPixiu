@@ -47,17 +47,20 @@ class MetaAgent(MetaObj): # TODO:
         self._stateSize = len(self._gymTrader.gymReset())
         self._actionSize = len(type(gymTrader).ACTIONS)
 
-        self._batchSize = self.getConfig('batchSize', 128)
-
-        self._trainInterval = self.getConfig('trainInterval', 10)
         self._learningRate = self.getConfig('learningRate', 0.001)
+        self._batchSize = self.getConfig('batchSize', 128)
 
         self._gamma = self.getConfig('gamma', 0.95)
         self._epsilon = self.getConfig('epsilon', 1) # rand()[0,1) <= self._epsilon will trigger a random explore
         self._epsilonMin = self.getConfig('epsilonMin', 0.01)
 
-        self.__wkBrainId = None
-        self._brain = self.buildBrain()
+        self._wkBrainId = self.getConfig('brainId', None)
+
+        self._trainInterval = self._batchSize /2
+        if self._trainInterval < 10:
+            self._trainInterval =10
+
+        self._brain = self.buildBrain(self._wkBrainId)
 
     @abstractmethod
     def isReady(self) : return True
@@ -85,7 +88,7 @@ class MetaAgent(MetaObj): # TODO:
         return defaultVal
 
     @abstractmethod
-    def buildBrain(self):
+    def buildBrain(self, brainId =None):
         '''
         @return the brain built to set to self._brain
         '''
@@ -496,8 +499,10 @@ class GymTrainer(BackTestApp):
 
         self.info('OnEpisodeDone() trained %s' % strSummary)
 
-        # decrease epsilon if improved
+        # save brain and decrease epsilon if improved
         if self.wkTrader.loss < self.__lossOfLastEpisode :
+            self.wkTrader._agent.saveBrain()
+
             self.wkTrader._agent._epsilon -= self.wkTrader._agent._epsilon/4
             if self.wkTrader._agent._epsilon < self.wkTrader._agent._epsilonMin :
                 self.wkTrader._agent._epsilon = self.wkTrader._agent._epsilonMin

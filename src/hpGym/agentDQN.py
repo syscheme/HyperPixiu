@@ -22,7 +22,14 @@ from abc import ABCMeta, abstractmethod
 
 ########################################################################
 class agentDQN(MetaAgent):
+    DEFAULT_BRAIN_ID = 'DQN_DrDrDl'
+
     def __init__(self, gymTrader, **kwargs):
+        self.__brainDict = {
+            agentDQN.DEFAULT_BRAIN_ID : self.__dqn_DrDrDl,
+            # TODO: other brains
+        }
+
         super(agentDQN, self).__init__(gymTrader, **kwargs)
         self.__sampleSize = self._batchSize *32
         if self.__sampleSize <1024:
@@ -34,39 +41,54 @@ class agentDQN(MetaAgent):
         self.__sampleIdx = 0
         self.__realDataNum =0
 
-    def buildBrain(self): #TODO param brainId to load json/HD5 from dataRoot/brainId
-        '''Build the agent's brain
-        '''
-        return self.buildBrain_00000()
+    def __del__(self):  # the destructor
+        # self.saveBrain()
+        pass
 
-    def buildBrain_00000(self): #TODO param brainId to load json/HD5 from dataRoot/brainId
+    def buildBrain(self, brainId =None): #TODO param brainId to load json/HD5 from dataRoot/brainId
         '''Build the agent's brain
         '''
-        self._brain = self.loadBrain('DQN00000')
+        if not brainId or len(brainId) <=0 :
+            brainId = agentDQN.DEFAULT_BRAIN_ID
+
+        self._brain = self.loadBrain(brainId)
         if not self._brain :
-            self._brain = Sequential()
-            neurons_per_layer = 24
-            activation = "relu"
-            self._brain.add(Dense(neurons_per_layer,
-                            input_dim=self._stateSize,
-                            activation=activation))
-            self._brain.add(Dense(neurons_per_layer, activation=activation))
-            self._brain.add(Dense(self._actionSize, activation='linear'))
+            # build the new brain
+            builder = None
+            if brainId in self.__brainDict.keys():
+                builder = self.__brainDict[brainId]
 
-        self.__wkBrainId = 'DQN00000'
-        self._brain.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
+            if builder:
+                self._brain = builder()
 
-        # checkpointPath ='best.h5'
-        # checkpoint = ModelCheckpoint(filepath=checkpointPath, monitor='val_acc', verbose=1, save_best_only=True, save_weights_only=True, mode='max', period=1)
-        # self._brain.flt(x, Y...., callbacks=[checkpoint])
-        # more additiona, to customize the checkpoint other than max(val_acc), such as max(mean(y_pred))
-        #    import keras.backend as K
-        #    def mean_pred(y_true, y_pred):
-        #        return K.mean(y_pred)
-        #    model.compile(..., metrics=['accuracy', mean_pred])
-        #    ModelCheckpoint(..., monitor='val_mean_pred', mode='max', period=1)
+        if self._brain:
+            self._wkBrainId = brainId
+            self._brain.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
+            # checkpointPath ='best.h5'
+            # checkpoint = ModelCheckpoint(filepath=checkpointPath, monitor='val_acc', verbose=1, save_best_only=True, save_weights_only=True, mode='max', period=1)
+            # self._brain.flt(x, Y...., callbacks=[checkpoint])
+            # more additiona, to customize the checkpoint other than max(val_acc), such as max(mean(y_pred))
+            #    import keras.backend as K
+            #    def mean_pred(y_true, y_pred):
+            #        return K.mean(y_pred)
+            #    model.compile(..., metrics=['accuracy', mean_pred])
+            #    ModelCheckpoint(..., monitor='val_mean_pred', mode='max', period=1)
 
         return self._brain
+
+    def __dqn_DrDrDl(self): #TODO param brainId to load json/HD5 from dataRoot/brainId
+        '''Build the agent's brain
+        '''
+        model = Sequential()
+        neurons_per_layer = 24
+        activation = "relu"
+        model.add(Dense(neurons_per_layer,
+                        input_dim=self._stateSize,
+                        activation=activation))
+        model.add(Dense(neurons_per_layer, activation=activation))
+        model.add(Dense(self._actionSize, activation='linear'))
+
+        return model
 
     def isReady(self) :
         if not super(agentDQN, self).isReady():
@@ -78,13 +100,13 @@ class agentDQN(MetaAgent):
         ''' save the current brain into the dataRoot
         @param a unique brainId must be given
         '''
+        if not brainId or len(brainId) <=0:
+            brainId = self._wkBrainId
+        if not brainId or len(brainId) <=0:
+            return
+
         if not self._gymTrader.dataRoot or not self._brain :
             raise ValueError("Null brain or Null trader")
-
-        if not brainId or len(brainId) <=0:
-            if self.__wkBrainId and len(brainId) >0:
-                brainId = brainId
-            else : raise ValueError("empty brainId")
 
         try :
             brainDir = '%s%s/' % (self._gymTrader.dataRoot, brainId)
@@ -104,17 +126,13 @@ class agentDQN(MetaAgent):
         ''' load the previous saved brain
         @param a unique brainId must be given
         '''
+        if not brainId or len(brainId) <=0:
+            raise ValueError("No brainId specified")
+
         if not self._gymTrader :
             raise ValueError("Null trader")
-        if not brainId or len(brainId) <=0:
-            raise ValueError("empty brainId")
 
-        try :
-            brainDir = '%s%s/' % (self._gymTrader.dataRoot, brainId)
-            os.makedirs(brainDir)
-        except:
-            pass
-
+        brainDir = '%s%s/' % (self._gymTrader.dataRoot, brainId)
         brain = None
         # step 1. read the model file in json
         try :

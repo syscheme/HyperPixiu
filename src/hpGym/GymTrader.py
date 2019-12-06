@@ -52,7 +52,7 @@ class MetaAgent(MetaObj): # TODO:
 
         self._gamma = self.getConfig('gamma', 0.95)
         self._epsilon = self.getConfig('epsilon', 1) # rand()[0,1) <= self._epsilon will trigger a random explore
-        self._epsilonMin = self.getConfig('epsilonMin', 0.01)
+        self._epsilonMin = self.getConfig('epsilonMin', 0.02)
 
         self._wkBrainId = self.getConfig('brainId', None)
 

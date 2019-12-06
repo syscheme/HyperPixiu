@@ -460,6 +460,7 @@ class GymTrainer(BackTestApp):
         self.__bestEpisode_Id = -1
         self.__bestEpisode_loss = DUMMY_BIG_VAL
         self.__bestEpisode_reward = -DUMMY_BIG_VAL
+        self.__stampLastSaveBrain = '0000'
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -498,17 +499,6 @@ class GymTrainer(BackTestApp):
     # BackTest related entries
     def OnEpisodeDone(self):
         super(GymTrainer, self).OnEpisodeDone()
-        mySummary = {
-            'totalReward' : round(self.wkTrader._total_reward, 2),
-            'epsilon' : round(self.wkTrader._agent._epsilon, 4),
-            'loss': self._episodes,
-            'lastLoss': self.__lastEpisode_loss,
-            'lastLoss': self.__lastEpisode_loss,
-            'bestLoss': self.__bestEpisode_loss,
-            'idOfBest': self.__bestEpisode_Id,
-            'rewardOfBest': self.__bestEpisode_reward
-        }
-        self._episodeSummary = {**self._episodeSummary, **mySummary}
 
         # save brain and decrease epsilon if improved
         if self.wkTrader.loss < self.__bestEpisode_loss :
@@ -516,10 +506,23 @@ class GymTrainer(BackTestApp):
             self.__bestEpisode_Id = self.episodeId
             self.__bestEpisode_reward = self.wkTrader._total_reward
             self.wkTrader._agent.saveBrain()
+            self.__stampLastSaveBrain = datetime.datetime.now()
 
             self.wkTrader._agent._epsilon -= self.wkTrader._agent._epsilon/4
             if self.wkTrader._agent._epsilon < self.wkTrader._agent._epsilonMin :
                 self.wkTrader._agent._epsilon = self.wkTrader._agent._epsilonMin
+
+        mySummary = {
+            'totalReward' : round(self.wkTrader._total_reward, 2),
+            'epsilon'     : round(self.wkTrader._agent._epsilon, 4),
+            'loss'        : self.wkTrader.loss,
+            'lastLoss'    : self.__lastEpisode_loss,
+            'bestLoss'    : self.__bestEpisode_loss,
+            'idOfBest'    : self.__bestEpisode_Id,
+            'rewardOfBest': self.__bestEpisode_reward,
+            'lastSaveBrain': self.__stampLastSaveBrain
+        }
+        self._episodeSummary = {**self._episodeSummary, **mySummary}
 
         self.__lastEpisode_loss = self.wkTrader.loss
         # maybe self.wkTrader.gymRender()
@@ -542,8 +545,9 @@ class GymTrainer(BackTestApp):
         strReport += '\n\n' + '-'*20
         strReport += '\n totalReward: %s'  % summary['totalReward']
         strReport += '\n     epsilon: %s'  % summary['epsilon']
-        strReport += '\n        loss: %s ~ %s' % (summary['lastLoss'], summary['loss'])
-        strReport += '\n    bestLoss: %s <- (episode %s, reward %s)' % (summary['bestLoss'], summary['idOfBest'], summary['rewardOfBest'])
+        strReport += '\n        loss: %s <-last %s' % (summary['loss'], summary['lastLoss'])
+        strReport += '\n    bestLoss: %s <-(%s: reward=%s)' % (summary['bestLoss'], summary['idOfBest'], summary['rewardOfBest'])
+        strReport += '\n   saveBrain: %s %s'  % (summary['bestLoss'], summary['lastSaveBrain'])
         return strReport
 
 if __name__ == '__main__':

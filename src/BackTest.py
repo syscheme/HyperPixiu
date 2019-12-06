@@ -245,10 +245,12 @@ class BackTestApp(MetaTrader):
     # 数据回放结果计算相关
 
     def OnEpisodeDone(self, leadingReportPage=''):
+
+        tradeDays, summary = calculateSummary(self._startBalance, self._account.dailyResultDict)
+
         self._account.OnPlaybackEnd()
         self.info('OnEpisodeDone() episode[%d/%d], processed %d events took %s, generating report' % (self.__episodeNo, self._episodes, self.__stepNoInEpisode, str(datetime.now() - self.__execStamp_episodeStart)))
 
-        tradeDays, summary = calculateSummary(self._startBalance, self._account.dailyResultDict)
         if not summary or not isinstance(summary, dict) :
             self.error('no summary given: %s' % summary)
         else: self._episodeSummary = {**self._episodeSummary, **summary}
@@ -789,7 +791,8 @@ def calculateSummary(startBalance, dayResultDict):
 
     columns ={}
     cDaysHaveTrade =0
-    for dr in dayResultDict.values():
+    for k, dr in dayResultDict.items():
+        if not dr.date: dr.date = k
         if len(columns) <=0 :
             for k in dr.__dict__.keys() :
                 if 'tradeList' == k : # to exclude some columns

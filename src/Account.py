@@ -434,6 +434,10 @@ class Account(MetaAccount):
 
     def _broker_onOrderPlaced(self, orderData):
         """委托回调"""
+
+        if len(orderData.stampSubmitted) <=0:
+            orderData.stampSubmitted = self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
+
         # order placed, move it from _dictOutgoingOrders to _dictLimitOrders
         with self._lock :
             try :
@@ -461,8 +465,8 @@ class Account(MetaAccount):
     def _broker_onCancelled(self, orderData):
         """撤单回调"""
         orderData.status = OrderData.STATUS_CANCELLED
-        if len(orderData.cancelTime) <=0:
-            orderData.cancelTime = self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
+        if len(orderData.stampCanceled) <=0:
+            orderData.stampCanceled = self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
 
         with self._lock :
             try :
@@ -502,6 +506,9 @@ class Account(MetaAccount):
 
     def _broker_onOrderDone(self, orderData):
         """委托被执行"""
+        if len(orderData.stampFinished) <=0:
+            orderData.stampFinished = self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
+
         with self._lock :
             try :
                 if not OrderData.STOPORDERPREFIX in orderData.reqId :
@@ -568,7 +575,7 @@ class Account(MetaAccount):
 
                 # TODO: T+0 also need to increase pos.avalPos
                 
-            pos.stampByTrader = trade.dt  # the current position is calculated based on trade
+            pos.stampByTrader = trade.datetime  # the current position is calculated based on trade
         
         cashAvail, cashTotal = self.cashAmount()
         self.info('broker_onTrade() trade[%s] processed, pos[%s->%s/%s] cash[%.2f/%.2f]' % (trade.desc, strPrevPos, pos.posAvail, pos.position, cashAvail, cashTotal))#, pos.desc))
@@ -826,7 +833,7 @@ class Account(MetaAccount):
         # part 1. 汇总 the confirmed trades, and save
         with self._lock :
             for trade in self._dictTrades.values():
-                if trade.dt and self._dateToday != trade.dt.date():
+                if trade.datetime and self._dateToday != trade.datetime.date():
                     continue
 
                 cTrades +=1
@@ -1182,7 +1189,6 @@ class TradeData(EventData):
         self.offset = EventData.EMPTY_UNICODE             # 成交开平仓
         self.price = EventData.EMPTY_FLOAT                # 成交价格
         self.volume = EventData.EMPTY_INT                 # 成交数量
-        self.dt     = None                      # 成交时间 datetime
    
     @property
     def desc(self) :

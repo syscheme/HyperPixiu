@@ -170,7 +170,7 @@ class GymTrader(BaseTrader):
         self.__recentLoss = None
         self._total_pnl = 0.0
         self._total_reward = 0.0
-        self._capOfLastStep = 0.0
+        self._latestBalance = 0.0
 
         # self.n_actions = 3
         # self._prices_history = []
@@ -247,7 +247,7 @@ class GymTrader(BaseTrader):
         self._total_pnl = 0.0
         self._total_reward = 0.0
         cash, posvalue = self._account.summrizeBalance()
-        self._capOfLastStep = cash + posvalue
+        self._latestBalance = cash + posvalue
 
         observation = self.makeupGymObservation()
         self._shapeOfState = observation.shape
@@ -303,9 +303,9 @@ class GymTrader(BaseTrader):
             done =True
 
         instant_pnl = capitalAfterStep - capitalBeforeStep
-        reward      += capitalAfterStep - self._capOfLastStep
+        reward      += capitalAfterStep - self._latestBalance
         self._total_pnl += instant_pnl
-        self._capOfLastStep = capitalAfterStep
+        self._latestBalance = capitalAfterStep
 
         ''' step 4. composing info for tracing
 
@@ -410,8 +410,7 @@ class GymTrader(BaseTrader):
         # part 1. build up the account_state
         cashAvail, cashTotal, positions = self._account.positionState()
         _, posvalue = self._account.summrizeBalance(positions, cashTotal)
-        capitalBeforeStep = cashTotal + posvalue
-        stateCapital = [cashAvail, cashTotal, capitalBeforeStep]
+        stateCapital = [cashAvail, cashTotal, posvalue]
         # POS_COLS = PositionData.COLUMNS.split(',')
         # del(POS_COLS['exchange', 'stampByTrader', 'stampByBroker'])
         # del(POS_COLS['symbol']) # TODO: this version only support single Symbol, so regardless field symbol
@@ -431,18 +430,8 @@ class GymTrader(BaseTrader):
         market_state = self._marketState.snapshot('000001')
 
         # return the concatenation of account_state and market_state as gymEnv sate
-        ret = np.concatenate((account_state, market_state))
-        return ret.astype('float32')
-
-    @staticmethod
-    def random_action_fun():
-        """The default random action for exploration.
-        We hold 80% of the time and buy or sell 10% of the time each.
-
-        Returns:
-            numpy.array: array with a 1 on the action index, 0 elsewhere.
-        """
-        return np.random.multinomial(1, [0.8, 0.1, 0.1])
+        envState = np.concatenate((account_state, market_state))
+        return envState.astype('float32')
 
     #----------------------------------------------------------------------
     # access to the account observed
@@ -497,9 +486,10 @@ class GymTrainer(BackTestApp):
             self._dataBegin_date = self._dataEnd_date
             self._dataBegin_openprice = self._dataEnd_closeprice
 
-        if self.wkTrader._total_reward < - (self._startBalance/2):
-            self._episodeDone = True
-            self.error('episode[%s] has done: totalReward[%s] lost half of startBalance' % (self.episodeId, self.wkTrader._total_reward))
+        if self.wkTrader._latestBalance < - (self._startBalance/2):
+            self._bGameOver = True
+            self._episodeSummary['reason'] = 'balance[%s] lost half of startBalance' % self.wkTrader._latestBalance
+            self.error('episode[%s] has been KO-ed: %s' % self._episodeSummary['reason'])
         
     # end of BaseApplication routine
     #----------------------------------------------------------------------
@@ -510,7 +500,7 @@ class GymTrainer(BackTestApp):
         super(GymTrainer, self).OnEpisodeDone(reachedEnd)
 
         # determin whether it is a best episode
-        isBest = False
+        meanRewardImproved = False
         wkdays = self.__bestEpisode_wkdays
         opendays =0
         endLazyDays = opendays
@@ -527,13 +517,10 @@ class GymTrainer(BackTestApp):
                 rewardMean = self.wkTrader._total_reward/wkdays
                 rewardMeanBest = self.__bestEpisode_reward/self.__bestEpisode_wkdays
                 if rewardMean > rewardMeanBest:
-                    isBest = True
-
-            if not isBest:
-                isBest = (self.wkTrader.loss < self.__bestEpisode_loss)
+                    meanRewardImproved = True
 
         # save brain and decrease epsilon if improved
-        if reachedEnd and isBest:
+        if meanRewardImproved or (wkdays > (opendays/2) and self.wkTrader.loss < self.__bestEpisode_loss):
             if self.__bestEpisode_loss < DUMMY_BIG_VAL: # do not save for the first episode
                 self.wkTrader._agent.saveBrain()
                 self.__stampLastSaveBrain = datetime.datetime.now()

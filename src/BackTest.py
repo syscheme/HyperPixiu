@@ -82,7 +82,7 @@ class BackTestApp(MetaTrader):
             pass
 
         self._dtData = self._btStartDate
-        self._episodeDone = False
+        self._bGameOver = False
 
     @property
     def episodeId(self) :
@@ -170,7 +170,7 @@ class BackTestApp(MetaTrader):
 
         reachedEnd = False
 
-        if self.__wkHistData and not self._episodeDone:
+        if self.__wkHistData and not self._bGameOver:
             try :
                 ev = next(self.__wkHistData)
                 if not ev : return
@@ -207,7 +207,7 @@ class BackTestApp(MetaTrader):
             return
 
         self.resetEpisode()
-        self._episodeDone =False
+        self._bGameOver =False
 
     def OnEvent(self, ev): 
         # step 2. 收到行情后，在启动策略前的处理
@@ -282,7 +282,7 @@ class BackTestApp(MetaTrader):
 #        self._account._dvrBroker._backtest= self
 #        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
 
-        self._episodeSummary = {}
+        self._episodeSummary = {'reason':''}
         self.__execStamp_episodeStart = datetime.now()
         self.__stepNoInEpisode =0
         self.debug('initializing episode[%d/%d], elapsed %s obj-in-program: %s' % (self.__episodeNo, self._episodes, str(self.__execStamp_episodeStart - self.__execStamp_appStart), self._program.listByType(MetaObj)))
@@ -396,6 +396,7 @@ class BackTestApp(MetaTrader):
         strReport += u'\n日均成交笔数: %s' % formatNumber(summary['dailyTradeCount'])
         strReport += u'\n  日均收益率: %s%%' % formatNumber(summary['dailyReturn'])
         strReport += u'\n  收益标准差: %s%%' % formatNumber(summary['returnStd'])
+        if 'reason' in summary.keys() : strReport += u'\n  reason: %s' % summary['reason']
         
         return strReport
 
@@ -1090,6 +1091,7 @@ class AccountWrapper(MetaAccount):
         orderData.price       = self.roundToPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
         orderData.source      = source
+        orderData.datetime    = self.datetimeAsOfMarket()
 
         # 报单方向
         if orderType == OrderData.ORDER_BUY:
@@ -1119,9 +1121,8 @@ class AccountWrapper(MetaAccount):
     def _broker_cancelOrder(self, orderData) :
         # simuate a cancel by orderData
         orderData.status = OrderData.STATUS_CANCELLED
-        orderData.cancelTime = self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
+        orderData.stampCanceled = self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
         self._broker_onCancelled(orderData)
-
 
     def onDayOpen(self, newDate):
         # instead that the true Account is able to sync with broker,
@@ -1249,9 +1250,8 @@ class AccountWrapper(MetaAccount):
                 trade.direction = order.direction
                 trade.offset    = order.offset
                 trade.volume    = order.totalVolume
-                trade.dt        = self._btTrader._dtData
-                # trade.tradeTime = self._btTrader._dtData.strftime('%H:%M:%S')
-                # trade.dt = self._dtData
+                trade.datetime  = self.datetimeAsOfMarket()
+
                 if buyCross:
                     trade.price = min(order.price, buyBestCrossPrice)
                 else:
@@ -1261,6 +1261,8 @@ class AccountWrapper(MetaAccount):
 
                 order.tradedVolume = trade.volume
                 order.status = OrderData.STATUS_ALLTRADED
+                order.stampFinished = trade.datetime.strftime('%H:%M:%S.%f')[:3]
+
                 if order.tradedVolume < order.totalVolume :
                     order.status = OrderData.STATUS_PARTTRADED
                 finishedOrders.append(order)

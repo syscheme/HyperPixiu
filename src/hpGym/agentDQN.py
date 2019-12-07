@@ -12,7 +12,7 @@ from .GymTrader import GymTrader, MetaAgent
 import random
 
 import numpy as np
-from keras.layers import Dense
+from keras.layers import Dense, Conv1D, Activation, Dropout, LSTM
 from keras.models import Sequential
 from keras.optimizers import Adam
 from keras.models import model_from_json
@@ -23,11 +23,13 @@ import os
 
 ########################################################################
 class agentDQN(MetaAgent):
-    DEFAULT_BRAIN_ID = 'DQN_DrDrDl'
+    DEFAULT_BRAIN_ID = 'DQN_Dr64Dr32x3' # 'DQN_DrDrDl'
 
     def __init__(self, gymTrader, **kwargs):
         self.__brainDict = {
-            agentDQN.DEFAULT_BRAIN_ID : self.__dqn_DrDrDl,
+            'DQN_DrDrDl'     : self.__dqn_DrDrDl, 
+            'DQN_C1D2DrDl'   : self.__dqn_C1D2DrDl,
+            'DQN_Dr64Dr32x3'     : self.__dqn_Dr64Dr32x3,
             # TODO: other brains
         }
 
@@ -79,7 +81,7 @@ class agentDQN(MetaAgent):
 
         return self._brain
 
-    def __dqn_DrDrDl(self): #TODO param brainId to load json/HD5 from dataRoot/brainId
+    def __dqn_DrDrDl(self):
         '''Build the agent's brain
         '''
         model = Sequential()
@@ -91,6 +93,45 @@ class agentDQN(MetaAgent):
         model.add(Dense(neurons_per_layer, activation=activation))
         model.add(Dense(self._actionSize, activation='linear'))
 
+        return model
+
+    def __dqn_Dr64Dr32x3(self):
+        '''Build the agent's brain
+        '''
+        model = Sequential()
+        neurons_per_layer = 32
+        activation = "relu"
+        model.add(Dense(64,
+                        input_dim=self._stateSize,
+                        activation=activation))
+        model.add(Dropout(0.5))
+        model.add(Dense(neurons_per_layer, activation=activation))
+        model.add(Dense(neurons_per_layer, activation=activation))
+        model.add(Dense(neurons_per_layer, activation=activation))
+        
+        model.add(Dense(self._actionSize, activation='linear'))
+
+        return model
+
+    def __dqn_C1D2DrDl(self):
+
+        model = Sequential()
+        neurons_per_layer = 24
+        activation = "relu"
+        model.add(Dense(neurons_per_layer,
+                        input_dim=self._stateSize,
+                        activation=activation))
+
+        model.add(Dropout(0.5))
+        model.add(LSTM(128))
+        
+        # We add a vanilla hidden layer:
+        model.add(Dropout(0.5))
+        model.add(Activation('relu'))
+
+        # We project onto a single unit output layer, and squash it with a sigmoid:
+        model.add(Dense(32, activation='relu'))
+        model.add(Dense(self._actionSize, activation='linear'))
         return model
 
     def isReady(self) :
@@ -199,9 +240,8 @@ class agentDQN(MetaAgent):
         #     self._epsilon -= self.__epsilonDecrement
 
         state, action, reward, next_state, done = self.__get_batches()
-        reward += (self._gamma
-                    * np.logical_not(done)
-                    * np.amax(self._brain.predict(next_state), axis=1))
+        y = self._brain.predict(next_state)
+        reward += (self._gamma * np.logical_not(done) * np.amax(y, axis=1))
 
         q_target = self._brain.predict(state)
         q_target[action[0], action[1]] = reward
@@ -218,7 +258,7 @@ class agentDQN(MetaAgent):
         # class_weight：字典，将不同的类别映射为不同的权值，该参数用来在训练过程中调整损失函数（只能用于训练）
         # sample_weight：权值的numpy array，用于在训练时调整损失函数（仅用于训练）。可以传递一个1D的与样本等长的向量用于对样本进行1对1的加权，或者在面对时序数据时，传递一个的形式为（samples，sequence_length）的矩阵来为每个时间步上的样本赋不同的权。这种情况下请确定在编译模型时添加了sample_weight_mode=’temporal’。
         # initial_epoch: 从该参数指定的epoch开始训练，在继续之前的训练时有用。
-        return self._brain.fit(x=state, y=q_target, epochs=2, batch_size=self._batchSize, verbose=0)
+        return self._brain.fit(x=state, y=q_target, epochs=1, batch_size=self._batchSize, verbose=0)
 
     def __get_batches(self):
         '''Selecting a batch of memory, split it into categorical subbatches

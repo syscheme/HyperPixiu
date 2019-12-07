@@ -23,6 +23,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import shutil
+import codecs
 
 # 如果安装了seaborn则设置为白色风格
 try:
@@ -191,7 +192,7 @@ class BackTestApp(MetaTrader):
 
         # print the summary report
         strReport = self.formatSummary()
-        with open('%s/%s_summary.txt' %(self._initTrader._outDir, self.episodeId),'wt') as rptfile:
+        with codecs.open('%s/%s_summary.txt' %(self._initTrader._outDir, self.episodeId), "w","utf-8") as rptfile:
             rptfile.write(strReport)
             self.debug('doAppStep() episode[%s] summary report generated' %(self.episodeId))
 
@@ -1324,7 +1325,7 @@ if __name__ == '__main__':
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
     rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder')
-    csvdir = '/mnt/m/AShareSample' # '/mnt/m/AShareSample'
+    csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
     ps = Perspective('AShare', SYMBOL)
     csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
     histdata = PerspectiveGenerator(ps)

@@ -182,9 +182,11 @@ class GymTrader(BaseTrader):
     # impl/overwrite of BaseApplication
     def doAppInit(self): # return True if succ
         if not super(GymTrader, self).doAppInit() :
+            self.error('doAppInit() super-of[GymTrader] failed')
             return False
 
         if not self._AGENTCLASS :
+            self.error('doAppInit() no AGENTCLASS associated')
             return False
 
         # the self._account should be good here
@@ -197,15 +199,20 @@ class GymTrader(BaseTrader):
         agentKwArgs = {**agentKwArgs, 'outDir': self._outDir }
         self._agent = self._AGENTCLASS(self, jsettings=self.subConfig('agent'), **agentKwArgs)
         # gymReset() will be called by agent above, self._gymState = self.gymReset() # will perform self._action = ACTIONS[ACTION_HOLD]
+        if not self._agent:
+            self.error('doAppInit() failed to instantize agent')
+            return False
 
         # self.__stampActStart = datetime.datetime.now()
         # self.__stampActEnd = self.__stampActStart
 
+        self.debug('doAppInit() dummy gymStep to initialize cache')
         while not self._agent.isReady() :
             action = self._agent.gymAct(self._gymState)
             next_state, reward, done, _ = self.gymStep(action)
             self._agent.gymObserve(self._gymState, action, reward, next_state, done, warming_up=True) # regardless state-stepping, rewards and loss here
 
+        self.debug('doAppInit() done')
         return True
 
     def doAppStep(self):
@@ -227,7 +234,6 @@ class GymTrader(BaseTrader):
         self._gymState = next_state
         self._total_reward += reward
 
-        # self.info('proc_MarketEvent(%s) processed took %s, from last-round %s' % (ev.desc, (self.__stampActEnd - self.__stampActStart), waited))
         self.debug('proc_MarketEvent(%s) processed' % (ev.desc))
 
     # end of impl/overwrite of BaseApplication
@@ -253,6 +259,7 @@ class GymTrader(BaseTrader):
         self._shapeOfState = observation.shape
         self._action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
         self._gymState = observation
+        self.debug('gymReset() returning observation')
         return observation
 
     def gymStep(self, action) :
@@ -287,11 +294,13 @@ class GymTrader(BaseTrader):
         # TODO: the first version only support FULL-BUY and FULL-SELL
         if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]) :
             if maxBuy >0 :
+                self.debug('gymStep() issuing maxBuy %s x%s' %(latestPrice, maxBuy))
                 self._account.cancelAllOrders()
                 vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, strategy=None)
             else: reward -= 1 # penalty: is the agent blind to buy with no cash? :)
         elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]):
             if  maxSell >0:
+                self.debug('gymStep() issuing maxSell %s x%s' %(latestPrice, maxSell))
                 self._account.cancelAllOrders()
                 vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, strategy=None)
             else: reward -= 1 # penalty: is the agent blind to sell with no position? :)
@@ -299,8 +308,6 @@ class GymTrader(BaseTrader):
         # step 3. calculate the rewards
         cash, posvalue = self._account.summrizeBalance() # most likely the cashAmount changed due to comission
         capitalAfterStep = cash + posvalue
-        if capitalAfterStep < 50000 : 
-            done =True
 
         instant_pnl = capitalAfterStep - capitalBeforeStep
         reward      += capitalAfterStep - self._latestBalance
@@ -463,6 +470,7 @@ class GymTrainer(BackTestApp):
 
         # make sure GymTrainer is ONLY wrappering GymTrader
         if not self._initTrader or not isinstance(self._initTrader, GymTrader) :
+            self.error('doAppInit() invalid initTrader')
             return False
 
         return super(GymTrainer, self).doAppInit()
@@ -485,6 +493,7 @@ class GymTrainer(BackTestApp):
         if not self._dataBegin_date:
             self._dataBegin_date = self._dataEnd_date
             self._dataBegin_openprice = self._dataEnd_closeprice
+            self.debug('OnEvent() taking dataBegin(%s @%s)' % (self._dataBegin_openprice, self._dataBegin_date))
 
         if self.wkTrader._latestBalance < - (self._startBalance/2):
             self._bGameOver = True
@@ -518,12 +527,14 @@ class GymTrainer(BackTestApp):
                 rewardMeanBest = self.__bestEpisode_reward/self.__bestEpisode_wkdays
                 if rewardMean > rewardMeanBest:
                     meanRewardImproved = True
+                    self.debug('OnEpisodeDone() meanReward improved from %s to %s' % (rewardMeanBest, meanRewardImproved))
 
         # save brain and decrease epsilon if improved
         if meanRewardImproved or (wkdays > (opendays/2) and self.wkTrader.loss < self.__bestEpisode_loss):
             if self.__bestEpisode_loss < DUMMY_BIG_VAL: # do not save for the first episode
                 self.wkTrader._agent.saveBrain()
                 self.__stampLastSaveBrain = datetime.datetime.now()
+                self.debug('OnEpisodeDone() brain saved')
 
             self.__bestEpisode_wkdays = wkdays
             self.__bestEpisode_loss = self.wkTrader.loss
@@ -538,6 +549,8 @@ class GymTrainer(BackTestApp):
             self.wkTrader._agent._epsilon -= self.wkTrader._agent._epsilon/4
             if self.wkTrader._agent._epsilon < self.wkTrader._agent._epsilonMin :
                 self.wkTrader._agent._epsilon = self.wkTrader._agent._epsilonMin
+
+            self.debug('OnEpisodeDone() bestEpisode updated, decreased to learningRate[%s] epsilon[%s]' % (self.wkTrader._agent._learningRate, self.wkTrader._agent._epsilon))
 
         mySummary = {
             'totalReward' : round(self.wkTrader._total_reward, 2),

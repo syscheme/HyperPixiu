@@ -185,6 +185,7 @@ class BackTestApp(MetaTrader):
                 reachedEnd = True
                 self.info('hist-read: end of playback')
 
+        self.debug('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self.__stepNoInEpisode, self._bGameOver, reachedEnd))
         # this test should be done if reached here
         self.OnEpisodeDone(reachedEnd)
 
@@ -192,6 +193,7 @@ class BackTestApp(MetaTrader):
         strReport = self.formatSummary()
         with open('%s/%s_summary.txt' %(self._initTrader._outDir, self.episodeId),'wt') as rptfile:
             rptfile.write(strReport)
+            self.debug('doAppStep() episode[%s] summary report generated' %(self.episodeId))
 
         self.info('%s_%s summary:' %(self.ident, self.episodeId))
         for line in strReport.splitlines():
@@ -206,6 +208,7 @@ class BackTestApp(MetaTrader):
             self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._episodes, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
             return
 
+        self.debug('doAppStep() starting over new episode[%s]' %(self.episodeId))
         self.resetEpisode()
         self._bGameOver =False
 
@@ -257,10 +260,11 @@ class BackTestApp(MetaTrader):
 
     def OnEpisodeDone(self, reachedEnd=True):
 
+        self.info('OnEpisodeDone() episode[%d/%d], processed %d events took %s, composing summary' % (self.__episodeNo, self._episodes, self.__stepNoInEpisode, str(datetime.now() - self.__execStamp_episodeStart)))
+
         tradeDays, summary = calculateSummary(self._startBalance, self._account.dailyResultDict)
 
         self._account.OnPlaybackEnd()
-        self.info('OnEpisodeDone() episode[%d/%d], processed %d events took %s, generating report' % (self.__episodeNo, self._episodes, self.__stepNoInEpisode, str(datetime.now() - self.__execStamp_episodeStart)))
 
         if not summary or not isinstance(summary, dict) :
             self.error('no summary given: %s' % summary)
@@ -268,6 +272,7 @@ class BackTestApp(MetaTrader):
 
         if not tradeDays is None:
             csvfile = '%s/%s_DR.csv' %(self._initTrader._outDir, self.episodeId)
+            self.debug('OnEpisodeDone() episode[%s], saving trade-days into %s' % (self.episodeId, csvfile))
             try :
                 os.makedirs(os.path.dirname(csvfile))
             except:
@@ -278,14 +283,11 @@ class BackTestApp(MetaTrader):
                 self.plotResult(tradeDays)
 
     def resetEpisode(self) :
-#        self._account = self._accountClass(None, tdBackTest, self._settings.account)
-#        self._account._dvrBroker._backtest= self
-#        self._account._id = "BT.%s:%s" % (self.strategyBT, self.symbol)
 
-        self._episodeSummary = {'reason':''}
+        self._episodeSummary = {}
         self.__execStamp_episodeStart = datetime.now()
         self.__stepNoInEpisode =0
-        self.debug('initializing episode[%d/%d], elapsed %s obj-in-program: %s' % (self.__episodeNo, self._episodes, str(self.__execStamp_episodeStart - self.__execStamp_appStart), self._program.listByType(MetaObj)))
+        self.debug('resetEpisode() initializing episode[%d/%d], elapsed %s obj-in-program: %s' % (self.__episodeNo, self._episodes, str(self.__execStamp_episodeStart - self.__execStamp_appStart), self._program.listByType(MetaObj)))
 
         # if self._recorder:
         #     self._program.removeApp(self._recorder)
@@ -350,7 +352,7 @@ class BackTestApp(MetaTrader):
         self.subscribeEvent(Account.EVENT_ORDER)
         self.subscribeEvent(Account.EVENT_TRADE)
 
-        self.info('resetEpisode() reset for episode[%d/%d], obj-in-program: %s' % (self.__episodeNo, self._episodes, self._program.listByType(MetaObj)))
+        self.info('resetEpisode() done for episode[%d/%d], obj-in-program: %s' % (self.__episodeNo, self._episodes, self._program.listByType(MetaObj)))
         return True
 
     #----------------------------------------------------------------------
@@ -403,6 +405,10 @@ class BackTestApp(MetaTrader):
     #----------------------------------------------------------------------
     def plotResult(self, tradeDays):
         # 绘图
+        
+        filename = '%s%s_DR.png' %(self._initTrader._outDir, self.episodeId)
+        self.debug('plotResult() episode[%s] plotting result to %s' % (self.episodeId, filename))
+
         plt.rcParams['agg.path.chunksize'] =10000
 
         fig = plt.figure(figsize=(10, 16))
@@ -423,143 +429,79 @@ class BackTestApp(MetaTrader):
         pKDE.set_title('Daily Pnl Distribution')
         tradeDays['netPnl'].hist(bins=50)
         
-        plt.savefig('%s%s_DR.png' %(self._initTrader._outDir, self.episodeId), dpi=400, bbox_inches='tight')
+        plt.savefig(filename, dpi=400, bbox_inches='tight')
         plt.show()
         plt.close()
        
-    # #----------------------------------------------------------------------
-    # def runOptimization(self, strategyClass, optimizationSetting):
-    #     """优化参数"""
-    #     # 获取优化设置        
-    #     settingList = optimizationSetting.generateSetting()
-    #     targetName = optimizationSetting.optimizeTarget
-        
-    #     # 检查参数设置问题
-    #     if not settingList or not targetName:
-    #         self.debug(u'优化设置有问题，请检查')
-        
-    #     # 遍历优化
-    #     self.resultList =[]
-    #     for setting in settingList:
-    #         self.clearBackTesting()
-    #         self.debug('-' * 30)
-    #         self.debug('setting: %s' %str(setting))
-    #         self.initStrategy(strategyClass, setting)
-    #         self.runBacktesting()
-
-    #         df, d = calculateSummary(self._startBalance, self._account.dailyResultDict)
-    #         try:
-    #             targetValue = d[targetName]
-    #         except KeyError:
-    #             targetValue = 0
-    #         self.resultList.append(([str(setting)], targetValue, d))
-        
-    #     # 显示结果
-    #     self.resultList.sort(reverse=True, key=lambda result:result[1])
-    #     self.debug('-' * 30)
-    #     self.debug(u'优化结果：')
-    #     for result in self.resultList:
-    #         self.debug(u'参数：%s，目标：%s' %(result[0], result[1]))    
-    #     return self.resultList
-            
-    # #----------------------------------------------------------------------
-    # def runParallelOptimization(self, strategyClass, optimizationSetting):
-    #     """并行优化参数"""
-    #     # 获取优化设置        
-    #     settingList = optimizationSetting.generateSetting()
-    #     targetName = optimizationSetting.optimizeTarget
-        
-    #     # 检查参数设置问题
-    #     if not settingList or not targetName:
-    #         self.debug(u'优化设置有问题，请检查')
-        
-    #     # 多进程优化，启动一个对应CPU核心数量的进程池
-    #     pool = multiprocessing.Pool(multiprocessing.cpu_count())
-    #     l = []
-
-    #     for setting in settingList:
-    #         l.append(pool.apply_async(optimize, (strategyClass, setting,
-    #                                              targetName, self.mode, 
-    #                                              self.startDate, self.initDays, self.endDate,
-    #                                              self.dbName, self.symbol)))
-    #     pool.close()
-    #     pool.join()
-        
-    #     # 显示结果
-    #     resultList = [res.get() for res in l]
-    #     resultList.sort(reverse=True, key=lambda result:result[1])
-    #     self.debug('-' * 30)
-    #     self.debug(u'优化结果：')
-    #     for result in resultList:
-    #         self.debug(u'参数：%s，目标：%s' %(result[0], result[1]))    
-            
-    #     return resultList
-
 ''' 
-    # Transaction-based
     #----------------------------------------------------------------------
-    def plotBacktestingResult(self, d):
-        # 绘图
-        plt.rcParams['agg.path.chunksize'] =10000
-        fig = plt.figure(figsize=(10, 16))
+    def runOptimization(self, strategyClass, optimizationSetting):
+        """优化参数"""
+        # 获取优化设置        
+        settingList = optimizationSetting.generateSetting()
+        targetName = optimizationSetting.optimizeTarget
         
-        pCapital = plt.subplot(4, 1, 1)
-        pCapital.set_ylabel("capital")
-        pCapital.plot(d['capitalList'], color='r', lw=0.8)
+        # 检查参数设置问题
+        if not settingList or not targetName:
+            self.debug(u'优化设置有问题，请检查')
         
-        pDD = plt.subplot(4, 1, 2)
-        pDD.set_ylabel("DD")
-        pDD.bar(range(len(d['drawdownList'])), d['drawdownList'], color='g')
+        # 遍历优化
+        self.resultList =[]
+        for setting in settingList:
+            self.clearBackTesting()
+            self.debug('-' * 30)
+            self.debug('setting: %s' %str(setting))
+            self.initStrategy(strategyClass, setting)
+            self.runBacktesting()
+
+            df, d = calculateSummary(self._startBalance, self._account.dailyResultDict)
+            try:
+                targetValue = d[targetName]
+            except KeyError:
+                targetValue = 0
+            self.resultList.append(([str(setting)], targetValue, d))
         
-        pPnl = plt.subplot(4, 1, 3)
-        pPnl.set_ylabel("pnl")
-        pPnl.hist(d['pnlList'], bins=50, color='c')
-
-        pPos = plt.subplot(4, 1, 4)
-        pPos.set_ylabel("Position")
-        if d['posList'][-1] == 0:
-            del d['posList'][-1]
-        tradeTimeIndex = [item.strftime("%m/%d %H:%M:%S") for item in d['tradeTimeList']]
-        xindex = np.arange(0, len(tradeTimeIndex), np.int(len(tradeTimeIndex)/10))
-        tradeTimeIndex = map(lambda i: tradeTimeIndex[i], xindex)
-        pPos.plot(d['posList'], color='k', drawstyle='steps-pre')
-        pPos.set_ylim(-1.2, 1.2)
-        plt.sca(pPos)
-        plt.tight_layout()
-        plt.xticks(xindex, tradeTimeIndex, rotation=30)  # 旋转15
-        
-        plt.savefig('BT-%s.png' % self._id, dpi=400, bbox_inches='tight')
-        # plt.show()
-        plt.close()
-
-    #----------------------------------------------------------------------
-    def showBacktestingResult(self):
-        """显示回测结果"""
-
-        d = self.calculateTransactions()
-        originGain = 0.0
-        if self._dataBegin_openprice >0 :
-            originGain = (self._dataEnd_closeprice - self._dataBegin_openprice)*100/self._dataBegin_openprice
-
-        # 输出
+        # 显示结果
+        self.resultList.sort(reverse=True, key=lambda result:result[1])
         self.debug('-' * 30)
-        self.debug(u'回放日期  :%s(close:%.2f)~%s(close:%.2f): %s%%'  %(self._dataBegin_date, self._dataBegin_openprice, self._dataEnd_date, self._dataEnd_closeprice, formatNumber(originGain)))
-        self.debug(u'交易日期  :%s(close:%.2f)~%s(close:%.2f)' % (d['timeList'][0], self._dataBegin_openprice, d['timeList'][-1], self._dataEnd_closeprice))
+        self.debug(u'优化结果：')
+        for result in self.resultList:
+            self.debug(u'参数：%s，目标：%s' %(result[0], result[1]))    
+        return self.resultList
+            
+    #----------------------------------------------------------------------
+    def runParallelOptimization(self, strategyClass, optimizationSetting):
+        """并行优化参数"""
+        # 获取优化设置        
+        settingList = optimizationSetting.generateSetting()
+        targetName = optimizationSetting.optimizeTarget
         
-        self.debug(u'总交易次数  :%s' % formatNumber(d['totalResult'],0))        
-        self.debug(u'总盈亏  :%s' % formatNumber(d['capital']))
-        self.debug(u'最大回撤: \t%s' % formatNumber(min(d['drawdownList'])))                
+        # 检查参数设置问题
+        if not settingList or not targetName:
+            self.debug(u'优化设置有问题，请检查')
         
-        self.debug(u'平均每笔盈利  :%s' %formatNumber(d['capital']/d['totalResult']))
-        self.debug(u'平均每笔滑点  :%s' %formatNumber(d['totalSlippage']/d['totalResult']))
-        self.debug(u'平均每笔佣金  :%s' %formatNumber(d['totalCommission']/d['totalResult']))
-        
-        self.debug(u'胜率\t\t%s%%' %formatNumber(d['winningRate']))
-        self.debug(u'盈利交易平均值\t%s' %formatNumber(d['averageWinning']))
-        self.debug(u'亏损交易平均值\t%s' %formatNumber(d['averageLosing']))
-        self.debug(u'盈亏比  :%s' %formatNumber(d['profitLossRatio']))
+        # 多进程优化，启动一个对应CPU核心数量的进程池
+        pool = multiprocessing.Pool(multiprocessing.cpu_count())
+        l = []
 
-        # self.plotBacktestingResult(d)
+        for setting in settingList:
+            l.append(pool.apply_async(optimize, (strategyClass, setting,
+                                                 targetName, self.mode, 
+                                                 self.startDate, self.initDays, self.endDate,
+                                                 self.dbName, self.symbol)))
+        pool.close()
+        pool.join()
+        
+        # 显示结果
+        resultList = [res.get() for res in l]
+        resultList.sort(reverse=True, key=lambda result:result[1])
+        self.debug('-' * 30)
+        self.debug(u'优化结果：')
+        for result in resultList:
+            self.debug(u'参数：%s，目标：%s' %(result[0], result[1]))    
+            
+        return resultList
+
     #----------------------------------------------------------------------
     def calculateTransactions(self):
         """
@@ -703,38 +645,6 @@ class BackTestApp(MetaTrader):
         # return resultList;
         return self.settleResult()
         
-########################################################################
-SEE BackTestApp.calculateTransactions()
-class TradingResult(object):
-    """每笔交易的结果
-     """
-
-   #----------------------------------------------------------------------
-    def __init__(self, entryPrice, entryDt, exitPrice, 
-                 exitDt, volume, rate, slippage, size):
-        """Constructor"""
-        self.entryPrice = entryPrice    # 开仓价格
-        self.exitPrice = exitPrice      # 平仓价格
-        
-        self.entryDt = entryDt          # 开仓时间datetime    
-        self.exitDt = exitDt            # 平仓时间
-        
-        self.volume = volume    # 交易数量（+/-代表方向）
-        
-        self.turnover   = (self.entryPrice + self.exitPrice) *size*abs(volume)   # 成交金额
-        entryCommission = self.entryPrice *size*abs(volume) *rate
-        if entryCommission < 2.0:
-            entryCommission =2.0
-
-        exitCommission = self.exitPrice *size*abs(volume) *rate
-        if exitCommission < 2.0:
-            exitCommission =2.0
-
-        self.commission = entryCommission + exitCommission
-        self.slippage   = slippage*2*size*abs(volume)                            # 滑点成本
-        self.pnl        = ((self.exitPrice - self.entryPrice) * volume * size 
-                            - self.commission - self.slippage)                   # 净盈亏
-
 '''
 
 ########################################################################
@@ -1106,6 +1016,13 @@ class AccountWrapper(MetaAccount):
         elif orderType == OrderData.ORDER_COVER:
             orderData.direction = OrderData.DIRECTION_LONG
             orderData.offset = OrderData.OFFSET_CLOSE     
+
+        if isinstance(self._nest, Account_AShare) :
+            if orderData.datetime.hour >=15 or (14 == orderData.datetime.hour and orderData.datetime.minute >=58) :
+                return ''
+        else:
+            if (23 == orderData.datetime.hour and orderData.datetime.minute >=58) :
+                return ''
 
         self._broker_placeOrder(orderData)
         return orderData.reqId

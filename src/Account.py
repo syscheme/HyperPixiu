@@ -833,7 +833,8 @@ class Account(MetaAccount):
         # part 1. 汇总 the confirmed trades, and save
         with self._lock :
             for trade in self._dictTrades.values():
-                if trade.datetime and self._dateToday != trade.datetime.date():
+                if trade.datetime and self._dateToday != trade.datetime.strftime('%Y-%m-%d') :
+                    self.warn('onDayClose(%s) found a trade not as of today: %s @%s' % (self._dateToday, trade.desc, trade.datetime) )
                     continue
 
                 cTrades +=1
@@ -858,7 +859,7 @@ class Account(MetaAccount):
 
             cTds = len(self._dictTrades)
             if cTds >0 :
-                self.info('onDayClose(%s) summed %s trades: %s' % (self._dateToday, cTds, self._todayResult.txnHist))
+                self.info('onDayClose(%s) summed %s/%s trades: %s' % (self._dateToday, cTrades, cTds, self._todayResult.txnHist))
             else:
                 self.debug('onDayClose(%s) no trades' % (self._dateToday))
 

@@ -495,7 +495,7 @@ class GymTrainer(BackTestApp):
             self._dataBegin_openprice = self._dataEnd_closeprice
             self.debug('OnEvent() taking dataBegin(%s @%s)' % (self._dataBegin_openprice, self._dataBegin_date))
 
-        if self.wkTrader._latestBalance < - (self._startBalance/2):
+        if self.wkTrader._latestBalance < (self._startBalance/2):
             self._bGameOver = True
             self._episodeSummary['reason'] = 'balance[%s] lost half of startBalance' % self.wkTrader._latestBalance
             self.error('episode[%s] has been KO-ed: %s' % self._episodeSummary['reason'])

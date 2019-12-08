@@ -289,7 +289,7 @@ class Account(MetaAccount):
         for s, pos in positions.items():
             posValueSubtotal += pos.position * pos.price * self.contractSize
 
-        return cashTotal, posValueSubtotal
+        return round(cashTotal,2), round(posValueSubtotal,2)
 
     #----------------------------------------------------------------------
     def datetimeAsOfMarket(self):

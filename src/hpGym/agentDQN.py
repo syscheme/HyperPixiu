@@ -101,14 +101,14 @@ class agentDQN(MetaAgent):
         model = Sequential()
         neurons_per_layer = 32
         activation = "relu"
-        model.add(Dense(64,
+        model.add(Dense(256,
                         input_dim=self._stateSize,
                         activation=activation))
-        model.add(Dropout(0.5))
+        # model.add(Dropout(0.5))
+        model.add(Dense(64, activation=activation))
         model.add(Dense(neurons_per_layer, activation=activation))
         model.add(Dense(neurons_per_layer, activation=activation))
-        model.add(Dense(neurons_per_layer, activation=activation))
-        
+
         model.add(Dense(self._actionSize, activation='linear'))
 
         return model

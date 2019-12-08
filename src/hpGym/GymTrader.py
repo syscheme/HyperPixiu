@@ -170,8 +170,7 @@ class GymTrader(BaseTrader):
         self.__recentLoss = None
         self._total_pnl = 0.0
         self._total_reward = 0.0
-        self._latestBalance = 0.0
-
+        self._latestCash, self._latestPosValue =0.0, 0.0
         # self.n_actions = 3
         # self._prices_history = []
     @property
@@ -222,7 +221,21 @@ class GymTrader(BaseTrader):
     def proc_MarketEvent(self, ev):
         '''processing an incoming MarketEvent'''
 
-        self._action = self._agent.gymAct(self._gymState)
+        action = self._agent.gymAct(self._gymState)
+        
+        # the gymAct only determin the direction, adjust the action to execute per current balance
+        if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]) and self._latestCash < 1000:
+            action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
+        elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]) and self._latestPosValue < 1.0:
+            action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
+
+        if not all(action == GymTrader.ACTIONS[GymTrader.ACTION_HOLD]):
+            dtAsOf = self.marketState.getAsOf()
+            if (dtAsOf.hour in [14, 23] and dtAsOf.minute in [58,59]) or (dtAsOf.hour in [0, 15] and dtAsOf.minute in [0,1]) :
+                action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
+
+        self._action = action
+
         next_state, reward, done, _ = self.gymStep(self._action)
     
         # self.__stampActStart = datetime.datetime.now()
@@ -252,8 +265,7 @@ class GymTrader(BaseTrader):
         self.__stepNo = 0
         self._total_pnl = 0.0
         self._total_reward = 0.0
-        cash, posvalue = self._account.summrizeBalance()
-        self._latestBalance = cash + posvalue
+        self._latestCash, self._latestPosValue = self._account.summrizeBalance()
 
         observation = self.makeupGymObservation()
         self._shapeOfState = observation.shape
@@ -306,13 +318,12 @@ class GymTrader(BaseTrader):
             else: reward -= 1 # penalty: is the agent blind to sell with no position? :)
 
         # step 3. calculate the rewards
-        cash, posvalue = self._account.summrizeBalance() # most likely the cashAmount changed due to comission
-        capitalAfterStep = cash + posvalue
-
+        self._latestCash, self._latestPosValue = self._account.summrizeBalance() # most likely the cashAmount changed due to comission
+        capitalAfterStep = self._latestCash + self._latestPosValue
         instant_pnl = capitalAfterStep - capitalBeforeStep
-        reward      += capitalAfterStep - self._latestBalance
+
+        reward      += instant_pnl
         self._total_pnl += instant_pnl
-        self._latestBalance = capitalAfterStep
 
         ''' step 4. composing info for tracing
 
@@ -495,9 +506,9 @@ class GymTrainer(BackTestApp):
             self._dataBegin_openprice = self._dataEnd_closeprice
             self.debug('OnEvent() taking dataBegin(%s @%s)' % (self._dataBegin_openprice, self._dataBegin_date))
 
-        if self.wkTrader._latestBalance < (self._startBalance/2):
+        if (self.wkTrader._latestCash  + self.wkTrader._latestPosValue) < (self._startBalance/2):
             self._bGameOver = True
-            self._episodeSummary['reason'] = 'balance[%s] lost half of startBalance' % self.wkTrader._latestBalance
+            self._episodeSummary['reason'] = 'cash[%s] + posValue[%s] lost half of startBalance' % (self.wkTrader._latestCash, self.wkTrader._latestPosValue)
             self.error('episode[%s] has been KO-ed: %s' % self._episodeSummary['reason'])
         
     # end of BaseApplication routine

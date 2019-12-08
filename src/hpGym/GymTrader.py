@@ -509,7 +509,7 @@ class GymTrainer(BackTestApp):
         if (self.wkTrader._latestCash  + self.wkTrader._latestPosValue) < (self._startBalance/2):
             self._bGameOver = True
             self._episodeSummary['reason'] = 'cash[%s] + posValue[%s] lost half of startBalance' % (self.wkTrader._latestCash, self.wkTrader._latestPosValue)
-            self.error('episode[%s] has been KO-ed: %s' % self._episodeSummary['reason'])
+            self.error('episode[%s] has been KO-ed: %s' % (self.episodeId, self._episodeSummary['reason']))
         
     # end of BaseApplication routine
     #----------------------------------------------------------------------

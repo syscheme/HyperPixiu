@@ -19,7 +19,7 @@ from keras.models import model_from_json
 from keras.callbacks import ModelCheckpoint
 
 from abc import ABCMeta, abstractmethod
-import os
+import os, threading
 
 ########################################################################
 class agentDQN(MetaAgent):
@@ -34,6 +34,8 @@ class agentDQN(MetaAgent):
         }
 
         super(agentDQN, self).__init__(gymTrader, **kwargs)
+
+        self._lock = threading.Lock()
         self.__sampleSize = self._batchSize *32
         if self.__sampleSize <1024:
             self.__sampleSize = 1024
@@ -159,13 +161,15 @@ class agentDQN(MetaAgent):
             pass
 
         self._gymTrader.debug('saving brain[%s] at %s' % (brainId, brainDir))
-        # step 1. save the model file in json
-        model_json = self._brain.to_json()
-        with open('%smodel.json' % brainDir, 'w') as mjson:
-            mjson.write(model_json)
-        
-        # step 2. save the weights of the model
-        self._brain.save('%smodel.json.h5' % brainDir)
+        with self._lock:
+            # step 1. save the model file in json
+            model_json = self._brain.to_json()
+            with open('%smodel.json' % brainDir, 'w') as mjson:
+                mjson.write(model_json)
+            
+            # step 2. save the weights of the model
+            self._brain.save('%smodel.json.h5' % brainDir)
+
         self._gymTrader.info('saved brain[%s] with weights' % (brainDir))
         
     def loadBrain(self, brainId) :
@@ -210,8 +214,9 @@ class agentDQN(MetaAgent):
             action[random.randrange(self._actionSize)] = 1
         else:
             state = state.reshape(1, self._stateSize)
-            act_values = self._brain.predict(state)
-            action[np.argmax(act_values[0])] = 1
+            with self._lock:
+                act_values = self._brain.predict(state)
+                action[np.argmax(act_values[0])] = 1
 
         return action
 
@@ -220,63 +225,83 @@ class agentDQN(MetaAgent):
         @return tuple:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch
         '''
-        self.__sampleIdx = self.__sampleIdx % self.__sampleSize
-        if self.__sampleIdx >= len(self.__sampleCache) :
-            self.__sampleCache.append((state, action, reward, next_state, done))
-            self.__sampleIdx = len(self.__sampleCache)
-        else :
-            self.__sampleCache[self.__sampleIdx] = (state, action, reward, next_state, done)
-            self.__sampleIdx +=1
-
-        if warming_up:
-            self.__realDataNum =0
-            return None
-
-        self.__realDataNum += 1
-        if 0 != (self.__sampleIdx % self._trainInterval):
+        if not self._updateCache(state, action, reward, next_state, done, warming_up) :
             return None
 
         # TODO: if self._epsilon > self._epsilonMin:
         #     self._epsilon -= self.__epsilonDecrement
+        state, action, reward, next_state, done = self._sampleBatches()
 
-        state, action, reward, next_state, done = self.__get_batches()
-        y = self._brain.predict(next_state)
-        reward += (self._gamma * np.logical_not(done) * np.amax(y, axis=1))
+        with self._lock:
+            y = self._brain.predict(next_state)
+            reward += (self._gamma * np.logical_not(done) * np.amax(y, axis=1))
 
-        q_target = self._brain.predict(state)
-        q_target[action[0], action[1]] = reward
+            q_target = self._brain.predict(state)
+            q_target[action[0], action[1]] = reward
 
-        # x：输入数据。如果模型只有一个输入，那么x的类型是numpy array，如果模型有多个输入，那么x的类型应当为list，list的元素是对应于各个输入的numpy array
-        # y：标签，numpy array
-        # batch_size：整数，指定进行梯度下降时每个batch包含的样本数。训练时一个batch的样本会被计算一次梯度下降，使目标函数优化一步。
-        # epochs：整数，训练终止时的epoch值，训练将在达到该epoch值时停止，当没有设置initial_epoch时，它就是训练的总轮数，否则训练的总轮数为epochs - inital_epoch
-        # verbose：日志显示，0为不在标准输出流输出日志信息，1为输出进度条记录，2为每个epoch输出一行记录
-        # callbacks：list，其中的元素是keras.callbacks.Callback的对象。这个list中的回调函数将会在训练过程中的适当时机被调用，参考回调函数
-        # validation_split：0~1之间的浮点数，用来指定训练集的一定比例数据作为验证集。验证集将不参与训练，并在每个epoch结束后测试的模型的指标，如损失函数、精确度等。注意，validation_split的划分在shuffle之前，因此如果你的数据本身是有序的，需要先手工打乱再指定validation_split，否则可能会出现验证集样本不均匀。
-        # validation_data：形式为（X，y）的tuple，是指定的验证集。此参数将覆盖validation_spilt。
-        # shuffle：布尔值或字符串，一般为布尔值，表示是否在训练过程中随机打乱输入样本的顺序。若为字符串“batch”，则是用来处理HDF5数据的特殊情况，它将在batch内部将数据打乱。
-        # class_weight：字典，将不同的类别映射为不同的权值，该参数用来在训练过程中调整损失函数（只能用于训练）
-        # sample_weight：权值的numpy array，用于在训练时调整损失函数（仅用于训练）。可以传递一个1D的与样本等长的向量用于对样本进行1对1的加权，或者在面对时序数据时，传递一个的形式为（samples，sequence_length）的矩阵来为每个时间步上的样本赋不同的权。这种情况下请确定在编译模型时添加了sample_weight_mode=’temporal’。
-        # initial_epoch: 从该参数指定的epoch开始训练，在继续之前的训练时有用。
-        return self._brain.fit(x=state, y=q_target, epochs=1, batch_size=self._batchSize, verbose=0)
+            # x：输入数据。如果模型只有一个输入，那么x的类型是numpy array，如果模型有多个输入，那么x的类型应当为list，list的元素是对应于各个输入的numpy array
+            # y：标签，numpy array
+            # batch_size：整数，指定进行梯度下降时每个batch包含的样本数。训练时一个batch的样本会被计算一次梯度下降，使目标函数优化一步。
+            # epochs：整数，训练终止时的epoch值，训练将在达到该epoch值时停止，当没有设置initial_epoch时，它就是训练的总轮数，否则训练的总轮数为epochs - inital_epoch
+            # verbose：日志显示，0为不在标准输出流输出日志信息，1为输出进度条记录，2为每个epoch输出一行记录
+            # callbacks：list，其中的元素是keras.callbacks.Callback的对象。这个list中的回调函数将会在训练过程中的适当时机被调用，参考回调函数
+            # validation_split：0~1之间的浮点数，用来指定训练集的一定比例数据作为验证集。验证集将不参与训练，并在每个epoch结束后测试的模型的指标，如损失函数、精确度等。注意，validation_split的划分在shuffle之前，因此如果你的数据本身是有序的，需要先手工打乱再指定validation_split，否则可能会出现验证集样本不均匀。
+            # validation_data：形式为（X，y）的tuple，是指定的验证集。此参数将覆盖validation_spilt。
+            # shuffle：布尔值或字符串，一般为布尔值，表示是否在训练过程中随机打乱输入样本的顺序。若为字符串“batch”，则是用来处理HDF5数据的特殊情况，它将在batch内部将数据打乱。
+            # class_weight：字典，将不同的类别映射为不同的权值，该参数用来在训练过程中调整损失函数（只能用于训练）
+            # sample_weight：权值的numpy array，用于在训练时调整损失函数（仅用于训练）。可以传递一个1D的与样本等长的向量用于对样本进行1对1的加权，或者在面对时序数据时，传递一个的形式为（samples，sequence_length）的矩阵来为每个时间步上的样本赋不同的权。这种情况下请确定在编译模型时添加了sample_weight_mode=’temporal’。
+            # initial_epoch: 从该参数指定的epoch开始训练，在继续之前的训练时有用。
+            self._loss = self._brain.fit(x=state, y=q_target, epochs=1, batch_size=self._batchSize, verbose=0)
+        return self._loss
 
-    def __get_batches(self):
-        '''Selecting a batch of memory, split it into categorical subbatches
-           Process action_batch into a position vector
+    def _updateCache(self, state, action, reward, next_state, done, warming_up=False):
+        '''record the input tuple(state, action, reward, next_state, done) into the cache, then pick out a batch
+           of samples from the cache for training
+        @return True if warmed up and ready to train
         '''
-        sizeToBatch = self._batchSize
-        batch = np.array(random.sample(self.__sampleCache, sizeToBatch))
-        state_batch = np.concatenate(batch[:, 0]).reshape(sizeToBatch, self._stateSize)
-        action_batch = np.concatenate(batch[:, 1]).reshape(sizeToBatch, self._actionSize)
-        reward_batch = batch[:, 2]
-        next_state_batch = np.concatenate(batch[:, 3]).reshape(sizeToBatch, self._stateSize)
-        done_batch = batch[:, 4]
+        with self._lock:
+            self.__sampleIdx = self.__sampleIdx % self.__sampleSize
+            if self.__sampleIdx >= len(self.__sampleCache) :
+                self.__sampleCache.append((state, action, reward, next_state, done))
+                self.__sampleIdx = len(self.__sampleCache)
+            else :
+                self.__sampleCache[self.__sampleIdx] = (state, action, reward, next_state, done)
+                self.__sampleIdx +=1
 
-        # action processing
-        action_batch = np.where(action_batch == 1)
-        return state_batch, action_batch, reward_batch, next_state_batch, done_batch
+            if warming_up:
+                self.__realDataNum =0
+                return False
 
-    def __get_batches_TODO(self):
+            self.__realDataNum += 1
+            if 0 != (self.__sampleIdx % self._trainInterval):
+                return False
+        
+        return True
+
+    def _sampleBatches(self):
+        '''Selecting a batch of memory as sample, split it into categorical subbatches
+           Process action_batch into a position vector
+        @return tuple of the sampled batch:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch
+        '''
+        state_batch, action_batch, reward_batch, next_state_batch, done_batch =None,None,None,None,None
+        with self._lock:
+            sizeToBatch = self._batchSize
+            if None in self.__sampleCache :
+                return state_batch, action_batch, reward_batch, next_state_batch, done_batch
+            
+            batch = np.array(random.sample(self.__sampleCache, sizeToBatch))
+            state_batch = np.concatenate(batch[:, 0]).reshape(sizeToBatch, self._stateSize)
+            action_batch = np.concatenate(batch[:, 1]).reshape(sizeToBatch, self._actionSize)
+            reward_batch = batch[:, 2]
+            next_state_batch = np.concatenate(batch[:, 3]).reshape(sizeToBatch, self._stateSize)
+            done_batch = batch[:, 4]
+
+            # action processing
+            action_batch = np.where(action_batch == 1)
+            return state_batch, action_batch, reward_batch, next_state_batch, done_batch
+
+    def _sampleBatches_TODO(self):
         '''Selecting a batch of memory, split it into categorical subbatches
            Process action_batch into a position vector
         '''
@@ -310,6 +335,92 @@ class agentDQN(MetaAgent):
         # action processing
         action_batch = np.where(action_batch == 1)
         return state_batch, action_batch, reward_batch, next_state_batch, done_batch
+
+
+########################################################################
+class agentDualHemicerebrum(agentDQN):
+    def __init__(self, gymTrader, **kwargs):
+        super(agentDualHemicerebrum, self).__init__(gymTrader, **kwargs)
+
+        # treat the orginal self._brain as the right hemicerebrum to perform predicting, and 
+        # additional self.__leftHemicerebrum to perform training in an additional thread
+        self.__leftHemicerebrum = None
+        if self._brain : 
+            model_json = self._brain.to_json()
+            self.__leftHemicerebrum = model_from_json(model_json)
+            self.__leftHemicerebrum.set_weights(self._brain.get_weights()) 
+            self.__leftHemicerebrum.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
+
+        self.__evWakeup = threading.Event()
+        self.__bQuit = False
+        self.__thread = threading.Thread(target=self.__trainLeft)
+        if self.__leftHemicerebrum :
+            self.__thread.start()
+
+    def __del__(self):  # the destructor
+        self._app.stop()
+        self.wakeup()
+        self.__thread.join()
+
+    def wakeup(self) :
+        self.__evWakeup.set()
+
+    def isReady(self) :
+        if not self.__leftHemicerebrum:
+            return False
+
+        if not super(agentDQN, self).isReady():
+            return False
+
+    #----------------------------------------------------------------------
+    def __trainLeft(self):
+        '''perform training left hemicerebrum in this threaded execution'''
+        self.local = {}
+        nextSleep = 0
+        while not self.__bQuit:
+            if nextSleep >0.0001:
+                self.__evWakeup.wait(nextSleep)
+
+            nextSleep = 1.0
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch = self._sampleBatches()
+            if state_batch is None:
+                continue
+
+            y = self.__leftHemicerebrum.predict(next_state_batch)
+            reward_batch += (self._gamma * np.logical_not(done_batch) * np.amax(y, axis=1))
+
+            q_target = self.__leftHemicerebrum.predict(state_batch)
+            q_target[action_batch[0], action_batch[1]] = reward_batch
+            
+            # x：输入数据。如果模型只有一个输入，那么x的类型是numpy array，如果模型有多个输入，那么x的类型应当为list，list的元素是对应于各个输入的numpy array
+            # y：标签，numpy array
+            # batch_size：整数，指定进行梯度下降时每个batch包含的样本数。训练时一个batch的样本会被计算一次梯度下降，使目标函数优化一步。
+            # epochs：整数，训练终止时的epoch值，训练将在达到该epoch值时停止，当没有设置initial_epoch时，它就是训练的总轮数，否则训练的总轮数为epochs - inital_epoch
+            # verbose：日志显示，0为不在标准输出流输出日志信息，1为输出进度条记录，2为每个epoch输出一行记录
+            # callbacks：list，其中的元素是keras.callbacks.Callback的对象。这个list中的回调函数将会在训练过程中的适当时机被调用，参考回调函数
+            # validation_split：0~1之间的浮点数，用来指定训练集的一定比例数据作为验证集。验证集将不参与训练，并在每个epoch结束后测试的模型的指标，如损失函数、精确度等。注意，validation_split的划分在shuffle之前，因此如果你的数据本身是有序的，需要先手工打乱再指定validation_split，否则可能会出现验证集样本不均匀。
+            # validation_data：形式为（X，y）的tuple，是指定的验证集。此参数将覆盖validation_spilt。
+            # shuffle：布尔值或字符串，一般为布尔值，表示是否在训练过程中随机打乱输入样本的顺序。若为字符串“batch”，则是用来处理HDF5数据的特殊情况，它将在batch内部将数据打乱。
+            # class_weight：字典，将不同的类别映射为不同的权值，该参数用来在训练过程中调整损失函数（只能用于训练）
+            # sample_weight：权值的numpy array，用于在训练时调整损失函数（仅用于训练）。可以传递一个1D的与样本等长的向量用于对样本进行1对1的加权，或者在面对时序数据时，传递一个的形式为（samples，sequence_length）的矩阵来为每个时间步上的样本赋不同的权。这种情况下请确定在编译模型时添加了sample_weight_mode=’temporal’。
+            # initial_epoch: 从该参数指定的epoch开始训练，在继续之前的训练时有用。
+            # loss = self.__leftHemicerebrum.fit(x=state_batch, y=q_target, epochs=1, batch_size=self._batchSize, verbose=0)
+            loss = self.__leftHemicerebrum.train_on_batch(x=state_batch, y=q_target)
+
+            #if loss < self._loss:
+            with self._lock: # update the trained left hemicerebrum to the right
+                self._brain.set_weights(self.__leftHemicerebrum.get_weights()) 
+                self._loss =  loss
+
+    def gymObserve(self, state, action, reward, next_state, done, warming_up=False):
+        '''cache update of the agent, simple update the cache in this step
+        @return loss take the known recent loss
+        '''
+        if not self._updateCache(state, action, reward, next_state, done, warming_up) :
+            return None
+
+        self.wakeup()
+        return self._loss
 
 '''
 ########################################################################

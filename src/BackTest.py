@@ -416,7 +416,7 @@ class BackTestApp(MetaTrader):
         
         pBalance = plt.subplot(4, 1, 1)
         pBalance.set_title(self._id + ' Balance')
-        tradeDays['balance'].plot(legend=True)
+        tradeDays['endBalance'].plot(legend=True)
         
         pDrawdown = plt.subplot(4, 1, 2)
         pDrawdown.set_title('Drawdown')

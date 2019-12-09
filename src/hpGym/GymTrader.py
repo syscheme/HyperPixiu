@@ -10,7 +10,7 @@ from Application import MetaObj
 from Trader import MetaTrader, BaseTrader
 from BackTest import BackTestApp
 from Perspective import PerspectiveState
-from MarketData import EVENT_TICK, EVENT_KLINE_PREFIX
+from MarketData import EVENT_TICK, EVENT_KLINE_PREFIX, EXPORT_FLOATS_DIMS
 
 import hpGym
 
@@ -237,6 +237,8 @@ class GymTrader(BaseTrader):
         self._action = action
 
         next_state, reward, done, _ = self.gymStep(self._action)
+        if len(next_state) != 1552 :
+            i =1+1
     
         # self.__stampActStart = datetime.datetime.now()
         # waited = self.__stampActStart - self.__stampActEnd
@@ -423,23 +425,33 @@ class GymTrader(BaseTrader):
         '''Concatenate all necessary elements to create the observation.
 
         Returns:
-            numpy.array: observation array.
+            numpy.array: observation array with each element dim=EXPORT_FLOATS_DIMS
         '''
         # part 1. build up the account_state
         cashAvail, cashTotal, positions = self._account.positionState()
         _, posvalue = self._account.summrizeBalance(positions, cashTotal)
-        stateCapital = [cashAvail, cashTotal, posvalue]
+        stateCapital = [0.0] * EXPORT_FLOATS_DIMS
+        stateCapital[0] = cashAvail
+        stateCapital[1] = cashTotal
+        stateCapital[2] = posvalue
+
         # POS_COLS = PositionData.COLUMNS.split(',')
         # del(POS_COLS['exchange', 'stampByTrader', 'stampByBroker'])
         # del(POS_COLS['symbol']) # TODO: this version only support single Symbol, so regardless field symbol
-        POS_COLS = 'position,posAvail,price,avgPrice'
-        statePOS = [0.0,0.0,0.0,0.0] # supposed to be [[0.0,0.0,0.0,0.0],...] when mutliple-symbols
+
+        # [price,avgPrice,posAvail,position,...] 
+        statePOS = [0.0] * EXPORT_FLOATS_DIMS
+
+        # supposed to be [[price,avgPrice,posAvail,position,...],...] when mutliple-symbols
         for s, pos in positions.items() :
             # row = []
             # for c in POS_COLS:
             #     row.append(pos.__dict__[c])
             # statePOS.append(row)
-            statePOS = [pos.position, pos.posAvail, pos.price, pos.avgPrice]
+            statePOS[0] = pos.price
+            statePOS[1] = pos.avgPrice
+            statePOS[2] = pos.posAvail
+            statePOS[3] = pos.position
             break
 
         account_state = np.concatenate([stateCapital + statePOS], axis=0)

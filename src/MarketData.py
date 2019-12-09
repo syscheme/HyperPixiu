@@ -7,6 +7,7 @@ from Application import MetaObj
 from datetime import datetime, timedelta
 
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
+EXPORT_FLOATS_DIMS = 4 # take the minimal dim=4
 
 # Market相关events
 EVENT_TICK          = MARKETDATE_EVENT_PREFIX + 'Tick'                   # TICK行情事件，可后接具体的vtSymbol
@@ -65,7 +66,7 @@ class MarketData(EventData):
     @abstractmethod
     def toFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
-        @return float[] for numpy
+        @return float[] with dim = EXPORT_FLOATS_DIMS for numpy
         '''
         raise NotImplementedError
 
@@ -139,7 +140,7 @@ class TickData(MarketData):
     @abstractmethod
     def toFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
-        @return float[] for numpy
+        @return float[] with dim = EXPORT_FLOATS_DIMS
         '''
         if baseline_Price <=0: baseline_Price=1.0
         if baseline_Volume <=0: baseline_Volume=1.0
@@ -152,14 +153,23 @@ class TickData(MarketData):
             for x in [self.b1P, self.b1P, self.b1P, self.b1P, self.b1P] ],
             Y=[self.b1V, self.b1V, self.b1V, self.b1V, self.b1V])
 
-        return [
-            float(self.open/baseline_Price), 
-            float(self.high/baseline_Price), 
-            float(self.low/baseline_Price), 
+        # the basic dims, min=4
+        ret = [
             float(self.price/baseline_Price), 
             float(self.volume/baseline_Volume),
-            float(leanAsks), float(leanBids)
-            ]
+            float(leanAsks), 
+            float(leanBids)
+        ] + [0.0] * ( EXPORT_FLOATS_DIMS -4)
+
+        # the optional dims
+        if EXPORT_FLOATS_DIMS > 4:
+            ret[4] = float(self.high/baseline_Price)
+        if EXPORT_FLOATS_DIMS > 5:
+            ret[5] = float(self.low/baseline_Price)
+        if EXPORT_FLOATS_DIMS > 6:
+            ret[6] = float(self.open/baseline_Price)
+
+        return ret
 
 ########################################################################
 class KLineData(MarketData):
@@ -199,13 +209,23 @@ class KLineData(MarketData):
         if baseline_Price <=0: baseline_Price=1.0
         if baseline_Volume <=0: baseline_Volume=1.0
 
-        return [
-            float(self.open/baseline_Price), 
+        # the basic dims, min=4
+        ret = [
+            float(self.close/baseline_Price), 
+            float(self.volume/baseline_Volume),
             float(self.high/baseline_Price), 
             float(self.low/baseline_Price), 
-            float(self.close/baseline_Price), 
-            float(self.volume/baseline_Volume)
-            ]
+        ] + [0.0] * ( EXPORT_FLOATS_DIMS -4)
+
+        # the optional dims
+        if EXPORT_FLOATS_DIMS > 4:
+            ret[4] = float(self.open/baseline_Price)
+        if EXPORT_FLOATS_DIMS > 5:
+            ret[5] = float(self.openInterest/baseline_Price)
+        
+
+        return ret
+
 
 ########################################################################
 class DictToKLine(object):

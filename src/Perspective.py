@@ -268,8 +268,10 @@ class Perspective(MarketData):
 
     @property
     def snapshotSize(self):
-        klsize = sum([self._stacks[et].evictSize for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] ])
-        return Perspective.TICK_FLOATS *self._stacks[EVENT_TICK].evictSize + Perspective.KLINE_FLOATS *klsize
+        # klsize = sum([self._stacks[et].evictSize for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] ])
+        # return Perspective.TICK_FLOATS *self._stacks[EVENT_TICK].evictSize + Perspective.KLINE_FLOATS *klsize
+        itemsize = sum([self._stacks[et].evictSize for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] ]) + self._stacks[EVENT_TICK].evictSize
+        return itemsize * EXPORT_FLOATS_DIMS
 
     @property
     def snapshot(self):
@@ -293,20 +295,20 @@ class Perspective(MarketData):
         stk = self._stacks[EVENT_TICK]
         for i in range(stk.evictSize):
             if i >= stk.size:
-                result += [0.0] * Perspective.TICK_FLOATS
+                result += [0.0] * EXPORT_FLOATS_DIMS
             else:
                 v = stk[i].toFloats(baseline_Price=baseline_Price, baseline_Volume= baseline_Volume)
-                Perspective.TICK_FLOATS = len(v)
+                # Perspective.TICK_FLOATS = len(v)
                 result += v
 
         for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]:
             stk = self._stacks[et]
             for i in range(stk.evictSize):
                 if i >= stk.size:
-                    result += [0.0] * Perspective.KLINE_FLOATS
+                    result += [0.0] * EXPORT_FLOATS_DIMS
                 else:
                     v = stk[i].toFloats(baseline_Price=baseline_Price, baseline_Volume= baseline_Volume)
-                    Perspective.KLINE_FLOATS = len(v)
+                    # Perspective.KLINE_FLOATS = len(v)
                     result += v
 
         return result

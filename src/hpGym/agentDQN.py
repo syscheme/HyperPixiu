@@ -8,11 +8,12 @@ Do not hesitate to run several times and/or tweak parameters to get better resul
 Inspired from https://github.com/keon/deep-q-learning
 '''
 from .GymTrader import GymTrader, MetaAgent
+from MarketData import EXPORT_FLOATS_DIMS
 
 import random
 
 import numpy as np
-from keras.layers import Dense, Conv1D, Activation, Dropout, LSTM
+from keras.layers import Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D,GlobalAveragePooling1D
 from keras.models import Sequential
 from keras.optimizers import Adam
 from keras.models import model_from_json
@@ -23,13 +24,13 @@ import os, threading
 
 ########################################################################
 class agentDQN(MetaAgent):
-    DEFAULT_BRAIN_ID = 'DQN_Dr64Dr32x3' # 'DQN_DrDrDl'
+    DEFAULT_BRAIN_ID = 'DQN_Cnn1Dx4' # 'DQN_DrDrDl'
 
     def __init__(self, gymTrader, **kwargs):
         self.__brainDict = {
             'DQN_DrDrDl'     : self.__dqn_DrDrDl, 
-            'DQN_C1D2DrDl'   : self.__dqn_C1D2DrDl,
             'DQN_Dr64Dr32x3'     : self.__dqn_Dr64Dr32x3,
+            'DQN_Cnn1Dx4'   : self.__dqn_Cnn1Dx4,
             # TODO: other brains
         }
 
@@ -127,25 +128,24 @@ class agentDQN(MetaAgent):
 
         return model
 
-    def __dqn_C1D2DrDl(self):
+    def __dqn_Cnn1Dx4(self):
 
+        '''
+        https://www.codercto.com/a/38746.html
+        '''
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
         model = Sequential()
-        neurons_per_layer = 24
-        activation = "relu"
-        model.add(Dense(neurons_per_layer,
-                        input_dim=self._stateSize,
-                        activation=activation))
-
+        model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
+        model.add(Conv1D(100, 10, activation='relu', input_shape=(self._stateSize/EXPORT_FLOATS_DIMS, EXPORT_FLOATS_DIMS)))
+        model.add(Conv1D(100, 10, activation='relu'))
+        model.add(MaxPooling1D(3))
+        model.add(Conv1D(160, 10, activation='relu'))
+        model.add(Conv1D(160, 10, activation='relu'))
+        model.add(GlobalAveragePooling1D())
         model.add(Dropout(0.5))
-        model.add(LSTM(128))
-        
-        # We add a vanilla hidden layer:
-        model.add(Dropout(0.5))
-        model.add(Activation('relu'))
+        model.add(Dense(self._actionSize, activation='softmax'))
+        print(model.summary())
 
-        # We project onto a single unit output layer, and squash it with a sigmoid:
-        model.add(Dense(32, activation='relu'))
-        model.add(Dense(self._actionSize, activation='linear'))
         return model
 
     def isReady(self) :
@@ -266,6 +266,9 @@ class agentDQN(MetaAgent):
         @return True if warmed up and ready to train
         '''
         with self._lock:
+            if len(state) != self._stateSize:
+                i =1+1
+
             self.__sampleIdx = self.__sampleIdx % self.__sampleSize
             if self.__sampleIdx >= len(self.__sampleCache) :
                 self.__sampleCache.append((state, action, reward, next_state, done))

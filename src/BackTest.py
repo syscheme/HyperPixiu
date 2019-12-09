@@ -123,16 +123,24 @@ class BackTestApp(MetaTrader):
 
         return super(BackTestApp, self).stop()
 
+    def __taglog(self, message):
+        if not self.marketState: return message
+        return '%s@%s ' % (self.episodeId, self.marketState.getAsOf().strftime('%Y%m%dT%H%M%S')) + message
+
     def debug(self, message):
-        """输出内容"""
-        if self._dtData:
-            message = '@%s ' % self._dtData.strftime('%Y%m%dT%H%M%S') + message
-        super(BackTestApp, self).debug(message)
+        super(BackTestApp, self).debug(self.__taglog(message))
     
+    def info(self, message):
+        super(BackTestApp, self).info(self.__taglog(message))
+
+    def warn(self, message):
+        super(BackTestApp, self).warn(self.__taglog(message))
+
+    def error(self, message):
+        super(BackTestApp, self).error(self.__taglog(message))
+
     def log(self, level, message):
-        if self._dtData:
-            message = '@%s ' % self._dtData.strftime('%Y%m%dT%H%M%S') + message
-        super(BackTestApp, self).log(level, message)
+        super(BackTestApp, self).log(level, self.__taglog(message))
 
     def doAppInit(self): # return True if succ
         if not super(BackTestApp, self).doAppInit() :
@@ -191,6 +199,9 @@ class BackTestApp(MetaTrader):
         self.OnEpisodeDone(reachedEnd)
 
         # print the summary report
+        if self._recorder and isinstance(self._episodeSummary, dict):
+            self._recorder.pushRow('EpSum', self._episodeSummary)
+
         strReport = self.formatSummary()
         with codecs.open('%s/%s_summary.txt' %(self._initTrader._outDir, self.episodeId), "w","utf-8") as rptfile:
             rptfile.write(strReport)

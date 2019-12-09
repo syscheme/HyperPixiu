@@ -237,8 +237,6 @@ class GymTrader(BaseTrader):
         self._action = action
 
         next_state, reward, done, _ = self.gymStep(self._action)
-        if len(next_state) != 1552 :
-            i =1+1
     
         # self.__stampActStart = datetime.datetime.now()
         # waited = self.__stampActStart - self.__stampActEnd
@@ -584,7 +582,8 @@ class GymTrainer(BackTestApp):
             'idOfBest'    : self.__bestEpisode_Id,
             'rewardOfBest': round(self.__bestEpisode_reward,2),
             'daysOfBest'  : self.__bestEpisode_wkdays,
-            'lastSaveBrain': self.__stampLastSaveBrain.strftime('%Y%m%dT%H%M%S') if isinstance(self.__stampLastSaveBrain, datetime.datetime) else self.__stampLastSaveBrain
+            'lastSaveBrain': self.__stampLastSaveBrain.strftime('%Y%m%dT%H%M%S') if isinstance(self.__stampLastSaveBrain, datetime.datetime) else self.__stampLastSaveBrain,
+            'frameNum'     : self._agent.frameNum
         }
         self._episodeSummary = {**self._episodeSummary, **mySummary}
 
@@ -628,7 +627,7 @@ if __name__ == '__main__':
     sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/Gym_AShare.json']
     p = Program()
     p._heartbeatInterval =-1
-    SYMBOL = '000540' # '000540' '000001'
+    SYMBOL = '000001' # '000540' '000001'
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
     csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'

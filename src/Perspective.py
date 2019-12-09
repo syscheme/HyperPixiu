@@ -150,15 +150,18 @@ class Perspective(MarketData):
 
     @property
     def latestPrice(self) :
+        ret =0.0
         stk = self._stacks[self.__focusLast]
         if stk or stk.size >0:
-            return stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
-
-        for et in Perspective.EVENT_SEQ:
-            stk = self._readers[self.__focusLast]
-            if not stk or stk.size <=0:
-                continue
-            return stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
+            ret = stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
+        else:
+            for et in Perspective.EVENT_SEQ:
+                stk = self._readers[self.__focusLast]
+                if not stk or stk.size <=0:
+                    continue
+                ret = stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
+        
+        return round(ret, 3)
 
     @property
     def dailyOHLC_sofar(self) :

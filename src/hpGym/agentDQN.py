@@ -20,9 +20,9 @@ from keras.models import model_from_json
 from keras.callbacks import ModelCheckpoint, TensorBoard
 
 from abc import ABCMeta, abstractmethod
-import os, threading
+import os, threading, datetime
 
-EPOCHS_PER_OBSERV =2 #10 for GPU
+EPOCHS_PER_OBSERV =10 #10 for GPU
 
 ########################################################################
 class agentDQN(MetaAgent):
@@ -48,14 +48,16 @@ class agentDQN(MetaAgent):
         self.__sampleCache = [None] * self._batchSize
         self.__sampleIdx = 0
         self.__realDataNum =0
-        self._brainOutDir = self._outDir
 
-        try :
-            self._brainOutDir = '%s%s/' % (self._outDir, self._wkBrainId)
-            os.makedirs(self._brainOutDir)
-        except:
-            pass
+        self._brainOutDir = '%s%s/' % (self._outDir, self._wkBrainId)
 
+        #format the desc
+        self._brainDesc = '%s created at %s, outdir %s' % (self._wkBrainId, datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'), self._brainOutDir)
+        lines = []
+        self._brain.summary(print_fn=lambda x: lines.append(x))
+        self._brainDesc += '\nsummary:\n%s\n' % "\n".join(lines)
+        
+        # prepare the callbacks
         self.__callbacks=[]
         # don't take update_freq='epoch' or batch as we train almost every gymObserve()
         # cbTB = TensorBoard(log_dir =self._brainOutDir, update_freq=self._batchSize *50000)
@@ -146,7 +148,6 @@ class agentDQN(MetaAgent):
         model.add(GlobalAveragePooling1D())
         model.add(Dropout(0.5))
         model.add(Dense(self._actionSize, activation='softmax'))
-        print(model.summary())
 
         return model
 
@@ -169,6 +170,11 @@ class agentDQN(MetaAgent):
             raise ValueError("Null brain or Null trader")
 
         self._gymTrader.debug('saving brain[%s] at %s' % (brainId, self._brainOutDir))
+        try :
+            os.makedirs(self._brainOutDir)
+        except:
+            pass
+
         with self._lock:
             # step 1. save the model file in json
             model_json = self._brain.to_json()
@@ -177,6 +183,12 @@ class agentDQN(MetaAgent):
             
             # step 2. save the weights of the model
             self._brain.save('%smodel.json.h5' % self._brainOutDir)
+
+            # step 3. the desc.txt
+            if self._brainDesc and len(self._brainDesc) >0:
+                self._brainDesc += '\n'
+                with open('%sdesc.txt' % self._brainOutDir, 'w') as desc:
+                    desc.write(self._brainDesc)
 
         self._gymTrader.info('saved brain[%s] with weights' % (self._brainOutDir))
         

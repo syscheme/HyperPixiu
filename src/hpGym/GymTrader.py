@@ -583,7 +583,7 @@ class GymTrainer(BackTestApp):
             'rewardOfBest': round(self.__bestEpisode_reward,2),
             'daysOfBest'  : self.__bestEpisode_wkdays,
             'lastSaveBrain': self.__stampLastSaveBrain.strftime('%Y%m%dT%H%M%S') if isinstance(self.__stampLastSaveBrain, datetime.datetime) else self.__stampLastSaveBrain,
-            'frameNum'     : self._agent.frameNum
+            'frameNum'     : self.wkTrader._agent.frameNum
         }
         self._episodeSummary = {**self._episodeSummary, **mySummary}
 

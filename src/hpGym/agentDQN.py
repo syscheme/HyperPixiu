@@ -33,8 +33,8 @@ class agentDQN(MetaAgent):
     def __init__(self, gymTrader, **kwargs):
         self.__brainDict = {
             'DQN_DrDrDl'     : self.__dqn_DrDrDl, 
-            'DQN_Dr64Dr32x3'     : self.__dqn_Dr64Dr32x3,
-            'DQN_Cnn1Dx4'   : self.__dqn_Cnn1Dx4,
+            'DQN_Dr64Dr32x3' : self.__dqn_Dr64Dr32x3, # not good yet
+            'DQN_Cnn1Dx4'    : self.__dqn_Cnn1Dx4,
             # TODO: other brains
         }
 
@@ -55,7 +55,7 @@ class agentDQN(MetaAgent):
         self._brainOutDir = '%s%s/' % (self._outDir, self._wkBrainId)
 
         #format the desc
-        self._brainDesc = '%s created at %s, outdir %s' % (self._wkBrainId, datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'), self._brainOutDir)
+        self._brainDesc = '%s created at %s with stateSize[%s] actionSize[%s], outdir %s' % (self._wkBrainId, datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'), self._stateSize, self._actionSize, self._brainOutDir)
         lines = []
         self._brain.summary(print_fn=lambda x: lines.append(x))
         self._brainDesc += '\nsummary:\n%s\n' % "\n".join(lines)
@@ -208,7 +208,7 @@ class agentDQN(MetaAgent):
         if not self._gymTrader :
             raise ValueError("Null trader")
 
-        brainDir = '%s%s/' % (self._gymTrader.dataRoot, brainId)
+        brainDir = '%s%s.%s_%s/' % (self._gymTrader.dataRoot, brainId, self._stateSize, self._actionSize)
         brain = None
         try : 
             # step 1. read the model file in json
@@ -225,7 +225,7 @@ class agentDQN(MetaAgent):
             # limiting epsilon
             self._epsilon = min([self._epsilon*0.7, self._epsilonMin *20, 0.5])
             self._learningRate = min([self._learningRate/2, 0.001])
-            self._gymTrader.info('loaded brain from %s, take initial epsilon[%s] learningRate[%s]' % (brainDir, self._epsilon, self._learningRate))
+            self._gymTrader.info('loaded brain from %s by taking initial epsilon[%s] learningRate[%s]' % (brainDir, self._epsilon, self._learningRate))
         except:
             pass
 

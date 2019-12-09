@@ -16,7 +16,7 @@ from keras.layers import Dense, Conv1D, Activation, Dropout, LSTM
 from keras.models import Sequential
 from keras.optimizers import Adam
 from keras.models import model_from_json
-from keras.callbacks import ModelCheckpoint
+from keras.callbacks import ModelCheckpoint, TensorBoard
 
 from abc import ABCMeta, abstractmethod
 import os, threading
@@ -45,6 +45,18 @@ class agentDQN(MetaAgent):
         self.__sampleCache = [None] * self._batchSize
         self.__sampleIdx = 0
         self.__realDataNum =0
+        self._brainOutDir = self._outDir
+
+        try :
+            self._brainOutDir = '%s%s/' % (self._outDir, self._wkBrainId)
+            os.makedirs(self._brainOutDir)
+        except:
+            pass
+
+        self.__callbacks=[]
+        # don't take update_freq='epoch' or batch as we train almost every gymObserve()
+        # cbTB = TensorBoard(log_dir =self._brainOutDir, update_freq=self._batchSize *50000)
+        # self.__callbacks.append(cbTB) # still too frequent
 
     def __del__(self):  # the destructor
         # self.saveBrain()
@@ -154,23 +166,17 @@ class agentDQN(MetaAgent):
         if not self._gymTrader.dataRoot or not self._brain :
             raise ValueError("Null brain or Null trader")
 
-        try :
-            brainDir = '%s%s/' % (self._outDir, brainId)
-            os.makedirs(brainDir)
-        except:
-            pass
-
-        self._gymTrader.debug('saving brain[%s] at %s' % (brainId, brainDir))
+        self._gymTrader.debug('saving brain[%s] at %s' % (brainId, self._brainOutDir))
         with self._lock:
             # step 1. save the model file in json
             model_json = self._brain.to_json()
-            with open('%smodel.json' % brainDir, 'w') as mjson:
+            with open('%smodel.json' % self._brainOutDir, 'w') as mjson:
                 mjson.write(model_json)
             
             # step 2. save the weights of the model
-            self._brain.save('%smodel.json.h5' % brainDir)
+            self._brain.save('%smodel.json.h5' % self._brainOutDir)
 
-        self._gymTrader.info('saved brain[%s] with weights' % (brainDir))
+        self._gymTrader.info('saved brain[%s] with weights' % (self._brainOutDir))
         
     def loadBrain(self, brainId) :
         ''' load the previous saved brain
@@ -251,7 +257,7 @@ class agentDQN(MetaAgent):
             # class_weight：字典，将不同的类别映射为不同的权值，该参数用来在训练过程中调整损失函数（只能用于训练）
             # sample_weight：权值的numpy array，用于在训练时调整损失函数（仅用于训练）。可以传递一个1D的与样本等长的向量用于对样本进行1对1的加权，或者在面对时序数据时，传递一个的形式为（samples，sequence_length）的矩阵来为每个时间步上的样本赋不同的权。这种情况下请确定在编译模型时添加了sample_weight_mode=’temporal’。
             # initial_epoch: 从该参数指定的epoch开始训练，在继续之前的训练时有用。
-            self._loss = self._brain.fit(x=state, y=q_target, epochs=1, batch_size=self._batchSize, verbose=0)
+            self._loss = self._brain.fit(x=state, y=q_target, epochs=1, batch_size=self._batchSize, verbose=0, callbacks=self.__callbacks)
         return self._loss
 
     def _updateCache(self, state, action, reward, next_state, done, warming_up=False):
@@ -405,7 +411,7 @@ class agentDualHemicerebrum(agentDQN):
             # sample_weight：权值的numpy array，用于在训练时调整损失函数（仅用于训练）。可以传递一个1D的与样本等长的向量用于对样本进行1对1的加权，或者在面对时序数据时，传递一个的形式为（samples，sequence_length）的矩阵来为每个时间步上的样本赋不同的权。这种情况下请确定在编译模型时添加了sample_weight_mode=’temporal’。
             # initial_epoch: 从该参数指定的epoch开始训练，在继续之前的训练时有用。
             # loss = self.__leftHemicerebrum.fit(x=state_batch, y=q_target, epochs=1, batch_size=self._batchSize, verbose=0)
-            loss = self.__leftHemicerebrum.train_on_batch(x=state_batch, y=q_target)
+            loss = self.__leftHemicerebrum.train_on_batch(x=state_batch, y=q_target, callbacks=self.__callbacks)
 
             #if loss < self._loss:
             with self._lock: # update the trained left hemicerebrum to the right

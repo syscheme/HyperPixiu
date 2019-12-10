@@ -1049,7 +1049,7 @@ class Account_AShare(Account):
                 # if self.cashSymbol == pos.symbol:
                 #     continues
                 if pos.position != pos.posAvail :
-                    strshift += '%s[%s ov %s], ' % (pos.symbol, pos.position, pos.posAvail)
+                    strshift += '%s[%sov%s], ' % (pos.symbol, pos.position, pos.posAvail)
                 pos.posAvail = pos.position
 
             if sum([cOutgoingOrders, cOrdersToCancel, cLimitOrders, cStopOrders])>0 or len(strshift) >0:

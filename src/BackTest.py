@@ -56,12 +56,10 @@ class BackTestApp(MetaTrader):
 
         # 回测相关属性
         # -----------------------------------------
-        self._btStartDate = datetime.strptime('2000-01-01', '%Y-%m-%d') # 回测数据开始日期，datetime对象
-        self._btEndDate   = None         # 回测数据结束日期，datetime对象, None to today or late data
         self._startBalance = 100000      # 10w
 
-        self._btStartDate  = datetime.strptime(self.getConfig('startDate', '2000-01-01'), '%Y-%m-%d')
-        self._btEndDate    = datetime.strptime(self.getConfig('endDate', '2999-12-31'), '%Y-%m-%d')
+        self._btStartDate  = datetime.strptime(self.getConfig('startDate', '2000-01-01'), '%Y-%m-%d').replace(hour=0, minute=0, second=0) # 回测数据开始日期，datetime对象
+        self._btEndDate    = datetime.strptime(self.getConfig('endDate', '2999-12-31'), '%Y-%m-%d').replace(hour=23, minute=59, second=59)
         self._startBalance = self.getConfig('startBalance', 100000)
         self._episodes     = self.getConfig('episodes', 1)
         self._plotReport   = self.getConfig('plotReport', 'False').lower() in BOOL_STRVAL_TRUE
@@ -183,13 +181,16 @@ class BackTestApp(MetaTrader):
         if self.__wkHistData and not self._bGameOver:
             try :
                 ev = next(self.__wkHistData)
-                if not ev : return
-                self._marketState.updateByEvent(ev)
-                s = ev.data.symbol
-                self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type[len(MARKETDATE_EVENT_PREFIX):], self._marketState.getAsOf(s).strftime('%Y%m%dT%H%M'), self._marketState.latestPrice(s), self._marketState.dailyOHLC_sofar(s)))
-                self.OnEvent(ev) # call Trader
-                self.__stepNoInEpisode += 1
-                return # successfully performed a step by pushing an Event
+                if not ev or ev.data.datetime < self._btStartDate: return
+                if ev.data.datetime <= self._btEndDate:
+                    self._marketState.updateByEvent(ev)
+                    s = ev.data.symbol
+                    self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type[len(MARKETDATE_EVENT_PREFIX):], self._marketState.getAsOf(s).strftime('%Y%m%dT%H%M'), self._marketState.latestPrice(s), self._marketState.dailyOHLC_sofar(s)))
+                    self.OnEvent(ev) # call Trader
+                    self.__stepNoInEpisode += 1
+                    return # successfully performed a step by pushing an Event
+
+                reachedEnd = True
 
             except StopIteration:
                 reachedEnd = True
@@ -244,10 +245,12 @@ class BackTestApp(MetaTrader):
                 matchNeeded = True
 
             if not self._dataBegin_date:
-                self._dataBegin_date = evd.date
+                # NO self._dataBegin_date = evd.date here because events other than tick and KL could be in
                 if EVENT_TICK == ev.type:
+                    self._dataBegin_date = evd.date
                     self._dataBegin_openprice = evd.price
                 elif EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
+                    self._dataBegin_date = evd.date
                     self._dataBegin_openprice = evd.close
 
         if matchNeeded :
@@ -279,7 +282,7 @@ class BackTestApp(MetaTrader):
 
         additionAttrs = {
             'openDays' : len(self._account.dailyResultDict),
-            'episodeDuration' : datetime2float(datetime.now()) - datetime2float(self.__execStamp_episodeStart),
+            'episodeDuration' : round(datetime2float(datetime.now()) - datetime2float(self.__execStamp_episodeStart), 3),
             'episodeNo' : self.__episodeNo,
             'episodes' : self._episodes,
             'stepsInEpisode' : self.__stepNoInEpisode,
@@ -429,7 +432,8 @@ class BackTestApp(MetaTrader):
         # 输出统计结果
         strReport  = '\n%s_R%d/%d took %s' %(self.ident, self.__episodeNo, self._episodes, str(datetime.now() - self.__execStamp_episodeStart))
         strReport += u'\n%s: %-10s ~ %-10s'  % (self.__fieldName('playbackRange'), self._btStartDate.strftime('%Y-%m-%d'), self._btEndDate.strftime('%Y-%m-%d'))
-        strReport += u'\n%s: %-10s(open:%.2f) ~ %-10s(close:%.2f): %s日 %s%%' % (self.__fieldName('executeRange'), summary['startDate'], self._dataBegin_openprice, summary['endDate'], self._dataEnd_closeprice, summary['totalDays'], formatNumber(originGain))
+        strReport += u'\n%s: %-10s(open:%.2f) ~ %-10s(close:%.2f): %sdays %s%%' % \
+                    (self.__fieldName('executeRange'), summary['startDate'], self._dataBegin_openprice, summary['endDate'], self._dataEnd_closeprice, summary['totalDays'], formatNumber(originGain))
         strReport += u'\n%s: %s (%s-profit, %s-loss) %s ~ %s +%s' % (self.__fieldName('executeDays'), summary['daysHaveTrade'], summary['profitDays'], summary['lossDays'], 
                     summary['tradeDay_1st'], summary['tradeDay_last'], summary['endLazyDays'])
         

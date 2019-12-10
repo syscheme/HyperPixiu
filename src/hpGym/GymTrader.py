@@ -541,6 +541,7 @@ class GymTrainer(BackTestApp):
 
         # determin whether it is a best episode
         meanRewardImproved = False
+        lossImproved = False
         opendays = self._episodeSummary['openDays']
 
         if opendays > self.__maxKnownOpenDays:

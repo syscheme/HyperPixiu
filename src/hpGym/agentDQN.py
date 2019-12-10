@@ -53,7 +53,7 @@ class agentDQN(MetaAgent):
         self.__realDataNum =0
         self.__frameNum =0
 
-        self._brainOutDir = '%s%s/' % (self._outDir, self._wkBrainId)
+        self._brainOutDir = '%s%s.%s_%s/' % (self._outDir, self._wkBrainId, self._stateSize, self._actionSize)
 
         #format the desc
         self._brainDesc = '%s created at %s with stateSize[%s] actionSize[%s], outdir %s' % (self._wkBrainId, datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'), self._stateSize, self._actionSize, self._brainOutDir)

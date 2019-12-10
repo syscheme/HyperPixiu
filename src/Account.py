@@ -1042,13 +1042,17 @@ class Account_AShare(Account):
             self._dictStopOrders.clear()
 
             # shift yesterday's position as available
+            strshift=''
             for pos in self._dictPositions.values():
-                if self.cashSymbol == pos.symbol:
-                    continue
-
+                # cash also need shift as above _dictOutgoingOrders.clear() may lead to avalCash != total
+                # if self.cashSymbol == pos.symbol:
+                #     continues
                 if pos.position != pos.posAvail :
-                    self.info('onDayOpen(%s) shifting %s pos[%s] into avail-pos[%s]' % (self._dateToday, pos.symbol, pos.position, pos.posAvail))
+                    strshift += '%s[%s ov %s], ' % (pos.symbol, pos.position, pos.posAvail)
                 pos.posAvail = pos.position
+
+            if len(strshift) >0:
+                self.info('onDayOpen(%s) shifted avail-positions: %s' % (self._dateToday, strshift))
 
         #TODO: sync with broker
 

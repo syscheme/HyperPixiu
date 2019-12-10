@@ -770,7 +770,7 @@ class PlaybackDay(MarketState):
         if not symbol in self.__dictPlayback.keys() :
             return 0.0
         
-        return self.__dictPlayback[symbol].close
+        return round(self.__dictPlayback[symbol].close, 3)
 
     def getAsOf(self, symbol=None) :
         ''' 

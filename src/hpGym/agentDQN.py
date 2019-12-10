@@ -18,11 +18,13 @@ from keras.models import Sequential
 from keras.optimizers import Adam
 from keras.models import model_from_json
 from keras.callbacks import ModelCheckpoint, TensorBoard
+from keras import backend
 
 from abc import ABCMeta, abstractmethod
 import os, threading, datetime
 
-EPOCHS_PER_OBSERV =10 #10 for GPU
+GPU_EPOCHS_PER_OBSERV =10 #10 for GPU
+USING_GPU = len(backend.tensorflow_backend._get_available_gpus()) > 0
 
 ########################################################################
 class agentDQN(MetaAgent):
@@ -31,8 +33,8 @@ class agentDQN(MetaAgent):
     def __init__(self, gymTrader, **kwargs):
         self.__brainDict = {
             'DQN_DrDrDl'     : self.__dqn_DrDrDl, 
-            'DQN_Dr64Dr32x3'     : self.__dqn_Dr64Dr32x3,
-            'DQN_Cnn1Dx4'   : self.__dqn_Cnn1Dx4,
+            'DQN_Dr64Dr32x3' : self.__dqn_Dr64Dr32x3, # not good yet
+            'DQN_Cnn1Dx4'    : self.__dqn_Cnn1Dx4,
             # TODO: other brains
         }
 
@@ -48,11 +50,12 @@ class agentDQN(MetaAgent):
         self.__sampleCache = [None] * self._batchSize
         self.__sampleIdx = 0
         self.__realDataNum =0
+        self.__frameNum =0
 
         self._brainOutDir = '%s%s/' % (self._outDir, self._wkBrainId)
 
         #format the desc
-        self._brainDesc = '%s created at %s, outdir %s' % (self._wkBrainId, datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'), self._brainOutDir)
+        self._brainDesc = '%s created at %s with stateSize[%s] actionSize[%s], outdir %s' % (self._wkBrainId, datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'), self._stateSize, self._actionSize, self._brainOutDir)
         lines = []
         self._brain.summary(print_fn=lambda x: lines.append(x))
         self._brainDesc += '\nsummary:\n%s\n' % "\n".join(lines)
@@ -66,6 +69,9 @@ class agentDQN(MetaAgent):
     def __del__(self):  # the destructor
         # self.saveBrain()
         pass
+
+    @property
+    def frameNum(self) : return self.__frameNum
 
     def buildBrain(self, brainId =None): #TODO param brainId to load json/HD5 from dataRoot/brainId
         '''Build the agent's brain
@@ -202,7 +208,7 @@ class agentDQN(MetaAgent):
         if not self._gymTrader :
             raise ValueError("Null trader")
 
-        brainDir = '%s%s/' % (self._gymTrader.dataRoot, brainId)
+        brainDir = '%s%s.%s_%s/' % (self._gymTrader.dataRoot, brainId, self._stateSize, self._actionSize)
         brain = None
         try : 
             # step 1. read the model file in json
@@ -219,7 +225,7 @@ class agentDQN(MetaAgent):
             # limiting epsilon
             self._epsilon = min([self._epsilon*0.7, self._epsilonMin *20, 0.5])
             self._learningRate = min([self._learningRate/2, 0.001])
-            self._gymTrader.info('loaded brain from %s, take initial epsilon[%s] learningRate[%s]' % (brainDir, self._epsilon, self._learningRate))
+            self._gymTrader.info('loaded brain from %s by taking initial epsilon[%s] learningRate[%s]' % (brainDir, self._epsilon, self._learningRate))
         except:
             pass
 
@@ -271,7 +277,10 @@ class agentDQN(MetaAgent):
             # class_weight：字典，将不同的类别映射为不同的权值，该参数用来在训练过程中调整损失函数（只能用于训练）
             # sample_weight：权值的numpy array，用于在训练时调整损失函数（仅用于训练）。可以传递一个1D的与样本等长的向量用于对样本进行1对1的加权，或者在面对时序数据时，传递一个的形式为（samples，sequence_length）的矩阵来为每个时间步上的样本赋不同的权。这种情况下请确定在编译模型时添加了sample_weight_mode=’temporal’。
             # initial_epoch: 从该参数指定的epoch开始训练，在继续之前的训练时有用。
-            self._loss = self._brain.fit(x=state, y=q_target, epochs=EPOCHS_PER_OBSERV, batch_size=self._batchSize, verbose=0, callbacks=self.__callbacks)
+            epochs =1
+            if USING_GPU and len(state) >self._batchSize:
+                epochs = GPU_EPOCHS_PER_OBSERV
+            self._loss = self._brain.fit(x=state, y=q_target, epochs=epochs, batch_size=self._batchSize, verbose=0, callbacks=self.__callbacks)
         return self._loss
 
     def _updateCache(self, state, action, reward, next_state, done, warming_up=False):
@@ -280,10 +289,11 @@ class agentDQN(MetaAgent):
         @return True if warmed up and ready to train
         '''
         with self._lock:
-            if len(state) != self._stateSize:
-                i =1+1
-
             self.__sampleIdx = self.__sampleIdx % self.__sampleSize
+            samplelen = len(self.__sampleCache)
+            if 0 == self.__sampleIdx and samplelen >= self._batchSize: 
+                self.__frameNum +=1
+
             if self.__sampleIdx >= len(self.__sampleCache) :
                 self.__sampleCache.append((state, action, reward, next_state, done))
                 self.__sampleIdx = len(self.__sampleCache)
@@ -312,6 +322,9 @@ class agentDQN(MetaAgent):
             sizeToBatch = self._batchSize
             if None in self.__sampleCache :
                 return state_batch, action_batch, reward_batch, next_state_batch, done_batch
+
+            if USING_GPU and len(self.__sampleCache) > self._batchSize:
+                sizeToBatch = min(10, int(len(self.__sampleCache) / self._batchSize)) *self._batchSize
             
             batch = np.array(random.sample(self.__sampleCache, sizeToBatch))
             state_batch = np.concatenate(batch[:, 0]).reshape(sizeToBatch, self._stateSize)

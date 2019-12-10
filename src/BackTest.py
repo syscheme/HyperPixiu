@@ -123,16 +123,24 @@ class BackTestApp(MetaTrader):
 
         return super(BackTestApp, self).stop()
 
+    def __taglog(self, message):
+        if not self.marketState: return message
+        return '%s@%s ' % (self.episodeId, self.marketState.getAsOf().strftime('%Y%m%dT%H%M%S')) + message
+
     def debug(self, message):
-        """输出内容"""
-        if self._dtData:
-            message = '@%s ' % self._dtData.strftime('%Y%m%dT%H%M%S') + message
-        super(BackTestApp, self).debug(message)
+        super(BackTestApp, self).debug(self.__taglog(message))
     
+    def info(self, message):
+        super(BackTestApp, self).info(self.__taglog(message))
+
+    def warn(self, message):
+        super(BackTestApp, self).warn(self.__taglog(message))
+
+    def error(self, message):
+        super(BackTestApp, self).error(self.__taglog(message))
+
     def log(self, level, message):
-        if self._dtData:
-            message = '@%s ' % self._dtData.strftime('%Y%m%dT%H%M%S') + message
-        super(BackTestApp, self).log(level, message)
+        super(BackTestApp, self).log(level, self.__taglog(message))
 
     def doAppInit(self): # return True if succ
         if not super(BackTestApp, self).doAppInit() :
@@ -191,6 +199,9 @@ class BackTestApp(MetaTrader):
         self.OnEpisodeDone(reachedEnd)
 
         # print the summary report
+        if self._recorder and isinstance(self._episodeSummary, dict):
+            self._recorder.pushRow('EpSum', self._episodeSummary)
+
         strReport = self.formatSummary()
         self.info('%s_%s summary:' %(self.ident, self.episodeId))
         for line in strReport.splitlines():
@@ -359,6 +370,34 @@ class BackTestApp(MetaTrader):
         return True
 
     #----------------------------------------------------------------------
+    def __fieldName(self, summaryKey, zh=False):
+        __CHINESE_FIELDNAMES= {
+        'playbackRange'   : u'    回放始末',
+        'executeRange'    : u'  交易日始末',
+        'executeDays'     : u'    交易日数',
+        'startBalance'    : u'    起始资金',
+        'endBalance'      : u'    结束资金',
+        'totalTurnover'   : u'  总成交金额',
+        'totalTradeCount' : u'  总成交笔数',
+        'totalCommission' : u'    总手续费',
+        'totalSlippage'   : u'      总滑点',
+        'totalNetPnl'     : u'      总盈亏',
+        'totalReturn'     : u'    总收益率',
+        'annualizedReturn': u'    年化收益',
+        'maxDrawdown'     : u'    最大回撤',
+        'maxDdPercent'    : u'  最大回撤率',
+        'sharpeRatio'     : u'      夏普率',
+        'dailyNetPnl'     : u'    日均盈亏',
+        'dailyCommission' : u'  日均手续费',
+        'dailySlippage'   : u'    日均滑点',
+        'dailyTurnover'   : u'日均成交金额',
+        'dailyTradeCount' : u'日均成交笔数',
+        'dailyReturn'     : u'  日均收益率',
+        'returnStd'       : u'  收益标准差',
+        }
+
+        return __CHINESE_FIELDNAMES[summaryKey] if zh else summaryKey
+
     def formatSummary(self, summary=None):
         """显示按日统计的交易结果"""
         if not summary :
@@ -374,33 +413,33 @@ class BackTestApp(MetaTrader):
 
         # 输出统计结果
         strReport  = '\n%s_R%d/%d took %s' %(self.ident, self.__episodeNo, self._episodes, str(datetime.now() - self.__execStamp_episodeStart))
-        strReport += u'\n    回放始末: %-10s ~ %-10s'  % (self._btStartDate.strftime('%Y-%m-%d'), self._btEndDate.strftime('%Y-%m-%d'))
-        strReport += u'\n  交易日始末: %-10s(open:%.2f) ~ %-10s(close:%.2f): %s日 %s%%' % (summary['startDate'], self._dataBegin_openprice, summary['endDate'], self._dataEnd_closeprice, summary['totalDays'], formatNumber(originGain))
-        strReport += u'\n    交易日数: %s (盈利%s, 亏损%s) %s ~ %s +%s' % (summary['daysHaveTrade'], summary['profitDays'], summary['lossDays'], 
+        strReport += u'\n%s: %-10s ~ %-10s'  % (self.__fieldName('playbackRange'), self._btStartDate.strftime('%Y-%m-%d'), self._btEndDate.strftime('%Y-%m-%d'))
+        strReport += u'\n%s: %-10s(open:%.2f) ~ %-10s(close:%.2f): %s日 %s%%' % (self.__fieldName('executeRange'), summary['startDate'], self._dataBegin_openprice, summary['endDate'], self._dataEnd_closeprice, summary['totalDays'], formatNumber(originGain))
+        strReport += u'\n%s: %s (%s-profit, %s-loss) %s ~ %s +%s' % (self.__fieldName('executeDays'), summary['daysHaveTrade'], summary['profitDays'], summary['lossDays'], 
                     summary['tradeDay_1st'], summary['tradeDay_last'], summary['endLazyDays'])
         
-        strReport += u'\n    起始资金: %-12s' % formatNumber(self._startBalance,2)
-        strReport += u'\n    结束资金: %-12s' % formatNumber(summary['endBalance'])
+        strReport += u'\n%s: %-12s' % (self.__fieldName('startBalance'), formatNumber(self._startBalance,2))
+        strReport += u'\n%s: %-12s' % (self.__fieldName('endBalance'), formatNumber(summary['endBalance']))
     
-        strReport += u'\n  总成交金额: %-12s' % formatNumber(summary['totalTurnover'])
-        strReport += u'\n  总成交笔数: %s' % formatNumber(summary['totalTradeCount'],0)
-        strReport += u'\n    总手续费: %s' % formatNumber(summary['totalCommission'])
-        strReport += u'\n      总滑点: %s' % formatNumber(summary['totalSlippage'])
+        strReport += u'\n%s: %-12s' % (self.__fieldName('totalTurnover'), formatNumber(summary['totalTurnover']))
+        strReport += u'\n%s: %s'    % (self.__fieldName('totalTradeCount'), formatNumber(summary['totalTradeCount'],0))
+        strReport += u'\n%s: %s'    % (self.__fieldName('totalCommission'), formatNumber(summary['totalCommission']))
+        strReport += u'\n%s: %s'    % (self.__fieldName('totalSlippage'), formatNumber(summary['totalSlippage']))
 
-        strReport += u'\n      总盈亏: %s' % formatNumber(summary['totalNetPnl'])
-        strReport += u'\n    总收益率: %s%%' % formatNumber(summary['totalReturn'])
-        strReport += u'\n    年化收益: %s%%' % formatNumber(summary['annualizedReturn'])
-        strReport += u'\n    最大回撤: %s' % formatNumber(summary['maxDrawdown'])   
-        strReport += u'\n  最大回撤率: %s%%' % formatNumber(summary['maxDdPercent'])
-        strReport += u'\n      夏普率: %s' % formatNumber(summary['sharpeRatio'], 3)
+        strReport += u'\n%s: %s'    % (self.__fieldName('totalNetPnl'), formatNumber(summary['totalNetPnl']))
+        strReport += u'\n%s: %s%%'  % (self.__fieldName('totalReturn'), formatNumber(summary['totalReturn']))
+        strReport += u'\n%s: %s%%'  % (self.__fieldName('annualizedReturn'), formatNumber(summary['annualizedReturn']))
+        strReport += u'\n%s: %s'    % (self.__fieldName('maxDrawdown'), formatNumber(summary['maxDrawdown']))
+        strReport += u'\n%s: %s%%'  % (self.__fieldName('maxDdPercent'), formatNumber(summary['maxDdPercent']))
+        strReport += u'\n%s: %s'    % (self.__fieldName('sharpeRatio'), formatNumber(summary['sharpeRatio'], 3))
         
-        strReport += u'\n    日均盈亏: %s' % formatNumber(summary['dailyNetPnl'])
-        strReport += u'\n  日均手续费: %s' % formatNumber(summary['dailyCommission'])
-        strReport += u'\n    日均滑点: %s' % formatNumber(summary['dailySlippage'])
-        strReport += u'\n日均成交金额: %s' % formatNumber(summary['dailyTurnover'])
-        strReport += u'\n日均成交笔数: %s' % formatNumber(summary['dailyTradeCount'])
-        strReport += u'\n  日均收益率: %s%%' % formatNumber(summary['dailyReturn'])
-        strReport += u'\n  收益标准差: %s%%' % formatNumber(summary['returnStd'])
+        strReport += u'\n%s: %s'    % (self.__fieldName('dailyNetPnl'), formatNumber(summary['dailyNetPnl']))
+        strReport += u'\n%s: %s'    % (self.__fieldName('dailyCommission'), formatNumber(summary['dailyCommission']))
+        strReport += u'\n%s: %s'    % (self.__fieldName('dailySlippage'), formatNumber(summary['dailySlippage']))
+        strReport += u'\n%s: %s'    % (self.__fieldName('dailyTurnover'), formatNumber(summary['dailyTurnover']))
+        strReport += u'\n%s: %s'    % (self.__fieldName('dailyTradeCount'), formatNumber(summary['dailyTradeCount']))
+        strReport += u'\n%s: %s%%'  % (self.__fieldName('dailyReturn'), formatNumber(summary['dailyReturn']))
+        strReport += u'\n%s: %s%%'  % (self.__fieldName('returnStd'), formatNumber(summary['returnStd']))
         if 'reason' in summary.keys() : strReport += u'\n  reason: %s' % summary['reason']
         
         return strReport

@@ -188,11 +188,13 @@ class BackTestApp(MetaTrader):
                 self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type[len(MARKETDATE_EVENT_PREFIX):], self._marketState.getAsOf(s).strftime('%Y%m%dT%H%M'), self._marketState.latestPrice(s), self._marketState.dailyOHLC_sofar(s)))
                 self.OnEvent(ev) # call Trader
                 self.__stepNoInEpisode += 1
-                return # successfully pushed an Event
+                return # successfully performed a step by pushing an Event
 
             except StopIteration:
                 reachedEnd = True
                 self.info('hist-read: end of playback')
+            except Exception as ex:
+                self.logexception(ex)
 
         self.debug('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self.__stepNoInEpisode, self._bGameOver, reachedEnd))
         # this test should be done if reached here

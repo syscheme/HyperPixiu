@@ -64,6 +64,8 @@ class MetaAgent(MetaObj): # TODO:
         if '/' != self._outDir[-1]:
             self._outDir +='/'
 
+        self._statusAttrs = {}
+
         self._brain = self.buildBrain(self._wkBrainId)
 
     @abstractmethod
@@ -106,7 +108,7 @@ class MetaAgent(MetaObj): # TODO:
         raise NotImplementedError
 
     @abstractmethod
-    def gymObserve(self, state, action, reward, next_state, done, warming_up=False):
+    def gymObserve(self, state, action, reward, next_state, done, **feedbacks):
         '''Memory Management and training of the agent
         @return tuple:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch
@@ -164,13 +166,19 @@ class GymTrader(BaseTrader):
         if agentType and agentType in hpGym.GYMAGENT_CLASS.keys():
             self._AGENTCLASS = hpGym.GYMAGENT_CLASS[agentType]
 
-        # step 1. GymTrader always take PerspectiveState as the market state
+        # GymTrader always take PerspectiveState as the market state
         self._marketState = PerspectiveState(None)
         self._gymState = None
+
         self.__recentLoss = None
         self._total_pnl = 0.0
         self._total_reward = 0.0
         self._latestCash, self._latestPosValue =0.0, 0.0
+        self.__feedbackToAgent = {
+            'avgDailyReward': 0.0, 
+            'bestDailyReward': 0.0,
+        }
+
         # self.n_actions = 3
         # self._prices_history = []
     @property
@@ -209,7 +217,7 @@ class GymTrader(BaseTrader):
         while not self._agent.isReady() :
             action = self._agent.gymAct(self._gymState)
             next_state, reward, done, _ = self.gymStep(action)
-            self._agent.gymObserve(self._gymState, action, reward, next_state, done, warming_up=True) # regardless state-stepping, rewards and loss here
+            self._agent.gymObserve(self._gymState, action, reward, next_state, done) # regardless state-stepping, rewards and loss here
 
         self.debug('doAppInit() done')
         return True
@@ -240,7 +248,7 @@ class GymTrader(BaseTrader):
     
         # self.__stampActStart = datetime.datetime.now()
         # waited = self.__stampActStart - self.__stampActEnd
-        loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, done)
+        loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, done, **self.__feedbackToAgent)
         if loss: self.__recentLoss =loss
         # self.__stampActEnd = datetime.datetime.now()
 

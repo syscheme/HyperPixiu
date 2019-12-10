@@ -22,9 +22,9 @@ from keras import backend
 
 from abc import ABCMeta, abstractmethod
 import os, threading, datetime
+import json
 
-GPU_EPOCHS_PER_OBSERV =10 #10 for GPU
-USING_GPU = len(backend.tensorflow_backend._get_available_gpus()) > 0
+GPUs = backend.tensorflow_backend._get_available_gpus()
 
 ########################################################################
 class agentDQN(MetaAgent):
@@ -40,6 +40,7 @@ class agentDQN(MetaAgent):
 
         super(agentDQN, self).__init__(gymTrader, **kwargs)
 
+        self._epochsPerObservOnGpu = self.getConfig('epochsPerObservOnGpu', 10)
         self._lock = threading.Lock()
         self.__sampleSize = self._batchSize *32
         if self.__sampleSize <1024:
@@ -59,6 +60,17 @@ class agentDQN(MetaAgent):
         lines = []
         self._brain.summary(print_fn=lambda x: lines.append(x))
         self._brainDesc += '\nsummary:\n%s\n' % "\n".join(lines)
+        basicAttrs = {
+            'Id': self._wkBrainId,
+            'GPUs': len(GPUs),
+            'summary': '\n' + '\n'.join(lines),
+            'stateSize': self._stateSize,
+            'actionSize': self._actionSize,
+            'created': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
+            'outdir': self._brainOutDir
+        }
+
+        self._statusAttrs = { **self._statusAttrs, **basicAttrs }
         
         # prepare the callbacks
         self.__callbacks=[]
@@ -190,11 +202,15 @@ class agentDQN(MetaAgent):
             # step 2. save the weights of the model
             self._brain.save('%smodel.json.h5' % self._brainOutDir)
 
-            # step 3. the desc.txt
-            if self._brainDesc and len(self._brainDesc) >0:
-                self._brainDesc += '\n'
-                with open('%sdesc.txt' % self._brainOutDir, 'w') as desc:
-                    desc.write(self._brainDesc)
+            # TODO step 3. the status.json
+            attrsToUpdate = {
+                'epsilon' : self._epsilon,
+                'learningRate' : self._learningRate,
+            }
+            self._statusAttrs = {**self._statusAttrs, **attrsToUpdate}
+
+            with open('%sstatus.json' % self._brainOutDir, 'w') as outfile:
+                json.dump(self._statusAttrs, outfile)
 
         self._gymTrader.info('saved brain[%s] with weights' % (self._brainOutDir))
         
@@ -222,13 +238,25 @@ class agentDQN(MetaAgent):
             brain.load_weights('%smodel.json.h5' % brainDir)
 
             # step 3. if load weight successfully, do not start over to mess-up the trained model by
-            # limiting epsilon
-            self._epsilon = min([self._epsilon*0.7, self._epsilonMin *20, 0.5])
-            self._learningRate = min([self._learningRate/2, 0.001])
-            self._gymTrader.info('loaded brain from %s by taking initial epsilon[%s] learningRate[%s]' % (brainDir, self._epsilon, self._learningRate))
+            # limiting epsilon from status.json
+            with open('%sstatus.json' % brainDir, 'r') as f:
+                self._statusAttrs = json.loads(f.read())
+
+            continued = self._statusAttrs['continued'] if 'continued' in self._statusAttrs.keys() else []
+            continued.append(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'))
+
+            attrsToUpdate = {
+                'continued': continued
+            }
+            self._statusAttrs = {**self._statusAttrs, **attrsToUpdate}
+
+            self._epsilon = float(self._statusAttrs['epsilon']) if 'epsilon' in self._statusAttrs.keys() else self._epsilon*0.7
+            self._learningRate = float(self._statusAttrs['learningRate']) if 'learningRate' in self._statusAttrs.keys() else self._learningRate/2
         except:
             pass
 
+        if brain:
+            self._gymTrader.info('loaded brain from %s by taking initial epsilon[%s] learningRate[%s]' % (brainDir, self._epsilon, self._learningRate))
         return brain
 
     def gymAct(self, state):
@@ -246,12 +274,13 @@ class agentDQN(MetaAgent):
 
         return action
 
-    def gymObserve(self, state, action, reward, next_state, done, warming_up=False):
+    def gymObserve(self, state, action, reward, next_state, done, **feedbacks):
         '''Memory Management and training of the agent
         @return tuple:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch
         '''
-        if not self._updateCache(state, action, reward, next_state, done, warming_up) :
+        self._statusAttrs = {**self._statusAttrs, **feedbacks}
+        if not self._updateCache(state, action, reward, next_state, done) :
             return None
 
         # TODO: if self._epsilon > self._epsilonMin:
@@ -278,30 +307,32 @@ class agentDQN(MetaAgent):
             # sample_weight：权值的numpy array，用于在训练时调整损失函数（仅用于训练）。可以传递一个1D的与样本等长的向量用于对样本进行1对1的加权，或者在面对时序数据时，传递一个的形式为（samples，sequence_length）的矩阵来为每个时间步上的样本赋不同的权。这种情况下请确定在编译模型时添加了sample_weight_mode=’temporal’。
             # initial_epoch: 从该参数指定的epoch开始训练，在继续之前的训练时有用。
             epochs =1
-            if USING_GPU and len(state) >self._batchSize:
-                epochs = GPU_EPOCHS_PER_OBSERV
+            if len(GPUs) > 0 and len(state) >self._batchSize:
+                epochs = self._epochsPerObservOnGpu
             self._loss = self._brain.fit(x=state, y=q_target, epochs=epochs, batch_size=self._batchSize, verbose=0, callbacks=self.__callbacks)
         return self._loss
 
-    def _updateCache(self, state, action, reward, next_state, done, warming_up=False):
+    def _updateCache(self, state, action, reward, next_state, done):
         '''record the input tuple(state, action, reward, next_state, done) into the cache, then pick out a batch
            of samples from the cache for training
         @return True if warmed up and ready to train
         '''
+        bWarmed = False
         with self._lock:
             self.__sampleIdx = self.__sampleIdx % self.__sampleSize
             samplelen = len(self.__sampleCache)
-            if 0 == self.__sampleIdx and samplelen >= self._batchSize: 
+            bWarmed = (self.__sampleIdx >= self._batchSize)
+            if 0 == self.__sampleIdx and samplelen > self._batchSize: 
                 self.__frameNum +=1
 
-            if self.__sampleIdx >= len(self.__sampleCache) :
+            if self.__sampleIdx >= samplelen :
                 self.__sampleCache.append((state, action, reward, next_state, done))
-                self.__sampleIdx = len(self.__sampleCache)
+                self.__sampleIdx = samplelen
             else :
                 self.__sampleCache[self.__sampleIdx] = (state, action, reward, next_state, done)
                 self.__sampleIdx +=1
 
-            if warming_up:
+            if not bWarmed:
                 self.__realDataNum =0
                 return False
 
@@ -323,7 +354,7 @@ class agentDQN(MetaAgent):
             if None in self.__sampleCache :
                 return state_batch, action_batch, reward_batch, next_state_batch, done_batch
 
-            if USING_GPU and len(self.__sampleCache) > self._batchSize:
+            if len(GPUs) > 0 and len(self.__sampleCache) > self._batchSize:
                 sizeToBatch = min(10, int(len(self.__sampleCache) / self._batchSize)) *self._batchSize
             
             batch = np.array(random.sample(self.__sampleCache, sizeToBatch))
@@ -448,11 +479,11 @@ class agentDualHemicerebrum(agentDQN):
                 self._brain.set_weights(self.__leftHemicerebrum.get_weights()) 
                 self._loss =  loss
 
-    def gymObserve(self, state, action, reward, next_state, done, warming_up=False):
+    def gymObserve(self, state, action, reward, next_state, done, **feedbacks):
         '''cache update of the agent, simple update the cache in this step
         @return loss take the known recent loss
         '''
-        if not self._updateCache(state, action, reward, next_state, done, warming_up) :
+        if not self._updateCache(state, action, reward, next_state, done, **feedbacks) :
             return None
 
         self.wakeup()

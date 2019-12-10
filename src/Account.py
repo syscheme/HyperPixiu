@@ -906,7 +906,7 @@ class Account(MetaAccount):
 
         self._dictTrades.clear() # clean the trade list
         self._state = Account.STATE_OPEN
-        self.debug('onDayOpen() shift pos to dict _prevPositions, updated state')
+        self.debug('onDayOpen(%s) updated todayResult' % self._dateToday)
     
     def onTimer(self, dt):
         # TODO refresh from BrokerDriver
@@ -1035,8 +1035,9 @@ class Account_AShare(Account):
         with self._lock :
             # A-share will not keep yesterday's order alive
             # all the out-standing order will be cancelled
+            cOutgoingOrders, cOrdersToCancel, cLimitOrders, cStopOrders = len(self._dictOutgoingOrders), len(self._lstOrdersToCancel), len(self._dictLimitOrders), len(self._dictStopOrders)
+
             self._dictOutgoingOrders.clear()
-            
             self._lstOrdersToCancel =[]
             self._dictLimitOrders.clear()
             self._dictStopOrders.clear()
@@ -1051,8 +1052,8 @@ class Account_AShare(Account):
                     strshift += '%s[%s ov %s], ' % (pos.symbol, pos.position, pos.posAvail)
                 pos.posAvail = pos.position
 
-            if len(strshift) >0:
-                self.info('onDayOpen(%s) shifted avail-positions: %s' % (self._dateToday, strshift))
+            if sum([cOutgoingOrders, cOrdersToCancel, cLimitOrders, cStopOrders])>0 or len(strshift) >0:
+                self.info('onDayOpen(%s) cleared %d,%d,%d,%d orders and shifted avail-positions: %s' % (self._dateToday, cOutgoingOrders, cOrdersToCancel, cLimitOrders, cStopOrders, strshift))
 
         #TODO: sync with broker
 

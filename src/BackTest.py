@@ -65,6 +65,7 @@ class BackTestApp(MetaTrader):
         self._startBalance = self.getConfig('startBalance', 100000)
         self._episodes     = self.getConfig('episodes', 1)
         self._plotReport   = self.getConfig('plotReport', 'False').lower() in BOOL_STRVAL_TRUE
+        self._maxPercentOfLost = self.getConfig('_maxPercentOfLost', 30) # we allow 30% lost during a episode
 
         self.__episodeNo = 1 # count start from 1 to ease reading
         self.__stepNoInEpisode =0
@@ -276,7 +277,18 @@ class BackTestApp(MetaTrader):
 
     def OnEpisodeDone(self, reachedEnd=True):
 
-        self.info('OnEpisodeDone() episode[%d/%d], processed %d events took %s, composing summary' % (self.__episodeNo, self._episodes, self.__stepNoInEpisode, str(datetime.now() - self.__execStamp_episodeStart)))
+        additionAttrs = {
+            'openDays' : len(self._account.dailyResultDict),
+            'episodeDuration' : datetime2float(datetime.now()) - datetime2float(self.__execStamp_episodeStart),
+            'episodeNo' : self.__episodeNo,
+            'episodes' : self._episodes,
+            'stepsInEpisode' : self.__stepNoInEpisode,
+        }
+
+        self._episodeSummary = {**self._episodeSummary, **additionAttrs}
+
+        self.info('OnEpisodeDone() episode[%d/%d], processed %d events in %d opendays took %ssec, composing summary' % 
+            (additionAttrs['episodeNo'], additionAttrs['episodes'], additionAttrs['stepsInEpisode'], additionAttrs['openDays'], additionAttrs['episodeDuration']) )
 
         tradeDays, summary = calculateSummary(self._startBalance, self._account.dailyResultDict)
 
@@ -284,7 +296,8 @@ class BackTestApp(MetaTrader):
 
         if not summary or not isinstance(summary, dict) :
             self.error('no summary given: %s' % summary)
-        else: self._episodeSummary = {**self._episodeSummary, **summary}
+        else: 
+            self._episodeSummary = {**self._episodeSummary, **summary}
 
         if not tradeDays is None:
             csvfile = '%s/%s_DR.csv' %(self._initTrader._outDir, self.episodeId)

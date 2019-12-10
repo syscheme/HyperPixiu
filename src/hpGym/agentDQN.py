@@ -85,9 +85,10 @@ class agentDQN(MetaAgent):
     @property
     def frameNum(self) : return self.__frameNum
 
-    def buildBrain(self, brainId =None): #TODO param brainId to load json/HD5 from dataRoot/brainId
+    def buildBrain(self, brainId =None, **feedbacks): #TODO param brainId to load json/HD5 from dataRoot/brainId
         '''Build the agent's brain
         '''
+        self._statusAttrs = {**self._statusAttrs, **feedbacks}
         if not brainId or len(brainId) <=0 :
             brainId = agentDQN.DEFAULT_BRAIN_ID
             self._gymTrader.warn('taking default brain[%s]' % (brainId))
@@ -175,7 +176,7 @@ class agentDQN(MetaAgent):
             
         return not None in self.__sampleCache
 
-    def saveBrain(self, brainId=None) :
+    def saveBrain(self, brainId=None, **feedbacks) :
         ''' save the current brain into the dataRoot
         @param a unique brainId must be given
         '''
@@ -206,6 +207,7 @@ class agentDQN(MetaAgent):
             attrsToUpdate = {
                 'epsilon' : self._epsilon,
                 'learningRate' : self._learningRate,
+                'saveTime' : datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
             }
             self._statusAttrs = {**self._statusAttrs, **attrsToUpdate}
 

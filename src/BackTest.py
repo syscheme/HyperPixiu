@@ -192,14 +192,16 @@ class BackTestApp(MetaTrader):
 
         # print the summary report
         strReport = self.formatSummary()
-        with codecs.open('%s/%s_summary.txt' %(self._initTrader._outDir, self.episodeId), "w","utf-8") as rptfile:
-            rptfile.write(strReport)
-            self.debug('doAppStep() episode[%s] summary report generated' %(self.episodeId))
-
         self.info('%s_%s summary:' %(self.ident, self.episodeId))
         for line in strReport.splitlines():
             if len(line) <2: continue
             self.info(line)
+
+        strReport += '\n'
+        with codecs.open('%s/%s_summary.txt' %(self._initTrader._outDir, self.episodeId), "w","utf-8") as rptfile:
+            rptfile.write(strReport)
+            self.debug('doAppStep() episode[%s] summary report generated' %(self.episodeId))
+
 
         # prepare for the next episode
         self.__episodeNo +=1

@@ -475,7 +475,7 @@ class GymTrader(BaseTrader):
         market_state = self._marketState.snapshot(self._tradeSymbol)
 
         # TODO: more observations in the future could be:
-        #  - [month, day, hour, minute [, weekday] ]
+        #  - [month, day, hour*60 +minute , weekday ]
         #  - money flow
         #  - market index
 
@@ -558,16 +558,16 @@ class GymTrainer(BackTestApp):
         super(GymTrainer, self).OnEpisodeDone(reachedEnd)
 
         # determin whether it is a best episode
-        meanRewardImproved = False
-        lossImproved = False
-        maxBalanceImproved = False
-        opendays = self._episodeSummary['openDays']
+        lstImproved=[]
 
+        opendays = self._episodeSummary['openDays']
         if opendays > self.__maxKnownOpenDays:
             self.__maxKnownOpenDays = opendays
+            lstImproved.append('openDays')
 
         if self.wkTrader._maxBalance > self.__prevMaxBalance :
-            maxBalanceImproved = True
+            lstImproved.append('maxBalance')
+            self.debug('OnEpisodeDone() maxBalance improved from %s to %s' % (self.__prevMaxBalance, self.wkTrader._maxBalance))
             self.__prevMaxBalance = self.wkTrader._maxBalance
 
         if reachedEnd or (opendays>2 and opendays > (self.__maxKnownOpenDays *3/4)): # at least stepped most of known days
@@ -580,21 +580,21 @@ class GymTrainer(BackTestApp):
                 rewardMeanBest /= self.__savedEpisode_opendays
 
             if rewardMean > rewardMeanBest or (rewardMean > rewardMeanBest/2 and opendays > self.__savedEpisode_opendays *1.2):
-                meanRewardImproved = True
+                lstImproved.append('meanReward')
                 self.debug('OnEpisodeDone() meanReward improved from %s/%s to %s/%s' % (self.__savedEpisode_reward, self.__savedEpisode_opendays, self.wkTrader._total_reward, opendays))
 
             # determin best by loss
             if self.wkTrader.loss < self.__savedEpisode_loss and opendays >= self.__savedEpisode_opendays:
-                lossImproved = True
+                lstImproved.append('loss')
 
         # save brain and decrease epsilon if improved
-        if meanRewardImproved or lossImproved or maxBalanceImproved :
+        if len(lstImproved) >0 :
             self.wkTrader._feedbackToAgent['bestRewardTotal'] = self.wkTrader._total_reward
             self.wkTrader._feedbackToAgent['bestRewardDays'] = opendays
             if self.__savedEpisode_loss < DUMMY_BIG_VAL: # do not save for the first episode
                 self.wkTrader._agent.saveBrain(**self.wkTrader._feedbackToAgent)
                 self.__stampLastSaveBrain = datetime.datetime.now()
-                self.debug('OnEpisodeDone() brain saved')
+                self.info('OnEpisodeDone() brain saved per improvements: %s' % lstImproved )
 
             self.__savedEpisode_opendays = opendays
             self.__savedEpisode_loss = self.wkTrader.loss
@@ -617,7 +617,7 @@ class GymTrainer(BackTestApp):
         self.__lastEpisode_loss = self.wkTrader.loss
 
         # decrease agent's learningRate and epsilon if reward improved
-        if meanRewardImproved :
+        if 'meanReward' in lstImproved :
             self.wkTrader._agent._learningRate *=0.8
             if self.wkTrader._agent._learningRate < 0.0001 : 
                 self.wkTrader._agent._learningRate = 0.0001

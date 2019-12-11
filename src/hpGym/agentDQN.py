@@ -500,7 +500,7 @@ class agentDualHemicerebrum(agentDQN):
         if not self.__leftHemicerebrum:
             return False
 
-        if not super(agentDQN, self).isReady():
+        if not super(agentDualHemicerebrum, self).isReady():
             return False
 
     #----------------------------------------------------------------------

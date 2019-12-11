@@ -637,7 +637,6 @@ class GymTrainer(BackTestApp):
         if not isinstance(summary, dict) :
             summary = self._episodeSummary
 
-        strReport += '\n\n' + '-'*20
         strReport += '\n totalReward: %s'  % summary['totalReward']
         strReport += '\n     epsilon: %s'  % summary['epsilon']
         strReport += '\n        loss: %s from %s' % (summary['loss'], summary['lastLoss'])

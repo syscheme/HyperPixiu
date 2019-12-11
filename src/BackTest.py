@@ -249,6 +249,7 @@ class BackTestApp(MetaTrader):
             self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._episodes, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
             return
 
+        self.info('-' *30)
         self.debug('doAppStep() starting over new episode[%s]' %(self.episodeId))
         self.resetEpisode()
         self._bGameOver =False

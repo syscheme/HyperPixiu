@@ -351,6 +351,34 @@ class agentDQN(MetaAgent):
            Process action_batch into a position vector
         @return tuple of the sampled batch:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch
+        TODO: if sampling take loss-of-fit as priority to always keep those have most losses as high priorities to pop for next round,
+        the training could be more effictive. To get the loss of each sample within a fit-training, a source exmaple could be like:
+        https://stackoverflow.com/questions/57087047/how-to-get-loss-for-each-sample-within-a-batch-in-keras
+
+                model = keras.models.Sequential([
+                    keras.layers.Input(shape=(4,)),
+                    keras.layers.Dense(1)
+                ])
+
+                def examine_loss(y_true, y_pred):
+                    result = keras.losses.mean_squared_error(y_true, y_pred)
+                    result = K.print_tensor(result, message='losses')
+                    return result
+
+                model.compile('adam', examine_loss)
+                model.summary()
+
+                X = np.random.rand(100, 4)
+
+                def test_fn(x):
+                    return x[0] * 0.2 + x[1] * 5.0 + x[2] * 0.3 + x[3] + 0.6
+
+                y = np.apply_along_axis(test_fn, 1, X)
+
+                model.fit(X[0:4], y[0:4])
+                
+        You should seem something like the following:
+        losses [23.2873611 26.1659927 34.1300354 6.16115761]
         '''
         state_batch, action_batch, reward_batch, next_state_batch, done_batch =None,None,None,None,None
         with self._lock:

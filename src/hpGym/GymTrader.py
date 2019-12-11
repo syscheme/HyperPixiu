@@ -586,16 +586,17 @@ class GymTrainer(BackTestApp):
             self.__bestEpisode_Id = self.episodeId
             self.__bestEpisode_reward = self.wkTrader._total_reward
 
-            # decrease agent's learningRate and epsilon
+        # decrease agent's learningRate and epsilon if reward improved
+        if meanRewardImproved :
             self.wkTrader._agent._learningRate *=0.8
-            if self.wkTrader._agent._learningRate < 0.00001 : 
-                self.wkTrader._agent._learningRate = 0.00001
+            if self.wkTrader._agent._learningRate < 0.0001 : 
+                self.wkTrader._agent._learningRate = 0.0001
 
             self.wkTrader._agent._epsilon -= self.wkTrader._agent._epsilon/4
             if self.wkTrader._agent._epsilon < self.wkTrader._agent._epsilonMin :
                 self.wkTrader._agent._epsilon = self.wkTrader._agent._epsilonMin
 
-            self.debug('OnEpisodeDone() bestEpisode updated, decreased to learningRate[%s] epsilon[%s]' % (self.wkTrader._agent._learningRate, self.wkTrader._agent._epsilon))
+            self.debug('OnEpisodeDone() reward improved, decreased to learningRate[%s] epsilon[%s]' % (self.wkTrader._agent._learningRate, self.wkTrader._agent._epsilon))
 
         mySummary = {
             'totalReward' : round(self.wkTrader._total_reward, 2),

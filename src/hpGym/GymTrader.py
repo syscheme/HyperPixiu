@@ -173,7 +173,6 @@ class GymTrader(BaseTrader):
         self.__recentLoss = None
         self._total_pnl = 0.0
         self._total_reward = 0.0
-        self._latestCash, self._latestPosValue =0.0, 0.0
         self._feedbackToAgent = {
             'avgDailyReward': 0.0, 
             'bestRewardTotal': 0.0,
@@ -276,6 +275,9 @@ class GymTrader(BaseTrader):
         self._total_pnl = 0.0
         self._total_reward = 0.0
         self._latestCash, self._latestPosValue = self._account.summrizeBalance()
+        balance = self._latestCash + self._latestPosValue
+        if balance > self._maxBalance :
+            self._maxBalance = balance
 
         observation = self.makeupGymObservation()
         self._shapeOfState = observation.shape
@@ -332,6 +334,8 @@ class GymTrader(BaseTrader):
         prevCap = self._latestCash + self._latestPosValue
         self._latestCash, self._latestPosValue = self._account.summrizeBalance() # most likely the cashAmount changed due to comission
         capitalAfterStep = self._latestCash + self._latestPosValue
+        if capitalAfterStep > self._maxBalance :
+            self._maxBalance = capitalAfterStep
 
         reward += round(capitalAfterStep - prevCap, 4)
 
@@ -539,9 +543,9 @@ class GymTrainer(BackTestApp):
             self._dataBegin_openprice = self._dataEnd_closeprice
             self.debug('OnEvent() taking dataBegin(%s @%s)' % (self._dataBegin_openprice, self._dataBegin_date))
 
-        if (self.wkTrader._latestCash  + self.wkTrader._latestPosValue) < (self._startBalance*(100.0 -self._maxPercentOfLost)/100):
+        if (self.wkTrader._latestCash  + self.wkTrader._latestPosValue) < (self.wkTrader._maxBalance*(100.0 -self._pctMaxDrawDown)/100):
             self._bGameOver = True
-            self._episodeSummary['reason'] = '%s/cash +%s/pv lost %s%% of startBalance' % (self.wkTrader._latestCash, self.wkTrader._latestPosValue, self._maxPercentOfLost)
+            self._episodeSummary['reason'] = '%s/cash +%s/pv drewdown %s%% of maxBalance[%s]' % (self.wkTrader._latestCash, self.wkTrader._latestPosValue, self._pctMaxDrawDown, self.wkTrader._maxBalance)
             self.error('episode[%s] has been KO-ed: %s' % (self.episodeId, self._episodeSummary['reason']))
         
     # end of BaseApplication routine

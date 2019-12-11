@@ -67,7 +67,7 @@ class BackTestApp(MetaTrader):
         self._startBalance = self.getConfig('startBalance', 100000)
         self._episodes     = self.getConfig('episodes', 1)
         self._plotReport   = self.getConfig('plotReport', 'False').lower() in BOOL_STRVAL_TRUE
-        self._maxPercentOfLost = self.getConfig('maxPercentOfLost', 30) # we allow 30% lost during a episode
+        self._pctMaxDrawDown = self.getConfig('pctMaxDrawDown', 30) # we allow 30% lost during a episode
 
         self.__episodeNo = 1 # count start from 1 to ease reading
         self.__stepNoInEpisode =0
@@ -75,6 +75,7 @@ class BackTestApp(MetaTrader):
         self.__execStamp_episodeStart = self.__execStamp_appStart
 
         self._dailyCapCost = float(self._startBalance) * self._initTrader._annualCostRatePcnt /220 / 100  # assuming 220 opendays every year
+        self._maxBalance = self._startBalance
 
         # backtest will always clear the datapath
         self._initTrader._outDir = '%s%s%s' % (self.dataRoot, self.ident, self.program.progId)
@@ -381,7 +382,8 @@ class BackTestApp(MetaTrader):
             self._account._marketState = self._marketState
             self.__wkTrader._account = self._account
             self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d]' % (self._originAcc.ident, self._account.ident, self._startBalance))
-        
+
+        self._maxBalance = self._startBalance
         self.__wkHistData.resetRead()
            
         self._dataBegin_date = None

@@ -40,6 +40,8 @@ class MetaTrader(BaseApplication):
         self._dictObjectives = {}
         self._marketState = None
         self._recorder =recorder
+        self._latestCash, self._latestPosValue =0.0, 0.0
+        self._maxBalance =0.0
 
     def __deepcopy__(self, other):
         result = object.__new__(type(self))

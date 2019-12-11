@@ -40,7 +40,7 @@ class agentDQN(MetaAgent):
 
         super(agentDQN, self).__init__(gymTrader, **kwargs)
 
-        self._epochsPerObservOnGpu = self.getConfig('epochsPerObservOnGpu', 10)
+        self._epochsPerObservOnGpu = self.getConfig('epochsPerObservOnGpu', 5)
         self._lock = threading.Lock()
         self.__replaySize = self._batchSize *32
         if self.__replaySize <1024:

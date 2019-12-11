@@ -32,12 +32,17 @@ try:
 except ImportError:
     pass
 
+RECCATE_ESPSUMMARY = 'EspSum'
+COLUMNS_ESPSUMMARY ='episodeNo,endBalance,openDays,startDate,endDate,totalDays,profitDays,lossDays,maxDrawdown,maxDdPercent,' \
+    + 'totalNetPnl,dailyNetPnl,totalCommission,dailyCommission,totalSlippage,dailySlippage,totalTurnover,dailyTurnover,totalTradeCount,dailyTradeCount,totalReturn,annualizedReturn,dailyReturn,' \
+    + 'returnStd,sharpeRatio,episodeDuration,stepsInEpisode,daysHaveTrade,tradeDay_1st,tradeDay_last,endLazyDays,' \
+    + 'avgDailyReward,totalReward,epsilon,loss,lastLoss,bestLoss,idOfBest,rewardOfBest,daysOfBest,frameNum,lastSaveBrain,reason'
+
 ########################################################################
 class BackTestApp(MetaTrader):
     '''
     BackTest is a wrapprer of Trader, with same interface of Trader
     '''
-    
     #----------------------------------------------------------------------
     def __init__(self, program, trader, histdata, **kwargs):
         """Constructor"""
@@ -53,6 +58,11 @@ class BackTestApp(MetaTrader):
         self.__wkHistData = histdata
         
         self._recorder = self._initTrader.recorder
+        self._recorder.registerCategory(Account.RECCATE_ORDER,       params= {'columns' : OrderData.COLUMNS})
+        self._recorder.registerCategory(Account.RECCATE_TRADE,       params= {'columns' : TradeData.COLUMNS})
+        self._recorder.registerCategory(Account.RECCATE_DAILYPOS,    params= {'columns' : DailyPosition.COLUMNS})
+        self._recorder.registerCategory(Account.RECCATE_DAILYRESULT, params= {'columns' : DailyResult.COLUMNS})
+        self._recorder.registerCategory(RECCATE_ESPSUMMARY,          params= {'columns' : COLUMNS_ESPSUMMARY })
 
         # 回测相关属性
         # -----------------------------------------
@@ -209,7 +219,7 @@ class BackTestApp(MetaTrader):
 
         # print the summary report
         if self._recorder and isinstance(self._episodeSummary, dict):
-            self._recorder.pushRow('EpSum', self._episodeSummary)
+            self._recorder.pushRow(RECCATE_ESPSUMMARY, self._episodeSummary)
 
         strReport = self.formatSummary()
         self.info('%s_%s summary:' %(self.ident, self.episodeId))
@@ -983,6 +993,22 @@ class AccountWrapper(MetaAccount):
     def OnEvent(self, ev):
         return self._nest.OnEvent(ev)
 
+    def debug(self, msg):
+        fwdTo = self._btTrader if self._btTrader else self._nest
+        fwdTo.debug(msg)
+        
+    def info(self, msg):
+        fwdTo = self._btTrader if self._btTrader else self._nest
+        fwdTo.info(msg)
+
+    def warn(self, msg):
+        fwdTo = self._btTrader if self._btTrader else self._nest
+        fwdTo.warn(msg)
+
+    def error(self, msg):
+        fwdTo = self._btTrader if self._btTrader else self._nest
+        fwdTo.error(msg)
+
     #----------------------------------------------------------------------
     # most of the methods are just forward to the self._nest
     @property
@@ -1124,7 +1150,7 @@ class AccountWrapper(MetaAccount):
 
         if len(clist) >0:
             self.batchCancel(clist)
-            self._nest.debug('BT.onDayOpen() batchCancelled: %s' % clist)
+            self.debug('BT.onDayOpen() batchCancelled: %s' % clist)
 
         self._nest.onDayOpen(newDate)
 
@@ -1180,7 +1206,7 @@ class AccountWrapper(MetaAccount):
         # 再撮合停止单
         self.__crossStopOrder(kldata.symbol, kldata.datetime, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
 
-    def __crossLimitOrder(self, symbol, dt, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume=-1):
+    def __crossLimitOrder(self, symbol, dtAsOf, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume=-1):
         """基于最新数据撮合限价单
         A limit order is an order placed with a brokerage to execute a buy or 
         sell transaction at a set number of shares and at a specified limit
@@ -1197,6 +1223,9 @@ class AccountWrapper(MetaAccount):
         pendingOrders =[]
 
         strCrossed =''
+        if not dtAsOf:
+            dtAsOf  = self.datetimeAsOfMarket()
+
         with self._nest._lock:
             for orderID, order in self._nest._dictLimitOrders.items():
                 if order.symbol != symbol:
@@ -1233,7 +1262,7 @@ class AccountWrapper(MetaAccount):
                 trade.direction = order.direction
                 trade.offset    = order.offset
                 trade.volume    = order.totalVolume
-                trade.datetime  = self.datetimeAsOfMarket()
+                trade.datetime  = dtAsOf
 
                 if buyCross:
                     trade.price = min(order.price, buyBestCrossPrice)
@@ -1244,7 +1273,7 @@ class AccountWrapper(MetaAccount):
 
                 order.tradedVolume = trade.volume
                 order.status = OrderData.STATUS_ALLTRADED
-                order.stampFinished = trade.datetime.strftime('%H:%M:%S.%f')[:3]
+                order.stampFinished = dtAsOf.strftime('%H:%M:%S.%f')[:3]
 
                 if order.tradedVolume < order.totalVolume :
                     order.status = OrderData.STATUS_PARTTRADED
@@ -1255,7 +1284,7 @@ class AccountWrapper(MetaAccount):
             strPendings = ''
             for o in pendingOrders:
                 strPendings += 'O[%s],' % o.desc
-            self._nest.info('crossLimitOrder() crossed %d orders:%s; %d pendings:%s'% (len(finishedOrders), strCrossed, len(pendingOrders), strPendings))
+            self.info('crossLimitOrder() crossed %d orders:%s; %d pendings:%s'% (len(finishedOrders), strCrossed, len(pendingOrders), strPendings))
 
         for o in finishedOrders:
             self._broker_onOrderDone(o)
@@ -1264,7 +1293,7 @@ class AccountWrapper(MetaAccount):
             self._broker_onTrade(t)
 
     #----------------------------------------------------------------------
-    def __crossStopOrder(self, symbol, dt, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume=-1): 
+    def __crossStopOrder(self, symbol, dtAsOf, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume=-1): 
         """基于最新数据撮合停止单
             A stop order is an order to buy or sell a security when its price moves past
             a particular point, ensuring a higher probability of achieving a predetermined 
@@ -1272,6 +1301,9 @@ class AccountWrapper(MetaAccount):
             the price crosses the predefined entry/exit point, the stop order becomes a
             market order.
         """
+        if not dtAsOf:
+            dtAsOf  = self.datetimeAsOfMarket()
+
         # TODO implement StopOrders
         #########################################################
         # # 遍历停止单字典中的所有停止单
@@ -1349,11 +1381,11 @@ class AccountWrapper(MetaAccount):
         # ---------------------------
         # step 1 fake a if newDate == self._dateToday
         fakedTomorrow = (datetime.strptime(self._nest._dateToday, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d') if self._nest._dateToday else '2999-12-31'
-        self._nest.info('OnPlaybackEnd() faking a day-open(%s)' % fakedTomorrow)
+        self.info('OnPlaybackEnd() faking a day-open(%s)' % fakedTomorrow)
         self.onDayOpen(fakedTomorrow)
 
         # step 1 到最后交易日尚未平仓的交易，则以最后价格平仓
-        self._nest.info('OnPlaybackEnd() faking trades to clean all positions into cash')
+        self.info('OnPlaybackEnd() faking trades to clean all positions into cash')
         cashAvail, cashTotal, currentPositions = self.positionState()
         for symbol, pos in currentPositions.items() :
             if symbol == self.cashSymbol:
@@ -1374,7 +1406,7 @@ class AccountWrapper(MetaAccount):
             trade.dt     = self._btTrader._dtData
 
             self._broker_onTrade(trade)
-            self._nest.info('OnPlaybackEnd() faked a trade: %s' % trade.desc)
+            self.info('OnPlaybackEnd() faked a trade: %s' % trade.desc)
 
 
 if __name__ == '__main__':

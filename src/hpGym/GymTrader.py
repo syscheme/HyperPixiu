@@ -468,7 +468,12 @@ class GymTrader(BaseTrader):
         account_state = np.concatenate([stateCapital + statePOS], axis=0)
 
         # part 2. build up the market_state
-        market_state = self._marketState.snapshot('000001')
+        market_state = self._marketState.snapshot(self._tradeSymbol)
+
+        # TODO: more observations in the future could be:
+        #  - [month, day, hour, minute [, weekday] ]
+        #  - money flow
+        #  - market index
 
         # return the concatenation of account_state and market_state as gymEnv sate
         envState = np.concatenate((account_state, market_state))
@@ -586,18 +591,6 @@ class GymTrainer(BackTestApp):
             self.__bestEpisode_Id = self.episodeId
             self.__bestEpisode_reward = self.wkTrader._total_reward
 
-        # decrease agent's learningRate and epsilon if reward improved
-        if meanRewardImproved :
-            self.wkTrader._agent._learningRate *=0.8
-            if self.wkTrader._agent._learningRate < 0.0001 : 
-                self.wkTrader._agent._learningRate = 0.0001
-
-            self.wkTrader._agent._epsilon -= self.wkTrader._agent._epsilon/4
-            if self.wkTrader._agent._epsilon < self.wkTrader._agent._epsilonMin :
-                self.wkTrader._agent._epsilon = self.wkTrader._agent._epsilonMin
-
-            self.debug('OnEpisodeDone() reward improved, decreased to learningRate[%s] epsilon[%s]' % (self.wkTrader._agent._learningRate, self.wkTrader._agent._epsilon))
-
         mySummary = {
             'totalReward' : round(self.wkTrader._total_reward, 2),
             'epsilon'     : round(self.wkTrader._agent._epsilon, 4),
@@ -611,9 +604,19 @@ class GymTrainer(BackTestApp):
             'frameNum'     : self.wkTrader._agent.frameNum
         }
         self._episodeSummary = {**self._episodeSummary, **mySummary}
-
         self.__lastEpisode_loss = self.wkTrader.loss
-        # maybe self.wkTrader.gymRender()
+
+        # decrease agent's learningRate and epsilon if reward improved
+        if meanRewardImproved :
+            self.wkTrader._agent._learningRate *=0.8
+            if self.wkTrader._agent._learningRate < 0.0001 : 
+                self.wkTrader._agent._learningRate = 0.0001
+
+            self.wkTrader._agent._epsilon -= self.wkTrader._agent._epsilon/4
+            if self.wkTrader._agent._epsilon < self.wkTrader._agent._epsilonMin :
+                self.wkTrader._agent._epsilon = self.wkTrader._agent._epsilonMin
+
+            self.debug('OnEpisodeDone() reward improved, decreased to learningRate[%s] epsilon[%s]' % (self.wkTrader._agent._learningRate, self.wkTrader._agent._epsilon))
 
     def resetEpisode(self) :
         '''

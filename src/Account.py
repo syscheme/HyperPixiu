@@ -899,10 +899,10 @@ class Account(MetaAccount):
             _, posCap = self.summrizeBalance(positions=self._prevPositions, cashTotal=cashTotal)
             prevBalance =  cashTotal + posCap
 
+        self._dateToday = newDate
+
         self._todayResult = DailyResult(self._dateToday, startBalance=prevBalance)
         self._todayResult.cash, self._todayResult.posValue = cashTotal, posCap
-
-        self._dateToday = newDate
 
         self._dictTrades.clear() # clean the trade list
         self._state = Account.STATE_OPEN

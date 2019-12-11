@@ -28,7 +28,7 @@ LOGLEVEL_INFO     = logging.INFO
 LOGLEVEL_WARN     = logging.WARN
 LOGLEVEL_ERROR    = logging.ERROR
 LOGLEVEL_CRITICAL = logging.CRITICAL
-LOGFMT_GENERAL = '%(asctime)s %(levelname)s\t%(message)s'
+LOGFMT_GENERAL    = '%(asctime)s %(levelname)s\t%(message)s'
 
 BOOL_STRVAL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh', True, 1]
 
@@ -979,7 +979,7 @@ class Program(object):
         level = STR2LEVEL['info']
         echoToConsole = True
         logdir = '/tmp'
-        filename = '%s.%s_%s.log' % (self.__progName, datetime.now().strftime('%m%d'), self.__pid)
+        filename = '%s_%s.log' % (self.progId, datetime.now().strftime('%m%d'))
         loggingEvent = True
 
         if self.__jsettings and jsoncfg.node_exists(self.__jsettings.logger):

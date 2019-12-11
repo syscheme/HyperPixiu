@@ -671,13 +671,14 @@ if __name__ == '__main__':
     csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
     # marketstate = PerspectiveState('AShare')
     # p.addObj(marketstate)
-    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder')
 
-    gymtdr = p.createApp(GymTrader, configNode ='trainer', tradeSymbol=SYMBOL, account=acc, recorder=rec)
+    gymtdr = p.createApp(GymTrader, configNode ='trainer', tradeSymbol=SYMBOL, account=acc)
     
     p.info('all objects registered piror to GymTrainer: %s' % p.listByType())
     
-    p.createApp(GymTrainer, configNode ='trainer', trader=gymtdr, histdata=csvreader)
+    trainer = p.createApp(GymTrainer, configNode ='trainer', trader=gymtdr, histdata=csvreader)
+    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = '%s/GymTrainer.tcsv' % trainer.outdir)
+    trainer.setRecorder(rec)
 
     p.start()
     p.loop()

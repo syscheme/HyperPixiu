@@ -1106,7 +1106,7 @@ class OrderData(EventData):
     STATUS_CLOSED     = STATUS_FINISHED + [STATUS_CANCELLED]
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
-    COLUMNS = 'datetime,symbol,exchange,reqId,brokerOrderId,direction,price,totalVolume,tradedVolume,offset,status,stampSubmitted,stampCanceled,stampFinished,source'
+    COLUMNS = 'datetime,symbol,exchange,reqId,brokerOrderId,direction,price,totalVolume,tradedVolume,offset,status,source' # ,stampSubmitted,stampCanceled,stampFinished'
 
     #----------------------------------------------------------------------
     def __init__(self, account, stopOrder=False, reqId = None):

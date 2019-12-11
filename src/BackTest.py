@@ -57,12 +57,7 @@ class BackTestApp(MetaTrader):
         self.__wkTrader = None
         self.__wkHistData = histdata
         
-        self._recorder = self._initTrader.recorder
-        self._recorder.registerCategory(Account.RECCATE_ORDER,       params= {'columns' : OrderData.COLUMNS})
-        self._recorder.registerCategory(Account.RECCATE_TRADE,       params= {'columns' : TradeData.COLUMNS})
-        self._recorder.registerCategory(Account.RECCATE_DAILYPOS,    params= {'columns' : DailyPosition.COLUMNS})
-        self._recorder.registerCategory(Account.RECCATE_DAILYRESULT, params= {'columns' : DailyResult.COLUMNS})
-        self._recorder.registerCategory(RECCATE_ESPSUMMARY,          params= {'columns' : COLUMNS_ESPSUMMARY })
+        self.setRecorder(self._initTrader.recorder)
 
         # 回测相关属性
         # -----------------------------------------
@@ -107,6 +102,20 @@ class BackTestApp(MetaTrader):
     @property
     def outdir(self) :
         return self._initTrader._outDir
+
+    def setRecorder(self, recorder) :
+        self._recorder = recorder
+        if self._recorder :
+            self._recorder.registerCategory(Account.RECCATE_ORDER,       params= {'columns' : OrderData.COLUMNS})
+            self._recorder.registerCategory(Account.RECCATE_TRADE,       params= {'columns' : TradeData.COLUMNS})
+            self._recorder.registerCategory(Account.RECCATE_DAILYPOS,    params= {'columns' : DailyPosition.COLUMNS})
+            self._recorder.registerCategory(Account.RECCATE_DAILYRESULT, params= {'columns' : DailyResult.COLUMNS})
+            self._recorder.registerCategory(RECCATE_ESPSUMMARY,          params= {'columns' : COLUMNS_ESPSUMMARY })
+
+        if self.__wkTrader :
+            self.__wkTrader._recorder = self._recorder
+            
+        return self._recorder
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication

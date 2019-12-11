@@ -86,6 +86,8 @@ class BaseTrader(MetaTrader):
 
         self._accountId      = self.getConfig('accountId', self._accountId)
         self._outDir         = self.getConfig('outDir', self.dataRoot)
+        self._annualCostRatePcnt = self.getConfig('annualCostRatePcnt', 10) # the annual cost rate of capital time, 10% by default
+        
         #--------------------
         # from old 数据引擎
 

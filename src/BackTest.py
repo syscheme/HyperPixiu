@@ -63,12 +63,14 @@ class BackTestApp(MetaTrader):
         self._startBalance = self.getConfig('startBalance', 100000)
         self._episodes     = self.getConfig('episodes', 1)
         self._plotReport   = self.getConfig('plotReport', 'False').lower() in BOOL_STRVAL_TRUE
-        self._maxPercentOfLost = self.getConfig('_maxPercentOfLost', 30) # we allow 30% lost during a episode
+        self._maxPercentOfLost = self.getConfig('maxPercentOfLost', 30) # we allow 30% lost during a episode
 
         self.__episodeNo = 1 # count start from 1 to ease reading
         self.__stepNoInEpisode =0
         self.__execStamp_appStart = datetime.now()
         self.__execStamp_episodeStart = self.__execStamp_appStart
+
+        self._dailyCapCost = float(self._startBalance) * self._initTrader._annualCostRatePcnt /220 / 100  # assuming 220 opendays every year
 
         # backtest will always clear the datapath
         self._initTrader._outDir = '%s%s%s' % (self.dataRoot, self.ident, self.program.progId)
@@ -198,9 +200,12 @@ class BackTestApp(MetaTrader):
             except Exception as ex:
                 self.logexception(ex)
 
-        self.debug('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self.__stepNoInEpisode, self._bGameOver, reachedEnd))
         # this test should be done if reached here
-        self.OnEpisodeDone(reachedEnd)
+        self.debug('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self.__stepNoInEpisode, self._bGameOver, reachedEnd))
+        try:
+            self.OnEpisodeDone(reachedEnd)
+        except Exception as ex:
+            self.logexception(ex)
 
         # print the summary report
         if self._recorder and isinstance(self._episodeSummary, dict):
@@ -216,7 +221,6 @@ class BackTestApp(MetaTrader):
         with codecs.open('%s/%s_summary.txt' %(self._initTrader._outDir, self.episodeId), "w","utf-8") as rptfile:
             rptfile.write(strReport)
             self.debug('doAppStep() episode[%s] summary report generated' %(self.episodeId))
-
 
         # prepare for the next episode
         self.__episodeNo +=1
@@ -351,6 +355,7 @@ class BackTestApp(MetaTrader):
             self._account = AccountWrapper(self._program, btTrader =self, account=copy.copy(self._originAcc)) # duplicate the original account for test espoches
             self._account.hostTrader(self) # adopt the account by pointing its._trader to self
             self._account.setCapital(self._startBalance, True)
+            self.__wkTrader._dailyCapCost = self._dailyCapCost
             self._program.addApp(self._account)
             self._account._marketState = self._marketState
             self.__wkTrader._account = self._account

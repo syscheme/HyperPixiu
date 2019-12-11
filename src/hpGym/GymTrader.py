@@ -180,6 +180,7 @@ class GymTrader(BaseTrader):
             'bestRewardDays': 0,
         }
 
+        self._dailyCapCost = 0.0 # just to ease calc
         # self.n_actions = 3
         # self._prices_history = []
     @property
@@ -231,32 +232,32 @@ class GymTrader(BaseTrader):
         '''processing an incoming MarketEvent'''
 
         action = self._agent.gymAct(self._gymState)
+        strActionAdj =''
         
         # the gymAct only determin the direction, adjust the action to execute per current balance
         if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]) and self._latestCash < 1000:
             action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
+            strActionAdj += '<BC'
         elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]) and self._latestPosValue < 1.0:
             action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
+            strActionAdj += '<SP'
 
         if not all(action == GymTrader.ACTIONS[GymTrader.ACTION_HOLD]):
             dtAsOf = self.marketState.getAsOf()
             if (dtAsOf.hour in [14, 23] and dtAsOf.minute in [58,59]) or (dtAsOf.hour in [0, 15] and dtAsOf.minute in [0,1]) :
                 action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
+                strActionAdj += '<EoD'
 
         self._action = action
 
         next_state, reward, done, _ = self.gymStep(self._action)
     
-        # self.__stampActStart = datetime.datetime.now()
-        # waited = self.__stampActStart - self.__stampActEnd
         loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, done, **self._feedbackToAgent)
         if loss: self.__recentLoss =loss
-        # self.__stampActEnd = datetime.datetime.now()
 
         self._gymState = next_state
         self._total_reward += reward
-
-        self.debug('proc_MarketEvent(%s) processed' % (ev.desc))
+        self.debug('proc_MarketEvent(%s) performed gymAct(%s%s) got reward[%s/%s] done[%s], agent ack-ed loss[%s]'% (ev.desc, action, strActionAdj, reward, self._total_reward, done, self.loss))
 
     # end of impl/overwrite of BaseApplication
     #----------------------------------------------------------------------
@@ -302,6 +303,7 @@ class GymTrader(BaseTrader):
         reward =0.0
         info = {}
 
+        reward += - round(self._dailyCapCost /240, 4) # this is supposed the capital timecost every minute as there are 4 open hours every day
         # step 1. collected information from the account
         cashAvail, cashTotal, positions = self._account.positionState()
         _, posvalue = self._account.summrizeBalance(positions, cashTotal)
@@ -327,11 +329,13 @@ class GymTrader(BaseTrader):
             else: reward -= 1 # penalty: is the agent blind to sell with no position? :)
 
         # step 3. calculate the rewards
+        prevCap = self._latestCash + self._latestPosValue
         self._latestCash, self._latestPosValue = self._account.summrizeBalance() # most likely the cashAmount changed due to comission
         capitalAfterStep = self._latestCash + self._latestPosValue
-        instant_pnl = capitalAfterStep - capitalBeforeStep
 
-        reward      += instant_pnl
+        reward += round(capitalAfterStep - prevCap, 4)
+
+        instant_pnl = capitalAfterStep - capitalBeforeStep
         self._total_pnl += instant_pnl
 
         ''' step 4. composing info for tracing
@@ -504,7 +508,11 @@ class GymTrainer(BackTestApp):
             self.error('doAppInit() invalid initTrader')
             return False
 
-        return super(GymTrainer, self).doAppInit()
+        if not super(GymTrainer, self).doAppInit() :
+            return False
+
+        self.wkTrader.gymReset()
+        return True
 
     def OnEvent(self, ev): # this overwrite BackTest's because there are some different needs
         symbol  = None

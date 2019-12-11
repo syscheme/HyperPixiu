@@ -42,13 +42,13 @@ class agentDQN(MetaAgent):
 
         self._epochsPerObservOnGpu = self.getConfig('epochsPerObservOnGpu', 10)
         self._lock = threading.Lock()
-        self.__sampleSize = self._batchSize *32
-        if self.__sampleSize <1024:
-            self.__sampleSize = 1024
-        if self.__sampleSize >10240:
-            self.__sampleSize = 10240
+        self.__replaySize = self._batchSize *32
+        if self.__replaySize <1024:
+            self.__replaySize = 1024
+        if self.__replaySize >10240:
+            self.__replaySize = 10240
 
-        self.__sampleCache = [None] * self._batchSize
+        self.__replayCache = [None] * self._batchSize
         self.__sampleIdx = 0
         self.__realDataNum =0
         self.__frameNum =0
@@ -71,7 +71,8 @@ class agentDQN(MetaAgent):
         }
 
         self._statusAttrs = { **self._statusAttrs, **basicAttrs }
-        
+        self.__bWarmed = False
+
         # prepare the callbacks
         self.__callbacks=[]
         # don't take update_freq='epoch' or batch as we train almost every gymObserve()
@@ -174,7 +175,7 @@ class agentDQN(MetaAgent):
         if not super(agentDQN, self).isReady():
             return False
             
-        return not None in self.__sampleCache
+        return not None in self.__replayCache
 
     def saveBrain(self, brainId=None, **feedbacks) :
         ''' save the current brain into the dataRoot
@@ -282,11 +283,10 @@ class agentDQN(MetaAgent):
             state_batch, action_batch, reward_batch, next_state_batch, done_batch
         '''
         self._statusAttrs = {**self._statusAttrs, **feedbacks}
-        if not self._updateCache(state, action, reward, next_state, done) :
+        if not self._pushToReplay(state, action, reward, next_state, done) :
             return None
 
-        # TODO: if self._epsilon > self._epsilonMin:
-        #     self._epsilon -= self.__epsilonDecrement
+        # this basic DQN also performs training in this step
         state, action, reward, next_state, done = self._sampleBatches()
 
         with self._lock:
@@ -314,32 +314,34 @@ class agentDQN(MetaAgent):
             self._loss = self._brain.fit(x=state, y=q_target, epochs=epochs, batch_size=self._batchSize, verbose=0, callbacks=self.__callbacks)
         return self._loss
 
-    def _updateCache(self, state, action, reward, next_state, done):
+    def _pushToReplay(self, state, action, reward, next_state, done):
         '''record the input tuple(state, action, reward, next_state, done) into the cache, then pick out a batch
            of samples from the cache for training
         @return True if warmed up and ready to train
         '''
-        bWarmed = False
         with self._lock:
-            self.__sampleIdx = self.__sampleIdx % self.__sampleSize
-            samplelen = len(self.__sampleCache)
-            bWarmed = (self.__sampleIdx >= self._batchSize)
+            self.__sampleIdx = self.__sampleIdx % self.__replaySize
+            if not self.__bWarmed and not None in self.__replayCache :
+                self.__bWarmed = True
+                self.__sampleIdx =0
+
+            samplelen = len(self.__replayCache)
             if 0 == self.__sampleIdx and samplelen > self._batchSize: 
                 self.__frameNum +=1
 
             if self.__sampleIdx >= samplelen :
-                self.__sampleCache.append((state, action, reward, next_state, done))
+                self.__replayCache.append((state, action, reward, next_state, done))
                 self.__sampleIdx = samplelen
             else :
-                self.__sampleCache[self.__sampleIdx] = (state, action, reward, next_state, done)
+                self.__replayCache[self.__sampleIdx] = (state, action, reward, next_state, done)
                 self.__sampleIdx +=1
 
-            if not bWarmed:
+            if not self.__bWarmed:
                 self.__realDataNum =0
                 return False
 
             self.__realDataNum += 1
-            if 0 != (self.__sampleIdx % self._trainInterval):
+            if self.__realDataNum <self._batchSize or 0 != (self.__sampleIdx % self._trainInterval):
                 return False
         
         return True
@@ -353,13 +355,15 @@ class agentDQN(MetaAgent):
         state_batch, action_batch, reward_batch, next_state_batch, done_batch =None,None,None,None,None
         with self._lock:
             sizeToBatch = self._batchSize
-            if None in self.__sampleCache :
+            if None in self.__replayCache :
                 return state_batch, action_batch, reward_batch, next_state_batch, done_batch
 
-            if len(GPUs) > 0 and len(self.__sampleCache) > self._batchSize:
-                sizeToBatch = min(10, int(len(self.__sampleCache) / self._batchSize)) *self._batchSize
+            if len(GPUs) > 0 and len(self.__replayCache) > self._batchSize:
+                sizeToBatch = min(10, int(len(self.__replayCache) / self._batchSize)) *self._batchSize
             
-            batch = np.array(random.sample(self.__sampleCache, sizeToBatch))
+            batch = np.array(random.sample(self.__replayCache, sizeToBatch))
+
+            # pick up the each part from the batch as we inserted via __replayCache[__sampleIdx] = (state, action, reward, next_state, done)
             state_batch = np.concatenate(batch[:, 0]).reshape(sizeToBatch, self._stateSize)
             action_batch = np.concatenate(batch[:, 1]).reshape(sizeToBatch, self._actionSize)
             reward_batch = batch[:, 2]
@@ -377,22 +381,22 @@ class agentDQN(MetaAgent):
         sizeToBatch = self._batchSize
         if self.__realDataNum <=0:
             sizeToBatch = self._batchSize
-            batch = np.array(random.sample(self.__sampleCache, sizeToBatch)).astype('float32')    
+            batch = np.array(random.sample(self.__replayCache, sizeToBatch)).astype('float32')    
         else:
-            if self.__realDataNum >= self.__sampleSize:
-                sizeToBatch = self.__sampleSize
-                self.__realDataNum = self.__sampleSize
+            if self.__realDataNum >= self.__replaySize:
+                sizeToBatch = self.__replaySize
+                self.__realDataNum = self.__replaySize
             else :
                 sizeToBatch = int((self.__realDataNum +self._batchSize -1) /self._batchSize) * self._batchSize
 
-            idxStart = (self.__sampleIdx + self.__sampleSize - sizeToBatch +1) % self.__sampleSize
+            idxStart = (self.__sampleIdx + self.__replaySize - sizeToBatch +1) % self.__replaySize
             if self.__sampleIdx <= idxStart:
-                a =self.__sampleCache[idxStart :]
-                b= self.__sampleCache[: self.__sampleIdx+1]
+                a =self.__replayCache[idxStart :]
+                b= self.__replayCache[: self.__sampleIdx+1]
                 c= a+b
                 batch = np.array(c, dtype=np.float32)
             else : 
-                c = self.__sampleCache[idxStart : self.__sampleIdx+1]
+                c = self.__replayCache[idxStart : self.__sampleIdx+1]
                 batch = np.concatenate(c).astype('float32')
             
         state_batch = np.concatenate(batch[:, 0]).reshape(sizeToBatch, self._stateSize)
@@ -405,6 +409,36 @@ class agentDQN(MetaAgent):
         action_batch = np.where(action_batch == 1)
         return state_batch, action_batch, reward_batch, next_state_batch, done_batch
 
+
+########################################################################
+# TODO DoubleDQN to avoid overestimate, 将动作选择（max操作）和动作估计Q(s’,a’)解耦
+# refer to https://github.com/ljpzzz/machinelearning/blob/master/reinforcement-learning/ddqn.py
+    # # Step 2: calculate y
+    # y_batch = []
+    # current_Q_batch = self.Q_value.eval(feed_dict={self.state_input: next_state_batch})
+    # max_action_next = np.argmax(current_Q_batch, axis=1)
+    # target_Q_batch = self.target_Q_value.eval(feed_dict={self.state_input: next_state_batch})
+
+    # for i in range(0,BATCH_SIZE):
+    #   done = minibatch[i][4]
+    #   if done:
+    #     y_batch.append(reward_batch[i])
+    #   else :
+    #     target_Q_value = target_Q_batch[i, max_action_next[i]]
+    #     y_batch.append(reward_batch[i] + GAMMA * target_Q_value)
+
+    # self.optimizer.run(feed_dict={
+    #     self.y_input:y_batch,
+    #     self.action_input:action_batch,
+    #     self.state_input:state_batch
+    #   })
+
+########################################################################
+# TODO AsynchronousDQN to avoid overestimate, 将动作选择（max操作）和动作估计Q(s’,a’)解耦
+# refer to https://github.com/ljpzzz/machinelearning/blob/master/reinforcement-learning/ddqn.py
+# AsynchronousDQN
+# https://www.tensorflow.org/tutorials/distribute/multi_worker_with_keras?hl=zh-cn
+# Keras' MirroredStrategy/MultiWorkerMirroredStrategy https://tf.wiki/zh/appendix/distributed.html
 
 ########################################################################
 class agentDualHemicerebrum(agentDQN):
@@ -485,7 +519,7 @@ class agentDualHemicerebrum(agentDQN):
         '''cache update of the agent, simple update the cache in this step
         @return loss take the known recent loss
         '''
-        if not self._updateCache(state, action, reward, next_state, done, **feedbacks) :
+        if not self._pushToReplay(state, action, reward, next_state, done, **feedbacks) :
             return None
 
         self.wakeup()

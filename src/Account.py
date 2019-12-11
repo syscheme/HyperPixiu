@@ -1106,7 +1106,7 @@ class OrderData(EventData):
     STATUS_CLOSED     = STATUS_FINISHED + [STATUS_CANCELLED]
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
-    COLUMNS = 'datetime,symbol,exchange,reqId,brokerOrderId,direction,price,totalVolume,tradedVolume,offset,status,source' # ,stampSubmitted,stampCanceled,stampFinished'
+    COLUMNS = 'datetime,symbol,reqId,brokerOrderId,direction,price,totalVolume,tradedVolume,offset,status,source' # ,stampSubmitted,stampCanceled,stampFinished'
 
     #----------------------------------------------------------------------
     def __init__(self, account, stopOrder=False, reqId = None):
@@ -1172,7 +1172,7 @@ class TradeData(EventData):
     # STATUS_UNKNOWN    = u'UNKNOWN' # u'未知'
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
-    COLUMNS = 'datetime,symbol,exchange,tradeID,brokerTradeId,direction,orderID,price,volume,offset'
+    COLUMNS = 'datetime,symbol,tradeID,brokerTradeId,direction,orderID,price,volume,offset'
 
     #----------------------------------------------------------------------
     def __init__(self, account):
@@ -1205,7 +1205,7 @@ class PositionData(EventData):
     '''持仓数据类'''
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
-    COLUMNS = 'symbol,exchange,direction,position,posAvail,price,avgPrice,stampByTrader,stampByBroker'
+    COLUMNS = 'symbol,direction,position,posAvail,price,avgPrice,stampByTrader,stampByBroker'
 
     #----------------------------------------------------------------------
     def __init__(self):

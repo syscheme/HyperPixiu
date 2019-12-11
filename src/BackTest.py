@@ -33,10 +33,9 @@ except ImportError:
     pass
 
 RECCATE_ESPSUMMARY = 'EspSum'
-COLUMNS_ESPSUMMARY ='episodeNo,endBalance,openDays,startDate,endDate,totalDays,profitDays,lossDays,maxDrawdown,maxDdPercent,' \
+COLUMNS_ESPSUMMARY ='episodeNo,endBalance,openDays,startDate,endDate,totalDays,tradeDay_1st,tradeDay_last,profitDays,lossDays,maxDrawdown,maxDdPercent,' \
     + 'totalNetPnl,dailyNetPnl,totalCommission,dailyCommission,totalSlippage,dailySlippage,totalTurnover,dailyTurnover,totalTradeCount,dailyTradeCount,totalReturn,annualizedReturn,dailyReturn,' \
-    + 'returnStd,sharpeRatio,episodeDuration,stepsInEpisode,daysHaveTrade,tradeDay_1st,tradeDay_last,endLazyDays,' \
-    + 'avgDailyReward,totalReward,epsilon,loss,lastLoss,bestLoss,idOfBest,rewardOfBest,daysOfBest,frameNum,lastSaveBrain,reason'
+    + 'returnStd,sharpeRatio,episodeDuration,stepsInEpisode,totalReward,avgDailyReward,epsilon,loss,lastLoss,idOfBest,bestLoss,rewardOfBest,daysOfBest,frameNum,lastSaveBrain,reason'
 
 ########################################################################
 class BackTestApp(MetaTrader):
@@ -326,14 +325,16 @@ class BackTestApp(MetaTrader):
             self._episodeSummary = {**self._episodeSummary, **summary}
 
         if not tradeDays is None:
-            csvfile = '%s/%s_DR.csv' %(self._initTrader._outDir, self.episodeId)
-            self.debug('OnEpisodeDone() episode[%s], saving trade-days into %s' % (self.episodeId, csvfile))
-            try :
-                os.makedirs(os.path.dirname(csvfile))
-            except:
-                pass
+            # has been covered by tcsv recorder
+            # csvfile = '%s/%s_DR.csv' %(self._initTrader._outDir, self.episodeId)
+            # self.debug('OnEpisodeDone() episode[%s], saving trade-days into %s' % (self.episodeId, csvfile))
+            # try :
+            #     os.makedirs(os.path.dirname(csvfile))
+            # except:
+            #     pass
 
-            tradeDays.to_csv(csvfile)
+            # tradeDays.to_csv(csvfile)
+
             if self._plotReport :
                 self.plotResult(tradeDays)
 
@@ -344,6 +345,7 @@ class BackTestApp(MetaTrader):
         self.__stepNoInEpisode =0
         self.debug('resetEpisode() initializing episode[%d/%d], elapsed %s obj-in-program: %s' % (self.__episodeNo, self._episodes, str(self.__execStamp_episodeStart - self.__execStamp_appStart), self._program.listByType(MetaObj)))
 
+        # NOTE: Any applications must be created prior to program.start()
         # if self._recorder:
         #     self._program.removeApp(self._recorder)
         # self._recorder = self._program.createApp(hist.TaggedCsvRecorder, filepath ='%s/BT_%s.tcsv' % (self._initTrader._outDir, self.episodeId))

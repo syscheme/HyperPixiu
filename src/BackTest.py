@@ -35,7 +35,7 @@ except ImportError:
 RECCATE_ESPSUMMARY = 'EspSum'
 COLUMNS_ESPSUMMARY ='episodeNo,endBalance,openDays,startDate,endDate,totalDays,tradeDay_1st,tradeDay_last,profitDays,lossDays,maxDrawdown,maxDdPercent,' \
     + 'totalNetPnl,dailyNetPnl,totalCommission,dailyCommission,totalSlippage,dailySlippage,totalTurnover,dailyTurnover,totalTradeCount,dailyTradeCount,totalReturn,annualizedReturn,dailyReturn,' \
-    + 'returnStd,sharpeRatio,episodeDuration,stepsInEpisode,totalReward,avgDailyReward,epsilon,loss,lastLoss,idOfBest,bestLoss,rewardOfBest,daysOfBest,frameNum,lastSaveBrain,reason'
+    + 'returnStd,sharpeRatio,episodeDuration,stepsInEpisode,totalReward,dailyReward,epsilon,loss,lastLoss,savedEId,savedLoss,savedReward,savedODays,savedTime,frameNum,reason'
 
 ########################################################################
 class BackTestApp(MetaTrader):
@@ -67,7 +67,7 @@ class BackTestApp(MetaTrader):
         self._startBalance = self.getConfig('startBalance', 100000)
         self._episodes     = self.getConfig('episodes', 1)
         self._plotReport   = self.getConfig('plotReport', 'False').lower() in BOOL_STRVAL_TRUE
-        self._pctMaxDrawDown = self.getConfig('pctMaxDrawDown', 30) # we allow 30% lost during a episode
+        self._pctMaxDrawDown = self.getConfig('pctMaxDrawDown', 25) # we allow 25% drawdown during a episode
 
         self.__episodeNo = 1 # count start from 1 to ease reading
         self.__stepNoInEpisode =0

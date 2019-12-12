@@ -189,12 +189,11 @@ class GymTrader(BaseTrader):
         return round(self.__recentLoss.history["loss"][0], 6) if self.__recentLoss else DUMMY_BIG_VAL
 
     @property
-    def depositedReward(self) : # any read will reset the self.__additionalReward
+    def withdrawReward(self) : # any read will reset the self.__additionalReward
         ret = self.__additionalReward
         self.__additionalReward = 0.0
         return ret
 
-    @property
     def depositReward(self, reward) :
         self.__additionalReward += round(reward, 4)
 
@@ -349,7 +348,7 @@ class GymTrader(BaseTrader):
         if capitalAfterStep > self._maxBalance :
             self._maxBalance = capitalAfterStep
 
-        reward += round(capitalAfterStep - prevCap, 4) + self.depositedReward
+        reward += round(capitalAfterStep - prevCap, 4) + self.withdrawReward
 
         instant_pnl = capitalAfterStep - capitalBeforeStep
         self._total_pnl += instant_pnl
@@ -520,7 +519,9 @@ class GymTrainer(BackTestApp):
         self.__stampLastSaveBrain = '0000'
         self.__maxKnownOpenDays =0
         self.__prevMaxBalance =0
-        self.__rewardDayStepped = float(self._startBalance) * self._initTrader._annualCostRatePcnt /220 / 100 *2 # we encought the train to reach end of history, so give a reward every dayend for the survive
+
+        # we encourage the train to reach end of history, so give some reward every week for its survive
+        self.__rewardWeekStepped = float(self._startBalance) * self._initTrader._annualCostRatePcnt /220 / 100 *2
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -550,8 +551,10 @@ class GymTrainer(BackTestApp):
         self.wkTrader.OnEvent(ev) # to perform the gym step
 
         asOf = self.wkTrader.marketState.getAsOf(symbol)
-        if self._dataEnd_date and asOf > self._dataEnd_date :
-            self.wkTrader.depositReward(self.__rewardDayStepped)
+
+        # git some additional reward when survived for a week starts
+        if self._dataEnd_date and asOf.weekday() < self._dataEnd_date.weekday() :
+            self.wkTrader.depositReward(self.__rewardWeekStepped)
 
         self._dataEnd_date = asOf
         self._dataEnd_closeprice = self.wkTrader.marketState.latestPrice(symbol)

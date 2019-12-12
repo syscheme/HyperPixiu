@@ -1408,11 +1408,12 @@ class AccountWrapper(MetaAccount):
         # 结算日
         # ---------------------------
         # step 1 fake a if newDate == self._dateToday
-        fakedTomorrow = (datetime.strptime(self._nest._dateToday, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d') if self._nest._dateToday else '2999-12-31'
-        self.info('OnPlaybackEnd() faking a day-open(%s)' % fakedTomorrow)
-        self.onDayOpen(fakedTomorrow)
+        dtAsOf  = self.datetimeAsOfMarket()
+        dtFakedTomorrow = (dtAsOf + timedelta(days=1)).replace(hour=0, minute=0, second=1)
+        self.info('OnPlaybackEnd() faking a day-open(%s)' % dtFakedTomorrow)
+        self.onDayOpen(dtFakedTomorrow.strftime('%Y-%m-%d'))
 
-        # step 1 到最后交易日尚未平仓的交易，则以最后价格平仓
+        # step 1 reached playback-end, sell all position and turn them into cash via the latest price
         self.info('OnPlaybackEnd() faking trades to clean all positions into cash')
         cashAvail, cashTotal, currentPositions = self.positionState()
         for symbol, pos in currentPositions.items() :
@@ -1431,7 +1432,7 @@ class AccountWrapper(MetaAccount):
             trade.offset = OrderData.OFFSET_CLOSE
             trade.price  = pos.price
             trade.volume = pos.posAvail
-            trade.dt     = self._btTrader._dtData
+            trade.datetime = dtAsOf
 
             self._broker_onTrade(trade)
             self.info('OnPlaybackEnd() faked a trade: %s' % trade.desc)

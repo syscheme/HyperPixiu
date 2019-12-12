@@ -35,7 +35,7 @@ except ImportError:
 RECCATE_ESPSUMMARY = 'EspSum'
 COLUMNS_ESPSUMMARY ='episodeNo,endBalance,openDays,startDate,endDate,totalDays,tradeDay_1st,tradeDay_last,profitDays,lossDays,maxDrawdown,maxDdPercent,' \
     + 'totalNetPnl,dailyNetPnl,totalCommission,dailyCommission,totalSlippage,dailySlippage,totalTurnover,dailyTurnover,totalTradeCount,dailyTradeCount,totalReturn,annualizedReturn,dailyReturn,' \
-    + 'returnStd,sharpeRatio,episodeDuration,stepsInEpisode,totalReward,dailyReward,epsilon,loss,lastLoss,savedEId,savedLoss,savedReward,savedODays,savedTime,frameNum,reason'
+    + 'returnStd,sharpeRatio,episodeDuration,stepsInEpisode,totalReward,dailyReward,epsilon,loss,savedEId,savedLoss,savedReward,savedODays,savedTime,frameNum,reason'
 
 ########################################################################
 class BackTestApp(MetaTrader):
@@ -837,6 +837,8 @@ def calculateSummary(startBalance, dayResultDict):
     profitDays = len(df[df['netPnl']>0])
     lossDays   = len(df[df['netPnl']<0])
     daysHaveTrades = df[(df['tcBuy'] + df['tcSell']) >0].index
+    tcBuys = df['tcBuy'].sum()
+    tcSells = df['tcSell'].sum()
     tradeDay_1st = daysHaveTrades[0] if len(daysHaveTrades) >0 else None
     tradeDay_last  = daysHaveTrades[-1] if len(daysHaveTrades) >0 else None
     endLazyDays = totalDays - df.index.get_loc(tradeDay_last) -1 if tradeDay_last else totalDays
@@ -857,7 +859,7 @@ def calculateSummary(startBalance, dayResultDict):
     totalTurnover = df['turnover'].sum()
     dailyTurnover = totalTurnover / totalDays
     
-    totalTradeCount = df['tcBuy'].sum() + df['tcSell'].sum()
+    totalTradeCount = tcBuys + tcSells
     dailyTradeCount = totalTradeCount / totalDays
     
     totalReturn = (endBalance/startBalance - 1) * 100
@@ -888,6 +890,8 @@ def calculateSummary(startBalance, dayResultDict):
         'dailySlippage': round(dailySlippage, 3),
         'totalTurnover': round(totalTurnover, 3),
         'dailyTurnover': round(dailyTurnover, 3),
+        # 'tcSells':tcSell,
+        # 'tcBuys':tcBuys,
         'totalTradeCount': totalTradeCount,
         'dailyTradeCount': round(dailyTradeCount, 3),
         'totalReturn':    round(totalReturn, 3),

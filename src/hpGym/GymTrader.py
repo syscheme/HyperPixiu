@@ -51,7 +51,7 @@ class MetaAgent(MetaObj): # TODO:
         self._batchSize = self.getConfig('batchSize', 128)
 
         self._gamma = self.getConfig('gamma', 0.95)
-        self._epsilon = self.getConfig('epsilon', 1) # rand()[0,1) <= self._epsilon will trigger a random explore
+        self._epsilon = self.getConfig('epsilon', 1.0) # rand()[0,1) <= self._epsilon will trigger a random explore
         self._epsilonMin = self.getConfig('epsilonMin', 0.02)
 
         self._wkBrainId = self.getConfig('brainId', None)
@@ -67,6 +67,7 @@ class MetaAgent(MetaObj): # TODO:
         self._statusAttrs = {}
 
         self._brain = self.buildBrain(self._wkBrainId)
+
 
     @abstractmethod
     def isReady(self) : return True
@@ -180,11 +181,22 @@ class GymTrader(BaseTrader):
         }
 
         self._dailyCapCost = 0.0 # just to ease calc
+        self.__additionalReward = 0.0
         # self.n_actions = 3
         # self._prices_history = []
     @property
     def loss(self) :
         return round(self.__recentLoss.history["loss"][0], 6) if self.__recentLoss else DUMMY_BIG_VAL
+
+    @property
+    def depositedReward(self) : # any read will reset the self.__additionalReward
+        ret = self.__additionalReward
+        self.__additionalReward = 0.0
+        return ret
+
+    @property
+    def depositReward(self, reward) :
+        self.__additionalReward += round(reward, 4)
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -337,7 +349,7 @@ class GymTrader(BaseTrader):
         if capitalAfterStep > self._maxBalance :
             self._maxBalance = capitalAfterStep
 
-        reward += round(capitalAfterStep - prevCap, 4)
+        reward += round(capitalAfterStep - prevCap, 4) + self.depositedReward
 
         instant_pnl = capitalAfterStep - capitalBeforeStep
         self._total_pnl += instant_pnl
@@ -508,6 +520,7 @@ class GymTrainer(BackTestApp):
         self.__stampLastSaveBrain = '0000'
         self.__maxKnownOpenDays =0
         self.__prevMaxBalance =0
+        self.__rewardDayStepped = float(self._startBalance) * self._initTrader._annualCostRatePcnt /220 / 100 *2 # we encought the train to reach end of history, so give a reward every dayend for the survive
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -536,7 +549,11 @@ class GymTrainer(BackTestApp):
 
         self.wkTrader.OnEvent(ev) # to perform the gym step
 
-        self._dataEnd_date = self.wkTrader.marketState.getAsOf(symbol)
+        asOf = self.wkTrader.marketState.getAsOf(symbol)
+        if self._dataEnd_date and asOf > self._dataEnd_date :
+            self.wkTrader.depositReward(self.__rewardDayStepped)
+
+        self._dataEnd_date = asOf
         self._dataEnd_closeprice = self.wkTrader.marketState.latestPrice(symbol)
 
         if not self._dataBegin_date:
@@ -592,6 +609,7 @@ class GymTrainer(BackTestApp):
             self.wkTrader._feedbackToAgent['bestRewardTotal'] = self.wkTrader._total_reward
             self.wkTrader._feedbackToAgent['bestRewardDays'] = opendays
             if self.__savedEpisode_loss < DUMMY_BIG_VAL: # do not save for the first episode
+                self.wkTrader._feedbackToAgent['improved'] = lstImproved
                 self.wkTrader._agent.saveBrain(**self.wkTrader._feedbackToAgent)
                 self.__stampLastSaveBrain = datetime.datetime.now()
                 self.info('OnEpisodeDone() brain saved per improvements: %s' % lstImproved )
@@ -603,7 +621,7 @@ class GymTrainer(BackTestApp):
 
         mySummary = {
             'totalReward' : round(self.wkTrader._total_reward, 2),
-            'epsilon'     : round(self.wkTrader._agent._epsilon, 4),
+            'epsilon'     : round(self.wkTrader._agent._epsilon, 6),
             'loss'        : self.wkTrader.loss,
             'lastLoss'    : self.__lastEpisode_loss,
             'savedLoss'   : self.__savedEpisode_loss,

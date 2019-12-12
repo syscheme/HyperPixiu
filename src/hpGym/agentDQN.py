@@ -206,7 +206,7 @@ class agentDQN(MetaAgent):
 
             # TODO step 3. the status.json
             attrsToUpdate = {
-                'epsilon' : self._epsilon,
+                'epsilon' : round(self._epsilon, 6),
                 'learningRate' : self._learningRate,
                 'saveTime' : datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
             }

@@ -49,7 +49,8 @@
         "accountId" : "blah",
         "startCapitial": 100000,
         "episodes": 5000,
-    
+        "pctMaxDrawDown": 15, // 15% maximal drawdown rate to give up the current episodes
+        // "plotReport": "no", 
 
         // the following are same as "trader"
         "dbNamePrefixHist" : "dr", // the prefix of DB name where to read history data from: <dbNamePrefixHist>Tick, <dbNamePrefixHist>K1min

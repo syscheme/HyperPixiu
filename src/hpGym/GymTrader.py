@@ -253,6 +253,10 @@ class GymTrader(BaseTrader):
             strActionAdj += '<SP'
 
         if not all(action == GymTrader.ACTIONS[GymTrader.ACTION_HOLD]):
+            if not self._account.executable:
+                action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
+                strActionAdj += '<Frz'
+
             dtAsOf = self.marketState.getAsOf()
             if (dtAsOf.hour in [14, 23] and dtAsOf.minute in [58,59]) or (dtAsOf.hour in [0, 15] and dtAsOf.minute in [0,1]) :
                 action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
@@ -340,15 +344,17 @@ class GymTrader(BaseTrader):
                 self._account.cancelAllOrders()
                 vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, strategy=None)
             else: reward -= 1 # penalty: is the agent blind to sell with no position? :)
+        else : reward += self.withdrawReward # only allow withdraw the depositted reward when action=HOLD
 
         # step 3. calculate the rewards
         prevCap = self._latestCash + self._latestPosValue
         self._latestCash, self._latestPosValue = self._account.summrizeBalance() # most likely the cashAmount changed due to comission
         capitalAfterStep = self._latestCash + self._latestPosValue
         if capitalAfterStep > self._maxBalance :
+            self.depositReward(round((capitalAfterStep - self._maxBalance) *5, 4)) # exceeding maxBalance should be encouraged
             self._maxBalance = capitalAfterStep
 
-        reward += round(capitalAfterStep - prevCap, 4) + self.withdrawReward
+        reward += round(capitalAfterStep - prevCap, 4)
 
         instant_pnl = capitalAfterStep - capitalBeforeStep
         self._total_pnl += instant_pnl
@@ -521,7 +527,7 @@ class GymTrainer(BackTestApp):
         self.__prevMaxBalance =0
 
         # we encourage the train to reach end of history, so give some reward every week for its survive
-        self.__rewardWeekStepped = float(self._startBalance) * self._initTrader._annualCostRatePcnt /220 / 100 *2
+        self.__rewardDayStepped = float(self._startBalance) * self._initTrader._annualCostRatePcnt /220 / 100
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -552,9 +558,9 @@ class GymTrainer(BackTestApp):
 
         asOf = self.wkTrader.marketState.getAsOf(symbol)
 
-        # git some additional reward when survived for a week starts
-        if self._dataEnd_date and asOf.weekday() < self._dataEnd_date.weekday() :
-            self.wkTrader.depositReward(self.__rewardWeekStepped)
+        # get some additional reward when survived for one more day
+        if self._dataEnd_date and asOf.day > self._dataEnd_date.day :
+            self.wkTrader.depositReward(self.__rewardDayStepped)
 
         self._dataEnd_date = asOf
         self._dataEnd_closeprice = self.wkTrader.marketState.latestPrice(symbol)
@@ -566,7 +572,7 @@ class GymTrainer(BackTestApp):
 
         if (self.wkTrader._latestCash  + self.wkTrader._latestPosValue) < (self.wkTrader._maxBalance*(100.0 -self._pctMaxDrawDown)/100):
             self._bGameOver = True
-            self._episodeSummary['reason'] = '%s/cash +%s/pv drewdown %s%% of maxBalance[%s]' % (self.wkTrader._latestCash, self.wkTrader._latestPosValue, self._pctMaxDrawDown, self.wkTrader._maxBalance)
+            self._episodeSummary['reason'] = '%s cash +%s pv drewdown %s%% of maxBalance[%s]' % (self.wkTrader._latestCash, self.wkTrader._latestPosValue, self._pctMaxDrawDown, self.wkTrader._maxBalance)
             self.error('episode[%s] has been KO-ed: %s' % (self.episodeId, self._episodeSummary['reason']))
         
     # end of BaseApplication routine
@@ -625,6 +631,7 @@ class GymTrainer(BackTestApp):
         mySummary = {
             'totalReward' : round(self.wkTrader._total_reward, 2),
             'epsilon'     : round(self.wkTrader._agent._epsilon, 6),
+            'learningRate': self.wkTrader._agent._learningRate,
             'loss'        : self.wkTrader.loss,
             'lastLoss'    : self.__lastEpisode_loss,
             'savedLoss'   : self.__savedEpisode_loss,
@@ -666,8 +673,9 @@ class GymTrainer(BackTestApp):
 
         strReport += '\n totalReward: %s'  % summary['totalReward']
         strReport += '\n     epsilon: %s'  % summary['epsilon']
+        strReport += '\nlearningRate: %s'  % summary['learningRate']
         strReport += '\n        loss: %s from %s' % (summary['loss'], summary['lastLoss'])
-        strReport += '\n    savedLoss: %s <-(%s: %sd reward=%s @%s)' % (summary['savedLoss'], summary['savedEId'], summary['savedODays'], summary['savedReward'], summary['savedTime'])
+        strReport += '\n   savedLoss: %s <-(%s: %sd reward=%s @%s)' % (summary['savedLoss'], summary['savedEId'], summary['savedODays'], summary['savedReward'], summary['savedTime'])
         return strReport
 
 if __name__ == '__main__':

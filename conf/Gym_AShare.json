@@ -3,14 +3,6 @@
     "logger": {
         "level": "info", //40
         // "console": "False",
-        // "file": "True",
-        // "event": { "log": "True", "error": "True" } // whether to post the log into event channel
-    },
-
-    "database": {
-        "host": "mongo-vnpy",
-        // "console": "False",
-        // "file": "True",
         // "event": { "log": "True", "error": "True" } // whether to post the log into event channel
     },
 
@@ -49,29 +41,18 @@
         "accountId" : "blah",
         "startCapitial": 100000,
         "episodes": 5000,
-        "pctMaxDrawDown": 15, // 15% maximal drawdown rate to give up the current episodes
+        "pctMaxDrawDown": 5, // 15% maximal drawdown rate to give up the current episodes
         // "plotReport": "no", 
 
-        // the following are same as "trader"
-        "dbNamePrefixHist" : "dr", // the prefix of DB name where to read history data from: <dbNamePrefixHist>Tick, <dbNamePrefixHist>K1min
+        "agent" :{
+            // "epochsPerObservOnGpu" :2,
+        },
+
         "objectives": [
             { 
                 "symbol": "600019", 
                 "ds1min": "AShare",  // sample "ds1min":"hadax:t2k1", in the case that we don't subscribe Kline directly from the market but take those merged from ticks
             }, 
-        ],
-
-        "strategies": [
-            {
-                "name" : "BBand", // strategy name equals to class name
-                "symbols": ["600019"],
-                "weights": { // weights to affect decisions, in range of [0-100] each
-                    "long" : 100, // optimisti
-                    "short": 100, // pessimistic
-                },
-
-                // TODO: the following is up to the stategy class
-            },
         ],
     },
 }

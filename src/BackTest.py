@@ -68,6 +68,7 @@ class BackTestApp(MetaTrader):
         self._episodes     = self.getConfig('episodes', 1)
         self._plotReport   = self.getConfig('plotReport', 'False').lower() in BOOL_STRVAL_TRUE
         self._pctMaxDrawDown = self.getConfig('pctMaxDrawDown', 21) # we allow 30% lost during a episode
+        self._observeDaysBeforeTrading = self.getConfig('observeDaysBeforeTrading', 10)
 
         self.__episodeNo = 1 # count start from 1 to ease reading
         self.__stepNoInEpisode =0
@@ -90,6 +91,7 @@ class BackTestApp(MetaTrader):
 
         self._dtData = self._btStartDate
         self._bGameOver = False
+        self._openDays = 0
 
     @property
     def episodeId(self) :
@@ -381,6 +383,7 @@ class BackTestApp(MetaTrader):
             self.__wkTrader._dailyCapCost = self._dailyCapCost
             self._program.addApp(self._account)
             self._account._marketState = self._marketState
+            self._account._observeDaysBeforeTrading = self._observeDaysBeforeTrading
             self.__wkTrader._account = self._account
             self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d]' % (self._originAcc.ident, self._account.ident, self._startBalance))
 
@@ -955,10 +958,17 @@ class AccountWrapper(MetaAccount):
 
         # 日线回测结果计算用
         self.__dailyResultDict = OrderedDict()
-
+        self._observeDaysBeforeTrading =0
     @property
     def dailyResultDict(self):
         return self.__dailyResultDict
+
+    @property
+    def executable(self):
+        if len(self.__dailyResultDict) < self._observeDaysBeforeTrading :
+            return False
+
+        return self._nest.executable
 
     #----------------------------------------------------------------------
     # impl of BaseApplication

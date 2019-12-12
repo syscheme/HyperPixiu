@@ -49,6 +49,9 @@ class MetaAccount(BaseApplication):
     def trader(self): return self.__trader
     def hostTrader(self, trader): self.__trader = trader
 
+    @property
+    def executable(self): return True
+
     @abstractmethod 
     def getPosition(self, symbol): raise NotImplementedError
     @abstractmethod 

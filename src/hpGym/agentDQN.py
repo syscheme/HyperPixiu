@@ -275,7 +275,7 @@ class agentDQN(MetaAgent):
                 act_values = self._brain.predict(state)
                 action[np.argmax(act_values[0])] = 1
 
-        return action.astype('float32')
+        return action.astype(GymTrader.NN_FLOAT)
 
     def gymObserve(self, state, action, reward, next_state, done, **feedbacks):
         '''Memory Management and training of the agent
@@ -411,7 +411,7 @@ class agentDQN(MetaAgent):
         sizeToBatch = self._batchSize
         if self.__realDataNum <=0:
             sizeToBatch = self._batchSize
-            batch = np.array(random.sample(self.__replayCache, sizeToBatch)).astype('float32')    
+            batch = np.array(random.sample(self.__replayCache, sizeToBatch)).astype(GymTrader.NN_FLOAT)    
         else:
             if self.__realDataNum >= self.__replaySize:
                 sizeToBatch = self.__replaySize
@@ -427,7 +427,7 @@ class agentDQN(MetaAgent):
                 batch = np.array(c, dtype=np.float32)
             else : 
                 c = self.__replayCache[idxStart : self.__sampleIdx+1]
-                batch = np.concatenate(c).astype('float32')
+                batch = np.concatenate(c).astype(GymTrader.NN_FLOAT)
             
         state_batch = np.concatenate(batch[:, 0]).reshape(sizeToBatch, self._stateSize)
         action_batch = np.concatenate(batch[:, 1]).reshape(sizeToBatch, self._actionSize)

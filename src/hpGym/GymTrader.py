@@ -135,20 +135,22 @@ class GymTrader(BaseTrader):
     '''
     GymTrader impls BaseTrader and represent itself as a Gym Environment
     '''
+    NN_FLOAT = 'float32'
+    
     ACTION_BUY  = OrderData.ORDER_BUY
     ACTION_SELL = OrderData.ORDER_SELL
     ACTION_HOLD = 'HOLD'
 
     ACTIONS = {
-        ACTION_HOLD: np.array([1, 0, 0]).astype('float32'),
-        ACTION_BUY:  np.array([0, 1, 0]).astype('float32'),
-        ACTION_SELL: np.array([0, 0, 1]).astype('float32')
+        ACTION_HOLD: np.array([1, 0, 0]).astype(GymTrader.NN_FLOAT),
+        ACTION_BUY:  np.array([0, 1, 0]).astype(GymTrader.NN_FLOAT),
+        ACTION_SELL: np.array([0, 0, 1]).astype(GymTrader.NN_FLOAT)
     }
 
     POS_DIRECTIONS = {
-        OrderData.DIRECTION_NONE:  np.array([1, 0, 0]).astype('float32'),
-        OrderData.DIRECTION_LONG:  np.array([0, 1, 0]).astype('float32'),
-        OrderData.DIRECTION_SHORT: np.array([0, 0, 1]).astype('float32')
+        OrderData.DIRECTION_NONE:  np.array([1, 0, 0]).astype(GymTrader.NN_FLOAT),
+        OrderData.DIRECTION_LONG:  np.array([0, 1, 0]).astype(GymTrader.NN_FLOAT),
+        OrderData.DIRECTION_SHORT: np.array([0, 0, 1]).astype(GymTrader.NN_FLOAT)
     }
 
     def __init__(self, program, agentClass=None, **kwargs):
@@ -181,7 +183,7 @@ class GymTrader(BaseTrader):
         }
 
         self._dailyCapCost = 0.0 # just to ease calc
-        self.__additionalReward = 0.0
+        self.__deposittedReward = 0.0
         # self.n_actions = 3
         # self._prices_history = []
     @property
@@ -189,13 +191,13 @@ class GymTrader(BaseTrader):
         return round(self.__recentLoss.history["loss"][0], 6) if self.__recentLoss else DUMMY_BIG_VAL
 
     @property
-    def withdrawReward(self) : # any read will reset the self.__additionalReward
-        ret = self.__additionalReward
-        self.__additionalReward = 0.0
+    def withdrawReward(self) : # any read will reset the self.__deposittedReward
+        ret = self.__deposittedReward
+        self.__deposittedReward = 0.0
         return ret
 
     def depositReward(self, reward) :
-        self.__additionalReward += round(reward, 4)
+        self.__deposittedReward += round(reward, 4)
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -498,7 +500,7 @@ class GymTrader(BaseTrader):
 
         # return the concatenation of account_state and market_state as gymEnv sate
         envState = np.concatenate((account_state, market_state))
-        return envState.astype('float32')
+        return envState.astype(GymTrader.NN_FLOAT)
 
     #----------------------------------------------------------------------
     # access to the account observed

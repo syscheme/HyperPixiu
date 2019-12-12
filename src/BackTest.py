@@ -35,7 +35,7 @@ except ImportError:
 RECCATE_ESPSUMMARY = 'EspSum'
 COLUMNS_ESPSUMMARY ='episodeNo,endBalance,openDays,startDate,endDate,totalDays,tradeDay_1st,tradeDay_last,profitDays,lossDays,maxDrawdown,maxDdPercent,' \
     + 'totalNetPnl,dailyNetPnl,totalCommission,dailyCommission,totalSlippage,dailySlippage,totalTurnover,dailyTurnover,totalTradeCount,dailyTradeCount,totalReturn,annualizedReturn,dailyReturn,' \
-    + 'returnStd,sharpeRatio,episodeDuration,stepsInEpisode,totalReward,avgDailyReward,epsilon,loss,lastLoss,idOfBest,bestLoss,rewardOfBest,daysOfBest,frameNum,lastSaveBrain,reason'
+    + 'returnStd,sharpeRatio,episodeDuration,stepsInEpisode,totalReward,dailyReward,epsilon,loss,lastLoss,savedEId,savedLoss,savedReward,savedODays,savedTime,frameNum,reason'
 
 ########################################################################
 class BackTestApp(MetaTrader):

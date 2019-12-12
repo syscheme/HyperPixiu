@@ -174,7 +174,7 @@ class GymTrader(BaseTrader):
         self._total_pnl = 0.0
         self._total_reward = 0.0
         self._feedbackToAgent = {
-            'avgDailyReward': 0.0, 
+            'dailyReward': 0.0, 
             'bestRewardTotal': 0.0,
             'bestRewardDays': 0,
         }
@@ -475,7 +475,7 @@ class GymTrader(BaseTrader):
         market_state = self._marketState.snapshot(self._tradeSymbol)
 
         # TODO: more observations in the future could be:
-        #  - [month, day, hour, minute [, weekday] ]
+        #  - [month, day, hour*60 +minute , weekday ]
         #  - money flow
         #  - market index
 
@@ -501,12 +501,13 @@ class GymTrainer(BackTestApp):
         self._iterationsPerEpisode = self.getConfig('iterationsPerEpisode', 1)
         self.__lastEpisode_loss = DUMMY_BIG_VAL
 
-        self.__bestEpisode_Id = -1
-        self.__bestEpisode_opendays = 0
-        self.__bestEpisode_loss = DUMMY_BIG_VAL
-        self.__bestEpisode_reward = -DUMMY_BIG_VAL
+        self.__savedEpisode_Id = -1
+        self.__savedEpisode_opendays = 0
+        self.__savedEpisode_loss = DUMMY_BIG_VAL
+        self.__savedEpisode_reward = -DUMMY_BIG_VAL
         self.__stampLastSaveBrain = '0000'
         self.__maxKnownOpenDays =0
+        self.__prevMaxBalance =0
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -557,66 +558,71 @@ class GymTrainer(BackTestApp):
         super(GymTrainer, self).OnEpisodeDone(reachedEnd)
 
         # determin whether it is a best episode
-        meanRewardImproved = False
-        lossImproved = False
-        opendays = self._episodeSummary['openDays']
+        lstImproved=[]
 
+        opendays = self._episodeSummary['openDays']
         if opendays > self.__maxKnownOpenDays:
             self.__maxKnownOpenDays = opendays
+            lstImproved.append('openDays')
+
+        if self.wkTrader._maxBalance > self.__prevMaxBalance :
+            lstImproved.append('maxBalance')
+            self.debug('OnEpisodeDone() maxBalance improved from %s to %s' % (self.__prevMaxBalance, self.wkTrader._maxBalance))
+            self.__prevMaxBalance = self.wkTrader._maxBalance
 
         if reachedEnd or (opendays>2 and opendays > (self.__maxKnownOpenDays *3/4)): # at least stepped most of known days
             # determin best by reward
             rewardMean = self.wkTrader._total_reward /opendays
-            self._episodeSummary['avgDailyReward'] = rewardMean
-            self.wkTrader._feedbackToAgent['avgDailyReward'] = rewardMean
-            rewardMeanBest = self.__bestEpisode_reward
-            if self.__bestEpisode_opendays>0 :
-                rewardMeanBest /= self.__bestEpisode_opendays
+            self._episodeSummary['dailyReward'] = rewardMean
+            self.wkTrader._feedbackToAgent['dailyReward'] = rewardMean
+            rewardMeanBest = self.__savedEpisode_reward
+            if self.__savedEpisode_opendays>0 :
+                rewardMeanBest /= self.__savedEpisode_opendays
 
-            if rewardMean > rewardMeanBest or (rewardMean > rewardMeanBest/2 and opendays > self.__bestEpisode_opendays *1.2):
-                meanRewardImproved = True
-                self.debug('OnEpisodeDone() meanReward improved from %s/%s to %s/%s' % (self.__bestEpisode_reward, self.__bestEpisode_opendays, self.wkTrader._total_reward, opendays))
+            if rewardMean > rewardMeanBest or (rewardMean > rewardMeanBest/2 and opendays > self.__savedEpisode_opendays *1.2):
+                lstImproved.append('meanReward')
+                self.debug('OnEpisodeDone() meanReward improved from %s/%s to %s/%s' % (self.__savedEpisode_reward, self.__savedEpisode_opendays, self.wkTrader._total_reward, opendays))
 
             # determin best by loss
-            if self.wkTrader.loss < self.__bestEpisode_loss and opendays >= self.__bestEpisode_opendays:
-                lossImproved = True
+            if self.wkTrader.loss < self.__savedEpisode_loss and opendays >= self.__savedEpisode_opendays:
+                lstImproved.append('loss')
 
         # save brain and decrease epsilon if improved
-        if meanRewardImproved or lossImproved:
+        if len(lstImproved) >0 :
             self.wkTrader._feedbackToAgent['bestRewardTotal'] = self.wkTrader._total_reward
             self.wkTrader._feedbackToAgent['bestRewardDays'] = opendays
-            if self.__bestEpisode_loss < DUMMY_BIG_VAL: # do not save for the first episode
+            if self.__savedEpisode_loss < DUMMY_BIG_VAL: # do not save for the first episode
                 self.wkTrader._agent.saveBrain(**self.wkTrader._feedbackToAgent)
                 self.__stampLastSaveBrain = datetime.datetime.now()
-                self.debug('OnEpisodeDone() brain saved')
+                self.info('OnEpisodeDone() brain saved per improvements: %s' % lstImproved )
 
-            self.__bestEpisode_opendays = opendays
-            self.__bestEpisode_loss = self.wkTrader.loss
-            self.__bestEpisode_Id = self.episodeId
-            self.__bestEpisode_reward = self.wkTrader._total_reward
+            self.__savedEpisode_opendays = opendays
+            self.__savedEpisode_loss = self.wkTrader.loss
+            self.__savedEpisode_Id = self.episodeId
+            self.__savedEpisode_reward = self.wkTrader._total_reward
 
         mySummary = {
             'totalReward' : round(self.wkTrader._total_reward, 2),
             'epsilon'     : round(self.wkTrader._agent._epsilon, 4),
             'loss'        : self.wkTrader.loss,
             'lastLoss'    : self.__lastEpisode_loss,
-            'bestLoss'    : self.__bestEpisode_loss,
-            'idOfBest'    : self.__bestEpisode_Id,
-            'rewardOfBest': round(self.__bestEpisode_reward,2),
-            'daysOfBest'  : self.__bestEpisode_opendays,
-            'lastSaveBrain': self.__stampLastSaveBrain.strftime('%Y%m%dT%H%M%S') if isinstance(self.__stampLastSaveBrain, datetime.datetime) else self.__stampLastSaveBrain,
-            'frameNum'     : self.wkTrader._agent.frameNum
+            'savedLoss'   : self.__savedEpisode_loss,
+            'savedEId'    : self.__savedEpisode_Id,
+            'savedReward' : round(self.__savedEpisode_reward,2),
+            'savedODays'  : self.__savedEpisode_opendays,
+            'savedTime'   : self.__stampLastSaveBrain.strftime('%Y%m%dT%H%M%S') if isinstance(self.__stampLastSaveBrain, datetime.datetime) else self.__stampLastSaveBrain,
+            'frameNum'    : self.wkTrader._agent.frameNum
         }
         self._episodeSummary = {**self._episodeSummary, **mySummary}
         self.__lastEpisode_loss = self.wkTrader.loss
 
         # decrease agent's learningRate and epsilon if reward improved
-        if meanRewardImproved :
+        if 'meanReward' in lstImproved :
             self.wkTrader._agent._learningRate *=0.8
             if self.wkTrader._agent._learningRate < 0.0001 : 
                 self.wkTrader._agent._learningRate = 0.0001
 
-            self.wkTrader._agent._epsilon -= self.wkTrader._agent._epsilon/4
+            self.wkTrader._agent._epsilon -= self.wkTrader._agent._epsilon/8
             if self.wkTrader._agent._epsilon < self.wkTrader._agent._epsilonMin :
                 self.wkTrader._agent._epsilon = self.wkTrader._agent._epsilonMin
 
@@ -640,7 +646,7 @@ class GymTrainer(BackTestApp):
         strReport += '\n totalReward: %s'  % summary['totalReward']
         strReport += '\n     epsilon: %s'  % summary['epsilon']
         strReport += '\n        loss: %s from %s' % (summary['loss'], summary['lastLoss'])
-        strReport += '\n    bestLoss: %s <-(%s: %sd reward=%s @%s)' % (summary['bestLoss'], summary['idOfBest'], summary['daysOfBest'], summary['rewardOfBest'], summary['lastSaveBrain'])
+        strReport += '\n    savedLoss: %s <-(%s: %sd reward=%s @%s)' % (summary['savedLoss'], summary['savedEId'], summary['savedODays'], summary['savedReward'], summary['savedTime'])
         return strReport
 
 if __name__ == '__main__':

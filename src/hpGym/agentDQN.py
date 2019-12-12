@@ -275,7 +275,7 @@ class agentDQN(MetaAgent):
                 act_values = self._brain.predict(state)
                 action[np.argmax(act_values[0])] = 1
 
-        return action
+        return action.astype('float32')
 
     def gymObserve(self, state, action, reward, next_state, done, **feedbacks):
         '''Memory Management and training of the agent
@@ -288,13 +288,15 @@ class agentDQN(MetaAgent):
 
         # this basic DQN also performs training in this step
         state, action, reward, next_state, done = self._sampleBatches()
+        batchsize = len(state)
 
         with self._lock:
-            y = self._brain.predict(next_state)
-            reward += (self._gamma * np.logical_not(done) * np.amax(y, axis=1))
+            y = self._brain.predict(next_state) # arrary(batchsize, actionSize)
+            maxact= np.amax(y, axis=1) # arrary(batchsize, 1)
+            reward += (self._gamma * np.logical_not(done) * maxact) # arrary(batchsize, 1)
 
             q_target = self._brain.predict(state)
-            q_target[action[0], action[1]] = reward
+            q_target[action[0], action[1]] = reward # action =arrary(2,batchsize)
 
             # x：输入数据。如果模型只有一个输入，那么x的类型是numpy array，如果模型有多个输入，那么x的类型应当为list，list的元素是对应于各个输入的numpy array
             # y：标签，numpy array
@@ -393,13 +395,13 @@ class agentDQN(MetaAgent):
 
             # pick up the each part from the batch as we inserted via __replayCache[__sampleIdx] = (state, action, reward, next_state, done)
             state_batch = np.concatenate(batch[:, 0]).reshape(sizeToBatch, self._stateSize)
-            action_batch = np.concatenate(batch[:, 1]).reshape(sizeToBatch, self._actionSize)
-            reward_batch = batch[:, 2]
+            action_batch = np.concatenate(batch[:, 1]).reshape(sizeToBatch, self._actionSize) # array(sizeToBatch, self._actionSize)
+            reward_batch = batch[:, 2] #array(sizeToBatch, 1)
             next_state_batch = np.concatenate(batch[:, 3]).reshape(sizeToBatch, self._stateSize)
-            done_batch = batch[:, 4]
+            done_batch = batch[:, 4] #array(sizeToBatch, 1)
 
             # action processing
-            action_batch = np.where(action_batch == 1)
+            action_batch = np.where(action_batch == 1) # array(sizeToBatch, self._actionSize)=>array(2, sizeToBatch)
             return state_batch, action_batch, reward_batch, next_state_batch, done_batch
 
     def _sampleBatches_TODO(self):
@@ -500,7 +502,7 @@ class agentDualHemicerebrum(agentDQN):
         if not self.__leftHemicerebrum:
             return False
 
-        if not super(agentDQN, self).isReady():
+        if not super(agentDualHemicerebrum, self).isReady():
             return False
 
     #----------------------------------------------------------------------

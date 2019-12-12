@@ -142,15 +142,15 @@ class GymTrader(BaseTrader):
     ACTION_HOLD = 'HOLD'
 
     ACTIONS = {
-        ACTION_HOLD: np.array([1, 0, 0]).astype(GymTrader.NN_FLOAT),
-        ACTION_BUY:  np.array([0, 1, 0]).astype(GymTrader.NN_FLOAT),
-        ACTION_SELL: np.array([0, 0, 1]).astype(GymTrader.NN_FLOAT)
+        ACTION_HOLD: np.array([1, 0, 0]).astype(NN_FLOAT),
+        ACTION_BUY:  np.array([0, 1, 0]).astype(NN_FLOAT),
+        ACTION_SELL: np.array([0, 0, 1]).astype(NN_FLOAT)
     }
 
     POS_DIRECTIONS = {
-        OrderData.DIRECTION_NONE:  np.array([1, 0, 0]).astype(GymTrader.NN_FLOAT),
-        OrderData.DIRECTION_LONG:  np.array([0, 1, 0]).astype(GymTrader.NN_FLOAT),
-        OrderData.DIRECTION_SHORT: np.array([0, 0, 1]).astype(GymTrader.NN_FLOAT)
+        OrderData.DIRECTION_NONE:  np.array([1, 0, 0]).astype(NN_FLOAT),
+        OrderData.DIRECTION_LONG:  np.array([0, 1, 0]).astype(NN_FLOAT),
+        OrderData.DIRECTION_SHORT: np.array([0, 0, 1]).astype(NN_FLOAT)
     }
 
     def __init__(self, program, agentClass=None, **kwargs):

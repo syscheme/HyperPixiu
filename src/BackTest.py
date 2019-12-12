@@ -123,11 +123,7 @@ class BackTestApp(MetaTrader):
     # impl/overwrite of BaseApplication
     @property
     def ident(self) :
-        str = self.__class__.__name__
-        if self.__wkTrader :
-            str += '/' + self.__wkTrader.ident
-        else : str += '.' +self._id
-        return str
+        return '%s/%s' % (self.__class__.__name__, (self.__wkTrader.ident if self.__wkTrader else self._id))
 
     def stop(self):
         """退出程序前调用，保证正常退出"""

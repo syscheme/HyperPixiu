@@ -68,7 +68,7 @@ class BackTestApp(MetaTrader):
         self._episodes     = self.getConfig('episodes', 1)
         self._plotReport   = self.getConfig('plotReport', 'False').lower() in BOOL_STRVAL_TRUE
         self._pctMaxDrawDown = self.getConfig('pctMaxDrawDown', 21) # we allow 30% lost during a episode
-        self._observeDaysBeforeTrading = self.getConfig('observeDaysBeforeTrading', 10)
+        self._observeDaysBeforeTrading = self.getConfig('observeDaysBeforeTrading', 5) # observe for a week by default to make the market state not so empty
 
         self.__episodeNo = 1 # count start from 1 to ease reading
         self.__stepNoInEpisode =0

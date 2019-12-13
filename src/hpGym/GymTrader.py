@@ -109,8 +109,9 @@ class MetaAgent(MetaObj): # TODO:
         raise NotImplementedError
 
     @abstractmethod
-    def gymObserve(self, state, action, reward, next_state, done, **feedbacks):
+    def gymObserve(self, state, action, reward, next_state, done, frozen=False, **feedbacks):
         '''Memory Management and training of the agent
+        @param frozen True if the account is not executable, so only observing, no predicting and/or training
         @return tuple:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch
         '''
@@ -165,7 +166,7 @@ class GymTrader(BaseTrader):
         
         self.__1stRender = True
         self._AGENTCLASS = None
-        agentType = self.getConfig('agent/type', 'DQN')
+        agentType = self.getConfig('agent/type', 'DQN') # 'DoubleDQN')
         if agentType and agentType in hpGym.GYMAGENT_CLASS.keys():
             self._AGENTCLASS = hpGym.GYMAGENT_CLASS[agentType]
 
@@ -227,11 +228,11 @@ class GymTrader(BaseTrader):
         # self.__stampActStart = datetime.datetime.now()
         # self.__stampActEnd = self.__stampActStart
 
-        self.debug('doAppInit() dummy gymStep to initialize cache')
-        while not self._agent.isReady() :
-            action = self._agent.gymAct(self._gymState)
-            next_state, reward, done, _ = self.gymStep(action)
-            self._agent.gymObserve(self._gymState, action, reward, next_state, done) # regardless state-stepping, rewards and loss here
+        # self.debug('doAppInit() dummy gymStep to initialize cache')
+        # while not self._agent.isReady() :
+        #     action = self._agent.gymAct(self._gymState)
+        #     next_state, reward, done, _ = self.gymStep(action)
+        #     self._agent.gymObserve(self._gymState, action, reward, next_state, done) # regardless state-stepping, rewards and loss here
 
         self.debug('doAppInit() done')
         return True
@@ -255,10 +256,6 @@ class GymTrader(BaseTrader):
             strActionAdj += '<SP'
 
         if not all(action == GymTrader.ACTIONS[GymTrader.ACTION_HOLD]):
-            if not self._account.executable:
-                action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
-                strActionAdj += '<Frz'
-
             dtAsOf = self.marketState.getAsOf()
             if (dtAsOf.hour in [14, 23] and dtAsOf.minute in [58,59]) or (dtAsOf.hour in [0, 15] and dtAsOf.minute in [0,1]) :
                 action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
@@ -266,7 +263,8 @@ class GymTrader(BaseTrader):
 
         self._action = action
 
-        next_state, reward, done, _ = self.gymStep(self._action)
+        next_state, reward, done, info = self.gymStep(self._action)
+        self._feedbackToAgent = {**info, **self._feedbackToAgent}
     
         loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, done, **self._feedbackToAgent)
         if loss: self.__recentLoss =loss
@@ -322,75 +320,52 @@ class GymTrader(BaseTrader):
         reward =0.0
         info = {}
 
-        reward += - round(self._dailyCapCost /240, 4) # this is supposed the capital timecost every minute as there are 4 open hours every day
-        # step 1. collected information from the account
-        cashAvail, cashTotal, positions = self._account.positionState()
-        _, posvalue = self._account.summrizeBalance(positions, cashTotal)
-        capitalBeforeStep = cashTotal + posvalue
+        if not self._account.executable:
+            info['frozen'] = True
+            info['status'] = 'frozen account'
+        else :
+            reward += - round(self._dailyCapCost /240, 4) # this is supposed the capital timecost every minute as there are 4 open hours every day
+            # step 1. collected information from the account
+            cashAvail, cashTotal, positions = self._account.positionState()
+            _, posvalue = self._account.summrizeBalance(positions, cashTotal)
+            capitalBeforeStep = cashTotal + posvalue
 
-        # TODO: the first version only support one symbol to play, so simply take the first symbol in the positions        
-        symbol = self._tradeSymbol # TODO: should take the __dictOberserves
-        latestPrice = self._marketState.latestPrice(symbol)
+            # TODO: the first version only support one symbol to play, so simply take the first symbol in the positions        
+            symbol = self._tradeSymbol # TODO: should take the __dictOberserves
+            latestPrice = self._marketState.latestPrice(symbol)
 
-        maxBuy, maxSell = self._account.maxOrderVolume(symbol, latestPrice)
-        # TODO: the first version only support FULL-BUY and FULL-SELL
-        if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]) :
-            if maxBuy >0 :
-                self.debug('gymStep() issuing maxBuy %s x%s' %(latestPrice, maxBuy))
-                self._account.cancelAllOrders()
-                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, strategy=None)
-            else: reward -= 1 # penalty: is the agent blind to buy with no cash? :)
-        elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]):
-            if  maxSell >0:
-                self.debug('gymStep() issuing maxSell %s x%s' %(latestPrice, maxSell))
-                self._account.cancelAllOrders()
-                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, strategy=None)
-            else: reward -= 1 # penalty: is the agent blind to sell with no position? :)
-        else : reward += self.withdrawReward # only allow withdraw the depositted reward when action=HOLD
+            maxBuy, maxSell = self._account.maxOrderVolume(symbol, latestPrice)
+            # TODO: the first version only support FULL-BUY and FULL-SELL
+            if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]) :
+                if maxBuy >0 :
+                    self.debug('gymStep() issuing maxBuy %s x%s' %(latestPrice, maxBuy))
+                    self._account.cancelAllOrders()
+                    vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, strategy=None)
+                    info['status'] = 'buy issued'
+                else: reward -= 1 # penalty: is the agent blind to buy with no cash? :)
+            elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]):
+                if  maxSell >0:
+                    self.debug('gymStep() issuing maxSell %s x%s' %(latestPrice, maxSell))
+                    self._account.cancelAllOrders()
+                    vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, strategy=None)
+                    info['status'] = 'sell issued'
+                else: reward -= 1 # penalty: is the agent blind to sell with no position? :)
+            else : reward += self.withdrawReward # only allow withdraw the depositted reward when action=HOLD
 
-        # step 3. calculate the rewards
-        prevCap = self._latestCash + self._latestPosValue
-        self._latestCash, self._latestPosValue = self._account.summrizeBalance() # most likely the cashAmount changed due to comission
-        capitalAfterStep = self._latestCash + self._latestPosValue
-        if capitalAfterStep > self._maxBalance :
-            self.depositReward(round((capitalAfterStep - self._maxBalance) *5, 4)) # exceeding maxBalance should be encouraged
-            self._maxBalance = capitalAfterStep
+            # step 3. calculate the rewards
+            prevCap = self._latestCash + self._latestPosValue
+            self._latestCash, self._latestPosValue = self._account.summrizeBalance() # most likely the cashAmount changed due to comission
+            capitalAfterStep = self._latestCash + self._latestPosValue
+            if capitalAfterStep > self._maxBalance :
+                self.depositReward(round((capitalAfterStep - self._maxBalance) *5, 4)) # exceeding maxBalance should be encouraged
+                self._maxBalance = capitalAfterStep
 
-        reward += round(capitalAfterStep - prevCap, 4)
+            reward += round(capitalAfterStep - prevCap, 4)
 
-        instant_pnl = capitalAfterStep - capitalBeforeStep
-        self._total_pnl += instant_pnl
-
-        ''' step 4. composing info for tracing
-
-        try :
-            self._market_state = self._envMarket.next()
-        except StopIteration:
-            done = True
-            info['status'] = 'No more data.'
-        if self.__stepNo >= self._iterationsPerEpisode:
-            done = True
-            info['status'] = 'Time out.'
-        if self.__closed_plot:
-            info['status'] = 'Closed plot'
-
-        # try:
-        #     self._prices_history.append(self._data_generator.next())
-        # except StopIteration:
-        #     done = True
-        #     info['status'] = 'No more data.'
-        # if self.__stepNo >= self._iterationsPerEpisode:
-        #     done = True
-        #     info['status'] = 'Time out.'
-        # if self.__closed_plot:
-        #     info['status'] = 'Closed plot'
-
-        '''
-
-        ''' step 5. combine account and market observations as final observations,
-            then return
-        observation = np.concatenate((self._account_state, self._market_state))
-        '''
+            instant_pnl = capitalAfterStep - capitalBeforeStep
+            self._total_pnl += instant_pnl
+        
+        # step 5. combine account and market observations as final observations, then return
         observation = self.makeupGymObservation()
         return observation, reward, done, info
     

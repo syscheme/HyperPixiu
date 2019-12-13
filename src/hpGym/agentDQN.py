@@ -74,10 +74,10 @@ class agentDQN(MetaAgent):
         self.__bWarmed = False
 
         # prepare the callbacks
-        self.__callbacks=[]
+        self._callbacks=[]
         # don't take update_freq='epoch' or batch as we train almost every gymObserve()
         # cbTB = TensorBoard(log_dir =self._brainOutDir, update_freq=self._batchSize *50000)
-        # self.__callbacks.append(cbTB) # still too frequent
+        # self._callbacks.append(cbTB) # still too frequent
 
     def __del__(self):  # the destructor
         # self.saveBrain()
@@ -277,26 +277,27 @@ class agentDQN(MetaAgent):
 
         return action.astype(GymTrader.NN_FLOAT)
 
-    def gymObserve(self, state, action, reward, next_state, done, **feedbacks):
+    def gymObserve(self, state, action, reward, next_state, done, frozen=False, **feedbacks):
         '''Memory Management and training of the agent
+        @param frozen True if the account is not executable, so only observing, no predicting and/or training
         @return tuple:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch
         '''
         self._statusAttrs = {**self._statusAttrs, **feedbacks}
-        if not self._pushToReplay(state, action, reward, next_state, done) :
+        if not self._pushToReplay(state, action, reward, next_state, done) or frozen :
             return None
 
         # this basic DQN also performs training in this step
-        state, action, reward, next_state, done = self._sampleBatches()
-        batchsize = len(state)
+        state_batch, action_batch, reward_batch, next_state_batch, done_batch = self._sampleBatches()
+        sampleLen = len(state_batch)
 
         with self._lock:
-            y = self._brain.predict(next_state) # arrary(batchsize, actionSize)
-            maxact= np.amax(y, axis=1) # arrary(batchsize, 1)
-            reward += (self._gamma * np.logical_not(done) * maxact) # arrary(batchsize, 1)
+            y = self._brain.predict(next_state_batch) # arrary(sampleLen, actionSize)
+            maxact= np.amax(y, axis=1) # arrary(sampleLen, 1)
+            reward_batch += (self._gamma * np.logical_not(done_batch) * maxact) # arrary(sampleLen, 1)
 
-            q_target = self._brain.predict(state)
-            q_target[action[0], action[1]] = reward # action =arrary(2,batchsize)
+            q_target = self._brain.predict(state_batch)
+            q_target[action_batch[0], action_batch[1]] = reward_batch # action =arrary(2,sampleLen)
 
             # x：输入数据。如果模型只有一个输入，那么x的类型是numpy array，如果模型有多个输入，那么x的类型应当为list，list的元素是对应于各个输入的numpy array
             # y：标签，numpy array
@@ -311,9 +312,9 @@ class agentDQN(MetaAgent):
             # sample_weight：权值的numpy array，用于在训练时调整损失函数（仅用于训练）。可以传递一个1D的与样本等长的向量用于对样本进行1对1的加权，或者在面对时序数据时，传递一个的形式为（samples，sequence_length）的矩阵来为每个时间步上的样本赋不同的权。这种情况下请确定在编译模型时添加了sample_weight_mode=’temporal’。
             # initial_epoch: 从该参数指定的epoch开始训练，在继续之前的训练时有用。
             epochs =1
-            if len(GPUs) > 0 and len(state) >self._batchSize:
+            if len(GPUs) > 0 and sampleLen >self._batchSize:
                 epochs = self._epochsPerObservOnGpu
-            self._loss = self._brain.fit(x=state, y=q_target, epochs=epochs, batch_size=self._batchSize, verbose=0, callbacks=self.__callbacks)
+            self._loss = self._brain.fit(x=state_batch, y=q_target, epochs=epochs, batch_size=self._batchSize, verbose=0, callbacks=self._callbacks)
         return self._loss
 
     def _pushToReplay(self, state, action, reward, next_state, done):
@@ -439,123 +440,84 @@ class agentDQN(MetaAgent):
         action_batch = np.where(action_batch == 1)
         return state_batch, action_batch, reward_batch, next_state_batch, done_batch
 
-
 ########################################################################
-# TODO DoubleDQN to avoid overestimate, 将动作选择（max操作）和动作估计Q(s’,a’)解耦
-# refer to https://github.com/ljpzzz/machinelearning/blob/master/reinforcement-learning/ddqn.py
-    # # Step 2: calculate y
-    # y_batch = []
-    # current_Q_batch = self.Q_value.eval(feed_dict={self.state_input: next_state_batch})
-    # max_action_next = np.argmax(current_Q_batch, axis=1)
-    # target_Q_batch = self.target_Q_value.eval(feed_dict={self.state_input: next_state_batch})
-
-    # for i in range(0,BATCH_SIZE):
-    #   done = minibatch[i][4]
-    #   if done:
-    #     y_batch.append(reward_batch[i])
-    #   else :
-    #     target_Q_value = target_Q_batch[i, max_action_next[i]]
-    #     y_batch.append(reward_batch[i] + GAMMA * target_Q_value)
-
-    # self.optimizer.run(feed_dict={
-    #     self.y_input:y_batch,
-    #     self.action_input:action_batch,
-    #     self.state_input:state_batch
-    #   })
-
-########################################################################
-# TODO AsynchronousDQN to avoid overestimate, 将动作选择（max操作）和动作估计Q(s’,a’)解耦
-# refer to https://github.com/ljpzzz/machinelearning/blob/master/reinforcement-learning/ddqn.py
-# AsynchronousDQN
-# https://www.tensorflow.org/tutorials/distribute/multi_worker_with_keras?hl=zh-cn
-# Keras' MirroredStrategy/MultiWorkerMirroredStrategy https://tf.wiki/zh/appendix/distributed.html
-
-########################################################################
-class agentDualHemicerebrum(agentDQN):
+# DoubleDQN to avoid overestimate, 将动作选择（max操作）和动作估计Q(s’,a’)解耦
+class agentDoubleDQN(agentDQN):
     def __init__(self, gymTrader, **kwargs):
-        super(agentDualHemicerebrum, self).__init__(gymTrader, **kwargs)
+        super(agentDoubleDQN, self).__init__(gymTrader, **kwargs)
 
         # treat the orginal self._brain as the right hemicerebrum to perform predicting, and 
-        # additional self.__leftHemicerebrum to perform training in an additional thread
-        self.__leftHemicerebrum = None
+        # additional self._theOther to perform training in an additional thread
+        self._theOther = None
         if self._brain : 
             model_json = self._brain.to_json()
-            self.__leftHemicerebrum = model_from_json(model_json)
-            self.__leftHemicerebrum.set_weights(self._brain.get_weights()) 
-            self.__leftHemicerebrum.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
-
-        self.__evWakeup = threading.Event()
-        self.__bQuit = False
-        self.__thread = threading.Thread(target=self.__trainLeft)
-        if self.__leftHemicerebrum :
-            self.__thread.start()
-
-    def __del__(self):  # the destructor
-        self._app.stop()
-        self.wakeup()
-        self.__thread.join()
-
-    def wakeup(self) :
-        self.__evWakeup.set()
+            self._theOther = model_from_json(model_json)
+            self._theOther.set_weights(self._brain.get_weights()) 
+            self._theOther.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
 
     def isReady(self) :
-        if not self.__leftHemicerebrum:
+        if not self._theOther:
             return False
 
-        if not super(agentDualHemicerebrum, self).isReady():
+        if not super(agentDoubleDQN, self).isReady():
             return False
 
-    #----------------------------------------------------------------------
-    def __trainLeft(self):
-        '''perform training left hemicerebrum in this threaded execution'''
-        self.local = {}
-        nextSleep = 0
-        while not self.__bQuit:
-            if nextSleep >0.0001:
-                self.__evWakeup.wait(nextSleep)
-
-            nextSleep = 1.0
-            state_batch, action_batch, reward_batch, next_state_batch, done_batch = self._sampleBatches()
-            if state_batch is None:
-                continue
-
-            y = self.__leftHemicerebrum.predict(next_state_batch)
-            reward_batch += (self._gamma * np.logical_not(done_batch) * np.amax(y, axis=1))
-
-            q_target = self.__leftHemicerebrum.predict(state_batch)
-            q_target[action_batch[0], action_batch[1]] = reward_batch
-            
-            # x：输入数据。如果模型只有一个输入，那么x的类型是numpy array，如果模型有多个输入，那么x的类型应当为list，list的元素是对应于各个输入的numpy array
-            # y：标签，numpy array
-            # batch_size：整数，指定进行梯度下降时每个batch包含的样本数。训练时一个batch的样本会被计算一次梯度下降，使目标函数优化一步。
-            # epochs：整数，训练终止时的epoch值，训练将在达到该epoch值时停止，当没有设置initial_epoch时，它就是训练的总轮数，否则训练的总轮数为epochs - inital_epoch
-            # verbose：日志显示，0为不在标准输出流输出日志信息，1为输出进度条记录，2为每个epoch输出一行记录
-            # callbacks：list，其中的元素是keras.callbacks.Callback的对象。这个list中的回调函数将会在训练过程中的适当时机被调用，参考回调函数
-            # validation_split：0~1之间的浮点数，用来指定训练集的一定比例数据作为验证集。验证集将不参与训练，并在每个epoch结束后测试的模型的指标，如损失函数、精确度等。注意，validation_split的划分在shuffle之前，因此如果你的数据本身是有序的，需要先手工打乱再指定validation_split，否则可能会出现验证集样本不均匀。
-            # validation_data：形式为（X，y）的tuple，是指定的验证集。此参数将覆盖validation_spilt。
-            # shuffle：布尔值或字符串，一般为布尔值，表示是否在训练过程中随机打乱输入样本的顺序。若为字符串“batch”，则是用来处理HDF5数据的特殊情况，它将在batch内部将数据打乱。
-            # class_weight：字典，将不同的类别映射为不同的权值，该参数用来在训练过程中调整损失函数（只能用于训练）
-            # sample_weight：权值的numpy array，用于在训练时调整损失函数（仅用于训练）。可以传递一个1D的与样本等长的向量用于对样本进行1对1的加权，或者在面对时序数据时，传递一个的形式为（samples，sequence_length）的矩阵来为每个时间步上的样本赋不同的权。这种情况下请确定在编译模型时添加了sample_weight_mode=’temporal’。
-            # initial_epoch: 从该参数指定的epoch开始训练，在继续之前的训练时有用。
-            # loss = self.__leftHemicerebrum.fit(x=state_batch, y=q_target, epochs=1, batch_size=self._batchSize, verbose=0)
-            loss = self.__leftHemicerebrum.train_on_batch(x=state_batch, y=q_target, callbacks=self.__callbacks)
-
-            #if loss < self._loss:
-            with self._lock: # update the trained left hemicerebrum to the right
-                self._brain.set_weights(self.__leftHemicerebrum.get_weights()) 
-                self._loss =  loss
-
-    def gymObserve(self, state, action, reward, next_state, done, **feedbacks):
-        '''cache update of the agent, simple update the cache in this step
-        @return loss take the known recent loss
+    def gymObserve(self, state, action, reward, next_state, done, frozen=False, **feedbacks):
+        '''Memory Management and training of the agent
+        @param frozen True if the account is not executable, so only observing, no predicting and/or training
+        @return tuple:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch
         '''
-        if not self._pushToReplay(state, action, reward, next_state, done, **feedbacks) :
+        self._statusAttrs = {**self._statusAttrs, **feedbacks}
+        if not self._pushToReplay(state, action, reward, next_state, done) :
             return None
 
-        self.wakeup()
+        # this basic DQN also performs training in this step
+        state_batch, action_batch, reward_batch, next_state_batch, done_batch = self._sampleBatches()
+        sampleLen = len(state_batch)
+
+        with self._lock:
+            if np.random.rand() < self._epsilon:
+                brainPred  = self._brain
+                brainTrain = self._theOther
+            else:
+                brainPred  = self._theOther
+                brainTrain = self._brain
+            
+            y = brainPred.predict(next_state_batch) # arrary(sampleLen, actionSize)
+            maxact= np.amax(y, axis=1) # arrary(sampleLen, 1)
+            reward_batch += (self._gamma * np.logical_not(done_batch) * maxact) # arrary(sampleLen, 1)
+
+            q_target = brainTrain.predict(state_batch)
+            q_target[action_batch[0], action_batch[1]] = reward_batch # action =arrary(2,sampleLen)
+
+            epochs =1
+            if len(GPUs) > 0 and sampleLen >self._batchSize:
+                epochs = self._epochsPerObservOnGpu
+            self._loss = brainTrain.fit(x=state_batch, y=q_target, epochs=epochs, batch_size=self._batchSize, verbose=0, callbacks=self._callbacks)
+
         return self._loss
 
 '''
+Notes: Averaging the weights
+
+https://stackoverflow.com/questions/48212110/average-weights-in-keras-models
+
+weights = [model.get_weights() for model in models]
+Now - create a new averaged weights:
+
+new_weights = list()
+
+for weights_list_tuple in zip(*weights):
+    new_weights.append(
+        [numpy.array(weights_).mean(axis=0)\
+            for weights_ in zip(*weights_list_tuple)])
+
+
+And what is left is to set these weights in a new model:
+
+new_model = new_model.set_weights(new_weights)
+
 ########################################################################
 if __name__ == "__main__":
     import matplotlib.pyplot as plt

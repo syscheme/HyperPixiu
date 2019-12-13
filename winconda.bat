@@ -6,5 +6,5 @@ set PYTHONUNBUFFERED=1
 set PROGRAM=%1
 set PYTHON=python
 
-%PYTHON% %PROGRAM%
+%PYTHON% %PROGRAM% %2 %3 %4 %5 %6 %7 %8 %9
 endlocal

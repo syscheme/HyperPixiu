@@ -270,29 +270,39 @@ class Perspective(MarketData):
     KLINE_FLOATS=5
 
     @property
-    def snapshotSize(self):
+    def NNFloatsSize(self):
         # klsize = sum([self._stacks[et].evictSize for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] ])
         # return Perspective.TICK_FLOATS *self._stacks[EVENT_TICK].evictSize + Perspective.KLINE_FLOATS *klsize
         itemsize = sum([self._stacks[et].evictSize for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] ]) + self._stacks[EVENT_TICK].evictSize
-        return itemsize * EXPORT_FLOATS_DIMS
+        return (itemsize +1) * EXPORT_FLOATS_DIMS
 
     @property
-    def snapshot(self):
+    def NNFloats(self):
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
-            return [0.0] * self.snapshotSize # snapshot not available
+            return [0.0] * self.NNFloatsSize # toNNFloats not available
         
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
-        return self.toFloats(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume)
+        return self.toNNFloats(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume/100)
     
     @abstractmethod
-    def toFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] for numpy
         '''
-        if baseline_Price <=0: baseline_Price=1.0
-        if baseline_Volume <=0: baseline_Volume=1.0
-        
-        result = []
+        if baseline_Price <0.01: baseline_Price=1.0
+        if baseline_Volume <0.001: baseline_Volume=1.0
+
+        fAsOf = [0.0] * EXPORT_FLOATS_DIMS
+        try :
+            stampAsof = self.asof
+            fAsOf[0] = stampAsof.month
+            fAsOf[1] = stampAsof.day
+            fAsOf[2] = stampAsof.weekday()
+            fAsOf[3] = stampAsof.hour *60 +stampAsof.minute
+        except: pass
+
+        result = fAsOf # datetime as the first item
+        c =1
 
         # part 1, EVENT_TICK
         stk = self._stacks[EVENT_TICK]
@@ -300,7 +310,7 @@ class Perspective(MarketData):
             if i >= stk.size:
                 result += [0.0] * EXPORT_FLOATS_DIMS
             else:
-                v = stk[i].toFloats(baseline_Price=baseline_Price, baseline_Volume= baseline_Volume)
+                v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= baseline_Volume)
                 # Perspective.TICK_FLOATS = len(v)
                 result += v
 
@@ -310,7 +320,7 @@ class Perspective(MarketData):
                 if i >= stk.size:
                     result += [0.0] * EXPORT_FLOATS_DIMS
                 else:
-                    v = stk[i].toFloats(baseline_Price=baseline_Price, baseline_Volume= baseline_Volume)
+                    v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= baseline_Volume)
                     # Perspective.KLINE_FLOATS = len(v)
                     result += v
 
@@ -442,13 +452,13 @@ class PerspectiveState(MarketState):
         self.__dictPerspective[s].push(ev)
 
     __dummy = None
-    def snapshot(self, symbol=None) :
-        '''@return an array_like data as snapshot, maybe [] or numpy.array
+    def toNNFloats(self, symbol=None) :
+        '''@return an array_like data as toNNFloats, maybe [] or numpy.array
         '''
         if symbol and symbol in self.__dictPerspective.keys():
-            return self.__dictPerspective[symbol].snapshot
+            return self.__dictPerspective[symbol].NNFloats
 
         if not PerspectiveState.__dummy:
             PerspectiveState.__dummy = Perspective(self.exchange, 'Dummy')
-        return [0.0] * PerspectiveState.__dummy.snapshotSize
+        return [0.0] * PerspectiveState.__dummy.NNFloatsSize
 

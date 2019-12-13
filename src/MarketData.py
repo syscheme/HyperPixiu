@@ -64,9 +64,9 @@ class MarketData(EventData):
         return self.datetime
 
     @abstractmethod
-    def toFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
-        @return float[] with dim = EXPORT_FLOATS_DIMS for numpy
+        @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
         '''
         raise NotImplementedError
 
@@ -138,9 +138,9 @@ class TickData(MarketData):
         return lean
 
     @abstractmethod
-    def toFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
-        @return float[] with dim = EXPORT_FLOATS_DIMS
+        @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
         '''
         if baseline_Price <=0: baseline_Price=1.0
         if baseline_Volume <=0: baseline_Volume=1.0
@@ -202,9 +202,9 @@ class KLineData(MarketData):
     '''
 
     @abstractmethod
-    def toFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
-        @return float[] for numpy
+        @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
         '''
         if baseline_Price <=0: baseline_Price=1.0
         if baseline_Volume <=0: baseline_Volume=1.0
@@ -506,7 +506,7 @@ class MarketState(MetaObj):
         raise NotImplementedError
 
     @abstractmethod
-    def snapshot(self) :
-        '''@return an array_like data as snapshot, maybe [] or numpy.array
+    def toNNFloats(self) :
+        '''@return an array_like data as toNNFloats, maybe [] or numpy.array
         '''
         raise NotImplementedError

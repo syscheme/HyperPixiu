@@ -807,8 +807,8 @@ class PlaybackDay(MarketState):
             self.__onKLineX(ev)
             return
 
-    def snapshot(self) :
-        '''@return an array_like data as snapshot, maybe [] or numpy.array
+    def toNNFloats(self) :
+        '''@return an array_like data as [float] for neural network computing
         '''
         raise NotImplementedError
 

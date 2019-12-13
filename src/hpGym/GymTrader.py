@@ -491,10 +491,9 @@ class GymTrader(BaseTrader):
         account_state = np.concatenate([stateCapital + statePOS], axis=0)
 
         # part 2. build up the market_state
-        market_state = self._marketState.snapshot(self._tradeSymbol)
+        market_state = self._marketState.toNNFloats(self._tradeSymbol)
 
         # TODO: more observations in the future could be:
-        #  - [month, day, hour*60 +minute , weekday ]
         #  - money flow
         #  - market index
 
@@ -684,7 +683,7 @@ if __name__ == '__main__':
     from Application import Program
     from Account import Account_AShare
     import HistoryData as hist
-    import sys, os
+    import sys, os, platform
     # from keras.backend.tensorflow_backend import set_session
     # import tensorflow as tf
 
@@ -692,25 +691,45 @@ if __name__ == '__main__':
     # config.gpu_options.allow_growth=True
     # set_session(tf.Session(config=config))
 
-    sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/Gym_AShare.json']
+    if not '-f' in sys.argv :
+        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/Gym_AShare.json']
+
     p = Program()
     p._heartbeatInterval =-1
+
     SYMBOL = '000001' # '000540' '000001'
+    sourceCsvDir = None
+    try:
+        jsetting = p.jsettings('trainer/sourceCsvDir')
+        if not jsetting is None:
+            sourceCsvDir = jsetting(None)
+
+        jsetting = p.jsettings('trainer/objectives')
+        if not jsetting is None:
+            symbol = jsetting([SYMBOL])[0]
+    except Exception as ex:
+        symbol = SYMBOL
+    SYMBOL = symbol
+
+    if not sourceCsvDir or len(sourceCsvDir) <=0:
+        for d in ['e:/AShareSample', '/mnt/e/AShareSample/ETF', '/mnt/m/AShareSample']:
+            try :
+                if  os.stat(d):
+                    sourceCsvDir = d
+                    break
+            except :
+                pass
+
+    if 'Windows' in platform.platform() and '/mnt/' == sourceCsvDir[:5] and '/' == sourceCsvDir[6]:
+        drive = '%s:' % sourceCsvDir[5]
+        sourceCsvDir = sourceCsvDir.replace(sourceCsvDir[:6], drive)
+
+    # sourceCsvDir='%s/%s' % (sourceCsvDir, SYMBOL)
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-    csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
-    for d in ['e:/AShareSample', '/mnt/e/AShareSample', '/mnt/m/AShareSample']:
-        try :
-            if  os.stat(d):
-                csvdir = d
-                break
-        except :
-            pass
 
-    p.info('taking input dir %s for symbol[%s]' % (csvdir, SYMBOL))
-    csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
-    # marketstate = PerspectiveState('AShare')
-    # p.addObj(marketstate)
+    p.info('taking input dir %s for symbol[%s]' % (sourceCsvDir, SYMBOL))
+    csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=sourceCsvDir, fields='date,time,open,high,low,close,volume,ammount')
 
     gymtdr = p.createApp(GymTrader, configNode ='trainer', tradeSymbol=SYMBOL, account=acc)
     

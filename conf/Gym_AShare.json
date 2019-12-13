@@ -43,17 +43,13 @@
         "episodes": 5000,
         "pctMaxDrawDown": 5, // 15% maximal drawdown rate to give up the current episodes
         // "plotReport": "no", 
-        "warmupDays": 20,
+        "warmupDays": 10,
 
         "agent" :{
             // "epochsPerObservOnGpu" :2,
         },
 
-        "objectives": [
-            { 
-                "symbol": "600019", 
-                "ds1min": "AShare",  // sample "ds1min":"hadax:t2k1", in the case that we don't subscribe Kline directly from the market but take those merged from ticks
-            }, 
-        ],
+        "sourceCsvDir": "/mnt/e/AShareSample",
+        "objectives": ["000001"],
     },
 }

@@ -29,6 +29,18 @@ import bz2
 
 EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
 
+def listAllFiles(folder, depth=5):
+    ret =[]
+    if depth <=0:
+        return ret
+
+    for _, subdirs, files in os.walk(folder, topdown=False):
+        for name in files:
+            ret.append(os.path.join(folder, name))
+        for name in subdirs:
+            ret += listAllFiles(os.path.join(folder, name), depth -1)
+    return ret
+
 ########################################################################
 class Recorder(BaseApplication):
     """数据记录, the base DR is implmented as a csv Recorder
@@ -403,29 +415,34 @@ class CsvPlayback(Playback):
         # filter the csv files
         self.debug('search dir %s for csv files' % self._folder)
         prev = ""
-        for _, _, files in os.walk(self._folder):
-            files.sort()
-            for name in files:
-                stk = name.split('.')
-                if len(stk) <=1 or not 'csv' in stk or self._symbol.lower() != name[:len(self._symbol)].lower():
-                    continue
-                if not stk[-1].lower() in ['csv', 'bz2'] :
-                    continue
+        files = listAllFiles(self._folder)
+        # files.sort()
+        for fn in files:
+            try :
+                os.stat(fn)
+            except :
+                continue
 
-                fn = '%s/%s' % (self._folder, name)
-                self.debug('checking if file %s is valid' % fn)
-                stampstr = stk[0][len(self._symbol):]
-                pos = next((i for i, ch  in enumerate(stampstr) if ch in CsvPlayback.DIGITS), None)
-                if not pos :
-                    self._csvfiles.append(fn)
-                    continue
+            name = os.path.basename(fn)
+            stk = name.split('.')
+            if len(stk) <=1 or not 'csv' in stk or self._symbol.lower() != name[:len(self._symbol)].lower():
+                continue
+            if not stk[-1].lower() in ['csv', 'bz2'] :
+                continue
 
-                if 'Y' == stampstr[pos] : pos +=1
-                stampstr = stampstr[pos:]
-                if stampstr < self._startDate :
-                    prev = fn
-                elif stampstr <= self._endDate:
-                    self._csvfiles.append(fn)
+            self.debug('checking if file %s is valid' % fn)
+            stampstr = stk[0][len(self._symbol):]
+            pos = next((i for i, ch  in enumerate(stampstr) if ch in CsvPlayback.DIGITS), None)
+            if not pos :
+                self._csvfiles.append(fn)
+                continue
+
+            if 'Y' == stampstr[pos] : pos +=1
+            stampstr = stampstr[pos:]
+            if stampstr < self._startDate :
+                prev = fn
+            elif stampstr <= self._endDate:
+                self._csvfiles.append(fn)
 
         if len(prev) >0:
             self._csvfiles = [prev] + self._csvfiles

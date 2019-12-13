@@ -43,6 +43,7 @@
         "episodes": 5000,
         "pctMaxDrawDown": 5, // 15% maximal drawdown rate to give up the current episodes
         // "plotReport": "no", 
+        "warmupDays": 20,
 
         "agent" :{
             // "epochsPerObservOnGpu" :2,

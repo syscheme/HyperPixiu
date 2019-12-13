@@ -499,25 +499,6 @@ class agentDoubleDQN(agentDQN):
         return self._loss
 
 '''
-Notes: Averaging the weights
-
-https://stackoverflow.com/questions/48212110/average-weights-in-keras-models
-
-weights = [model.get_weights() for model in models]
-Now - create a new averaged weights:
-
-new_weights = list()
-
-for weights_list_tuple in zip(*weights):
-    new_weights.append(
-        [numpy.array(weights_).mean(axis=0)\
-            for weights_ in zip(*weights_list_tuple)])
-
-
-And what is left is to set these weights in a new model:
-
-new_model = new_model.set_weights(new_weights)
-
 ########################################################################
 if __name__ == "__main__":
     import matplotlib.pyplot as plt

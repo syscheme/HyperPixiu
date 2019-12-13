@@ -416,7 +416,7 @@ class CsvPlayback(Playback):
         self.debug('search dir %s for csv files' % self._folder)
         prev = ""
         files = listAllFiles(self._folder)
-        # files.sort()
+        files.sort()
         for fn in files:
             try :
                 os.stat(fn)

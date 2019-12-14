@@ -246,7 +246,7 @@ class GymTrader(BaseTrader):
 
         action = self._agent.gymAct(self._gymState)
         strActionAdj =''
-        
+
         # the gymAct only determin the direction, adjust the action to execute per current balance
         if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]) and self._latestCash < 1000:
             action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
@@ -302,7 +302,6 @@ class GymTrader(BaseTrader):
 
     def gymStep(self, action) :
         '''Take an action (buy/sell/hold) and computes the immediate reward.
-
         @param action (numpy.array): Action to be taken, one-hot encoded.
         @returns:
             tuple:
@@ -651,6 +650,11 @@ class GymTrainer(BackTestApp):
         strReport += '\nlearningRate: %s'  % summary['learningRate']
         strReport += '\n        loss: %s from %s' % (summary['loss'], summary['lastLoss'])
         strReport += '\n   savedLoss: %s <-(%s: %sd reward=%s @%s)' % (summary['savedLoss'], summary['savedEId'], summary['savedODays'], summary['savedReward'], summary['savedTime'])
+        # durInner, durOuter = self.wkTrader.durMeasure_sum() 
+        # strReport += '\n   durations: %s, %s'  % (durInner, durOuter)
+        # durInner, durOuter = self.durMeasure_sum() 
+        # strReport += '\n   durations: %s, %s'  % (durInner, durOuter)
+
         return strReport
 
 if __name__ == '__main__':
@@ -717,3 +721,10 @@ if __name__ == '__main__':
     p.loop()
     p.stop()
 
+'''
+Note: The initial version of the distribution of CPU time is:
+1) csv.bz2 read took 4%
+2）agent.predict to determine action 17%
+3) gymStep(mostly marketstate generating) 22%
+4) gymObers(mostly brain.fit) 50%
+'''

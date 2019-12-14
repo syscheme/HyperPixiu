@@ -117,6 +117,8 @@ class BaseApplication(MetaApp):
 
         self.__gen = self._generator()
 
+        self.__fstampInnerStart, self.__fstampInnerEnd, self.__fdurInner, self.__fdurOuter = 0.0, 0.0, 0.0, 0.0
+
     def __deepcopy__(self, other):
         result = object.__new__(type(self))
         result.__dict__ = copy(self.__dict__)
@@ -271,6 +273,19 @@ class BaseApplication(MetaApp):
     # TODO   error = event.data
     #    self._lstErrors.append(error)
         pass
+
+    def durMeasure_start(self) :
+        self.__fstampInnerStart = datetime2float(datetime.now())
+        if self.__fstampInnerEnd > 0.0 :
+            self.__fdurOuter += self.__fstampInnerStart - self.__fstampInnerEnd
+
+    def durMeasure_stop(self) :
+        self.__fstampInnerEnd = datetime2float(datetime.now())
+        if self.__fstampInnerStart >0.0:
+            self.__fdurInner += self.__fstampInnerEnd - self.__fstampInnerStart
+
+    def durMeasure_sum(self) :
+        return self.__fdurInner, self.__fdurOuter
 
 ########################################################################
 import threading
@@ -1148,6 +1163,8 @@ class Program(object):
             print("loadObject() error: %s %s" % (ex, traceback.format_exc()))
 
         return None
+
+
 '''
     #----------------------------------------------------------------------
     def addMarketData(self, dsModule, settings):

@@ -657,18 +657,18 @@ class GymTrainer(BackTestApp):
 
         return strReport
 
-if __name__ == '__main__':
-    from Application import Program
-    from Account import Account_AShare
-    import HistoryData as hist
-    import sys, os, platform
-    # from keras.backend.tensorflow_backend import set_session
-    # import tensorflow as tf
+from Application import Program
+from Account import Account_AShare
+import HistoryData as hist
+import sys, os, platform
+# from keras.backend.tensorflow_backend import set_session
+# import tensorflow as tf
 
-    # config = tf.ConfigProto()
-    # config.gpu_options.allow_growth=True
-    # set_session(tf.Session(config=config))
+# config = tf.ConfigProto()
+# config.gpu_options.allow_growth=True
+# set_session(tf.Session(config=config))
 
+def main_prog():
     if not '-f' in sys.argv :
         sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/Gym_AShare.json']
 
@@ -720,6 +720,11 @@ if __name__ == '__main__':
     p.start()
     p.loop()
     p.stop()
+
+if __name__ == '__main__':
+#    from vprof import runner
+#    runner.run(main_prog, 'cmhp', host='localhost', port=8000)
+    main_prog()
 
 '''
 Note: The initial version of the distribution of CPU time is:

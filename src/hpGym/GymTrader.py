@@ -264,9 +264,8 @@ class GymTrader(BaseTrader):
         self._action = action
 
         next_state, reward, done, info = self.gymStep(self._action)
-        self._feedbackToAgent = {**info, **self._feedbackToAgent}
     
-        loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, done, **self._feedbackToAgent)
+        loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, done, **{**info, **self._feedbackToAgent})
         if loss: self.__recentLoss =loss
 
         self._gymState = next_state
@@ -318,7 +317,7 @@ class GymTrader(BaseTrader):
         done = False
         instant_pnl = 0.0
         reward =0.0
-        info = {}
+        info = {'frozen': False}
 
         if not self._account.executable:
             info['frozen'] = True

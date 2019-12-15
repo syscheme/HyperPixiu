@@ -11,6 +11,7 @@ from Trader import MetaTrader, BaseTrader
 from BackTest import BackTestApp
 from Perspective import PerspectiveState
 from MarketData import EVENT_TICK, EVENT_KLINE_PREFIX, EXPORT_FLOATS_DIMS
+from HistoryData import listAllFiles
 
 import hpGym
 
@@ -19,6 +20,7 @@ import matplotlib as mpl # pip install matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import datetime
+import tarfile
 
 plt.style.use('dark_background')
 mpl.rcParams.update(
@@ -61,13 +63,15 @@ class MetaAgent(MetaObj): # TODO:
             self._trainInterval =10
 
         self._outDir = self.getConfig('outDir', self._gymTrader.dataRoot)
-        if '/' != self._outDir[-1]:
-            self._outDir +='/'
+        if '/' != self._outDir[-1]: self._outDir +='/'
 
         self._statusAttrs = {}
 
         self._brain = self.buildBrain(self._wkBrainId)
 
+    @property
+    def brainId(self):
+        return self._wkBrainId
 
     @abstractmethod
     def isReady(self) : return True
@@ -490,6 +494,14 @@ class Simulator(BackTestApp):
         '''
         super(Simulator, self).__init__(program, trader, histdata, **kwargs)
         self._iterationsPerEpisode = self.getConfig('iterationsPerEpisode', 1)
+
+        self._masterExportHomeDir = self.getConfig('master/homeDir', None) # this agent work as the master when configured, usually point to a dir under webroot
+        if self._masterExportHomeDir and '/' != self._masterExportHomeDir[-1]: self._masterExportHomeDir +='/'
+        
+        # the base URL of local web for the slaves to GET/POST the tasks
+        # current Simulator works as slave if this masterExportURL presents but masterExportHomeDir abendons
+        self._masterExportURL = self.getConfig('master/exportURL', self._masterExportHomeDir)
+
         self.__lastEpisode_loss = DUMMY_BIG_VAL
 
         self.__savedEpisode_Id = -1
@@ -516,6 +528,8 @@ class Simulator(BackTestApp):
             return False
 
         self.wkTrader.gymReset()
+        self.wkTrader._agent.enableMaster(self._masterExportHomeDir)
+
         return True
 
     def OnEvent(self, ev): # this overwrite BackTest's because there are some different needs
@@ -657,6 +671,70 @@ class Simulator(BackTestApp):
 
         return strReport
 
+    def __updateSimulatorTask(self, inputFiles):
+        
+        if not self._masterExportHomeDir or len(self._masterExportHomeDir) <=0:
+            return # not as the master
+        
+        # collect all needed files into a tmpdir
+        simTaskId = '%s_%s' % (self.wkTrader._agent.brainId, datetime.datetime.now().strftime('%Y%m%dT%H%M%S%f'))
+        tmpdir = os.path.join(self.wkTrader._outDir, 'sim_tmp.%s' % simTaskId)
+        try :
+            os.makedirs(tmpdir)
+        except :
+            pass
+
+        for fn in listAllFiles(self.wkTrader._outDir) :
+            if '/model.' in fn:
+                os.system('cp -f %s %s' % (fn, tmpdir))
+
+        if not 'model.json.h5' in os.listdir(tmpdir) :
+            os.system('cp -f %s/model.* %s' % (os.path.join(self.dataRoot, self.wkTrader._agent.brainId), tmpdir))
+        
+        # generate the URL list where the slave is able to download the input csv files
+        exportedCsvHome = '%s/' % os.path.join(self._masterExportHomeDir, 'csv')
+        try :
+            os.makedirs(exportedCsvHome)
+        except :
+            pass
+
+        urlList= []
+        for fn in inputFiles:
+            basename = os.path.basename(fn)
+            exportedFn = '%s%s' % (exportedCsvHome, basename)
+            try :
+                os.stat(exportedFn)
+            except:
+                os.system('cp -f %s %s' % (fn, exportedFn))
+
+            urlList.append(os.path.join(exportedCsvHome, basename))
+        
+        with open(os.path.join(tmpdir, 'source.lst'), 'wt') as lstfile:
+            lstfile.write('\r\n'.join(urlList))
+        
+        # now make a tar ball as the task file
+        # this is a tar.bz2 including a) model.json, b) current weight h5 file, c) version-number, d) the frame exported as hdf5 file
+        fn_task = os.path.join(self._masterExportHomeDir, 'tasks', 'sim_%s.tak' % simTaskId)
+        try :
+            os.makedirs(os.path.dirname(fn_task))
+        except :
+            pass
+
+        with tarfile.open(fn_task, "w:bz2") as tar:
+            files = os.listdir(tmpdir)
+            for f in files:
+                tar.add(os.path.join(tmpdir, f), f)
+
+        self.debug('__updateSimulatorTask() prepared task-file %s, activating it' % (fn_task))
+        os.system('rm -rf %s' % tmpdir)
+
+        # swap into the active task
+        target_task_file = os.path.join(self._masterExportHomeDir, 'tasks', 'sim.tak')
+        os.system('rm -rf $(realpath %s) %s' % (target_task_file, target_task_file))
+        os.system('ln -sf %s %s' % (fn_task, target_task_file))
+        self.info('__updateSimulatorTask() task updated: %s->%s' % (target_task_file, fn_task))
+
+########################################################################
 from Application import Program
 from Account import Account_AShare
 import HistoryData as hist

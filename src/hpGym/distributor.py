@@ -9,11 +9,64 @@
 #        b) the version when the worker took the task
 #        As the response to POST, a new task like above GET's response would be delivered to the worker
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+from Application import BaseApplication
 import cgi
+import re
 
-class DistributorApp(BaseHTTPRequestHandler):
+class DistributorApp(BaseHTTPRequestHandler, BaseApplication):
+
+    URI_STACK=[
+        (re.compile('^/sim/task'), __get_SimulatorTask, __post_SimulatorResult),
+        (re.compile('^/train/task'), __get_TrainingTask, __post_TrainingResult)
+    ]
     
+    def __init__(self, config, duration, errors, *args, **kwargs):
+        self._config = config
+        self._duration = duration
+        self._errors = errors
+        BaseHTTPRequestHandler.__init__(self, *args, **kwargs) 
+        BaseApplication.__init__(self, *args, **kwargs) 
+
+        # self.extensions_map.update({
+        #     '.webapp': 'application/x-web-app-manifest+json',
+        # });
+
+    def do_GET(self):
+        for uristk in DistributorApp.URI_STACK:
+            m = uristk[0].match(self.path)
+            if m :
+                return self.uristk[1]()
+
+        self.send_response(404)
+        self.end_headers()
+
     def do_POST(self):
+        func = None
+        for uristk in DistributorApp.URI_STACK:
+            m = uristk[0].match(self.path)
+            if m :
+                return self.uristk[2]()
+
+        self.send_response(404)
+        self.end_headers()
+
+    def __post_SimulatorResult(self):
+        self.send_response(200)
+        self.end_headers()
+
+    def __get_SimulatorTask(self):
+        self.send_response(200)
+        self.end_headers()
+
+    def __get_TrainingTask(self):
+        self.send_response(200)
+        self.end_headers()
+
+    def __post_TrainingResult(self):
+        self.send_response(200)
+        self.end_headers()
+
+    def template_do_POST(self):
         # Parse the form data posted
         form = cgi.FieldStorage(
             fp=self.rfile, 
@@ -45,7 +98,7 @@ class DistributorApp(BaseHTTPRequestHandler):
                 self.wfile.write('\t%s=%s\n' % (field, form[field].value))
         return
 
-    def do_GET(self):
+    def template_do_GET(self):
         parsed_path = urlparse.urlparse(self.path)
         message_parts = [
                 'CLIENT VALUES:',

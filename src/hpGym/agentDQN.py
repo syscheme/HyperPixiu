@@ -40,6 +40,7 @@ class agentDQN(MetaAgent):
 
         super(agentDQN, self).__init__(gymTrader, **kwargs)
 
+        self._masterExportHomeDir = self.getConfig('masterHomeDir', None) # this agent work as the master when configured, usually point to a dir under webroot
         self._epochsPerObservOnGpu = self.getConfig('epochsPerObservOnGpu', 5)
         self._lock = threading.Lock()
         self.__replaySize = self._batchSize *32
@@ -48,15 +49,15 @@ class agentDQN(MetaAgent):
         if self.__replaySize >10240:
             self.__replaySize = 10240
 
-        self.__replayCache = [None] * self._batchSize
+        self.__replayCache = [None] # * self._batchSize
         self.__sampleIdx = 0
         self.__realDataNum =0
         self.__frameNum =0
 
-        self._brainOutDir = '%s%s.%s_%s/' % (self._outDir, self._wkBrainId, self._stateSize, self._actionSize)
+        self._brainOutDir = '%s%s/' % (self._outDir, self._wkBrainId)
 
         #format the desc
-        self._brainDesc = '%s created at %s with stateSize[%s] actionSize[%s], outdir %s' % (self._wkBrainId, datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'), self._stateSize, self._actionSize, self._brainOutDir)
+        self._brainDesc = '%s created at %s, outdir %s' % (self._wkBrainId, datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'), self._brainOutDir)
         lines = []
         self._brain.summary(print_fn=lambda x: lines.append(x))
         self._brainDesc += '\nsummary:\n%s\n' % "\n".join(lines)
@@ -86,6 +87,9 @@ class agentDQN(MetaAgent):
     @property
     def frameNum(self) : return self.__frameNum
 
+    def enableMaster(self, homeDir):
+        self._masterExportHomeDir = homeDir # this agent work as the master when configured, usually point to a dir under webroot
+
     def buildBrain(self, brainId =None, **feedbacks): #TODO param brainId to load json/HD5 from dataRoot/brainId
         '''Build the agent's brain
         '''
@@ -106,7 +110,7 @@ class agentDQN(MetaAgent):
                 self._brain = builder()
 
         if self._brain:
-            self._wkBrainId = brainId
+            self._wkBrainId = '%s.%s_%s' %(brainId, self._stateSize, self._actionSize)
             self._brain.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
             # checkpointPath ='best.h5'
             # checkpoint = ModelCheckpoint(filepath=checkpointPath, monitor='val_acc', verbose=1, save_best_only=True, save_weights_only=True, mode='max', period=1)
@@ -331,6 +335,7 @@ class agentDQN(MetaAgent):
             samplelen = len(self.__replayCache)
             if 0 == self.__sampleIdx and samplelen > self._batchSize: 
                 self.__frameNum +=1
+                self.OnNewFrame(self.__replayCache)
 
             if self.__sampleIdx >= samplelen :
                 self.__replayCache.append((state, action, reward, next_state, done))
@@ -405,40 +410,90 @@ class agentDQN(MetaAgent):
             action_batch = np.where(action_batch == 1) # array(sizeToBatch, self._actionSize)=>array(2, sizeToBatch)
             return state_batch, action_batch, reward_batch, next_state_batch, done_batch
 
-    def _sampleBatches_TODO(self):
-        '''Selecting a batch of memory, split it into categorical subbatches
-           Process action_batch into a position vector
-        '''
-        sizeToBatch = self._batchSize
-        if self.__realDataNum <=0:
-            sizeToBatch = self._batchSize
-            batch = np.array(random.sample(self.__replayCache, sizeToBatch)).astype(GymTrader.NN_FLOAT)    
-        else:
-            if self.__realDataNum >= self.__replaySize:
-                sizeToBatch = self.__replaySize
-                self.__realDataNum = self.__replaySize
-            else :
-                sizeToBatch = int((self.__realDataNum +self._batchSize -1) /self._batchSize) * self._batchSize
+    def OnNewFrame(self, frame) :
+        import h5py, tarfile, numpy
 
-            idxStart = (self.__sampleIdx + self.__replaySize - sizeToBatch +1) % self.__replaySize
-            if self.__sampleIdx <= idxStart:
-                a =self.__replayCache[idxStart :]
-                b= self.__replayCache[: self.__sampleIdx+1]
-                c= a+b
-                batch = np.array(c, dtype=np.float32)
-            else : 
-                c = self.__replayCache[idxStart : self.__sampleIdx+1]
-                batch = np.concatenate(c).astype(GymTrader.NN_FLOAT)
-            
-        state_batch = np.concatenate(batch[:, 0]).reshape(sizeToBatch, self._stateSize)
-        action_batch = np.concatenate(batch[:, 1]).reshape(sizeToBatch, self._actionSize)
-        reward_batch = batch[:, 2]
-        next_state_batch = np.concatenate(batch[:, 3]).reshape(sizeToBatch, self._stateSize)
-        done_batch = batch[:, 4]
+        if not self._masterExportHomeDir or len(self._masterExportHomeDir) <=0:
+            return # not as the master
+        
+        if not frame or len(frame) <=0:
+            return
+        
+        rows = len(frame)
+        # rowlen = len(frame[0])
 
-        # action processing
-        action_batch = np.where(action_batch == 1)
-        return state_batch, action_batch, reward_batch, next_state_batch, done_batch
+        if '/' != self._masterExportHomeDir[-1]: self._masterExportHomeDir +='/'
+
+        try :
+            statinfo = os.stat(self._masterExportHomeDir)
+        except :
+            self._gymTrader.error('agent.OnNewFrame() failed to be the master as exportHome[%s] not exists' % (self._masterExportHomeDir))
+            self._masterExportHomeDir = None
+            return
+
+        brainInst = '%s.%s' % (self._wkBrainId, datetime.datetime.now().strftime('%Y%m%dT%H%M%S%f'))
+
+        # collect all needed files into a tmpdir
+        tmpdir = '%sft_tmp.%s/' % (self._outDir, brainInst)
+        try :
+            os.makedirs(tmpdir)
+        except :
+            pass
+
+        os.system('cp -f %smodel.* %s' % (self._brainOutDir, tmpdir))
+        if not 'model.json.h5' in os.listdir(tmpdir) :
+            os.system('cp -f %s%s/model.* %s' % (self._gymTrader.dataRoot, self._wkBrainId, tmpdir))
+        
+        # output the frame into a HDF5 file
+        fn_frame = '%sframes.h5' % tmpdir
+        self._gymTrader.debug('agent.OnNewFrame() collected fit task supplemental files, generating frame file %s' % (fn_frame))
+        # with h5py.File(fn_frame, 'w') as h5file:
+        #     rowShape=numpy.asarray(frame[0]).shape
+        #     X = h5file.create_dataset(shape=(rows, rowShape[0],),   # 数据集的维度
+        #                         dtype=float, name='fitframe',    # no compression needed
+        #                         chunks=(self._batchSize, rowShape[0],))
+        #     X[0:rows, :,] = frame
+
+        with h5py.File(fn_frame, 'w') as h5file:
+            g = h5file.create_group('ReplayBuffer')
+            g.attrs['state'] = 'state'
+            g.attrs['action'] = 'action'
+            g.attrs['reward'] = 'reward'
+            g.attrs['next_state'] = 'next_state'
+            g.attrs['done'] = 'done'
+            g.attrs[u'default'] = 'state'
+
+            g.create_dataset(u'title',     data= '%s replay buffer for NN training' % brainInst)
+            metrix = np.array(frame)
+            done_col = [ 1 if i else 0 for i in metrix[:, 4]]
+            g.create_dataset('state',      data= np.concatenate(metrix[:, 0]).reshape(rows, self._stateSize)) # np.concatenate(frame[:, 0]).reshape(rows, self._stateSize))
+            g.create_dataset('action',     data= np.concatenate(metrix[:, 1]).reshape(rows, self._actionSize))
+            g.create_dataset('reward',     data= metrix[:, 2].astype('float32'))
+            g.create_dataset('next_state', data= np.concatenate(metrix[:, 3]).reshape(rows, self._stateSize))
+            g.create_dataset('done',       data= done_col)
+
+        # now make a tar ball as the task file
+        # this is a tar.bz2 including a) model.json, b) current weight h5 file, c) version-number, d) the frame exported as hdf5 file
+        fn_fit_task = '%stasks/fit_%s.tak' % (self._masterExportHomeDir, brainInst)
+        try :
+            os.makedirs(os.path.dirname(fn_fit_task))
+        except :
+            pass
+
+        with tarfile.open(fn_fit_task, "w:bz2") as tar:
+            files = os.listdir(tmpdir)
+            for f in files:
+                tar.add('%s%s' % (tmpdir, f), f)
+
+        self._gymTrader.debug('agent.OnNewFrame() prepared task-file %s, activating it' % (fn_fit_task))
+        os.system('rm -rf %s' % tmpdir)
+
+        # swap into the active task
+        target_task_file = '%stasks/fit.tak' % self._masterExportHomeDir
+        os.system('rm -rf $(realpath %s) %s' % (target_task_file, target_task_file))
+        os.system('ln -sf %s %s' % (fn_fit_task, target_task_file))
+        self._gymTrader.info('agent.OnNewFrame() fit-task updated: %s->%s' % (target_task_file, fn_fit_task))
+
 
 ########################################################################
 # DoubleDQN to avoid overestimate, 将动作选择（max操作）和动作估计Q(s’,a’)解耦

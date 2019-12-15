@@ -19,6 +19,8 @@ EVENT_LOG    = EVENT_NAME_PREFIX + 'Log'     # 日志事件，全局通用
 
 DT_EPOCH = datetime.utcfromtimestamp(0)
 
+########################################################################
+# utilities
 def datetime2float(dt):
     total_seconds =  (dt - DT_EPOCH).total_seconds()
     # total_seconds will be in decimals (millisecond precision)

@@ -246,7 +246,7 @@ class GymTrader(BaseTrader):
 
         action = self._agent.gymAct(self._gymState)
         strActionAdj =''
-        
+
         # the gymAct only determin the direction, adjust the action to execute per current balance
         if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]) and self._latestCash < 1000:
             action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
@@ -302,7 +302,6 @@ class GymTrader(BaseTrader):
 
     def gymStep(self, action) :
         '''Take an action (buy/sell/hold) and computes the immediate reward.
-
         @param action (numpy.array): Action to be taken, one-hot encoded.
         @returns:
             tuple:
@@ -651,20 +650,25 @@ class GymTrainer(BackTestApp):
         strReport += '\nlearningRate: %s'  % summary['learningRate']
         strReport += '\n        loss: %s from %s' % (summary['loss'], summary['lastLoss'])
         strReport += '\n   savedLoss: %s <-(%s: %sd reward=%s @%s)' % (summary['savedLoss'], summary['savedEId'], summary['savedODays'], summary['savedReward'], summary['savedTime'])
+        # durInner, durOuter = self.wkTrader.durMeasure_sum() 
+        # strReport += '\n   durations: %s, %s'  % (durInner, durOuter)
+        # durInner, durOuter = self.durMeasure_sum() 
+        # strReport += '\n   durations: %s, %s'  % (durInner, durOuter)
+
         return strReport
 
-if __name__ == '__main__':
-    from Application import Program
-    from Account import Account_AShare
-    import HistoryData as hist
-    import sys, os, platform
-    # from keras.backend.tensorflow_backend import set_session
-    # import tensorflow as tf
+from Application import Program
+from Account import Account_AShare
+import HistoryData as hist
+import sys, os, platform
+# from keras.backend.tensorflow_backend import set_session
+# import tensorflow as tf
 
-    # config = tf.ConfigProto()
-    # config.gpu_options.allow_growth=True
-    # set_session(tf.Session(config=config))
+# config = tf.ConfigProto()
+# config.gpu_options.allow_growth=True
+# set_session(tf.Session(config=config))
 
+def main_prog():
     if not '-f' in sys.argv :
         sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/Gym_AShare.json']
 
@@ -717,3 +721,15 @@ if __name__ == '__main__':
     p.loop()
     p.stop()
 
+if __name__ == '__main__':
+#    from vprof import runner
+#    runner.run(main_prog, 'cmhp', host='localhost', port=8000)
+    main_prog()
+
+'''
+Note: The initial version of the distribution of CPU time is:
+1) csv.bz2 read took 4%
+2）agent.predict to determine action 17%
+3) gymStep(mostly marketstate generating) 22%
+4) gymObers(mostly brain.fit) 50%
+'''

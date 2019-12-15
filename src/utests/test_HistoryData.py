@@ -2,7 +2,9 @@ import unittest
 import HistoryData as hist
 import Perspective as psp
 import MarketData as md
+from EventData import datetime2float
 from Application import *
+import h5py
 
 class Foo(BaseApplication) :
     def __init__(self, program, settings):
@@ -22,6 +24,8 @@ class Foo(BaseApplication) :
         self.info("Foo.step %d" % self.__step)
 
 PROGNAME = os.path.basename(__file__)[0:-3]
+SYMBOL ='000001'
+
 hs300s= [
         "600000","600008","600009","600010","600011","600015","600016","600018","600019","600023",
         "600025","600028","600029","600030","600031","600036","600038","600048","600050","600061",
@@ -85,19 +89,19 @@ class TestHistoryData(unittest.TestCase):
         p.stop()
 
     def _test_playback(self):
-        reader = hist.CsvPlayback(symbol='000001', folder='/mnt/e/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
+        reader = hist.CsvPlayback(symbol=SYMBOL, folder='/mnt/e/AShareSample/%s' % SYMBOL, fields='date,time,open,high,low,close,volume,ammount')
         for i in reader :
             print('Row: %s\n' % i.desc)
 
-    def test_Perspective(self):
+    def _test_Perspective(self):
         p = Program()
         p._heartbeatInterval =-1
-        ps = psp.Perspective('AShare', '000001')
+        ps = psp.Perspective('AShare', SYMBOL)
         
         histdata = psp.PerspectiveGenerator(ps)
         histdata.setProgram(p)
 
-        reader = hist.CsvPlayback(symbol='000001', folder='/mnt/m/AShareSample/000001', fields='date,time,open,high,low,close,volume,ammount')
+        reader = hist.CsvPlayback(symbol=SYMBOL, folder='/mnt/e/AShareSample/%s' % SYMBOL, fields='date,time,open,high,low,close,volume,ammount')
         reader.setProgram(p)
 
         histdata.adaptReader(reader, md.EVENT_KLINE_1MIN)
@@ -113,16 +117,52 @@ class TestHistoryData(unittest.TestCase):
             s = i.data.symbol
             p.debug('-> state: asof[%s] symbol[%s] lastPrice[%s] OHLC%s\n' % (marketstate.getAsOf(s).strftime('%Y%m%dT%H:%M:%S'), s, marketstate.latestPrice(s), marketstate.dailyOHLC_sofar(s)))
 
-    def func1(self, a=None, **kwargs):
-        print('func1(a=%s, kwargs=%s)\n' %(a, kwargs))
+    def test_PerspToHDF5(self):
+        p = Program()
+        p._heartbeatInterval =-1
+        ps = psp.Perspective('AShare', SYMBOL)
 
-    def func2(self, **kwargs):
-        self.func1(kwargs)
-        self.func1(**kwargs)
+        # https://www.jianshu.com/p/998c861d32e3
+        # https://www.jianshu.com/p/ae12525450e8
+        h5file = h5py.File('/tmp/psp%s.h5pd'%SYMBOL, 'w')
 
-    def _test_kwargs(self):
-        self.func2(a='123',b=45,c=78) 
-        self.func2(b=45,c=78)
+        marketState_Len= 1552
+        chunk_size= 256
+
+        X = h5file.create_dataset(shape=(0, 1, marketState_Len),            #数据集的维度
+                              maxshape = (None, 1, marketState_Len),          #数据集的允许最大维度　
+                              dtype=float, name='marketState_train', compression='szip',   #数据类型、是否压缩(szip better than gzip, https://support.hdfgroup.org/doc_resource/SZIP/ but not supported bz2/bcolz)，以及数据集的名字
+                              chunks=(chunk_size, 1, marketState_Len))
+        
+        histdata = psp.PerspectiveGenerator(ps)
+        histdata.setProgram(p)
+
+        reader = hist.CsvPlayback(symbol=SYMBOL, folder='/mnt/e/AShareSample/%s.REDU' % SYMBOL, fields='date,time,open,high,low,close,volume,ammount')
+        reader.setProgram(p)
+
+        histdata.adaptReader(reader, md.EVENT_KLINE_1MIN)
+        marketstate = psp.PerspectiveState('AShare')
+
+        c =0
+        for i in histdata :
+            if psp.EVENT_Perspective != i.type :
+                p.info('evnt: %s' % i.desc) 
+                continue
+
+            p.info('Psp: %s' % i.desc)
+            marketstate.updateByEvent(i)
+            s = i.data.symbol
+            nnfloats = [0.0] * md.EXPORT_FLOATS_DIMS
+            nnfloats[0] = datetime2float(marketstate.getAsOf(SYMBOL))
+            nnfloats[1] = marketstate.latestPrice(SYMBOL)
+            nnfloats += marketstate.toNNFloats(SYMBOL)
+
+            if 0 == c %chunk_size:
+                X.resize(X.shape[0]+chunk_size, axis=0)
+            X[c,:,:] = nnfloats
+            c+=1
+
+            p.debug('-> state: asof[%s] symbol[%s] lastPrice[%s] OHLC%s\n' % (marketstate.getAsOf(s).strftime('%Y%m%dT%H:%M:%S'), s, marketstate.latestPrice(s), marketstate.dailyOHLC_sofar(s)))
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,5 +1,5 @@
 ########################################################################
-# TrainingDistributor work as an HTTPServer accept the requests from TrainingWorkers
+# DistributorApp work as an HTTPServer accept the requests from TrainingWorkers
 # - GET to respond a training task via MIME resp, including
 #        a) the JSON model definition of the agent._brain
 #        b) the recent and version-ed weights of the agent._brain
@@ -11,7 +11,7 @@
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 import cgi
 
-class TrainingDistributor(BaseHTTPRequestHandler):
+class DistributorApp(BaseHTTPRequestHandler):
     
     def do_POST(self):
         # Parse the form data posted

@@ -481,14 +481,14 @@ class GymTrader(BaseTrader):
         self.__closed_plot = True
 
 ########################################################################
-class GymTrainer(BackTestApp):
+class Simulator(BackTestApp):
     '''
     GymTrader extends GymTrader by reading history and perform training
     '''
     def __init__(self, program, trader, histdata, **kwargs):
         '''Constructor
         '''
-        super(GymTrainer, self).__init__(program, trader, histdata, **kwargs)
+        super(Simulator, self).__init__(program, trader, histdata, **kwargs)
         self._iterationsPerEpisode = self.getConfig('iterationsPerEpisode', 1)
         self.__lastEpisode_loss = DUMMY_BIG_VAL
 
@@ -507,12 +507,12 @@ class GymTrainer(BackTestApp):
     # impl/overwrite of BaseApplication
     def doAppInit(self): # return True if succ
 
-        # make sure GymTrainer is ONLY wrappering GymTrader
+        # make sure Simulator is ONLY wrappering GymTrader
         if not self._initTrader or not isinstance(self._initTrader, GymTrader) :
             self.error('doAppInit() invalid initTrader')
             return False
 
-        if not super(GymTrainer, self).doAppInit() :
+        if not super(Simulator, self).doAppInit() :
             return False
 
         self.wkTrader.gymReset()
@@ -555,7 +555,7 @@ class GymTrainer(BackTestApp):
     #------------------------------------------------
     # BackTest related entries
     def OnEpisodeDone(self, reachedEnd=True):
-        super(GymTrainer, self).OnEpisodeDone(reachedEnd)
+        super(Simulator, self).OnEpisodeDone(reachedEnd)
 
         # determin whether it is a best episode
         lstImproved=[]
@@ -637,11 +637,11 @@ class GymTrainer(BackTestApp):
         @return:
             observation (numpy.array): observation of the state
         '''
-        super(GymTrainer, self).resetEpisode()
+        super(Simulator, self).resetEpisode()
         return self.wkTrader.gymReset()
 
     def formatSummary(self, summary=None):
-        strReport = super(GymTrainer, self).formatSummary(summary)
+        strReport = super(Simulator, self).formatSummary(summary)
         if not isinstance(summary, dict) :
             summary = self._episodeSummary
 
@@ -711,10 +711,10 @@ def main_prog():
 
     gymtdr = p.createApp(GymTrader, configNode ='trainer', tradeSymbol=SYMBOL, account=acc)
     
-    p.info('all objects registered piror to GymTrainer: %s' % p.listByType())
+    p.info('all objects registered piror to Simulator: %s' % p.listByType())
     
-    trainer = p.createApp(GymTrainer, configNode ='trainer', trader=gymtdr, histdata=csvreader)
-    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = '%s/GymTrainer.tcsv' % trainer.outdir)
+    trainer = p.createApp(Simulator, configNode ='trainer', trader=gymtdr, histdata=csvreader)
+    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = '%s/Simulator.tcsv' % trainer.outdir)
     trainer.setRecorder(rec)
 
     p.start()

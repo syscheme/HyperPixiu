@@ -266,10 +266,13 @@ class agentDQN(MetaAgent):
             self._gymTrader.info('loaded brain from %s by taking initial epsilon[%s] learningRate[%s]' % (brainDir, self._epsilon, self._learningRate))
         return brain
 
-    def gymAct(self, state):
+    def gymAct(self, state, bObserveOnly=False):
         '''Acting Policy of the agentDQN
         @return one of self.__gymTrader.ACTIONS
         '''
+        if bObserveOnly:
+            return GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
+
         action = np.zeros(self._actionSize)
         if np.random.rand() <= self._epsilon:
             action[random.randrange(self._actionSize)] = 1
@@ -281,14 +284,14 @@ class agentDQN(MetaAgent):
 
         return action.astype(GymTrader.NN_FLOAT)
 
-    def gymObserve(self, state, action, reward, next_state, done, frozen=False, **feedbacks):
+    def gymObserve(self, state, action, reward, next_state, done, bObserveOnly=False, **feedbacks):
         '''Memory Management and training of the agent
-        @param frozen True if the account is not executable, so only observing, no predicting and/or training
+        @param bObserveOnly True if the account is not executable, so only observing, no predicting and/or training
         @return tuple:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch
         '''
         self._statusAttrs = {**self._statusAttrs, **feedbacks}
-        if not self._pushToReplay(state, action, reward, next_state, done) or frozen :
+        if not self._pushToReplay(state, action, reward, next_state, done) or bObserveOnly :
             return None
 
         # this basic DQN also performs training in this step
@@ -517,14 +520,14 @@ class agentDoubleDQN(agentDQN):
         if not super(agentDoubleDQN, self).isReady():
             return False
 
-    def gymObserve(self, state, action, reward, next_state, done, frozen=False, **feedbacks):
+    def gymObserve(self, state, action, reward, next_state, done, bObserveOnly=False, **feedbacks):
         '''Memory Management and training of the agent
-        @param frozen True if the account is not executable, so only observing, no predicting and/or training
+        @param bObserveOnly True if the account is not executable, so only observing, no predicting and/or training
         @return tuple:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch
         '''
         self._statusAttrs = {**self._statusAttrs, **feedbacks}
-        if not self._pushToReplay(state, action, reward, next_state, done) :
+        if not self._pushToReplay(state, action, reward, next_state, done) or bObserveOnly :
             return None
 
         # this basic DQN also performs training in this step

@@ -162,6 +162,7 @@ class GymTrader(BaseTrader):
         '''Constructor
         '''
         super(GymTrader, self).__init__(program, **kwargs) # redirect to BaseTrader, who will adopt account and so on
+        self._lstMarketEventProc.append(self.__processMarketEvent)
 
         self._agent = None
         self._timeCostYrRate = self.getConfig('timeCostYrRate', 0)
@@ -177,23 +178,12 @@ class GymTrader(BaseTrader):
         # GymTrader always take PerspectiveState as the market state
         self._marketState = PerspectiveState(None)
         self._gymState = None
-
-        self.__recentLoss = None
         self._total_pnl = 0.0
-        self._total_reward = 0.0
-        self._feedbackToAgent = {
-            'dailyReward': 0.0, 
-            'bestRewardTotal': 0.0,
-            'bestRewardDays': 0,
-        }
 
         self._dailyCapCost = 0.0 # just to ease calc
         self.__deposittedReward = 0.0
         # self.n_actions = 3
         # self._prices_history = []
-    @property
-    def loss(self) :
-        return round(self.__recentLoss.history["loss"][0], 6) if self.__recentLoss else DUMMY_BIG_VAL
 
     @property
     def withdrawReward(self) : # any read will reset the self.__deposittedReward
@@ -245,9 +235,13 @@ class GymTrader(BaseTrader):
         super(GymTrader, self).doAppStep()
         # perform some dummy steps in order to fill agent._memory[]
 
-    def proc_MarketEvent(self, ev):
+    def __processMarketEvent(self, ev):
         '''processing an incoming MarketEvent'''
+        bObserveOnly, action = self.determinActionByMarketEvent(ev)
+        next_state, reward, done, info = self.gymStep(action, bObserveOnly)
 
+    def determinActionByMarketEvent(self, ev):
+        '''processing an incoming MarketEvent'''
         bObserveOnly = False
         if not self._account.executable:
             bObserveOnly = True
@@ -271,14 +265,7 @@ class GymTrader(BaseTrader):
 
         self._action = action
 
-        next_state, reward, done, info = self.gymStep(self._action, bObserveOnly)
-    
-        loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
-        if loss: self.__recentLoss =loss
-
-        self._gymState = next_state
-        self._total_reward += reward
-        self.debug('proc_MarketEvent(%s) performed gymAct(%s%s) got reward[%s/%s] done[%s], agent ack-ed loss[%s]'% (ev.desc, action, strActionAdj, reward, self._total_reward, done, self.loss))
+        return self._action, bObserveOnly, strActionAdj
 
     # end of impl/overwrite of BaseApplication
     #----------------------------------------------------------------------
@@ -490,7 +477,7 @@ class GymTrader(BaseTrader):
 ########################################################################
 class Simulator(BackTestApp):
     '''
-    GymTrader extends GymTrader by reading history and perform training
+    Simulator extends GymTrader by reading history and perform training
     '''
     def __init__(self, program, trader, histdata, **kwargs):
         '''Constructor
@@ -515,8 +502,20 @@ class Simulator(BackTestApp):
         self.__maxKnownOpenDays =0
         self.__prevMaxBalance =0
 
+        self.__recentLoss = None
+        self._total_reward = 0.0
+        self._feedbackToAgent = {
+            'dailyReward': 0.0, 
+            'bestRewardTotal': 0.0,
+            'bestRewardDays': 0,
+        }
+
         # we encourage the train to reach end of history, so give some reward every week for its survive
         self.__rewardDayStepped = float(self._startBalance) * self._initTrader._annualCostRatePcnt /220 / 100
+
+    @property
+    def loss(self) :
+        return round(self.__recentLoss.history["loss"][0], 6) if self.__recentLoss else DUMMY_BIG_VAL
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -569,6 +568,20 @@ class Simulator(BackTestApp):
     # end of BaseApplication routine
     #----------------------------------------------------------------------
 
+    # to replace GymTrader's __actPerMarketEvent
+    def __trainPerMarketEvent(self, ev):
+        '''processing an incoming MarketEvent'''
+
+        action, bObserveOnly, strActionAdj = self.wkTrader.determinActionByMarketEvent(ev)
+
+        next_state, reward, done, info = self.wkTrader.gymStep(action, bObserveOnly)
+    
+        loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, action, reward, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+        if loss: self.__recentLoss =loss
+
+        self._total_reward += reward
+        self.debug('__trainPerMarketEvent(%s) performed gymAct(%s%s) got reward[%s/%s] done[%s], agent ack-ed loss[%s]'% (ev.desc, action, strActionAdj, reward, self._total_reward, done, self.loss))
+
     #------------------------------------------------
     # BackTest related entries
     def OnEpisodeDone(self, reachedEnd=True):
@@ -589,41 +602,41 @@ class Simulator(BackTestApp):
 
         if reachedEnd or (opendays>2 and opendays > (self.__maxKnownOpenDays *3/4)): # at least stepped most of known days
             # determin best by reward
-            rewardMean = self.wkTrader._total_reward /opendays
+            rewardMean = self._total_reward /opendays
             self._episodeSummary['dailyReward'] = rewardMean
-            self.wkTrader._feedbackToAgent['dailyReward'] = rewardMean
+            self._feedbackToAgent['dailyReward'] = rewardMean
             rewardMeanBest = self.__savedEpisode_reward
             if self.__savedEpisode_opendays>0 :
                 rewardMeanBest /= self.__savedEpisode_opendays
 
             if rewardMean > rewardMeanBest or (rewardMean > rewardMeanBest/2 and opendays > self.__savedEpisode_opendays *1.2):
                 lstImproved.append('meanReward')
-                self.debug('OnEpisodeDone() meanReward improved from %s/%s to %s/%s' % (self.__savedEpisode_reward, self.__savedEpisode_opendays, self.wkTrader._total_reward, opendays))
+                self.debug('OnEpisodeDone() meanReward improved from %s/%s to %s/%s' % (self.__savedEpisode_reward, self.__savedEpisode_opendays, self._total_reward, opendays))
 
             # determin best by loss
-            if self.wkTrader.loss < self.__savedEpisode_loss and opendays >= self.__savedEpisode_opendays:
+            if self.loss < self.__savedEpisode_loss and opendays >= self.__savedEpisode_opendays:
                 lstImproved.append('loss')
 
         # save brain and decrease epsilon if improved
         if len(lstImproved) >0 :
-            self.wkTrader._feedbackToAgent['bestRewardTotal'] = self.wkTrader._total_reward
-            self.wkTrader._feedbackToAgent['bestRewardDays'] = opendays
+            self._feedbackToAgent['bestRewardTotal'] = self._total_reward
+            self._feedbackToAgent['bestRewardDays'] = opendays
             if self.__savedEpisode_loss < DUMMY_BIG_VAL: # do not save for the first episode
-                self.wkTrader._feedbackToAgent['improved'] = lstImproved
-                self.wkTrader._agent.saveBrain(**self.wkTrader._feedbackToAgent)
+                self._feedbackToAgent['improved'] = lstImproved
+                self.wkTrader._agent.saveBrain(**self._feedbackToAgent)
                 self.__stampLastSaveBrain = datetime.datetime.now()
                 self.info('OnEpisodeDone() brain saved per improvements: %s' % lstImproved )
 
             self.__savedEpisode_opendays = opendays
-            self.__savedEpisode_loss = self.wkTrader.loss
+            self.__savedEpisode_loss = self.loss
             self.__savedEpisode_Id = self.episodeId
-            self.__savedEpisode_reward = self.wkTrader._total_reward
+            self.__savedEpisode_reward = self._total_reward
 
         mySummary = {
-            'totalReward' : round(self.wkTrader._total_reward, 2),
+            'totalReward' : round(self._total_reward, 2),
             'epsilon'     : round(self.wkTrader._agent._epsilon, 6),
             'learningRate': self.wkTrader._agent._learningRate,
-            'loss'        : self.wkTrader.loss,
+            'loss'        : self.loss,
             'lastLoss'    : self.__lastEpisode_loss,
             'savedLoss'   : self.__savedEpisode_loss,
             'savedEId'    : self.__savedEpisode_Id,
@@ -632,8 +645,9 @@ class Simulator(BackTestApp):
             'savedTime'   : self.__stampLastSaveBrain.strftime('%Y%m%dT%H%M%S') if isinstance(self.__stampLastSaveBrain, datetime.datetime) else self.__stampLastSaveBrain,
             'frameNum'    : self.wkTrader._agent.frameNum
         }
+
         self._episodeSummary = {**self._episodeSummary, **mySummary}
-        self.__lastEpisode_loss = self.wkTrader.loss
+        self.__lastEpisode_loss = self.loss
 
         # decrease agent's learningRate and epsilon if reward improved
         if 'meanReward' in lstImproved :
@@ -655,6 +669,10 @@ class Simulator(BackTestApp):
             observation (numpy.array): observation of the state
         '''
         super(Simulator, self).resetEpisode()
+        self.wkTrader._lstMarketEventProc =[self.__trainPerMarketEvent] # replace GymTrader's with training method
+        self.__recentLoss = None
+        self._total_reward = 0.0
+
         return self.wkTrader.gymReset()
 
     def formatSummary(self, summary=None):
@@ -738,6 +756,114 @@ class Simulator(BackTestApp):
         self.info('__updateSimulatorTask() task updated: %s->%s' % (target_task_file, fn_task))
 
 ########################################################################
+class IdealDayTrader(Simulator):
+    '''
+    IdealTrader extends Simulator by scanning the MarketEvents occurs in a day, determining
+    the ideal actions then pass the events down to the models
+    '''
+    def __init__(self, program, trader, histdata, **kwargs):
+        '''Constructor
+        '''
+        super(IdealDayTrader, self).__init__(program, trader, histdata, **kwargs)
+        self._iterationsPerEpisode = self.getConfig('iterationsPerEpisode', 1)
+        self.__ordersToPlace = [] # list of OrderData, the OrderData only tells the direction withno amount
+        self.__datetimeOfOHLC = [None, None, None, None] # list of the datetime of open, high, low, close price occured today
+        self.__mdEventsToday = [] # list of the datetime of open, high, low, close price occured today
+        self.__dtToday = None
+
+    # to replace Simulator's __trainPerMarketEvent
+    def __idealActionPerMarketEvent(self, ev):
+        '''processing an incoming MarketEvent'''
+
+        bObserveOnly = False
+        if not self.wkTrader._account.executable:
+            bObserveOnly = True
+
+        # see if need to perform the next order pre-determined
+        action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
+        if len(self.__ordersToPlace) >0 :
+            nextOrder = self.__ordersToPlace[0]
+            if nextOrder.datetime <= ev.data.datetime :
+                action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD] if OrderData.DIRECTION_LONG == nextOrder.orderData.direction else OrderData.DIRECTION_SHORT
+                del self.__ordersToPlace[0]
+
+        next_state, reward, done, info = self.wkTrader.gymStep(action, bObserveOnly)
+    
+        loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, action, reward, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+        if loss: self.__recentLoss =loss
+
+        self._total_reward += reward
+        self.debug('__idealActionPerMarketEvent(%s) performed gymAct(%s) got reward[%s/%s] done[%s], agent ack-ed loss[%s]'% (ev.desc, action, reward, self._total_reward, done, loss))
+
+    # to replace BackTest's doAppStep
+    def doAppStep(self):
+
+        self._bGameOver = False # always False in IdealTrader
+        reachedEnd = False
+        if self.__wkHistData :
+            try :
+                ev = next(self.__wkHistData)
+                if not ev or ev.data.datetime < self._btStartDate: return
+                if ev.data.datetime <= self._btEndDate:
+                    if self.__dtToday and self.__dtToday == ev.data.datetime.replace(hour=0, minute=0, second=0, mircosecond=0):
+                        self.__mdEventsToday.append(ev)
+                        return
+
+                    # day open here
+                    self.scanEventsAndGenerateOrders()
+                    for cachedEv in self.__mdEventsToday:
+                        self._marketState.updateByEvent(ev)
+                        s = ev.data.symbol
+
+                        super(BackTestApp, self).doAppStep()
+                        self._account.doAppStep()
+
+                        self.OnEvent(ev) # call Trader
+                        self.__stepNoInEpisode += 1
+                    self.__mdEventsToday =[]
+                    return # successfully performed a step by pushing an Event
+
+                reachedEnd = True
+            except StopIteration:
+                reachedEnd = True
+                self.info('hist-read: end of playback')
+            except Exception as ex:
+                self.logexception(ex)
+
+        # this test should be done if reached here
+        self.debug('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self.__stepNoInEpisode, self._bGameOver, reachedEnd))
+        try:
+            self.OnEpisodeDone(reachedEnd)
+        except Exception as ex:
+            self.logexception(ex)
+
+        # print the summary report
+        if self._recorder and isinstance(self._episodeSummary, dict):
+            self._recorder.pushRow(RECCATE_ESPSUMMARY, self._episodeSummary)
+
+        strReport = self.formatSummary()
+        self.info('%s_%s summary:' %(self.ident, self.episodeId))
+        for line in strReport.splitlines():
+            if len(line) <2: continue
+            self.info(line)
+
+        # prepare for the next episode
+        self.__episodeNo +=1
+        if (self.__episodeNo > self._episodes) :
+            # all tests have been done
+            self.stop()
+            self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._episodes, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
+            return
+
+        self.info('-' *30)
+        self.debug('doAppStep() starting over new episode[%s]' %(self.episodeId))
+        self.resetEpisode()
+        self._bGameOver =False
+
+    def scanEventsAndGenerateOrders(self) :
+        pass #TODO
+
+########################################################################
 from Application import Program
 from Account import Account_AShare
 import HistoryData as hist
@@ -802,6 +928,7 @@ def main_prog():
     p.loop()
     p.stop()
 
+
 if __name__ == '__main__':
 #    from vprof import runner
 #    runner.run(main_prog, 'cmhp', host='localhost', port=8000)
@@ -814,3 +941,4 @@ Note: The initial version of the distribution of CPU time is:
 3) gymStep(mostly marketstate generating) 22%
 4) gymObers(mostly brain.fit) 50%
 '''
+

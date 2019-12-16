@@ -294,9 +294,6 @@ class BackTestApp(MetaTrader):
     def onDayOpen(self, symbol, date):
         return self.__wkTrader.onDayOpen(symbol, date)
 
-    def proc_MarketEvent(self, ev):
-        self.error('proc_MarketEvent() should not be here')
-
     #------------------------------------------------
     # 数据回放结果计算相关
 

@@ -62,8 +62,6 @@ class MetaTrader(BaseApplication):
     def eventHdl_Trade(self, event): raise NotImplementedError
     @abstractmethod
     def onDayOpen(self, symbol, date): raise NotImplementedError
-    @abstractmethod
-    def proc_MarketEvent(self, ev): raise NotImplementedError
 
     def openObjective(self, symbol):
         if not symbol in self._dictObjectives.keys() :
@@ -129,24 +127,9 @@ class BaseTrader(MetaTrader):
         self.stopOrderCount = 0
         # stopOrderID = STOPORDERPREFIX + str(stopOrderCount)
 
-        # #   part 1. those specified in the configuration
-        # for s in jsoncfg.expect_array(self._settings.objectives):
-        #     try :
-        #         symbol   = s.symbol('')
-        #         dsTick   = s.dsTick('')
-        #         ds1min   = s.ds1min('')
-        #         if len(symbol) <=0 or (len(dsTick) <=0 and len(ds1min) <=0):
-        #             continue
-        #         d = {
-        #             "dsTick"  : dsTick,
-        #             "ds1min"  : ds1min,
-        #             Trader.RUNTIME_TAG_TODAY : None,
-        #         }
+        self._lstMarketEventProc = []
 
-        #         self._dictObjectives[symbol] = d
-        #     except:
-        #         pass
-        
+
         
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -247,12 +230,15 @@ class BaseTrader(MetaTrader):
             if not self._dtData or d.asof > self._dtData:
                 self._dtData = d.asof # datetime of data
 
-            # step 2. 收到行情后，在启动策略前的处理
-            # 先处理本地停止单（检查是否要立即发出） lnf ctaEngine
-            try:
-                self.proc_MarketEvent(ev)
-            except Exception as ex:
-                self.error('proc_MarketEvent %s caught %s: %s' % (ev.desc, ex, traceback.format_exc()))
+            # step 2. # call each registed procedure to handle the incoming MarketEvent
+            for proc in self._lstMarketEventProc :
+                if not proc : ConnectionRefusedError
+
+                try:
+                    proc(ev)
+                except Exception as ex:
+                    self.error('call MarketEventProc %s caught %s: %s' % (ev.desc, ex, traceback.format_exc()))
+
             return
 
     # end of BaseApplication routine
@@ -269,16 +255,6 @@ class BaseTrader(MetaTrader):
         """处理成交事件"""
         pass
 
-    # # --- eventContract from ??? ----------------
-    # @abstractmethod
-    # def processContractEvent(self, event):
-    #     """处理合约事件"""
-    #     contract = event.data
-
-    #     # step 1. cache lnf DataEngine
-    #     self._dictLatestContract[contract.vtSymbol] = contract
-    #     self._dictLatestContract[contract.symbol] = contract       # 使用常规代码（不包括交易所）可能导致重复
-
     #----------------------------------------------------------------------
     # usually back test will overwrite this
     def onDayOpen(self, symbol, date):
@@ -289,10 +265,6 @@ class BaseTrader(MetaTrader):
                 self._account.onDayOpen(date)
             except Exception as ex:
                 self.logexception(ex)
-
-    def proc_MarketEvent(self, ev):
-        '''processing an incoming MarketEvent'''
-        pass
 
     # end of event handling
     #----------------------------------------------------------------------

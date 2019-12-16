@@ -13,6 +13,7 @@ class VnTrader(BaseTrader):
         """Constructor"""
 
         super(VnTrader, self).__init__(program, **kwargs)
+        self._lstMarketEventProc.append(self.__onMarketEvent)
 
         # 保存策略实例的字典
         # key为策略名称，value为策略实例，注意策略名称不允许重复
@@ -31,6 +32,7 @@ class VnTrader(BaseTrader):
         # key为vtOrderID，value为strategy对象
         self.__idxOrderToStategy = {}
         self.__idxStrategyToOrder = {}
+
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -101,7 +103,7 @@ class VnTrader(BaseTrader):
             # 保存策略持仓到数据库
             # goes to Account now : self._stg_flushPos(strategy)
 
-    def proc_MarketEvent(self, ev):
+    def __onMarketEvent(self, ev):
         '''processing an incoming MarketEvent'''
 
         # step 2. 收到行情后，在启动策略前的处理
@@ -128,7 +130,7 @@ class VnTrader(BaseTrader):
         # step 4. 执行完策略后的的处理，通常为综合决策
         self.OnMarketEventProcessed(ev)
 
-        self.debug('proc_MarketEvent(%s) processed: %s' % (ev.desc, execStgList))
+        self.debug('__onMarketEvent(%s) processed: %s' % (ev.desc, execStgList))
 
     # end of event handling
     #----------------------------------------------------------------------

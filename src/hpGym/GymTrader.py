@@ -106,16 +106,16 @@ class MetaAgent(MetaObj): # TODO:
         raise NotImplementedError
 
     @abstractmethod
-    def gymAct(self, state):
+    def gymAct(self, state, bObserveOnly=False):
         '''
         @return one of self.__gymTrader.ACTIONS
         '''
         raise NotImplementedError
 
     @abstractmethod
-    def gymObserve(self, state, action, reward, next_state, done, frozen=False, **feedbacks):
+    def gymObserve(self, state, action, reward, next_state, done, bObserveOnly=False, **feedbacks):
         '''Memory Management and training of the agent
-        @param frozen True if the account is not executable, so only observing, no predicting and/or training
+        @param bObserveOnly True if the account is not executable, so only observing, no predicting and/or training
         @return tuple:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch
         '''
@@ -248,7 +248,11 @@ class GymTrader(BaseTrader):
     def proc_MarketEvent(self, ev):
         '''processing an incoming MarketEvent'''
 
-        action = self._agent.gymAct(self._gymState)
+        bObserveOnly = False
+        if not self._account.executable:
+            bObserveOnly = True
+
+        action = self._agent.gymAct(self._gymState, bObserveOnly)
         strActionAdj =''
 
         # the gymAct only determin the direction, adjust the action to execute per current balance
@@ -267,9 +271,9 @@ class GymTrader(BaseTrader):
 
         self._action = action
 
-        next_state, reward, done, info = self.gymStep(self._action)
+        next_state, reward, done, info = self.gymStep(self._action, bObserveOnly)
     
-        loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, done, **{**info, **self._feedbackToAgent})
+        loss = self._agent.gymObserve(self._gymState, self._action, reward, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
         if loss: self.__recentLoss =loss
 
         self._gymState = next_state
@@ -304,7 +308,7 @@ class GymTrader(BaseTrader):
         self.debug('gymReset() returning observation')
         return observation
 
-    def gymStep(self, action) :
+    def gymStep(self, action, bObserveOnly=False) :
         '''Take an action (buy/sell/hold) and computes the immediate reward.
         @param action (numpy.array): Action to be taken, one-hot encoded.
         @returns:
@@ -320,11 +324,10 @@ class GymTrader(BaseTrader):
         done = False
         instant_pnl = 0.0
         reward =0.0
-        info = {'frozen': False}
+        info = {}
 
-        if not self._account.executable:
-            info['frozen'] = True
-            info['status'] = 'frozen account'
+        if bObserveOnly:
+            info['status'] = 'observe only'
         else :
             reward += - round(self._dailyCapCost /240, 4) # this is supposed the capital timecost every minute as there are 4 open hours every day
             # step 1. collected information from the account

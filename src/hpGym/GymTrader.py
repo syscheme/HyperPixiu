@@ -773,6 +773,7 @@ class IdealDayTrader(Simulator):
         self.__ordersToPlace = [] # list of OrderData, the OrderData only tells the direction withno amount
         self.__mdEventsToday = [] # list of the datetime of open, high, low, close price occured today
         self.__dtToday = None
+        self.__cOpenDays =0
 
     # to replace Simulator's __trainPerMarketEvent
     def __idealActionPerMarketEvent(self, ev):
@@ -830,6 +831,10 @@ class IdealDayTrader(Simulator):
 
                     self.__mdEventsToday =[]
                     self.__dtToday = ev.data.datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+                    self.__cOpenDays += 1
+                    if 0 == (self.__cOpenDays % 100) :
+                        self.wkTrader._agent.saveBrain(**self._feedbackToAgent)
+
                     return # successfully performed a step by pushing an Event
 
                 reachedEnd = True

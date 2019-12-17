@@ -19,7 +19,7 @@ from abc import abstractmethod
 import matplotlib as mpl # pip install matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import datetime
+import datetime, copy
 import tarfile
 
 plt.style.use('dark_background')
@@ -767,7 +767,6 @@ class IdealDayTrader(Simulator):
         super(IdealDayTrader, self).__init__(program, trader, histdata, **kwargs)
         self._iterationsPerEpisode = self.getConfig('iterationsPerEpisode', 1)
         self.__ordersToPlace = [] # list of OrderData, the OrderData only tells the direction withno amount
-        self.__datetimeOfOHLC = [None, None, None, None] # list of the datetime of open, high, low, close price occured today
         self.__mdEventsToday = [] # list of the datetime of open, high, low, close price occured today
         self.__dtToday = None
 
@@ -784,7 +783,7 @@ class IdealDayTrader(Simulator):
         if len(self.__ordersToPlace) >0 :
             nextOrder = self.__ordersToPlace[0]
             if nextOrder.datetime <= ev.data.datetime :
-                action = GymTrader.ACTIONS[GymTrader.ACTION_HOLD] if OrderData.DIRECTION_LONG == nextOrder.orderData.direction else OrderData.DIRECTION_SHORT
+                action = GymTrader.ACTIONS[GymTrader.ACTION_BUY] if (OrderData.DIRECTION_LONG == nextOrder.direction) else GymTrader.ACTIONS[GymTrader.ACTION_SELL]
                 del self.__ordersToPlace[0]
 
         next_state, reward, done, info = self.wkTrader.gymStep(action, bObserveOnly)
@@ -795,32 +794,38 @@ class IdealDayTrader(Simulator):
         self._total_reward += reward
         self.debug('__idealActionPerMarketEvent(%s) performed gymAct(%s) got reward[%s/%s] done[%s], agent ack-ed loss[%s]'% (ev.desc, action, reward, self._total_reward, done, loss))
 
+    def resetEpisode(self) :
+        ret = super(IdealDayTrader, self).resetEpisode()
+        self.wkTrader._lstMarketEventProc =[self.__idealActionPerMarketEvent] # replace GymTrader's with __idealActionPerMarketEvent
+        return ret
+
     # to replace BackTest's doAppStep
     def doAppStep(self):
 
         self._bGameOver = False # always False in IdealTrader
         reachedEnd = False
-        if self.__wkHistData :
+        if self._wkHistData :
             try :
-                ev = next(self.__wkHistData)
+                ev = next(self._wkHistData)
                 if not ev or ev.data.datetime < self._btStartDate: return
                 if ev.data.datetime <= self._btEndDate:
-                    if self.__dtToday and self.__dtToday == ev.data.datetime.replace(hour=0, minute=0, second=0, mircosecond=0):
+                    if self.__dtToday and self.__dtToday == ev.data.datetime.replace(hour=0, minute=0, second=0, microsecond=0):
                         self.__mdEventsToday.append(ev)
                         return
 
-                    # day open here
-                    self.scanEventsAndGenerateOrders()
+                    # day-close here
+                    self.scanEventsAndFakeOrders()
                     for cachedEv in self.__mdEventsToday:
-                        self._marketState.updateByEvent(ev)
-                        s = ev.data.symbol
+                        self._marketState.updateByEvent(cachedEv)
 
                         super(BackTestApp, self).doAppStep()
                         self._account.doAppStep()
 
-                        self.OnEvent(ev) # call Trader
-                        self.__stepNoInEpisode += 1
+                        self.OnEvent(cachedEv) # call Trader
+                        self._stepNoInEpisode += 1
+
                     self.__mdEventsToday =[]
+                    self.__dtToday = ev.data.datetime.replace(hour=0, minute=0, second=0, microsecond=0)
                     return # successfully performed a step by pushing an Event
 
                 reachedEnd = True
@@ -831,7 +836,7 @@ class IdealDayTrader(Simulator):
                 self.logexception(ex)
 
         # this test should be done if reached here
-        self.debug('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self.__stepNoInEpisode, self._bGameOver, reachedEnd))
+        self.debug('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self._stepNoInEpisode, self._bGameOver, reachedEnd))
         try:
             self.OnEpisodeDone(reachedEnd)
         except Exception as ex:
@@ -860,8 +865,69 @@ class IdealDayTrader(Simulator):
         self.resetEpisode()
         self._bGameOver =False
 
-    def scanEventsAndGenerateOrders(self) :
-        pass #TODO
+    def scanEventsAndFakeOrders(self) :
+        # step 1. scan self.__mdEventsToday and determine TH TL
+        price_open, price_high, price_low, price_close = 0.0, 0.0, DUMMY_BIG_VAL, 0.0
+        T_high, T_low  = None, None
+
+        for ev in self.__mdEventsToday:
+            evd = ev.data
+            if EVENT_TICK == ev.type :
+                price_close = evd.price
+                if price_open <= 0.01 :
+                    price_open = price_close
+                if price_high < price_close :
+                    price_high = price_close
+                    T_high = evd.datetime
+                if price_low > price_close :
+                    price_low = price_close
+                    T_low = evd.datetime
+                continue
+
+            if EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
+                price_close = evd.close
+                if price_high < evd.high :
+                    price_high = evd.high
+                    T_high = evd.datetime
+                if price_low > evd.low :
+                    price_low = evd.low
+                    T_low = evd.datetime
+                if price_open <= 0.01 :
+                    price_open = evd.open
+                continue
+        
+        # step 2. faking the ideal orders
+        bMayBuy = price_close >= min(price_open*1.005, price_close*1.02) # may BUY today, >=price_open*1.005
+        T_win = datetime.timedelta(minutes=2)
+        slip = 0.02
+        for ev in self.__mdEventsToday:
+            if EVENT_TICK != ev.type and EVENT_KLINE_PREFIX != ev.type[:len(EVENT_KLINE_PREFIX)] :
+                continue
+
+            evd = ev.data
+            T = evd.datetime
+            price = evd.price if EVENT_TICK == ev.type else evd.close
+            order = OrderData(self._account)
+            order.datetime = T
+
+            if T_low < T_high : # up-hill
+                if bMayBuy and (T <= T_low + T_win and price <= min(price_close*0.98, price_low +slip)):
+                    order.direction = OrderData.DIRECTION_LONG 
+                    self.__ordersToPlace.append(copy.copy(order))
+                elif T <= (T_high + T_win) and price >= (price_high -slip):
+                    order.direction = OrderData.DIRECTION_SHORT 
+                    self.__ordersToPlace.append(copy.copy(order))
+                elif T > T_high and price > max(price_high -slip, price_close*1.02) :
+                    order.direction = OrderData.DIRECTION_SHORT 
+                    self.__ordersToPlace.append(copy.copy(order))
+
+            if T_low > T_high : # down-hill
+                if price >= (price_high -slip) or (T < T_low and price >= (price_close*0.995)):
+                    order.direction = OrderData.DIRECTION_SHORT 
+                    self.__ordersToPlace.append(copy.copy(order))
+                elif bMayBuy and (T > (T_low - T_win) and T <= (T_low + T_win) and price < (price_close*0.98) ):
+                    order.direction = OrderData.DIRECTION_LONG 
+                    self.__ordersToPlace.append(copy.copy(order))
 
 ########################################################################
 from Application import Program
@@ -920,7 +986,7 @@ def main_prog():
     
     p.info('all objects registered piror to Simulator: %s' % p.listByType())
     
-    trainer = p.createApp(Simulator, configNode ='trainer', trader=gymtdr, histdata=csvreader)
+    trainer = p.createApp(IdealDayTrader, configNode ='trainer', trader=gymtdr, histdata=csvreader) # trainer = p.createApp(Simulator, configNode ='trainer', trader=gymtdr, histdata=csvreader)
     rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = '%s/Simulator.tcsv' % trainer.outdir)
     trainer.setRecorder(rec)
 

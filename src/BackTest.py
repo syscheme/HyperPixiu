@@ -54,7 +54,7 @@ class BackTestApp(MetaTrader):
         self._account = None # the working account inherit from MetaTrader
         self._marketState = None
         self.__wkTrader = None
-        self.__wkHistData = histdata
+        self._wkHistData = histdata
         
         self.setRecorder(self._initTrader.recorder)
 
@@ -71,7 +71,7 @@ class BackTestApp(MetaTrader):
         self._warmupDays     = self.getConfig('warmupDays', 5) # observe for a week by default to make the market state not so empty
 
         self.__episodeNo = 1 # count start from 1 to ease reading
-        self.__stepNoInEpisode =0
+        self._stepNoInEpisode =0
         self.__execStamp_appStart = datetime.now()
         self.__execStamp_episodeStart = self.__execStamp_appStart
 
@@ -197,16 +197,16 @@ class BackTestApp(MetaTrader):
 
         reachedEnd = False
 
-        if self.__wkHistData and not self._bGameOver:
+        if self._wkHistData and not self._bGameOver:
             try :
-                ev = next(self.__wkHistData)
+                ev = next(self._wkHistData)
                 if not ev or ev.data.datetime < self._btStartDate: return
                 if ev.data.datetime <= self._btEndDate:
                     self._marketState.updateByEvent(ev)
                     s = ev.data.symbol
                     self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type[len(MARKETDATE_EVENT_PREFIX):], self._marketState.getAsOf(s).strftime('%Y%m%dT%H%M'), self._marketState.latestPrice(s), self._marketState.dailyOHLC_sofar(s)))
                     self.OnEvent(ev) # call Trader
-                    self.__stepNoInEpisode += 1
+                    self._stepNoInEpisode += 1
                     return # successfully performed a step by pushing an Event
 
                 reachedEnd = True
@@ -218,7 +218,7 @@ class BackTestApp(MetaTrader):
                 self.logexception(ex)
 
         # this test should be done if reached here
-        self.debug('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self.__stepNoInEpisode, self._bGameOver, reachedEnd))
+        self.debug('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self._stepNoInEpisode, self._bGameOver, reachedEnd))
         try:
             self.OnEpisodeDone(reachedEnd)
         except Exception as ex:
@@ -304,7 +304,7 @@ class BackTestApp(MetaTrader):
             'episodeDuration' : round(datetime2float(datetime.now()) - datetime2float(self.__execStamp_episodeStart), 3),
             'episodeNo' : self.__episodeNo,
             'episodes' : self._episodes,
-            'stepsInEpisode' : self.__stepNoInEpisode,
+            'stepsInEpisode' : self._stepNoInEpisode,
         }
 
         self._episodeSummary = {**self._episodeSummary, **additionAttrs}
@@ -339,7 +339,7 @@ class BackTestApp(MetaTrader):
 
         self._episodeSummary = {}
         self.__execStamp_episodeStart = datetime.now()
-        self.__stepNoInEpisode =0
+        self._stepNoInEpisode =0
         self.debug('resetEpisode() initializing episode[%d/%d], elapsed %s obj-in-program: %s' % (self.__episodeNo, self._episodes, str(self.__execStamp_episodeStart - self.__execStamp_appStart), self._program.listByType(MetaObj)))
 
         # NOTE: Any applications must be created prior to program.start()
@@ -381,7 +381,7 @@ class BackTestApp(MetaTrader):
             self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d]' % (self._originAcc.ident, self._account.ident, self._startBalance))
 
         self._maxBalance = self._startBalance
-        self.__wkHistData.resetRead()
+        self._wkHistData.resetRead()
            
         self._dataBegin_date = None
         self._dataBegin_openprice = 0.0
@@ -396,7 +396,7 @@ class BackTestApp(MetaTrader):
 
         if self._marketState :
             for i in range(30) : # initially feed 20 data from histread to the marketstate
-                ev = next(self.__wkHistData)
+                ev = next(self._wkHistData)
                 if not ev : continue
                 self._marketState.updateByEvent(ev)
 

@@ -54,6 +54,7 @@ class agentDQN(MetaAgent):
         self.__sampleIdx = 0
         self.__realDataNum =0
         self.__frameNum =0
+        self._loss = None
 
         self._brainOutDir = '%s%s/' % (self._outDir, self._wkBrainId)
 
@@ -211,6 +212,7 @@ class agentDQN(MetaAgent):
 
             # TODO step 3. the status.json
             attrsToUpdate = {
+                'loss'    : round(self._loss.history["loss"][0], 6) if self._loss else 'n/a',
                 'epsilon' : round(self._epsilon, 6),
                 'learningRate' : self._learningRate,
                 'saveTime' : datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
@@ -220,7 +222,7 @@ class agentDQN(MetaAgent):
             with open('%sstatus.json' % self._brainOutDir, 'w') as outfile:
                 json.dump(self._statusAttrs, outfile)
 
-        self._gymTrader.info('saved brain[%s] with weights' % (self._brainOutDir))
+        self._gymTrader.info('saved brain[%s] with weights, status: %s; fd: %s' % (self._brainOutDir, str(attrsToUpdate), str(feedbacks)))
         
     def loadBrain(self, brainId) :
         ''' load the previous saved brain

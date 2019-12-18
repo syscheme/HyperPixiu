@@ -6,7 +6,7 @@ from __future__ import division
 
 # from gym import GymEnv
 from Account import Account, OrderData, Account_AShare
-from Application import MetaObj
+from Application import MetaObj, BOOL_STRVAL_TRUE
 from Trader import MetaTrader, BaseTrader
 from BackTest import BackTestApp, RECCATE_ESPSUMMARY
 from Perspective import PerspectiveState
@@ -54,7 +54,7 @@ class MetaAgent(MetaObj): # TODO:
 
         self._gamma = self.getConfig('gamma', 0.95)
         self._epsilon = self.getConfig('epsilon', 1.0) # rand()[0,1) <= self._epsilon will trigger a random explore
-        self._epsilonMin = self.getConfig('epsilonMin', 0.02)
+        self._epsilonMin = self.getConfig('epsilonMin', 0.02) #  self._epsilon < self._epsilonMin means at playmode and no more explorations
 
         self._wkBrainId = self.getConfig('brainId', None)
 
@@ -767,11 +767,13 @@ class IdealDayTrader(Simulator):
         super(IdealDayTrader, self).__init__(program, trader, histdata, **kwargs)
 
         self._pctMaxDrawDown =99.0 # IdealTrader will not be constrainted by max drawndown, so overwrite it with 99%
+        self._warmupDays =0 # IdealTrader will not be constrainted by warmupDays
 
         self._constraintBuy_closeOverOpen = self.getConfig('constraints/buy_closeOverOpen', 0.5) #pecentage price-close more than price-open
         self._constraintBuy_closeOverLow = self.getConfig('constraint/buy_closeOverLow', 2.0) #pecentage price-close more than price-low
         self._constraintSell_highOverClose = self.getConfig('constraint/sell_highOverClose', 2.0)
         self._constraintSell_downHillOverClose = self.getConfig('constraint/sell_downHillOverClose', 0.5) # price more than this rate will trigger sell during a downhill day
+        self._generateReplayFrames  = self.getConfig('generateReplayFrames', True) in BOOL_STRVAL_TRUE
         
         self.__ordersToPlace = [] # list of faked OrderData, the OrderData only tells the direction withno amount
         self.__mdEventsToday = [] # list of the datetime of open, high, low, close price occured today
@@ -807,6 +809,13 @@ class IdealDayTrader(Simulator):
         ret = super(IdealDayTrader, self).resetEpisode()
         self.wkTrader._lstMarketEventProc =[self.__idealActionPerMarketEvent] # replace GymTrader's with __idealActionPerMarketEvent
         self.wkTrader._agent._cbNewReplayFrame = [self.__saveReplayFrame] # the hook agent's OnNewFrame
+        # the IdealTrader normally will disable exploration of agent
+        self.wkTrader._agent._epsilon = -1.0 # less than epsilonMin
+
+        # no need to do training if to export ReplayFrames
+        if self._generateReplayFrames:
+            self.wkTrader._agent._learningRate = -1.0
+
         return ret
 
     # to replace BackTest's doAppStep
@@ -951,7 +960,7 @@ class IdealDayTrader(Simulator):
     def __saveReplayFrame(self, frameId, col_state, col_action, col_reward, col_next_state, col_done) :
 
         # output the frame into a HDF5 file
-        fn_frame = os.path.join(self.wkTrader._outDir, 'frames.h5')
+        fn_frame = os.path.join(self.wkTrader._outDir, 'RFrames_%s.h5' % self.wkTrader._tradeSymbol)
         dsargs={
             'compression':'gzip'
         }
@@ -965,7 +974,7 @@ class IdealDayTrader(Simulator):
             g.attrs['done'] = 'done'
             g.attrs[u'default'] = 'state'
 
-            g.create_dataset(u'title',     data= 'replay frame[%s] for NN training' % frameId)
+            g.create_dataset(u'title',     data= 'replay frame[%s] of %s for DQN training' % (frameId, self.wkTrader._tradeSymbol))
             g.create_dataset('state',      data= col_state, **dsargs)
             g.create_dataset('action',     data= col_action, **dsargs)
             g.create_dataset('reward',     data= col_reward, **dsargs)

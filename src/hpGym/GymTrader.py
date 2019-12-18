@@ -20,7 +20,7 @@ import matplotlib as mpl # pip install matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import datetime, copy
-import tarfile
+import h5py, tarfile, numpy
 
 plt.style.use('dark_background')
 mpl.rcParams.update(
@@ -602,7 +602,7 @@ class Simulator(BackTestApp):
 
         if reachedEnd or (opendays>2 and opendays > (self.__maxKnownOpenDays *3/4)): # at least stepped most of known days
             # determin best by reward
-            rewardMean = self._total_reward /opendays
+            rewardMean = self._total_reward /opendays if opendays>0 else 0
             self._episodeSummary['dailyReward'] = rewardMean
             self._feedbackToAgent['dailyReward'] = rewardMean
             rewardMeanBest = self.__savedEpisode_reward
@@ -806,6 +806,7 @@ class IdealDayTrader(Simulator):
     def resetEpisode(self) :
         ret = super(IdealDayTrader, self).resetEpisode()
         self.wkTrader._lstMarketEventProc =[self.__idealActionPerMarketEvent] # replace GymTrader's with __idealActionPerMarketEvent
+        self.wkTrader._agent._cbNewReplayFrame = [self.__saveReplayFrame] # the hook agent's OnNewFrame
         return ret
 
     # to replace BackTest's doAppStep
@@ -850,6 +851,11 @@ class IdealDayTrader(Simulator):
 
         # this test should be done if reached here
         self.debug('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self._stepNoInEpisode, self._bGameOver, reachedEnd))
+        
+        # for this IdealTrader, collect a single episode of ReplayFrames is enough to export
+        # so no more hooking
+        self.wkTrader._agent._cbNewReplayFrame = []
+
         try:
             self.OnEpisodeDone(reachedEnd)
         except Exception as ex:
@@ -866,8 +872,8 @@ class IdealDayTrader(Simulator):
             self.info(line)
 
         # prepare for the next episode
-        self.__episodeNo +=1
-        if (self.__episodeNo > self._episodes) :
+        self._episodeNo +=1
+        if (self._episodeNo > self._episodes) :
             # all tests have been done
             self.stop()
             self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._episodes, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
@@ -941,6 +947,33 @@ class IdealDayTrader(Simulator):
                 elif bMayBuy and (T > (T_low - T_win) and T <= (T_low + T_win) and price < (price_close*(100.0 +self._constraintBuy_closeOverLow)/100) ):
                     order.direction = OrderData.DIRECTION_LONG 
                     self.__ordersToPlace.append(copy.copy(order))
+
+    def __saveReplayFrame(self, frameId, col_state, col_action, col_reward, col_next_state, col_done) :
+
+        # output the frame into a HDF5 file
+        fn_frame = os.path.join(self.wkTrader._outDir, 'frames.h5')
+        dsargs={
+            'compression':'gzip'
+        }
+
+        with h5py.File(fn_frame, 'a') as h5file:
+            g = h5file.create_group('ReplayFrame:%s' % frameId)
+            g.attrs['state'] = 'state'
+            g.attrs['action'] = 'action'
+            g.attrs['reward'] = 'reward'
+            g.attrs['next_state'] = 'next_state'
+            g.attrs['done'] = 'done'
+            g.attrs[u'default'] = 'state'
+
+            g.create_dataset(u'title',     data= 'replay frame[%s] for NN training' % frameId)
+            g.create_dataset('state',      data= col_state, **dsargs)
+            g.create_dataset('action',     data= col_action, **dsargs)
+            g.create_dataset('reward',     data= col_reward, **dsargs)
+            g.create_dataset('next_state', data= col_next_state, **dsargs)
+            g.create_dataset('done',       data= col_done, **dsargs)
+
+        self.info('saved frame[%s] len[%s] to file %s' % (frameId, len(col_state), fn_frame))
+
 
 ########################################################################
 from Application import Program

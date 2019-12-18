@@ -44,7 +44,7 @@ class agentDQN(MetaAgent):
         self._masterExportHomeDir = self.getConfig('masterHomeDir', None) # this agent work as the master when configured, usually point to a dir under webroot
         self._epochsPerObservOnGpu = self.getConfig('epochsPerObservOnGpu', 5)
         self._lock = threading.Lock()
-        self.__replaySize = self._batchSize *32
+        self.__replaySize = self._batchSize *64
         if self.__replaySize <1024:
             self.__replaySize = 1024
         if self.__replaySize >10240:
@@ -77,10 +77,12 @@ class agentDQN(MetaAgent):
         self.__bWarmed = False
 
         # prepare the callbacks
-        self._callbacks=[]
+        self._fitCallbacks=[]
+        self._cbNewReplayFrame = [self.OnNewFrame] # lisf of callback(frameId, col_state, col_action, col_reward, col_next_state, col_done) to hook new ReplayFrame prepared
+
         # don't take update_freq='epoch' or batch as we train almost every gymObserve()
         # cbTB = TensorBoard(log_dir =self._brainOutDir, update_freq=self._batchSize *50000)
-        # self._callbacks.append(cbTB) # still too frequent
+        # self._fitCallbacks.append(cbTB) # still too frequent
 
     def __del__(self):  # the destructor
         # self.saveBrain()
@@ -299,7 +301,9 @@ class agentDQN(MetaAgent):
 
         # this basic DQN also performs training in this step
         state_batch, action_batch, reward_batch, next_state_batch, done_batch = self._sampleBatches()
-        sampleLen = len(state_batch)
+        sampleLen = len(state_batch) if not state_batch is None else 0
+        if sampleLen < self._batchSize: 
+            return None
 
         with self._lock:
             y = self._brain.predict(next_state_batch) # arrary(sampleLen, actionSize)
@@ -324,7 +328,7 @@ class agentDQN(MetaAgent):
             epochs =1
             if len(GPUs) > 0 and sampleLen >self._batchSize:
                 epochs = self._epochsPerObservOnGpu
-            self._loss = self._brain.fit(x=state_batch, y=q_target, epochs=epochs, batch_size=self._batchSize, verbose=0, callbacks=self._callbacks)
+            self._loss = self._brain.fit(x=state_batch, y=q_target, epochs=epochs, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
         return self._loss
 
     def _pushToReplay(self, state, action, reward, next_state, done):
@@ -341,7 +345,19 @@ class agentDQN(MetaAgent):
             samplelen = len(self.__replayCache)
             if 0 == self.__sampleIdx and samplelen > self._batchSize: 
                 self.__frameNum +=1
-                self.OnNewFrame(self.__replayCache)
+                frameId = '%s.F%s' % (self._wkBrainId, str(self.__frameNum).zfill(6))
+                if len(self._cbNewReplayFrame) >0:
+                    metrix = np.array(self.__replayCache)
+                    col_state      = np.concatenate(metrix[:, 0]).reshape(samplelen, self._stateSize)
+                    col_action     = np.concatenate(metrix[:, 1]).reshape(samplelen, self._actionSize)
+                    col_reward     = metrix[:, 2].astype('float32')
+                    col_next_state = np.concatenate(metrix[:, 3]).reshape(samplelen, self._stateSize)
+                    col_done       = [ 1 if i else 0 for i in metrix[:, 4]]
+                    for cb in self._cbNewReplayFrame:
+                        try:
+                            cb(frameId, col_state, col_action, col_reward, col_next_state, col_done)
+                        except Exception as ex:
+                            self._gymTrader.logexception(ex)
 
             if self.__sampleIdx >= samplelen :
                 self.__replayCache.append((state, action, reward, next_state, done))
@@ -397,7 +413,7 @@ class agentDQN(MetaAgent):
         state_batch, action_batch, reward_batch, next_state_batch, done_batch =None,None,None,None,None
         with self._lock:
             sizeToBatch = self._batchSize
-            if None in self.__replayCache :
+            if None in self.__replayCache or len(self.__replayCache) < sizeToBatch:
                 return state_batch, action_batch, reward_batch, next_state_batch, done_batch
 
             if len(GPUs) > 0 and len(self.__replayCache) > self._batchSize:
@@ -416,17 +432,14 @@ class agentDQN(MetaAgent):
             action_batch = np.where(action_batch == 1) # array(sizeToBatch, self._actionSize)=>array(2, sizeToBatch)
             return state_batch, action_batch, reward_batch, next_state_batch, done_batch
 
-    def OnNewFrame(self, frame) :
+    def OnNewFrame(self, frameId, col_state, col_action, col_reward, col_next_state, col_done) :
 
         if not self._masterExportHomeDir or len(self._masterExportHomeDir) <=0:
             return # not as the master
         
-        if not frame or len(frame) <=0:
+        if not col_state or len(col_state) <=0:
             return
         
-        rows = len(frame)
-        # rowlen = len(frame[0])
-
         if '/' != self._masterExportHomeDir[-1]: self._masterExportHomeDir +='/'
 
         try :
@@ -469,13 +482,12 @@ class agentDQN(MetaAgent):
             g.attrs[u'default'] = 'state'
 
             g.create_dataset(u'title',     data= '%s replay buffer for NN training' % brainInst)
-            metrix = np.array(frame)
             done_col = [ 1 if i else 0 for i in metrix[:, 4]]
-            g.create_dataset('state',      data= np.concatenate(metrix[:, 0]).reshape(rows, self._stateSize)) # np.concatenate(frame[:, 0]).reshape(rows, self._stateSize))
-            g.create_dataset('action',     data= np.concatenate(metrix[:, 1]).reshape(rows, self._actionSize))
-            g.create_dataset('reward',     data= metrix[:, 2].astype('float32'))
-            g.create_dataset('next_state', data= np.concatenate(metrix[:, 3]).reshape(rows, self._stateSize))
-            g.create_dataset('done',       data= done_col)
+            g.create_dataset('state',      data= col_state)
+            g.create_dataset('action',     data= col_action)
+            g.create_dataset('reward',     data= col_reward)
+            g.create_dataset('next_state', data= col_next_state)
+            g.create_dataset('done',       data= col_done)
 
         # now make a tar ball as the task file
         # this is a tar.bz2 including a) model.json, b) current weight h5 file, c) version-number, d) the frame exported as hdf5 file
@@ -588,7 +600,9 @@ class agentDoubleDQN(agentDQN):
 
         # this basic DQN also performs training in this step
         state_batch, action_batch, reward_batch, next_state_batch, done_batch = self._sampleBatches()
-        sampleLen = len(state_batch)
+        sampleLen = len(state_batch) if state_batch else 0
+        if sampleLen < self._batchSize: 
+            return None
 
         with self._lock:
             if np.random.rand() < self._epsilon:
@@ -608,7 +622,7 @@ class agentDoubleDQN(agentDQN):
             epochs =1
             if len(GPUs) > 0 and sampleLen >self._batchSize:
                 epochs = self._epochsPerObservOnGpu
-            self._loss = brainTrain.fit(x=state_batch, y=q_target, epochs=epochs, batch_size=self._batchSize, verbose=0, callbacks=self._callbacks)
+            self._loss = brainTrain.fit(x=state_batch, y=q_target, epochs=epochs, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
 
         return self._loss
 

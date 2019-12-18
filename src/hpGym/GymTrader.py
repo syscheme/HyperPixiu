@@ -1041,7 +1041,7 @@ def main_prog():
     
     p.info('all objects registered piror to Simulator: %s' % p.listByType())
     
-    trainer = p.createApp(IdealDayTrader, configNode ='trainer', trader=gymtdr, histdata=csvreader) # trainer = p.createApp(Simulator, configNode ='trainer', trader=gymtdr, histdata=csvreader)
+    trainer = p.createApp(Simulator, configNode ='trainer', trader=gymtdr, histdata=csvreader)
     rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = '%s/Simulator.tcsv' % trainer.outdir)
     trainer.setRecorder(rec)
 

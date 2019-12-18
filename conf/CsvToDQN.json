@@ -1,0 +1,29 @@
+// configuration of a BackTest
+{
+    "trainer": { // the configuration schema is extending "trader"
+        "accountId" : "blah",
+        "startCapitial": 100000,
+        "episodes": 1,
+        "agent" :{
+            // "epochsPerObservOnGpu" :2,
+        },
+
+        "sourceCsvDir": "/mnt/e/AShareSample",
+        "objectives": ["000001"],
+    },
+
+    "logger": {
+        "level": "info", //40
+        // "console": "False",
+    },
+
+    "account": { // account settings
+        "id": "blah",
+        "broker": "AShare",
+
+        "slippage" : 0,       // 假设的滑点
+        "ratePer10K" : 30,    // 佣金比例（per 10K）
+        "size" : 100,         // 合约大小，默认为1
+        "priceTick" : 0,      // 价格最小变动 
+    },
+}

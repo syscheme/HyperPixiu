@@ -8,7 +8,7 @@ from __future__ import division
 from Account import Account, OrderData, Account_AShare
 from Application import MetaObj
 from Trader import MetaTrader, BaseTrader
-from BackTest import BackTestApp
+from BackTest import BackTestApp, RECCATE_ESPSUMMARY
 from Perspective import PerspectiveState
 from MarketData import EVENT_TICK, EVENT_KLINE_PREFIX, EXPORT_FLOATS_DIMS
 from HistoryData import listAllFiles
@@ -765,15 +765,19 @@ class IdealDayTrader(Simulator):
         '''Constructor
         '''
         super(IdealDayTrader, self).__init__(program, trader, histdata, **kwargs)
-        self._iterationsPerEpisode = self.getConfig('iterationsPerEpisode', 1)
+
+        self._pctMaxDrawDown =99.0 # IdealTrader will not be constrainted by max drawndown, so overwrite it with 99%
+
         self._constraintBuy_closeOverOpen = self.getConfig('constraints/buy_closeOverOpen', 0.5) #pecentage price-close more than price-open
         self._constraintBuy_closeOverLow = self.getConfig('constraint/buy_closeOverLow', 2.0) #pecentage price-close more than price-low
         self._constraintSell_highOverClose = self.getConfig('constraint/sell_highOverClose', 2.0)
         self._constraintSell_downHillOverClose = self.getConfig('constraint/sell_downHillOverClose', 0.5) # price more than this rate will trigger sell during a downhill day
-        self.__ordersToPlace = [] # list of OrderData, the OrderData only tells the direction withno amount
+        
+        self.__ordersToPlace = [] # list of faked OrderData, the OrderData only tells the direction withno amount
         self.__mdEventsToday = [] # list of the datetime of open, high, low, close price occured today
         self.__dtToday = None
         self.__cOpenDays =0
+
 
     # to replace Simulator's __trainPerMarketEvent
     def __idealActionPerMarketEvent(self, ev):

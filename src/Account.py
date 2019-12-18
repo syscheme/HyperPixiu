@@ -457,13 +457,17 @@ class Account(MetaAccount):
         if orderData.direction == OrderData.DIRECTION_LONG:
             turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.totalVolume)
             self.__cashChange(-(turnover + commission + slippage))
+        elif orderData.direction == OrderData.DIRECTION_SHORT:
+            with self._lock :
+                pos = self._dictPositions[orderData.symbol]
+                if pos:
+                    pos.posAvail = round(pos.posAvail - orderData.totalVolume, 2)
 
         self.postEvent_Order(orderData)
         self.record(Account.RECCATE_ORDER, orderData)
 
     def _broker_cancelOrder(self, brokerOrderId):
         """撤单"""
-        raise NotImplementedError
 
     def _broker_onCancelled(self, orderData):
         """撤单回调"""
@@ -488,6 +492,10 @@ class Account(MetaAccount):
             if orderData.direction == OrderData.DIRECTION_LONG:
                 turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.totalVolume)
                 self.__cashChange(turnover + commission + slippage)
+            elif orderData.direction == OrderData.DIRECTION_SHORT:
+                pos = self._dictPositions[orderData.symbol]
+                if pos:
+                    pos.posAvail = round(pos.posAvail + orderData.totalVolume, 2)
 
         self.info('order.brokerOrderId[%s] canceled' % orderData.brokerOrderId)
         self.postEvent_Order(orderData)
@@ -561,7 +569,7 @@ class Account(MetaAccount):
                 self.__cashChange(tradeAmount, tradeAmount)
 
                 pos.position -= trade.volume
-                pos.posAvail -= trade.volume
+                # posAvail was sustracted when pos.posAvail -= trade.volume
             else :
                 turnover, commission, slippage = self.calcAmountOfTrade(s, trade.price, trade.volume)
                 tradeAmount = turnover + commission + slippage
@@ -771,13 +779,19 @@ class Account(MetaAccount):
         strTxn = 'avail[%s%+.3f] total[%s%+.3f]' % (pos.posAvail, dAvail, pos.position, dTotal)
         
         self.debug('__cashChange() %s' % strTxn)
-        # double check if the cash account goes to negative
-        newAvail, newTotal = pos.posAvail + dAvail, pos.position + dTotal
-        if newAvail<-0.5 or newTotal <-0.5 or newAvail >(newTotal*1.05): # because some err at float calculating
-            raise ValueError('__cashChange(%s) something wrong: newAvail[%s] newTotal[%s]' % (strTxn, newAvail, newTotal))
 
-        pos.posAvail = newAvail
-        pos.position = newTotal
+        newAvail, newTotal = pos.posAvail + dAvail, pos.position + dTotal
+
+        # double check if the cash account goes to negative
+        allowedError = pos.position * 0.0001 # because some err at float calculating
+        if newAvail< -allowedError :
+            newAvail =0.0
+        
+        if newTotal <-allowedError or newAvail >(newTotal*1.05): # because some err at float calculating
+            raise ValueError('__cashChange(%s) something wrong: newAvail[%s] newTotal[%s] with allowed err[%s]' % (strTxn, newAvail, newTotal, allowedError))
+
+        pos.posAvail = round(newAvail, 3)
+        pos.position = round(newTotal, 3)
         pos.stampByTrader = self.datetimeAsOfMarket()
         return True
 
@@ -814,7 +828,7 @@ class Account(MetaAccount):
         if not self._priceTick:
             return price
         
-        newPrice = round(price/self._priceTick, 0) * self._priceTick
+        newPrice = round(round(price/self._priceTick, 0) * self._priceTick, 4)
         return newPrice
 
     #----------------------------------------------------------------------

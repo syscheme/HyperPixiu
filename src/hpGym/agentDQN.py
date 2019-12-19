@@ -21,8 +21,8 @@ from keras.callbacks import ModelCheckpoint, TensorBoard
 from keras import backend
 
 from abc import ABCMeta, abstractmethod
-import os, threading
 from datetime import datetime, timedelta
+import os, threading
 import json
 import h5py, tarfile, numpy
 

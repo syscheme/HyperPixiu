@@ -183,6 +183,9 @@ class Account(MetaAccount):
         self._priceTick     = self.getConfig('priceTick', 0.0)
         self._dbName        = self.getConfig('dbName', self._id) 
 
+        self._pctReservedCash = self.getConfig('pctReservedCash', 1.0) # cash at percent of total cap, in order not to buy securities at full
+        if self._pctReservedCash < 0.5: self._pctReservedCash =0.5
+
         self._lock = threading.Lock()
         # the app instance Id
         if not self._id or len(self._id)<=0 :
@@ -312,7 +315,7 @@ class Account(MetaAccount):
 
     def cashChange(self, dAvail=0, dTotal=0):
         with self._lock :
-            return self.__cashChange(dAvail, dTotal)
+            return self.__changePos(self.cashSymbol, dAvail, dTotal)
 
     def record(self, category, row) :
         if not self._recorder and self.trader :
@@ -456,7 +459,7 @@ class Account(MetaAccount):
 
         if orderData.direction == OrderData.DIRECTION_LONG:
             turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.totalVolume)
-            self.__cashChange(-(turnover + commission + slippage))
+            self.__changePos(self.cashSymbol, -(turnover + commission + slippage))
         elif orderData.direction == OrderData.DIRECTION_SHORT:
             with self._lock :
                 pos = self._dictPositions[orderData.symbol]
@@ -491,7 +494,7 @@ class Account(MetaAccount):
 
             if orderData.direction == OrderData.DIRECTION_LONG:
                 turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.totalVolume)
-                self.__cashChange(turnover + commission + slippage)
+                self.__changePos(self.cashSymbol, turnover + commission + slippage)
             elif orderData.direction == OrderData.DIRECTION_SHORT:
                 pos = self._dictPositions[orderData.symbol]
                 if pos:
@@ -531,7 +534,7 @@ class Account(MetaAccount):
 
             if orderData.direction == OrderData.DIRECTION_LONG:
                 turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.totalVolume)
-                self.__cashChange(turnover + commission + slippage)
+                self.__changePos(self.cashSymbol, turnover + commission + slippage)
 
         self.postEvent_Order(orderData)
 
@@ -566,14 +569,14 @@ class Account(MetaAccount):
                 turnover, commission, slippage = self.calcAmountOfTrade(s, trade.price, -trade.volume)
                 tradeAmount = turnover - commission - slippage
                 # sold, increase both cash aval/total
-                self.__cashChange(tradeAmount, tradeAmount)
+                self.__changePos(self.cashSymbol, tradeAmount, tradeAmount)
 
                 pos.position -= trade.volume
                 # posAvail was sustracted when pos.posAvail -= trade.volume
             else :
                 turnover, commission, slippage = self.calcAmountOfTrade(s, trade.price, trade.volume)
                 tradeAmount = turnover + commission + slippage
-                self.__cashChange(-tradeAmount, -tradeAmount)
+                self.__changePos(self.cashSymbol, -tradeAmount, -tradeAmount)
                 # calclulate pos.avgPrice
                 if self._contractSize <=0:
                     self._contractSize =1
@@ -766,19 +769,19 @@ class Account(MetaAccount):
     # end of BaseApplication routine
     #----------------------------------------------------------------------
 
-    def __cashChange(self, dAvail=0, dTotal=0): # thread unsafe
-        pos = self._dictPositions[self.cashSymbol]
+    def __changePos(self, symbol, dAvail=0, dTotal=0): # thread unsafe
+        pos = self._dictPositions[symbol]
         volprice = pos.price * self._contractSize
-        if pos.price <=0 :   # if cache.price not initialized
+        if pos.price <=0 and symbol == self.cashSymbol:   # if cache.price not initialized
             volprice = pos.price =1
             if self._contractSize >0:
                 pos.price /=self._contractSize
 
         dAvail /= volprice
         dTotal /= volprice
-        strTxn = 'avail[%s%+.3f] total[%s%+.3f]' % (pos.posAvail, dAvail, pos.position, dTotal)
+        strTxn = '%s:avail[%s%+.3f],total[%s%+.3f]' % (symbol, pos.posAvail, dAvail, pos.position, dTotal)
         
-        self.debug('__cashChange() %s' % strTxn)
+        self.debug('__changePos() %s' % strTxn)
 
         newAvail, newTotal = pos.posAvail + dAvail, pos.position + dTotal
 
@@ -788,7 +791,7 @@ class Account(MetaAccount):
             newAvail =0.0
         
         if newTotal <-allowedError or newAvail >(newTotal*1.05): # because some err at float calculating
-            raise ValueError('__cashChange(%s) something wrong: newAvail[%s] newTotal[%s] with allowed err[%s]' % (strTxn, newAvail, newTotal, allowedError))
+            raise ValueError('__changePos(%s) something wrong: newAvail[%s] newTotal[%s] with allowed err[%s]' % (strTxn, newAvail, newTotal, allowedError))
 
         pos.posAvail = round(newAvail, 3)
         pos.position = round(newTotal, 3)
@@ -809,10 +812,14 @@ class Account(MetaAccount):
         # calculate max buy volumes
         volume =0
         if price > 0 :
-            cash, _  = self.cashAmount()
-            volume   = round(cash / (price + self._priceTick) / self._contractSize -0.999, 0)
+            cashAvail, cashTotal, positions = self.positionState()
+            _, posvalue = self.summrizeBalance(positions, cashTotal)
+            reservedCash = (cashTotal + posvalue) * self._pctReservedCash /100
+            cashAvail -= reservedCash
+
+            volume   = round(cashAvail / (price + self._priceTick) / self._contractSize -0.999, 0)
             turnOver, commission, slippage = self.calcAmountOfTrade(symbol, price, volume)
-            if cash < (turnOver + commission + slippage) :
+            if cashAvail < (turnOver + commission + slippage) :
                 volume -= int((commission + slippage) / price / self._contractSize) +1
             if volume <=0:
                 volume =0

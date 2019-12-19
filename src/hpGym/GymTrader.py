@@ -885,7 +885,7 @@ class IdealDayTrader(Simulator):
             # all tests have been done
             self.stop()
             self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._episodes, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
-            return
+            exit(0) # IdealDayTrader is not supposed to run forever, just exit instead of return
 
         self.info('-' *30)
         self.debug('doAppStep() starting over new episode[%s]' %(self.episodeId))
@@ -941,10 +941,11 @@ class IdealDayTrader(Simulator):
                 if bMayBuy and (T <= T_low + T_win and price <= min(price_close*(100.0 -self._constraintBuy_closeOverRecovery)/100, price_low +slip)):
                     order.direction = OrderData.DIRECTION_LONG 
                     self.__ordersToPlace.append(copy.copy(order))
-                elif T <= (T_high + T_win) and price >= (price_high -slip):
+                if T <= (T_high + T_win) and price >= (price_high -slip):
                     order.direction = OrderData.DIRECTION_SHORT 
                     self.__ordersToPlace.append(copy.copy(order))
                 elif T > T_high and price > max(price_high -slip, price_close*(100.0 +self._constraintSell_lossBelowHigh)/100) :
+                    # if not ( (price_high - price_close) < (price_high -price_open)/3 ): # we prefer to HOLD overnight if close is quite near high during up-hill
                     order.direction = OrderData.DIRECTION_SHORT 
                     self.__ordersToPlace.append(copy.copy(order))
 

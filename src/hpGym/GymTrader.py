@@ -19,7 +19,8 @@ from abc import abstractmethod
 import matplotlib as mpl # pip install matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import datetime, copy
+from datetime import datetime, timedelta
+import copy
 import h5py, tarfile, numpy
 
 plt.style.use('dark_background')
@@ -219,7 +220,7 @@ class GymTrader(BaseTrader):
             self.error('doAppInit() failed to instantize agent')
             return False
 
-        # self.__stampActStart = datetime.datetime.now()
+        # self.__stampActStart = datetime.now()
         # self.__stampActEnd = self.__stampActStart
 
         # self.debug('doAppInit() dummy gymStep to initialize cache')
@@ -624,7 +625,7 @@ class Simulator(BackTestApp):
             if self.__savedEpisode_loss < DUMMY_BIG_VAL: # do not save for the first episode
                 self._feedbackToAgent['improved'] = lstImproved
                 self.wkTrader._agent.saveBrain(**self._feedbackToAgent)
-                self.__stampLastSaveBrain = datetime.datetime.now()
+                self.__stampLastSaveBrain = datetime.now()
                 self.info('OnEpisodeDone() brain saved per improvements: %s' % lstImproved )
 
             self.__savedEpisode_opendays = opendays
@@ -642,7 +643,7 @@ class Simulator(BackTestApp):
             'savedEId'    : self.__savedEpisode_Id,
             'savedReward' : round(self.__savedEpisode_reward,2),
             'savedODays'  : self.__savedEpisode_opendays,
-            'savedTime'   : self.__stampLastSaveBrain.strftime('%Y%m%dT%H%M%S') if isinstance(self.__stampLastSaveBrain, datetime.datetime) else self.__stampLastSaveBrain,
+            'savedTime'   : self.__stampLastSaveBrain.strftime('%Y%m%dT%H%M%S') if isinstance(self.__stampLastSaveBrain, datetime) else self.__stampLastSaveBrain,
             'frameNum'    : self.wkTrader._agent.frameNum
         }
 
@@ -698,7 +699,7 @@ class Simulator(BackTestApp):
             return # not as the master
         
         # collect all needed files into a tmpdir
-        simTaskId = '%s_%s' % (self.wkTrader._agent.brainId, datetime.datetime.now().strftime('%Y%m%dT%H%M%S%f'))
+        simTaskId = '%s_%s' % (self.wkTrader._agent.brainId, datetime.now().strftime('%Y%m%dT%H%M%S%f'))
         tmpdir = os.path.join(self.wkTrader._outDir, 'sim_tmp.%s' % simTaskId)
         try :
             os.makedirs(tmpdir)

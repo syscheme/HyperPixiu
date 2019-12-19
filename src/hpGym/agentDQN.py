@@ -21,7 +21,8 @@ from keras.callbacks import ModelCheckpoint, TensorBoard
 from keras import backend
 
 from abc import ABCMeta, abstractmethod
-import os, threading, datetime
+import os, threading
+from datetime import datetime, timedelta
 import json
 import h5py, tarfile, numpy
 
@@ -59,7 +60,7 @@ class agentDQN(MetaAgent):
         self._brainOutDir = '%s%s/' % (self._outDir, self._wkBrainId)
 
         #format the desc
-        self._brainDesc = '%s created at %s, outdir %s' % (self._wkBrainId, datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'), self._brainOutDir)
+        self._brainDesc = '%s created at %s, outdir %s' % (self._wkBrainId, datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'), self._brainOutDir)
         lines = []
         self._brain.summary(print_fn=lambda x: lines.append(x))
         self._brainDesc += '\nsummary:\n%s\n' % "\n".join(lines)
@@ -69,7 +70,7 @@ class agentDQN(MetaAgent):
             'summary': '\n' + '\n'.join(lines),
             'stateSize': self._stateSize,
             'actionSize': self._actionSize,
-            'created': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
+            'created': datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
             'outdir': self._brainOutDir
         }
 
@@ -225,7 +226,7 @@ class agentDQN(MetaAgent):
                 'loss'    : round(self._loss.history["loss"][0], 6) if self._loss else 'n/a',
                 'epsilon' : round(self._epsilon, 6),
                 'learningRate' : self._learningRate,
-                'saveTime' : datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
+                'saveTime' : datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
             }
             self._statusAttrs = {**self._statusAttrs, **attrsToUpdate}
 
@@ -263,7 +264,7 @@ class agentDQN(MetaAgent):
                 self._statusAttrs = json.loads(f.read())
 
             continued = self._statusAttrs['continued'] if 'continued' in self._statusAttrs.keys() else []
-            continued.append(datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'))
+            continued.append(datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'))
 
             attrsToUpdate = {
                 'continued': continued
@@ -457,7 +458,7 @@ class agentDQN(MetaAgent):
             self._masterExportHomeDir = None
             return
 
-        brainInst = '%s.%s' % (self._wkBrainId, datetime.datetime.now().strftime('%Y%m%dT%H%M%S%f'))
+        brainInst = '%s.%s' % (self._wkBrainId, datetime.now().strftime('%Y%m%dT%H%M%S%f'))
 
         # collect all needed files into a tmpdir
         tmpdir = '%sft_tmp.%s/' % (self._outDir, brainInst)
@@ -527,7 +528,7 @@ class agentDQN(MetaAgent):
           # NO THIS IS FOR SIMTASK - GymTrader.tcsv the records of the training
         '''
         # step 1. extract necessary files into tmpdir
-        tmpdir = os.path.join(self._outDir, 'ftr_tmp.%s' % datetime.datetime.now().strftime('%Y%m%dT%H%M%S%f'))
+        tmpdir = os.path.join(self._outDir, 'ftr_tmp.%s' % datetime.now().strftime('%Y%m%dT%H%M%S%f'))
         try :
             os.makedirs(tmpdir)
         except :

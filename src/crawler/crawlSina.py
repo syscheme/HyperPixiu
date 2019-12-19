@@ -75,7 +75,7 @@ class SinaCrawler(MarketCrawler):
         if not dt:
             dt = datetime.now()
         
-        if dt.weekday() in [5,6] : # datetime.datetime.now().weekday() map 0-Mon,1-Tue,2-Wed,3-Thu,4-Fri,5-Sat,6-Sun
+        if dt.weekday() in [5,6] : # datetime.now().weekday() map 0-Mon,1-Tue,2-Wed,3-Thu,4-Fri,5-Sat,6-Sun
             return False
         
         if not dt.hour in [9, 10, 11, 13, 14] :

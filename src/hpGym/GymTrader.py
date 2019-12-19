@@ -885,13 +885,11 @@ class IdealDayTrader(Simulator):
         if (self._episodeNo > self._episodes) :
             # all tests have been done
             self.stop()
-            self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._episodes, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
-            exit(0) # IdealDayTrader is not supposed to run forever, just exit instead of return
+            self.info('all %d episodes have been done, app stopped. obj-in-program: %s' % (self._episodes, self._program.listByType(MetaObj)))
 
-        self.info('-' *30)
-        self.debug('doAppStep() starting over new episode[%s]' %(self.episodeId))
-        self.resetEpisode()
-        self._bGameOver =False
+        self._program.stop()
+        
+        exit(0) # IdealDayTrader is not supposed to run forever, just exit instead of return
 
     def scanEventsAndFakeOrders(self) :
         # step 1. scan self.__mdEventsToday and determine TH TL

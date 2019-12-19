@@ -926,7 +926,7 @@ class IdealDayTrader(Simulator):
         
         # step 2. faking the ideal orders
         bMayBuy = price_close >= price_open*(100.0 +self._constraintBuy_closeOverOpen)/100 # may BUY today, >=price_open*1.005
-        T_win = datetime.timedelta(minutes=2)
+        T_win = timedelta(minutes=2)
         slip = 0.02
         for ev in self.__mdEventsToday:
             if EVENT_TICK != ev.type and EVENT_KLINE_PREFIX != ev.type[:len(EVENT_KLINE_PREFIX)] :

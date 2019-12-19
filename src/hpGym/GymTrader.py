@@ -19,7 +19,8 @@ from abc import abstractmethod
 import matplotlib as mpl # pip install matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import datetime, copy
+from datetime import datetime, timedelta
+import copy
 import h5py, tarfile, numpy
 
 plt.style.use('dark_background')
@@ -219,7 +220,7 @@ class GymTrader(BaseTrader):
             self.error('doAppInit() failed to instantize agent')
             return False
 
-        # self.__stampActStart = datetime.datetime.now()
+        # self.__stampActStart = datetime.now()
         # self.__stampActEnd = self.__stampActStart
 
         # self.debug('doAppInit() dummy gymStep to initialize cache')
@@ -624,7 +625,7 @@ class Simulator(BackTestApp):
             if self.__savedEpisode_loss < DUMMY_BIG_VAL: # do not save for the first episode
                 self._feedbackToAgent['improved'] = lstImproved
                 self.wkTrader._agent.saveBrain(**self._feedbackToAgent)
-                self.__stampLastSaveBrain = datetime.datetime.now()
+                self.__stampLastSaveBrain = datetime.now()
                 self.info('OnEpisodeDone() brain saved per improvements: %s' % lstImproved )
 
             self.__savedEpisode_opendays = opendays
@@ -642,7 +643,7 @@ class Simulator(BackTestApp):
             'savedEId'    : self.__savedEpisode_Id,
             'savedReward' : round(self.__savedEpisode_reward,2),
             'savedODays'  : self.__savedEpisode_opendays,
-            'savedTime'   : self.__stampLastSaveBrain.strftime('%Y%m%dT%H%M%S') if isinstance(self.__stampLastSaveBrain, datetime.datetime) else self.__stampLastSaveBrain,
+            'savedTime'   : self.__stampLastSaveBrain.strftime('%Y%m%dT%H%M%S') if isinstance(self.__stampLastSaveBrain, datetime) else self.__stampLastSaveBrain,
             'frameNum'    : self.wkTrader._agent.frameNum
         }
 
@@ -698,7 +699,7 @@ class Simulator(BackTestApp):
             return # not as the master
         
         # collect all needed files into a tmpdir
-        simTaskId = '%s_%s' % (self.wkTrader._agent.brainId, datetime.datetime.now().strftime('%Y%m%dT%H%M%S%f'))
+        simTaskId = '%s_%s' % (self.wkTrader._agent.brainId, datetime.now().strftime('%Y%m%dT%H%M%S%f'))
         tmpdir = os.path.join(self.wkTrader._outDir, 'sim_tmp.%s' % simTaskId)
         try :
             os.makedirs(tmpdir)
@@ -884,13 +885,11 @@ class IdealDayTrader(Simulator):
         if (self._episodeNo > self._episodes) :
             # all tests have been done
             self.stop()
-            self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._episodes, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
-            return
+            self.info('all %d episodes have been done, app stopped. obj-in-program: %s' % (self._episodes, self._program.listByType(MetaObj)))
 
-        self.info('-' *30)
-        self.debug('doAppStep() starting over new episode[%s]' %(self.episodeId))
-        self.resetEpisode()
-        self._bGameOver =False
+        self._program.stop()
+        
+        exit(0) # IdealDayTrader is not supposed to run forever, just exit instead of return
 
     def scanEventsAndFakeOrders(self) :
         # step 1. scan self.__mdEventsToday and determine TH TL
@@ -925,7 +924,7 @@ class IdealDayTrader(Simulator):
         
         # step 2. faking the ideal orders
         bMayBuy = price_close >= price_open*(100.0 +self._constraintBuy_closeOverOpen)/100 # may BUY today, >=price_open*1.005
-        T_win = datetime.timedelta(minutes=2)
+        T_win = timedelta(minutes=2)
         slip = 0.02
         for ev in self.__mdEventsToday:
             if EVENT_TICK != ev.type and EVENT_KLINE_PREFIX != ev.type[:len(EVENT_KLINE_PREFIX)] :
@@ -941,10 +940,11 @@ class IdealDayTrader(Simulator):
                 if bMayBuy and (T <= T_low + T_win and price <= min(price_close*(100.0 -self._constraintBuy_closeOverRecovery)/100, price_low +slip)):
                     order.direction = OrderData.DIRECTION_LONG 
                     self.__ordersToPlace.append(copy.copy(order))
-                elif T <= (T_high + T_win) and price >= (price_high -slip):
+                if T <= (T_high + T_win) and price >= (price_high -slip):
                     order.direction = OrderData.DIRECTION_SHORT 
                     self.__ordersToPlace.append(copy.copy(order))
                 elif T > T_high and price > max(price_high -slip, price_close*(100.0 +self._constraintSell_lossBelowHigh)/100) :
+                    # if not ( (price_high - price_close) < (price_high -price_open)/3 ): # we prefer to HOLD overnight if close is quite near high during up-hill
                     order.direction = OrderData.DIRECTION_SHORT 
                     self.__ordersToPlace.append(copy.copy(order))
 

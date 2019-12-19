@@ -1065,7 +1065,7 @@ class AccountWrapper(MetaAccount):
     def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendStopOrder(vtSymbol, orderType, price, volume, strategy)
     def findOrdersOfStrategy(self, strategyId, symbol=None): return self._nest.findOrdersOfStrategy(strategyId, symbol)
     
-    def datetimeAsOfMarket(self): return self._dtData
+    def datetimeAsOfMarket(self): return self._btTrader.wkTrader._dtData
     def _broker_onOrderPlaced(self, orderData): return self._nest._broker_onOrderPlaced(orderData)
     def _broker_onCancelled(self, orderData): return self._nest._broker_onCancelled(orderData)
     def _broker_onOrderDone(self, orderData): return self._nest._broker_onOrderDone(orderData)

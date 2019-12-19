@@ -6,9 +6,9 @@ from __future__ import division
 
 # from gym import GymEnv
 from Account import Account, OrderData, Account_AShare
-from Application import MetaObj
+from Application import MetaObj, BOOL_STRVAL_TRUE
 from Trader import MetaTrader, BaseTrader
-from BackTest import BackTestApp
+from BackTest import BackTestApp, RECCATE_ESPSUMMARY
 from Perspective import PerspectiveState
 from MarketData import EVENT_TICK, EVENT_KLINE_PREFIX, EXPORT_FLOATS_DIMS
 from HistoryData import listAllFiles
@@ -20,7 +20,7 @@ import matplotlib as mpl # pip install matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import datetime, copy
-import tarfile
+import h5py, tarfile, numpy
 
 plt.style.use('dark_background')
 mpl.rcParams.update(
@@ -54,7 +54,7 @@ class MetaAgent(MetaObj): # TODO:
 
         self._gamma = self.getConfig('gamma', 0.95)
         self._epsilon = self.getConfig('epsilon', 1.0) # rand()[0,1) <= self._epsilon will trigger a random explore
-        self._epsilonMin = self.getConfig('epsilonMin', 0.02)
+        self._epsilonMin = self.getConfig('epsilonMin', 0.02) #  self._epsilon < self._epsilonMin means at playmode and no more explorations
 
         self._wkBrainId = self.getConfig('brainId', None)
 
@@ -602,7 +602,7 @@ class Simulator(BackTestApp):
 
         if reachedEnd or (opendays>2 and opendays > (self.__maxKnownOpenDays *3/4)): # at least stepped most of known days
             # determin best by reward
-            rewardMean = self._total_reward /opendays
+            rewardMean = self._total_reward /opendays if opendays>0 else 0
             self._episodeSummary['dailyReward'] = rewardMean
             self._feedbackToAgent['dailyReward'] = rewardMean
             rewardMeanBest = self.__savedEpisode_reward
@@ -765,15 +765,20 @@ class IdealDayTrader(Simulator):
         '''Constructor
         '''
         super(IdealDayTrader, self).__init__(program, trader, histdata, **kwargs)
-        self._iterationsPerEpisode = self.getConfig('iterationsPerEpisode', 1)
         self._constraintBuy_closeOverOpen = self.getConfig('constraints/buy_closeOverOpen',          0.5) #pecentage price-close more than price-open - indicate buy
         self._constraintBuy_closeOverRecovery = self.getConfig('constraint/buy_closeOverRecovery',   2.0) #pecentage price-close more than price-low at the recovery edge - indicate buy
         self._constraintSell_lossBelowHigh = self.getConfig('constraint/sell_lossBelowHigh',         2.0) #pecentage price-close less than price-high at the loss edge - indicate sell
         self._constraintSell_downHillOverClose = self.getConfig('constraint/sell_downHillOverClose', 0.5) #pecentage price more than price-close triggers sell during a downhill-day to reduce loss
-        self.__ordersToPlace = [] # list of OrderData, the OrderData only tells the direction withno amount
+        self._generateReplayFrames  = self.getConfig('generateReplayFrames', True) in BOOL_STRVAL_TRUE
+
+        self._pctMaxDrawDown =99.0 # IdealTrader will not be constrainted by max drawndown, so overwrite it with 99%
+        self._warmupDays =0 # IdealTrader will not be constrainted by warmupDays
+
+        self.__ordersToPlace = [] # list of faked OrderData, the OrderData only tells the direction withno amount
         self.__mdEventsToday = [] # list of the datetime of open, high, low, close price occured today
         self.__dtToday = None
         self.__cOpenDays =0
+
 
     # to replace Simulator's __trainPerMarketEvent
     def __idealActionPerMarketEvent(self, ev):
@@ -802,6 +807,14 @@ class IdealDayTrader(Simulator):
     def resetEpisode(self) :
         ret = super(IdealDayTrader, self).resetEpisode()
         self.wkTrader._lstMarketEventProc =[self.__idealActionPerMarketEvent] # replace GymTrader's with __idealActionPerMarketEvent
+        self.wkTrader._agent._cbNewReplayFrame = [self.__saveReplayFrame] # the hook agent's OnNewFrame
+        # the IdealTrader normally will disable exploration of agent
+        self.wkTrader._agent._epsilon = -1.0 # less than epsilonMin
+
+        # no need to do training if to export ReplayFrames
+        if self._generateReplayFrames:
+            self.wkTrader._agent._learningRate = -1.0
+
         return ret
 
     # to replace BackTest's doAppStep
@@ -846,6 +859,11 @@ class IdealDayTrader(Simulator):
 
         # this test should be done if reached here
         self.debug('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self._stepNoInEpisode, self._bGameOver, reachedEnd))
+        
+        # for this IdealTrader, collect a single episode of ReplayFrames is enough to export
+        # so no more hooking
+        self.wkTrader._agent._cbNewReplayFrame = []
+
         try:
             self.OnEpisodeDone(reachedEnd)
         except Exception as ex:
@@ -862,8 +880,8 @@ class IdealDayTrader(Simulator):
             self.info(line)
 
         # prepare for the next episode
-        self.__episodeNo +=1
-        if (self.__episodeNo > self._episodes) :
+        self._episodeNo +=1
+        if (self._episodeNo > self._episodes) :
             # all tests have been done
             self.stop()
             self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._episodes, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
@@ -940,6 +958,33 @@ class IdealDayTrader(Simulator):
                     order.direction = OrderData.DIRECTION_LONG 
                     self.__ordersToPlace.append(copy.copy(order))
 
+    def __saveReplayFrame(self, frameId, col_state, col_action, col_reward, col_next_state, col_done) :
+
+        # output the frame into a HDF5 file
+        fn_frame = os.path.join(self.wkTrader._outDir, 'RFrames_%s.h5' % self.wkTrader._tradeSymbol)
+        dsargs={
+            'compression':'gzip'
+        }
+
+        with h5py.File(fn_frame, 'a') as h5file:
+            g = h5file.create_group('ReplayFrame:%s' % frameId)
+            g.attrs['state'] = 'state'
+            g.attrs['action'] = 'action'
+            g.attrs['reward'] = 'reward'
+            g.attrs['next_state'] = 'next_state'
+            g.attrs['done'] = 'done'
+            g.attrs[u'default'] = 'state'
+
+            g.create_dataset(u'title',     data= 'replay frame[%s] of %s for DQN training' % (frameId, self.wkTrader._tradeSymbol))
+            g.create_dataset('state',      data= col_state, **dsargs)
+            g.create_dataset('action',     data= col_action, **dsargs)
+            g.create_dataset('reward',     data= col_reward, **dsargs)
+            g.create_dataset('next_state', data= col_next_state, **dsargs)
+            g.create_dataset('done',       data= col_done, **dsargs)
+
+        self.info('saved frame[%s] len[%s] to file %s' % (frameId, len(col_state), fn_frame))
+
+
 ########################################################################
 from Application import Program
 from Account import Account_AShare
@@ -997,7 +1042,7 @@ def main_prog():
     
     p.info('all objects registered piror to Simulator: %s' % p.listByType())
     
-    trainer = p.createApp(IdealDayTrader, configNode ='trainer', trader=gymtdr, histdata=csvreader) # trainer = p.createApp(Simulator, configNode ='trainer', trader=gymtdr, histdata=csvreader)
+    trainer = p.createApp(Simulator, configNode ='trainer', trader=gymtdr, histdata=csvreader)
     rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = '%s/Simulator.tcsv' % trainer.outdir)
     trainer.setRecorder(rec)
 

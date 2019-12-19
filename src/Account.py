@@ -779,12 +779,16 @@ class Account(MetaAccount):
         strTxn = 'avail[%s%+.3f] total[%s%+.3f]' % (pos.posAvail, dAvail, pos.position, dTotal)
         
         self.debug('__cashChange() %s' % strTxn)
-        # double check if the cash account goes to negative
+
         newAvail, newTotal = pos.posAvail + dAvail, pos.position + dTotal
-        if newAvail<-0.5 :
+
+        # double check if the cash account goes to negative
+        allowedError = pos.position * 0.0001 # because some err at float calculating
+        if newAvail< -allowedError :
             newAvail =0.0
-        if newTotal <-0.5 or newAvail >(newTotal*1.05): # because some err at float calculating
-            raise ValueError('__cashChange(%s) something wrong: newAvail[%s] newTotal[%s]' % (strTxn, newAvail, newTotal))
+        
+        if newTotal <-allowedError or newAvail >(newTotal*1.05): # because some err at float calculating
+            raise ValueError('__cashChange(%s) something wrong: newAvail[%s] newTotal[%s] with allowed err[%s]' % (strTxn, newAvail, newTotal, allowedError))
 
         pos.posAvail = round(newAvail, 3)
         pos.position = round(newTotal, 3)

@@ -70,7 +70,7 @@ class BackTestApp(MetaTrader):
         self._pctMaxDrawDown = self.getConfig('pctMaxDrawDown', 21) # we allow 30% lost during a episode
         self._warmupDays     = self.getConfig('warmupDays', 5) # observe for a week by default to make the market state not so empty
 
-        self.__episodeNo = 1 # count start from 1 to ease reading
+        self._episodeNo = 1 # count start from 1 to ease reading
         self._stepNoInEpisode =0
         self.__execStamp_appStart = datetime.now()
         self.__execStamp_episodeStart = self.__execStamp_appStart
@@ -95,7 +95,7 @@ class BackTestApp(MetaTrader):
 
     @property
     def episodeId(self) :
-        return 'E' + str(self.__episodeNo).zfill(6)
+        return 'E' + str(self._episodeNo).zfill(6)
 
     @property
     def wkTrader(self) :
@@ -240,8 +240,8 @@ class BackTestApp(MetaTrader):
             self.debug('doAppStep() episode[%s] summary report generated' %(self.episodeId))
 
         # prepare for the next episode
-        self.__episodeNo +=1
-        if (self.__episodeNo > self._episodes) :
+        self._episodeNo +=1
+        if (self._episodeNo > self._episodes) :
             # all tests have been done
             self.stop()
             self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._episodes, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
@@ -302,7 +302,7 @@ class BackTestApp(MetaTrader):
         additionAttrs = {
             'openDays' : len(self._account.dailyResultDict),
             'episodeDuration' : round(datetime2float(datetime.now()) - datetime2float(self.__execStamp_episodeStart), 3),
-            'episodeNo' : self.__episodeNo,
+            'episodeNo' : self._episodeNo,
             'episodes' : self._episodes,
             'stepsInEpisode' : self._stepNoInEpisode,
         }
@@ -340,7 +340,7 @@ class BackTestApp(MetaTrader):
         self._episodeSummary = {}
         self.__execStamp_episodeStart = datetime.now()
         self._stepNoInEpisode =0
-        self.debug('resetEpisode() initializing episode[%d/%d], elapsed %s obj-in-program: %s' % (self.__episodeNo, self._episodes, str(self.__execStamp_episodeStart - self.__execStamp_appStart), self._program.listByType(MetaObj)))
+        self.debug('resetEpisode() initializing episode[%d/%d], elapsed %s obj-in-program: %s' % (self._episodeNo, self._episodes, str(self.__execStamp_episodeStart - self.__execStamp_appStart), self._program.listByType(MetaObj)))
 
         # NOTE: Any applications must be created prior to program.start()
         # if self._recorder:
@@ -409,7 +409,7 @@ class BackTestApp(MetaTrader):
         self.subscribeEvent(Account.EVENT_ORDER)
         self.subscribeEvent(Account.EVENT_TRADE)
 
-        self.info('resetEpisode() done for episode[%d/%d], obj-in-program: %s' % (self.__episodeNo, self._episodes, self._program.listByType(MetaObj)))
+        self.info('resetEpisode() done for episode[%d/%d], obj-in-program: %s' % (self._episodeNo, self._episodes, self._program.listByType(MetaObj)))
         return True
 
     #----------------------------------------------------------------------
@@ -455,7 +455,7 @@ class BackTestApp(MetaTrader):
             originGain = (self._dataEnd_closeprice - self._dataBegin_openprice)*100 / self._dataBegin_openprice
 
         # 输出统计结果
-        strReport  = '\n%s_R%d/%d took %s' %(self.ident, self.__episodeNo, self._episodes, str(datetime.now() - self.__execStamp_episodeStart))
+        strReport  = '\n%s_R%d/%d took %s' %(self.ident, self._episodeNo, self._episodes, str(datetime.now() - self.__execStamp_episodeStart))
         strReport += u'\n%s: %-10s ~ %-10s'  % (self.__fieldName('playbackRange'), self._btStartDate.strftime('%Y-%m-%d'), self._btEndDate.strftime('%Y-%m-%d'))
         strReport += u'\n%s: %-10s(open:%.2f) ~ %-10s(close:%.2f): %sdays %s%%' % \
                     (self.__fieldName('executeRange'), summary['startDate'], self._dataBegin_openprice, summary['endDate'], self._dataEnd_closeprice, summary['totalDays'], formatNumber(originGain))

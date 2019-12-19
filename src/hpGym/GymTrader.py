@@ -765,16 +765,15 @@ class IdealDayTrader(Simulator):
         '''Constructor
         '''
         super(IdealDayTrader, self).__init__(program, trader, histdata, **kwargs)
+        self._constraintBuy_closeOverOpen = self.getConfig('constraints/buy_closeOverOpen',          0.5) #pecentage price-close more than price-open - indicate buy
+        self._constraintBuy_closeOverRecovery = self.getConfig('constraint/buy_closeOverRecovery',   2.0) #pecentage price-close more than price-low at the recovery edge - indicate buy
+        self._constraintSell_lossBelowHigh = self.getConfig('constraint/sell_lossBelowHigh',         2.0) #pecentage price-close less than price-high at the loss edge - indicate sell
+        self._constraintSell_downHillOverClose = self.getConfig('constraint/sell_downHillOverClose', 0.5) #pecentage price more than price-close triggers sell during a downhill-day to reduce loss
+        self._generateReplayFrames  = self.getConfig('generateReplayFrames', True) in BOOL_STRVAL_TRUE
 
         self._pctMaxDrawDown =99.0 # IdealTrader will not be constrainted by max drawndown, so overwrite it with 99%
         self._warmupDays =0 # IdealTrader will not be constrainted by warmupDays
 
-        self._constraintBuy_closeOverOpen = self.getConfig('constraints/buy_closeOverOpen', 0.5) #pecentage price-close more than price-open
-        self._constraintBuy_closeOverLow = self.getConfig('constraint/buy_closeOverLow', 2.0) #pecentage price-close more than price-low
-        self._constraintSell_highOverClose = self.getConfig('constraint/sell_highOverClose', 2.0)
-        self._constraintSell_downHillOverClose = self.getConfig('constraint/sell_downHillOverClose', 0.5) # price more than this rate will trigger sell during a downhill day
-        self._generateReplayFrames  = self.getConfig('generateReplayFrames', True) in BOOL_STRVAL_TRUE
-        
         self.__ordersToPlace = [] # list of faked OrderData, the OrderData only tells the direction withno amount
         self.__mdEventsToday = [] # list of the datetime of open, high, low, close price occured today
         self.__dtToday = None
@@ -925,7 +924,7 @@ class IdealDayTrader(Simulator):
                 continue
         
         # step 2. faking the ideal orders
-        bMayBuy = price_close >= min(price_open*(100.0 +self._constraintBuy_closeOverOpen)/100, price_close*(100.0 +self._constraintBuy_closeOverLow)/100) # may BUY today, >=price_open*1.005
+        bMayBuy = price_close >= price_open*(100.0 +self._constraintBuy_closeOverOpen)/100 # may BUY today, >=price_open*1.005
         T_win = datetime.timedelta(minutes=2)
         slip = 0.02
         for ev in self.__mdEventsToday:
@@ -939,21 +938,23 @@ class IdealDayTrader(Simulator):
             order.datetime = T
 
             if T_low < T_high : # up-hill
-                if bMayBuy and (T <= T_low + T_win and price <= min(price_close*(100.0 -self._constraintBuy_closeOverLow)/100, price_low +slip)):
+                if bMayBuy and (T <= T_low + T_win and price <= min(price_close*(100.0 -self._constraintBuy_closeOverRecovery)/100, price_low +slip)):
                     order.direction = OrderData.DIRECTION_LONG 
                     self.__ordersToPlace.append(copy.copy(order))
                 elif T <= (T_high + T_win) and price >= (price_high -slip):
                     order.direction = OrderData.DIRECTION_SHORT 
                     self.__ordersToPlace.append(copy.copy(order))
-                elif T > T_high and price > max(price_high -slip, price_close*(100.0 +self._constraintSell_highOverClose)/100) :
+                elif T > T_high and price > max(price_high -slip, price_close*(100.0 +self._constraintSell_lossBelowHigh)/100) :
                     order.direction = OrderData.DIRECTION_SHORT 
                     self.__ordersToPlace.append(copy.copy(order))
 
             if T_low > T_high : # down-hill
+                if price_close > price_close*(100.0 +self._constraintBuy_closeOverRecovery)/100 : # if close is at a well recovery edge
+                    bMayBuy = True
                 if price >= (price_high -slip) or (T < T_low and price >= (price_close*(100.0 +self._constraintSell_downHillOverClose)/100)):
                     order.direction = OrderData.DIRECTION_SHORT 
                     self.__ordersToPlace.append(copy.copy(order))
-                elif bMayBuy and (T > (T_low - T_win) and T <= (T_low + T_win) and price < (price_close*(100.0 +self._constraintBuy_closeOverLow)/100) ):
+                elif bMayBuy and (T > (T_low - T_win) and T <= (T_low + T_win) and price < (price_close*(100.0 +self._constraintBuy_closeOverRecovery)/100) ):
                     order.direction = OrderData.DIRECTION_LONG 
                     self.__ordersToPlace.append(copy.copy(order))
 

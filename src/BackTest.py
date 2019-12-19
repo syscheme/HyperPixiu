@@ -89,7 +89,7 @@ class BackTestApp(MetaTrader):
         except:
             pass
 
-        self._dtData = self._btStartDate
+        self.__dtLastData = self._btStartDate
         self._bGameOver = False
         self._openDays = 0
 
@@ -256,8 +256,8 @@ class BackTestApp(MetaTrader):
         # step 2. 收到行情后，在启动策略前的处理
         evd = ev.data
         matchNeeded = False
-        if not self._dtData or self._dtData < evd.asof :
-            self._dtData = evd.asof
+        if not self.__dtLastData or self.__dtLastData < evd.asof :
+            self.__dtLastData = evd.asof
             self._dataEnd_date = evd.date
             if EVENT_TICK == ev.type:
                 self._dataEnd_closeprice = evd.price
@@ -392,7 +392,7 @@ class BackTestApp(MetaTrader):
         # 当前最新数据，用于模拟成交用
         self.tick = None
         self.bar  = None
-        self._dtData  = None      # 最新数据的时间
+        self.__dtLastData  = None      # 最新数据的时间
 
         if self._marketState :
             for i in range(30) : # initially feed 20 data from histread to the marketstate
@@ -717,13 +717,13 @@ class BackTestApp(MetaTrader):
         # ---------------------------
         # 到最后交易日尚未平仓的交易，则以最后价格平仓
         for trade in buyTrades:
-            result = TradingResult(trade.price, trade.dt, self._dataEnd_closeprice, self._dtData, 
+            result = TradingResult(trade.price, trade.dt, self._dataEnd_closeprice, self.__dtLastData, 
                                    trade.volume, self._ratePer10K, self._slippage, self._account.size)
             self.resultList.append(result)
             txnstr += '%+dx%.2f' % (trade.volume, trade.price)
             
         for trade in sellTrades:
-            result = TradingResult(trade.price, trade.dt, self._dataEnd_closeprice, self._dtData, 
+            result = TradingResult(trade.price, trade.dt, self._dataEnd_closeprice, self.__dtLastData, 
                                    -trade.volume, self._ratePer10K, self._slippage, self._account.size)
             self.resultList.append(result)
             txnstr += '%-dx%.2f' % (trade.volume, trade.price)
@@ -1196,7 +1196,6 @@ class AccountWrapper(MetaAccount):
         if EVENT_TICK == ev.type:
             tkdata = ev.data
             symbol = tkdata.symbol
-            self._dtData = tkdata.datetime
             buyCrossPrice      = tkdata.a1P
             sellCrossPrice     = tkdata.b1P
             buyBestCrossPrice  = tkdata.a1P
@@ -1204,7 +1203,6 @@ class AccountWrapper(MetaAccount):
         elif EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
             kldata = ev.data
             symbol = kldata.symbol
-            self._dtData = kldata.datetime
             bestPrice          = round(((kldata.open + kldata.close) *4 + kldata.high + kldata.low) /10, 2)
 
             buyCrossPrice      = kldata.low        # 若买入方向限价单价格高于该价格，则会成交
@@ -1368,8 +1366,8 @@ class AccountWrapper(MetaAccount):
         #         trade.direction = so.direction
         #         trade.offset = so.offset
         #         trade.volume = so.volume
-        #         trade.tradeTime = self._dtData.strftime('%H:%M:%S')
-        #         trade.dt = self._dtData
+        #         trade.tradeTime = self.__dtLastData.strftime('%H:%M:%S')
+        #         trade.dt = self.__dtLastData
                     
         #         self._dictTrades[tradeID] = trade
                     

@@ -6,124 +6,204 @@ It reads the ReplayBuffers, which was output from agentDQN, to train the model. 
 and can also distribute the training load outside of the online agent
 '''
 
+from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
+import HistoryData as hist
+
+from keras.models import Sequential
+from keras.optimizers import Adam
+from keras.models import model_from_json
+from keras.callbacks import ModelCheckpoint, TensorBoard
+from keras import backend
+
+import sys, os, platform, random
+import h5py, tarfile
+import numpy as np
+
+H5_COLS = 'state,action,reward,next_state,done'
 ########################################################################
 # to work as a generator for Keras fit_generator() by reading replay-buffers from HDF5 file
 # sample the data as training data
-class ReplayHdf5toDqnGenerator(object):
+class DQNTrainer(BaseApplication):
 
-    def __init__(self, h5filepath, **kwargs):
-        self._h5filepath = h5filepath
-        self.__gen = None
-        self._iterableEnd = False
 
-        self.__minSamplesInPool =batchSize *1024
+    def __init__(self, program, h5filepath, model_json=None, initWeights= None, recorder =None, **kwargs):
+        super(DQNTrainer, self).__init__(program, **kwargs)
 
-        self.__frameNames =[]
+        self._model_json = model_json
+        if not self._model_json :
+            modelfn = os.path.join(self.dataRoot, 'DQN_Cnn1Dx4.1556_3/model.json')
+            modelfn = self.getConfig('model_file', modelfn)
+            self.debug('loading saved brain from %s' % modelfn)
+            with open(modelfn, 'r') as mjson:
+                self._model_json = mjson.read()
+
+        if not h5filepath : 
+            h5filepath = os.path.join(self.dataRoot, 'RFrames.h5')
+            h5filepath = self.getConfig('RFSamples_file', h5filepath)
+
+        self.debug('loading saved ReplaySamples from %s' % h5filepath)
+        self._h5file = h5py.File(h5filepath, 'r')
+
+        self._batchSize = 128
+        self._iterationPerPool = 200
+        self._trainSize = self._batchSize *20
+
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._batchesLeftFromPool = 10 # should be something like len(self.__samplePool) / batchSize, when downcounting reached 0, the self.__samplePool should be repopulated from the H5 frames
+        self._brain = None
+        self._learningRate = 0.01
+        self._gamma = 0.01
+        self._epochsPerIteration =200
+        self._fitCallbacks =[]
 
-    while 1:
-            f = open(path)
-            for line in f:
-                # create Numpy arrays of input data
-                # and labels, from each line in the file
-                x, y = process_line(line)
-                yield (x, y)
-        f.close()
+    #----------------------------------------------------------------------
+    # impl/overwrite of BaseApplication
+    def OnEvent(self, ev): pass
 
-        self.__gen = None
-        self.__program = None
-        if 'program' in kwargs.keys():
-            self.__program = kwargs['program']
+    def doAppInit(self): # return True if succ
+        if not super(DQNTrainer, self).doAppInit() :
+            return False
 
-        self._iterableEnd = False
+        if not self._model_json or not self._h5file:
+            return False
 
-        # 事件队列
-        self.__quePending = Queue(maxsize=100)
+        self._brain = model_from_json(self._model_json)
+        if not self._brain:
+            self.error('model_from_json failed')
+            return False
 
-    def __iter__(self):
-        return self
+        self._brain.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
 
-    def __next__(self):
-        if not self.__gen and self.resetRead() : # not perform reset here
-            self.__gen = self.__generate()
-            self.__c = 0
-            self._iterableEnd = False
+        self.__gen = self.__generator(self.__train_DQN)
+        return True
 
-        if not self.__gen :
-            raise StopIteration
-
-        return next(self.__gen)
-
-    def __generate(self):
-
-        self.__frameNames = []
-        with h5py.File(fn_frame, 'r') as h5file:
-            for name in h5file.keys():
-                if 'ReplayFrame:' == name[:len('ReplayFrame:')] :
-                    self.__frameNames.append(name)
-            
-            random.suffle(self.__frameNames)
-
-            # build up self.__samplePool
-            self.__samplePool = []
-            while len(self.__frameNames) >0 && len(self.__samplePool) < self.__minSamplesInPool:
-                frame = h5file[self.__frameNames[0]]
-                del self.__frameNames[0]
-                dqn_state, dqn_action, dqn_reward, dqn_next_state, dqn_done  = frame['state'], frame['action'], frame['reward'], frame['next_state'], frame['done']
-
-
-
-
-            g = h5file.create_group('ReplayFrame:%s' % frameId)
-            g.attrs['state'] = 'state'
-            g.attrs['action'] = 'action'
-            g.attrs['reward'] = 'reward'
-            g.attrs['next_state'] = 'next_state'
-            g.attrs['done'] = 'done'
-            g.attrs[u'default'] = 'state'
-
-            g.create_dataset(u'title',     data= 'replay frame[%s] of %s for DQN training' % (frameId, self.wkTrader._tradeSymbol))
-            g.create_dataset('state',      data= col_state, **dsargs)
-            g.create_dataset('action',     data= col_action, **dsargs)
-            g.create_dataset('reward',     data= col_reward, **dsargs)
-            g.create_dataset('next_state', data= col_next_state, **dsargs)
-            g.create_dataset('done',       data= col_done, **dsargs)
-
-        self.info('saved frame[%s] len[%s] to file %s' % (frameId, len(col_state), fn_frame))
-
-        while not self._iterableEnd :
-                n = self.readNext()
-                if None ==n:
-                    continue
-
-                yield n
-                self.__c +=1
-            except StopIteration:
-                self.info('reached the end')
-                break
+    def doAppStep(self):
+        if not self.__gen:
+            self.stop()
+        else:
+            try:
+                next(self.__gen)
             except Exception as ex:
+                self.stop()
                 self.logexception(ex)
-                self._iterableEnd = True
-                break
+                raise StopIteration
+        
+        return super(DQNTrainer, self).doAppStep()
 
-        self.__gen=None
-        raise StopIteration
+    # end of BaseApplication routine
+    #----------------------------------------------------------------------
 
-    def popPending(self, block=False, timeout=0.1):
-        return self.__quePending.get(block = block, timeout = timeout)
+    def __generator(self, trainMethod):
 
-    #--- new methods  -----------------------
-    @abstractmethod
-    def resetRead(self):
-        '''For this generator, we want to rewind only when the end of the data is reached.
-        '''
-        pass
+        frameNames = []
+        for name in self._h5file.keys():
+            if 'ReplayFrame:' == name[:len('ReplayFrame:')] :
+                frameNames.append(name)
+        
+        random.shuffle(frameNames)
 
-    @abstractmethod
-    def readNext(self):
-        '''
-        @return next item, mostlikely expect one of Event()
-        '''
-        return None
+        # build up self.__samplePool
+        self.__samplePool = {
+            'state':[],
+            'action':[],
+            'reward':[],
+            'next_state':[],
+            'done':[],
+        }
 
+        while len(frameNames) >0:
+            poolSize = len(self.__samplePool['state'])
+            while len(frameNames) >0 and poolSize < self._trainSize:
+                frame = self._h5file[frameNames[0]]
+                del frameNames[0]
+
+                # dqn_state, dqn_action, dqn_reward, dqn_next_state, dqn_done  = frame['state'], frame['action'], frame['reward'], frame['next_state'], frame['done']
+                # frameSamples = [(dqn_state[i], dqn_action[i], dqn_reward[i], dqn_next_state[i], dqn_done[i]) for i in range(len(dqn_state))]
+                # self.__samplePool += frameSamples
+
+                for col in H5_COLS.split(',') :
+                    self.__samplePool[col] += list(frame[col].value)
+
+                poolSize = len(self.__samplePool['state'])
+            
+            for iter in range(self._iterationPerPool) :
+
+                # random sample a dataset with size=self._trainSize from self.__samplePool
+                samples ={}
+                sampleIdxs = [a for a in range(poolSize)]
+                random.shuffle(sampleIdxs)
+                del sampleIdxs[self._trainSize:]
+
+                for col in H5_COLS.split(',') :
+                    a = [self.__samplePool[col][i] for i in sampleIdxs]
+                    samples[col] = np.array(a)
+
+                result = trainMethod(samples)
+                self.info('itration%s done, loss[%s]' % (str(iter).zfill(6), result.history["loss"][0]))
+                yield result # this is a step
+
+            # randomly evict half of poolSize
+            sampleIdxs = [a for a in range(int(poolSize/2))]
+            random.shuffle(sampleIdxs)
+            for i in sampleIdxs:
+                for col in H5_COLS.split(',') :
+                    del self.__samplePool[col][i]
+
+    def __train_DQN(self, samples):
+            # perform DQN training
+            y = self._brain.predict(samples['next_state'])
+            maxact= np.amax(y, axis=1) # arrary(sampleLen, 1)
+            done = np.array(samples['done'] !=0)
+            samples['reward'] += (self._gamma * np.logical_not(done) * maxact) # arrary(sampleLen, 1)
+            action_link = np.where(samples['action'] == 1) # array(sizeToBatch, self._actionSize)=>array(2, sizeToBatch)
+
+            q_target = self._brain.predict(samples['state'])
+            q_target[action_link[0], action_link[1]] = samples['reward'] # action_link =arrary(2,sampleLen)
+
+            return self._brain.fit(x=samples['state'], y=q_target, epochs=self._epochsPerIteration, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
+
+########################################################################
+if __name__ == '__main__':
+
+    if not '-f' in sys.argv :
+        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/Gym_AShare.json']
+
+    p = Program()
+    p._heartbeatInterval =-1
+
+    SYMBOL = '000001' # '000540' '000001'
+    sourceCsvDir = None
+    try:
+        jsetting = p.jsettings('trainer/sourceCsvDir')
+        if not jsetting is None:
+            sourceCsvDir = jsetting(None)
+
+        jsetting = p.jsettings('trainer/objectives')
+        if not jsetting is None:
+            symbol = jsetting([SYMBOL])[0]
+    except Exception as ex:
+        symbol = SYMBOL
+    SYMBOL = symbol
+
+    if not sourceCsvDir or len(sourceCsvDir) <=0:
+        for d in ['e:/AShareSample', '/mnt/e/AShareSample/ETF', '/mnt/m/AShareSample']:
+            try :
+                if  os.stat(d):
+                    sourceCsvDir = d
+                    break
+            except :
+                pass
+
+    if 'Windows' in platform.platform() and '/mnt/' == sourceCsvDir[:5] and '/' == sourceCsvDir[6]:
+        drive = '%s:' % sourceCsvDir[5]
+        sourceCsvDir = sourceCsvDir.replace(sourceCsvDir[:6], drive)
+
+    p.info('all objects registered piror to DQNTrainer: %s' % p.listByType())
+    
+    trainer = p.createApp(DQNTrainer, configNode ='trainer', h5filepath='out/IdealDayTrader/CsvToDQN_24106/RFrames_000001.h5')
+    # rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = '/tmp/DQNTrainer.tcsv')
+    # trainer.setRecorder(rec)
+
+    p.start()
+    p.loop()
+    p.stop()

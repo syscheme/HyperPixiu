@@ -43,12 +43,12 @@ class DQNTrainer(BaseApplication):
         self.debug('loading saved ReplaySamples from %s' % h5filepath)
         self._h5file = h5py.File(h5filepath, 'r')
 
-        self._batchSize           = self.getConfig('batchSize', 64)
-        self._trainSize           = self.getConfig('batchesPerTrain', 2) * self._batchSize
-        self._sampleTimesFromPool = self.getConfig('sampleTimesFromPool', 2)
+        self._batchSize           = self.getConfig('batchSize', 128)
+        self._trainSize           = self.getConfig('batchesPerTrain', 8) * self._batchSize
+        self._sampleTimesFromPool = self.getConfig('sampleTimesFromPool', 20)
         self._epochsPerFit      = self.getConfig('epochsPerFit', 2)
         self._gamma               = self.getConfig('gamma', 0.01)
-        self._learningRate        = self.getConfig('learningRate', 0.01)
+        self._learningRate        = self.getConfig('learningRate', 0.02)
 
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
@@ -95,12 +95,16 @@ class DQNTrainer(BaseApplication):
 
     def __generator(self, trainMethod):
 
-        frameNames = []
+        framesInHd5 = []
         for name in self._h5file.keys():
             if 'ReplayFrame:' == name[:len('ReplayFrame:')] :
-                frameNames.append(name)
+                framesInHd5.append(name)
         
-        random.shuffle(frameNames)
+        frameSeq=[]
+        for i in range(5):
+            a = framesInHd5
+            random.shuffle(a)
+            frameSeq +=a
 
         # build up self.__samplePool
         self.__samplePool = {
@@ -113,15 +117,11 @@ class DQNTrainer(BaseApplication):
 
         itrId=0
 
-        while len(frameNames) >0:
+        while len(frameSeq) >0:
             poolSize = len(self.__samplePool['state'])
-            while len(frameNames) >0 and poolSize < self._trainSize:
-                frame = self._h5file[frameNames[0]]
-                del frameNames[0]
-
-                # dqn_state, dqn_action, dqn_reward, dqn_next_state, dqn_done  = frame['state'], frame['action'], frame['reward'], frame['next_state'], frame['done']
-                # frameSamples = [(dqn_state[i], dqn_action[i], dqn_reward[i], dqn_next_state[i], dqn_done[i]) for i in range(len(dqn_state))]
-                # self.__samplePool += frameSamples
+            while len(frameSeq) >0 and poolSize < self._trainSize *2:
+                frame = self._h5file[frameSeq[0]]
+                del frameSeq[0]
 
                 for col in H5_COLS.split(',') :
                     self.__samplePool[col] += list(frame[col].value)
@@ -129,7 +129,6 @@ class DQNTrainer(BaseApplication):
                 poolSize = len(self.__samplePool['state'])
             
             for iter in range(self._sampleTimesFromPool) :
-
                 # random sample a dataset with size=self._trainSize from self.__samplePool
                 samples ={}
                 sampleIdxs = [a for a in range(poolSize)]
@@ -140,12 +139,13 @@ class DQNTrainer(BaseApplication):
                     a = [self.__samplePool[col][i] for i in sampleIdxs]
                     samples[col] = np.array(a)
 
+                # call trainMethod to perform tranning
                 itrId +=1
                 result = trainMethod(samples)
                 self.info('it[%s] done, loss[%s]' % (str(itrId).zfill(6), result.history["loss"][0]))
                 yield result # this is a step
 
-            # randomly evict half of poolSize
+            # randomly evict half of the poolSize
             sampleIdxs = [a for a in range(int(poolSize/2))]
             random.shuffle(sampleIdxs)
             for i in sampleIdxs:

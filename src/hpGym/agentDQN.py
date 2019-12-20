@@ -354,7 +354,7 @@ class agentDQN(MetaAgent):
             samplelen = len(self.__replayCache)
             if 0 == self.__sampleIdx and samplelen > self._batchSize: 
                 self.__frameNum +=1
-                frameId = '%s.F%s' % (self._wkBrainId, str(self.__frameNum).zfill(6))
+                frameId = '%s.F%s' % (self._wkBrainId, str(self.__frameNum).zfill(4))
                 if len(self._cbNewReplayFrame) >0:
                     metrix = np.array(self.__replayCache)
                     col_state      = np.concatenate(metrix[:, 0]).reshape(samplelen, self._stateSize)

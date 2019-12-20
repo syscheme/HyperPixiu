@@ -1,0 +1,16 @@
+// configuration of a BackTest
+{
+    "logger": {
+        "level": "info", //40
+        // "console": "False",
+    },
+
+    "DQNTrainer": { 
+        "batchSize": 128,
+        "batchesPerTrain": 8,
+        "poolReuses": 20,
+        "epochsPerFit": 20,
+        "gamma": 0.01,
+        "learningRate": 0.02,
+    },
+}

@@ -15,7 +15,7 @@ from keras.models import model_from_json
 from keras.callbacks import ModelCheckpoint, TensorBoard
 from keras import backend
 
-import sys, os, platform, random
+import sys, os, platform, random, copy
 import h5py, tarfile
 import numpy as np
 
@@ -45,8 +45,8 @@ class DQNTrainer(BaseApplication):
 
         self._batchSize           = self.getConfig('batchSize', 128)
         self._trainSize           = self.getConfig('batchesPerTrain', 8) * self._batchSize
-        self._sampleTimesFromPool = self.getConfig('sampleTimesFromPool', 20)
-        self._epochsPerFit      = self.getConfig('epochsPerFit', 2)
+        self._poolReuses          = self.getConfig('poolReuses', -1)
+        self._epochsPerFit        = self.getConfig('epochsPerFit', 2)
         self._gamma               = self.getConfig('gamma', 0.01)
         self._learningRate        = self.getConfig('learningRate', 0.02)
 
@@ -101,10 +101,6 @@ class DQNTrainer(BaseApplication):
                 framesInHd5.append(name)
         
         frameSeq=[]
-        for i in range(5):
-            a = framesInHd5
-            random.shuffle(a)
-            frameSeq +=a
 
         # build up self.__samplePool
         self.__samplePool = {
@@ -116,19 +112,48 @@ class DQNTrainer(BaseApplication):
         }
 
         itrId=0
+        samplePerFrame =0
+        lastLoss = 9999999
+        loss = 9999999
 
-        while len(frameSeq) >0:
-            poolSize = len(self.__samplePool['state'])
-            while len(frameSeq) >0 and poolSize < self._trainSize *2:
+        while loss > 1000 or abs(loss-lastLoss) > (loss * 0.1) :
+            lastLoss = loss
+
+            if len(frameSeq) <=0:
+                a = copy.copy(framesInHd5)
+                random.shuffle(a)
+                frameSeq +=a
+            
+            startPoolSize = len(self.__samplePool['state'])
+            cEvicted =0
+            if startPoolSize >= max(samplePerFrame, self._trainSize *2):
+                # randomly evict half of the poolSize
+                sampleIdxs = [a for a in range(min(samplePerFrame, int(startPoolSize/2)))]
+                random.shuffle(sampleIdxs)
+                for i in sampleIdxs:
+                    cEvicted +=1
+                    for col in H5_COLS.split(',') :
+                        del self.__samplePool[col][i]
+
+            cAppend =0
+            strFrames=''
+            while len(frameSeq) >0 and len(self.__samplePool['state']) <max(samplePerFrame, self._trainSize *2) :
+                strFrames += '%s,' % frameSeq[0]
                 frame = self._h5file[frameSeq[0]]
                 del frameSeq[0]
 
                 for col in H5_COLS.split(',') :
+                    incrematal = list(frame[col].value)
+                    samplePerFrame = len(incrematal)
                     self.__samplePool[col] += list(frame[col].value)
+                cAppend += samplePerFrame
 
-                poolSize = len(self.__samplePool['state'])
-            
-            for iter in range(self._sampleTimesFromPool) :
+            poolSize = len(self.__samplePool['state'])
+            self.info('sample pool refreshed: size[%s->%s] by evicting %s and refilling %s samples from %s' % (startPoolSize, poolSize, cEvicted, cAppend, strFrames))
+
+            iterations = self._poolReuses if self._poolReuses >0 else int(round(poolSize / self._trainSize, 0))
+
+            for iter in range(iterations) :
                 # random sample a dataset with size=self._trainSize from self.__samplePool
                 samples ={}
                 sampleIdxs = [a for a in range(poolSize)]
@@ -142,16 +167,12 @@ class DQNTrainer(BaseApplication):
                 # call trainMethod to perform tranning
                 itrId +=1
                 result = trainMethod(samples)
+                loss = result.history["loss"][0]
                 self.info('it[%s] done, loss[%s]' % (str(itrId).zfill(6), result.history["loss"][0]))
                 yield result # this is a step
 
-            # randomly evict half of the poolSize
-            sampleIdxs = [a for a in range(int(poolSize/2))]
-            random.shuffle(sampleIdxs)
-            for i in sampleIdxs:
-                for col in H5_COLS.split(',') :
-                    del self.__samplePool[col][i]
-            self.info('evicted samples from pool size: %s->%s' % (poolSize, len(self.__samplePool['state'])))
+            self._brain.save('/tmp/model.json.h5')
+            self.info('saved weights to /tmp/model.json.h5')
 
     def __train_DQN(self, samples):
         # perform DQN training
@@ -204,11 +225,11 @@ if __name__ == '__main__':
     SYMBOL = '000001' # '000540' '000001'
     sourceCsvDir = None
     try:
-        jsetting = p.jsettings('trainer/sourceCsvDir')
+        jsetting = p.jsettings('DQNTrainer/sourceCsvDir')
         if not jsetting is None:
             sourceCsvDir = jsetting(None)
 
-        jsetting = p.jsettings('trainer/objectives')
+        jsetting = p.jsettings('DQNTrainer/objectives')
         if not jsetting is None:
             symbol = jsetting([SYMBOL])[0]
     except Exception as ex:
@@ -230,7 +251,7 @@ if __name__ == '__main__':
 
     p.info('all objects registered piror to DQNTrainer: %s' % p.listByType())
     
-    trainer = p.createApp(DQNTrainer, configNode ='trainer', h5filepath='out/IdealDayTrader/CsvToDQN_24106/RFrames_000001.h5')
+    trainer = p.createApp(DQNTrainer, configNode ='DQNTrainer', h5filepath='out/IdealDayTrader/CsvToDQN_24106/RFrames_000001.h5')
     # rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = '/tmp/DQNTrainer.tcsv')
     # trainer.setRecorder(rec)
 

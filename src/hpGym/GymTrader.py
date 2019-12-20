@@ -775,10 +775,15 @@ class IdealDayTrader(Simulator):
         self._pctMaxDrawDown =99.0 # IdealTrader will not be constrainted by max drawndown, so overwrite it with 99%
         self._warmupDays =0 # IdealTrader will not be constrainted by warmupDays
 
-        self.__ordersToPlace = [] # list of faked OrderData, the OrderData only tells the direction withno amount
-        self.__mdEventsToday = [] # list of the datetime of open, high, low, close price occured today
-        self.__dtToday = None
         self.__cOpenDays =0
+
+        self.__ordersToPlace = [] # list of faked OrderData, the OrderData only tells the direction withno amount
+
+        self.__dtToday = None
+        self.__mdEventsToday = [] # list of the datetime of open, high, low, close price occured today
+
+        self.__dtTomrrow = None
+        self.__mdEventsTomrrow = [] # list of the datetime of open, high, low, close price occured 'tomorrow'
 
 
     # to replace Simulator's __trainPerMarketEvent
@@ -832,6 +837,10 @@ class IdealDayTrader(Simulator):
                         self.__mdEventsToday.append(ev)
                         return
 
+                    if self.__dtTomrrow and self.__dtTomrrow == ev.data.datetime.replace(hour=0, minute=0, second=0, microsecond=0):
+                        self.__mdEventsTomrrow.append(ev)
+                        return
+
                     # day-close here
                     self.scanEventsAndFakeOrders()
                     for cachedEv in self.__mdEventsToday:
@@ -843,8 +852,11 @@ class IdealDayTrader(Simulator):
                         self.OnEvent(cachedEv) # call Trader
                         self._stepNoInEpisode += 1
 
-                    self.__mdEventsToday =[]
-                    self.__dtToday = ev.data.datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+                    self.__dtToday = self.__dtTomrrow
+                    self.__mdEventsToday = self.__mdEventsTomrrow
+
+                    self.__mdEventsTomrrow = []
+                    self.__dtTomrrow = ev.data.datetime.replace(hour=0, minute=0, second=0, microsecond=0)
                     self.__cOpenDays += 1
                     if 0 == (self.__cOpenDays % 100) :
                         self.wkTrader._agent.saveBrain(**self._feedbackToAgent)
@@ -891,41 +903,55 @@ class IdealDayTrader(Simulator):
         
         exit(0) # IdealDayTrader is not supposed to run forever, just exit instead of return
 
-    def scanEventsAndFakeOrders(self) :
-        # step 1. scan self.__mdEventsToday and determine TH TL
+    def __scanEventsSequence(self, evseq) :
+
         price_open, price_high, price_low, price_close = 0.0, 0.0, DUMMY_BIG_VAL, 0.0
         T_high, T_low  = None, None
+        if evseq and len(evseq) >0:
+            for ev in evseq:
+                evd = ev.data
+                if EVENT_TICK == ev.type :
+                    price_close = evd.price
+                    if price_open <= 0.01 :
+                        price_open = price_close
+                    if price_high < price_close :
+                        price_high = price_close
+                        T_high = evd.datetime
+                    if price_low > price_close :
+                        price_low = price_close
+                        T_low = evd.datetime
+                    continue
 
-        for ev in self.__mdEventsToday:
-            evd = ev.data
-            if EVENT_TICK == ev.type :
-                price_close = evd.price
-                if price_open <= 0.01 :
-                    price_open = price_close
-                if price_high < price_close :
-                    price_high = price_close
-                    T_high = evd.datetime
-                if price_low > price_close :
-                    price_low = price_close
-                    T_low = evd.datetime
-                continue
+                if EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
+                    price_close = evd.close
+                    if price_high < evd.high :
+                        price_high = evd.high
+                        T_high = evd.datetime
+                    if price_low > evd.low :
+                        price_low = evd.low
+                        T_low = evd.datetime
+                    if price_open <= 0.01 :
+                        price_open = evd.open
+                    continue
 
-            if EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
-                price_close = evd.close
-                if price_high < evd.high :
-                    price_high = evd.high
-                    T_high = evd.datetime
-                if price_low > evd.low :
-                    price_low = evd.low
-                    T_low = evd.datetime
-                if price_open <= 0.01 :
-                    price_open = evd.open
-                continue
-        
+        return price_open, price_high, price_low, price_close, T_high, T_low
+
+    def scanEventsAndFakeOrders(self) :
+        # step 1. scan self.__mdEventsToday and determine TH TL
+        price_open, price_high, price_low, price_close, T_high, T_low = self.__scanEventsSequence(self.__mdEventsToday)
+        tomorrow_open, tomorrow_high, tomorrow_low, tomorrow_close, tT_high, tT_low = self.__scanEventsSequence(self.__mdEventsTomrrow)
+
         # step 2. faking the ideal orders
         bMayBuy = price_close >= price_open*(100.0 +self._constraintBuy_closeOverOpen)/100 # may BUY today, >=price_open*1.005
         T_win = timedelta(minutes=2)
         slip = 0.02
+
+        uphill_sell_stop = max(price_high -slip, price_close*(100.0 +self._constraintSell_lossBelowHigh)/100)
+        uphill_buy_stop  = min(price_close*(100.0 -self._constraintBuy_closeOverRecovery)/100, price_low +slip)
+        uphill_catchback = price_close + slip *2
+        if tomorrow_high < uphill_catchback * 1.003 :
+            uphill_catchback =0 # so catch back never happen
+
         for ev in self.__mdEventsToday:
             if EVENT_TICK != ev.type and EVENT_KLINE_PREFIX != ev.type[:len(EVENT_KLINE_PREFIX)] :
                 continue
@@ -937,16 +963,22 @@ class IdealDayTrader(Simulator):
             order.datetime = T
 
             if T_low < T_high : # up-hill
-                if bMayBuy and (T <= T_low + T_win and price <= min(price_close*(100.0 -self._constraintBuy_closeOverRecovery)/100, price_low +slip)):
+                if bMayBuy and (T <= T_low + T_win and price <= uphill_buy_stop) :
                     order.direction = OrderData.DIRECTION_LONG 
                     self.__ordersToPlace.append(copy.copy(order))
                 if T <= (T_high + T_win) and price >= (price_high -slip):
                     order.direction = OrderData.DIRECTION_SHORT 
                     self.__ordersToPlace.append(copy.copy(order))
-                elif T > T_high and price > max(price_high -slip, price_close*(100.0 +self._constraintSell_lossBelowHigh)/100) :
-                    # if not ( (price_high - price_close) < (price_high -price_open)/3 ): # we prefer to HOLD overnight if close is quite near high during up-hill
-                    order.direction = OrderData.DIRECTION_SHORT 
-                    self.__ordersToPlace.append(copy.copy(order))
+                elif T > T_high :
+                    if uphill_sell_stop < (uphill_catchback *1.002) and tomorrow_high > price_close:
+                        continue # too narrow to perform any actions
+
+                    if price > uphill_sell_stop:
+                        order.direction = OrderData.DIRECTION_SHORT 
+                        self.__ordersToPlace.append(copy.copy(order))
+                    elif price < uphill_catchback :
+                        order.direction = OrderData.DIRECTION_LONG 
+                        self.__ordersToPlace.append(copy.copy(order))
 
             if T_low > T_high : # down-hill
                 if price_close > price_close*(100.0 +self._constraintBuy_closeOverRecovery)/100 : # if close is at a well recovery edge

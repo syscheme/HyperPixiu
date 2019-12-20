@@ -25,7 +25,6 @@ H5_COLS = 'state,action,reward,next_state,done'
 # sample the data as training data
 class DQNTrainer(BaseApplication):
 
-
     def __init__(self, program, h5filepath, model_json=None, initWeights= None, recorder =None, **kwargs):
         super(DQNTrainer, self).__init__(program, **kwargs)
 
@@ -44,17 +43,18 @@ class DQNTrainer(BaseApplication):
         self.debug('loading saved ReplaySamples from %s' % h5filepath)
         self._h5file = h5py.File(h5filepath, 'r')
 
-        self._batchSize = 128
-        self._iterationPerPool = 200
-        self._trainSize = self._batchSize *20
+        self._batchSize           = self.getConfig('batchSize', 64)
+        self._trainSize           = self.getConfig('batchesPerTrain', 2) * self._batchSize
+        self._sampleTimesFromPool = self.getConfig('sampleTimesFromPool', 2)
+        self._epochsPerFit      = self.getConfig('epochsPerFit', 2)
+        self._gamma               = self.getConfig('gamma', 0.01)
+        self._learningRate        = self.getConfig('learningRate', 0.01)
 
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
-        self._batchesLeftFromPool = 10 # should be something like len(self.__samplePool) / batchSize, when downcounting reached 0, the self.__samplePool should be repopulated from the H5 frames
-        self._brain = None
-        self._learningRate = 0.01
-        self._gamma = 0.01
-        self._epochsPerIteration =200
         self._fitCallbacks =[]
+
+        self._brain = None
+        self._theOther = None
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -74,7 +74,7 @@ class DQNTrainer(BaseApplication):
 
         self._brain.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
 
-        self.__gen = self.__generator(self.__train_DQN)
+        self.__gen = self.__generator(self.__train_DDQN)
         return True
 
     def doAppStep(self):
@@ -111,6 +111,8 @@ class DQNTrainer(BaseApplication):
             'done':[],
         }
 
+        itrId=0
+
         while len(frameNames) >0:
             poolSize = len(self.__samplePool['state'])
             while len(frameNames) >0 and poolSize < self._trainSize:
@@ -126,7 +128,7 @@ class DQNTrainer(BaseApplication):
 
                 poolSize = len(self.__samplePool['state'])
             
-            for iter in range(self._iterationPerPool) :
+            for iter in range(self._sampleTimesFromPool) :
 
                 # random sample a dataset with size=self._trainSize from self.__samplePool
                 samples ={}
@@ -138,8 +140,9 @@ class DQNTrainer(BaseApplication):
                     a = [self.__samplePool[col][i] for i in sampleIdxs]
                     samples[col] = np.array(a)
 
+                itrId +=1
                 result = trainMethod(samples)
-                self.info('itration%s done, loss[%s]' % (str(iter).zfill(6), result.history["loss"][0]))
+                self.info('it[%s] done, loss[%s]' % (str(itrId).zfill(6), result.history["loss"][0]))
                 yield result # this is a step
 
             # randomly evict half of poolSize
@@ -148,19 +151,46 @@ class DQNTrainer(BaseApplication):
             for i in sampleIdxs:
                 for col in H5_COLS.split(',') :
                     del self.__samplePool[col][i]
+            self.info('evicted samples from pool size: %s->%s' % (poolSize, len(self.__samplePool['state'])))
 
     def __train_DQN(self, samples):
-            # perform DQN training
-            y = self._brain.predict(samples['next_state'])
-            maxact= np.amax(y, axis=1) # arrary(sampleLen, 1)
-            done = np.array(samples['done'] !=0)
-            samples['reward'] += (self._gamma * np.logical_not(done) * maxact) # arrary(sampleLen, 1)
-            action_link = np.where(samples['action'] == 1) # array(sizeToBatch, self._actionSize)=>array(2, sizeToBatch)
+        # perform DQN training
+        y = self._brain.predict(samples['next_state'])
+        maxact= np.amax(y, axis=1) # arrary(sampleLen, 1)
+        done = np.array(samples['done'] !=0)
+        rewards = samples['reward'] + (self._gamma * np.logical_not(done) * maxact) # arrary(sampleLen, 1)
+        action_link = np.where(samples['action'] == 1) # array(sizeToBatch, self._actionSize)=>array(2, sizeToBatch)
 
-            q_target = self._brain.predict(samples['state'])
-            q_target[action_link[0], action_link[1]] = samples['reward'] # action_link =arrary(2,sampleLen)
+        q_target = self._brain.predict(samples['state'])
+        q_target[action_link[0], action_link[1]] = rewards # action_link =arrary(2,sampleLen)
 
-            return self._brain.fit(x=samples['state'], y=q_target, epochs=self._epochsPerIteration, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
+        return self._brain.fit(x=samples['state'], y=q_target, epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
+
+    def __train_DDQN(self, samples):
+        if not self._theOther and self._brain :
+            model_json = self._brain.to_json()
+            self._theOther = model_from_json(model_json)
+            self._theOther.set_weights(self._brain.get_weights()) 
+            self._theOther.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
+
+        if np.random.rand() < 0.5:
+            brainPred  = self._brain
+            brainTrain = self._theOther
+        else:
+            brainPred  = self._theOther
+            brainTrain = self._brain
+        
+        y = brainPred.predict(samples['next_state']) # arrary(sampleLen, actionSize)
+        maxact= np.amax(y, axis=1) # arrary(sampleLen, 1)
+        done = np.array(samples['done'] !=0)
+        rewards = samples['reward'] + (self._gamma * np.logical_not(done) * maxact) # arrary(sampleLen, 1)
+        action_link = np.where(samples['action'] == 1) # array(sizeToBatch, self._actionSize)=>array(2, sizeToBatch)
+
+        q_target = self._brain.predict(samples['state'])
+        q_target[action_link[0], action_link[1]] = rewards # action_link =arrary(2,sampleLen)
+
+        return brainTrain.fit(x=samples['state'], y=q_target, epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
+
 
 ########################################################################
 if __name__ == '__main__':

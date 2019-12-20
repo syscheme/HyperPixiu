@@ -614,7 +614,7 @@ class agentDoubleDQN(agentDQN):
             return None
 
         with self._lock:
-            if np.random.rand() < self._epsilon:
+            if np.random.rand() < 0.5:
                 brainPred  = self._brain
                 brainTrain = self._theOther
             else:

@@ -949,7 +949,7 @@ class IdealDayTrader(Simulator):
         uphill_sell_stop = max(price_high -slip, price_close*(100.0 +self._constraintSell_lossBelowHigh)/100)
         uphill_buy_stop  = min(price_close*(100.0 -self._constraintBuy_closeOverRecovery)/100, price_low +slip)
         uphill_catchback = price_close + slip *2
-        if tomorrow_high < uphill_catchback * 1.003 :
+        if tT_high > tT_low or tomorrow_high < uphill_catchback * 1.003 :
             uphill_catchback =0 # so catch back never happen
 
         for ev in self.__mdEventsToday:

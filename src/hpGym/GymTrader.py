@@ -316,10 +316,13 @@ class GymTrader(BaseTrader):
         reward =0.0
         info = {}
 
+        prevCap = self._latestCash + self._latestPosValue
+
         if bObserveOnly:
             info['status'] = 'observe only'
         else :
             reward += - round(self._dailyCapCost /240, 4) # this is supposed the capital timecost every minute as there are 4 open hours every day
+
             # step 1. collected information from the account
             cashAvail, cashTotal, positions = self._account.positionState()
             _, posvalue = self._account.summrizeBalance(positions, cashTotal)
@@ -348,7 +351,6 @@ class GymTrader(BaseTrader):
             else : reward += self.withdrawReward # only allow withdraw the depositted reward when action=HOLD
 
             # step 3. calculate the rewards
-            prevCap = self._latestCash + self._latestPosValue
             self._latestCash, self._latestPosValue = self._account.summrizeBalance() # most likely the cashAmount changed due to comission
             capitalAfterStep = self._latestCash + self._latestPosValue
             if capitalAfterStep > self._maxBalance :
@@ -362,6 +364,9 @@ class GymTrader(BaseTrader):
         
         # step 5. combine account and market observations as final observations, then return
         observation = self.makeupGymObservation()
+        if prevCap >1:
+            reward = reward *10000 /prevCap
+
         return observation, reward, done, info
     
     def gymRender(self, savefig=False, filename='myfig'):
@@ -825,6 +830,7 @@ class IdealDayTrader(Simulator):
         self.wkTrader._agent._cbNewReplayFrame = [self.__saveReplayFrame] # the hook agent's OnNewFrame
         # the IdealTrader normally will disable exploration of agent
         self.wkTrader._agent._epsilon = -1.0 # less than epsilonMin
+        self.wkTrader._dailyCapCost = 0.0 # no more daily cost in ideal trader
 
         # no need to do training if to export ReplayFrames
         if self._generateReplayFrames:

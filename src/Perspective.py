@@ -109,6 +109,14 @@ class Perspective(MarketData):
             EVENT_KLINE_1DAY: EvictableStack(KLDepth_1day, KLineData(self.exchange, self.symbol)),
         }
 
+        #TODO: evsPerDay temporarily is base on AShare's 4hr/day
+        self._evsPerDay = {
+            EVENT_TICK:       3600/2 *4, # assuming every other seconds
+            EVENT_KLINE_1MIN: 60*4,
+            EVENT_KLINE_5MIN: 12*4,
+            EVENT_KLINE_1DAY: 1,
+        }
+
         self.__stampLast = None
         self.__focusLast = None
         self.__dayOHLC = None
@@ -282,7 +290,7 @@ class Perspective(MarketData):
             return [0.0] * self.NNFloatsSize # toNNFloats not available
         
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
-        return self.toNNFloats(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume/100)
+        return self.toNNFloats(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume)
     
     @abstractmethod
     def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
@@ -304,23 +312,33 @@ class Perspective(MarketData):
         result = fAsOf # datetime as the first item
         c =1
 
+        # self._evsPerDay = {
+        #     EVENT_TICK:       3600/2 *4, # assuming every other seconds
+        #     EVENT_KLINE_1MIN: 60*4,
+        #     EVENT_KLINE_5MIN: 12*4,
+        #     EVENT_KLINE_1DAY: 1,
+        # }
+
+
         # part 1, EVENT_TICK
         stk = self._stacks[EVENT_TICK]
+        bV= (baseline_Volume / self._evsPerDay[EVENT_TICK])
         for i in range(stk.evictSize):
             if i >= stk.size:
                 result += [0.0] * EXPORT_FLOATS_DIMS
             else:
-                v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= baseline_Volume)
+                v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= bV )
                 # Perspective.TICK_FLOATS = len(v)
                 result += v
 
         for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]:
             stk = self._stacks[et]
+            bV= (baseline_Volume / self._evsPerDay[et])
             for i in range(stk.evictSize):
                 if i >= stk.size:
                     result += [0.0] * EXPORT_FLOATS_DIMS
                 else:
-                    v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= baseline_Volume)
+                    v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= bV )
                     # Perspective.KLINE_FLOATS = len(v)
                     result += v
 

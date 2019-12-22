@@ -946,16 +946,96 @@ class IdealDayTrader(Simulator):
         price_open, price_high, price_low, price_close, T_high, T_low = self.__scanEventsSequence(self.__mdEventsToday)
         tomorrow_open, tomorrow_high, tomorrow_low, tomorrow_close, tT_high, tT_low = self.__scanEventsSequence(self.__mdEventsTomrrow)
 
+        if not T_high:
+            return
+
+        T_win = timedelta(minutes=2)
+        slip = 0.02
+
+        if T_high.day==3 and T_high.month==5 :
+            print('here')
+
+        # step 2. determine the stop prices
+        sell_stop = price_high -slip
+        buy_stop  = min(price_low +slip, price_close*0.99)
+
+        catchback =0.0 # assume catch-back unnecessaray by default
+        cleanup   =price_high*2 # assume no cleanup
+        if tomorrow_high :
+            tsell_stop = tomorrow_high -slip
+            tbuy_stop  = min(tomorrow_low +slip, tomorrow_close*0.99)
+            cleanup = max(tsell_stop, price_close -slip)
+
+            if tT_low < tT_high : # tomorrow is an up-hill
+                catchback = tbuy_stop
+            else :
+                catchback = min(tomorrow_high*0.98, price_close +slip)
+        elif (price_close < price_open*(100.0 +self._constraintBuy_closeOverOpen)/100):
+            buy_stop =0.0 # forbid to buy
+            catchback =0.0
+
+        if cleanup <price_high: # if cleanup is valid, then no more catchback
+            catchback =0.0
+
+        if sell_stop<=catchback or sell_stop <= buy_stop:
+            sell_stop = price_high*2 # forbid to sell
+
+        # step 2. faking the ideal orders
+        for ev in self.__mdEventsToday:
+            if EVENT_TICK != ev.type and EVENT_KLINE_PREFIX != ev.type[:len(EVENT_KLINE_PREFIX)] :
+                continue
+
+            evd = ev.data
+            T = evd.datetime
+
+            price = evd.price if EVENT_TICK == ev.type else evd.close
+            order = OrderData(self._account)
+            order.datetime = T
+
+            if price <= buy_stop :
+                order.direction = OrderData.DIRECTION_LONG 
+                self.__ordersToPlace.append(copy.copy(order))
+                continue
+
+            if price >= sell_stop :
+                order.direction = OrderData.DIRECTION_SHORT 
+                self.__ordersToPlace.append(copy.copy(order))
+                continue
+
+            if T > max(T_high, T_low) :
+                if price < catchback: # whether to catch back after sold
+                    order.direction = OrderData.DIRECTION_LONG 
+                    self.__ordersToPlace.append(copy.copy(order))
+
+    def scanEventsAndFakeOrders000(self) :
+        # step 1. scan self.__mdEventsToday and determine TH TL
+        price_open, price_high, price_low, price_close, T_high, T_low = self.__scanEventsSequence(self.__mdEventsToday)
+        tomorrow_open, tomorrow_high, tomorrow_low, tomorrow_close, tT_high, tT_low = self.__scanEventsSequence(self.__mdEventsTomrrow)
+
+        if not T_high:
+            return
+
+        if T_high.day==27 and T_high.month==2 :
+            print('here')
+
         # step 2. faking the ideal orders
         bMayBuy = price_close >= price_open*(100.0 +self._constraintBuy_closeOverOpen)/100 # may BUY today, >=price_open*1.005
         T_win = timedelta(minutes=2)
         slip = 0.02
 
-        uphill_sell_stop = max(price_high -slip, price_close*(100.0 +self._constraintSell_lossBelowHigh)/100)
-        uphill_buy_stop  = min(price_close*(100.0 -self._constraintBuy_closeOverRecovery)/100, price_low +slip)
-        uphill_catchback = price_close + slip *2
-        if tT_high and (tT_high > tT_low or tomorrow_high < (uphill_catchback * 1.003)) :
-            uphill_catchback =0 # so catch back never happen
+        sell_stop = max(price_high -slip, price_close*(100.0 +self._constraintSell_lossBelowHigh)/100)
+        buy_stop  = min(price_close*(100.0 -self._constraintBuy_closeOverRecovery)/100, price_low +slip)
+        uphill_catchback = price_close + slip
+
+        if tomorrow_high :
+            if tomorrow_high > price_close*(100.0 +self._constraintBuy_closeOverRecovery)/100 :
+               bMayBuy = True
+
+            if ((tT_low <tT_high and tomorrow_low < price_close) or tomorrow_high < (uphill_catchback * 1.003)) :
+                uphill_catchback =0 # so that catch back never happen
+
+        if price_close > price_low*(100.0 +self._constraintBuy_closeOverRecovery)/100 : # if close is at a well recovery edge
+            bMayBuy = True
 
         for ev in self.__mdEventsToday:
             if EVENT_TICK != ev.type and EVENT_KLINE_PREFIX != ev.type[:len(EVENT_KLINE_PREFIX)] :
@@ -963,22 +1043,23 @@ class IdealDayTrader(Simulator):
 
             evd = ev.data
             T = evd.datetime
+
             price = evd.price if EVENT_TICK == ev.type else evd.close
             order = OrderData(self._account)
             order.datetime = T
 
             if T_low < T_high : # up-hill
-                if bMayBuy and (T <= T_low + T_win and price <= uphill_buy_stop) :
+                if bMayBuy and (T <= T_low + T_win and price <= buy_stop) :
                     order.direction = OrderData.DIRECTION_LONG 
                     self.__ordersToPlace.append(copy.copy(order))
                 if T <= (T_high + T_win) and price >= (price_high -slip):
                     order.direction = OrderData.DIRECTION_SHORT 
                     self.__ordersToPlace.append(copy.copy(order))
                 elif T > T_high :
-                    if uphill_sell_stop < (uphill_catchback *1.002) and tomorrow_high > price_close:
-                        continue # too narrow to perform any actions
+                    # if sell_stop < (uphill_catchback *1.002) and tomorrow_high > price_close:
+                    #     continue # too narrow to perform any actions
 
-                    if price > uphill_sell_stop:
+                    if price > sell_stop:
                         order.direction = OrderData.DIRECTION_SHORT 
                         self.__ordersToPlace.append(copy.copy(order))
                     elif price < uphill_catchback :
@@ -986,12 +1067,10 @@ class IdealDayTrader(Simulator):
                         self.__ordersToPlace.append(copy.copy(order))
 
             if T_low > T_high : # down-hill
-                if price_close > price_close*(100.0 +self._constraintBuy_closeOverRecovery)/100 : # if close is at a well recovery edge
-                    bMayBuy = True
                 if price >= (price_high -slip) or (T < T_low and price >= (price_close*(100.0 +self._constraintSell_downHillOverClose)/100)):
                     order.direction = OrderData.DIRECTION_SHORT 
                     self.__ordersToPlace.append(copy.copy(order))
-                elif bMayBuy and (T > (T_low - T_win) and T <= (T_low + T_win) and price < (price_close*(100.0 +self._constraintBuy_closeOverRecovery)/100) ):
+                elif bMayBuy and (T > (T_low - T_win) and T <= (T_low + T_win) and price < round (price_close +price_low*3) /4, 3) :
                     order.direction = OrderData.DIRECTION_LONG 
                     self.__ordersToPlace.append(copy.copy(order))
 

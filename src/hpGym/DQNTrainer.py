@@ -74,6 +74,9 @@ class DQNTrainer(BaseApplication):
 
         self._brain.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
 
+        checkpoint = ModelCheckpoint('./weights.best.h5', verbose=1, monitor='loss', mode='min', save_best_only=True)
+        self._fitCallbacks =[checkpoint]
+
         self.__gen = self.__generator(self.__train_DDQN)
         return True
 
@@ -99,6 +102,11 @@ class DQNTrainer(BaseApplication):
         for name in self._h5file.keys():
             if 'ReplayFrame:' == name[:len('ReplayFrame:')] :
                 framesInHd5.append(name)
+
+        # I'd like to skip frame-0 as it most-likly includes many zero-samples
+        if len(framesInHd5)>3:
+            del framesInHd5[0]
+            del framesInHd5[-1]
         
         frameSeq=[]
 
@@ -113,11 +121,11 @@ class DQNTrainer(BaseApplication):
 
         itrId=0
         samplePerFrame =0
-        lastLoss = 9999999
+        lossOfLastPool = 9999999
         loss = 9999999
 
-        while loss > 1000 or abs(loss-lastLoss) > (loss * 0.1) :
-            lastLoss = loss
+        while loss > 1000 or abs(loss-lossOfLastPool) > (loss * 0.1) :
+            lossOfLastPool = loss
 
             if len(frameSeq) <=0:
                 a = copy.copy(framesInHd5)
@@ -151,9 +159,12 @@ class DQNTrainer(BaseApplication):
             poolSize = len(self.__samplePool['state'])
             self.info('sample pool refreshed: size[%s->%s] by evicting %s and refilling %s samples from %s' % (startPoolSize, poolSize, cEvicted, cAppend, strFrames))
 
-            iterations = self._poolReuses if self._poolReuses >0 else int(round(poolSize / self._trainSize, 0))
+            # iterations = self._poolReuses if self._poolReuses >0 else int(round(poolSize / self._trainSize, 0))
+            lossOfThisPool = 9999999
+            loss = lossOfThisPool
+            while loss > 1000 or abs(loss-lossOfThisPool) > (loss * 0.2) :
+                lossOfThisPool = loss
 
-            for iter in range(iterations) :
                 # random sample a dataset with size=self._trainSize from self.__samplePool
                 samples ={}
                 sampleIdxs = [a for a in range(poolSize)]
@@ -166,13 +177,15 @@ class DQNTrainer(BaseApplication):
 
                 # call trainMethod to perform tranning
                 itrId +=1
+                # loss = 9999999
+                # while loss > 100000:
                 result = trainMethod(samples)
-                loss = result.history["loss"][0]
-                self.info('it[%s] done, loss[%s]' % (str(itrId).zfill(6), result.history["loss"][0]))
+                loss = result.history["loss"][-1]
+                self.info('it[%s] done, loss[%s]' % (str(itrId).zfill(6), loss))
                 yield result # this is a step
 
             self._brain.save('/tmp/model.json.h5')
-            self.info('saved weights to /tmp/model.json.h5')
+            self.info('saved weights to /tmp/model.json.h5 with loss[%s]' %loss)
 
     def __train_DQN(self, samples):
         # perform DQN training
@@ -251,7 +264,8 @@ if __name__ == '__main__':
 
     p.info('all objects registered piror to DQNTrainer: %s' % p.listByType())
     
-    trainer = p.createApp(DQNTrainer, configNode ='DQNTrainer', h5filepath='out/IdealDayTrader/CsvToDQN_24106/RFrames_000001.h5')
+    # trainer = p.createApp(DQNTrainer, configNode ='DQNTrainer', h5filepath='out/IdealDayTrader/CsvToDQN_24106/RFrames_000001.h5')
+    trainer = p.createApp(DQNTrainer, configNode ='DQNTrainer', h5filepath='out/RFrames_SH510050.h5')
     # rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = '/tmp/DQNTrainer.tcsv')
     # trainer.setRecorder(rec)
 

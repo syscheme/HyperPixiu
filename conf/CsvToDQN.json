@@ -8,8 +8,8 @@
             // "epochsPerObservOnGpu" :2,
         },
 
-        "sourceCsvDir": "/mnt/e/AShareSample",
-        "objectives": ["000001"],
+        "sourceCsvDir": "/mnt/e/AShareSample/ETF",
+        "objectives": ["SH510050"],
     },
 
     "logger": {

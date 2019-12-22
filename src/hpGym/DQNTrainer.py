@@ -153,7 +153,7 @@ class DQNTrainer(BaseApplication):
                 for col in H5_COLS.split(',') :
                     incrematal = list(frame[col].value)
                     samplePerFrame = len(incrematal)
-                    self.__samplePool[col] += list(frame[col].value)
+                    self.__samplePool[col] += incrematal
                 cAppend += samplePerFrame
 
             poolSize = len(self.__samplePool['state'])

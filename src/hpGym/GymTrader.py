@@ -241,6 +241,8 @@ class GymTrader(BaseTrader):
         bObserveOnly, action = self.determinActionByMarketEvent(ev)
         next_state, reward, done, info = self.gymStep(action, bObserveOnly)
 
+        self._gymState = next_state
+
     def determinActionByMarketEvent(self, ev):
         '''processing an incoming MarketEvent'''
         bObserveOnly = False
@@ -580,6 +582,8 @@ class Simulator(BackTestApp):
         loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, action, reward, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
         if loss: self.__recentLoss =loss
 
+        self.wkTrader._gymState = next_state
+
         self._total_reward += reward
         self.debug('__trainPerMarketEvent(%s) performed gymAct(%s%s) got reward[%s/%s] done[%s], agent ack-ed loss[%s]'% (ev.desc, action, strActionAdj, reward, self._total_reward, done, self.loss))
 
@@ -807,6 +811,7 @@ class IdealDayTrader(Simulator):
         loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, action, reward, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
         if loss: self.__recentLoss =loss
 
+        self.wkTrader._gymState = next_state
         self._total_reward += reward
         self.debug('__idealActionPerMarketEvent(%s) performed gymAct(%s) got reward[%s/%s] done[%s], agent ack-ed loss[%s]'% (ev.desc, action, reward, self._total_reward, done, loss))
 

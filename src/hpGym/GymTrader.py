@@ -977,8 +977,8 @@ class IdealDayTrader(Simulator):
         if cleanup <price_high: # if cleanup is valid, then no more catchback
             catchback =0.0
 
-        if sell_stop<=catchback or sell_stop <= buy_stop:
-            sell_stop = price_high*2 # forbid to sell
+        if sell_stop <= max(catchback, buy_stop)+slip:
+            sell_stop = cleanup # no need to sell
 
         # step 2. faking the ideal orders
         for ev in self.__mdEventsToday:

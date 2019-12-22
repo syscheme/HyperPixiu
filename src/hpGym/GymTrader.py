@@ -779,6 +779,7 @@ class IdealDayTrader(Simulator):
         '''Constructor
         '''
         super(IdealDayTrader, self).__init__(program, trader, histdata, **kwargs)
+        self._dayPercentToCatch           = self.getConfig('constraints/dayPercentToCatch',          1.0) # pecentage of daychange to catch, otherwise will keep position empty
         self._constraintBuy_closeOverOpen = self.getConfig('constraints/buy_closeOverOpen',          0.5) #pecentage price-close more than price-open - indicate buy
         self._constraintBuy_closeOverRecovery = self.getConfig('constraint/buy_closeOverRecovery',   2.0) #pecentage price-close more than price-low at the recovery edge - indicate buy
         self._constraintSell_lossBelowHigh = self.getConfig('constraint/sell_lossBelowHigh',         2.0) #pecentage price-close less than price-high at the loss edge - indicate sell
@@ -967,7 +968,7 @@ class IdealDayTrader(Simulator):
 
         # step 2. determine the stop prices
         sell_stop = price_high -slip
-        buy_stop  = min(price_low +slip, price_close*0.99)
+        buy_stop  = min(price_low +slip, price_close*(100.0-self._dayPercentToCatch)/100)
 
         catchback =0.0 # assume catch-back unnecessaray by default
         cleanup   =price_high*2 # assume no cleanup
@@ -979,7 +980,7 @@ class IdealDayTrader(Simulator):
             if tT_low < tT_high : # tomorrow is an up-hill
                 catchback = tbuy_stop
             else :
-                catchback = min(tomorrow_high*0.98, price_close +slip)
+                catchback = min(tomorrow_high**(100.0- 2*self._dayPercentToCatch)/100, price_close +slip)
         elif (price_close < price_open*(100.0 +self._constraintBuy_closeOverOpen)/100):
             buy_stop =0.0 # forbid to buy
             catchback =0.0

@@ -426,6 +426,10 @@ class GymTrader(BaseTrader):
     #------------------------------------------------
 
     def makeupGymObservation(self):
+        market_state = self._marketState.toNNFloats(self._tradeSymbol)
+        return np.array(market_state).astype(GymTrader.NN_FLOAT)
+
+    def makeupGymObservation_0(self):
         '''Concatenate all necessary elements to create the observation.
 
         Returns:

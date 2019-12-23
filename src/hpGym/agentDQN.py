@@ -438,7 +438,16 @@ class agentDQN(MetaAgent):
             done_batch = batch[:, 4] #array(sizeToBatch, 1)
 
             # action processing
-            action_batch = np.where(action_batch == 1) # array(sizeToBatch, self._actionSize)=>array(2, sizeToBatch)
+            action_batch = np.where(action_batch == 1) # array(sizeToBatch, self._actionSize)=>array(2, sizeToBatch): array[0]=[index of item] arrayp[1]=[2d index of where=1]
+            # >>> a = np.array([[0,1,0],[1,0,0],[0,0,1],[1,0,0]])
+            # >>> link =np.where(a==1)
+            # >>> link
+            # (array([0, 1, 2, 3]), array([1, 0, 2, 0]))
+            # >>> b =a
+            # >>> b[link[0],link[1]] =[1,2,3,4]
+            # >>> b
+            # array([[0, 1, 0],[2, 0, 0],[0, 0, 3],[4, 0, 0]])
+            
             return state_batch, action_batch, reward_batch, next_state_batch, done_batch
 
     def OnNewFrame(self, frameId, col_state, col_action, col_reward, col_next_state, col_done) :

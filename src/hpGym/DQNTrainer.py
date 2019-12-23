@@ -30,7 +30,8 @@ class DQNTrainer(BaseApplication):
 
         self._model_json = model_json
         if not self._model_json :
-            modelfn = os.path.join(self.dataRoot, 'DQN_Cnn1Dx4.1556_3/model.json')
+            # modelfn = os.path.join(self.dataRoot, 'DQN_Cnn1Dx4.1556_3/model.json')
+            modelfn = 'e:/AShareSample/ETF/DQN_Cnn1Dx4.1548_3.model.json'
             modelfn = self.getConfig('model_file', modelfn)
             self.debug('loading saved brain from %s' % modelfn)
             with open(modelfn, 'r') as mjson:
@@ -49,6 +50,8 @@ class DQNTrainer(BaseApplication):
         self._epochsPerFit        = self.getConfig('epochsPerFit', 2)
         self._gamma               = self.getConfig('gamma', 0.01)
         self._learningRate        = self.getConfig('learningRate', 0.02)
+        self._maxLossBeforeStepSamples  = self.getConfig('maxLossBeforeStepSamples', 1000)
+        self._maxPctLossDiff      = self.getConfig('maxPctLossDiff', 10)
 
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
@@ -74,7 +77,7 @@ class DQNTrainer(BaseApplication):
 
         self._brain.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
 
-        checkpoint = ModelCheckpoint('./weights.best.h5', verbose=1, monitor='loss', mode='min', save_best_only=True)
+        checkpoint = ModelCheckpoint('./weights.best.h5', verbose=0, monitor='loss', mode='min', save_best_only=True)
         self._fitCallbacks =[checkpoint]
 
         self.__gen = self.__generator(self.__train_DDQN)
@@ -108,6 +111,9 @@ class DQNTrainer(BaseApplication):
             del framesInHd5[0]
             del framesInHd5[-1]
         
+        if len(framesInHd5)>6:
+            del framesInHd5[0]
+
         frameSeq=[]
 
         # build up self.__samplePool
@@ -124,7 +130,7 @@ class DQNTrainer(BaseApplication):
         lossOfLastPool = 9999999
         loss = 9999999
 
-        while loss > 1000 or abs(loss-lossOfLastPool) > (loss * 0.1) :
+        while len(frameSeq) >0 or loss > self._maxLossBeforeStepSamples or abs(loss-lossOfLastPool) > (loss * self._maxPctLossDiff/100) :
             lossOfLastPool = loss
 
             if len(frameSeq) <=0:
@@ -157,19 +163,21 @@ class DQNTrainer(BaseApplication):
                 cAppend += samplePerFrame
 
             poolSize = len(self.__samplePool['state'])
-            self.info('sample pool refreshed: size[%s->%s] by evicting %s and refilling %s samples from %s' % (startPoolSize, poolSize, cEvicted, cAppend, strFrames))
+            self.info('sample pool refreshed: size[%s->%s] by evicting %s and refilling %s samples from %s, %d frames await' % (startPoolSize, poolSize, cEvicted, cAppend, strFrames, len(frameSeq)))
 
             # iterations = self._poolReuses if self._poolReuses >0 else int(round(poolSize / self._trainSize, 0))
             lossOfThisPool = 9999999
             loss = lossOfThisPool
-            while loss > 1000 or abs(loss-lossOfThisPool) > (loss * 0.2) :
+            itsInPoll = int((poolSize +self._trainSize -1)/ self._trainSize)
+            while itsInPoll>0 or loss > self._maxLossBeforeStepSamples or abs(loss-lossOfThisPool) > (loss * self._maxPctLossDiff *2/100) :
+                itsInPoll -=1
                 lossOfThisPool = loss
 
                 # random sample a dataset with size=self._trainSize from self.__samplePool
                 samples ={}
                 sampleIdxs = [a for a in range(poolSize)]
                 random.shuffle(sampleIdxs)
-                del sampleIdxs[self._trainSize:]
+                del sampleIdxs[self._trainSize :]
 
                 for col in H5_COLS.split(',') :
                     a = [self.__samplePool[col][i] for i in sampleIdxs]
@@ -181,10 +189,10 @@ class DQNTrainer(BaseApplication):
                 # while loss > 100000:
                 result = trainMethod(samples)
                 loss = result.history["loss"][-1]
-                self.info('it[%s] done, loss[%s]' % (str(itrId).zfill(6), loss))
+                self.info('train[%s] done, sampled %d from poolsize[%s], loss[%s]' % (str(itrId).zfill(6), self._trainSize, poolSize, loss))
                 yield result # this is a step
 
-            self._brain.save('/tmp/model.json.h5')
+            self._brain.save('/tmp/DQN_Cnn1Dx4.1548_3.h5')
             self.info('saved weights to /tmp/model.json.h5 with loss[%s]' %loss)
 
     def __train_DQN(self, samples):
@@ -265,7 +273,7 @@ if __name__ == '__main__':
     p.info('all objects registered piror to DQNTrainer: %s' % p.listByType())
     
     # trainer = p.createApp(DQNTrainer, configNode ='DQNTrainer', h5filepath='out/IdealDayTrader/CsvToDQN_24106/RFrames_000001.h5')
-    trainer = p.createApp(DQNTrainer, configNode ='DQNTrainer', h5filepath='out/RFrames_SH510050.h5')
+    trainer = p.createApp(DQNTrainer, configNode ='DQNTrainer', h5filepath='e:/AShareSample/ETF/RFrames_SH510050.h5')
     # rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = '/tmp/DQNTrainer.tcsv')
     # trainer.setRecorder(rec)
 

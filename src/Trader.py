@@ -87,6 +87,7 @@ class BaseTrader(MetaTrader):
         self._accountId      = self.getConfig('accountId', self._accountId)
         self._outDir         = self.getConfig('outDir', self.dataRoot)
         self._annualCostRatePcnt = self.getConfig('annualCostRatePcnt', 10) # the annual cost rate of capital time, 10% by default
+        self._maxValuePerOrder = self.getConfig('maxValuePerOrder', 0) # the max value limitation of a single order
 
         if self._outDir and '/' != self._outDir[-1]: self._outDir +='/'
         

@@ -241,6 +241,8 @@ class GymTrader(BaseTrader):
         bObserveOnly, action = self.determinActionByMarketEvent(ev)
         next_state, reward, done, info = self.gymStep(action, bObserveOnly)
 
+        self._gymState = next_state
+
     def determinActionByMarketEvent(self, ev):
         '''processing an incoming MarketEvent'''
         bObserveOnly = False
@@ -314,10 +316,13 @@ class GymTrader(BaseTrader):
         reward =0.0
         info = {}
 
+        prevCap = self._latestCash + self._latestPosValue
+
         if bObserveOnly:
             info['status'] = 'observe only'
         else :
             reward += - round(self._dailyCapCost /240, 4) # this is supposed the capital timecost every minute as there are 4 open hours every day
+
             # step 1. collected information from the account
             cashAvail, cashTotal, positions = self._account.positionState()
             _, posvalue = self._account.summrizeBalance(positions, cashTotal)
@@ -346,7 +351,6 @@ class GymTrader(BaseTrader):
             else : reward += self.withdrawReward # only allow withdraw the depositted reward when action=HOLD
 
             # step 3. calculate the rewards
-            prevCap = self._latestCash + self._latestPosValue
             self._latestCash, self._latestPosValue = self._account.summrizeBalance() # most likely the cashAmount changed due to comission
             capitalAfterStep = self._latestCash + self._latestPosValue
             if capitalAfterStep > self._maxBalance :
@@ -360,6 +364,9 @@ class GymTrader(BaseTrader):
         
         # step 5. combine account and market observations as final observations, then return
         observation = self.makeupGymObservation()
+        if prevCap >1:
+            reward = reward *10000 /prevCap
+
         return observation, reward, done, info
     
     def gymRender(self, savefig=False, filename='myfig'):
@@ -424,6 +431,10 @@ class GymTrader(BaseTrader):
     #------------------------------------------------
 
     def makeupGymObservation(self):
+        market_state = self._marketState.toNNFloats(self._tradeSymbol)
+        return np.array(market_state).astype(GymTrader.NN_FLOAT)
+
+    def makeupGymObservation_0(self):
         '''Concatenate all necessary elements to create the observation.
 
         Returns:
@@ -579,6 +590,8 @@ class Simulator(BackTestApp):
     
         loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, action, reward, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
         if loss: self.__recentLoss =loss
+
+        self.wkTrader._gymState = next_state
 
         self._total_reward += reward
         self.debug('__trainPerMarketEvent(%s) performed gymAct(%s%s) got reward[%s/%s] done[%s], agent ack-ed loss[%s]'% (ev.desc, action, strActionAdj, reward, self._total_reward, done, self.loss))
@@ -766,6 +779,7 @@ class IdealDayTrader(Simulator):
         '''Constructor
         '''
         super(IdealDayTrader, self).__init__(program, trader, histdata, **kwargs)
+        self._dayPercentToCatch           = self.getConfig('constraints/dayPercentToCatch',          1.0) # pecentage of daychange to catch, otherwise will keep position empty
         self._constraintBuy_closeOverOpen = self.getConfig('constraints/buy_closeOverOpen',          0.5) #pecentage price-close more than price-open - indicate buy
         self._constraintBuy_closeOverRecovery = self.getConfig('constraint/buy_closeOverRecovery',   2.0) #pecentage price-close more than price-low at the recovery edge - indicate buy
         self._constraintSell_lossBelowHigh = self.getConfig('constraint/sell_lossBelowHigh',         2.0) #pecentage price-close less than price-high at the loss edge - indicate sell
@@ -807,6 +821,7 @@ class IdealDayTrader(Simulator):
         loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, action, reward, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
         if loss: self.__recentLoss =loss
 
+        self.wkTrader._gymState = next_state
         self._total_reward += reward
         self.debug('__idealActionPerMarketEvent(%s) performed gymAct(%s) got reward[%s/%s] done[%s], agent ack-ed loss[%s]'% (ev.desc, action, reward, self._total_reward, done, loss))
 
@@ -816,6 +831,7 @@ class IdealDayTrader(Simulator):
         self.wkTrader._agent._cbNewReplayFrame = [self.__saveReplayFrame] # the hook agent's OnNewFrame
         # the IdealTrader normally will disable exploration of agent
         self.wkTrader._agent._epsilon = -1.0 # less than epsilonMin
+        self.wkTrader._dailyCapCost = 0.0 # no more daily cost in ideal trader
 
         # no need to do training if to export ReplayFrames
         if self._generateReplayFrames:
@@ -941,16 +957,96 @@ class IdealDayTrader(Simulator):
         price_open, price_high, price_low, price_close, T_high, T_low = self.__scanEventsSequence(self.__mdEventsToday)
         tomorrow_open, tomorrow_high, tomorrow_low, tomorrow_close, tT_high, tT_low = self.__scanEventsSequence(self.__mdEventsTomrrow)
 
+        if not T_high:
+            return
+
+        T_win = timedelta(minutes=2)
+        slip = 0.02
+
+        if T_high.day==3 and T_high.month==5 :
+            print('here')
+
+        # step 2. determine the stop prices
+        sell_stop = price_high -slip
+        buy_stop  = min(price_low +slip, price_close*(100.0-self._dayPercentToCatch)/100)
+
+        catchback =0.0 # assume catch-back unnecessaray by default
+        cleanup   =price_high*2 # assume no cleanup
+        if tomorrow_high :
+            tsell_stop = tomorrow_high -slip
+            tbuy_stop  = min(tomorrow_low +slip, tomorrow_close*0.99)
+            cleanup = max(tsell_stop, price_close -slip)
+
+            if tT_low < tT_high : # tomorrow is an up-hill
+                catchback = tbuy_stop
+            else :
+                catchback = min(tomorrow_high**(100.0- 2*self._dayPercentToCatch)/100, price_close +slip)
+        elif (price_close < price_open*(100.0 +self._constraintBuy_closeOverOpen)/100):
+            buy_stop =0.0 # forbid to buy
+            catchback =0.0
+
+        if cleanup <price_high: # if cleanup is valid, then no more catchback
+            catchback =0.0
+
+        if sell_stop <= max(catchback, buy_stop)+slip:
+            sell_stop = cleanup # no need to sell
+
+        # step 2. faking the ideal orders
+        for ev in self.__mdEventsToday:
+            if EVENT_TICK != ev.type and EVENT_KLINE_PREFIX != ev.type[:len(EVENT_KLINE_PREFIX)] :
+                continue
+
+            evd = ev.data
+            T = evd.datetime
+
+            price = evd.price if EVENT_TICK == ev.type else evd.close
+            order = OrderData(self._account)
+            order.datetime = T
+
+            if price <= buy_stop :
+                order.direction = OrderData.DIRECTION_LONG 
+                self.__ordersToPlace.append(copy.copy(order))
+                continue
+
+            if price >= sell_stop :
+                order.direction = OrderData.DIRECTION_SHORT 
+                self.__ordersToPlace.append(copy.copy(order))
+                continue
+
+            if T > max(T_high, T_low) :
+                if price < catchback: # whether to catch back after sold
+                    order.direction = OrderData.DIRECTION_LONG 
+                    self.__ordersToPlace.append(copy.copy(order))
+
+    def scanEventsAndFakeOrders000(self) :
+        # step 1. scan self.__mdEventsToday and determine TH TL
+        price_open, price_high, price_low, price_close, T_high, T_low = self.__scanEventsSequence(self.__mdEventsToday)
+        tomorrow_open, tomorrow_high, tomorrow_low, tomorrow_close, tT_high, tT_low = self.__scanEventsSequence(self.__mdEventsTomrrow)
+
+        if not T_high:
+            return
+
+        if T_high.day==27 and T_high.month==2 :
+            print('here')
+
         # step 2. faking the ideal orders
         bMayBuy = price_close >= price_open*(100.0 +self._constraintBuy_closeOverOpen)/100 # may BUY today, >=price_open*1.005
         T_win = timedelta(minutes=2)
         slip = 0.02
 
-        uphill_sell_stop = max(price_high -slip, price_close*(100.0 +self._constraintSell_lossBelowHigh)/100)
-        uphill_buy_stop  = min(price_close*(100.0 -self._constraintBuy_closeOverRecovery)/100, price_low +slip)
-        uphill_catchback = price_close + slip *2
-        if tT_high and (tT_high > tT_low or tomorrow_high < (uphill_catchback * 1.003)) :
-            uphill_catchback =0 # so catch back never happen
+        sell_stop = max(price_high -slip, price_close*(100.0 +self._constraintSell_lossBelowHigh)/100)
+        buy_stop  = min(price_close*(100.0 -self._constraintBuy_closeOverRecovery)/100, price_low +slip)
+        uphill_catchback = price_close + slip
+
+        if tomorrow_high :
+            if tomorrow_high > price_close*(100.0 +self._constraintBuy_closeOverRecovery)/100 :
+               bMayBuy = True
+
+            if ((tT_low <tT_high and tomorrow_low < price_close) or tomorrow_high < (uphill_catchback * 1.003)) :
+                uphill_catchback =0 # so that catch back never happen
+
+        if price_close > price_low*(100.0 +self._constraintBuy_closeOverRecovery)/100 : # if close is at a well recovery edge
+            bMayBuy = True
 
         for ev in self.__mdEventsToday:
             if EVENT_TICK != ev.type and EVENT_KLINE_PREFIX != ev.type[:len(EVENT_KLINE_PREFIX)] :
@@ -958,22 +1054,23 @@ class IdealDayTrader(Simulator):
 
             evd = ev.data
             T = evd.datetime
+
             price = evd.price if EVENT_TICK == ev.type else evd.close
             order = OrderData(self._account)
             order.datetime = T
 
             if T_low < T_high : # up-hill
-                if bMayBuy and (T <= T_low + T_win and price <= uphill_buy_stop) :
+                if bMayBuy and (T <= T_low + T_win and price <= buy_stop) :
                     order.direction = OrderData.DIRECTION_LONG 
                     self.__ordersToPlace.append(copy.copy(order))
                 if T <= (T_high + T_win) and price >= (price_high -slip):
                     order.direction = OrderData.DIRECTION_SHORT 
                     self.__ordersToPlace.append(copy.copy(order))
                 elif T > T_high :
-                    if uphill_sell_stop < (uphill_catchback *1.002) and tomorrow_high > price_close:
-                        continue # too narrow to perform any actions
+                    # if sell_stop < (uphill_catchback *1.002) and tomorrow_high > price_close:
+                    #     continue # too narrow to perform any actions
 
-                    if price > uphill_sell_stop:
+                    if price > sell_stop:
                         order.direction = OrderData.DIRECTION_SHORT 
                         self.__ordersToPlace.append(copy.copy(order))
                     elif price < uphill_catchback :
@@ -981,12 +1078,10 @@ class IdealDayTrader(Simulator):
                         self.__ordersToPlace.append(copy.copy(order))
 
             if T_low > T_high : # down-hill
-                if price_close > price_close*(100.0 +self._constraintBuy_closeOverRecovery)/100 : # if close is at a well recovery edge
-                    bMayBuy = True
                 if price >= (price_high -slip) or (T < T_low and price >= (price_close*(100.0 +self._constraintSell_downHillOverClose)/100)):
                     order.direction = OrderData.DIRECTION_SHORT 
                     self.__ordersToPlace.append(copy.copy(order))
-                elif bMayBuy and (T > (T_low - T_win) and T <= (T_low + T_win) and price < (price_close*(100.0 +self._constraintBuy_closeOverRecovery)/100) ):
+                elif bMayBuy and (T > (T_low - T_win) and T <= (T_low + T_win) and price < round (price_close +price_low*3) /4, 3) :
                     order.direction = OrderData.DIRECTION_LONG 
                     self.__ordersToPlace.append(copy.copy(order))
 

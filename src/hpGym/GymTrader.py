@@ -838,12 +838,20 @@ class IdealDayTrader(Simulator):
         #     r = 1 if all(action == act) else fakedRewards[a]  # the positive reward for the bingo-ed action, should = reward?
         #     loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, act, r, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
         #     if loss: self.__recentLoss =loss
-        if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]) and GymTrader.ACTION_BUY in info['execAction'] :
-            loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, action, 1, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
-        elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]) and GymTrader.ACTION_SELL in info['execAction'] :
-            loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, action, 1, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+        if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]):
+            if GymTrader.ACTION_BUY in info['execAction'] :
+                loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_BUY], max(reward, 1.0), next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+            else:
+                loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_BUY], 0.5, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+                loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_HOLD], 0.1, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+        elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]):
+            if GymTrader.ACTION_SELL in info['execAction'] :
+                loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_SELL], max(reward, 1.0), next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+            else:
+                loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_SELL], 0.5, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+                loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_HOLD], 0.1, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
         else:
-            loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_HOLD], reward, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+            loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_HOLD], max(reward, 1.0), next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
 
         if loss: self.__recentLoss =loss
 

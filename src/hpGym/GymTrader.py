@@ -818,8 +818,17 @@ class IdealDayTrader(Simulator):
 
         next_state, reward, done, info = self.wkTrader.gymStep(action, bObserveOnly)
     
-        loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, action, reward, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
-        if loss: self.__recentLoss =loss
+        # fake reward here and make every possible as an obervation into the replaybuffer
+        fakedRewards = {
+            GymTrader.ACTION_HOLD: -round(self.wkTrader._dailyCapCost/240, 2),
+            GymTrader.ACTION_BUY: -1,
+            GymTrader.ACTION_SELL: -1,
+        }
+        for a in [GymTrader.ACTION_HOLD, GymTrader.ACTION_BUY, GymTrader.ACTION_SELL] :
+            act = GymTrader.ACTIONS[a]
+            r = 1 if all(action == act) else fakedRewards[a]  # the positive reward for the bingo-ed action, should = reward?
+            loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, act, r, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+            if loss: self.__recentLoss =loss
 
         self.wkTrader._gymState = next_state
         self._total_reward += reward

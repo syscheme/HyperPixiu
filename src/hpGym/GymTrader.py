@@ -314,7 +314,7 @@ class GymTrader(BaseTrader):
         done = False
         instant_pnl = 0.0
         reward =0.0
-        info = {}
+        info = {'execAction': GymTrader.ACTION_HOLD }
 
         prevCap = self._latestCash + self._latestPosValue
 
@@ -333,17 +333,25 @@ class GymTrader(BaseTrader):
             latestPrice = self._marketState.latestPrice(symbol)
 
             maxBuy, maxSell = self._account.maxOrderVolume(symbol, latestPrice)
+            if self._maxValuePerOrder >0:
+                if self._maxValuePerOrder < (maxBuy * latestPrice*100):
+                    maxBuy = int(maxBuy * self._maxValuePerOrder / (maxBuy* latestPrice*100))
+                if self._maxValuePerOrder < (maxSell*1.5 * latestPrice*100):
+                    maxSell = int(maxSell * self._maxValuePerOrder / (maxSell * latestPrice*100))
+
             # TODO: the first version only support FULL-BUY and FULL-SELL
             if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]) :
                 if maxBuy >0 :
-                    self.debug('gymStep() issuing maxBuy %s x%s' %(latestPrice, maxBuy))
+                    info['execAction'] = '%s:%sx%s' %(GymTrader.ACTION_BUY, latestPrice, maxBuy)
+                    self.debug('gymStep() issuing max%s' % info['execAction'])
                     self._account.cancelAllOrders()
                     vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, strategy=None)
                     info['status'] = 'buy issued'
                 else: reward -= 1 # penalty: is the agent blind to buy with no cash? :)
             elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]):
                 if  maxSell >0:
-                    self.debug('gymStep() issuing maxSell %s x%s' %(latestPrice, maxSell))
+                    info['execAction'] = '%s:%sx%s' %(GymTrader.ACTION_SELL, latestPrice, maxBuy)
+                    self.debug('gymStep() issuing max%s' % info['execAction'])
                     self._account.cancelAllOrders()
                     vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, strategy=None)
                     info['status'] = 'sell issued'
@@ -817,8 +825,26 @@ class IdealDayTrader(Simulator):
                 del self.__ordersToPlace[0]
 
         next_state, reward, done, info = self.wkTrader.gymStep(action, bObserveOnly)
+        loss = None
     
-        loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, action, reward, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+        # fake reward here and make every possible as an obervation into the replaybuffer
+        # fakedRewards = {
+        #     GymTrader.ACTION_HOLD: -round(self.wkTrader._dailyCapCost/240, 2),
+        #     GymTrader.ACTION_BUY: -1,
+        #     GymTrader.ACTION_SELL: -1,
+        # }
+        # for a in [GymTrader.ACTION_HOLD, GymTrader.ACTION_BUY, GymTrader.ACTION_SELL] :
+        #     act = GymTrader.ACTIONS[a]
+        #     r = 1 if all(action == act) else fakedRewards[a]  # the positive reward for the bingo-ed action, should = reward?
+        #     loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, act, r, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+        #     if loss: self.__recentLoss =loss
+        if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]) and GymTrader.ACTION_BUY in info['execAction'] :
+            loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, action, 1, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+        elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]) and GymTrader.ACTION_SELL in info['execAction'] :
+            loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, action, 1, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+        else:
+            loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_HOLD], reward, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+
         if loss: self.__recentLoss =loss
 
         self.wkTrader._gymState = next_state
@@ -831,7 +857,8 @@ class IdealDayTrader(Simulator):
         self.wkTrader._agent._cbNewReplayFrame = [self.__saveReplayFrame] # the hook agent's OnNewFrame
         # the IdealTrader normally will disable exploration of agent
         self.wkTrader._agent._epsilon = -1.0 # less than epsilonMin
-        self.wkTrader._dailyCapCost = 0.0 # no more daily cost in ideal trader
+        # self.wkTrader._dailyCapCost = 0.0 # no more daily cost in ideal trader
+        self.wkTrader._maxValuePerOrder = self._startBalance /2
 
         # no need to do training if to export ReplayFrames
         if self._generateReplayFrames:

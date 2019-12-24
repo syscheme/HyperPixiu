@@ -792,7 +792,7 @@ class IdealDayTrader(Simulator):
         self._constraintBuy_closeOverRecovery = self.getConfig('constraint/buy_closeOverRecovery',   2.0) #pecentage price-close more than price-low at the recovery edge - indicate buy
         self._constraintSell_lossBelowHigh = self.getConfig('constraint/sell_lossBelowHigh',         2.0) #pecentage price-close less than price-high at the loss edge - indicate sell
         self._constraintSell_downHillOverClose = self.getConfig('constraint/sell_downHillOverClose', 0.5) #pecentage price more than price-close triggers sell during a downhill-day to reduce loss
-        self._generateReplayFrames  = self.getConfig('generateReplayFrames', True) in BOOL_STRVAL_TRUE
+        self._generateReplayFrames  = self.getConfig('generateReplayFrames', 'directionOnly').lower()
 
         self._pctMaxDrawDown =99.0 # IdealTrader will not be constrainted by max drawndown, so overwrite it with 99%
         self._warmupDays =0 # IdealTrader will not be constrainted by warmupDays
@@ -871,7 +871,7 @@ class IdealDayTrader(Simulator):
         self.wkTrader._maxValuePerOrder = self._startBalance /2
 
         # no need to do training if to export ReplayFrames
-        if self._generateReplayFrames:
+        if 'full' == self._generateReplayFrames or 'direction' in self._generateReplayFrames:
             self.wkTrader._agent._learningRate = -1.0
 
         return ret
@@ -1134,17 +1134,19 @@ class IdealDayTrader(Simulator):
             g = h5file.create_group('ReplayFrame:%s' % frameId)
             g.attrs['state'] = 'state'
             g.attrs['action'] = 'action'
-            g.attrs['reward'] = 'reward'
-            g.attrs['next_state'] = 'next_state'
-            g.attrs['done'] = 'done'
             g.attrs[u'default'] = 'state'
+            if 'full' == self._generateReplayFrames :
+                g.attrs['reward'] = 'reward'
+                g.attrs['next_state'] = 'next_state'
+                g.attrs['done'] = 'done'
 
-            g.create_dataset(u'title',     data= 'replay frame[%s] of %s for DQN training' % (frameId, self.wkTrader._tradeSymbol))
+            g.create_dataset(u'title',     data= '%s replay frame[%s] of %s for DQN training' % (self._generateReplayFrames, frameId, self.wkTrader._tradeSymbol))
             g.create_dataset('state',      data= col_state, **dsargs)
             g.create_dataset('action',     data= col_action, **dsargs)
-            g.create_dataset('reward',     data= col_reward, **dsargs)
-            g.create_dataset('next_state', data= col_next_state, **dsargs)
-            g.create_dataset('done',       data= col_done, **dsargs)
+            if 'full' == self._generateReplayFrames :
+                g.create_dataset('reward',     data= col_reward, **dsargs)
+                g.create_dataset('next_state', data= col_next_state, **dsargs)
+                g.create_dataset('done',       data= col_done, **dsargs)
 
         self.info('saved frame[%s] len[%s] to file %s' % (frameId, len(col_state), fn_frame))
 

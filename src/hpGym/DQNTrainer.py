@@ -8,18 +8,21 @@ and can also distribute the training load outside of the online agent
 
 from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 import HistoryData as hist
+from MarketData import EXPORT_FLOATS_DIMS
 
 from keras.models import Sequential
 from keras.optimizers import Adam
 from keras.models import model_from_json
 from keras.callbacks import ModelCheckpoint, TensorBoard
 from keras import backend
+from keras.layers import Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D,GlobalAveragePooling1D
+from keras.models import Sequential
+from keras.optimizers import Adam
 
 import sys, os, platform, random, copy
 import h5py, tarfile
 import numpy as np
 
-H5_COLS = 'state,action,reward,next_state,done'
 ########################################################################
 # to work as a generator for Keras fit_generator() by reading replay-buffers from HDF5 file
 # sample the data as training data
@@ -154,7 +157,7 @@ class DQNTrainer(BaseApplication):
                 random.shuffle(sampleIdxs)
                 for i in sampleIdxs:
                     cEvicted +=1
-                    for col in H5_COLS.split(',') :
+                    for col in self.__samplePool.keys() :
                         del self.__samplePool[col][i]
 
             cAppend =0
@@ -164,7 +167,7 @@ class DQNTrainer(BaseApplication):
                 frame = self._h5file[frameSeq[0]]
                 del frameSeq[0]
 
-                for col in H5_COLS.split(',') :
+                for col in self.__samplePool.keys() :
                     incrematal = list(frame[col].value)
                     samplePerFrame = len(incrematal)
                     self.__samplePool[col] += incrematal
@@ -193,7 +196,7 @@ class DQNTrainer(BaseApplication):
                 random.shuffle(sampleIdxs)
                 del sampleIdxs[self._trainSize :]
 
-                for col in H5_COLS.split(',') :
+                for col in self.__samplePool.keys() :
                     a = [self.__samplePool[col][i] for i in sampleIdxs]
                     samples[col] = np.array(a)
 
@@ -248,6 +251,208 @@ class DQNTrainer(BaseApplication):
 
         return brainTrain.fit(x=samples['state'], y=Q_target, epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
 
+########################################################################
+class MarketDirClassifier(BaseApplication):
+
+    def __init__(self, program, h5filepath, model_json=None, initWeights= None, recorder =None, **kwargs):
+        super(MarketDirClassifier, self).__init__(program, **kwargs)
+
+        self._model_json =model_json
+        self._h5filepath =h5filepath
+        if not self._h5filepath : 
+            h5filepath = os.path.join(self.dataRoot, 'RFrames.h5')
+            self._h5filepath = self.getConfig('RFSamples_file', h5filepath)
+
+        self._batchSize           = self.getConfig('batchSize', 128)
+        self._trainSize           = self.getConfig('batchesPerTrain', 8) * self._batchSize
+        self._poolReuses          = self.getConfig('poolReuses', -1)
+        self._epochsPerFit        = self.getConfig('epochsPerFit', 2)
+        self._gamma               = self.getConfig('gamma', 0.01)
+        self._learningRate        = self.getConfig('learningRate', 0.02)
+        self._maxLossBeforeStepSamples  = self.getConfig('maxLossBeforeStepSamples', 1000)
+        self._maxPctLossDiff      = self.getConfig('maxPctLossDiff', 2)
+
+        self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
+        self._fitCallbacks =[]
+
+        self._brain = None
+        self._theOther = None
+
+    #----------------------------------------------------------------------
+    # impl/overwrite of BaseApplication
+    def OnEvent(self, ev): pass
+
+    def doAppInit(self): # return True if succ
+        if not super(MarketDirClassifier, self).doAppInit() :
+            return False
+
+        self.debug('loading saved ReplaySamples from %s' % self._h5filepath)
+        self._h5file = h5py.File(self._h5filepath, 'r')
+
+        if not self._h5file:
+            return False
+
+        self._framesInHd5 = []
+        for name in self._h5file.keys():
+            if 'ReplayFrame:' == name[:len('ReplayFrame:')] :
+                self._framesInHd5.append(name)
+
+        # I'd like to skip frame-0 as it most-likly includes many zero-samples
+        if len(self._framesInHd5)>3:
+            del self._framesInHd5[0]
+            del self._framesInHd5[-1]
+        
+        if len(self._framesInHd5)>6:
+            del self._framesInHd5[0]
+        if len(self._framesInHd5) <=0:
+            return False
+
+        self._stateSize = self._h5file[self._framesInHd5[0]]['state'].shape[1]
+        self._actionSize = self._h5file[self._framesInHd5[0]]['action'].shape[1]
+        
+        if self._model_json:
+            self._brain = model_from_json(self._model_json)
+            if not self._brain:
+                self.error('model_from_json failed')
+                return False
+        else:
+            self._brain = self.__createModel_XXX()
+
+        self._brain.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
+
+        #checkpoint = ModelCheckpoint('./weights.best.h5', verbose=0, monitor='loss', mode='min', save_best_only=True)
+        #self._fitCallbacks =[checkpoint]
+        cbTensorBoard = TensorBoard(log_dir='./out/tb', histogram_freq=0,  # 按照何等频率（epoch）来计算直方图，0为不计算
+                 write_graph=True,  # 是否存储网络结构图
+                 write_grads=True, # 是否可视化梯度直方图
+                 write_images=True,# 是否可视化参数
+                 embeddings_freq=0, 
+                 embeddings_layer_names=None, 
+                 embeddings_metadata=None)
+        self._fitCallbacks =[cbTensorBoard]
+
+        self.__gen = self.__generator()
+        return True
+
+    def doAppStep(self):
+        if not self.__gen:
+            self.stop()
+        else:
+            try:
+                next(self.__gen)
+            except Exception as ex:
+                self.stop()
+                self.logexception(ex)
+                raise StopIteration
+        
+        return super(MarketDirClassifier, self).doAppStep()
+
+    # end of BaseApplication routine
+    #----------------------------------------------------------------------
+
+    def __createModel_XXX(self):
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
+        model = Sequential()
+        model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
+        model.add(Conv1D(100, 10, activation='relu', input_shape=(self._stateSize/EXPORT_FLOATS_DIMS, EXPORT_FLOATS_DIMS)))
+        model.add(Conv1D(100, 10, activation='relu'))
+        model.add(MaxPooling1D(3))
+        model.add(Conv1D(160, 10, activation='relu'))
+        model.add(Conv1D(160, 10, activation='relu'))
+        model.add(GlobalAveragePooling1D())
+        model.add(Dropout(0.5))
+        model.add(Dense(self._actionSize, activation='linear')) # Q func, the output of DQN, always take float results so DO NOT take activation='softmax', which only result 1 or 0
+
+        return model
+    def __generator(self):
+
+        frameSeq=[]
+
+        # build up self.__samplePool
+        self.__samplePool = {
+            'state':[],
+            'action':[],
+        }
+
+        itrId=0
+        samplePerFrame =0
+        lossOfLastPool = 9999999
+        loss = 9999999
+
+        while len(frameSeq) >0 or loss > self._maxLossBeforeStepSamples or abs(loss-lossOfLastPool) > (loss * self._maxPctLossDiff/100) :
+            lossOfLastPool = loss
+
+            if len(frameSeq) <=0:
+                a = copy.copy(self._framesInHd5)
+                random.shuffle(a)
+                frameSeq +=a
+            
+            startPoolSize = len(self.__samplePool['state'])
+            cEvicted =0
+            if startPoolSize >= max(samplePerFrame, self._trainSize *2):
+                # randomly evict half of the poolSize
+                sampleIdxs = [a for a in range(min(samplePerFrame, int(startPoolSize/2)))]
+                random.shuffle(sampleIdxs)
+                for i in sampleIdxs:
+                    cEvicted +=1
+                    for col in self.__samplePool.keys() :
+                        del self.__samplePool[col][i]
+
+            cAppend =0
+            strFrames=''
+            while len(frameSeq) >0 and len(self.__samplePool['state']) <max(samplePerFrame, self._trainSize *2) :
+                strFrames += '%s,' % frameSeq[0]
+                frame = self._h5file[frameSeq[0]]
+                del frameSeq[0]
+
+                for col in self.__samplePool.keys() :
+                    incrematal = list(frame[col].value)
+                    samplePerFrame = len(incrematal)
+                    self.__samplePool[col] += incrematal
+
+                if loss <10:
+                    state_set = self.__samplePool['state'][poolSize+cAppend:]
+                    action_set = self.__samplePool['action'][poolSize+cAppend:]
+                    result = self._brain.evaluate(x=np.array(state_set), y=np.array(action_set), batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
+
+                cAppend += samplePerFrame
+
+            poolSize = len(self.__samplePool['state'])
+            self.info('sample pool refreshed: size[%s->%s] by evicting %s and refilling %s samples from %s %d frames await' % (startPoolSize, poolSize, cEvicted, cAppend, strFrames, len(frameSeq)))
+
+            self._trainSize = poolSize #??????
+            lossOfThisPool = 9999999
+            loss = lossOfThisPool/2
+            itsInPoll = int((poolSize +self._trainSize -1)/ self._trainSize)
+            while itsInPoll>0 or loss > self._maxLossBeforeStepSamples:
+
+                if loss <0.001: loss =0.001 # to avoid divid by zero
+                rDiff = abs(loss-lossOfThisPool)*100 / loss
+                if itsInPoll<0 and ((rDiff < self._maxPctLossDiff *2) or (loss<0.1 and rDiff < self._maxPctLossDiff *5)):
+                    break
+
+                itsInPoll -=1
+                lossOfThisPool = loss
+
+                # random sample a dataset with size=self._trainSize from self.__samplePool
+                sampleIdxs = [a for a in range(poolSize)]
+                random.shuffle(sampleIdxs)
+                del sampleIdxs[self._trainSize :]
+
+                state_set = [self.__samplePool['state'][i] for i in sampleIdxs]
+                action_set = [self.__samplePool['action'][i] for i in sampleIdxs]
+
+                # call trainMethod to perform tranning
+                itrId +=1
+                result = self._brain.fit(x=np.array(state_set), y=np.array(action_set), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks) # ,metrics=['accuracy']) #metrics=['accuracy'],
+
+                loss = result.history["loss"][-1]
+                self.info('train[%s] done, sampled %d from poolsize[%s], loss[%s]' % (str(itrId).zfill(6), self._trainSize, poolSize, loss))
+                yield result # this is a step
+
+            fn_save = '/tmp/DQN_Cnn1Dx4.1548_3.h5'
+            self._brain.save(fn_save)
+            self.info('saved weights to %s with loss[%s]' %(fn_save, loss))
 
 ########################################################################
 if __name__ == '__main__':
@@ -273,7 +478,7 @@ if __name__ == '__main__':
     SYMBOL = symbol
 
     if not sourceCsvDir or len(sourceCsvDir) <=0:
-        for d in ['e:/AShareSample', '/mnt/e/AShareSample/ETF', '/mnt/m/AShareSample']:
+        for d in ['e:/AShareSample/ETF', '/mnt/e/AShareSample/ETF', '/mnt/m/AShareSample']:
             try :
                 if  os.stat(d):
                     sourceCsvDir = d
@@ -287,10 +492,8 @@ if __name__ == '__main__':
 
     p.info('all objects registered piror to DQNTrainer: %s' % p.listByType())
     
-    # trainer = p.createApp(DQNTrainer, configNode ='DQNTrainer', h5filepath='out/IdealDayTrader/CsvToDQN_24106/RFrames_000001.h5')
-    trainer = p.createApp(DQNTrainer, configNode ='DQNTrainer', h5filepath='e:/AShareSample/ETF/RFrames_SH510050.h5')
-    # rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = '/tmp/DQNTrainer.tcsv')
-    # trainer.setRecorder(rec)
+    # trainer = p.createApp(DQNTrainer, configNode ='DQNTrainer', h5filepath=os.path.join(sourceCsvDir, 'RFrames_SH510050.h5'))
+    trainer = p.createApp(MarketDirClassifier, configNode ='DQNTrainer', h5filepath=os.path.join(sourceCsvDir, 'RFrames_SH510050.h5'))
 
     p.start()
     p.loop()

@@ -16,8 +16,10 @@ from keras.models import model_from_json
 from keras.callbacks import ModelCheckpoint, TensorBoard
 from keras import backend
 from keras.layers import Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D,GlobalAveragePooling1D
+from keras.layers import BatchNormalization, Flatten
 from keras.models import Sequential
-from keras.optimizers import Adam
+from keras.optimizers import Adam, SGD
+from keras import regularizers
 
 import sys, os, platform, random, copy
 import h5py, tarfile
@@ -316,9 +318,7 @@ class MarketDirClassifier(BaseApplication):
                 self.error('model_from_json failed')
                 return False
         else:
-            self._brain = self.__createModel_XXX()
-
-        self._brain.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
+            self._brain = self.__createModel_VGG16_1d()
 
         #checkpoint = ModelCheckpoint('./weights.best.h5', verbose=0, monitor='loss', mode='min', save_best_only=True)
         #self._fitCallbacks =[checkpoint]
@@ -361,9 +361,123 @@ class MarketDirClassifier(BaseApplication):
         model.add(Conv1D(160, 10, activation='relu'))
         model.add(GlobalAveragePooling1D())
         model.add(Dropout(0.5))
-        model.add(Dense(self._actionSize, activation='linear')) # Q func, the output of DQN, always take float results so DO NOT take activation='softmax', which only result 1 or 0
-
+        model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
+        model.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
         return model
+
+    def __createModel_VGG16_1d(self):
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
+        weight_decay = 0.0005
+
+        model = Sequential()
+        model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
+        #第一个 卷积层 的卷积核的数目是32 ，卷积核的大小是3*3，stride没写，默认应该是1*1
+        #对于stride=1*1,并且padding ='same',这种情况卷积后的图像shape与卷积前相同，本层后shape还是32*32
+        model.add(Conv1D(64, 3, padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
+        model.add(Activation('relu'))
+        
+        #进行一次归一化
+        model.add(BatchNormalization())
+        model.add(Dropout(0.3))
+        #layer2 32*32*64
+        model.add(Conv1D(64, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        model.add(Activation('relu'))
+        model.add(BatchNormalization())
+
+        #下面两行代码是等价的，#keras Pool层有个奇怪的地方，stride,默认是(2*2),
+        #padding默认是valid，在写代码是这些参数还是最好都加上,这一步之后,输出的shape是16*16*64
+        model.add(MaxPooling1D(2))
+
+        #layer3 16*16*64
+        model.add(Conv1D(128, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        model.add(Activation('relu'))
+        model.add(BatchNormalization())
+        model.add(Dropout(0.4))
+        
+        #layer4 16*16*128
+        model.add(Conv1D(128, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        model.add(Activation('relu'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(2))
+        
+        #layer5 8*8*128
+        model.add(Conv1D(256, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        model.add(Activation('relu'))
+        model.add(BatchNormalization())
+        model.add(Dropout(0.4))
+        
+        #layer6 8*8*256
+        model.add(Conv1D(256, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        model.add(Activation('relu'))
+        model.add(BatchNormalization())
+        model.add(Dropout(0.4))
+        
+        #layer7 8*8*256
+        model.add(Conv1D(256, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        model.add(Activation('relu'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(2))
+
+        #layer8 4*4*256
+        model.add(Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        model.add(Activation('relu'))
+        model.add(BatchNormalization())
+        model.add(Dropout(0.4))
+
+        #layer9 4*4*512
+        model.add(Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        model.add(Activation('relu'))
+        model.add(BatchNormalization())
+        model.add(Dropout(0.4))
+        
+        #layer10 4*4*512
+        model.add(Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        model.add(Activation('relu'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(2))
+        
+        #layer11 2*2*512
+        model.add(Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        model.add(Activation('relu'))
+        model.add(BatchNormalization())
+        model.add(Dropout(0.4))
+
+        #layer12 2*2*512
+        model.add(Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        model.add(Activation('relu'))
+        model.add(BatchNormalization())
+        model.add(Dropout(0.4))
+
+        #layer13 2*2*512
+        model.add(Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        model.add(Activation('relu'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(2))
+        model.add(Dropout(0.5))
+
+        #layer14 1*1*512
+        model.add(Flatten())
+        model.add(Dense(512,kernel_regularizer=regularizers.l2(weight_decay)))
+        model.add(Activation('relu'))
+        model.add(BatchNormalization())
+
+        #layer15 512
+        model.add(Dense(512,kernel_regularizer=regularizers.l2(weight_decay)))
+        model.add(Activation('relu'))
+        model.add(BatchNormalization())
+
+        #layer16 512
+        model.add(Dropout(0.5))
+        model.add(Dense(10))
+        model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
+
+        # 10
+        # model.summary()
+        sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
+        model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
+        return model
+
+
     def __generator(self):
 
         frameSeq=[]
@@ -401,7 +515,7 @@ class MarketDirClassifier(BaseApplication):
             cAppend =0
             strFrames=''
             while len(frameSeq) >0 and len(self.__samplePool['state']) <max(samplePerFrame, self._trainSize *2) :
-                strFrames += '%s,' % frameSeq[0]
+                strFrames += frameSeq[0]
                 frame = self._h5file[frameSeq[0]]
                 del frameSeq[0]
 
@@ -413,8 +527,9 @@ class MarketDirClassifier(BaseApplication):
                 if loss <10:
                     state_set = self.__samplePool['state'][poolSize+cAppend:]
                     action_set = self.__samplePool['action'][poolSize+cAppend:]
-                    result = self._brain.evaluate(x=np.array(state_set), y=np.array(action_set), batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
+                    strFrames += '/loss[%s]' %  self._brain.evaluate(x=np.array(state_set), y=np.array(action_set), batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
 
+                strFrames += ','
                 cAppend += samplePerFrame
 
             poolSize = len(self.__samplePool['state'])

@@ -169,7 +169,11 @@ class DQNTrainer(BaseApplication):
             lossOfThisPool = 9999999
             loss = lossOfThisPool
             itsInPoll = int((poolSize +self._trainSize -1)/ self._trainSize)
-            while itsInPoll>0 or loss > self._maxLossBeforeStepSamples or abs(loss-lossOfThisPool) > (loss * self._maxPctLossDiff *2/100) :
+            while itsInPoll>0 or loss > self._maxLossBeforeStepSamples :
+                lossDiff = abs(loss-lossOfThisPool)
+                if (lossDiff < (loss * self._maxPctLossDiff *2/100)) or (loss<10 and lossDiff<(loss * self._maxPctLossDiff *5/100)):
+                    break
+
                 itsInPoll -=1
                 lossOfThisPool = loss
 

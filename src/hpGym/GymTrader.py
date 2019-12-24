@@ -851,7 +851,8 @@ class IdealDayTrader(Simulator):
                 loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_SELL], max(reward, 0.5), next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
                 # loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_HOLD], 0.1, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
         else:
-            loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_HOLD], max(reward, 1.0), next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+            if reward <0.01: reward =0.01
+            loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_HOLD], min(reward, 0.1), next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
 
         if loss: self.__recentLoss =loss
 
@@ -1166,7 +1167,7 @@ def main_prog():
     p = Program()
     p._heartbeatInterval =-1
 
-    SYMBOL = '000001' # '000540' '000001'
+    SYMBOL = 'SH510050' # '000540' '000001'
     sourceCsvDir = None
     try:
         jsetting = p.jsettings('trainer/sourceCsvDir')

@@ -176,7 +176,7 @@ class agentDQN(MetaAgent):
         model.add(Conv1D(160, 10, activation='relu'))
         model.add(GlobalAveragePooling1D())
         model.add(Dropout(0.5))
-        model.add(Dense(self._actionSize, activation='linear')) # activation='softmax'))
+        model.add(Dense(self._actionSize, activation='linear')) # Q func, the output of DQN, always take float results so DO NOT take activation='softmax', which only result 1 or 0
 
         return model
 
@@ -719,4 +719,35 @@ if __name__ == "__main__":
             done = True
         else:
             environment.render()
+'''
+
+
+''' How to embeded existing model: The following example appends VGG16 with 5-layers Flatten+Dense+Dropout+Dense+Dense
+
+from keras.applications import VGG16
+
+#-------------加载VGG模型并且添加自己的层----------------------
+    #这里自己添加的层需要不断调整超参数来提升结果，输出类别更改softmax层即可
+ 
+    #参数说明：inlucde_top:是否包含最上方的Dense层，input_shape：输入的图像大小(width,height,channel)                                         
+    base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+    x = base_model.output
+    x = Flatten()(x)
+    x = Dense(256, activation='relu')(x)
+    x = Dropout(0.5)(x)
+    x = Dense(1, activation='sigmoid')(x)
+    predictions = Dense(2, activation='softmax')(x)
+    model = Model(input=base_model.input, output=predictions)
+    
+    #-----------控制需要FineTune的层数，不FineTune的就直接冻结
+    for layer in base_model.layers:
+        layer.trainable = False
+ 
+    #----------编译，设置优化器，损失函数，性能指标
+    model.compile(optimizer='rmsprop', loss='binary_crossentropy', metrics=['accuracy'])
+
+————————————————
+版权声明：本文为CSDN博主「李正浩大魔王」的原创文章，遵循 CC 4.0 BY-SA 版权协议，转载请附上原文出处链接及本声明。
+原文链接：https://blog.csdn.net/m0_37316917/article/details/90485314
+
 '''

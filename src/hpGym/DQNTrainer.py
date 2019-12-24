@@ -79,6 +79,14 @@ class DQNTrainer(BaseApplication):
 
         #checkpoint = ModelCheckpoint('./weights.best.h5', verbose=0, monitor='loss', mode='min', save_best_only=True)
         #self._fitCallbacks =[checkpoint]
+        cbTensorBoard = TensorBoard(log_dir='./out/tb', histogram_freq=0,  # 按照何等频率（epoch）来计算直方图，0为不计算
+                 write_graph=True,  # 是否存储网络结构图
+                 write_grads=True, # 是否可视化梯度直方图
+                 write_images=True,# 是否可视化参数
+                 embeddings_freq=0, 
+                 embeddings_layer_names=None, 
+                 embeddings_metadata=None)
+        self._fitCallbacks =[cbTensorBoard]
 
         self.__gen = self.__generator(self.__train_DDQN)
         return True
@@ -163,7 +171,7 @@ class DQNTrainer(BaseApplication):
                 cAppend += samplePerFrame
 
             poolSize = len(self.__samplePool['state'])
-            self.info('sample pool refreshed: size[%s->%s] by evicting %s and refilling %s samples from %s, %d frames await' % (startPoolSize, poolSize, cEvicted, cAppend, strFrames, len(frameSeq)))
+            self.info('sample pool refreshed: size[%s->%s] by evicting %s and refilling %s samples from %s %d frames await' % (startPoolSize, poolSize, cEvicted, cAppend, strFrames, len(frameSeq)))
 
             # iterations = self._poolReuses if self._poolReuses >0 else int(round(poolSize / self._trainSize, 0))
             lossOfThisPool = 9999999
@@ -220,7 +228,7 @@ class DQNTrainer(BaseApplication):
             model_json = self._brain.to_json()
             self._theOther = model_from_json(model_json)
             self._theOther.set_weights(self._brain.get_weights()) 
-            self._theOther.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
+            self._theOther.compile(loss='mse', optimizer=Adam(lr=self._learningRate), metrics=['accuracy'])
 
         if np.random.rand() < 0.5:
             brainPred  = self._brain

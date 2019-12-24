@@ -51,7 +51,7 @@ class DQNTrainer(BaseApplication):
         self._gamma               = self.getConfig('gamma', 0.01)
         self._learningRate        = self.getConfig('learningRate', 0.02)
         self._maxLossBeforeStepSamples  = self.getConfig('maxLossBeforeStepSamples', 1000)
-        self._maxPctLossDiff      = self.getConfig('maxPctLossDiff', 10)
+        self._maxPctLossDiff      = self.getConfig('maxPctLossDiff', 2)
 
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
@@ -77,8 +77,8 @@ class DQNTrainer(BaseApplication):
 
         self._brain.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
 
-        checkpoint = ModelCheckpoint('./weights.best.h5', verbose=0, monitor='loss', mode='min', save_best_only=True)
-        self._fitCallbacks =[checkpoint]
+        #checkpoint = ModelCheckpoint('./weights.best.h5', verbose=0, monitor='loss', mode='min', save_best_only=True)
+        #self._fitCallbacks =[checkpoint]
 
         self.__gen = self.__generator(self.__train_DDQN)
         return True
@@ -167,11 +167,13 @@ class DQNTrainer(BaseApplication):
 
             # iterations = self._poolReuses if self._poolReuses >0 else int(round(poolSize / self._trainSize, 0))
             lossOfThisPool = 9999999
-            loss = lossOfThisPool
+            loss = lossOfThisPool/2
             itsInPoll = int((poolSize +self._trainSize -1)/ self._trainSize)
-            while itsInPoll>0 or loss > self._maxLossBeforeStepSamples :
-                lossDiff = abs(loss-lossOfThisPool)
-                if (lossDiff < (loss * self._maxPctLossDiff *2/100)) or (loss<10 and lossDiff<(loss * self._maxPctLossDiff *5/100)):
+            while itsInPoll>0 or loss > self._maxLossBeforeStepSamples:
+
+                if loss <0.001: loss =0.001 # to avoid divid by zero
+                rDiff = abs(loss-lossOfThisPool)*100 / loss
+                if itsInPoll<0 and ((rDiff < self._maxPctLossDiff *2) or (loss<0.1 and rDiff < self._maxPctLossDiff *5)):
                     break
 
                 itsInPoll -=1
@@ -196,21 +198,22 @@ class DQNTrainer(BaseApplication):
                 self.info('train[%s] done, sampled %d from poolsize[%s], loss[%s]' % (str(itrId).zfill(6), self._trainSize, poolSize, loss))
                 yield result # this is a step
 
-            self._brain.save('/tmp/DQN_Cnn1Dx4.1548_3.h5')
-            self.info('saved weights to /tmp/model.json.h5 with loss[%s]' %loss)
+            fn_save = '/tmp/DQN_Cnn1Dx4.1548_3.h5'
+            self._brain.save(fn_save)
+            self.info('saved weights to %s with loss[%s]' %(fn_save, loss))
 
     def __train_DQN(self, samples):
         # perform DQN training
-        y = self._brain.predict(samples['next_state'])
-        maxact= np.amax(y, axis=1) # arrary(sampleLen, 1)
+        Q_next = self._brain.predict(samples['next_state'])
+        Q_next_max= np.amax(Q_next, axis=1) # arrary(sampleLen, 1)
         done = np.array(samples['done'] !=0)
-        rewards = samples['reward'] + (self._gamma * np.logical_not(done) * maxact) # arrary(sampleLen, 1)
+        rewards = samples['reward'] + (self._gamma * np.logical_not(done) * Q_next_max) # arrary(sampleLen, 1)
         action_link = np.where(samples['action'] == 1) # array(sizeToBatch, self._actionSize)=>array(2, sizeToBatch)
 
-        q_target = self._brain.predict(samples['state'])
-        q_target[action_link[0], action_link[1]] = rewards # action_link =arrary(2,sampleLen)
+        Q_target = self._brain.predict(samples['state'])
+        Q_target[action_link[0], action_link[1]] = rewards # action_link =arrary(2,sampleLen)
 
-        return self._brain.fit(x=samples['state'], y=q_target, epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
+        return self._brain.fit(x=samples['state'], y=Q_target, epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
 
     def __train_DDQN(self, samples):
         if not self._theOther and self._brain :
@@ -226,16 +229,16 @@ class DQNTrainer(BaseApplication):
             brainPred  = self._theOther
             brainTrain = self._brain
         
-        y = brainPred.predict(samples['next_state']) # arrary(sampleLen, actionSize)
-        maxact= np.amax(y, axis=1) # arrary(sampleLen, 1)
+        Q_next = brainPred.predict(samples['next_state']) # arrary(sampleLen, actionSize)
+        Q_next_max= np.amax(Q_next, axis=1) # arrary(sampleLen, 1)
         done = np.array(samples['done'] !=0)
-        rewards = samples['reward'] + (self._gamma * np.logical_not(done) * maxact) # arrary(sampleLen, 1)
+        rewards = samples['reward'] + (self._gamma * np.logical_not(done) * Q_next_max) # arrary(sampleLen, 1)
         action_link = np.where(samples['action'] == 1) # array(sizeToBatch, self._actionSize)=>array(2, sizeToBatch)
 
-        q_target = self._brain.predict(samples['state'])
-        q_target[action_link[0], action_link[1]] = rewards # action_link =arrary(2,sampleLen)
+        Q_target = self._brain.predict(samples['state'])
+        Q_target[action_link[0], action_link[1]] = rewards # action_link =arrary(2,sampleLen)
 
-        return brainTrain.fit(x=samples['state'], y=q_target, epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
+        return brainTrain.fit(x=samples['state'], y=Q_target, epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
 
 
 ########################################################################

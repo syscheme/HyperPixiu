@@ -866,6 +866,7 @@ class IdealDayTrader(Simulator):
         self.wkTrader._agent._cbNewReplayFrame = [self.__saveReplayFrame] # the hook agent's OnNewFrame
         # the IdealTrader normally will disable exploration of agent
         self.wkTrader._agent._epsilon = -1.0 # less than epsilonMin
+        self.wkTrader._agent._gamma = 0 # idealtrader doesn't concern Q_next
         # self.wkTrader._dailyCapCost = 0.0 # no more daily cost in ideal trader
         self.wkTrader._maxValuePerOrder = self._startBalance /2
 

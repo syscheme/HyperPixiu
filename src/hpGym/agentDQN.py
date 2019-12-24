@@ -176,7 +176,7 @@ class agentDQN(MetaAgent):
         model.add(Conv1D(160, 10, activation='relu'))
         model.add(GlobalAveragePooling1D())
         model.add(Dropout(0.5))
-        model.add(Dense(self._actionSize, activation='softmax'))
+        model.add(Dense(self._actionSize, activation='linear')) # activation='softmax'))
 
         return model
 
@@ -315,12 +315,12 @@ class agentDQN(MetaAgent):
             return None
 
         with self._lock:
-            y = self._brain.predict(next_state_batch) # arrary(sampleLen, actionSize)
-            maxact= np.amax(y, axis=1) # arrary(sampleLen, 1)
-            reward_batch += (self._gamma * np.logical_not(done_batch) * maxact) # arrary(sampleLen, 1)
+            Q_next = self._brain.predict(next_state_batch) # arrary(sampleLen, actionSize)
+            Q_next_max= np.amax(Q_next, axis=1) # arrary(sampleLen, 1)
+            reward_batch += (self._gamma * np.logical_not(done_batch) * Q_next_max) # arrary(sampleLen, 1)
 
-            q_target = self._brain.predict(state_batch)
-            q_target[action_batch[0], action_batch[1]] = reward_batch # action =arrary(2,sampleLen)
+            Q_target = self._brain.predict(state_batch)
+            Q_target[action_batch[0], action_batch[1]] = reward_batch # action =arrary(2,sampleLen)
 
             # x：输入数据。如果模型只有一个输入，那么x的类型是numpy array，如果模型有多个输入，那么x的类型应当为list，list的元素是对应于各个输入的numpy array
             # y：标签，numpy array
@@ -337,7 +337,7 @@ class agentDQN(MetaAgent):
             epochs =1
             if len(GPUs) > 0 and sampleLen >self._batchSize:
                 epochs = self._epochsPerObservOnGpu
-            self._loss = self._brain.fit(x=state_batch, y=q_target, epochs=epochs, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
+            self._loss = self._brain.fit(x=state_batch, y=Q_target, epochs=epochs, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
         return self._loss
 
     def _pushToReplay(self, state, action, reward, next_state, done):
@@ -630,17 +630,17 @@ class agentDoubleDQN(agentDQN):
                 brainPred  = self._theOther
                 brainTrain = self._brain
             
-            y = brainPred.predict(next_state_batch) # arrary(sampleLen, actionSize)
-            maxact= np.amax(y, axis=1) # arrary(sampleLen, 1)
-            reward_batch += (self._gamma * np.logical_not(done_batch) * maxact) # arrary(sampleLen, 1)
+            Q_next = brainPred.predict(next_state_batch) # arrary(sampleLen, actionSize)
+            Q_next_max = np.amax(Q_next, axis=1) # arrary(sampleLen, 1)
+            reward_batch += (self._gamma * np.logical_not(done_batch) * Q_next_max) # arrary(sampleLen, 1)
 
-            q_target = brainTrain.predict(state_batch)
-            q_target[action_batch[0], action_batch[1]] = reward_batch # action =arrary(2,sampleLen)
+            Q_target = brainTrain.predict(state_batch)
+            Q_target[action_batch[0], action_batch[1]] = reward_batch # action =arrary(2,sampleLen)
 
             epochs =1
             if len(GPUs) > 0 and sampleLen >self._batchSize:
                 epochs = self._epochsPerObservOnGpu
-            self._loss = brainTrain.fit(x=state_batch, y=q_target, epochs=epochs, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
+            self._loss = brainTrain.fit(x=state_batch, y=Q_target, epochs=epochs, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
 
         return self._loss
 

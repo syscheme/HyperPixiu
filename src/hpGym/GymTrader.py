@@ -843,13 +843,13 @@ class IdealDayTrader(Simulator):
                 loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_BUY], max(reward, 1.0), next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
             else:
                 loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_BUY], 0.5, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
-                loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_HOLD], 0.1, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+                # loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_HOLD], 0.1, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
         elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]):
             if GymTrader.ACTION_SELL in info['execAction'] :
                 loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_SELL], max(reward, 1.0), next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
             else:
                 loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_SELL], 0.5, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
-                loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_HOLD], 0.1, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
+                # loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_HOLD], 0.1, next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
         else:
             loss = self.wkTrader._agent.gymObserve(self.wkTrader._gymState, GymTrader.ACTIONS[GymTrader.ACTION_HOLD], max(reward, 1.0), next_state, done, bObserveOnly, **{**info, **self._feedbackToAgent})
 

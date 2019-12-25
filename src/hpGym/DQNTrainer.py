@@ -258,6 +258,8 @@ class DQNTrainer(BaseApplication):
 ########################################################################
 class MarketDirClassifier(BaseApplication):
 
+    DEFAULT_MODEL = 'Cnn1Dx4'
+    
     def __init__(self, program, h5filepath, model_json=None, initWeights= None, recorder =None, **kwargs):
         super(MarketDirClassifier, self).__init__(program, **kwargs)
 
@@ -274,7 +276,7 @@ class MarketDirClassifier(BaseApplication):
         self._lossStop            = self.getConfig('lossStop', 0.1)
         self._lossPctStop         = self.getConfig('lossPctStop', 2)
         self._startLR             = self.getConfig('startLR', 0.02)
-        self._wkModelId           = self.getConfig('modelId', 'VGG16d1')
+        self._wkModelId           = self.getConfig('modelId', MarketDirClassifier.DEFAULT_MODEL)
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
         #     self._poolEvictRate =1
@@ -285,6 +287,12 @@ class MarketDirClassifier(BaseApplication):
         self._brain = None
         self._theOther = None
         self._outDir = os.path.join(self.dataRoot, self._program.progId)
+
+        self.__knownModels = {
+            'Cnn1Dx4' : self.__createModel_Cnn1Dx4,
+            'VGG16d1' : self.__createModel_VGG16d1,
+            }
+
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -324,8 +332,8 @@ class MarketDirClassifier(BaseApplication):
                 self.error('model_from_json failed')
                 return False
         elif self._wkModelId and len(self._wkModelId) >0:
-            self._wkModelId  += '.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
-            inDir = os.path.join(self.dataRoot, self._wkModelId)
+            wkModelId = '%s.S%sI%sA%s' % (self._wkModelId, self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+            inDir = os.path.join(self.dataRoot, wkModelId)
             try : 
                 self.debug('loading saved model from %s' % inDir)
                 with open(os.path.join(inDir, 'model.json'), 'r') as mjson:
@@ -335,6 +343,8 @@ class MarketDirClassifier(BaseApplication):
                 sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
                 self._brain.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
 
+                self._wkModelId = wkModelId
+
                 fn_weights = os.path.join(inDir, 'weights.h5')
                 self.debug('loading saved weights from %s' %fn_weights)
                 self._brain.load_weights(fn_weights)
@@ -343,8 +353,11 @@ class MarketDirClassifier(BaseApplication):
             except Exception as ex:
                 self.logexception(ex)
 
+            if not self._brain and self._wkModelId in self.__knownModels.keys():
+                self._brain = self.__knownModels[self._wkModelId]()
+
         if not self._brain:
-            self._brain = self.__createModel_VGG16d1()
+            self._brain = self.__knownModels[MarketDirClassifier.DEFAULT_MODEL]()
 
         try :
             os.makedirs(self._outDir)
@@ -499,11 +512,11 @@ class MarketDirClassifier(BaseApplication):
 
     #----------------------------------------------------------------------
     # model definitions
-    
+
     def __createModel_Cnn1Dx4(self):
         # changed input/output dims based on 
         # ref: https://blog.goodaudience.com/introduction-to-1d-convolutional-neural-networks-in-keras-for-time-sequences-3a7ff801a2cf
-        self._wkModelId = 'C1D4.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+        self._wkModelId = 'Cnn1Dx4.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         model = Sequential()
         model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))

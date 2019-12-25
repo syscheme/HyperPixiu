@@ -535,7 +535,6 @@ class MarketDirClassifier(BaseApplication):
             poolSize = len(self.__samplePool['state'])
             self.info('sample pool refreshed: size[%s->%s] by evicting %s and refilling %s samples from %s %d frames await' % (startPoolSize, poolSize, cEvicted, cAppend, strFrames, len(frameSeq)))
 
-            self._trainSize = poolSize #??????
             lossOfThisPool = 9999999
             loss = lossOfThisPool/2
             itsInPoll = int((poolSize +self._trainSize -1)/ self._trainSize)

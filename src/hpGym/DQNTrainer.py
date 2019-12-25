@@ -552,7 +552,7 @@ class MarketDirClassifier(BaseApplication):
                     
                 #     cEvicted +=1
                 #     if cEvicted >= nToEvict: break
-                cEvicted = samplePerFrame
+                cEvicted = startPoolSize # = samplePerFrame
                 for col in self.__samplePool.keys() :
                     del self.__samplePool[col][:cEvicted]
 
@@ -574,7 +574,7 @@ class MarketDirClassifier(BaseApplication):
                     try :
                         state_set = self.__samplePool['state'][poolSize+cAppend: ]
                         action_set = self.__samplePool['action'][poolSize+cAppend: ]
-                        strFrames += '/loss[%s]' %  self._brain.evaluate(x=np.array(state_set), y=np.array(action_set), batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
+                        strFrames += '/eval[%s]' %  self._brain.evaluate(x=np.array(state_set), y=np.array(action_set), batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
                     except Exception as ex:
                         self.logexception(ex)
 
@@ -614,7 +614,7 @@ class MarketDirClassifier(BaseApplication):
                     result = self._brain.fit(x=np.array(state_set), y=np.array(action_set), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks) # ,metrics=['accuracy']) #metrics=['accuracy'],
 
                     loss = result.history["loss"][-1]
-                    self.info('train[%s] done, sampled %d from poolsize[%s], loss[%s]' % (str(itrId).zfill(6), self._trainSize, poolSize, loss))
+                    self.info('train[%s] done, sampled %d from poolsize[%s], loss[%s/%s]' % (str(itrId).zfill(6), self._trainSize, poolSize, loss, lossMax))
                     yield result # this is a step
                 except Exception as ex:
                     self.logexception(ex)

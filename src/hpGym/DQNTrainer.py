@@ -25,6 +25,8 @@ import sys, os, platform, random, copy
 import h5py, tarfile
 import numpy as np
 
+DUMMY_BIG_VAL = 999999
+
 ########################################################################
 # to work as a generator for Keras fit_generator() by reading replay-buffers from HDF5 file
 # sample the data as training data
@@ -140,11 +142,11 @@ class DQNTrainer(BaseApplication):
 
         itrId=0
         samplePerFrame =0
-        lossOfLastPool = 9999999
+        lossMax = 9999999
         loss = 9999999
 
-        while len(frameSeq) >0 or loss > self._lossStop or abs(loss-lossOfLastPool) > (loss * self._lossPctStop/100) :
-            lossOfLastPool = loss
+        while len(frameSeq) >0 or loss > self._lossStop or abs(loss-lossMax) > (loss * self._lossPctStop/100) :
+            lossMax = loss
 
             if len(frameSeq) <=0:
                 a = copy.copy(framesInHd5)
@@ -273,6 +275,7 @@ class MarketDirClassifier(BaseApplication):
         self._lossPctStop         = self.getConfig('lossPctStop', 2)
         self._startLR             = self.getConfig('startLR', 0.02)
         self._wkModelId           = self.getConfig('modelId', 'VGG16d1')
+        self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
 
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
@@ -523,12 +526,10 @@ class MarketDirClassifier(BaseApplication):
 
         itrId=0
         samplePerFrame =0
-        lossOfLastPool = 9999999
-        loss = 9999999
 
-        while len(frameSeq) >0 or loss > self._lossStop or abs(loss-lossOfLastPool) > (loss * self._lossPctStop/100) :
-            lossOfLastPool = loss
-
+        loss = DUMMY_BIG_VAL
+        lossMax = loss
+        while len(frameSeq) >0 or lossMax > self._lossStop or abs(loss-lossMax) > (lossMax * self._lossPctStop/100) :
             if len(frameSeq) <=0:
                 a = copy.copy(self._framesInHd5)
                 random.shuffle(a)
@@ -538,12 +539,14 @@ class MarketDirClassifier(BaseApplication):
             cEvicted =0
             if startPoolSize >= max(samplePerFrame, self._trainSize *2):
                 # randomly evict half of the poolSize
-                sampleIdxs = [a for a in range(min(samplePerFrame, int(startPoolSize/2)))]
+                sampleIdxs = [a for a in range(startPoolSize)]
                 random.shuffle(sampleIdxs)
-                for i in sampleIdxs:
-                    cEvicted +=1
+                numToEvict = int(startPoolSize * self._poolEvictRate)
+                for i in range(numToEvict):
+                    idx = sampleIdxs[i]
                     for col in self.__samplePool.keys() :
-                        del self.__samplePool[col][i]
+                        del self.__samplePool[col][idx]
+                    cEvicted +=1
 
             poolSize = len(self.__samplePool['state'])
 
@@ -573,9 +576,6 @@ class MarketDirClassifier(BaseApplication):
             poolSize = len(self.__samplePool['state'])
             self.info('sample pool refreshed: size[%s->%s] by evicting %s and refilling %s samples from %s %d frames await' % (startPoolSize, poolSize, cEvicted, cAppend, strFrames, len(frameSeq)))
 
-            lossOfThisPool = 9999999
-            loss = lossOfThisPool/2
-            
             # random sample a dataset with size=self._trainSize from self.__samplePool
             sampleSeq = [a for a in range(poolSize)]
             random.shuffle(sampleSeq)
@@ -585,8 +585,10 @@ class MarketDirClassifier(BaseApplication):
                     random.shuffle(tmpseq)
                     sampleSeq += tmpseq
 
+            if len(sampleSeq) >= self._batchSize:
+                lossMax = 0.0
+
             while len(sampleSeq) >= self._batchSize:
-                lossOfThisPool = loss
 
                 if len(sampleSeq) > self._trainSize:
                     sampleIdxs = sampleSeq[:self._trainSize]
@@ -608,6 +610,9 @@ class MarketDirClassifier(BaseApplication):
                     yield result # this is a step
                 except Exception as ex:
                     self.logexception(ex)
+
+                if lossMax < loss:
+                    lossMax = loss
 
             fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
             self._brain.save(fn_weights)

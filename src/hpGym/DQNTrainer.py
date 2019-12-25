@@ -514,8 +514,35 @@ class MarketDirClassifier(BaseApplication):
     # model definitions
 
     def __createModel_Cnn1Dx4(self):
-        # changed input/output dims based on 
-        # ref: https://blog.goodaudience.com/introduction-to-1d-convolutional-neural-networks-in-keras-for-time-sequences-3a7ff801a2cf
+        '''
+        changed input/output dims based on 
+        ref: https://blog.goodaudience.com/introduction-to-1d-convolutional-neural-networks-in-keras-for-time-sequences-3a7ff801a2cf
+        
+        when Cnn1Dx4.S1548I4A3, the layers is like the following:
+            Layer (type)                 Output Shape              Param #   
+            =================================================================
+            reshape_2 (Reshape)          (None, 387, 4)            0         
+            _________________________________________________________________
+            conv1d_9 (Conv1D)            (None, 378, 100)          4100      
+            _________________________________________________________________
+            conv1d_10 (Conv1D)           (None, 369, 100)          100100    
+            _________________________________________________________________
+            max_pooling1d_1 (MaxPooling1 (None, 123, 100)          0         
+            _________________________________________________________________
+            conv1d_11 (Conv1D)           (None, 114, 160)          160160    
+            _________________________________________________________________
+            conv1d_12 (Conv1D)           (None, 105, 160)          256160    
+            _________________________________________________________________
+            global_average_pooling1d_1 ( (None, 160)               0         
+            _________________________________________________________________
+            dropout_1 (Dropout)          (None, 160)               0         
+            _________________________________________________________________
+            dense_1 (Dense)              (None, 3)                 483       
+            =================================================================
+            Total params: 521,003
+            Trainable params: 521,003
+            Non-trainable params: 0
+        '''
         self._wkModelId = 'Cnn1Dx4.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         model = Sequential()

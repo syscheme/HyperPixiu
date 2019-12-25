@@ -512,6 +512,8 @@ class MarketDirClassifier(BaseApplication):
                     for col in self.__samplePool.keys() :
                         del self.__samplePool[col][i]
 
+            poolSize = len(self.__samplePool['state'])
+
             cAppend =0
             strFrames=''
             while len(frameSeq) >0 and len(self.__samplePool['state']) <max(samplePerFrame, self._trainSize *2) :
@@ -524,10 +526,13 @@ class MarketDirClassifier(BaseApplication):
                     samplePerFrame = len(incrematal)
                     self.__samplePool[col] += incrematal
 
-                if loss <10:
-                    state_set = self.__samplePool['state'][poolSize+cAppend:]
-                    action_set = self.__samplePool['action'][poolSize+cAppend:]
-                    strFrames += '/loss[%s]' %  self._brain.evaluate(x=np.array(state_set), y=np.array(action_set), batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
+                if loss <10 and len(self.__samplePool['state']) > (poolSize+cAppend + self._batchSize):
+                    try :
+                        state_set = self.__samplePool['state'][poolSize+cAppend: ]
+                        action_set = self.__samplePool['action'][poolSize+cAppend: ]
+                        strFrames += '/loss[%s]' %  self._brain.evaluate(x=np.array(state_set), y=np.array(action_set), batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
+                    except Exception as ex:
+                        self.logexception(ex)
 
                 strFrames += ','
                 cAppend += samplePerFrame
@@ -551,18 +556,22 @@ class MarketDirClassifier(BaseApplication):
                 # random sample a dataset with size=self._trainSize from self.__samplePool
                 sampleIdxs = [a for a in range(poolSize)]
                 random.shuffle(sampleIdxs)
-                del sampleIdxs[self._trainSize :]
+                if len(sampleIdxs) > self._trainSize:
+                    del sampleIdxs[self._trainSize :]
 
                 state_set = [self.__samplePool['state'][i] for i in sampleIdxs]
                 action_set = [self.__samplePool['action'][i] for i in sampleIdxs]
 
                 # call trainMethod to perform tranning
                 itrId +=1
-                result = self._brain.fit(x=np.array(state_set), y=np.array(action_set), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks) # ,metrics=['accuracy']) #metrics=['accuracy'],
+                try :
+                    result = self._brain.fit(x=np.array(state_set), y=np.array(action_set), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks) # ,metrics=['accuracy']) #metrics=['accuracy'],
 
-                loss = result.history["loss"][-1]
-                self.info('train[%s] done, sampled %d from poolsize[%s], loss[%s]' % (str(itrId).zfill(6), self._trainSize, poolSize, loss))
-                yield result # this is a step
+                    loss = result.history["loss"][-1]
+                    self.info('train[%s] done, sampled %d from poolsize[%s], loss[%s]' % (str(itrId).zfill(6), self._trainSize, poolSize, loss))
+                    yield result # this is a step
+                except Exception as ex:
+                    self.logexception(ex)
 
             fn_save = '/tmp/DQN_Cnn1Dx4.1548_3.h5'
             self._brain.save(fn_save)

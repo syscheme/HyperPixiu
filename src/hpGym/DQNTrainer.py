@@ -275,7 +275,9 @@ class MarketDirClassifier(BaseApplication):
         self._lossPctStop         = self.getConfig('lossPctStop', 2)
         self._startLR             = self.getConfig('startLR', 0.02)
         self._wkModelId           = self.getConfig('modelId', 'VGG16d1')
-        self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
+        # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
+        # if self._poolEvictRate>1 or self._poolEvictRate<=0:
+        #     self._poolEvictRate =1
 
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
@@ -538,15 +540,21 @@ class MarketDirClassifier(BaseApplication):
             startPoolSize = len(self.__samplePool['state'])
             cEvicted =0
             if startPoolSize >= max(samplePerFrame, self._trainSize *2):
-                # randomly evict half of the poolSize
-                sampleIdxs = [a for a in range(startPoolSize)]
-                random.shuffle(sampleIdxs)
-                numToEvict = int(startPoolSize * self._poolEvictRate)
-                for i in range(numToEvict):
-                    idx = sampleIdxs[i]
-                    for col in self.__samplePool.keys() :
-                        del self.__samplePool[col][idx]
-                    cEvicted +=1
+                # # randomly evict half of the poolSize
+                # sampleIdxs = [a for a in range(startPoolSize)]
+                # random.shuffle(sampleIdxs)
+                # nToEvict = int(startPoolSize * self._poolEvictRate)
+                # for i in sampleIdxs:
+                #     if i >= (startPoolSize - cEvicted): continue
+
+                #     for col in self.__samplePool.keys() :
+                #         del self.__samplePool[col][i]
+                    
+                #     cEvicted +=1
+                #     if cEvicted >= nToEvict: break
+                cEvicted = samplePerFrame
+                for col in self.__samplePool.keys() :
+                    del self.__samplePool[col][:cEvicted]
 
             poolSize = len(self.__samplePool['state'])
 

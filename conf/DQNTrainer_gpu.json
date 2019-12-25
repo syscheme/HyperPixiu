@@ -8,8 +8,8 @@
     "DQNTrainer": { 
         "batchSize": 128,
         "batchesPerTrain": 64, // 64 for 1050/2G, 
-        "poolReuses": 20,
-        "epochsPerFit": 10,
+        "poolReuses": 0,
+        "epochsPerFit": 20,
         "gamma": 0.01,
         "learningRate": 0.02,
     },

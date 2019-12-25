@@ -387,7 +387,122 @@ class MarketDirClassifier(BaseApplication):
     # end of BaseApplication routine
     #----------------------------------------------------------------------
 
-    def __createModel_XXX(self):
+    def __generator(self):
+
+        frameSeq=[]
+
+        # build up self.__samplePool
+        self.__samplePool = {
+            'state':[],
+            'action':[],
+        }
+
+        itrId=0
+        samplePerFrame =0
+
+        loss = DUMMY_BIG_VAL
+        lossMax = loss
+        while len(frameSeq) >0 or lossMax > self._lossStop or abs(loss-lossMax) > (lossMax * self._lossPctStop/100) :
+            if len(frameSeq) <=0:
+                a = copy.copy(self._framesInHd5)
+                random.shuffle(a)
+                frameSeq +=a
+            
+            startPoolSize = len(self.__samplePool['state'])
+            cEvicted =0
+            if startPoolSize >= max(samplePerFrame, self._trainSize *2):
+                # # randomly evict half of the poolSize
+                # sampleIdxs = [a for a in range(startPoolSize)]
+                # random.shuffle(sampleIdxs)
+                # nToEvict = int(startPoolSize * self._poolEvictRate)
+                # for i in sampleIdxs:
+                #     if i >= (startPoolSize - cEvicted): continue
+
+                #     for col in self.__samplePool.keys() :
+                #         del self.__samplePool[col][i]
+                    
+                #     cEvicted +=1
+                #     if cEvicted >= nToEvict: break
+                cEvicted = startPoolSize # = samplePerFrame
+                for col in self.__samplePool.keys() :
+                    del self.__samplePool[col][:cEvicted]
+
+            poolSize = len(self.__samplePool['state'])
+
+            cAppend =0
+            strFrames=''
+            while len(frameSeq) >0 and len(self.__samplePool['state']) <max(samplePerFrame, self._trainSize *2) :
+                strFrames += frameSeq[0]
+                frame = self._h5file[frameSeq[0]]
+                del frameSeq[0]
+
+                for col in self.__samplePool.keys() :
+                    incrematal = list(frame[col].value)
+                    samplePerFrame = len(incrematal)
+                    self.__samplePool[col] += incrematal
+
+                if loss <10 and len(self.__samplePool['state']) > (poolSize+cAppend + self._batchSize):
+                    try :
+                        state_set = self.__samplePool['state'][poolSize+cAppend: ]
+                        action_set = self.__samplePool['action'][poolSize+cAppend: ]
+                        strFrames += '/eval:%s' %  self._brain.evaluate(x=np.array(state_set), y=np.array(action_set), batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
+                    except Exception as ex:
+                        self.logexception(ex)
+
+                strFrames += ','
+                cAppend += samplePerFrame
+
+            poolSize = len(self.__samplePool['state'])
+            self.info('sample pool refreshed: size[%s->%s] by evicting %s and refilling %s samples from %s %d frames await' % (startPoolSize, poolSize, cEvicted, cAppend, strFrames, len(frameSeq)))
+
+            # random sample a dataset with size=self._trainSize from self.__samplePool
+            sampleSeq = [a for a in range(poolSize)]
+            random.shuffle(sampleSeq)
+            if self._poolReuses >0:
+                tmpseq = copy.copy(sampleSeq)
+                for i in range(self._poolReuses) :
+                    random.shuffle(tmpseq)
+                    sampleSeq += tmpseq
+
+            if len(sampleSeq) >= self._batchSize:
+                lossMax = loss if loss < DUMMY_BIG_VAL-1 else 0.0
+
+            while len(sampleSeq) >= self._batchSize:
+
+                if len(sampleSeq) > self._trainSize:
+                    sampleIdxs = sampleSeq[:self._trainSize]
+                    del sampleSeq[self._trainSize: ]
+                else :
+                    sampleIdxs = sampleSeq
+                    sampleSeq = []
+
+                state_set = [self.__samplePool['state'][i] for i in sampleIdxs]
+                action_set = [self.__samplePool['action'][i] for i in sampleIdxs]
+
+                # call trainMethod to perform tranning
+                itrId +=1
+                try :
+                    result = self._brain.fit(x=np.array(state_set), y=np.array(action_set), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks) # ,metrics=['accuracy']) #metrics=['accuracy'],
+
+                    loss = result.history["loss"][-1]
+                    self.info('train[%s] done, sampled %d from poolsize[%s], loss[%s/%s]' % (str(itrId).zfill(6), self._trainSize, poolSize, loss, lossMax))
+                    yield result # this is a step
+                except Exception as ex:
+                    self.logexception(ex)
+
+                if lossMax < loss:
+                    lossMax = loss
+
+            fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
+            self._brain.save(fn_weights)
+            self.info('saved weights to %s with loss[%s]' %(fn_weights, loss))
+
+    #----------------------------------------------------------------------
+    # model definitions
+    
+    def __createModel_Cnn1Dx4(self):
+        # changed input/output dims based on 
+        # ref: https://blog.goodaudience.com/introduction-to-1d-convolutional-neural-networks-in-keras-for-time-sequences-3a7ff801a2cf
         self._wkModelId = 'C1D4.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         model = Sequential()
@@ -515,116 +630,6 @@ class MarketDirClassifier(BaseApplication):
         sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
         model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
         return model
-
-    def __generator(self):
-
-        frameSeq=[]
-
-        # build up self.__samplePool
-        self.__samplePool = {
-            'state':[],
-            'action':[],
-        }
-
-        itrId=0
-        samplePerFrame =0
-
-        loss = DUMMY_BIG_VAL
-        lossMax = loss
-        while len(frameSeq) >0 or lossMax > self._lossStop or abs(loss-lossMax) > (lossMax * self._lossPctStop/100) :
-            if len(frameSeq) <=0:
-                a = copy.copy(self._framesInHd5)
-                random.shuffle(a)
-                frameSeq +=a
-            
-            startPoolSize = len(self.__samplePool['state'])
-            cEvicted =0
-            if startPoolSize >= max(samplePerFrame, self._trainSize *2):
-                # # randomly evict half of the poolSize
-                # sampleIdxs = [a for a in range(startPoolSize)]
-                # random.shuffle(sampleIdxs)
-                # nToEvict = int(startPoolSize * self._poolEvictRate)
-                # for i in sampleIdxs:
-                #     if i >= (startPoolSize - cEvicted): continue
-
-                #     for col in self.__samplePool.keys() :
-                #         del self.__samplePool[col][i]
-                    
-                #     cEvicted +=1
-                #     if cEvicted >= nToEvict: break
-                cEvicted = startPoolSize # = samplePerFrame
-                for col in self.__samplePool.keys() :
-                    del self.__samplePool[col][:cEvicted]
-
-            poolSize = len(self.__samplePool['state'])
-
-            cAppend =0
-            strFrames=''
-            while len(frameSeq) >0 and len(self.__samplePool['state']) <max(samplePerFrame, self._trainSize *2) :
-                strFrames += frameSeq[0]
-                frame = self._h5file[frameSeq[0]]
-                del frameSeq[0]
-
-                for col in self.__samplePool.keys() :
-                    incrematal = list(frame[col].value)
-                    samplePerFrame = len(incrematal)
-                    self.__samplePool[col] += incrematal
-
-                if loss <10 and len(self.__samplePool['state']) > (poolSize+cAppend + self._batchSize):
-                    try :
-                        state_set = self.__samplePool['state'][poolSize+cAppend: ]
-                        action_set = self.__samplePool['action'][poolSize+cAppend: ]
-                        strFrames += '/eval[%s]' %  self._brain.evaluate(x=np.array(state_set), y=np.array(action_set), batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
-                    except Exception as ex:
-                        self.logexception(ex)
-
-                strFrames += ','
-                cAppend += samplePerFrame
-
-            poolSize = len(self.__samplePool['state'])
-            self.info('sample pool refreshed: size[%s->%s] by evicting %s and refilling %s samples from %s %d frames await' % (startPoolSize, poolSize, cEvicted, cAppend, strFrames, len(frameSeq)))
-
-            # random sample a dataset with size=self._trainSize from self.__samplePool
-            sampleSeq = [a for a in range(poolSize)]
-            random.shuffle(sampleSeq)
-            if self._poolReuses >0:
-                tmpseq = copy.copy(sampleSeq)
-                for i in range(self._poolReuses) :
-                    random.shuffle(tmpseq)
-                    sampleSeq += tmpseq
-
-            if len(sampleSeq) >= self._batchSize:
-                lossMax = 0.0
-
-            while len(sampleSeq) >= self._batchSize:
-
-                if len(sampleSeq) > self._trainSize:
-                    sampleIdxs = sampleSeq[:self._trainSize]
-                    del sampleSeq[self._trainSize: ]
-                else :
-                    sampleIdxs = sampleSeq
-                    sampleSeq = []
-
-                state_set = [self.__samplePool['state'][i] for i in sampleIdxs]
-                action_set = [self.__samplePool['action'][i] for i in sampleIdxs]
-
-                # call trainMethod to perform tranning
-                itrId +=1
-                try :
-                    result = self._brain.fit(x=np.array(state_set), y=np.array(action_set), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks) # ,metrics=['accuracy']) #metrics=['accuracy'],
-
-                    loss = result.history["loss"][-1]
-                    self.info('train[%s] done, sampled %d from poolsize[%s], loss[%s/%s]' % (str(itrId).zfill(6), self._trainSize, poolSize, loss, lossMax))
-                    yield result # this is a step
-                except Exception as ex:
-                    self.logexception(ex)
-
-                if lossMax < loss:
-                    lossMax = loss
-
-            fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
-            self._brain.save(fn_weights)
-            self.info('saved weights to %s with loss[%s]' %(fn_weights, loss))
 
 ########################################################################
 if __name__ == '__main__':

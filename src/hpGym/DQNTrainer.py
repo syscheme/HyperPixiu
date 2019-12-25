@@ -484,7 +484,7 @@ class MarketDirClassifier(BaseApplication):
 
                 if len(sampleSeq) > self._trainSize:
                     sampleIdxs = sampleSeq[:self._trainSize]
-                    del sampleSeq[self._trainSize: ]
+                    del sampleSeq[:self._trainSize]
                 else :
                     sampleIdxs = sampleSeq
                     sampleSeq = []

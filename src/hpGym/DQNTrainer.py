@@ -51,12 +51,12 @@ class DQNTrainer(BaseApplication):
 
         self._batchSize           = self.getConfig('batchSize', 128)
         self._trainSize           = self.getConfig('batchesPerTrain', 8) * self._batchSize
-        self._poolReuses          = self.getConfig('poolReuses', -1)
+        self._poolReuses          = self.getConfig('poolReuses', 0)
         self._epochsPerFit        = self.getConfig('epochsPerFit', 2)
         self._gamma               = self.getConfig('gamma', 0.01)
-        self._learningRate        = self.getConfig('learningRate', 0.02)
-        self._maxLossBeforeStepSamples  = self.getConfig('maxLossBeforeStepSamples', 1000)
-        self._maxPctLossDiff      = self.getConfig('maxPctLossDiff', 2)
+        self._startLR             = self.getConfig('startLR', 0.02)
+        self._lossStop            = self.getConfig('lossStop', 1000)
+        self._lossPctStop         = self.getConfig('lossPctStop', 2)
 
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
@@ -80,7 +80,7 @@ class DQNTrainer(BaseApplication):
             self.error('model_from_json failed')
             return False
 
-        self._brain.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
+        self._brain.compile(loss='mse', optimizer=Adam(lr=self._startLR))
 
         #checkpoint = ModelCheckpoint('./weights.best.h5', verbose=0, monitor='loss', mode='min', save_best_only=True)
         #self._fitCallbacks =[checkpoint]
@@ -143,7 +143,7 @@ class DQNTrainer(BaseApplication):
         lossOfLastPool = 9999999
         loss = 9999999
 
-        while len(frameSeq) >0 or loss > self._maxLossBeforeStepSamples or abs(loss-lossOfLastPool) > (loss * self._maxPctLossDiff/100) :
+        while len(frameSeq) >0 or loss > self._lossStop or abs(loss-lossOfLastPool) > (loss * self._lossPctStop/100) :
             lossOfLastPool = loss
 
             if len(frameSeq) <=0:
@@ -182,11 +182,11 @@ class DQNTrainer(BaseApplication):
             lossOfThisPool = 9999999
             loss = lossOfThisPool/2
             itsInPoll = int((poolSize +self._trainSize -1)/ self._trainSize)
-            while itsInPoll>0 or loss > self._maxLossBeforeStepSamples:
+            while itsInPoll>0 or loss > self._lossStop:
 
                 if loss <0.001: loss =0.001 # to avoid divid by zero
                 rDiff = abs(loss-lossOfThisPool)*100 / loss
-                if itsInPoll<0 and ((rDiff < self._maxPctLossDiff *2) or (loss<0.1 and rDiff < self._maxPctLossDiff *5)):
+                if itsInPoll<0 and ((rDiff < self._lossPctStop *2) or (loss<0.1 and rDiff < self._lossPctStop *5)):
                     break
 
                 itsInPoll -=1
@@ -211,9 +211,9 @@ class DQNTrainer(BaseApplication):
                 self.info('train[%s] done, sampled %d from poolsize[%s], loss[%s]' % (str(itrId).zfill(6), self._trainSize, poolSize, loss))
                 yield result # this is a step
 
-            fn_save = '/tmp/DQN_Cnn1Dx4.1548_3.h5'
-            self._brain.save(fn_save)
-            self.info('saved weights to %s with loss[%s]' %(fn_save, loss))
+            fn_weights = '/tmp/DQN_Cnn1Dx4.1548_3.h5'
+            self._brain.save(fn_weights)
+            self.info('saved weights to %s with loss[%s]' %(fn_weights, loss))
 
     def __train_DQN(self, samples):
         # perform DQN training
@@ -233,7 +233,7 @@ class DQNTrainer(BaseApplication):
             model_json = self._brain.to_json()
             self._theOther = model_from_json(model_json)
             self._theOther.set_weights(self._brain.get_weights()) 
-            self._theOther.compile(loss='mse', optimizer=Adam(lr=self._learningRate), metrics=['accuracy'])
+            self._theOther.compile(loss='mse', optimizer=Adam(lr=self._startLR), metrics=['accuracy'])
 
         if np.random.rand() < 0.5:
             brainPred  = self._brain
@@ -267,18 +267,19 @@ class MarketDirClassifier(BaseApplication):
 
         self._batchSize           = self.getConfig('batchSize', 128)
         self._trainSize           = self.getConfig('batchesPerTrain', 8) * self._batchSize
-        self._poolReuses          = self.getConfig('poolReuses', -1)
+        self._poolReuses          = self.getConfig('poolReuses', 0)
         self._epochsPerFit        = self.getConfig('epochsPerFit', 2)
-        self._gamma               = self.getConfig('gamma', 0.01)
-        self._learningRate        = self.getConfig('learningRate', 0.02)
-        self._maxLossBeforeStepSamples  = self.getConfig('maxLossBeforeStepSamples', 1000)
-        self._maxPctLossDiff      = self.getConfig('maxPctLossDiff', 2)
+        self._lossStop            = self.getConfig('lossStop', 0.1)
+        self._lossPctStop         = self.getConfig('lossPctStop', 2)
+        self._startLR             = self.getConfig('startLR', 0.02)
+        self._wkModelId           = self.getConfig('modelId', 'VGG16d1')
 
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
 
         self._brain = None
         self._theOther = None
+        self._outDir = os.path.join(self.dataRoot, self._program.progId)
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -317,18 +318,49 @@ class MarketDirClassifier(BaseApplication):
             if not self._brain:
                 self.error('model_from_json failed')
                 return False
-        else:
-            self._brain = self.__createModel_VGG16_1d()
+        elif self._wkModelId and len(self._wkModelId) >0:
+            self._wkModelId  += '.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+            inDir = os.path.join(self.dataRoot, self._wkModelId)
+            try : 
+                self.debug('loading saved model from %s' % inDir)
+                with open(os.path.join(inDir, 'model.json'), 'r') as mjson:
+                    model_json = mjson.read()
+                    self._brain = model_from_json(model_json)
 
-        #checkpoint = ModelCheckpoint('./weights.best.h5', verbose=0, monitor='loss', mode='min', save_best_only=True)
+                sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+                self._brain.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
+
+                fn_weights = os.path.join(inDir, 'weights.h5')
+                self.debug('loading saved weights from %s' %fn_weights)
+                self._brain.load_weights(fn_weights)
+                self.info('loaded model and weights from %s' %inDir)
+
+            except Exception as ex:
+                self.logexception(ex)
+
+        if not self._brain:
+            self._brain = self.__createModel_VGG16d1()
+
+        try :
+            os.makedirs(self._outDir)
+            fn_model =os.path.join(self._outDir, '%s.model.json' %self._wkModelId) 
+            with open(fn_model, 'w') as mjson:
+                model_json = self._brain.to_json()
+                mjson.write(model_json)
+                self.info('saved model as %s' %fn_model)
+        except :
+            pass
+
+        #checkpoint = ModelCheckpoint(os.path.join(self._outDir, '%s.best.h5' %self._wkModelId ), verbose=0, monitor='loss', mode='min', save_best_only=True)
         #self._fitCallbacks =[checkpoint]
-        cbTensorBoard = TensorBoard(log_dir='./out/tb', histogram_freq=0,  # 按照何等频率（epoch）来计算直方图，0为不计算
+        cbTensorBoard = TensorBoard(log_dir=os.path.join(self._outDir, 'tb'), histogram_freq=0,  # 按照何等频率（epoch）来计算直方图，0为不计算
                  write_graph=True,  # 是否存储网络结构图
                  write_grads=True, # 是否可视化梯度直方图
                  write_images=True,# 是否可视化参数
                  embeddings_freq=0, 
                  embeddings_layer_names=None, 
                  embeddings_metadata=None)
+
         self._fitCallbacks =[cbTensorBoard]
 
         self.__gen = self.__generator()
@@ -351,6 +383,7 @@ class MarketDirClassifier(BaseApplication):
     #----------------------------------------------------------------------
 
     def __createModel_XXX(self):
+        self._wkModelId = 'C1D4.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         model = Sequential()
         model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
@@ -362,10 +395,11 @@ class MarketDirClassifier(BaseApplication):
         model.add(GlobalAveragePooling1D())
         model.add(Dropout(0.5))
         model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
-        model.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
+        model.compile(loss='mse', optimizer=Adam(lr=self._startLR))
         return model
 
-    def __createModel_VGG16_1d(self):
+    def __createModel_VGG16d1(self):
+        self._wkModelId = 'VGG16d1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -473,10 +507,9 @@ class MarketDirClassifier(BaseApplication):
 
         # 10
         # model.summary()
-        sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
+        sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
         model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
         return model
-
 
     def __generator(self):
 
@@ -493,7 +526,7 @@ class MarketDirClassifier(BaseApplication):
         lossOfLastPool = 9999999
         loss = 9999999
 
-        while len(frameSeq) >0 or loss > self._maxLossBeforeStepSamples or abs(loss-lossOfLastPool) > (loss * self._maxPctLossDiff/100) :
+        while len(frameSeq) >0 or loss > self._lossStop or abs(loss-lossOfLastPool) > (loss * self._lossPctStop/100) :
             lossOfLastPool = loss
 
             if len(frameSeq) <=0:
@@ -542,22 +575,25 @@ class MarketDirClassifier(BaseApplication):
 
             lossOfThisPool = 9999999
             loss = lossOfThisPool/2
-            itsInPoll = int((poolSize +self._trainSize -1)/ self._trainSize)
-            while itsInPoll>0 or loss > self._maxLossBeforeStepSamples:
+            
+            # random sample a dataset with size=self._trainSize from self.__samplePool
+            sampleSeq = [a for a in range(poolSize)]
+            random.shuffle(sampleSeq)
+            if self._poolReuses >0:
+                tmpseq = copy.copy(sampleSeq)
+                for i in range(self._poolReuses) :
+                    random.shuffle(tmpseq)
+                    sampleSeq += tmpseq
 
-                if loss <0.001: loss =0.001 # to avoid divid by zero
-                rDiff = abs(loss-lossOfThisPool)*100 / loss
-                if itsInPoll<0 and ((rDiff < self._maxPctLossDiff *2) or (loss<0.1 and rDiff < self._maxPctLossDiff *5)):
-                    break
-
-                itsInPoll -=1
+            while len(sampleSeq) >= self._batchSize:
                 lossOfThisPool = loss
 
-                # random sample a dataset with size=self._trainSize from self.__samplePool
-                sampleIdxs = [a for a in range(poolSize)]
-                random.shuffle(sampleIdxs)
-                if len(sampleIdxs) > self._trainSize:
-                    del sampleIdxs[self._trainSize :]
+                if len(sampleSeq) > self._trainSize:
+                    sampleIdxs = sampleSeq[:self._trainSize]
+                    del sampleSeq[self._trainSize: ]
+                else :
+                    sampleIdxs = sampleSeq
+                    sampleSeq = []
 
                 state_set = [self.__samplePool['state'][i] for i in sampleIdxs]
                 action_set = [self.__samplePool['action'][i] for i in sampleIdxs]
@@ -573,9 +609,9 @@ class MarketDirClassifier(BaseApplication):
                 except Exception as ex:
                     self.logexception(ex)
 
-            fn_save = '/tmp/DQN_Cnn1Dx4.1548_3.h5'
-            self._brain.save(fn_save)
-            self.info('saved weights to %s with loss[%s]' %(fn_save, loss))
+            fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
+            self._brain.save(fn_weights)
+            self.info('saved weights to %s with loss[%s]' %(fn_weights, loss))
 
 ########################################################################
 if __name__ == '__main__':

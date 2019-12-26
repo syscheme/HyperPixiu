@@ -26,6 +26,7 @@ import h5py, tarfile
 import numpy as np
 
 DUMMY_BIG_VAL = 999999
+GPUs = backend.tensorflow_backend._get_available_gpus()
 
 ########################################################################
 # to work as a generator for Keras fit_generator() by reading replay-buffers from HDF5 file
@@ -260,14 +261,18 @@ class MarketDirClassifier(BaseApplication):
 
     DEFAULT_MODEL = 'Cnn1Dx4'
     
-    def __init__(self, program, h5filepath, model_json=None, initWeights= None, recorder =None, **kwargs):
+    def __init__(self, program, h5filepath=None, model_json=None, initWeights= None, recorder =None, **kwargs):
         super(MarketDirClassifier, self).__init__(program, **kwargs)
+
+        self._wkModelId           = self.getConfig('modelId', MarketDirClassifier.DEFAULT_MODEL)
 
         self._model_json =model_json
         self._h5filepath =h5filepath
+
         if not self._h5filepath : 
             h5filepath = os.path.join(self.dataRoot, 'RFrames.h5')
             self._h5filepath = self.getConfig('RFSamples_file', h5filepath)
+            self._h5filepath = Program.fixupPath(self._h5filepath)
 
         self._batchSize           = self.getConfig('batchSize', 128)
         self._trainSize           = self.getConfig('batchesPerTrain', 8) * self._batchSize
@@ -276,10 +281,18 @@ class MarketDirClassifier(BaseApplication):
         self._lossStop            = self.getConfig('lossStop', 0.1)
         self._lossPctStop         = self.getConfig('lossPctStop', 2)
         self._startLR             = self.getConfig('startLR', 0.02)
-        self._wkModelId           = self.getConfig('modelId', MarketDirClassifier.DEFAULT_MODEL)
+        self._batchSize           = self.getConfig('batchSize', 128)
+
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
         #     self._poolEvictRate =1
+
+        if len(GPUs) > 0 : # adjust some configurations if currently running on GPUs
+            self._batchSize       = self.getConfig('GPU/batchSize',    self._batchSize)
+            self._trainSize       = self.getConfig('GPU/batchesPerTrain', 64) * self._batchSize # usually 64 is good for a bottom-line model of GTX1050oc/2G
+            self._epochsPerFit    = self.getConfig('GPU/epochsPerFit', self._epochsPerFit)
+            self._poolReuses      = self.getConfig('GPU/poolReuses',   self._poolReuses)
+            self._startLR         = self.getConfig('GPU/startLR',      self._startLR)
 
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
@@ -703,14 +716,10 @@ if __name__ == '__main__':
             except :
                 pass
 
-    if 'Windows' in platform.platform() and '/mnt/' == sourceCsvDir[:5] and '/' == sourceCsvDir[6]:
-        drive = '%s:' % sourceCsvDir[5]
-        sourceCsvDir = sourceCsvDir.replace(sourceCsvDir[:6], drive)
-
     p.info('all objects registered piror to DQNTrainer: %s' % p.listByType())
     
     # trainer = p.createApp(DQNTrainer, configNode ='DQNTrainer', h5filepath=os.path.join(sourceCsvDir, 'RFrames_SH510050.h5'))
-    trainer = p.createApp(MarketDirClassifier, configNode ='DQNTrainer', h5filepath=os.path.join(sourceCsvDir, 'RFrames_SH510050.h5'))
+    trainer = p.createApp(MarketDirClassifier, configNode ='DQNTrainer')
 
     p.start()
     p.loop()

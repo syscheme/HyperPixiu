@@ -484,7 +484,7 @@ class Iterable(MetaObj):
         self.error('%s: %s' % (ex, traceback.format_exc()))
 
 ########################################################################
-import sys, getopt
+import sys, getopt, platform
 
 if sys.version_info <(3,):
     from Queue import Queue, Empty
@@ -584,6 +584,12 @@ class Program(object):
     @property
     def settings(self) :
         return self.__jsettings
+
+    def fixupPath(path) :
+        if 'Windows' in platform.platform() and '/mnt/' == path[:5] and '/' == path[6]:
+            drive = '%s:' % path[5]
+            path = path.replace(sourceCsvDir[:6], drive)
+        return path
 
     #----------------------------------------------------------------------
     def __addMetaObj(self, id, obj):

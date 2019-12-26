@@ -588,7 +588,7 @@ class Program(object):
     def fixupPath(path) :
         if 'Windows' in platform.platform() and '/mnt/' == path[:5] and '/' == path[6]:
             drive = '%s:' % path[5]
-            path = path.replace(sourceCsvDir[:6], drive)
+            path = path.replace(path[:6], drive)
         return path
 
     #----------------------------------------------------------------------

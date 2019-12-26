@@ -275,7 +275,7 @@ class MarketDirClassifier(BaseApplication):
         self._epochsPerFit        = self.getConfig('epochsPerFit', 2)
         self._lossStop            = self.getConfig('lossStop', 0.1)
         self._lossPctStop         = self.getConfig('lossPctStop', 2)
-        self._startLR             = self.getConfig('startLR', 0.02)
+        self._startLR             = self.getConfig('startLR', 0.01)
         self._wkModelId           = self.getConfig('modelId', MarketDirClassifier.DEFAULT_MODEL)
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
@@ -289,8 +289,9 @@ class MarketDirClassifier(BaseApplication):
         self._outDir = os.path.join(self.dataRoot, self._program.progId)
 
         self.__knownModels = {
-            'Cnn1Dx4' : self.__createModel_Cnn1Dx4,
-            'VGG16d1' : self.__createModel_VGG16d1,
+            'VGG16d1'    : self.__createModel_VGG16d1,
+            'Cnn1Dx4'    : self.__createModel_Cnn1Dx4,
+            'Cnn1Dx4R1'  : self.__createModel_Cnn1Dx4R1,
             }
 
 
@@ -495,7 +496,7 @@ class MarketDirClassifier(BaseApplication):
                 # call trainMethod to perform tranning
                 itrId +=1
                 try :
-                    result = self._brain.fit(x=np.array(state_set), y=np.array(action_set), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks) # ,metrics=['accuracy']) #metrics=['accuracy'],
+                    result = self._brain.fit(x=np.array(state_set), y=np.array(action_set), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
 
                     loss = result.history["loss"][-1]
                     self.info('train[%s] done, sampled %d from poolsize[%s], loss[%s/%s]' % (str(itrId).zfill(6), self._trainSize, poolSize, loss, lossMax))
@@ -555,7 +556,28 @@ class MarketDirClassifier(BaseApplication):
         model.add(GlobalAveragePooling1D())
         model.add(Dropout(0.5))
         model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
-        model.compile(loss='mse', optimizer=Adam(lr=self._startLR))
+        model.compile(loss='mse', optimizer=Adam(lr=self._startLR, decay=1e-5), metrics=['accuracy'])
+        return model
+
+    def __createModel_Cnn1Dx4R1(self):
+        self._wkModelId = 'Cnn1Dx4R1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
+        model = Sequential()
+        model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
+        model.add(Conv1D(128, 3, activation='relu', input_shape=(self._stateSize/EXPORT_FLOATS_DIMS, EXPORT_FLOATS_DIMS)))
+        model.add(Conv1D(256, 3, activation='relu'))
+        model.add(MaxPooling1D(2))
+        model.add(Conv1D(512, 3, activation='relu'))
+        model.add(Conv1D(256, 3, activation='relu'))
+        model.add(MaxPooling1D(2))
+        model.add(Dropout(0.3))
+        model.add(Conv1D(256, 3, activation='relu'))
+        model.add(MaxPooling1D(2))
+        model.add(Conv1D(100, 3, activation='relu'))
+        model.add(GlobalAveragePooling1D())
+        model.add(Dropout(0.4))
+        model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
+        model.compile(loss='categorical_crossentropy', optimizer=Adam(lr=self._startLR, decay=1e-6), metrics=['accuracy'])
         return model
 
     def __createModel_VGG16d1(self):

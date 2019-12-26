@@ -6,12 +6,12 @@
     },
 
     "DQNTrainer": { 
-        "batchSize": 128,
+        "batchSize": 64,
         "batchesPerTrain": 128, // 64 for GTX1050/2G, 128 for GTX1060/4G
         "poolReuses": 0,
-        "epochsPerFit": 10,
+        "epochsPerFit": 8,
         "gamma": 0.01,
-        "learningRate": 0.02,
-        "modelId": "VGG16d1", // default "Cnn1Dx4"
+        "startLR": 0.001,
+        "modelId": "Cnn1Dx4R1", // default "Cnn1Dx4"
     },
 }

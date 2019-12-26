@@ -1,0 +1,29 @@
+// configuration of a DQNTrainer
+{
+    "logger": {
+        "level": "info", //40
+        // "console": "False",
+    },
+
+    "DQNTrainer": {
+
+        "modelId": "VGG16d1", // default "Cnn1Dx4"
+        "RFSamples_file" : "/mnt/e/AShareSample/ETF/RFrames_SH510050.h5",
+
+        "batchSize": 128,
+        "batchesPerTrain": 8,
+        "poolReuses": 0,
+        "epochsPerFit": 2,
+        "startLR": 0.02, // start learningRate
+
+        "GPU": {
+            // "batchSize": 128,
+            // "startLR": 0.005,
+            "batchesPerTrain": 128, // 64 for GTX1050/2G, 128 for GTX1060/4G
+            "poolReuses": 0,
+            "epochsPerFit": 8,
+        },
+
+        "gamma": 0.01,
+    },
+}

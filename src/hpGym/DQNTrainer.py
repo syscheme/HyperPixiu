@@ -143,8 +143,6 @@ class MarketDirClassifier(BaseApplication):
         if not self._brain:
             self._brain = self.__knownModels[MarketDirClassifier.DEFAULT_MODEL]()
 
-        self._brain.summary()
-        
         try :
             os.makedirs(self._outDir)
             fn_model =os.path.join(self._outDir, '%s.model.json' %self._wkModelId) 
@@ -489,6 +487,7 @@ class MarketDirClassifier(BaseApplication):
         model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
         #第一个 卷积层 的卷积核的数目是32 ，卷积核的大小是3*3，stride没写，默认应该是1*1
         #对于stride=1*1,并且padding ='same',这种情况卷积后的图像shape与卷积前相同，本层后shape还是32*32
+        # model.add(Conv1D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Conv1D(64, 3, padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Activation('relu'))
         
@@ -496,6 +495,7 @@ class MarketDirClassifier(BaseApplication):
         model.add(BatchNormalization())
         model.add(Dropout(0.3))
         #layer2 32*32*64
+        # model.add(Conv1D(64, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Conv1D(64, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Activation('relu'))
         model.add(BatchNormalization())
@@ -505,66 +505,77 @@ class MarketDirClassifier(BaseApplication):
         model.add(MaxPooling1D(2))
 
         #layer3 16*16*64
+        # model.add(Conv1D(128, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Conv1D(128, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Activation('relu'))
         model.add(BatchNormalization())
         model.add(Dropout(0.4))
         
         #layer4 16*16*128
+        # model.add(Conv1D(128, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Conv1D(128, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Activation('relu'))
         model.add(BatchNormalization())
         model.add(MaxPooling1D(2))
         
         #layer5 8*8*128
+        # model.add(Conv1D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Conv1D(256, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Activation('relu'))
         model.add(BatchNormalization())
         model.add(Dropout(0.4))
         
         #layer6 8*8*256
+        # model.add(Conv1D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Conv1D(256, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Activation('relu'))
         model.add(BatchNormalization())
         model.add(Dropout(0.4))
         
         #layer7 8*8*256
+        # model.add(Conv1D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Conv1D(256, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Activation('relu'))
         model.add(BatchNormalization())
         model.add(MaxPooling1D(2))
 
         #layer8 4*4*256
+        # model.add(Conv1D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Activation('relu'))
         model.add(BatchNormalization())
         model.add(Dropout(0.4))
 
         #layer9 4*4*512
+        # model.add(Conv1D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Activation('relu'))
         model.add(BatchNormalization())
         model.add(Dropout(0.4))
         
         #layer10 4*4*512
+        # model.add(Conv1D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Activation('relu'))
         model.add(BatchNormalization())
         model.add(MaxPooling1D(2))
         
         #layer11 2*2*512
+        # model.add(Conv1D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Activation('relu'))
         model.add(BatchNormalization())
         model.add(Dropout(0.4))
 
         #layer12 2*2*512
+        # model.add(Conv1D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Activation('relu'))
         model.add(BatchNormalization())
         model.add(Dropout(0.4))
 
         #layer13 2*2*512
+        # model.add(Conv1D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Activation('relu'))
         model.add(BatchNormalization())
@@ -573,11 +584,13 @@ class MarketDirClassifier(BaseApplication):
 
         #layer14 1*1*512
         model.add(Flatten())
+        # model.add(Dense(512, activation='relu', kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Dense(512,kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Activation('relu'))
         model.add(BatchNormalization())
 
         #layer15 512
+        # model.add(Dense(512, activation='relu', kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Dense(512,kernel_regularizer=regularizers.l2(weight_decay)))
         model.add(Activation('relu'))
         model.add(BatchNormalization())
@@ -749,7 +762,7 @@ class DQNTrainer(MarketDirClassifier):
 if __name__ == '__main__':
 
     if not '-f' in sys.argv :
-        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/DQNTrainer_VGG16d1.json'] # 'Gym_AShare.json']
+        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/Gym_AShare.json'] # 'DQNTrainer_VGG16d1.json' 'Gym_AShare.json'
 
     p = Program()
     p._heartbeatInterval =-1

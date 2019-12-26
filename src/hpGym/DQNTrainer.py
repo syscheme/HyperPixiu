@@ -10,23 +10,31 @@ from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 import HistoryData as hist
 from MarketData import EXPORT_FLOATS_DIMS
 
-from keras.models import Sequential
-from keras.optimizers import Adam
-from keras.models import model_from_json
-from keras.callbacks import ModelCheckpoint, TensorBoard
-from keras import backend
-from keras.layers import Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D,GlobalAveragePooling1D
-from keras.layers import BatchNormalization, Flatten
-from keras.models import Sequential
-from keras.optimizers import Adam, SGD
-from keras import regularizers
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.optimizers import Adam, SGD
+from tensorflow.keras.models import model_from_json
+from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
+# from tensorflow.keras import backend
+from tensorflow.keras.layers import Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D,GlobalAveragePooling1D
+from tensorflow.keras.layers import BatchNormalization, Flatten
+from tensorflow.keras import regularizers
+from tensorflow.keras import backend as backend
+
+import tensorflow as tf
 
 import sys, os, platform, random, copy
 import h5py, tarfile
 import numpy as np
 
 DUMMY_BIG_VAL = 999999
-GPUs = backend.tensorflow_backend._get_available_gpus()
+# GPUs = backend.tensorflow_backend._get_available_gpus()
+
+def get_available_gpus():
+    from tensorflow.python.client import device_lib
+    local_device_protos = device_lib.list_local_devices()
+    return [x.name for x in local_device_protos if x.device_type == 'GPU']
+
+GPUs = get_available_gpus()
 
 ########################################################################
 class MarketDirClassifier(BaseApplication):
@@ -165,6 +173,7 @@ class MarketDirClassifier(BaseApplication):
         self._fitCallbacks =[cbTensorBoard]
 
         self._gen = self.__generator()
+        self._fit_gen = self.__fit_gen()
         return True
 
     def doAppStep(self):
@@ -180,9 +189,47 @@ class MarketDirClassifier(BaseApplication):
         
         return super(MarketDirClassifier, self).doAppStep()
 
+    def doAppStep1(self):
+        # ref: https://pastebin.com/kRLLmdxN
+        # training_set = tfdata_generator(x_train, y_train, is_training=True, batch_size=_BATCH_SIZE)
+        # result = self._brain.fit(training_set.make_one_shot_iterator(), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
+        # model.fit(training_set.make_one_shot_iterator(), steps_per_epoch=len(x_train) // _BATCH_SIZE
+        #     epochs=_EPOCHS, validation_data=testing_set.make_one_shot_iterator(), validation_steps=len(x_test) // _BATCH_SIZE,
+        #     verbose=1)
+
+        result = self._brain.fit_generator(generator=self._fit_gen, epochs=self._epochsPerFit, steps_per_epoch=10, verbose=1, callbacks=self._fitCallbacks)
+        return super(MarketDirClassifier, self).doAppStep()
+
     # end of BaseApplication routine
     #----------------------------------------------------------------------
+    def __readFrame(self, frameNo) :
+        frameName = self._framesInHd5[0]
+        frame = self._h5file[frameName]
+        return list(frame['state'].value), list(frame['action'].value)
 
+    def __fit_gen(self):
+
+        frameSeq= copy.copy(self._framesInHd5)
+        random.shuffle(frameSeq)
+
+        dataset = tf.data.Dataset.from_tensor_slices(np.array([i for i in range(len(self._framesInHd5))]))
+        dataset = dataset.map(lambda x: self.__readFrame(x)) # list(self._h5file[int(x)]['state'].value), list(self._h5file[int(x)]['action'].value)) # (self.__readFrame)
+        # dataset = dataset.apply(tf.contrib.data.map_and_batch(self.readFrame, batch_size,
+        #     num_parallel_batches=4, # cpu cores
+        #     drop_remainder=True if is_training else False))
+
+        dataset = dataset.shuffle(1000 + 3 * self._batchSize)
+        dataset = dataset.batch(self._batchSize)
+        dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
+        dataset = dataset.repeat()
+        iterator = dataset.make_one_shot_iterator()
+        next_batch = iterator.get_next()
+
+        with K.get_session().as_default() as sess:
+            while True:
+                *inputs, labels = sess.run(next_batch)
+                yield inputs, labels
+    
     def __generator(self):
 
         frameSeq=[]
@@ -782,7 +829,7 @@ class DQNTrainer(MarketDirClassifier):
 if __name__ == '__main__':
 
     if not '-f' in sys.argv :
-        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/Gym_AShare.json'] # 'DQNTrainer_VGG16d1.json' 'Gym_AShare.json'
+        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/DQNTrainer_VGG16d1.json'] # 'DQNTrainer_VGG16d1.json' 'Gym_AShare.json'
 
     p = Program()
     p._heartbeatInterval =-1

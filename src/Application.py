@@ -512,6 +512,7 @@ class Program(object):
         self.__daemonize =False
         # dirname(dirname(abspath(file)))
         self.__jsettings = None
+        self.__ostype = platform.platform().lower()
 
         try:
             opts, args = getopt.getopt(argvs[1:], "hf:o:", ["config=","outdir="])
@@ -580,6 +581,10 @@ class Program(object):
     @property
     def progId(self) : 
         return '%s_%s' % (self.__progName, self.__pid)
+
+    @property
+    def ostype(self) :
+        return self.__ostype
 
     @property
     def settings(self) :

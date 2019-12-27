@@ -19,10 +19,11 @@ from tensorflow.keras.layers import Dense, Conv1D, Activation, Dropout, LSTM, Re
 from tensorflow.keras.layers import BatchNormalization, Flatten
 from tensorflow.keras import regularizers
 from tensorflow.keras import backend as backend
+from tensorflow.keras.utils import Sequence
 
 import tensorflow as tf
 
-import sys, os, platform, random, copy
+import sys, os, platform, random, copy, threading
 import h5py, tarfile
 import numpy as np
 
@@ -35,6 +36,23 @@ def get_available_gpus():
     return [x.name for x in local_device_protos if x.device_type == 'GPU']
 
 GPUs = get_available_gpus()
+
+class Hd5DataGenerator(Sequence):
+    def __init__(self, trainer, batch_size):
+        self.trainer = trainer
+        self.batch_size = batch_size
+
+    def __len__(self):
+        return self.trainer.poolSize // self.batch_size
+
+    def __getitem__(self, index):
+        batch = self.trainer.readBatch(self.batch_size*index, self.batch_size)
+        return np.array(batch['state']), np.array(batch['action'])
+
+    def __iter__(self):
+        for i in range(self.__len__()) :
+            batch = self.trainer.readBatch(self.batch_size*i, self.batch_size)
+            yield np.array(batch['state']), np.array(batch['action'])
 
 ########################################################################
 class MarketDirClassifier(BaseApplication):
@@ -61,6 +79,7 @@ class MarketDirClassifier(BaseApplication):
         self._lossStop            = self.getConfig('lossStop', 0.1)
         self._lossPctStop         = self.getConfig('lossPctStop', 2)
         self._startLR             = self.getConfig('startLR', 0.01)
+        self._poolSize  =16*1024
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
         #     self._poolEvictRate =1
@@ -74,18 +93,17 @@ class MarketDirClassifier(BaseApplication):
 
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
+        self._frameSeq =[]
 
         self._brain = None
         self._outDir = os.path.join(self.dataRoot, self._program.progId)
+        self.__lock = threading.Lock()
 
         self.__knownModels = {
             'VGG16d1'    : self.__createModel_VGG16d1,
             'Cnn1Dx4'    : self.__createModel_Cnn1Dx4,
             'Cnn1Dx4R1'  : self.__createModel_Cnn1Dx4R1,
             }
-
-        self.__frameNo = 0
-
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -175,11 +193,10 @@ class MarketDirClassifier(BaseApplication):
         self._fitCallbacks =[cbTensorBoard]
 
         self._gen = self.__generator()
-        # self._fit_gen = self.__fit_gen()
-        # self._fit_gen = self.__gen_readFrame()
+
         return True
 
-    def doAppStep0(self):
+    def doAppStep_local_generator(self):
         if not self._gen:
             self.stop()
         else:
@@ -193,6 +210,22 @@ class MarketDirClassifier(BaseApplication):
         return super(MarketDirClassifier, self).doAppStep()
 
     def doAppStep(self):
+        # return self.doAppStep_local_generator()
+        # return self.doAppStep_keras_dataset()
+        return self.doAppStep_keras_generator()
+
+    def doAppStep_keras_generator(self):
+        # frameSeq= [i for i in range(len(self._framesInHd5))]
+        # random.shuffle(frameSeq)
+        # result = self._brain.fit_generator(generator=self.__gen_readBatchFromFrameEx(frameSeq), workers=2, use_multiprocessing=True, epochs=self._epochsPerFit, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
+
+        self.refreshPool()
+        use_multiprocessing = not 'windows' in self._program.ostype
+
+        result = self._brain.fit_generator(generator=Hd5DataGenerator(self, self._batchSize), workers=6, use_multiprocessing=use_multiprocessing, epochs=self._epochsPerFit, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
+        return super(MarketDirClassifier, self).doAppStep()
+
+    def doAppStep_keras_dataset(self):
         # ref: https://pastebin.com/kRLLmdxN
         # training_set = tfdata_generator(x_train, y_train, is_training=True, batch_size=_BATCH_SIZE)
         # result = self._brain.fit(training_set.make_one_shot_iterator(), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
@@ -200,20 +233,58 @@ class MarketDirClassifier(BaseApplication):
         #     epochs=_EPOCHS, validation_data=testing_set.make_one_shot_iterator(), validation_steps=len(x_test) // _BATCH_SIZE,
         #     verbose=1)
 
-        result = self._brain.fit_generator(generator=self.__gen_readFrame(), epochs=self._epochsPerFit, steps_per_epoch=1, verbose=1, callbacks=self._fitCallbacks)
+        dataset = tf.data.Dataset.from_generator(generator=self.__gen_readDataFromFrame,
+                                                output_types=(tf.float32, tf.float32),
+                                                output_shapes=((self._stateSize,), (self._actionSize,)))
+
+        dataset = dataset.batch(self._batchSize).shuffle(100)
+        dataset = dataset.apply(tf.data.experimental.copy_to_device("/gpu:0"))
+        dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
+        dataset = dataset.repeat()
+
+        result = self._brain.fit(dataset.make_one_shot_iterator(), epochs=self._epochsPerFit, steps_per_epoch=64, verbose=1, callbacks=self._fitCallbacks)
         return super(MarketDirClassifier, self).doAppStep()
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
-    def __gen_readFrame(self) :
+    def __gen_readBatchFromFrame(self) :
+        frameSeq= []
         while True:
-            yield self.__readFrame(self.__frameNo)
-            self.__frameNo = (self.__frameNo+1) %len(self._framesInHd5)
-    
-    def __readFrame(self, frameNo) :
-        frameName = self._framesInHd5[frameNo]
-        frame = self._h5file[frameName]
-        return np.array(list(frame['state'].value)), np.array(list(frame['action'].value))
+            if len(frameSeq) <=0:
+                frameSeq= [i for i in range(len(self._framesInHd5))]
+                random.shuffle(frameSeq)
+            
+            try :
+                return self.__gen_readBatchFromFrameEx(frameSeq)
+            except StopIteration:
+                frameSeq= []
+
+    def __gen_readBatchFromFrameEx(self, frameSeq) :
+        while len(frameSeq)>0:
+            frameName = self._framesInHd5[frameSeq[0]]
+            frame = self._h5file[frameName]
+            for i in range(int(8192/self._batchSize)) :
+                offset = self._batchSize*i
+                yield np.array(list(frame['state'].value)[offset: offset+self._batchSize]), np.array(list(frame['action'].value[offset: offset+self._batchSize]))
+
+            del frameSeq[0]
+        raise StopIteration
+
+    def __gen_readDataFromFrame(self) :
+        frameSeq= []
+        while True:
+            if len(frameSeq) <=0:
+                frameSeq= [i for i in range(len(self._framesInHd5))]
+                random.shuffle(frameSeq)
+
+            frameName = self._framesInHd5[frameSeq[0]]
+            frame = self._h5file[frameName]
+            for i in range(8192) :
+                state = frame['state'][i]
+                action = frame['action'][i]
+                yield np.array(state), np.array(action)
+
+            del frameSeq[0]
 
     def __fit_gen(self):
 
@@ -238,6 +309,49 @@ class MarketDirClassifier(BaseApplication):
                 *inputs, labels = sess.run(next_batch)
                 yield inputs, labels
     
+    @property
+    def poolSize(self):
+        with self.__lock:
+            return len(self.__samplePool['state'])
+
+    def refreshPool(self):
+        # build up self.__samplePool
+        strFrames=''
+        awaitSize =0
+        with self.__lock:
+            self.__samplePool = {
+                'state':[],
+                'action':[],
+            }
+
+            if len(self._frameSeq) <=0:
+                self._frameSeq = copy.copy(self._framesInHd5)
+                random.shuffle(self._frameSeq)
+
+            awaitSize = len(self._frameSeq)
+            while len(self._frameSeq) >0 and len(self.__samplePool['state']) < self._poolSize :
+                strFrames += self._frameSeq[0]
+                frame = self._h5file[self._frameSeq[0]]
+                del self._frameSeq[0]
+
+                for col in self.__samplePool.keys() :
+                    incrematal = list(frame[col])
+                    self.__samplePool[col] += incrematal
+
+                strFrames += ','
+            awaitSize = len(self._frameSeq)
+
+        newsize = self.poolSize
+        self.info('refreshPool() pool refreshed: size[%s] refilled samples from %s %d frames await' % (newsize, strFrames, awaitSize))
+        return newsize
+
+    def readBatch(self, offset, len):
+        ret = {}
+        with self.__lock:
+            for col in self.__samplePool.keys() :
+                ret[col] = copy.copy(self.__samplePool[col][offset: offset+len])
+        return ret
+
     def __generator(self):
 
         frameSeq=[]

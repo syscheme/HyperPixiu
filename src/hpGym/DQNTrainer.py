@@ -24,6 +24,8 @@ from tensorflow.keras.utils import Sequence
 import tensorflow as tf
 
 import sys, os, platform, random, copy, threading
+from datetime import datetime
+
 import h5py, tarfile
 import numpy as np
 
@@ -43,11 +45,11 @@ class Hd5DataGenerator(Sequence):
         self.batch_size = batch_size
 
     def __len__(self):
-        return self.trainer.poolSize // self.batch_size
+        return self.trainer.batchesInPool
 
     def __getitem__(self, index):
-        batch = self.trainer.readBatch(self.batch_size*index, self.batch_size)
-        return np.array(batch['state']), np.array(batch['action'])
+        batch = self.trainer.readBatch(index)
+        return batch['state'], batch['action']
 
     def __iter__(self):
         for i in range(self.__len__()) :
@@ -100,6 +102,7 @@ class MarketDirClassifier(BaseApplication):
         self.__lock = threading.Lock()
         self.__thread = None
         self.__samplesReadAhead = None
+        self.__samplePool2 =[]
 
         self.__knownModels = {
             'VGG16d1'    : self.__createModel_VGG16d1,
@@ -224,7 +227,13 @@ class MarketDirClassifier(BaseApplication):
         self.refreshPool()
         use_multiprocessing = not 'windows' in self._program.ostype
 
-        result = self._brain.fit_generator(generator=Hd5DataGenerator(self, self._batchSize), workers=6, use_multiprocessing=use_multiprocessing, epochs=self._epochsPerFit, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
+        result = self._brain.fit_generator(generator=Hd5DataGenerator(self, self._batchSize), workers=8, use_multiprocessing=use_multiprocessing, epochs=self._epochsPerFit, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
+
+        loss = result.history["loss"][-1]
+        fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
+        self._brain.save(fn_weights)
+        self.info('doAppStep_keras_generator() done, loss[%s] saved %s' % (loss, fn_weights))
+
         return super(MarketDirClassifier, self).doAppStep()
 
     def doAppStep_keras_dataset(self):
@@ -245,6 +254,12 @@ class MarketDirClassifier(BaseApplication):
         dataset = dataset.repeat()
 
         result = self._brain.fit(dataset.make_one_shot_iterator(), epochs=self._epochsPerFit, steps_per_epoch=64, verbose=1, callbacks=self._fitCallbacks)
+
+        loss = result.history["loss"][-1]
+        fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
+        self._brain.save(fn_weights)
+        self.info('doAppStep_keras_generator() done, loss[%s] saved %s' % (loss, fn_weights))
+
         return super(MarketDirClassifier, self).doAppStep()
 
     # end of BaseApplication routine
@@ -312,9 +327,9 @@ class MarketDirClassifier(BaseApplication):
                 yield inputs, labels
     
     @property
-    def poolSize(self):
+    def batchesInPool(self):
         with self.__lock:
-            return len(self.__samplePool['state'])
+            return len(self.__samplePool2)
 
     def refreshPool(self):
         # build up self.__samplePool
@@ -329,21 +344,18 @@ class MarketDirClassifier(BaseApplication):
             self.__readAhead()
 
         with self.__lock:
-            self.__samplePool = self.__samplesReadAhead
-            self.__samplesReadAhead ={}
+            self.__samplePool2 = self.__samplesReadAhead
+            self.__samplesReadAhead =[]
             self.__thread = threading.Thread(target=self.__readAhead)
             self.__thread.start()
 
-        newsize = self.poolSize
-        self.info('refreshPool() pool refreshed from readAhead: size[%s]' % (newsize))
+        newsize = self.batchesInPool
+        self.info('refreshPool() pool refreshed from readAhead: %s batches x%s' % (newsize, self._batchSize))
         return newsize
 
-    def readBatch(self, offset, len):
-        ret = {}
+    def readBatch(self, batchNo):
         with self.__lock:
-            for col in self.__samplePool.keys() :
-                ret[col] = copy.copy(self.__samplePool[col][offset: offset+len])
-        return ret
+            return self.__samplePool2[batchNo]
 
     def __readAhead(self):
         '''
@@ -351,12 +363,11 @@ class MarketDirClassifier(BaseApplication):
         '''
         self._frameNamesReadAhead=''
         awaitSize =0
-        self.__samplesReadAhead = {
-            'state':[],
-            'action':[],
-        }
+        self.__samplesReadAhead = []
+        stampStart = datetime.now()
 
-        while len(self.__samplesReadAhead['state']) < self._poolSize :
+        COLS = ['state','action']
+        while len(self.__samplesReadAhead) < self._poolSize/self._batchSize :
             with self.__lock:
                 if len(self._frameSeq) <=0:
                     self._frameSeq = copy.copy(self._framesInHd5)
@@ -369,9 +380,17 @@ class MarketDirClassifier(BaseApplication):
             self._frameNamesReadAhead += nextFrameName
             frame = self._h5file[nextFrameName]
 
-            for col in self.__samplesReadAhead.keys() :
-                incrematal = list(frame[col])
-                self.__samplesReadAhead[col] += incrematal
+            frameDict ={}
+            for col in COLS :
+                frameDict[col] = list(frame[col])
+
+            framelen = len(frameDict[COLS[0]])
+            for i in range(framelen // self._batchSize):
+                batch = {}
+                for col in COLS :
+                    batch[col] = np.array(frameDict[col][self._batchSize*i: self._batchSize*(i+1)])
+                
+                self.__samplesReadAhead.append(batch)
 
             self._frameNamesReadAhead += ','
 
@@ -379,7 +398,7 @@ class MarketDirClassifier(BaseApplication):
             awaitSize = len(self._frameSeq)
             self.__thread = None
 
-        self.info('readAhead() read %s samples from %s %d frames await' % (len(self.__samplesReadAhead['state']), self._frameNamesReadAhead, awaitSize))
+        self.info('readAhead() read %s batches x%s samples from %s %d frames await, took %s' % (len(self.__samplesReadAhead), self._batchSize, self._frameNamesReadAhead, awaitSize, str(datetime.now() - stampStart)))
 
     def __generator(self):
 

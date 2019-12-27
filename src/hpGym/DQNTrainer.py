@@ -84,6 +84,8 @@ class MarketDirClassifier(BaseApplication):
             'Cnn1Dx4R1'  : self.__createModel_Cnn1Dx4R1,
             }
 
+        self.__frameNo = 0
+
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -173,10 +175,11 @@ class MarketDirClassifier(BaseApplication):
         self._fitCallbacks =[cbTensorBoard]
 
         self._gen = self.__generator()
-        self._fit_gen = self.__fit_gen()
+        # self._fit_gen = self.__fit_gen()
+        # self._fit_gen = self.__gen_readFrame()
         return True
 
-    def doAppStep(self):
+    def doAppStep0(self):
         if not self._gen:
             self.stop()
         else:
@@ -189,7 +192,7 @@ class MarketDirClassifier(BaseApplication):
         
         return super(MarketDirClassifier, self).doAppStep()
 
-    def doAppStep1(self):
+    def doAppStep(self):
         # ref: https://pastebin.com/kRLLmdxN
         # training_set = tfdata_generator(x_train, y_train, is_training=True, batch_size=_BATCH_SIZE)
         # result = self._brain.fit(training_set.make_one_shot_iterator(), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
@@ -197,15 +200,20 @@ class MarketDirClassifier(BaseApplication):
         #     epochs=_EPOCHS, validation_data=testing_set.make_one_shot_iterator(), validation_steps=len(x_test) // _BATCH_SIZE,
         #     verbose=1)
 
-        result = self._brain.fit_generator(generator=self._fit_gen, epochs=self._epochsPerFit, steps_per_epoch=10, verbose=1, callbacks=self._fitCallbacks)
+        result = self._brain.fit_generator(generator=self.__gen_readFrame(), epochs=self._epochsPerFit, steps_per_epoch=1, verbose=1, callbacks=self._fitCallbacks)
         return super(MarketDirClassifier, self).doAppStep()
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
+    def __gen_readFrame(self) :
+        while True:
+            yield self.__readFrame(self.__frameNo)
+            self.__frameNo = (self.__frameNo+1) %len(self._framesInHd5)
+    
     def __readFrame(self, frameNo) :
-        frameName = self._framesInHd5[0]
+        frameName = self._framesInHd5[frameNo]
         frame = self._h5file[frameName]
-        return list(frame['state'].value), list(frame['action'].value)
+        return np.array(list(frame['state'].value)), np.array(list(frame['action'].value))
 
     def __fit_gen(self):
 

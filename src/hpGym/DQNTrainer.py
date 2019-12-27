@@ -393,6 +393,7 @@ class MarketDirClassifier(BaseApplication):
                 self.__samplesReadAhead.append(batch)
 
             self._frameNamesReadAhead += ','
+            frameDict =None
 
         with self.__lock:
             awaitSize = len(self._frameSeq)

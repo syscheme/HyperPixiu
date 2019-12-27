@@ -79,7 +79,7 @@ class MarketDirClassifier(BaseApplication):
         self._lossStop            = self.getConfig('lossStop', 0.1)
         self._lossPctStop         = self.getConfig('lossPctStop', 2)
         self._startLR             = self.getConfig('startLR', 0.01)
-        self._poolSize  =16*1024
+        self._poolSize  = 64*1024
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
         #     self._poolEvictRate =1
@@ -98,6 +98,8 @@ class MarketDirClassifier(BaseApplication):
         self._brain = None
         self._outDir = os.path.join(self.dataRoot, self._program.progId)
         self.__lock = threading.Lock()
+        self.__thread = None
+        self.__samplesReadAhead = None
 
         self.__knownModels = {
             'VGG16d1'    : self.__createModel_VGG16d1,
@@ -316,33 +318,24 @@ class MarketDirClassifier(BaseApplication):
 
     def refreshPool(self):
         # build up self.__samplePool
-        strFrames=''
-        awaitSize =0
+
+        readAheadThrd = None
         with self.__lock:
-            self.__samplePool = {
-                'state':[],
-                'action':[],
-            }
+            readAheadThrd = self.__thread
+        
+        if readAheadThrd:
+            readAheadThrd.join()
+        elif not self.__samplesReadAhead:
+            self.__readAhead()
 
-            if len(self._frameSeq) <=0:
-                self._frameSeq = copy.copy(self._framesInHd5)
-                random.shuffle(self._frameSeq)
-
-            awaitSize = len(self._frameSeq)
-            while len(self._frameSeq) >0 and len(self.__samplePool['state']) < self._poolSize :
-                strFrames += self._frameSeq[0]
-                frame = self._h5file[self._frameSeq[0]]
-                del self._frameSeq[0]
-
-                for col in self.__samplePool.keys() :
-                    incrematal = list(frame[col])
-                    self.__samplePool[col] += incrematal
-
-                strFrames += ','
-            awaitSize = len(self._frameSeq)
+        with self.__lock:
+            self.__samplePool = self.__samplesReadAhead
+            self.__samplesReadAhead ={}
+            self.__thread = threading.Thread(target=self.__readAhead)
+            self.__thread.start()
 
         newsize = self.poolSize
-        self.info('refreshPool() pool refreshed: size[%s] refilled samples from %s %d frames await' % (newsize, strFrames, awaitSize))
+        self.info('refreshPool() pool refreshed from readAhead: size[%s]' % (newsize))
         return newsize
 
     def readBatch(self, offset, len):
@@ -351,6 +344,42 @@ class MarketDirClassifier(BaseApplication):
             for col in self.__samplePool.keys() :
                 ret[col] = copy.copy(self.__samplePool[col][offset: offset+len])
         return ret
+
+    def __readAhead(self):
+        '''
+        reading from H5 file only works on CPU and is quite slow, so take a seperate thread to read-ahead
+        '''
+        self._frameNamesReadAhead=''
+        awaitSize =0
+        self.__samplesReadAhead = {
+            'state':[],
+            'action':[],
+        }
+
+        while len(self.__samplesReadAhead['state']) < self._poolSize :
+            with self.__lock:
+                if len(self._frameSeq) <=0:
+                    self._frameSeq = copy.copy(self._framesInHd5)
+                    random.shuffle(self._frameSeq)
+
+                awaitSize = len(self._frameSeq)
+                nextFrameName = self._frameSeq[0]
+                del self._frameSeq[0]
+
+            self._frameNamesReadAhead += nextFrameName
+            frame = self._h5file[nextFrameName]
+
+            for col in self.__samplesReadAhead.keys() :
+                incrematal = list(frame[col])
+                self.__samplesReadAhead[col] += incrematal
+
+            self._frameNamesReadAhead += ','
+
+        with self.__lock:
+            awaitSize = len(self._frameSeq)
+            self.__thread = None
+
+        self.info('readAhead() read %s samples from %s %d frames await' % (len(self.__samplesReadAhead['state']), self._frameNamesReadAhead, awaitSize))
 
     def __generator(self):
 

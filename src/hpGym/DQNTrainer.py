@@ -81,7 +81,7 @@ class MarketDirClassifier(BaseApplication):
         self._lossStop            = self.getConfig('lossStop', 0.1)
         self._lossPctStop         = self.getConfig('lossPctStop', 2)
         self._startLR             = self.getConfig('startLR', 0.01)
-        self._poolSize  = 64*1024
+        self._poolSize  = 32*1024
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
         #     self._poolEvictRate =1
@@ -340,7 +340,7 @@ class MarketDirClassifier(BaseApplication):
         
         if readAheadThrd:
             readAheadThrd.join()
-        elif not self.__samplesReadAhead:
+        elif not self.__samplesReadAhead or len(self.__samplesReadAhead) <=0:
             self.__readAhead()
 
         with self.__lock:

@@ -868,7 +868,7 @@ class IdealDayTrader(Simulator):
         self.wkTrader._agent._epsilon = -1.0 # less than epsilonMin
         self.wkTrader._agent._gamma = 0 # idealtrader doesn't concern Q_next
         # self.wkTrader._dailyCapCost = 0.0 # no more daily cost in ideal trader
-        self.wkTrader._maxValuePerOrder = self._startBalance /2
+        # self.wkTrader._maxValuePerOrder = self._startBalance /2
 
         # no need to do training if to export ReplayFrames
         if 'full' == self._generateReplayFrames or 'direction' in self._generateReplayFrames:

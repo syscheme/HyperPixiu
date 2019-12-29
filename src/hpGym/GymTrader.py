@@ -1000,12 +1000,15 @@ class IdealDayTrader(Simulator):
         T_win = timedelta(minutes=2)
         slip = 0.02
 
-        if T_high.day==3 and T_high.month==5 :
+        if T_high.month==3 and T_high.day in [4,5,6,7,8]:
             print('here')
 
         # step 2. determine the stop prices
         sell_stop = price_high -slip
         buy_stop  = min(price_low +slip, price_close*(100.0-self._dayPercentToCatch)/100)
+
+        if (T_high < T_low) and price_close < (sell_stop *0.97): # this is a critical downhill, then enlarger the window to sell
+            sell_stop= sell_stop *0.99 -slip
 
         catchback =0.0 # assume catch-back unnecessaray by default
         cleanup   =price_high*2 # assume no cleanup
@@ -1022,7 +1025,10 @@ class IdealDayTrader(Simulator):
             buy_stop =0.0 # forbid to buy
             catchback =0.0
 
-        if cleanup <price_high: # if cleanup is valid, then no more catchback
+        if tbuy_stop > price_close:
+            catchback =price_low +slip
+        elif cleanup <price_high: # if cleanup is valid, then no more buy/catchback
+            buy_stop =0.0
             catchback =0.0
 
         if sell_stop <= max(catchback, buy_stop)+slip:
@@ -1054,6 +1060,21 @@ class IdealDayTrader(Simulator):
                 if price < catchback: # whether to catch back after sold
                     order.direction = OrderData.DIRECTION_LONG 
                     self.__ordersToPlace.append(copy.copy(order))
+
+    # def filterFakeOrders(self) :
+    #     idx = 0
+    #     latestDir = None
+    #     cContinuousDir =0
+    #     while idx < len(self.__ordersToPlace):
+    #         if not latestDir or latestDir == self.__ordersToPlace[idx].direction:
+    #             latestDir = self.__ordersToPlace[idx].direction
+    #             cContinuousDir +=1
+    #             continue
+
+    #             self.__ordersToPlace
+
+    #         self.__ordersToPlace.append(copy.copy(order))
+
 
     def scanEventsAndFakeOrders000(self) :
         # step 1. scan self.__mdEventsToday and determine TH TL

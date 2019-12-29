@@ -1000,8 +1000,8 @@ class IdealDayTrader(Simulator):
         T_win = timedelta(minutes=2)
         slip = 0.02
 
-        if T_high.month==3 and T_high.day in [4,5,6,7,8]:
-            print('here')
+        if T_high.month==6 and T_high.day in [25,26]:
+             print('here')
 
         # step 2. determine the stop prices
         sell_stop = price_high -slip
@@ -1017,18 +1017,19 @@ class IdealDayTrader(Simulator):
             tbuy_stop  = min(tomorrow_low +slip, tomorrow_close*0.99)
             cleanup = max(tsell_stop, price_close -slip)
 
+            if buy_stop > tsell_stop:
+                buy_stop =0.0 # no buy today
+
             if tT_low < tT_high : # tomorrow is an up-hill
                 catchback = tbuy_stop
-            else :
-                catchback = min(tomorrow_high**(100.0- 2*self._dayPercentToCatch)/100, price_close +slip)
+            elif tsell_stop > price_close +slip:
+                #catchback = min(tomorrow_high*(100.0- 2*self._dayPercentToCatch)/100, price_close +slip)
+                catchback =price_low +slip
         elif (price_close < price_open*(100.0 +self._constraintBuy_closeOverOpen)/100):
             buy_stop =0.0 # forbid to buy
             catchback =0.0
 
-        if tbuy_stop > price_close:
-            catchback =price_low +slip
-        elif cleanup <price_high: # if cleanup is valid, then no more buy/catchback
-            buy_stop =0.0
+        if cleanup < price_high: # if cleanup is valid, then no more buy/catchback
             catchback =0.0
 
         if sell_stop <= max(catchback, buy_stop)+slip:

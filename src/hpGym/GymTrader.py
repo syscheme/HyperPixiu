@@ -1157,14 +1157,18 @@ class IdealDayTrader(Simulator):
             g.attrs['state'] = 'state'
             g.attrs['action'] = 'action'
             g.attrs[u'default'] = 'state'
+            g.attrs['size'] = col_state.shape[0]
             if 'full' == self._generateReplayFrames :
                 g.attrs['reward'] = 'reward'
                 g.attrs['next_state'] = 'next_state'
                 g.attrs['done'] = 'done'
 
             g.create_dataset(u'title',     data= '%s replay frame[%s] of %s for DQN training' % (self._generateReplayFrames, frameId, self.wkTrader._tradeSymbol))
-            g.create_dataset('state',      data= col_state, **dsargs)
-            g.create_dataset('action',     data= col_action, **dsargs)
+            st = g.create_dataset('state',      data= col_state, **dsargs)
+            st.attrs['dim'] = col_state.shape[1]
+            ac = g.create_dataset('action',     data= col_action, **dsargs)
+            ac.attrs['dim'] = col_action.shape[1]
+            
             if 'full' == self._generateReplayFrames :
                 g.create_dataset('reward',     data= col_reward, **dsargs)
                 g.create_dataset('next_state', data= col_next_state, **dsargs)

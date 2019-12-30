@@ -86,7 +86,6 @@ class MarketDirClassifier(BaseApplication):
         self._lossStop            = self.getConfig('lossStop', 0.1)
         self._lossPctStop         = self.getConfig('lossPctStop', 2)
         self._startLR             = self.getConfig('startLR', 0.01)
-        self._poolSize  = 32*1024
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
         #     self._poolEvictRate =1
@@ -98,6 +97,7 @@ class MarketDirClassifier(BaseApplication):
             self._poolReuses      = self.getConfig('GPU/poolReuses',   self._poolReuses)
             self._startLR         = self.getConfig('GPU/startLR',      self._startLR)
 
+        self._poolSize = min(64*1024, self._trainSize *8)
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
         self._frameSeq =[]
@@ -235,9 +235,10 @@ class MarketDirClassifier(BaseApplication):
         result = self._brain.fit_generator(generator=Hd5DataGenerator(self, self._batchSize), workers=8, use_multiprocessing=use_multiprocessing, epochs=self._epochsPerFit, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
 
         loss = result.history["loss"][-1]
+        accu = result.history["acc"][-1] if 'acc' in result.history.keys() else -1.0
         fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
         self._brain.save(fn_weights)
-        self.info('doAppStep_keras_generator() done, loss[%s] saved %s' % (loss, fn_weights))
+        self.info('doAppStep_keras_generator() done, loss[%s] accu[%s] saved %s' % (loss, accu, fn_weights))
 
         return super(MarketDirClassifier, self).doAppStep()
 
@@ -261,9 +262,10 @@ class MarketDirClassifier(BaseApplication):
         result = self._brain.fit(dataset.make_one_shot_iterator(), epochs=self._epochsPerFit, steps_per_epoch=64, verbose=1, callbacks=self._fitCallbacks)
 
         loss = result.history["loss"][-1]
+        accu = result.history["acc"][-1] if 'acc' in result.history.keys() else -1.0
         fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
         self._brain.save(fn_weights)
-        self.info('doAppStep_keras_dataset() done, loss[%s] saved %s' % (loss, fn_weights))
+        self.info('doAppStep_keras_dataset() done, loss[%s] accu[%s] saved %s' % (loss, accu, fn_weights))
 
         return super(MarketDirClassifier, self).doAppStep()
 

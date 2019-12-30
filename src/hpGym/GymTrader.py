@@ -868,7 +868,7 @@ class IdealDayTrader(Simulator):
         self.wkTrader._agent._epsilon = -1.0 # less than epsilonMin
         self.wkTrader._agent._gamma = 0 # idealtrader doesn't concern Q_next
         # self.wkTrader._dailyCapCost = 0.0 # no more daily cost in ideal trader
-        self.wkTrader._maxValuePerOrder = self._startBalance /2
+        # self.wkTrader._maxValuePerOrder = self._startBalance /2
 
         # no need to do training if to export ReplayFrames
         if 'full' == self._generateReplayFrames or 'direction' in self._generateReplayFrames:
@@ -1000,12 +1000,15 @@ class IdealDayTrader(Simulator):
         T_win = timedelta(minutes=2)
         slip = 0.02
 
-        if T_high.day==3 and T_high.month==5 :
-            print('here')
+        if T_high.month==6 and T_high.day in [25,26]:
+             print('here')
 
         # step 2. determine the stop prices
         sell_stop = price_high -slip
         buy_stop  = min(price_low +slip, price_close*(100.0-self._dayPercentToCatch)/100)
+
+        if (T_high < T_low) and price_close < (sell_stop *0.97): # this is a critical downhill, then enlarger the window to sell
+            sell_stop= sell_stop *0.99 -slip
 
         catchback =0.0 # assume catch-back unnecessaray by default
         cleanup   =price_high*2 # assume no cleanup
@@ -1014,15 +1017,19 @@ class IdealDayTrader(Simulator):
             tbuy_stop  = min(tomorrow_low +slip, tomorrow_close*0.99)
             cleanup = max(tsell_stop, price_close -slip)
 
+            if buy_stop > tsell_stop:
+                buy_stop =0.0 # no buy today
+
             if tT_low < tT_high : # tomorrow is an up-hill
                 catchback = tbuy_stop
-            else :
-                catchback = min(tomorrow_high**(100.0- 2*self._dayPercentToCatch)/100, price_close +slip)
+            elif tsell_stop > price_close +slip:
+                #catchback = min(tomorrow_high*(100.0- 2*self._dayPercentToCatch)/100, price_close +slip)
+                catchback =price_low +slip
         elif (price_close < price_open*(100.0 +self._constraintBuy_closeOverOpen)/100):
             buy_stop =0.0 # forbid to buy
             catchback =0.0
 
-        if cleanup <price_high: # if cleanup is valid, then no more catchback
+        if cleanup < price_high: # if cleanup is valid, then no more buy/catchback
             catchback =0.0
 
         if sell_stop <= max(catchback, buy_stop)+slip:
@@ -1054,6 +1061,21 @@ class IdealDayTrader(Simulator):
                 if price < catchback: # whether to catch back after sold
                     order.direction = OrderData.DIRECTION_LONG 
                     self.__ordersToPlace.append(copy.copy(order))
+
+    # def filterFakeOrders(self) :
+    #     idx = 0
+    #     latestDir = None
+    #     cContinuousDir =0
+    #     while idx < len(self.__ordersToPlace):
+    #         if not latestDir or latestDir == self.__ordersToPlace[idx].direction:
+    #             latestDir = self.__ordersToPlace[idx].direction
+    #             cContinuousDir +=1
+    #             continue
+
+    #             self.__ordersToPlace
+
+    #         self.__ordersToPlace.append(copy.copy(order))
+
 
     def scanEventsAndFakeOrders000(self) :
         # step 1. scan self.__mdEventsToday and determine TH TL

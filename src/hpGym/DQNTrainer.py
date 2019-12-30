@@ -53,7 +53,7 @@ class Hd5DataGenerator(Sequence):
 
     def __iter__(self):
         for i in range(self.__len__()) :
-            batch = self.trainer.readBatch(self.batch_size*i, self.batch_size)
+            batch = self.trainer.readBatch(i)
             yield np.array(batch['state']), np.array(batch['action'])
 
 ########################################################################
@@ -250,7 +250,8 @@ class MarketDirClassifier(BaseApplication):
         #     epochs=_EPOCHS, validation_data=testing_set.make_one_shot_iterator(), validation_steps=len(x_test) // _BATCH_SIZE,
         #     verbose=1)
 
-        dataset = tf.data.Dataset.from_generator(generator=self.__gen_readDataFromFrame,
+        self.refreshPool()
+        dataset = tf.data.Dataset.from_generator(generator =self.__gen_readDataFromFrame,
                                                 output_types=(tf.float32, tf.float32),
                                                 output_shapes=((self._stateSize,), (self._actionSize,)))
 
@@ -259,7 +260,7 @@ class MarketDirClassifier(BaseApplication):
         dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
         dataset = dataset.repeat()
 
-        result = self._brain.fit(dataset.make_one_shot_iterator(), epochs=self._epochsPerFit, steps_per_epoch=64, verbose=1, callbacks=self._fitCallbacks)
+        result = self._brain.fit(dataset.make_one_shot_iterator(), epochs=self._epochsPerFit, steps_per_epoch=self.batchesInPool, verbose=1, callbacks=self._fitCallbacks)
 
         loss = result.history["loss"][-1]
         accu = result.history["acc"][-1] if 'acc' in result.history.keys() else -1.0
@@ -295,20 +296,10 @@ class MarketDirClassifier(BaseApplication):
         raise StopIteration
 
     def __gen_readDataFromFrame(self) :
-        frameSeq= []
-        while True:
-            if len(frameSeq) <=0:
-                frameSeq= [i for i in range(len(self._framesInHd5))]
-                random.shuffle(frameSeq)
-
-            frameName = self._framesInHd5[frameSeq[0]]
-            frame = self._h5file[frameName]
-            for i in range(8192) :
-                state = frame['state'][i]
-                action = frame['action'][i]
-                yield np.array(state), np.array(action)
-
-            del frameSeq[0]
+        for bth in range(self.batchesInPool) :
+            batch = self.readBatch(bth)
+            for i in range(len(batch['state'])) :
+                yield batch['state'][i], batch['action'][i]
 
     def __fit_gen(self):
 
@@ -346,15 +337,17 @@ class MarketDirClassifier(BaseApplication):
             readAheadThrd = self.__thread
         
         if readAheadThrd:
+            self.warn('refreshPool() readAhead is still running, waiting for its completion')
             readAheadThrd.join()
         elif not self.__samplesReadAhead or len(self.__samplesReadAhead) <=0:
+            self.warn('refreshPool() no readAhead ready, force to read sync-ly')
             self.__readAhead()
 
         with self.__lock:
             self.__samplePool2 = []
             self.__samplePool2 = self.__samplesReadAhead
             self.__samplesReadAhead =[]
-            self.info('refreshPool() pool refreshed from readAhead: %s batches x%s, reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__samplePool2), self._batchSize, len(self.__samplesReadAhead)))
+            self.debug('refreshPool() pool refreshed from readAhead: %s batches x%s, reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__samplePool2), self._batchSize, len(self.__samplesReadAhead)))
             self.__thread = threading.Thread(target=self.__readAhead)
             self.__thread.start()
 

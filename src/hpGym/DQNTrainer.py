@@ -60,6 +60,11 @@ class Hd5DataGenerator(Sequence):
 class MarketDirClassifier(BaseApplication):
 
     DEFAULT_MODEL = 'Cnn1Dx4'
+    COMPILE_ARGS ={
+    'loss':'categorical_crossentropy', 
+    # 'optimizer': sgd,
+    'metrics':['accuracy']
+    }
     
     def __init__(self, program, h5filepath=None, model_json=None, initWeights= None, recorder =None, **kwargs):
         super(MarketDirClassifier, self).__init__(program, **kwargs)
@@ -157,7 +162,7 @@ class MarketDirClassifier(BaseApplication):
                     self._brain = model_from_json(model_json)
 
                 sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
-                self._brain.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
+                self._brain.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
 
                 self._wkModelId = wkModelId
 
@@ -185,7 +190,7 @@ class MarketDirClassifier(BaseApplication):
         except :
             pass
 
-        #checkpoint = ModelCheckpoint(os.path.join(self._outDir, '%s.best.h5' %self._wkModelId ), verbose=0, monitor='loss', mode='min', save_best_only=True)
+        checkpoint = ModelCheckpoint(os.path.join(self._outDir, '%s.best.h5' %self._wkModelId ), verbose=0, monitor='loss', mode='min', save_best_only=True)
         #self._fitCallbacks =[checkpoint]
         cbTensorBoard = TensorBoard(log_dir=os.path.join(self._outDir, 'tb'), histogram_freq=0,  # 按照何等频率（epoch）来计算直方图，0为不计算
                  write_graph=True,  # 是否存储网络结构图
@@ -195,7 +200,7 @@ class MarketDirClassifier(BaseApplication):
                  embeddings_layer_names=None, 
                  embeddings_metadata=None)
 
-        self._fitCallbacks =[cbTensorBoard]
+        self._fitCallbacks =[cbTensorBoard, checkpoint]
 
         self._gen = self.__generator()
 
@@ -258,7 +263,7 @@ class MarketDirClassifier(BaseApplication):
         loss = result.history["loss"][-1]
         fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
         self._brain.save(fn_weights)
-        self.info('doAppStep_keras_generator() done, loss[%s] saved %s' % (loss, fn_weights))
+        self.info('doAppStep_keras_dataset() done, loss[%s] saved %s' % (loss, fn_weights))
 
         return super(MarketDirClassifier, self).doAppStep()
 
@@ -344,8 +349,10 @@ class MarketDirClassifier(BaseApplication):
             self.__readAhead()
 
         with self.__lock:
+            self.__samplePool2 = []
             self.__samplePool2 = self.__samplesReadAhead
             self.__samplesReadAhead =[]
+            self.info('refreshPool() pool refreshed from readAhead: %s batches x%s, reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__samplePool2), self._batchSize, len(self.__samplesReadAhead)))
             self.__thread = threading.Thread(target=self.__readAhead)
             self.__thread.start()
 
@@ -556,7 +563,8 @@ class MarketDirClassifier(BaseApplication):
         model.add(GlobalAveragePooling1D())
         model.add(Dropout(0.5))
         model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
-        model.compile(loss='mse', optimizer=Adam(lr=self._startLR, decay=1e-5), metrics=['accuracy'])
+        model.compile(optimizer=Adam(lr=self._startLR, decay=1e-5), **MarketDirClassifier.COMPILE_ARGS)
+
         return model
 
     def __createModel_Cnn1Dx4R1(self):
@@ -577,7 +585,8 @@ class MarketDirClassifier(BaseApplication):
         model.add(GlobalAveragePooling1D())
         model.add(Dropout(0.4))
         model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
-        model.compile(loss='categorical_crossentropy', optimizer=Adam(lr=self._startLR, decay=1e-6), metrics=['accuracy'])
+        model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
+
         return model
 
     def __createModel_VGG16d1(self):
@@ -841,7 +850,7 @@ class MarketDirClassifier(BaseApplication):
         # 10
         # model.summary()
         sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
-        model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
+        model.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
 
         return model
 
@@ -1000,7 +1009,7 @@ class DQNTrainer(MarketDirClassifier):
 if __name__ == '__main__':
 
     if not '-f' in sys.argv :
-        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/DQNTrainer_VGG16d1.json'] # 'DQNTrainer_VGG16d1.json' 'Gym_AShare.json'
+        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/DQNTrainer_Cnn1D.json'] # 'DQNTrainer_VGG16d1.json' 'Gym_AShare.json'
 
     p = Program()
     p._heartbeatInterval =-1

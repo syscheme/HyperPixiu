@@ -54,7 +54,7 @@ class Hd5DataGenerator(Sequence):
     def __iter__(self):
         for i in range(self.__len__()) :
             batch = self.trainer.readBatch(i)
-            yield np.array(batch['state']), np.array(batch['action'])
+            yield batch['state'], batch['action']
 
 ########################################################################
 class MarketDirClassifier(BaseApplication):

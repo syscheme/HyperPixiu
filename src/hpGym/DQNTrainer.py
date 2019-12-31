@@ -46,7 +46,7 @@ class Hd5DataGenerator(Sequence):
         self.batch_size = batch_size
 
     def __len__(self):
-        return self.trainer.batchesInPool
+        return self.trainer.chunksInPool
 
     def __getitem__(self, index):
         batch = self.trainer.readDataChunk(index)
@@ -110,6 +110,7 @@ class MarketDirClassifier(BaseApplication):
         self.__samplesReadAhead = None
         self.__samplePool2 =[]
         self.__convertFrame = self.__frameToBatchs
+        self.__batchesPerChunk = self._epochsPerFit
 
         self.__latestBthNo=0
 
@@ -225,11 +226,12 @@ class MarketDirClassifier(BaseApplication):
 
     def doAppStep(self):
         # return self.doAppStep_local_generator()
-        return self.doAppStep_keras_dataset()
-        # return self.doAppStep_keras_generator()
-        #return self.doAppStep_keras_dataset2()
+        # return self.doAppStep_keras_dsGenerator()
+        # return self.doAppStep_keras_batchGenerator()
+        return self.doAppStep_keras_slice2dataset() # slice in pool
+        # return self.doAppStep_keras_datasetPool() # dataset in pool
 
-    def doAppStep_keras_generator(self):
+    def doAppStep_keras_batchGenerator(self):
         # frameSeq= [i for i in range(len(self._framesInHd5))]
         # random.shuffle(frameSeq)
         # result = self._brain.fit_generator(generator=self.__gen_readBatchFromFrameEx(frameSeq), workers=2, use_multiprocessing=True, epochs=self._epochsPerFit, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
@@ -238,16 +240,11 @@ class MarketDirClassifier(BaseApplication):
         use_multiprocessing = not 'windows' in self._program.ostype
 
         result = self._brain.fit_generator(generator=Hd5DataGenerator(self, self._batchSize), workers=8, use_multiprocessing=use_multiprocessing, epochs=self._epochsPerFit, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
-
-        loss = result.history["loss"][-1]
-        accu = result.history["acc"][-1] if 'acc' in result.history.keys() else -1.0
-        fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
-        self._brain.save(fn_weights)
-        self.info('doAppStep_keras_generator() done, loss[%s] accu[%s] saved %s' % (loss, accu, fn_weights))
+        self.__logAndSaveResult(result, 'doAppStep_keras_batchGenerator')
 
         return super(MarketDirClassifier, self).doAppStep()
 
-    def doAppStep_keras_dataset(self):
+    def doAppStep_keras_dsGenerator(self):
         # ref: https://pastebin.com/kRLLmdxN
         # training_set = tfdata_generator(x_train, y_train, is_training=True, batch_size=_BATCH_SIZE)
         # result = self._brain.fit(training_set.make_one_shot_iterator(), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
@@ -265,58 +262,60 @@ class MarketDirClassifier(BaseApplication):
         dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
         dataset = dataset.repeat()
 
-        result = self._brain.fit(dataset.make_one_shot_iterator(), epochs=self._epochsPerFit, steps_per_epoch=self.batchesInPool, verbose=1, callbacks=self._fitCallbacks)
-
-        loss = result.history["loss"][-1]
-        accu = result.history["acc"][-1] if 'acc' in result.history.keys() else -1.0
-        fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
-        self._brain.save(fn_weights)
-        self.info('doAppStep_keras_dataset() done, loss[%s] accu[%s] saved %s' % (loss, accu, fn_weights))
+        result = self._brain.fit(dataset.make_one_shot_iterator(), epochs=self._epochsPerFit, steps_per_epoch=self.chunksInPool, verbose=1, callbacks=self._fitCallbacks)
+        self.__logAndSaveResult(result, 'doAppStep_keras_dsGenerator')
 
         return super(MarketDirClassifier, self).doAppStep()
 
-    def doAppStep_keras_dataset2(self):
-        # ref: https://pastebin.com/kRLLmdxN
-        # training_set = tfdata_generator(x_train, y_train, is_training=True, batch_size=_BATCH_SIZE)
-        # result = self._brain.fit(training_set.make_one_shot_iterator(), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
-        # model.fit(training_set.make_one_shot_iterator(), steps_per_epoch=len(x_train) // _BATCH_SIZE
-        #     epochs=_EPOCHS, validation_data=testing_set.make_one_shot_iterator(), validation_steps=len(x_test) // _BATCH_SIZE,
-        #     verbose=1)
+    def doAppStep_keras_slice2dataset(self):
+
+        self.__convertFrame = self.__frameToSlices
+        self.refreshPool()
+
+        for i in range(self.chunksInPool) :
+            slice = self.readDataChunk(i)
+            dataset = tf.data.Dataset.from_tensor_slices(slice)
+            dataset = dataset.batch(self._batchSize)
+
+            # print( dataset.output_types)
+            # print( dataset.output_shapes)
+
+            # dataset = dataset.repeat(2).shuffle(self._batchSize*2)
+            # dataset = dataset.apply(tf.data.experimental.copy_to_device("/gpu:0"))
+            dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
+
+            self.info('doAppStep_keras_slice2dataset() starts fitting')
+            result = self._brain.fit(dataset, epochs=self._epochsPerFit, steps_per_epoch=self.chunksInPool, verbose=1, callbacks=self._fitCallbacks)
+            self.__logAndSaveResult(result, 'doAppStep_keras_slice2dataset')
+
+        return super(MarketDirClassifier, self).doAppStep()
+
+    def doAppStep_keras_datasetPool(self):
 
         self.__convertFrame = self.__frameToDatasets
         self.refreshPool()
 
-        # BATCH_PER_FIT=self._epochsPerFit
-        # for i in range(int(self.batchesInPool/self._epochsPerFit)) :
-        #     bthState =[]
-        #     bthAction =[]
-        #     for b in range(BATCH_PER_FIT):
-        #         bth = self.readDataChunk(i*BATCH_PER_FIT+b)
-        #         bthState.append(bth['state'])
-        #         bthAction.append(bth['action'])
-
-        #     b4state = np.concatenate(tuple(bthState))
-        #     b4action = np.concatenate(tuple(bthAction))
-        
-        for i in range(self.batchesInPool) :
+        for i in range(self.chunksInPool) :
             dataset = self.readDataChunk(i)
             # print( dataset.output_types)
             # print( dataset.output_shapes)
 
-            dataset = dataset.batch(self._batchSize).repeat(2).shuffle(self._batchSize*2)
+            # dataset = dataset.repeat(2).shuffle(self._batchSize*2)
             # dataset = dataset.apply(tf.data.experimental.copy_to_device("/gpu:0"))
             dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
-            # dataset = dataset.repeat()
 
-            result = self._brain.fit(dataset, epochs=self._epochsPerFit, steps_per_epoch=self.batchesInPool, verbose=1, callbacks=self._fitCallbacks)
-
-            loss = result.history["loss"][-1]
-            accu = result.history["acc"][-1] if 'acc' in result.history.keys() else -1.0
-            fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
-            self._brain.save(fn_weights)
-            self.info('doAppStep_keras_dataset2() done, loss[%s] accu[%s] saved %s' % (loss, accu, fn_weights))
+            self.info('doAppStep_keras_datasetPool() starts fitting')
+            result = self._brain.fit(dataset, epochs=self._epochsPerFit, steps_per_epoch=self.chunksInPool, verbose=1, callbacks=self._fitCallbacks)
+            self.__logAndSaveResult(result, 'doAppStep_keras_datasetPool')
 
         return super(MarketDirClassifier, self).doAppStep()
+
+    def __logAndSaveResult(self, result, methodName):
+        loss = result.history["loss"][-1]
+        accu = result.history["acc"][-1] if 'acc' in result.history.keys() else -1.0
+        fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
+        self._brain.save(fn_weights)
+        self.info('%s() done, loss[%s] accu[%s] saved %s' % (methodName, loss, accu, fn_weights))
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
@@ -344,7 +343,7 @@ class MarketDirClassifier(BaseApplication):
         raise StopIteration
 
     def __gen_readDataFromFrame(self) :
-        for bth in range(self.batchesInPool) :
+        for bth in range(self.chunksInPool) :
             batch = self.readDataChunk(bth)
             for i in range(len(batch['state'])) :
                 yield batch['state'][i], batch['action'][i]
@@ -373,9 +372,8 @@ class MarketDirClassifier(BaseApplication):
                 yield inputs, labels
     
     @property
-    def batchesInPool(self):
-        with self.__lock:
-            return len(self.__samplePool2)
+    def chunksInPool(self):
+        return len(self.__samplePool2)
 
     def refreshPool(self):
         # build up self.__samplePool
@@ -392,20 +390,33 @@ class MarketDirClassifier(BaseApplication):
             self.__readAhead()
 
         with self.__lock:
-            self.__samplePool2 = []
             self.__samplePool2 = self.__samplesReadAhead
             self.__samplesReadAhead =[]
-            self.debug('refreshPool() pool refreshed from readAhead: %s chunks x%s, reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__samplePool2), self._batchSize, len(self.__samplesReadAhead)))
+            self.debug('refreshPool() pool refreshed from readAhead: %s chunks x%s btc/c x%s samples/bth, reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__samplePool2), self.__batchesPerChunk, self._batchSize, len(self.__samplesReadAhead)))
             self.__thread = threading.Thread(target=self.__readAhead)
             self.__thread.start()
 
-        newsize = self.batchesInPool
-        self.info('refreshPool() pool refreshed from readAhead: %s batches x%s' % (newsize, self._batchSize))
+        newsize = self.chunksInPool
+        self.info('refreshPool() pool refreshed from readAhead: %s chunks x%s btc/c x%s samples/bth' % (newsize, self.__batchesPerChunk, self._batchSize))
         return newsize
 
     def readDataChunk(self, batchNo):
-        with self.__lock:
-            return self.__samplePool2[batchNo]
+        return self.__samplePool2[batchNo]
+
+    def __frameToSlices(self, frameDict):
+        framelen = 1
+        for k,v in frameDict.items():
+            framelen = len(v)
+            if framelen>= self._batchSize: break
+
+        samplesPerChunk = self.__batchesPerChunk * self._batchSize
+        datasets = []
+        for i in range(int(framelen // samplesPerChunk)) :
+            bthState  = np.array(frameDict['state'][i*samplesPerChunk: (i+1)*samplesPerChunk])
+            bthAction = np.array(frameDict['action'][i*samplesPerChunk: (i+1)*samplesPerChunk])
+            datasets.append((bthState, bthAction))
+
+        return datasets
 
     def __frameToDatasets(self, frameDict):
         framelen = 1
@@ -413,12 +424,13 @@ class MarketDirClassifier(BaseApplication):
             framelen = len(v)
             if framelen>= self._batchSize: break
 
-        SAMPLES_PER_SLICE=self._epochsPerFit * self._batchSize
+        samplesPerChunk = self.__batchesPerChunk * self._batchSize
         datasets = []
-        for i in range(int(framelen/SAMPLES_PER_SLICE)) :
-            bthState  = np.array(frameDict['state'][i*SAMPLES_PER_SLICE: (i+1)*SAMPLES_PER_SLICE])
-            bthAction = np.array(frameDict['action'][i*SAMPLES_PER_SLICE: (i+1)*SAMPLES_PER_SLICE])
+        for i in range(int(framelen // samplesPerChunk)) :
+            bthState  = np.array(frameDict['state'][i*samplesPerChunk: (i+1)*samplesPerChunk])
+            bthAction = np.array(frameDict['action'][i*samplesPerChunk: (i+1)*samplesPerChunk])
             dataset = tf.data.Dataset.from_tensor_slices((bthState, bthAction))
+            dataset = dataset.batch(self._batchSize)
             datasets.append(dataset)
 
         return datasets
@@ -427,7 +439,8 @@ class MarketDirClassifier(BaseApplication):
         COLS = ['state','action']
         framelen = len(frameDict[COLS[0]])
         bths = []
-        for i in range(framelen // self._batchSize):
+        self.__batchesPerChunk = framelen // self._batchSize
+        for i in range(self.__batchesPerChunk):
             batch = {}
             for col in COLS :
                 batch[col] = np.array(frameDict[col][self._batchSize*i: self._batchSize*(i+1)]).astype(NN_FLOAT)
@@ -573,19 +586,14 @@ class MarketDirClassifier(BaseApplication):
                 itrId +=1
                 try :
                     result = self._brain.fit(x=np.array(state_set), y=np.array(action_set), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
+                    self.__logAndSaveResult(result, 'doAppStep_local_generator')
 
-                    loss = result.history["loss"][-1]
-                    self.info('train[%s] done, sampled %d from poolsize[%s], loss[%s/%s]' % (str(itrId).zfill(6), self._trainSize, poolSize, loss, lossMax))
                     yield result # this is a step
                 except Exception as ex:
                     self.logexception(ex)
 
                 if lossMax < loss:
                     lossMax = loss
-
-            fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
-            self._brain.save(fn_weights)
-            self.info('saved weights to %s with loss[%s]' %(fn_weights, loss))
 
     #----------------------------------------------------------------------
     # model definitions

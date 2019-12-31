@@ -30,6 +30,7 @@ import h5py, tarfile
 import numpy as np
 
 DUMMY_BIG_VAL = 999999
+NN_FLOAT = 'float32'
 # GPUs = backend.tensorflow_backend._get_available_gpus()
 
 def get_available_gpus():
@@ -48,12 +49,12 @@ class Hd5DataGenerator(Sequence):
         return self.trainer.batchesInPool
 
     def __getitem__(self, index):
-        batch = self.trainer.readBatch(index)
+        batch = self.trainer.readDataChunk(index)
         return batch['state'], batch['action']
 
     def __iter__(self):
         for i in range(self.__len__()) :
-            batch = self.trainer.readBatch(i)
+            batch = self.trainer.readDataChunk(i)
             yield batch['state'], batch['action']
 
 ########################################################################
@@ -97,7 +98,7 @@ class MarketDirClassifier(BaseApplication):
             self._poolReuses      = self.getConfig('GPU/poolReuses',   self._poolReuses)
             self._startLR         = self.getConfig('GPU/startLR',      self._startLR)
 
-        self._poolSize = min(64*1024, self._trainSize *8)
+        self._poolSize = min(16*1024, self._trainSize *8)
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
         self._frameSeq =[]
@@ -108,6 +109,9 @@ class MarketDirClassifier(BaseApplication):
         self.__thread = None
         self.__samplesReadAhead = None
         self.__samplePool2 =[]
+        self.__convertFrame = self.__frameToBatchs
+
+        self.__latestBthNo=0
 
         self.__knownModels = {
             'VGG16d1'    : self.__createModel_VGG16d1,
@@ -221,8 +225,9 @@ class MarketDirClassifier(BaseApplication):
 
     def doAppStep(self):
         # return self.doAppStep_local_generator()
-        # return self.doAppStep_keras_dataset()
-        return self.doAppStep_keras_generator()
+        return self.doAppStep_keras_dataset()
+        # return self.doAppStep_keras_generator()
+        #return self.doAppStep_keras_dataset2()
 
     def doAppStep_keras_generator(self):
         # frameSeq= [i for i in range(len(self._framesInHd5))]
@@ -270,6 +275,49 @@ class MarketDirClassifier(BaseApplication):
 
         return super(MarketDirClassifier, self).doAppStep()
 
+    def doAppStep_keras_dataset2(self):
+        # ref: https://pastebin.com/kRLLmdxN
+        # training_set = tfdata_generator(x_train, y_train, is_training=True, batch_size=_BATCH_SIZE)
+        # result = self._brain.fit(training_set.make_one_shot_iterator(), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
+        # model.fit(training_set.make_one_shot_iterator(), steps_per_epoch=len(x_train) // _BATCH_SIZE
+        #     epochs=_EPOCHS, validation_data=testing_set.make_one_shot_iterator(), validation_steps=len(x_test) // _BATCH_SIZE,
+        #     verbose=1)
+
+        self.__convertFrame = self.__frameToDatasets
+        self.refreshPool()
+
+        # BATCH_PER_FIT=self._epochsPerFit
+        # for i in range(int(self.batchesInPool/self._epochsPerFit)) :
+        #     bthState =[]
+        #     bthAction =[]
+        #     for b in range(BATCH_PER_FIT):
+        #         bth = self.readDataChunk(i*BATCH_PER_FIT+b)
+        #         bthState.append(bth['state'])
+        #         bthAction.append(bth['action'])
+
+        #     b4state = np.concatenate(tuple(bthState))
+        #     b4action = np.concatenate(tuple(bthAction))
+        
+        for i in range(self.batchesInPool) :
+            dataset = self.readDataChunk(i)
+            # print( dataset.output_types)
+            # print( dataset.output_shapes)
+
+            dataset = dataset.batch(self._batchSize).repeat(2).shuffle(self._batchSize*2)
+            # dataset = dataset.apply(tf.data.experimental.copy_to_device("/gpu:0"))
+            dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
+            # dataset = dataset.repeat()
+
+            result = self._brain.fit(dataset, epochs=self._epochsPerFit, steps_per_epoch=self.batchesInPool, verbose=1, callbacks=self._fitCallbacks)
+
+            loss = result.history["loss"][-1]
+            accu = result.history["acc"][-1] if 'acc' in result.history.keys() else -1.0
+            fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
+            self._brain.save(fn_weights)
+            self.info('doAppStep_keras_dataset2() done, loss[%s] accu[%s] saved %s' % (loss, accu, fn_weights))
+
+        return super(MarketDirClassifier, self).doAppStep()
+
     # end of BaseApplication routine
     #----------------------------------------------------------------------
     def __gen_readBatchFromFrame(self) :
@@ -297,7 +345,7 @@ class MarketDirClassifier(BaseApplication):
 
     def __gen_readDataFromFrame(self) :
         for bth in range(self.batchesInPool) :
-            batch = self.readBatch(bth)
+            batch = self.readDataChunk(bth)
             for i in range(len(batch['state'])) :
                 yield batch['state'][i], batch['action'][i]
 
@@ -347,7 +395,7 @@ class MarketDirClassifier(BaseApplication):
             self.__samplePool2 = []
             self.__samplePool2 = self.__samplesReadAhead
             self.__samplesReadAhead =[]
-            self.debug('refreshPool() pool refreshed from readAhead: %s batches x%s, reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__samplePool2), self._batchSize, len(self.__samplesReadAhead)))
+            self.debug('refreshPool() pool refreshed from readAhead: %s chunks x%s, reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__samplePool2), self._batchSize, len(self.__samplesReadAhead)))
             self.__thread = threading.Thread(target=self.__readAhead)
             self.__thread.start()
 
@@ -355,9 +403,38 @@ class MarketDirClassifier(BaseApplication):
         self.info('refreshPool() pool refreshed from readAhead: %s batches x%s' % (newsize, self._batchSize))
         return newsize
 
-    def readBatch(self, batchNo):
+    def readDataChunk(self, batchNo):
         with self.__lock:
             return self.__samplePool2[batchNo]
+
+    def __frameToDatasets(self, frameDict):
+        framelen = 1
+        for k,v in frameDict.items():
+            framelen = len(v)
+            if framelen>= self._batchSize: break
+
+        SAMPLES_PER_SLICE=self._epochsPerFit * self._batchSize
+        datasets = []
+        for i in range(int(framelen/SAMPLES_PER_SLICE)) :
+            bthState  = np.array(frameDict['state'][i*SAMPLES_PER_SLICE: (i+1)*SAMPLES_PER_SLICE])
+            bthAction = np.array(frameDict['action'][i*SAMPLES_PER_SLICE: (i+1)*SAMPLES_PER_SLICE])
+            dataset = tf.data.Dataset.from_tensor_slices((bthState, bthAction))
+            datasets.append(dataset)
+
+        return datasets
+
+    def __frameToBatchs(self, frameDict):
+        COLS = ['state','action']
+        framelen = len(frameDict[COLS[0]])
+        bths = []
+        for i in range(framelen // self._batchSize):
+            batch = {}
+            for col in COLS :
+                batch[col] = np.array(frameDict[col][self._batchSize*i: self._batchSize*(i+1)]).astype(NN_FLOAT)
+            
+            bths.append(batch)
+
+        return bths
 
     def __readAhead(self):
         '''
@@ -386,22 +463,19 @@ class MarketDirClassifier(BaseApplication):
             for col in COLS :
                 frameDict[col] = list(frame[col])
 
-            framelen = len(frameDict[COLS[0]])
-            for i in range(framelen // self._batchSize):
-                batch = {}
-                for col in COLS :
-                    batch[col] = np.array(frameDict[col][self._batchSize*i: self._batchSize*(i+1)])
-                
-                self.__samplesReadAhead.append(batch)
-
             self._frameNamesReadAhead += ','
+                
+            if self.__convertFrame :
+                self.__samplesReadAhead += self.__convertFrame(frameDict)
+            else: self.__samplesReadAhead.append(frameDict)
+
             frameDict =None
 
         with self.__lock:
             awaitSize = len(self._frameSeq)
             self.__thread = None
 
-        self.info('readAhead() read %s batches x%s samples from %s %d frames await, took %s' % (len(self.__samplesReadAhead), self._batchSize, self._frameNamesReadAhead, awaitSize, str(datetime.now() - stampStart)))
+        self.info('readAhead() prepared %s chunks with %s-samples/bth from %s %d frames await, took %s' % (len(self.__samplesReadAhead), self._batchSize, self._frameNamesReadAhead, awaitSize, str(datetime.now() - stampStart)))
 
     def __generator(self):
 

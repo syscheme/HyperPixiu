@@ -81,7 +81,7 @@ class MarketDirClassifier(BaseApplication):
             self._h5filepath = Program.fixupPath(self._h5filepath)
 
         self._batchSize           = self.getConfig('batchSize', 128)
-        self._trainSize           = self.getConfig('batchesPerTrain', 8) * self._batchSize
+        self._batchesPerTrain     = self.getConfig('batchesPerTrain', 8)
         self._poolReuses          = self.getConfig('poolReuses', 0)
         self._epochsPerFit        = self.getConfig('epochsPerFit', 2)
         self._lossStop            = self.getConfig('lossStop', 0.1)
@@ -93,12 +93,11 @@ class MarketDirClassifier(BaseApplication):
 
         if len(GPUs) > 0 : # adjust some configurations if currently running on GPUs
             self._batchSize       = self.getConfig('GPU/batchSize',    self._batchSize)
-            self._trainSize       = self.getConfig('GPU/batchesPerTrain', 64) * self._batchSize # usually 64 is good for a bottom-line model of GTX1050oc/2G
+            self._batchesPerTrain = self.getConfig('GPU/batchesPerTrain', 64)  # usually 64 is good for a bottom-line model of GTX1050oc/2G
             self._epochsPerFit    = self.getConfig('GPU/epochsPerFit', self._epochsPerFit)
             self._poolReuses      = self.getConfig('GPU/poolReuses',   self._poolReuses)
             self._startLR         = self.getConfig('GPU/startLR',      self._startLR)
 
-        self._poolSize = min(16*1024, self._trainSize *8)
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
         self._frameSeq =[]
@@ -107,10 +106,11 @@ class MarketDirClassifier(BaseApplication):
         self._outDir = os.path.join(self.dataRoot, self._program.progId)
         self.__lock = threading.Lock()
         self.__thread = None
-        self.__samplesReadAhead = None
+        self.__chunksReadAhead = None
         self.__samplePool2 =[]
         self.__convertFrame = self.__frameToBatchs
-        self.__batchesPerChunk = self._epochsPerFit
+
+        self.__maxChunks = max(int(8*1024/self._batchesPerTrain /self._batchSize), 1) # minimal 8K samples to at least cover a frame
 
         self.__latestBthNo=0
 
@@ -271,46 +271,46 @@ class MarketDirClassifier(BaseApplication):
 
         self.__convertFrame = self.__frameToSlices
         self.refreshPool()
+        result = None
 
         for i in range(self.chunksInPool) :
             slice = self.readDataChunk(i)
             dataset = tf.data.Dataset.from_tensor_slices(slice)
             dataset = dataset.batch(self._batchSize)
+            if self._epochsPerFit >1:
+                dataset = dataset.repeat() #.shuffle(self._batchSize*2)
 
-            # print( dataset.output_types)
-            # print( dataset.output_shapes)
-
-            # dataset = dataset.repeat(2).shuffle(self._batchSize*2)
             # dataset = dataset.apply(tf.data.experimental.copy_to_device("/gpu:0"))
             dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
 
-            self.info('doAppStep_keras_slice2dataset() starts fitting')
-            result = self._brain.fit(dataset, epochs=self._epochsPerFit, steps_per_epoch=self.chunksInPool, verbose=1, callbacks=self._fitCallbacks)
-            self.__logAndSaveResult(result, 'doAppStep_keras_slice2dataset')
+            if 0 ==i: self.info('doAppStep_keras_slice2dataset() starts fitting ds %s' % str(dataset.output_shapes))
+            result = self._brain.fit(dataset, epochs=self._epochsPerFit, steps_per_epoch=self._batchesPerTrain, verbose=1, callbacks=self._fitCallbacks)
+            # result = self._brain.fit(dataset, epochs=1, steps_per_epoch=stepsPerEp, verbose=1, callbacks=self._fitCallbacks)
 
+        if result : self.__logAndSaveResult(result, 'doAppStep_keras_slice2dataset')
         return super(MarketDirClassifier, self).doAppStep()
 
     def doAppStep_keras_datasetPool(self):
 
         self.__convertFrame = self.__frameToDatasets
         self.refreshPool()
+        result = None
 
         for i in range(self.chunksInPool) :
             dataset = self.readDataChunk(i)
-            # print( dataset.output_types)
-            # print( dataset.output_shapes)
-
-            # dataset = dataset.repeat(2).shuffle(self._batchSize*2)
+            if self._epochsPerFit >1:
+                dataset = dataset.repeat() # .shuffle(self._batchSize*2)
             # dataset = dataset.apply(tf.data.experimental.copy_to_device("/gpu:0"))
             dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
 
-            self.info('doAppStep_keras_datasetPool() starts fitting')
-            result = self._brain.fit(dataset, epochs=self._epochsPerFit, steps_per_epoch=self.chunksInPool, verbose=1, callbacks=self._fitCallbacks)
-            self.__logAndSaveResult(result, 'doAppStep_keras_datasetPool')
+            if 0 ==i: self.info('doAppStep_keras_datasetPool() starts fitting ds %s' % str(dataset.output_shapes))
+            result = self._brain.fit(dataset, epochs=self._epochsPerFit, steps_per_epoch=self._batchesPerTrain, verbose=1, callbacks=self._fitCallbacks)
 
+        if result : self.__logAndSaveResult(result, 'doAppStep_keras_datasetPool')
         return super(MarketDirClassifier, self).doAppStep()
 
     def __logAndSaveResult(self, result, methodName):
+        if not result: return
         loss = result.history["loss"][-1]
         accu = result.history["acc"][-1] if 'acc' in result.history.keys() else -1.0
         fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
@@ -385,19 +385,19 @@ class MarketDirClassifier(BaseApplication):
         if readAheadThrd:
             self.warn('refreshPool() readAhead is still running, waiting for its completion')
             readAheadThrd.join()
-        elif not self.__samplesReadAhead or len(self.__samplesReadAhead) <=0:
+        elif not self.__chunksReadAhead or len(self.__chunksReadAhead) <=0:
             self.warn('refreshPool() no readAhead ready, force to read sync-ly')
             self.__readAhead()
 
         with self.__lock:
-            self.__samplePool2 = self.__samplesReadAhead
-            self.__samplesReadAhead =[]
-            self.debug('refreshPool() pool refreshed from readAhead: %s chunks x%s btc/c x%s samples/bth, reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__samplePool2), self.__batchesPerChunk, self._batchSize, len(self.__samplesReadAhead)))
+            self.__samplePool2 = self.__chunksReadAhead
+            self.__chunksReadAhead =[]
+            self.debug('refreshPool() pool refreshed from readAhead: %s chunks x%s btc/c x%s samples/bth, reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__samplePool2), self._batchesPerTrain, self._batchSize, len(self.__chunksReadAhead)))
             self.__thread = threading.Thread(target=self.__readAhead)
             self.__thread.start()
 
         newsize = self.chunksInPool
-        self.info('refreshPool() pool refreshed from readAhead: %s chunks x%s btc/c x%s samples/bth' % (newsize, self.__batchesPerChunk, self._batchSize))
+        self.info('refreshPool() pool refreshed from readAhead: %s chunks x%s btc/c x%s samples/bth' % (newsize, self._batchesPerTrain, self._batchSize))
         return newsize
 
     def readDataChunk(self, batchNo):
@@ -409,14 +409,18 @@ class MarketDirClassifier(BaseApplication):
             framelen = len(v)
             if framelen>= self._batchSize: break
 
-        samplesPerChunk = self.__batchesPerChunk * self._batchSize
-        datasets = []
-        for i in range(int(framelen // samplesPerChunk)) :
+        samplesPerChunk = self._batchesPerTrain * self._batchSize
+        cChunks = int(framelen // samplesPerChunk)
+        if cChunks <=0 :
+            cChunks, samplesPerChunk = 1, framelen
+
+        slices = []
+        for i in range(cChunks) :
             bthState  = np.array(frameDict['state'][i*samplesPerChunk: (i+1)*samplesPerChunk])
             bthAction = np.array(frameDict['action'][i*samplesPerChunk: (i+1)*samplesPerChunk])
-            datasets.append((bthState, bthAction))
+            slices.append((bthState, bthAction))
 
-        return datasets
+        return slices
 
     def __frameToDatasets(self, frameDict):
         framelen = 1
@@ -424,9 +428,13 @@ class MarketDirClassifier(BaseApplication):
             framelen = len(v)
             if framelen>= self._batchSize: break
 
-        samplesPerChunk = self.__batchesPerChunk * self._batchSize
+        samplesPerChunk = self._batchesPerTrain * self._batchSize
+        cChunks = int(framelen // samplesPerChunk)
+        if cChunks <=0 :
+            cChunks, samplesPerChunk = 1, framelen
+
         datasets = []
-        for i in range(int(framelen // samplesPerChunk)) :
+        for i in range(cChunks) :
             bthState  = np.array(frameDict['state'][i*samplesPerChunk: (i+1)*samplesPerChunk])
             bthAction = np.array(frameDict['action'][i*samplesPerChunk: (i+1)*samplesPerChunk])
             dataset = tf.data.Dataset.from_tensor_slices((bthState, bthAction))
@@ -439,8 +447,8 @@ class MarketDirClassifier(BaseApplication):
         COLS = ['state','action']
         framelen = len(frameDict[COLS[0]])
         bths = []
-        self.__batchesPerChunk = framelen // self._batchSize
-        for i in range(self.__batchesPerChunk):
+        self._batchesPerTrain = framelen // self._batchSize
+        for i in range(self._batchesPerTrain):
             batch = {}
             for col in COLS :
                 batch[col] = np.array(frameDict[col][self._batchSize*i: self._batchSize*(i+1)]).astype(NN_FLOAT)
@@ -455,11 +463,13 @@ class MarketDirClassifier(BaseApplication):
         '''
         self._frameNamesReadAhead=''
         awaitSize =0
-        self.__samplesReadAhead = []
+        self.__chunksReadAhead = []
         stampStart = datetime.now()
 
+        self.debug('readAhead() reading %s chunks x%s btc/c x%s samples/bth' % (self.__maxChunks, self._batchesPerTrain, self._batchSize))
         COLS = ['state','action']
-        while len(self.__samplesReadAhead) < self._poolSize/self._batchSize :
+        frameDict ={}
+        while len(frameDict) <=0 or len(frameDict[COLS[0]]) < (self.__maxChunks * self._batchesPerTrain * self._batchSize):
             with self.__lock:
                 if len(self._frameSeq) <=0:
                     self._frameSeq = copy.copy(self._framesInHd5)
@@ -472,23 +482,27 @@ class MarketDirClassifier(BaseApplication):
             self._frameNamesReadAhead += nextFrameName
             frame = self._h5file[nextFrameName]
 
-            frameDict ={}
             for col in COLS :
-                frameDict[col] = list(frame[col])
+                if col in frameDict.keys():
+                    frameDict[col] += list(frame[col])
+                else : frameDict[col] = list(frame[col])
 
             self._frameNamesReadAhead += ','
-                
-            if self.__convertFrame :
-                self.__samplesReadAhead += self.__convertFrame(frameDict)
-            else: self.__samplesReadAhead.append(frameDict)
 
-            frameDict =None
+        if self.__convertFrame :
+            self.debug('readAhead() read % samples from %s, converting' % (len(frameDict[COLS[0]]), self._frameNamesReadAhead) )
+            cvnted = self.__convertFrame(frameDict)
+            self.__chunksReadAhead += cvnted
+            self.debug('readAhead() converted % samples into %s chunks' % (len(frameDict[COLS[0]]), len(cvnted)) )
+        else: self.__chunksReadAhead.append(frameDict)
+
+        frameDict =None
 
         with self.__lock:
             awaitSize = len(self._frameSeq)
             self.__thread = None
 
-        self.info('readAhead() prepared %s chunks with %s-samples/bth from %s %d frames await, took %s' % (len(self.__samplesReadAhead), self._batchSize, self._frameNamesReadAhead, awaitSize, str(datetime.now() - stampStart)))
+        self.info('readAhead() prepared %s chunks x%s btc/c x%s samples/bth from %s %d frames await, took %s' % (len(self.__chunksReadAhead), self._batchesPerTrain, self._batchSize, self._frameNamesReadAhead, awaitSize, str(datetime.now() - stampStart)))
 
     def __generator(self):
 
@@ -502,6 +516,7 @@ class MarketDirClassifier(BaseApplication):
 
         itrId=0
         samplePerFrame =0
+        trainSize = self._batchesPerTrain*self._batchSize
 
         loss = DUMMY_BIG_VAL
         lossMax = loss
@@ -513,7 +528,7 @@ class MarketDirClassifier(BaseApplication):
             
             startPoolSize = len(self.__samplePool['state'])
             cEvicted =0
-            if startPoolSize >= max(samplePerFrame, self._trainSize *2):
+            if startPoolSize >= max(samplePerFrame, self._batchesPerTrain*self._batchSize *2):
                 # # randomly evict half of the poolSize
                 # sampleIdxs = [a for a in range(startPoolSize)]
                 # random.shuffle(sampleIdxs)
@@ -534,7 +549,7 @@ class MarketDirClassifier(BaseApplication):
 
             cAppend =0
             strFrames=''
-            while len(frameSeq) >0 and len(self.__samplePool['state']) <max(samplePerFrame, self._trainSize *2) :
+            while len(frameSeq) >0 and len(self.__samplePool['state']) <max(samplePerFrame, trainSize *2) :
                 strFrames += frameSeq[0]
                 frame = self._h5file[frameSeq[0]]
                 del frameSeq[0]
@@ -558,7 +573,7 @@ class MarketDirClassifier(BaseApplication):
             poolSize = len(self.__samplePool['state'])
             self.info('sample pool refreshed: size[%s->%s] by evicting %s and refilling %s samples from %s %d frames await' % (startPoolSize, poolSize, cEvicted, cAppend, strFrames, len(frameSeq)))
 
-            # random sample a dataset with size=self._trainSize from self.__samplePool
+            # random sample a dataset with size=trainSize from self.__samplePool
             sampleSeq = [a for a in range(poolSize)]
             random.shuffle(sampleSeq)
             if self._poolReuses >0:
@@ -572,9 +587,9 @@ class MarketDirClassifier(BaseApplication):
 
             while len(sampleSeq) >= self._batchSize:
 
-                if len(sampleSeq) > self._trainSize:
-                    sampleIdxs = sampleSeq[:self._trainSize]
-                    del sampleSeq[:self._trainSize]
+                if len(sampleSeq) > trainSize:
+                    sampleIdxs = sampleSeq[:trainSize]
+                    del sampleSeq[:trainSize]
                 else :
                     sampleIdxs = sampleSeq
                     sampleSeq = []
@@ -969,6 +984,7 @@ class DQNTrainer(MarketDirClassifier):
 
         itrId=0
         samplePerFrame =0
+        trainSize = self._batchesPerTrain*self._batchSize
 
         loss = DUMMY_BIG_VAL
         lossMax = loss
@@ -980,7 +996,7 @@ class DQNTrainer(MarketDirClassifier):
             
             startPoolSize = len(self.__samplePool['state'])
             cEvicted =0
-            if startPoolSize >= max(samplePerFrame, self._trainSize *2):
+            if startPoolSize >= max(samplePerFrame, trainSize *2):
                 # randomly evict half of the poolSize
                 sampleIdxs = [a for a in range(min(samplePerFrame, int(startPoolSize/2)))]
                 random.shuffle(sampleIdxs)
@@ -991,7 +1007,7 @@ class DQNTrainer(MarketDirClassifier):
 
             cAppend =0
             strFrames=''
-            while len(frameSeq) >0 and len(self.__samplePool['state']) <max(samplePerFrame, self._trainSize *2) :
+            while len(frameSeq) >0 and len(self.__samplePool['state']) <max(samplePerFrame, trainSize *2) :
                 strFrames += '%s,' % frameSeq[0]
                 frame = self._h5file[frameSeq[0]]
                 del frameSeq[0]
@@ -1005,7 +1021,7 @@ class DQNTrainer(MarketDirClassifier):
             poolSize = len(self.__samplePool['state'])
             self.info('sample pool refreshed: size[%s->%s] by evicting %s and refilling %s samples from %s %d frames await' % (startPoolSize, poolSize, cEvicted, cAppend, strFrames, len(frameSeq)))
 
-            # random sample a dataset with size=self._trainSize from self.__samplePool
+            # random sample a dataset with size=trainSize from self.__samplePool
             sampleSeq = [a for a in range(poolSize)]
             random.shuffle(sampleSeq)
             if self._poolReuses >0:
@@ -1019,9 +1035,9 @@ class DQNTrainer(MarketDirClassifier):
 
             while len(sampleSeq) >= self._batchSize:
 
-                if len(sampleSeq) > self._trainSize:
-                    sampleIdxs = sampleSeq[:self._trainSize]
-                    del sampleSeq[:self._trainSize]
+                if len(sampleSeq) > trainSize:
+                    sampleIdxs = sampleSeq[:trainSize]
+                    del sampleSeq[:trainSize]
                 else :
                     sampleIdxs = sampleSeq
                     sampleSeq = []
@@ -1034,7 +1050,7 @@ class DQNTrainer(MarketDirClassifier):
                 itrId +=1
                 result = trainMethod(samples)
                 loss = result.history["loss"][-1]
-                self.info('train[%s] done, sampled %d from poolsize[%s], loss[%s]' % (str(itrId).zfill(6), self._trainSize, poolSize, loss))
+                self.info('train[%s] done, sampled %d from poolsize[%s], loss[%s]' % (str(itrId).zfill(6), trainSize, poolSize, loss))
                 yield result # this is a step
 
                 if lossMax < loss:

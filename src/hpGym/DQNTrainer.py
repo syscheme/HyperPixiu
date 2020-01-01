@@ -80,6 +80,7 @@ class MarketDirClassifier(BaseApplication):
             self._h5filepath = self.getConfig('RFSamples_file', h5filepath)
             self._h5filepath = Program.fixupPath(self._h5filepath)
 
+        self._stepMethod          = self.getConfig('stepMethod', None)
         self._batchSize           = self.getConfig('batchSize', 128)
         self._batchesPerTrain     = self.getConfig('batchesPerTrain', 8)
         self._poolReuses          = self.getConfig('poolReuses', 0)
@@ -92,6 +93,7 @@ class MarketDirClassifier(BaseApplication):
         #     self._poolEvictRate =1
 
         if len(GPUs) > 0 : # adjust some configurations if currently running on GPUs
+            self._stepMethod      = self.getConfig('stepMethod', self._stepMethod)
             self._batchSize       = self.getConfig('GPU/batchSize',    self._batchSize)
             self._batchesPerTrain = self.getConfig('GPU/batchesPerTrain', 64)  # usually 64 is good for a bottom-line model of GTX1050oc/2G
             self._epochsPerFit    = self.getConfig('GPU/epochsPerFit', self._epochsPerFit)
@@ -119,6 +121,15 @@ class MarketDirClassifier(BaseApplication):
             'Cnn1Dx4'    : self.__createModel_Cnn1Dx4,
             'Cnn1Dx4R1'  : self.__createModel_Cnn1Dx4R1,
             }
+
+        self.STEPMETHODS = {
+            'LocalGenerator'   : self.doAppStep_local_generator,
+            'DatesetGenerator' : self.doAppStep_keras_dsGenerator,
+            'BatchGenerator'   : self.doAppStep_keras_batchGenerator,
+            'SliceToDataset'   : self.doAppStep_keras_slice2dataset,
+            'DatasetPool'      : self.doAppStep_keras_datasetPool,
+        }
+
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -207,9 +218,15 @@ class MarketDirClassifier(BaseApplication):
 
         self._fitCallbacks =[cbTensorBoard, checkpoint]
 
-        self._gen = self.__generator()
+        self._gen = self.__generator_local()
 
         return True
+
+    def doAppStep(self):
+        if not self._stepMethod in self.STEPMETHODS.keys():
+            self._stepMethod = 'LocalGenerator'
+
+        return self.STEPMETHODS[self._stepMethod]()
 
     def doAppStep_local_generator(self):
         if not self._gen:
@@ -223,13 +240,6 @@ class MarketDirClassifier(BaseApplication):
                 raise StopIteration
         
         return super(MarketDirClassifier, self).doAppStep()
-
-    def doAppStep(self):
-        # return self.doAppStep_local_generator()
-        # return self.doAppStep_keras_dsGenerator()
-        # return self.doAppStep_keras_batchGenerator()
-        return self.doAppStep_keras_slice2dataset() # slice in pool
-        # return self.doAppStep_keras_datasetPool() # dataset in pool
 
     def doAppStep_keras_batchGenerator(self):
         # frameSeq= [i for i in range(len(self._framesInHd5))]
@@ -313,6 +323,7 @@ class MarketDirClassifier(BaseApplication):
         if not result: return
         loss = result.history["loss"][-1]
         accu = result.history["acc"][-1] if 'acc' in result.history.keys() else -1.0
+        if accu <0 and 'accuracy' in result.history.keys(): accu = result.history["accuracy"][-1]
         fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
         self._brain.save(fn_weights)
         self.info('%s() done, loss[%s] accu[%s] saved %s' % (methodName, loss, accu, fn_weights))
@@ -447,8 +458,8 @@ class MarketDirClassifier(BaseApplication):
         COLS = ['state','action']
         framelen = len(frameDict[COLS[0]])
         bths = []
-        self._batchesPerTrain = framelen // self._batchSize
-        for i in range(self._batchesPerTrain):
+        cBth = framelen // self._batchSize
+        for i in range(cBth):
             batch = {}
             for col in COLS :
                 batch[col] = np.array(frameDict[col][self._batchSize*i: self._batchSize*(i+1)]).astype(NN_FLOAT)
@@ -504,9 +515,9 @@ class MarketDirClassifier(BaseApplication):
 
         self.info('readAhead() prepared %s chunks x%s btc/c x%s samples/bth from %s %d frames await, took %s' % (len(self.__chunksReadAhead), self._batchesPerTrain, self._batchSize, self._frameNamesReadAhead, awaitSize, str(datetime.now() - stampStart)))
 
-    def __generator(self):
+    def __generator_local(self):
 
-        frameSeq=[]
+        self.__convertFrame = self.__frameToBatchs
 
         # build up self.__samplePool
         self.__samplePool = {
@@ -520,95 +531,52 @@ class MarketDirClassifier(BaseApplication):
 
         loss = DUMMY_BIG_VAL
         lossMax = loss
-        while len(frameSeq) >0 or lossMax > self._lossStop or abs(loss-lossMax) > (lossMax * self._lossPctStop/100) :
-            if len(frameSeq) <=0:
-                a = copy.copy(self._framesInHd5)
-                random.shuffle(a)
-                frameSeq +=a
+        idxBatchInPool =int(DUMMY_BIG_VAL)
+        statebths, actionbths =[], []
+        while lossMax > self._lossStop or abs(loss-lossMax) > (lossMax * self._lossPctStop/100) :
+            if idxBatchInPool >= self.chunksInPool:
+                self.refreshPool()
+                idxBatchInPool =0
+
+            while idxBatchInPool< self.chunksInPool:
+                bth = self.readDataChunk(idxBatchInPool)
+                idxBatchInPool +=1
+
+                statebths.append(bth['state'])
+                actionbths.append(bth['action'])
+                if len(statebths) >= self._batchesPerTrain:
+                    break
+
+            if len(statebths) < self._batchesPerTrain:
+                continue
             
-            startPoolSize = len(self.__samplePool['state'])
-            cEvicted =0
-            if startPoolSize >= max(samplePerFrame, self._batchesPerTrain*self._batchSize *2):
-                # # randomly evict half of the poolSize
-                # sampleIdxs = [a for a in range(startPoolSize)]
-                # random.shuffle(sampleIdxs)
-                # nToEvict = int(startPoolSize * self._poolEvictRate)
-                # for i in sampleIdxs:
-                #     if i >= (startPoolSize - cEvicted): continue
-
-                #     for col in self.__samplePool.keys() :
-                #         del self.__samplePool[col][i]
-                    
-                #     cEvicted +=1
-                #     if cEvicted >= nToEvict: break
-                cEvicted = startPoolSize # = samplePerFrame
-                for col in self.__samplePool.keys() :
-                    del self.__samplePool[col][:cEvicted]
-
-            poolSize = len(self.__samplePool['state'])
-
-            cAppend =0
-            strFrames=''
-            while len(frameSeq) >0 and len(self.__samplePool['state']) <max(samplePerFrame, trainSize *2) :
-                strFrames += frameSeq[0]
-                frame = self._h5file[frameSeq[0]]
-                del frameSeq[0]
-
-                for col in self.__samplePool.keys() :
-                    incrematal = list(frame[col].value)
-                    samplePerFrame = len(incrematal)
-                    self.__samplePool[col] += incrematal
-
-                if loss <10 and len(self.__samplePool['state']) > (poolSize+cAppend + self._batchSize):
+            statechunk = np.concatenate(tuple(statebths))
+            actionchunk = np.concatenate(tuple(actionbths))
+            statebths, actionbths =[], []
+            
+            result = None
+            strFrames =''
+            loss = max(11, loss)
+            while loss >10:
+                if len(strFrames) <=0:
                     try :
-                        state_set = self.__samplePool['state'][poolSize+cAppend: ]
-                        action_set = self.__samplePool['action'][poolSize+cAppend: ]
-                        strFrames += '/eval:%s' %  self._brain.evaluate(x=np.array(state_set), y=np.array(action_set), batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
+                        strFrames += '/eval:%s' %  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
                     except Exception as ex:
                         self.logexception(ex)
-
-                strFrames += ','
-                cAppend += samplePerFrame
-
-            poolSize = len(self.__samplePool['state'])
-            self.info('sample pool refreshed: size[%s->%s] by evicting %s and refilling %s samples from %s %d frames await' % (startPoolSize, poolSize, cEvicted, cAppend, strFrames, len(frameSeq)))
-
-            # random sample a dataset with size=trainSize from self.__samplePool
-            sampleSeq = [a for a in range(poolSize)]
-            random.shuffle(sampleSeq)
-            if self._poolReuses >0:
-                tmpseq = copy.copy(sampleSeq)
-                for i in range(self._poolReuses) :
-                    random.shuffle(tmpseq)
-                    sampleSeq += tmpseq
-
-            if len(sampleSeq) >= self._batchSize:
-                lossMax = loss if loss < DUMMY_BIG_VAL-1 else 0.0
-
-            while len(sampleSeq) >= self._batchSize:
-
-                if len(sampleSeq) > trainSize:
-                    sampleIdxs = sampleSeq[:trainSize]
-                    del sampleSeq[:trainSize]
-                else :
-                    sampleIdxs = sampleSeq
-                    sampleSeq = []
-
-                state_set = [self.__samplePool['state'][i] for i in sampleIdxs]
-                action_set = [self.__samplePool['action'][i] for i in sampleIdxs]
 
                 # call trainMethod to perform tranning
                 itrId +=1
                 try :
-                    result = self._brain.fit(x=np.array(state_set), y=np.array(action_set), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
-                    self.__logAndSaveResult(result, 'doAppStep_local_generator')
+                    result = self._brain.fit(x=statechunk, y=actionchunk, epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
+                    loss = result.history["loss"][-1]
+                    if lossMax < loss:
+                        lossMax = loss
 
                     yield result # this is a step
                 except Exception as ex:
                     self.logexception(ex)
 
-                if lossMax < loss:
-                    lossMax = loss
+            self.__logAndSaveResult(result, 'doAppStep_local_generator')
 
     #----------------------------------------------------------------------
     # model definitions
@@ -963,13 +931,13 @@ class DQNTrainer(MarketDirClassifier):
             return False
 
         # overwrite MarketDirClassifier's self._gen
-        self._gen = self.__generator(self.__train_DDQN)
+        self._gen = self.__generator_local(self.__train_DDQN)
         return True
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
 
-    def __generator(self, trainMethod):
+    def __generator_local(self, trainMethod):
 
         frameSeq=[]
 

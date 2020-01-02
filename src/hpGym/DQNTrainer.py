@@ -222,7 +222,7 @@ class MarketDirClassifier(BaseApplication):
                     embeddings_freq=0, 
                     embeddings_layer_names=None, 
                     embeddings_metadata=None)
-                    
+
             self._fitCallbacks.append(cbTensorBoard)
 
 
@@ -589,7 +589,7 @@ class MarketDirClassifier(BaseApplication):
                     result = self._brain.fit(x=statechunk, y=actionchunk, epochs=epochs2run, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
                     loss = result.history["loss"][-1]
                     lossImprove =0.0
-                    if len(result.history["loss"] >1) :
+                    if len(result.history["loss"]) >1 :
                         lossImprove = result.history["loss"][-2] - loss
 
                     if lossImprove > loss *0.1 : epochs = 2*epochs2run

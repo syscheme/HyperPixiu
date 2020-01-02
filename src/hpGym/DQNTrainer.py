@@ -570,7 +570,8 @@ class MarketDirClassifier(BaseApplication):
             result = None
             strEval =''
             loss = max(11, loss)
-            while loss >10:
+            epochs = self._epochsPerTrain
+            while epochs > 0:
                 if len(strEval) <=0:
                     try :
                         strEval += '%s' %  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
@@ -580,12 +581,19 @@ class MarketDirClassifier(BaseApplication):
                 # call trainMethod to perform tranning
                 itrId +=1
                 try :
-                    result = self._brain.fit(x=statechunk, y=actionchunk, epochs=self._epochsPerTrain, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
+                    epochs2run = epochs
+                    epochs =0
+                    result = self._brain.fit(x=statechunk, y=actionchunk, epochs=epochs2run, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
                     loss = result.history["loss"][-1]
-                    if lossMax < loss:
-                        lossMax = loss
+                    lossImprove =0.0
+                    if len(result.history["loss"] >1) :
+                        lossImprove = result.history["loss"][-2] - loss
+
+                    if lossImprove > loss *0.1 : epochs = 2*epochs2run
+                    if lossMax>=DUMMY_BIG_VAL-1 or lossMax < loss: lossMax = loss
 
                     yield result # this is a step
+
                 except Exception as ex:
                     self.logexception(ex)
 

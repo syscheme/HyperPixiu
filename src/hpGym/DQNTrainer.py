@@ -592,7 +592,7 @@ class MarketDirClassifier(BaseApplication):
                     if len(result.history["loss"]) >1 :
                         lossImprove = result.history["loss"][-2] - loss
 
-                    if lossImprove > (loss * self._lossPctStop/100)  : epochs = 2*epochs2run
+                    if lossImprove > (loss * self._lossPctStop/100)  : epochs = int(epochs2run + epochs2run/2)
                     if lossMax>=DUMMY_BIG_VAL-1 or lossMax < loss: lossMax = loss
 
                     yield result # this is a step

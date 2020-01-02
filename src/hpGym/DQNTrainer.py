@@ -567,11 +567,13 @@ class MarketDirClassifier(BaseApplication):
             if cBths < self._batchesPerTrain:
                 continue
 
-            idxBths = [i for i in range(cBths)]
-            random.shuffle(idxBths)
+            # idxBths = [i for i in range(cBths)]
+            # random.shuffle(idxBths)
             
-            statechunk = np.concatenate(tuple([statebths[i] for i in idxBths]))
-            actionchunk = np.concatenate(tuple([actionbths[i] for i in idxBths]))
+            # statechunk = np.concatenate(tuple([statebths[i] for i in idxBths]))
+            # actionchunk = np.concatenate(tuple([actionbths[i] for i in idxBths]))
+            statechunk = np.concatenate(tuple(statebths))
+            actionchunk = np.concatenate(tuple(actionbths))
             statebths, actionbths, idxBths =[], [], []
             
             result = None
@@ -590,7 +592,7 @@ class MarketDirClassifier(BaseApplication):
                 try :
                     epochs2run = epochs
                     epochs =0
-                    result = self._brain.fit(x=statechunk, y=actionchunk, epochs=epochs2run, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
+                    result = self._brain.fit(x=statechunk, y=actionchunk, epochs=epochs2run, shuffle=True, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
                     loss = result.history["loss"][-1]
                     lossImprove =0.0
                     if len(result.history["loss"]) >1 :

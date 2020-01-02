@@ -24,7 +24,7 @@
             // "startLR": 0.005,
             "batchesPerTrain": 128, // 64 for GTX1050/2G, 128 for GTX1060/4G
             "poolReuses": 0,
-            "initEpochs": 8, // 16,
+            "initEpochs": 4, // 16,
         },
 
         "gamma": 0.01,

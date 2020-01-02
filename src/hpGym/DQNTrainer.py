@@ -95,6 +95,7 @@ class MarketDirClassifier(BaseApplication):
 
         if len(GPUs) > 0 : # adjust some configurations if currently running on GPUs
             self._stepMethod      = self.getConfig('GPU/stepMethod', self._stepMethod)
+            self._exportTB        = self.getConfig('GPU/tensorBoard', self._exportTB).lower() in BOOL_STRVAL_TRUE
             self._batchSize       = self.getConfig('GPU/batchSize',    self._batchSize)
             self._batchesPerTrain = self.getConfig('GPU/batchesPerTrain', 64)  # usually 64 is good for a bottom-line model of GTX1050oc/2G
             self._initEpochs      = self.getConfig('GPU/initEpochs', self._initEpochs)
@@ -341,8 +342,7 @@ class MarketDirClassifier(BaseApplication):
         fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
         self._brain.save(fn_weights)
 
-        strNote = '; %s' % notes if len(notes) >0 else ''
-        self.info('%s() done, loss[%s] accu[%s] saved %s%s' % (methodName, loss, accu, fn_weights, strNote))
+        self.info('%s() done, saved weights %s, loss[%s] accu[%s] %s' % (methodName, fn_weights, loss, accu, notes if len(notes) >0 else ''))
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------

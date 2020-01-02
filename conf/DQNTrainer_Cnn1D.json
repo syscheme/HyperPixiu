@@ -11,7 +11,7 @@
         "RFSamples_file" : "/mnt/e/AShareSample/ETF/RFrames_SH510050.h5",
 
         "batchSize": 128,
-        "batchesPerTrain": 8,
+        "batchesPerTrain": 16,
         "poolReuses": 0,
         "initEpochs": 2,
         "startLR": 0.001, // start learningRate

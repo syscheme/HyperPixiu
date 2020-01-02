@@ -563,12 +563,16 @@ class MarketDirClassifier(BaseApplication):
                 if len(statebths) >= self._batchesPerTrain:
                     break
 
-            if len(statebths) < self._batchesPerTrain:
+            cBths = len(statebths)
+            if cBths < self._batchesPerTrain:
                 continue
+
+            idxBths = [i for i in range(cBths)]
+            random.shuffle(idxBths)
             
-            statechunk = np.concatenate(tuple(statebths))
-            actionchunk = np.concatenate(tuple(actionbths))
-            statebths, actionbths =[], []
+            statechunk = np.concatenate(tuple([statebths[i] for i in idxBths]))
+            actionchunk = np.concatenate(tuple([actionbths[i] for i in idxBths]))
+            statebths, actionbths, idxBths =[], [], []
             
             result = None
             strEval =''

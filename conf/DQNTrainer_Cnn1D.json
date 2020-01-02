@@ -13,7 +13,7 @@
         "batchSize": 128,
         "batchesPerTrain": 8,
         "poolReuses": 0,
-        "epochsPerTrain": 2,
+        "initEpochs": 2,
         "startLR": 0.001, // start learningRate
 
         "GPU": {
@@ -21,7 +21,7 @@
             // "startLR": 0.005,
             "batchesPerTrain": 128, // 64 for GTX1050/2G, 128 for GTX1060/4G
             "poolReuses": 0,
-            "epochsPerTrain": 8,
+            "initEpochs": 8,
         },
 
         "gamma": 0.01,

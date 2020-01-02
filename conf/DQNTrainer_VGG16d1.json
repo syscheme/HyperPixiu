@@ -14,16 +14,17 @@
         "batchSize": 64,
         "batchesPerTrain": 8,
         "poolReuses": 0,
-        "epochsPerTrain": 2,
+        "initEpochs": 2,
         "startLR": 0.005, // start learningRate
 
         "GPU": {
             // "stepMethod": "SliceToDataset",
             "batchSize": 512,
+            "tensorBoard": "yes",
             // "startLR": 0.005,
             "batchesPerTrain": 128, // 64 for GTX1050/2G, 128 for GTX1060/4G
             "poolReuses": 0,
-            "epochsPerTrain": 8, // 16,
+            "initEpochs": 8, // 16,
         },
 
         "gamma": 0.01,

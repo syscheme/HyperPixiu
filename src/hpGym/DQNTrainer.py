@@ -576,6 +576,7 @@ class MarketDirClassifier(BaseApplication):
                 except Exception as ex:
                     self.logexception(ex)
 
+            if len(strFrames) >0: self.info('evaluate result: %s' % (strFrames))
             self.__logAndSaveResult(result, 'doAppStep_local_generator')
 
     #----------------------------------------------------------------------

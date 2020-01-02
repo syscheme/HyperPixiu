@@ -18,12 +18,12 @@
         "startLR": 0.005, // start learningRate
 
         "GPU": {
-            "stepMethod": "SliceToDataset",
+            // "stepMethod": "SliceToDataset",
             "batchSize": 512,
             // "startLR": 0.005,
-            "batchesPerTrain": 32, // 64 for GTX1050/2G, 128 for GTX1060/4G
+            "batchesPerTrain": 128, // 64 for GTX1050/2G, 128 for GTX1060/4G
             "poolReuses": 0,
-            "epochsPerFit": 16,
+            "epochsPerFit": 8, // 16,
         },
 
         "gamma": 0.01,

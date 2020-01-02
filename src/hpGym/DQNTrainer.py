@@ -93,7 +93,7 @@ class MarketDirClassifier(BaseApplication):
         #     self._poolEvictRate =1
 
         if len(GPUs) > 0 : # adjust some configurations if currently running on GPUs
-            self._stepMethod      = self.getConfig('stepMethod', self._stepMethod)
+            self._stepMethod      = self.getConfig('GPU/stepMethod', self._stepMethod)
             self._batchSize       = self.getConfig('GPU/batchSize',    self._batchSize)
             self._batchesPerTrain = self.getConfig('GPU/batchesPerTrain', 64)  # usually 64 is good for a bottom-line model of GTX1050oc/2G
             self._epochsPerFit    = self.getConfig('GPU/epochsPerFit', self._epochsPerFit)
@@ -122,7 +122,7 @@ class MarketDirClassifier(BaseApplication):
             'Cnn1Dx4R1'  : self.__createModel_Cnn1Dx4R1,
             }
 
-        self.STEPMETHODS = {
+        STEPMETHODS = {
             'LocalGenerator'   : self.doAppStep_local_generator,
             'DatesetGenerator' : self.doAppStep_keras_dsGenerator,
             'BatchGenerator'   : self.doAppStep_keras_batchGenerator,
@@ -130,6 +130,11 @@ class MarketDirClassifier(BaseApplication):
             'DatasetPool'      : self.doAppStep_keras_datasetPool,
         }
 
+        if not self._stepMethod or not self._stepMethod in STEPMETHODS.keys():
+            self._stepMethod = 'LocalGenerator'
+        
+        self.info('taking method[%s]' % (self._stepMethod))
+        self._stepMethod = STEPMETHODS[self._stepMethod]
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -223,23 +228,24 @@ class MarketDirClassifier(BaseApplication):
         return True
 
     def doAppStep(self):
-        if not self._stepMethod in self.STEPMETHODS.keys():
-            self._stepMethod = 'LocalGenerator'
+        if not self._stepMethod:
+            self.stop()
+            return
 
-        return self.STEPMETHODS[self._stepMethod]()
+        self._stepMethod()
+        return super(MarketDirClassifier, self).doAppStep()
 
     def doAppStep_local_generator(self):
         if not self._gen:
             self.stop()
-        else:
-            try:
-                next(self._gen)
-            except Exception as ex:
-                self.stop()
-                self.logexception(ex)
-                raise StopIteration
-        
-        return super(MarketDirClassifier, self).doAppStep()
+            return
+
+        try:
+            next(self._gen)
+        except Exception as ex:
+            self.stop()
+            self.logexception(ex)
+            raise StopIteration
 
     def doAppStep_keras_batchGenerator(self):
         # frameSeq= [i for i in range(len(self._framesInHd5))]
@@ -250,9 +256,7 @@ class MarketDirClassifier(BaseApplication):
         use_multiprocessing = not 'windows' in self._program.ostype
 
         result = self._brain.fit_generator(generator=Hd5DataGenerator(self, self._batchSize), workers=8, use_multiprocessing=use_multiprocessing, epochs=self._epochsPerFit, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
-        self.__logAndSaveResult(result, 'doAppStep_keras_batchGenerator')
-
-        return super(MarketDirClassifier, self).doAppStep()
+        if result : self.__logAndSaveResult(result, 'doAppStep_keras_batchGenerator')
 
     def doAppStep_keras_dsGenerator(self):
         # ref: https://pastebin.com/kRLLmdxN
@@ -273,9 +277,7 @@ class MarketDirClassifier(BaseApplication):
         dataset = dataset.repeat()
 
         result = self._brain.fit(dataset.make_one_shot_iterator(), epochs=self._epochsPerFit, steps_per_epoch=self.chunksInPool, verbose=1, callbacks=self._fitCallbacks)
-        self.__logAndSaveResult(result, 'doAppStep_keras_dsGenerator')
-
-        return super(MarketDirClassifier, self).doAppStep()
+        if result : self.__logAndSaveResult(result, 'doAppStep_keras_dsGenerator')
 
     def doAppStep_keras_slice2dataset(self):
 
@@ -298,7 +300,6 @@ class MarketDirClassifier(BaseApplication):
             # result = self._brain.fit(dataset, epochs=1, steps_per_epoch=stepsPerEp, verbose=1, callbacks=self._fitCallbacks)
 
         if result : self.__logAndSaveResult(result, 'doAppStep_keras_slice2dataset')
-        return super(MarketDirClassifier, self).doAppStep()
 
     def doAppStep_keras_datasetPool(self):
 
@@ -317,7 +318,6 @@ class MarketDirClassifier(BaseApplication):
             result = self._brain.fit(dataset, epochs=self._epochsPerFit, steps_per_epoch=self._batchesPerTrain, verbose=1, callbacks=self._fitCallbacks)
 
         if result : self.__logAndSaveResult(result, 'doAppStep_keras_datasetPool')
-        return super(MarketDirClassifier, self).doAppStep()
 
     def __logAndSaveResult(self, result, methodName):
         if not result: return
@@ -1105,4 +1105,5 @@ if __name__ == '__main__':
 
     p.start()
     p.loop()
+    p.info('loop done, all objs: %s' % p.listByType())
     p.stop()

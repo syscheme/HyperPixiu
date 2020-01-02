@@ -77,7 +77,7 @@ class TencentAPI(object):
             req = models.InquiryPriceRunInstancesRequest()
             req.InstanceCount=1
             req.InstanceType= 'GN6S.LARGE20' # 'S5.LARGE8'
-            req.ImageId = 'img-9qabwvbn'
+            req.ImageId = 'img-dscg6q6b' # public 'img-9qabwvbn'
 
             req.Placement = models.Placement()
             req.Placement.Zone = zone
@@ -148,7 +148,7 @@ class TencentAPI(object):
             req.Placement.Zone = zone
             req.ImageId = 'img-9qabwvbn'
 
-            print(req.to_jso';[[k[//]]pn_string(indent=2))
+            print(req.to_json_string(indent=2))
 
             resp = self._client.RunInstances(req)
             # 输出json格式的字符串回包
@@ -162,5 +162,5 @@ class TencentAPI(object):
 api = TencentAPI()
 api.connect()
 # api.listInstances()
-# api.inquiryPrice()
-api.createInstances()
+api.inquiryPrice()
+# api.createInstances()

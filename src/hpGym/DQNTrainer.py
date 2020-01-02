@@ -81,6 +81,7 @@ class MarketDirClassifier(BaseApplication):
             self._h5filepath = Program.fixupPath(self._h5filepath)
 
         self._stepMethod          = self.getConfig('stepMethod', None)
+        self._exportTB            = self.getConfig('tensorBoard', 'no').lower() in BOOL_STRVAL_TRUE
         self._batchSize           = self.getConfig('batchSize', 128)
         self._batchesPerTrain     = self.getConfig('batchesPerTrain', 8)
         self._poolReuses          = self.getConfig('poolReuses', 0)
@@ -212,16 +213,18 @@ class MarketDirClassifier(BaseApplication):
             pass
 
         checkpoint = ModelCheckpoint(os.path.join(self._outDir, '%s.best.h5' %self._wkModelId ), verbose=0, monitor='loss', mode='min', save_best_only=True)
-        #self._fitCallbacks =[checkpoint]
-        cbTensorBoard = TensorBoard(log_dir=os.path.join(self._outDir, 'tb'), histogram_freq=0,  # 按照何等频率（epoch）来计算直方图，0为不计算
-                 write_graph=True,  # 是否存储网络结构图
-                 write_grads=True, # 是否可视化梯度直方图
-                 write_images=True,# 是否可视化参数
-                 embeddings_freq=0, 
-                 embeddings_layer_names=None, 
-                 embeddings_metadata=None)
+        self._fitCallbacks = [checkpoint]
+        if self._exportTB :
+            cbTensorBoard = TensorBoard(log_dir=os.path.join(self._outDir, 'tb'), histogram_freq=0,  # 按照何等频率（epoch）来计算直方图，0为不计算
+                    write_graph=True,  # 是否存储网络结构图
+                    write_grads=True, # 是否可视化梯度直方图
+                    write_images=True,# 是否可视化参数
+                    embeddings_freq=0, 
+                    embeddings_layer_names=None, 
+                    embeddings_metadata=None)
+                    
+            self._fitCallbacks.append(cbTensorBoard)
 
-        self._fitCallbacks =[cbTensorBoard, checkpoint]
 
         self._gen = self.__generator_local()
 

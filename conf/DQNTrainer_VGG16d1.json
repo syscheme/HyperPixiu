@@ -10,7 +10,7 @@
         "modelId": "VGG16d1", // default "Cnn1Dx4"
         // "replayFrameFiles" : ["/mnt/e/AShareSample/ETF/RFrames_SH510050.h5" ],
         // "replayFrameFiles" : ["/mnt/e/AShareSample/ETF/RFrames_SH510050_1229.h5" ],
-        "replayFrameFiles" : ["/mnt/e/AShareSample/ETF/RFrames_SH510300.h5"],
+        "replayFrameFiles" : ["/mnt/e/AShareSample/ETF/RFrames_SH510300.h5", "/mnt/e/AShareSample/ETF/RFrames_SH510050.h5"],
         "batchSize": 64,
         "batchesPerTrain": 8,
         "poolReuses": 0,

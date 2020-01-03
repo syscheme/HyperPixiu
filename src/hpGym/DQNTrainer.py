@@ -82,7 +82,14 @@ class MarketDirClassifier(BaseApplication):
         if not self._replayFrameFiles or len(self._replayFrameFiles) <=0: 
             replayFrameDir = self.getConfig('replayFrameDir', None)
             if replayFrameDir:
-                pass # TODO populate files from the folder
+                self._replayFrameFiles =[]
+                try :
+                    for _, subdirs, files in os.walk(replayFrameDir, topdown=False):
+                        for name in files:
+                            if '.h5' != name[-3:] : continue
+                            self._replayFrameFiles.append(os.path.join(replayFrameDir, name))
+                except:
+                    pass
 
         self._stepMethod          = self.getConfig('stepMethod', None)
         self._exportTB            = self.getConfig('tensorBoard', 'no').lower() in BOOL_STRVAL_TRUE

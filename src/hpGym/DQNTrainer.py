@@ -160,7 +160,7 @@ class MarketDirClassifier(BaseApplication):
         # I'd like to skip frame-0 as it most-likly includes many zero-samples
         if len(self._framesInHd5)>3:
             del self._framesInHd5[0]
-            del self._framesInHd5[-1]
+            # del self._framesInHd5[-1]
         
         if len(self._framesInHd5)>6:
             del self._framesInHd5[0]
@@ -170,6 +170,8 @@ class MarketDirClassifier(BaseApplication):
         self._stateSize = self._h5file[self._framesInHd5[0]]['state'].shape[1]
         self._actionSize = self._h5file[self._framesInHd5[0]]['action'].shape[1]
         
+        self.info('loaded %s and found %d ReplayFrames with dims: %s/state, %s/action' % (self._h5filepath, len(self._framesInHd5), self._stateSize, self._actionSize) )
+
         if self._model_json:
             self._brain = model_from_json(self._model_json)
             if not self._brain:

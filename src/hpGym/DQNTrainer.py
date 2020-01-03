@@ -81,22 +81,24 @@ class MarketDirClassifier(BaseApplication):
             self._h5filepath = Program.fixupPath(self._h5filepath)
 
         self._stepMethod          = self.getConfig('stepMethod', None)
+        self._exportTB            = self.getConfig('tensorBoard', 'no').lower() in BOOL_STRVAL_TRUE
         self._batchSize           = self.getConfig('batchSize', 128)
         self._batchesPerTrain     = self.getConfig('batchesPerTrain', 8)
         self._poolReuses          = self.getConfig('poolReuses', 0)
-        self._epochsPerFit        = self.getConfig('epochsPerFit', 2)
+        self._initEpochs          = self.getConfig('initEpochs', 2)
         self._lossStop            = self.getConfig('lossStop', 0.1)
-        self._lossPctStop         = self.getConfig('lossPctStop', 2)
+        self._lossPctStop         = self.getConfig('lossPctStop', 5)
         self._startLR             = self.getConfig('startLR', 0.01)
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
         #     self._poolEvictRate =1
 
         if len(GPUs) > 0 : # adjust some configurations if currently running on GPUs
-            self._stepMethod      = self.getConfig('stepMethod', self._stepMethod)
+            self._stepMethod      = self.getConfig('GPU/stepMethod', self._stepMethod)
+            self._exportTB        = self.getConfig('GPU/tensorBoard', self._exportTB).lower() in BOOL_STRVAL_TRUE
             self._batchSize       = self.getConfig('GPU/batchSize',    self._batchSize)
             self._batchesPerTrain = self.getConfig('GPU/batchesPerTrain', 64)  # usually 64 is good for a bottom-line model of GTX1050oc/2G
-            self._epochsPerFit    = self.getConfig('GPU/epochsPerFit', self._epochsPerFit)
+            self._initEpochs      = self.getConfig('GPU/initEpochs', self._initEpochs)
             self._poolReuses      = self.getConfig('GPU/poolReuses',   self._poolReuses)
             self._startLR         = self.getConfig('GPU/startLR',      self._startLR)
 
@@ -122,14 +124,19 @@ class MarketDirClassifier(BaseApplication):
             'Cnn1Dx4R1'  : self.__createModel_Cnn1Dx4R1,
             }
 
-        self.STEPMETHODS = {
-            'LocalGenerator'   : self.doAppStep_local_generator,  # best fit widely at GPU/CPU, slightly slower than SliceToDataset
+        STEPMETHODS = {
+            'LocalGenerator'   : self.doAppStep_local_generator,
             'DatesetGenerator' : self.doAppStep_keras_dsGenerator,
             'BatchGenerator'   : self.doAppStep_keras_batchGenerator, # too slow to read data one by one
             'SliceToDataset'   : self.doAppStep_keras_slice2dataset, # top pick at nvidia V100, slightly better than LocalGenerator
             'DatasetPool'      : self.doAppStep_keras_datasetPool, # preparing Dataset took too long at CPU, even longer than hdf5 reading
         }
 
+        if not self._stepMethod or not self._stepMethod in STEPMETHODS.keys():
+            self._stepMethod = 'LocalGenerator'
+        
+        self.info('taking method[%s]' % (self._stepMethod))
+        self._stepMethod = STEPMETHODS[self._stepMethod]
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -207,62 +214,64 @@ class MarketDirClassifier(BaseApplication):
             pass
 
         checkpoint = ModelCheckpoint(os.path.join(self._outDir, '%s.best.h5' %self._wkModelId ), verbose=0, monitor='loss', mode='min', save_best_only=True)
-        #self._fitCallbacks =[checkpoint]
-        cbTensorBoard = TensorBoard(log_dir=os.path.join(self._outDir, 'tb'), histogram_freq=0,  # 按照何等频率（epoch）来计算直方图，0为不计算
-                 write_graph=True,  # 是否存储网络结构图
-                 write_grads=True, # 是否可视化梯度直方图
-                 write_images=True,# 是否可视化参数
-                 embeddings_freq=0, 
-                 embeddings_layer_names=None, 
-                 embeddings_metadata=None)
+        self._fitCallbacks = [checkpoint]
+        if self._exportTB :
+            cbTensorBoard = TensorBoard(log_dir=os.path.join(self._outDir, 'tb'), histogram_freq=0,  # 按照何等频率（epoch）来计算直方图，0为不计算
+                    write_graph=True,  # 是否存储网络结构图
+                    write_grads=True, # 是否可视化梯度直方图
+                    write_images=True,# 是否可视化参数
+                    embeddings_freq=0, 
+                    embeddings_layer_names=None, 
+                    embeddings_metadata=None)
 
-        self._fitCallbacks =[cbTensorBoard, checkpoint]
+            self._fitCallbacks.append(cbTensorBoard)
+
 
         self._gen = self.__generator_local()
 
         return True
 
     def doAppStep(self):
-        if not self._stepMethod in self.STEPMETHODS.keys():
-            self._stepMethod = 'LocalGenerator'
+        if not self._stepMethod:
+            self.stop()
+            return
 
-        return self.STEPMETHODS[self._stepMethod]()
+        self._stepMethod()
+        return super(MarketDirClassifier, self).doAppStep()
 
     def doAppStep_local_generator(self):
         if not self._gen:
             self.stop()
-        else:
-            try:
-                next(self._gen)
-            except Exception as ex:
-                self.stop()
-                self.logexception(ex)
-                raise StopIteration
-        
-        return super(MarketDirClassifier, self).doAppStep()
+            return
+
+        try:
+            next(self._gen)
+        except Exception as ex:
+            self.stop()
+            self.logexception(ex)
+            raise StopIteration
 
     def doAppStep_keras_batchGenerator(self):
         # frameSeq= [i for i in range(len(self._framesInHd5))]
         # random.shuffle(frameSeq)
-        # result = self._brain.fit_generator(generator=self.__gen_readBatchFromFrameEx(frameSeq), workers=2, use_multiprocessing=True, epochs=self._epochsPerFit, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
+        # result = self._brain.fit_generator(generator=self.__gen_readBatchFromFrameEx(frameSeq), workers=2, use_multiprocessing=True, epochs=self._initEpochs, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
 
         self.refreshPool()
         use_multiprocessing = not 'windows' in self._program.ostype
 
-        result = self._brain.fit_generator(generator=Hd5DataGenerator(self, self._batchSize), workers=8, use_multiprocessing=use_multiprocessing, epochs=self._epochsPerFit, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
-        self.__logAndSaveResult(result, 'doAppStep_keras_batchGenerator')
-
-        return super(MarketDirClassifier, self).doAppStep()
+        result = self._brain.fit_generator(generator=Hd5DataGenerator(self, self._batchSize), workers=8, use_multiprocessing=use_multiprocessing, epochs=self._initEpochs, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
+        if result : self.__logAndSaveResult(result, 'doAppStep_keras_batchGenerator')
 
     def doAppStep_keras_dsGenerator(self):
         # ref: https://pastebin.com/kRLLmdxN
         # training_set = tfdata_generator(x_train, y_train, is_training=True, batch_size=_BATCH_SIZE)
-        # result = self._brain.fit(training_set.make_one_shot_iterator(), epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
+        # result = self._brain.fit(training_set.make_one_shot_iterator(), epochs=self._initEpochs, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
         # model.fit(training_set.make_one_shot_iterator(), steps_per_epoch=len(x_train) // _BATCH_SIZE
         #     epochs=_EPOCHS, validation_data=testing_set.make_one_shot_iterator(), validation_steps=len(x_test) // _BATCH_SIZE,
         #     verbose=1)
 
         self.refreshPool()
+        result = None
         dataset = tf.data.Dataset.from_generator(generator =self.__gen_readDataFromFrame,
                                                 output_types=(tf.float32, tf.float32),
                                                 output_shapes=((self._stateSize,), (self._actionSize,)))
@@ -272,10 +281,11 @@ class MarketDirClassifier(BaseApplication):
         dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
         dataset = dataset.repeat()
 
-        result = self._brain.fit(dataset.make_one_shot_iterator(), epochs=self._epochsPerFit, steps_per_epoch=self.chunksInPool, verbose=1, callbacks=self._fitCallbacks)
-        self.__logAndSaveResult(result, 'doAppStep_keras_dsGenerator')
+        try :
+            result = self._brain.fit(dataset.make_one_shot_iterator(), epochs=self._initEpochs, steps_per_epoch=self.chunksInPool, verbose=1, callbacks=self._fitCallbacks)
+        except Exception as ex: self.logexception(ex)
 
-        return super(MarketDirClassifier, self).doAppStep()
+        self.__logAndSaveResult(result, 'doAppStep_keras_dsGenerator')
 
     def doAppStep_keras_slice2dataset(self):
 
@@ -285,20 +295,24 @@ class MarketDirClassifier(BaseApplication):
 
         for i in range(self.chunksInPool) :
             slice = self.readDataChunk(i)
+            length = len(slice[0])
+
             dataset = tf.data.Dataset.from_tensor_slices(slice)
+            slice = None # free the memory
             dataset = dataset.batch(self._batchSize)
-            if self._epochsPerFit >1:
+            if self._initEpochs >1:
                 dataset = dataset.repeat() #.shuffle(self._batchSize*2)
 
             # dataset = dataset.apply(tf.data.experimental.copy_to_device("/gpu:0"))
             dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
 
-            if 0 ==i: self.info('doAppStep_keras_slice2dataset() starts fitting ds %s' % str(dataset.output_shapes))
-            result = self._brain.fit(dataset, epochs=self._epochsPerFit, steps_per_epoch=self._batchesPerTrain, verbose=1, callbacks=self._fitCallbacks)
-            # result = self._brain.fit(dataset, epochs=1, steps_per_epoch=stepsPerEp, verbose=1, callbacks=self._fitCallbacks)
+            if 0 ==i: self.info('doAppStep_keras_slice2dataset() starts fitting slice %sx %s' % (length, str(dataset.output_shapes)))
+            try :
+                result = self._brain.fit(dataset, epochs=self._initEpochs, steps_per_epoch=self._batchesPerTrain, verbose=1, callbacks=self._fitCallbacks)
+                # result = self._brain.fit(dataset, epochs=1, steps_per_epoch=stepsPerEp, verbose=1, callbacks=self._fitCallbacks)
+            except Exception as ex: self.logexception(ex)
 
-        if result : self.__logAndSaveResult(result, 'doAppStep_keras_slice2dataset')
-        return super(MarketDirClassifier, self).doAppStep()
+        self.__logAndSaveResult(result, 'doAppStep_keras_slice2dataset')
 
     def doAppStep_keras_datasetPool(self):
 
@@ -308,25 +322,27 @@ class MarketDirClassifier(BaseApplication):
 
         for i in range(self.chunksInPool) :
             dataset = self.readDataChunk(i)
-            if self._epochsPerFit >1:
+            if self._initEpochs >1:
                 dataset = dataset.repeat() # .shuffle(self._batchSize*2)
             # dataset = dataset.apply(tf.data.experimental.copy_to_device("/gpu:0"))
             dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
 
             if 0 ==i: self.info('doAppStep_keras_datasetPool() starts fitting ds %s' % str(dataset.output_shapes))
-            result = self._brain.fit(dataset, epochs=self._epochsPerFit, steps_per_epoch=self._batchesPerTrain, verbose=1, callbacks=self._fitCallbacks)
+            try :
+                result = self._brain.fit(dataset, epochs=self._initEpochs, steps_per_epoch=self._batchesPerTrain, verbose=1, callbacks=self._fitCallbacks)
+            except Exception as ex: self.logexception(ex)
 
-        if result : self.__logAndSaveResult(result, 'doAppStep_keras_datasetPool')
-        return super(MarketDirClassifier, self).doAppStep()
+        self.__logAndSaveResult(result, 'doAppStep_keras_datasetPool')
 
-    def __logAndSaveResult(self, result, methodName):
+    def __logAndSaveResult(self, result, methodName, notes=''):
         if not result: return
         loss = result.history["loss"][-1]
         accu = result.history["acc"][-1] if 'acc' in result.history.keys() else -1.0
         if accu <0 and 'accuracy' in result.history.keys(): accu = result.history["accuracy"][-1]
         fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
         self._brain.save(fn_weights)
-        self.info('%s() done, loss[%s] accu[%s] saved %s' % (methodName, loss, accu, fn_weights))
+
+        self.info('%s() done, saved weights %s, loss[%s] accu[%s] %s' % (methodName, fn_weights, loss, accu, notes if len(notes) >0 else ''))
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
@@ -547,36 +563,50 @@ class MarketDirClassifier(BaseApplication):
                 if len(statebths) >= self._batchesPerTrain:
                     break
 
-            if len(statebths) < self._batchesPerTrain:
+            cBths = len(statebths)
+            if cBths < self._batchesPerTrain:
                 continue
+
+            # idxBths = [i for i in range(cBths)]
+            # random.shuffle(idxBths)
             
+            # statechunk = np.concatenate(tuple([statebths[i] for i in idxBths]))
+            # actionchunk = np.concatenate(tuple([actionbths[i] for i in idxBths]))
             statechunk = np.concatenate(tuple(statebths))
             actionchunk = np.concatenate(tuple(actionbths))
-            statebths, actionbths =[], []
+            statebths, actionbths, idxBths =[], [], []
             
             result = None
-            strFrames =''
+            strEval =''
             loss = max(11, loss)
-            while loss >10:
-                if len(strFrames) <=0:
+            epochs = self._initEpochs
+            while epochs > 0:
+                if len(strEval) <=0:
                     try :
-                        strFrames += '/eval:%s' %  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
+                        strEval += '%s' %  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
                     except Exception as ex:
                         self.logexception(ex)
 
                 # call trainMethod to perform tranning
                 itrId +=1
                 try :
-                    result = self._brain.fit(x=statechunk, y=actionchunk, epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
+                    epochs2run = epochs
+                    epochs =0
+                    result = self._brain.fit(x=statechunk, y=actionchunk, epochs=epochs2run, shuffle=True, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
                     loss = result.history["loss"][-1]
-                    if lossMax < loss:
-                        lossMax = loss
+                    lossImprove =0.0
+                    if len(result.history["loss"]) >1 :
+                        lossImprove = result.history["loss"][-2] - loss
+
+                    if lossImprove > (loss * self._lossPctStop/100)  : epochs = int(epochs2run + epochs2run/2)
+                    if lossMax>=DUMMY_BIG_VAL-1 or lossMax < loss: lossMax = loss
 
                     yield result # this is a step
+
                 except Exception as ex:
                     self.logexception(ex)
 
-            self.__logAndSaveResult(result, 'doAppStep_local_generator')
+            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from eval-result %s' %strEval)
 
     #----------------------------------------------------------------------
     # model definitions
@@ -1039,7 +1069,7 @@ class DQNTrainer(MarketDirClassifier):
         Q_target = self._brain.predict(samples['state'])
         Q_target[action_link[0], action_link[1]] = rewards # action_link =arrary(2,sampleLen)
 
-        return self._brain.fit(x=samples['state'], y=Q_target, epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
+        return self._brain.fit(x=samples['state'], y=Q_target, epochs=self._initEpochs, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
 
     def __train_DDQN(self, samples):
         if not self._theOther and self._brain :
@@ -1064,7 +1094,7 @@ class DQNTrainer(MarketDirClassifier):
         Q_target = self._brain.predict(samples['state'])
         Q_target[action_link[0], action_link[1]] = rewards # action_link =arrary(2,sampleLen)
 
-        return brainTrain.fit(x=samples['state'], y=Q_target, epochs=self._epochsPerFit, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
+        return brainTrain.fit(x=samples['state'], y=Q_target, epochs=self._initEpochs, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
 
 ########################################################################
 if __name__ == '__main__':
@@ -1105,4 +1135,5 @@ if __name__ == '__main__':
 
     p.start()
     p.loop()
+    p.info('loop done, all objs: %s' % p.listByType())
     p.stop()

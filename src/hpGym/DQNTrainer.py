@@ -80,9 +80,10 @@ class MarketDirClassifier(BaseApplication):
             self._replayFrameFiles = [ Program.fixupPath(f) for f in self._replayFrameFiles ]
 
         if not self._replayFrameFiles or len(self._replayFrameFiles) <=0: 
+            self._replayFrameFiles =[]
             replayFrameDir = self.getConfig('replayFrameDir', None)
             if replayFrameDir:
-                self._replayFrameFiles =[]
+                replayFrameDir = Program.fixupPath(replayFrameDir)
                 try :
                     for _, subdirs, files in os.walk(replayFrameDir, topdown=False):
                         for name in files:
@@ -107,7 +108,7 @@ class MarketDirClassifier(BaseApplication):
 
         if len(GPUs) > 0 : # adjust some configurations if currently running on GPUs
             self._stepMethod      = self.getConfig('GPU/stepMethod', self._stepMethod)
-            self._exportTB        = self.getConfig('GPU/tensorBoard', self._exportTB).lower() in BOOL_STRVAL_TRUE
+            self._exportTB        = self.getConfig('GPU/tensorBoard', 'no').lower() in BOOL_STRVAL_TRUE
             self._batchSize       = self.getConfig('GPU/batchSize',    self._batchSize)
             self._batchesPerTrain = self.getConfig('GPU/batchesPerTrain', 64)  # usually 64 is good for a bottom-line model of GTX1050oc/2G
             self._initEpochs      = self.getConfig('GPU/initEpochs', self._initEpochs)
@@ -119,16 +120,14 @@ class MarketDirClassifier(BaseApplication):
         self._frameSeq =[]
         self.__fileSeq =[]
 
-        self._stateSize, self._actionSize = None, None
+        self._stateSize, self._actionSize, self._frameSize = None, None, 0
         self._brain = None
         self._outDir = os.path.join(self.dataRoot, self._program.progId)
         self.__lock = threading.Lock()
-        self.__thread = None
-        self.__chunksReadAhead = None
+        self.__thrdsReadAhead = []
+        self.__chunksReadAhead = []
         self.__samplePool2 =[]
         self.__convertFrame = self.__frameToBatchs
-
-        self.__maxChunks = max(int(8*1024/self._batchesPerTrain /self._batchSize), 1) # minimal 8K samples to at least cover a frame
 
         self.__latestBthNo=0
 
@@ -161,37 +160,14 @@ class MarketDirClassifier(BaseApplication):
             return False
 
         if not self._replayFrameFiles or len(self._replayFrameFiles) <=0:
+            self.error('no input ReplayFrame files specified')
             return False
 
         self._replayFrameFiles.sort();
         self.info('ReplayFrame files: %s' % self._replayFrameFiles)
 
-        # self.debug('loading saved ReplaySamples from %s' % self._replayFrameFiles)
-        # self._h5file = h5py.File(self._replayFrameFiles, 'r')
-
-        # if not self._h5file:
-        #     return False
-
-        # self._framesInHd5 = []
-        # for name in self._h5file.keys():
-        #     if 'ReplayFrame:' == name[:len('ReplayFrame:')] :
-        #         self._framesInHd5.append(name)
-
-        # # I'd like to skip frame-0 as it most-likly includes many zero-samples
-        # if len(self._framesInHd5)>3:
-        #     del self._framesInHd5[0]
-        #     # del self._framesInHd5[-1]
-        
-        # if len(self._framesInHd5)>6:
-        #     del self._framesInHd5[0]
-        # if len(self._framesInHd5) <=0:
-        #     return False
-
-        # self._stateSize = self._h5file[self._framesInHd5[0]]['state'].shape[1]
-        # self._actionSize = self._h5file[self._framesInHd5[0]]['action'].shape[1]
-        
-        # self.info('loaded %s and found %d ReplayFrames with dims: %s/state, %s/action' % (self._replayFrameFiles, len(self._framesInHd5), self._stateSize, self._actionSize) )
-        self.__readAhead(isInit=True)
+        self.__nextFrameName(False) # probe the dims of state/action from the h5 file
+        self.__maxChunks = max(int(self._frameSize/self._batchesPerTrain /self._batchSize), 1) # minimal 8K samples to at least cover a frame
 
         if self._model_json:
             self._brain = model_from_json(self._model_json)
@@ -428,26 +404,45 @@ class MarketDirClassifier(BaseApplication):
     def refreshPool(self):
         # build up self.__samplePool
 
-        readAheadThrd = None
-        with self.__lock:
-            readAheadThrd = self.__thread
+        thrdBusy = True # dummy init value
+        while not thrdBusy is None:
+            thrdBusy =None
+            with self.__lock:
+                for th in self.__thrdsReadAhead:
+                    thrdBusy = th
+                    if thrdBusy: break
         
-        if readAheadThrd:
-            self.warn('refreshPool() readAhead is still running, waiting for its completion')
-            readAheadThrd.join()
-        elif not self.__chunksReadAhead or len(self.__chunksReadAhead) <=0:
+            if thrdBusy:
+                self.warn('refreshPool() readAhead is still running, waiting for its completion')
+                thrdBusy.join()
+
+        cThread=0
+        with self.__lock:
+            if self._frameSize >0:
+                cThread = ((self.__maxChunks * self._batchesPerTrain * self._batchSize) + self._frameSize -1) // self._frameSize
+            if cThread<=0: cThread =1
+            cThread =int(cThread)
+
+            self.__thrdsReadAhead = [None] * cThread
+
+        if not self.__chunksReadAhead or len(self.__chunksReadAhead) <=0:
             self.warn('refreshPool() no readAhead ready, force to read sync-ly')
-            self.__readAhead()
+            for i in range(cThread) :
+                self.__readAhead(thrdSeqId=i)
 
         with self.__lock:
             self.__samplePool2 = self.__chunksReadAhead
             self.__chunksReadAhead =[]
             self.debug('refreshPool() pool refreshed from readAhead: %s chunks x%s btc/c x%s samples/bth, reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__samplePool2), self._batchesPerTrain, self._batchSize, len(self.__chunksReadAhead)))
-            self.__thread = threading.Thread(target=self.__readAhead)
-            self.__thread.start()
+
+            # kickoff new round of readAhead threads
+            for i in range(cThread) :
+                thrd = threading.Thread(target=self.__readAhead, kwargs={'thrdSeqId': i} )
+                self.__thrdsReadAhead[i] =thrd
+                thrd.start()
 
         newsize = self.chunksInPool
-        self.info('refreshPool() pool refreshed from readAhead: %s chunks x%s btc/c x%s samples/bth' % (newsize, self._batchesPerTrain, self._batchSize))
+        self.info('refreshPool() pool refreshed from readAhead: %s chunks x%s btc/c x%s samples/bth, %s readahead started' % (newsize, self._batchesPerTrain, self._batchSize, cThread))
         return newsize
 
     def readDataChunk(self, batchNo):
@@ -507,62 +502,62 @@ class MarketDirClassifier(BaseApplication):
 
         return bths
 
-    def __readAhead(self, isInit=False):
+    def __nextFrameName(self, bPop1stFrameName=False):
         '''
-        reading from H5 file only works on CPU and is quite slow, so take a seperate thread to read-ahead
+        get the next (h5filename, frameName, framesAwait) to read from the H5 file
         '''
-        self._frameNamesReadAhead=''
-        awaitSize =0
-        self.__chunksReadAhead = []
-        stampStart = datetime.now()
+        h5fileName, nextFrameName, awaitSize = None, None, 0
 
-        self.debug('readAhead() reading %s chunks x%s btc/c x%s samples/bth' % (self.__maxChunks, self._batchesPerTrain, self._batchSize))
-        COLS = ['state','action']
-        frameDict ={}
-        while len(frameDict) <=0 or len(frameDict[COLS[0]]) < (self.__maxChunks * self._batchesPerTrain * self._batchSize):
-
-            h5fileName =None
-            nextFrameName =None
-            with self.__lock:
+        with self.__lock:
+            while len(self._replayFrameFiles) >0:
                 if len(self._frameSeq) <=0:
                     if len(self.__fileSeq) <=1:
                         self.__fileSeq = [i for i in range(len(self._replayFrameFiles))]
                         random.shuffle(self.__fileSeq)
                     else : del self.__fileSeq[0]
 
-                    h5fileName = self._replayFrameFiles[self.__fileSeq[0]]
-                    self.debug('loading saved ReplaySamples from %s' % h5fileName)
-                    with h5py.File(h5fileName, 'r') as h5f:
-                        self._framesInHd5 = []
-                        for name in h5f.keys():
-                            if 'ReplayFrame:' == name[:len('ReplayFrame:')] :
-                                self._framesInHd5.append(name)
+                    try:
+                        h5fileName = self._replayFrameFiles[self.__fileSeq[0]]
+                        self.debug('loading ReplayFrame file %s' % h5fileName)
+                        with h5py.File(h5fileName, 'r') as h5f:
+                            self._framesInHd5 = []
+                            for name in h5f.keys():
+                                if 'ReplayFrame:' == name[:len('ReplayFrame:')] :
+                                    self._framesInHd5.append(name)
 
-                        # I'd like to skip frame-0 as it most-likly includes many zero-samples
-                        if len(self._framesInHd5)>3:
-                            del self._framesInHd5[0]
-                            # del self._framesInHd5[-1]
-                        
-                        if len(self._framesInHd5)>6:
-                            del self._framesInHd5[0]
-                        if len(self._framesInHd5) <=0:
-                            self._replayFrameFiles.remove(h5fileName)
-                            del self.__fileSeq[0]
-                            self.error('file %s elimited as not enough ReplayFrames in it' % (h5fileName) )
-                            continue
+                            # I'd like to skip frame-0 as it most-likly includes many zero-samples
+                            if len(self._framesInHd5)>3:
+                                del self._framesInHd5[0]
+                                # del self._framesInHd5[-1]
+                            
+                            if len(self._framesInHd5)>6:
+                                del self._framesInHd5[0]
+                            if len(self._framesInHd5) <=0:
+                                self._replayFrameFiles.remove(h5fileName)
+                                del self.__fileSeq[0]
+                                self.error('file %s elimited as not enough ReplayFrames in it' % (h5fileName) )
+                                continue
 
-                        stateSize = h5f[self._framesInHd5[0]]['state'].shape[1]
-                        actionSize = h5f[self._framesInHd5[0]]['action'].shape[1]
+                            frameSize  = h5f[self._framesInHd5[0]]['state'].shape[0]
+                            stateSize  = h5f[self._framesInHd5[0]]['state'].shape[1]
+                            actionSize = h5f[self._framesInHd5[0]]['action'].shape[1]
 
-                        if self._stateSize and self._stateSize != stateSize or self._actionSize and self._actionSize != actionSize:
-                            self._replayFrameFiles.remove(h5fileName)
-                            del self.__fileSeq[0]
-                            self.error('file %s elimited as its dims: %s/state %s/action mismatch working dims %s/state %s/action' % (h5fileName, stateSize, actionSize, self._stateSize, self._actionSize) )
-                            continue
+                            if self._stateSize and self._stateSize != stateSize or self._actionSize and self._actionSize != actionSize:
+                                self._replayFrameFiles.remove(h5fileName)
+                                del self.__fileSeq[0]
+                                self.error('file %s elimited as its dims: %s/state %s/action mismatch working dims %s/state %s/action' % (h5fileName, stateSize, actionSize, self._stateSize, self._actionSize) )
+                                continue
 
-                        self._stateSize = stateSize
-                        self._actionSize = actionSize
-                        self.info('taking %d ReplayFrames in %s with dims: %s/state, %s/action' % (len(self._framesInHd5), h5fileName, self._stateSize, self._actionSize) )
+                            if self._frameSize < frameSize:
+                                self._frameSize = frameSize
+                            self._stateSize = stateSize
+                            self._actionSize = actionSize
+                            self.info('taking %d ReplayFrames in %s with dims: %s/state, %s/action' % (len(self._framesInHd5), h5fileName, self._stateSize, self._actionSize) )
+                    except Exception as ex:
+                        self._replayFrameFiles.remove(h5fileName)
+                        del self.__fileSeq[0]
+                        self.error('file %s elimited as its dims: %s/state %s/action mismatch working dims %s/state %s/action' % (h5fileName, stateSize, actionSize, self._stateSize, self._actionSize) )
+                        continue
 
                     self._frameSeq =[]
                     for i in range(max(1, 1+self._repeatsInFile)):
@@ -572,39 +567,55 @@ class MarketDirClassifier(BaseApplication):
 
                 # self._frameSeq in self.__fileSeq[0] determined when reached here
                 h5fileName = self._replayFrameFiles[self.__fileSeq[0]]
-                awaitSize = len(self._frameSeq)
                 nextFrameName = self._frameSeq[0]
-                del self._frameSeq[0]
 
-            # unlocked and the nextFrameName in h5fileName determined when reached here
-            if isInit: return
+                if bPop1stFrameName: del self._frameSeq[0]
+                awaitSize = len(self._frameSeq)
 
-            # reading the frame from the h5
-            with h5py.File(h5fileName, 'r') as h5f:
-                frame = h5f[nextFrameName]
-                self._frameNamesReadAhead += nextFrameName
+                break # successfully associated the filename and framename
 
-                for col in COLS :
-                    if col in frameDict.keys():
-                        frameDict[col] += list(frame[col])
-                    else : frameDict[col] = list(frame[col])
+            return h5fileName, nextFrameName, awaitSize
 
-                self._frameNamesReadAhead += ','
+    def __readAhead(self, thrdSeqId=0):
+        '''
+        reading from H5 file only works on CPU and is quite slow, so take a seperate thread to read-ahead
+        '''
 
+        stampStart = datetime.now()
+        COLS = ['state','action']
+        frameDict ={}
+        h5fileName, nextFrameName, awaitSize = self.__nextFrameName(True)
+        self.debug('readAhead(%s) reading %s of %s' % (thrdSeqId, nextFrameName, h5fileName))
+
+        # reading the frame from the h5
+        with h5py.File(h5fileName, 'r') as h5f:
+            frame = h5f[nextFrameName]
+
+            for col in COLS :
+                if col in frameDict.keys():
+                    frameDict[col] += list(frame[col])
+                else : frameDict[col] = list(frame[col])
+
+        cvnted = frameDict
         if self.__convertFrame :
-            self.debug('readAhead() read % samples from %s, converting' % (len(frameDict[COLS[0]]), self._frameNamesReadAhead) )
+            self.debug('readAhead() read % samples from %s, converting' % (len(frameDict[COLS[0]]), nextFrameName) )
             cvnted = self.__convertFrame(frameDict)
-            self.__chunksReadAhead += cvnted
             self.debug('readAhead() converted % samples into %s chunks' % (len(frameDict[COLS[0]]), len(cvnted)) )
-        else: self.__chunksReadAhead.append(frameDict)
 
-        frameDict =None
-
+        addSize, raSize=0, 0
         with self.__lock:
-            awaitSize = len(self._frameSeq)
-            self.__thread = None
+            if isinstance(cvnted, list) :
+                self.__chunksReadAhead += cvnted
+                addSize, raSize = len(cvnted), len(self.__chunksReadAhead)
+            else:
+                self.__chunksReadAhead.append(cvnted)
+                addSize, raSize = 1, len(self.__chunksReadAhead)
 
-        self.info('readAhead() prepared %s chunks x%s btc/c x%s samples/bth from %s %d frames await, took %s' % (len(self.__chunksReadAhead), self._batchesPerTrain, self._batchSize, self._frameNamesReadAhead, awaitSize, str(datetime.now() - stampStart)))
+            self.__thrdsReadAhead[thrdSeqId] = None
+
+        frameDict, cvnted = None, None
+        self.info('readAhead(%s) prepared %s->%s chunks x%s btc/c x%s s/bth from %s, took %s, %d frames of %s await' % 
+            (thrdSeqId, addSize, raSize, self._batchesPerTrain, self._batchSize, nextFrameName, str(datetime.now() - stampStart), awaitSize, h5fileName))
 
     def __generator_local(self):
 
@@ -637,6 +648,10 @@ class MarketDirClassifier(BaseApplication):
                 actionbths.append(bth['action'])
                 if len(statebths) >= self._batchesPerTrain:
                     break
+
+            ###########################################################
+            # continue ##################################################
+            ###########################################################
 
             cBths = len(statebths)
             if cBths < self._batchesPerTrain:

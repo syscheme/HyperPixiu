@@ -564,11 +564,11 @@ class MarketDirClassifier(BaseApplication):
                         self._actionSize = actionSize
                         self.info('taking %d ReplayFrames in %s with dims: %s/state, %s/action' % (len(self._framesInHd5), h5fileName, self._stateSize, self._actionSize) )
 
-                    self._frameSeq = copy.copy(self._framesInHd5)
-                    for i in range(self._repeatsInFile):
-                        self._frameSeq += copy.copy(self._framesInHd5)
-
-                    random.shuffle(self._frameSeq) # TODO: if need repeat within the same file
+                    self._frameSeq =[]
+                    for i in range(max(1, 1+self._repeatsInFile)):
+                        seq = copy.copy(self._framesInHd5)
+                        random.shuffle(seq)
+                        self._frameSeq += seq
 
                 # self._frameSeq in self.__fileSeq[0] determined when reached here
                 h5fileName = self._replayFrameFiles[self.__fileSeq[0]]

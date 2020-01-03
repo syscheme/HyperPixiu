@@ -8,7 +8,8 @@
     "DQNTrainer": {
 
         "modelId": "Cnn1Dx4R1", // default "Cnn1Dx4"
-        "RFSamples_file" : "/mnt/e/AShareSample/ETF/RFrames_SH510050.h5",
+        // "replayFrameFiles" : ["/mnt/e/AShareSample/ETF/RFrames_SH510050.h5"],
+        "replayFrameFiles" : ["/mnt/e/AShareSample/ETF/RFrames_SH510300.h5"],
 
         "batchSize": 64,
         "batchesPerTrain": 32,

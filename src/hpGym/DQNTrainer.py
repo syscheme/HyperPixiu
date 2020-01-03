@@ -67,18 +67,22 @@ class MarketDirClassifier(BaseApplication):
     'metrics':['accuracy']
     }
     
-    def __init__(self, program, h5filepath=None, model_json=None, initWeights= None, recorder =None, **kwargs):
+    def __init__(self, program, replayFrameFiles=None, model_json=None, initWeights= None, recorder =None, **kwargs):
         super(MarketDirClassifier, self).__init__(program, **kwargs)
 
         self._wkModelId           = self.getConfig('modelId', MarketDirClassifier.DEFAULT_MODEL)
 
         self._model_json =model_json
-        self._h5filepath =h5filepath
+        self._replayFrameFiles =replayFrameFiles
 
-        if not self._h5filepath : 
-            h5filepath = os.path.join(self.dataRoot, 'RFrames.h5')
-            self._h5filepath = self.getConfig('RFSamples_file', h5filepath)
-            self._h5filepath = Program.fixupPath(self._h5filepath)
+        if not self._replayFrameFiles or len(self._replayFrameFiles) <=0: 
+            self._replayFrameFiles = self.getConfig('replayFrameFiles', [])
+            self._replayFrameFiles = [ Program.fixupPath(f) for f in self._replayFrameFiles ]
+
+        if not self._replayFrameFiles or len(self._replayFrameFiles) <=0: 
+            replayFrameDir = self.getConfig('replayFrameDir', None)
+            if replayFrameDir:
+                pass # TODO populate files from the folder
 
         self._stepMethod          = self.getConfig('stepMethod', None)
         self._exportTB            = self.getConfig('tensorBoard', 'no').lower() in BOOL_STRVAL_TRUE
@@ -105,7 +109,9 @@ class MarketDirClassifier(BaseApplication):
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
         self._frameSeq =[]
+        self.__fileSeq =[]
 
+        self._stateSize, self._actionSize = None, None
         self._brain = None
         self._outDir = os.path.join(self.dataRoot, self._program.progId)
         self.__lock = threading.Lock()
@@ -146,31 +152,38 @@ class MarketDirClassifier(BaseApplication):
         if not super(MarketDirClassifier, self).doAppInit() :
             return False
 
-        self.debug('loading saved ReplaySamples from %s' % self._h5filepath)
-        self._h5file = h5py.File(self._h5filepath, 'r')
-
-        if not self._h5file:
+        if not self._replayFrameFiles or len(self._replayFrameFiles) <=0:
             return False
 
-        self._framesInHd5 = []
-        for name in self._h5file.keys():
-            if 'ReplayFrame:' == name[:len('ReplayFrame:')] :
-                self._framesInHd5.append(name)
+        self._replayFrameFiles.sort();
+        self.info('ReplayFrame files: %s' % self._replayFrameFiles)
 
-        # I'd like to skip frame-0 as it most-likly includes many zero-samples
-        if len(self._framesInHd5)>3:
-            del self._framesInHd5[0]
-            # del self._framesInHd5[-1]
-        
-        if len(self._framesInHd5)>6:
-            del self._framesInHd5[0]
-        if len(self._framesInHd5) <=0:
-            return False
+        # self.debug('loading saved ReplaySamples from %s' % self._replayFrameFiles)
+        # self._h5file = h5py.File(self._replayFrameFiles, 'r')
 
-        self._stateSize = self._h5file[self._framesInHd5[0]]['state'].shape[1]
-        self._actionSize = self._h5file[self._framesInHd5[0]]['action'].shape[1]
+        # if not self._h5file:
+        #     return False
+
+        # self._framesInHd5 = []
+        # for name in self._h5file.keys():
+        #     if 'ReplayFrame:' == name[:len('ReplayFrame:')] :
+        #         self._framesInHd5.append(name)
+
+        # # I'd like to skip frame-0 as it most-likly includes many zero-samples
+        # if len(self._framesInHd5)>3:
+        #     del self._framesInHd5[0]
+        #     # del self._framesInHd5[-1]
         
-        self.info('loaded %s and found %d ReplayFrames with dims: %s/state, %s/action' % (self._h5filepath, len(self._framesInHd5), self._stateSize, self._actionSize) )
+        # if len(self._framesInHd5)>6:
+        #     del self._framesInHd5[0]
+        # if len(self._framesInHd5) <=0:
+        #     return False
+
+        # self._stateSize = self._h5file[self._framesInHd5[0]]['state'].shape[1]
+        # self._actionSize = self._h5file[self._framesInHd5[0]]['action'].shape[1]
+        
+        # self.info('loaded %s and found %d ReplayFrames with dims: %s/state, %s/action' % (self._replayFrameFiles, len(self._framesInHd5), self._stateSize, self._actionSize) )
+        self.__readAhead(isInit=True)
 
         if self._model_json:
             self._brain = model_from_json(self._model_json)
@@ -486,7 +499,7 @@ class MarketDirClassifier(BaseApplication):
 
         return bths
 
-    def __readAhead(self):
+    def __readAhead(self, isInit=False):
         '''
         reading from H5 file only works on CPU and is quite slow, so take a seperate thread to read-ahead
         '''
@@ -499,24 +512,73 @@ class MarketDirClassifier(BaseApplication):
         COLS = ['state','action']
         frameDict ={}
         while len(frameDict) <=0 or len(frameDict[COLS[0]]) < (self.__maxChunks * self._batchesPerTrain * self._batchSize):
+
+            h5fileName =None
+            nextFrameName =None
             with self.__lock:
                 if len(self._frameSeq) <=0:
-                    self._frameSeq = copy.copy(self._framesInHd5)
-                    random.shuffle(self._frameSeq)
+                    if len(self.__fileSeq) <=1:
+                        self.__fileSeq = [i for i in range(len(self._replayFrameFiles))]
+                        random.shuffle(self.__fileSeq)
+                    else : del self.__fileSeq[0]
 
+                    h5fileName = self._replayFrameFiles[self.__fileSeq[0]]
+                    self.debug('loading saved ReplaySamples from %s' % h5fileName)
+                    with h5py.File(h5fileName, 'r') as h5f:
+                        self._framesInHd5 = []
+                        for name in h5f.keys():
+                            if 'ReplayFrame:' == name[:len('ReplayFrame:')] :
+                                self._framesInHd5.append(name)
+
+                        # I'd like to skip frame-0 as it most-likly includes many zero-samples
+                        if len(self._framesInHd5)>3:
+                            del self._framesInHd5[0]
+                            # del self._framesInHd5[-1]
+                        
+                        if len(self._framesInHd5)>6:
+                            del self._framesInHd5[0]
+                        if len(self._framesInHd5) <=0:
+                            self._replayFrameFiles.remove(h5fileName)
+                            del self.__fileSeq[0]
+                            self.error('file %s elimited as not enough ReplayFrames in it' % (h5fileName) )
+                            continue
+
+                        stateSize = h5f[self._framesInHd5[0]]['state'].shape[1]
+                        actionSize = h5f[self._framesInHd5[0]]['action'].shape[1]
+
+                        if self._stateSize and self._stateSize != stateSize or self._actionSize and self._actionSize != actionSize:
+                            self._replayFrameFiles.remove(h5fileName)
+                            del self.__fileSeq[0]
+                            self.error('file %s elimited as its dims: %s/state %s/action mismatch working dims %s/state %s/action' % (h5fileName, stateSize, actionSize, self._stateSize, self._actionSize) )
+                            continue
+
+                        self._stateSize = stateSize
+                        self._actionSize = actionSize
+                        self.info('taking %d ReplayFrames in %s with dims: %s/state, %s/action' % (len(self._framesInHd5), h5fileName, self._stateSize, self._actionSize) )
+
+                    self._frameSeq = copy.copy(self._framesInHd5)
+                    random.shuffle(self._frameSeq) # TODO: if need repeat within the same file
+
+                # self._frameSeq in self.__fileSeq[0] determined when reached here
+                h5fileName = self._replayFrameFiles[self.__fileSeq[0]]
                 awaitSize = len(self._frameSeq)
                 nextFrameName = self._frameSeq[0]
                 del self._frameSeq[0]
 
-            self._frameNamesReadAhead += nextFrameName
-            frame = self._h5file[nextFrameName]
+            # unlocked and the nextFrameName in h5fileName determined when reached here
+            if isInit: return
 
-            for col in COLS :
-                if col in frameDict.keys():
-                    frameDict[col] += list(frame[col])
-                else : frameDict[col] = list(frame[col])
+            # reading the frame from the h5
+            with h5py.File(h5fileName, 'r') as h5f:
+                frame = h5f[nextFrameName]
+                self._frameNamesReadAhead += nextFrameName
 
-            self._frameNamesReadAhead += ','
+                for col in COLS :
+                    if col in frameDict.keys():
+                        frameDict[col] += list(frame[col])
+                    else : frameDict[col] = list(frame[col])
+
+                self._frameNamesReadAhead += ','
 
         if self.__convertFrame :
             self.debug('readAhead() read % samples from %s, converting' % (len(frameDict[COLS[0]]), self._frameNamesReadAhead) )
@@ -1009,7 +1071,7 @@ class DQNTrainer(MarketDirClassifier):
             strFrames=''
             while len(frameSeq) >0 and len(self.__samplePool['state']) <max(samplePerFrame, trainSize *2) :
                 strFrames += '%s,' % frameSeq[0]
-                frame = self._h5file[frameSeq[0]]
+                frame = h5f[frameSeq[0]]
                 del frameSeq[0]
 
                 for col in self.__samplePool.keys() :
@@ -1132,7 +1194,7 @@ if __name__ == '__main__':
 
     p.info('all objects registered piror to DQNTrainer: %s' % p.listByType())
     
-    # trainer = p.createApp(DQNTrainer, configNode ='DQNTrainer', h5filepath=os.path.join(sourceCsvDir, 'RFrames_SH510050.h5'))
+    # trainer = p.createApp(DQNTrainer, configNode ='DQNTrainer', replayFrameFiles=os.path.join(sourceCsvDir, 'RFrames_SH510050.h5'))
     trainer = p.createApp(MarketDirClassifier, configNode ='DQNTrainer')
 
     p.start()

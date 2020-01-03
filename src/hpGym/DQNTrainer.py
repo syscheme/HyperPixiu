@@ -92,6 +92,7 @@ class MarketDirClassifier(BaseApplication):
                     pass
 
         self._stepMethod          = self.getConfig('stepMethod', None)
+        self._repeatsInFile       = self.getConfig('repeatsInFile', 0)
         self._exportTB            = self.getConfig('tensorBoard', 'no').lower() in BOOL_STRVAL_TRUE
         self._batchSize           = self.getConfig('batchSize', 128)
         self._batchesPerTrain     = self.getConfig('batchesPerTrain', 8)
@@ -564,6 +565,9 @@ class MarketDirClassifier(BaseApplication):
                         self.info('taking %d ReplayFrames in %s with dims: %s/state, %s/action' % (len(self._framesInHd5), h5fileName, self._stateSize, self._actionSize) )
 
                     self._frameSeq = copy.copy(self._framesInHd5)
+                    for i in range(self._repeatsInFile):
+                        self._frameSeq += copy.copy(self._framesInHd5)
+
                     random.shuffle(self._frameSeq) # TODO: if need repeat within the same file
 
                 # self._frameSeq in self.__fileSeq[0] determined when reached here

@@ -614,8 +614,8 @@ class MarketDirClassifier(BaseApplication):
             self.__thrdsReadAhead[thrdSeqId] = None
 
         frameDict, cvnted = None, None
-        self.info('readAhead(%s) prepared %s->%s chunks x%s btc/c x%s s/bth from %s, took %s, %d frames of %s await' % 
-            (thrdSeqId, addSize, raSize, self._batchesPerTrain, self._batchSize, nextFrameName, str(datetime.now() - stampStart), awaitSize, h5fileName))
+        self.info('readAhead(%s) prepared %s->%s chunks x%s s/bth from %s, took %s, %d frames of %s await' % 
+            (thrdSeqId, addSize, raSize, self._batchSize, nextFrameName, str(datetime.now() - stampStart), awaitSize, h5fileName))
 
     def __generator_local(self):
 
@@ -650,7 +650,7 @@ class MarketDirClassifier(BaseApplication):
                     break
 
             ###########################################################
-            # continue ##################################################
+            continue ##################################################
             ###########################################################
 
             cBths = len(statebths)

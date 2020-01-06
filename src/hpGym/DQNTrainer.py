@@ -527,15 +527,16 @@ class MarketDirClassifier(BaseApplication):
 
                             # I'd like to skip frame-0 as it most-likly includes many zero-samples
                             if len(self._framesInHd5)>3:
-                                del self._framesInHd5[0]
+                                del self._framesInHd5[0:3] # 3frames is about 4mon
                                 # del self._framesInHd5[-1]
                             
                             if len(self._framesInHd5)>6:
                                 del self._framesInHd5[0]
-                            if len(self._framesInHd5) <=0:
+
+                            if len(self._framesInHd5) <=1:
                                 self._replayFrameFiles.remove(h5fileName)
                                 del self.__fileSeq[0]
-                                self.error('file %s elimited as not enough ReplayFrames in it' % (h5fileName) )
+                                self.error('file %s elimited as too few ReplayFrames in it' % (h5fileName) )
                                 continue
 
                             frameSize  = h5f[self._framesInHd5[0]]['state'].shape[0]
@@ -692,7 +693,11 @@ class MarketDirClassifier(BaseApplication):
                     if len(result.history["loss"]) >1 :
                         lossImprove = result.history["loss"][-2] - loss
 
-                    if loss > self._lossStop and lossImprove > (loss * self._lossPctStop/100)  : epochs = int(epochs2run + epochs2run/2)
+                    if loss > self._lossStop and lossImprove > (loss * self._lossPctStop/100) :
+                        epochs = epochs2run
+                        if lossImprove > (loss * self._lossPctStop *2 /100) :
+                            epochs += int(epochs2run/2)
+
                     if lossMax>=DUMMY_BIG_VAL-1 or lossMax < loss: lossMax = loss
 
                     yield result # this is a step

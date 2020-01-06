@@ -649,9 +649,9 @@ class MarketDirClassifier(BaseApplication):
                 if len(statebths) >= self._batchesPerTrain:
                     break
 
-            ###########################################################
-            continue ##################################################
-            ###########################################################
+            #----------------------------------------------------------
+            # continue # if only test read-ahead and pool making-up   #
+            #----------------------------------------------------------
 
             cBths = len(statebths)
             if cBths < self._batchesPerTrain:
@@ -666,6 +666,8 @@ class MarketDirClassifier(BaseApplication):
             actionchunk = np.concatenate(tuple(actionbths))
             statebths, actionbths, idxBths =[], [], []
             
+            stampStart = datetime.now()
+            totalEpochs = 0
             result = None
             strEval =''
             loss = max(11, loss)
@@ -674,6 +676,7 @@ class MarketDirClassifier(BaseApplication):
                 if len(strEval) <=0:
                     try :
                         strEval += '%s' %  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
+                        strEval += '/%s' % (datetime.now() -stampStart)
                     except Exception as ex:
                         self.logexception(ex)
 
@@ -683,6 +686,7 @@ class MarketDirClassifier(BaseApplication):
                     epochs2run = epochs
                     epochs =0
                     result = self._brain.fit(x=statechunk, y=actionchunk, epochs=epochs2run, shuffle=True, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
+                    totalEpochs += epochs2run
                     loss = result.history["loss"][-1]
                     lossImprove =0.0
                     if len(result.history["loss"]) >1 :
@@ -696,7 +700,7 @@ class MarketDirClassifier(BaseApplication):
                 except Exception as ex:
                     self.logexception(ex)
 
-            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from eval-result %s' %strEval)
+            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from eval-result %s, %s epochs took %s' % (strEval, totalEpochs, (datetime.now() -stampStart)) )
 
     #----------------------------------------------------------------------
     # model definitions

@@ -80,9 +80,10 @@ class MarketDirClassifier(BaseApplication):
             self._replayFrameFiles = [ Program.fixupPath(f) for f in self._replayFrameFiles ]
 
         if not self._replayFrameFiles or len(self._replayFrameFiles) <=0: 
+            self._replayFrameFiles =[]
             replayFrameDir = self.getConfig('replayFrameDir', None)
             if replayFrameDir:
-                self._replayFrameFiles =[]
+                replayFrameDir = Program.fixupPath(replayFrameDir)
                 try :
                     for _, subdirs, files in os.walk(replayFrameDir, topdown=False):
                         for name in files:
@@ -624,7 +625,7 @@ class MarketDirClassifier(BaseApplication):
         lossMax = loss
         idxBatchInPool =int(DUMMY_BIG_VAL)
         statebths, actionbths =[], []
-        while lossMax > self._lossStop or abs(loss-lossMax) > (lossMax * self._lossPctStop/100) :
+        while True : #TODO temporarily loop for ever: lossMax > self._lossStop or abs(loss-lossMax) > (lossMax * self._lossPctStop/100) :
             if idxBatchInPool >= self.chunksInPool:
                 self.refreshPool()
                 idxBatchInPool =0

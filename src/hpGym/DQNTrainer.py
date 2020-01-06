@@ -99,7 +99,7 @@ class MarketDirClassifier(BaseApplication):
         self._batchesPerTrain     = self.getConfig('batchesPerTrain', 8)
         self._poolReuses          = self.getConfig('poolReuses', 0)
         self._initEpochs          = self.getConfig('initEpochs', 2)
-        self._lossStop            = self.getConfig('lossStop', 0.1)
+        self._lossStop            = self.getConfig('lossStop', 0.23) # 0.23 according to test logs
         self._lossPctStop         = self.getConfig('lossPctStop', 5)
         self._startLR             = self.getConfig('startLR', 0.01)
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
@@ -692,7 +692,7 @@ class MarketDirClassifier(BaseApplication):
                     if len(result.history["loss"]) >1 :
                         lossImprove = result.history["loss"][-2] - loss
 
-                    if lossImprove > (loss * self._lossPctStop/100)  : epochs = int(epochs2run + epochs2run/2)
+                    if loss > self._lossStop and lossImprove > (loss * self._lossPctStop/100)  : epochs = int(epochs2run + epochs2run/2)
                     if lossMax>=DUMMY_BIG_VAL-1 or lossMax < loss: lossMax = loss
 
                     yield result # this is a step

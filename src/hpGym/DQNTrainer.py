@@ -581,38 +581,44 @@ class MarketDirClassifier(BaseApplication):
         '''
         reading from H5 file only works on CPU and is quite slow, so take a seperate thread to read-ahead
         '''
-
         stampStart = datetime.now()
-        COLS = ['state','action']
+        h5fileName, nextFrameName, awaitSize = '', '', -1
         frameDict ={}
-        h5fileName, nextFrameName, awaitSize = self.__nextFrameName(True)
-        self.debug('readAhead(%s) reading %s of %s' % (thrdSeqId, nextFrameName, h5fileName))
+        try :
+            COLS = ['state','action']
+            h5fileName, nextFrameName, awaitSize = self.__nextFrameName(True)
+            self.debug('readAhead(%s) reading %s of %s' % (thrdSeqId, nextFrameName, h5fileName))
 
-        # reading the frame from the h5
-        with h5py.File(h5fileName, 'r') as h5f:
-            frame = h5f[nextFrameName]
+            # reading the frame from the h5
+            with h5py.File(h5fileName, 'r') as h5f:
+                frame = h5f[nextFrameName]
 
-            for col in COLS :
-                if col in frameDict.keys():
-                    frameDict[col] += list(frame[col])
-                else : frameDict[col] = list(frame[col])
+                for col in COLS :
+                    if col in frameDict.keys():
+                        frameDict[col] += list(frame[col])
+                    else : frameDict[col] = list(frame[col])
+        except Exception as ex:
+            self.logexception(ex)
 
         cvnted = frameDict
-        if self.__convertFrame :
-            self.debug('readAhead() read % samples from %s, converting' % (len(frameDict[COLS[0]]), nextFrameName) )
-            cvnted = self.__convertFrame(frameDict)
-            self.debug('readAhead() converted % samples into %s chunks' % (len(frameDict[COLS[0]]), len(cvnted)) )
+        try :
+            if self.__convertFrame :
+                self.debug('readAhead() read % samples from %s, converting' % (len(frameDict[COLS[0]]), nextFrameName) )
+                cvnted = self.__convertFrame(frameDict)
+                self.debug('readAhead() converted % samples into %s chunks' % (len(frameDict[COLS[0]]), len(cvnted)) )
+        except Exception as ex:
+            self.logexception(ex)
 
         addSize, raSize=0, 0
         with self.__lock:
+            self.__thrdsReadAhead[thrdSeqId] = None
+
             if isinstance(cvnted, list) :
                 self.__chunksReadAhead += cvnted
                 addSize, raSize = len(cvnted), len(self.__chunksReadAhead)
             else:
                 self.__chunksReadAhead.append(cvnted)
                 addSize, raSize = 1, len(self.__chunksReadAhead)
-
-            self.__thrdsReadAhead[thrdSeqId] = None
 
         frameDict, cvnted = None, None
         self.info('readAhead(%s) prepared %s->%s chunks x%s s/bth from %s, took %s, %d frames of %s await' % 

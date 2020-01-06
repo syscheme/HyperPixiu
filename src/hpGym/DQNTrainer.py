@@ -99,7 +99,7 @@ class MarketDirClassifier(BaseApplication):
         self._batchesPerTrain     = self.getConfig('batchesPerTrain', 8)
         self._poolReuses          = self.getConfig('poolReuses', 0)
         self._initEpochs          = self.getConfig('initEpochs', 2)
-        self._lossStop            = self.getConfig('lossStop', 0.23) # 0.23 according to test logs
+        self._lossStop            = self.getConfig('lossStop', 0.24) # 0.24 according to average loss value by： grep 'from eval' /mnt/d/tmp/DQNTrainer_14276_0106.log |sed 's/.*loss\[\([^]]*\)\].*/\1/g' | awk '{ total += $1; count++ } END { print total/count }'
         self._lossPctStop         = self.getConfig('lossPctStop', 5)
         self._startLR             = self.getConfig('startLR', 0.01)
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)

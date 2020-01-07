@@ -9,7 +9,7 @@ if ! [ -d ./out/${MODEL} ]; then
     mkdir -p ./${MODEL} ; 
 fi
 
-PID=$(ps aux|grep 'DQNTrainer.py'|grep VGG16d1|awk '{print $2;}')
+PID=$(ps aux|grep 'DQNTrainer.py'|grep U16TfGpu|awk '{print $2;}')
 if [ -z ${PID} ]; then
      if ! [ -e conf/DQNTrainer_U16TfGpu.json ]; then
         cp -f conf/DQNTrainer_VGG16d1.json conf/DQNTrainer_U16TfGpu.json

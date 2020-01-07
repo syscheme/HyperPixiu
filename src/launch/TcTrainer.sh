@@ -1,7 +1,7 @@
 #!/bin/bash
 
-PROJLOC="/mnt/d/workspace.t3600/HyperPixiu"
 MODEL="VGG16d1.S1548I4A3"
+PROJLOC="~/wkspaces/HyperPixiu"
 
 cd ${PROJLOC}
 if ! [ -d ./out/${MODEL} ]; then 
@@ -13,7 +13,7 @@ if [ -z ${PID} ]; then
      if ! [ -e conf/DQNTrainer_U16TfGpu.json ]; then
         cp -f conf/DQNTrainer_VGG16d1.json conf/DQNTrainer_U16TfGpu.json
      fi
-     
+
      ./run.sh src/hpGym/DQNTrainer.py -f conf/DQNTrainer_U16TfGpu.json 2>&1 >/dev/null &
     PID=$(ps aux|grep 'DQNTrainer.py'|grep VGG16d1|awk '{print $2;}')
     echo "started DQNTrainer with PID ${PID}"

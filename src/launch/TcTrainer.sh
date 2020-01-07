@@ -10,7 +10,11 @@ fi
 
 PID=$(ps aux|grep 'DQNTrainer.py'|grep VGG16d1|awk '{print $2;}')
 if [ -z ${PID} ]; then
-     ./run.sh src/hpGym/DQNTrainer.py -f conf/DQNTrainer_VGG16d1.json 2>&1 >/dev/null &
+     if ! [ -e conf/DQNTrainer_U16TfGpu.json ]; then
+        cp -f conf/DQNTrainer_VGG16d1.json conf/DQNTrainer_U16TfGpu.json
+     fi
+     
+     ./run.sh src/hpGym/DQNTrainer.py -f conf/DQNTrainer_U16TfGpu.json 2>&1 >/dev/null &
     PID=$(ps aux|grep 'DQNTrainer.py'|grep VGG16d1|awk '{print $2;}')
     echo "started DQNTrainer with PID ${PID}"
 fi

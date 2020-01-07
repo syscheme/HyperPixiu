@@ -435,8 +435,8 @@ class MarketDirClassifier(BaseApplication):
 
         with self.__lock:
             self.__samplePool2, self.__samplesFrom = self.__chunksReadAhead, self.__framesReadAhead
-            self.__chunksReadAhead, self.__framesReadAhead =[] , ''
-            self.debug('refreshPool() pool refreshed from readAhead: %s chunks x%s btc/c x%s samples/bth, reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__samplePool2), self._batchesPerTrain, self._batchSize, len(self.__chunksReadAhead)))
+            self.__chunksReadAhead, self.__framesReadAhead = [] , ''
+            self.debug('refreshPool() pool refreshed from readAhead: %s chunks x(%s bth/c, %s samples/bth), reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__samplePool2), self._batchesPerTrain, self._batchSize, len(self.__chunksReadAhead)))
 
             # # Approach 1. kickoff multiple readAhead threads to read one frame each
             # for i in range(cChunks) :
@@ -450,7 +450,7 @@ class MarketDirClassifier(BaseApplication):
             thrd.start()
 
         newsize = self.chunksInPool
-        self.info('refreshPool() pool refreshed from readAhead: %s chunks x%s btc/c x%s samples/bth, %s readahead started' % (newsize, self._batchesPerTrain, self._batchSize, cChunks))
+        self.info('refreshPool() pool refreshed from readAhead: %s chunks x(%s bth/c, %s samples/bth) from %s %s readahead started' % (newsize, self._batchesPerTrain, self._batchSize, self.__samplesFrom, cChunks))
         return newsize
 
     def readDataChunk(self, chunkNo):

@@ -6,7 +6,7 @@ PROJLOC="/home/ubuntu/wkspaces/HyperPixiu"
 
 cd ${PROJLOC}
 if ! [ -d ./out/${MODEL} ]; then 
-    mkdir -p ./${MODEL} ; 
+    mkdir -p ./out/${MODEL} ; 
 fi
 
 PID=$(ps aux|grep 'DQNTrainer.py'|grep U16TfGpu|awk '{print $2;}')
@@ -23,6 +23,9 @@ fi
 OUTDIR="./out/DQNTrainer_${PID}"
 
 if [ -e ${OUTDIR}/VGG16d1.S1548I4A3.weights.h5 ] ; then 
+    echo "patching ${OUTDIR} best into ./out/${MODEL}"
+    cp -f ${OUTDIR}/VGG16d1.S1548I4A3.best.h5 ./out/${MODEL}/weights.h5
+
     echo "packaging ${OUTDIR} into /tmp/${MODEL}_${STAMP}.tar.bz2"
     
     mkdir -p /tmp/${MODEL}/tb

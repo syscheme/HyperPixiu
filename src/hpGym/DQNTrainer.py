@@ -241,8 +241,8 @@ class MarketDirClassifier(BaseApplication):
             cbTensorBoard = TensorBoard(log_dir=os.path.join(self._outDir, 'tb'), histogram_freq=0,  # 按照何等频率（epoch）来计算直方图，0为不计算
                     write_graph=True,  # 是否存储网络结构图
                     write_grads=True, # 是否可视化梯度直方图
-                    write_images=True,# 是否可视化参数
-                    embeddings_freq=0)
+                    write_images=True) # ,# 是否可视化参数
+                    # embeddings_freq=0,
                     # embeddings_layer_names=None, 
                     # embeddings_metadata=None)
 

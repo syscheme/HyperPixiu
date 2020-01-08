@@ -1,10 +1,10 @@
 #!/bin/bash
 
 MODEL="VGG16d1.S1548I4A3"
-# CONF="DQNTrainer_U16TfGpu.json"
-CONF="DQNTrainer_VGG16d1.json"
+CONF="DQNTrainer_U16TfGpu.json"
+# CONF="DQNTrainer_VGG16d1.json"
 
-PROJLOC="~/wkspaces/HyperPixiu"
+PROJLOC=~/wkspaces/HyperPixiu
 
 cd ${PROJLOC}
 if ! [ -d ./out/${MODEL} ]; then 

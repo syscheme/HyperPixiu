@@ -1,30 +1,32 @@
 #!/bin/bash
 
 MODEL="VGG16d1.S1548I4A3"
+# CONF="DQNTrainer_U16TfGpu.json"
+CONF="DQNTrainer_VGG16d1.json"
 
-PROJLOC="/home/ubuntu/wkspaces/HyperPixiu"
+PROJLOC="~/wkspaces/HyperPixiu"
 
 cd ${PROJLOC}
 if ! [ -d ./out/${MODEL} ]; then 
     mkdir -p ./out/${MODEL} ; 
 fi
 
-PID=$(ps aux|grep 'DQNTrainer.py'|grep U16TfGpu|awk '{print $2;}')
+PID=$(ps aux|grep 'DQNTrainer.py'|grep ${CONF}|awk '{print $2;}')
 if [ -z ${PID} ]; then
-     if ! [ -e conf/DQNTrainer_U16TfGpu.json ]; then
-        cp -f conf/DQNTrainer_VGG16d1.json conf/DQNTrainer_U16TfGpu.json
+     if ! [ -e conf/${CONF} ]; then
+        cp -f conf/DQNTrainer_VGG16d1.json conf/${CONF}
      fi
 
-    ./run.sh src/hpGym/DQNTrainer.py -f conf/DQNTrainer_U16TfGpu.json 2>&1 >/dev/null &
+    ./run.sh src/hpGym/DQNTrainer.py -f conf/${CONF} 2>&1 >/dev/null &
     PID=$(ps aux|grep 'DQNTrainer.py'|grep VGG16d1|awk '{print $2;}')
     echo "started DQNTrainer with PID ${PID}"
 fi
 
 OUTDIR="./out/DQNTrainer_${PID}"
 
-if [ -e ${OUTDIR}/VGG16d1.S1548I4A3.weights.h5 ] ; then 
+if [ -e ${OUTDIR}/${MODEL}.weights.h5 ] ; then 
     echo "patching ${OUTDIR} best into ./out/${MODEL}"
-    cp -f ${OUTDIR}/VGG16d1.S1548I4A3.best.h5 ./out/${MODEL}/weights.h5
+    cp -f ${OUTDIR}/${MODEL}.best.h5 ./out/${MODEL}/weights.h5
 
     echo "packaging ${OUTDIR} into /tmp/${MODEL}_${STAMP}.tar.bz2"
     
@@ -53,5 +55,3 @@ fi
 #     rm -f ${TAR2CLR} ;
 #     ls -lh /tmp/${MODEL}*.tar.bz2 ;
 # fi
-
-

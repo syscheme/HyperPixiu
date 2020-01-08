@@ -41,6 +41,9 @@ def get_available_gpus():
 
 GPUs = get_available_gpus()
 
+if len(GPUs) >1:
+    from keras.utils.training_utils import multi_gpu_model
+
 class Hd5DataGenerator(Sequence):
     def __init__(self, trainer, batch_size):
         self.trainer = trainer
@@ -170,18 +173,29 @@ class MarketDirClassifier(BaseApplication):
         self.__maxChunks = max(int(self._frameSize/self._batchesPerTrain /self._batchSize), 1) # minimal 8K samples to at least cover a frame
 
         if self._model_json:
-            self._brain = model_from_json(self._model_json)
+            if len(GPUs) <= 1:
+                self._brain = model_from_json(self._model_json)
+            else:
+                # we'll store a copy of the model on *every* GPU and then combine the results from the gradient updates on the CPU
+                with tf.device("/cpu:0"):
+                    self._brain = model_from_json(self._model_json)
+
             if not self._brain:
                 self.error('model_from_json failed')
                 return False
-        elif self._wkModelId and len(self._wkModelId) >0:
+        
+        if not self._brain and self._wkModelId and len(self._wkModelId) >0:
             wkModelId = '%s.S%sI%sA%s' % (self._wkModelId, self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
             inDir = os.path.join(self.dataRoot, wkModelId)
             try : 
                 self.debug('loading saved model from %s' % inDir)
                 with open(os.path.join(inDir, 'model.json'), 'r') as mjson:
                     model_json = mjson.read()
-                    self._brain = model_from_json(model_json)
+                    if len(GPUs) <= 1:
+                        self._brain = model_from_json(model_json)
+                    else:
+                        with tf.device("/cpu:0"):
+                            self._brain = model_from_json(model_json)
 
                 sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
                 self._brain.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
@@ -196,11 +210,16 @@ class MarketDirClassifier(BaseApplication):
             except Exception as ex:
                 self.logexception(ex)
 
-            if not self._brain and self._wkModelId in self.__knownModels.keys():
-                self._brain = self.__knownModels[self._wkModelId]()
+            if not self._brain and not self._wkModelId in self.__knownModels.keys():
+                self.warn('unknown modelId[%s], taking % instead' % (self._wkModelId, MarketDirClassifier.DEFAULT_MODEL))
+                self._wkModelId = MarketDirClassifier.DEFAULT_MODEL
 
         if not self._brain:
-            self._brain = self.__knownModels[MarketDirClassifier.DEFAULT_MODEL]()
+            if len(GPUs) <= 1:
+                self._brain = self.__knownModels[self._wkModelId]()
+            else:
+                with tf.device("/cpu:0"):
+                    self._brain = self.__knownModels[self._wkModelId]()
 
         try :
             os.makedirs(self._outDir)
@@ -211,6 +230,10 @@ class MarketDirClassifier(BaseApplication):
                 self.info('saved model as %s' %fn_model)
         except :
             pass
+
+        if len(GPUs) > 1: # make the model parallel
+            self.info('training with m-GPU: %s' % GPUs)
+            self._brain = multi_gpu_model(self._brain, gpus=len(GPUs))
 
         checkpoint = ModelCheckpoint(os.path.join(self._outDir, '%s.best.h5' %self._wkModelId ), verbose=0, monitor='loss', mode='min', save_best_only=True)
         self._fitCallbacks = [checkpoint]
@@ -637,7 +660,7 @@ class MarketDirClassifier(BaseApplication):
                 addSize, raSize = 1, len(self.__chunksReadAhead)
 
         frameDict, cvnted = None, None
-        self.info('readAhead(%s) prepared %s->%s chunks x%s s/bth from %s, took %s, %d frames await' % 
+        self.info('readAhead(%s) prepared %s->%s chunks x%s s/bth from %s took %s, %d frames await' % 
             (thrdSeqId, addSize, raSize, self._batchSize, nextFrameName, str(datetime.now() - stampStart), awaitSize))
 
     def __readAheadChunks(self, thrdSeqId=0, cChunks=1):
@@ -688,7 +711,7 @@ class MarketDirClassifier(BaseApplication):
             raSize = len(self.__chunksReadAhead)
             self.__framesReadAhead = strFrames
 
-        self.info('readAheadChunks(%s) prepared %s->%s chunks x%s s/bth from %s, took %s, %d frames await' % 
+        self.info('readAheadChunks(%s) prepared %s->%s chunks x%s s/bth from %s took %s, %d frames await' % 
             (thrdSeqId, addSize, raSize, self._batchSize, strFrames, str(datetime.now() - stampStart), awaitSize))
 
     def __generator_local(self):

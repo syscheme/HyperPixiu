@@ -242,9 +242,9 @@ class MarketDirClassifier(BaseApplication):
                     write_graph=True,  # 是否存储网络结构图
                     write_grads=True, # 是否可视化梯度直方图
                     write_images=True,# 是否可视化参数
-                    embeddings_freq=0, 
-                    embeddings_layer_names=None, 
-                    embeddings_metadata=None)
+                    embeddings_freq=0)
+                    # embeddings_layer_names=None, 
+                    # embeddings_metadata=None)
 
             self._fitCallbacks.append(cbTensorBoard)
 

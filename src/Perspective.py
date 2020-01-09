@@ -295,7 +295,7 @@ class Perspective(MarketData):
         return self.toNNFloats(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume)
     
     @abstractmethod
-    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0, priceDiffNormalizeMultiple=1.0) :
+    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] for numpy
         '''
@@ -325,24 +325,22 @@ class Perspective(MarketData):
         # part 1, EVENT_TICK
         stk = self._stacks[EVENT_TICK]
         bV= (baseline_Volume / self._evsPerDay[EVENT_TICK])
-        pdNM = 10.0 # = priceDiffNormalizeMultiple *self._evsPerDay[EVENT_TICK]
         for i in range(stk.evictSize):
             if i >= stk.size:
                 result += [0.0] * EXPORT_FLOATS_DIMS
             else:
-                v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= b, priceDiffNormalizeMultiple =pdNM)
+                v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= bV)
                 # Perspective.TICK_FLOATS = len(v)
                 result += v
 
         for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]:
             stk = self._stacks[et]
             bV= (baseline_Volume / self._evsPerDay[et])
-            pdNM = 10.0 # = priceDiffNormalizeMultiple *self._evsPerDay[et]
             for i in range(stk.evictSize):
                 if i >= stk.size:
                     result += [0.0] * EXPORT_FLOATS_DIMS
                 else:
-                    v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= bV, priceDiffNormalizeMultiple =pdNM)
+                    v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= bV)
                     # Perspective.KLINE_FLOATS = len(v)
                     result += v
 

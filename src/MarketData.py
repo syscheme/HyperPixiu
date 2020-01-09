@@ -8,7 +8,12 @@ from datetime import datetime, timedelta
 
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 EXPORT_FLOATS_DIMS = 4 # take the minimal dim=4
-NORMALIZE_ID   = 'D%sM1X10' % EXPORT_FLOATS_DIMS
+
+def floatNormalize_M1X5(var, base=1.0):
+    return (float(var/base) -1) *5.0 + 0.5
+
+NORMALIZE_ID        = 'D%sM1X5' % EXPORT_FLOATS_DIMS
+FUNC_floatNormalize = floatNormalize_M1X5
 
 # Market相关events
 EVENT_TICK          = MARKETDATE_EVENT_PREFIX + 'Tick'                   # TICK行情事件，可后接具体的vtSymbol
@@ -65,14 +70,11 @@ class MarketData(EventData):
         return self.datetime
 
     @abstractmethod
-    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0, priceDiffNormalizeMultiple=10.0) :
+    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
         '''
         raise NotImplementedError
-
-def floatNormalize(var, base=1.0, times=10, meanAxis =1):
-    return (float(var/base) -meanAxis) *times 
 
 ########################################################################
 class TickData(MarketData):
@@ -142,7 +144,7 @@ class TickData(MarketData):
         return lean
 
     @abstractmethod
-    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0, priceDiffNormalizeMultiple=10.0) :
+    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
         '''
@@ -159,19 +161,19 @@ class TickData(MarketData):
 
         # the basic dims, min=4
         ret = [
-            floatNormalize(self.price, baseline_Price, priceDiffNormalizeMultiple), 
-            floatNormalize(self.volume, baseline_Volume),
+            FUNC_floatNormalize(self.price, baseline_Price), 
+            FUNC_floatNormalize(self.volume, baseline_Volume),
             float(leanAsks), 
             float(leanBids)
         ] + [0.0] * ( EXPORT_FLOATS_DIMS -4)
 
         # the optional dims
         if EXPORT_FLOATS_DIMS > 4:
-            ret[4] = floatNormalize(self.high, baseline_Price, priceDiffNormalizeMultiple)
+            ret[4] = FUNC_floatNormalize(self.high, baseline_Price)
         if EXPORT_FLOATS_DIMS > 5:
-            ret[5] = floatNormalize(self.low, baseline_Price, priceDiffNormalizeMultiple)
+            ret[5] = FUNC_floatNormalize(self.low, baseline_Price)
         if EXPORT_FLOATS_DIMS > 6:
-            ret[6] = floatNormalize(self.open, baseline_Price, priceDiffNormalizeMultiple)
+            ret[6] = FUNC_floatNormalize(self.open, baseline_Price)
 
         return ret
 
@@ -206,7 +208,7 @@ class KLineData(MarketData):
     '''
 
     @abstractmethod
-    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0, priceDiffNormalizeMultiple=10.0) :
+    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
         '''
@@ -215,17 +217,17 @@ class KLineData(MarketData):
 
         # the basic dims, min=4
         ret = [
-            floatNormalize(self.close, baseline_Price, priceDiffNormalizeMultiple), 
-            floatNormalize(self.volume, baseline_Volume),
-            floatNormalize(self.high, baseline_Price, priceDiffNormalizeMultiple), 
-            floatNormalize(self.low, baseline_Price, priceDiffNormalizeMultiple), 
+            FUNC_floatNormalize(self.close, baseline_Price), 
+            FUNC_floatNormalize(self.volume, baseline_Volume),
+            FUNC_floatNormalize(self.high, baseline_Price), 
+            FUNC_floatNormalize(self.low, baseline_Price), 
         ] + [0.0] * ( EXPORT_FLOATS_DIMS -4)
 
         # the optional dims
         if EXPORT_FLOATS_DIMS > 4:
-            ret[4] = floatNormalize(self.open, baseline_Price, priceDiffNormalizeMultiple)
+            ret[4] = FUNC_floatNormalize(self.open, baseline_Price)
         if EXPORT_FLOATS_DIMS > 5:
-            ret[5] = floatNormalize(self.openInterest, baseline_Price, priceDiffNormalizeMultiple)
+            ret[5] = FUNC_floatNormalize(self.openInterest, baseline_Price)
 
         return ret
 

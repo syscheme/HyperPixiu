@@ -23,6 +23,8 @@ DEFAULT_DEPTH_1min = 30
 DEFAULT_DEPTH_5min = 96
 DEFAULT_DEPTH_1day = 260
 
+EXPORT_SIGNATURE= '%dT%dM%dF%dD.M1X10:200109T17' % (DEFAULT_DEPTH_TICK, DEFAULT_DEPTH_1min, DEFAULT_DEPTH_5min, DEFAULT_DEPTH_1day)
+
 ########################################################################
 class EvictableStack(object):
     def __init__(self, evictSize=0, nildata=None):

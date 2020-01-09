@@ -9,7 +9,7 @@ from Account import Account, OrderData, Account_AShare
 from Application import MetaObj, BOOL_STRVAL_TRUE
 from Trader import MetaTrader, BaseTrader
 from BackTest import BackTestApp, RECCATE_ESPSUMMARY
-from Perspective import PerspectiveState
+from Perspective import PerspectiveState, EXPORT_SIGNATURE
 from MarketData import EVENT_TICK, EVENT_KLINE_PREFIX, EXPORT_FLOATS_DIMS
 from HistoryData import listAllFiles
 
@@ -1158,6 +1158,8 @@ class IdealDayTrader(Simulator):
             g.attrs['action'] = 'action'
             g.attrs[u'default'] = 'state'
             g.attrs['size'] = col_state.shape[0]
+            g.attrs['signature'] = EXPORT_SIGNATURE
+
             if 'full' == self._generateReplayFrames :
                 g.attrs['reward'] = 'reward'
                 g.attrs['next_state'] = 'next_state'

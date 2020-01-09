@@ -1147,7 +1147,7 @@ class IdealDayTrader(Simulator):
     def __saveReplayFrame(self, frameId, col_state, col_action, col_reward, col_next_state, col_done) :
 
         # output the frame into a HDF5 file
-        fn_frame = os.path.join(self.wkTrader._outDir, 'RFrames_%s.h5' % self.wkTrader._tradeSymbol)
+        fn_frame = os.path.join(self.wkTrader._outDir, 'RFrmM1x10_%s.h5' % self.wkTrader._tradeSymbol)
         dsargs={
             'compression':'gzip'
         }

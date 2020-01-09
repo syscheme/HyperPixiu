@@ -64,11 +64,14 @@ class MarketData(EventData):
         return self.datetime
 
     @abstractmethod
-    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0, priceDiffNormalizeMultiple=10.0) :
         '''
         @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
         '''
         raise NotImplementedError
+
+def floatNormalize(var, base=1.0, times=10, meanAxis =1):
+    return (float(var/base) -meanAxis) *times 
 
 ########################################################################
 class TickData(MarketData):
@@ -138,7 +141,7 @@ class TickData(MarketData):
         return lean
 
     @abstractmethod
-    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0, priceDiffNormalizeMultiple=10.0) :
         '''
         @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
         '''
@@ -155,19 +158,19 @@ class TickData(MarketData):
 
         # the basic dims, min=4
         ret = [
-            float(self.price/baseline_Price), 
-            float(self.volume/baseline_Volume),
+            floatNormalize(self.price, baseline_Price, priceDiffNormalizeMultiple), 
+            floatNormalize(self.volume, baseline_Volume),
             float(leanAsks), 
             float(leanBids)
         ] + [0.0] * ( EXPORT_FLOATS_DIMS -4)
 
         # the optional dims
         if EXPORT_FLOATS_DIMS > 4:
-            ret[4] = float(self.high/baseline_Price)
+            ret[4] = floatNormalize(self.high, baseline_Price, priceDiffNormalizeMultiple)
         if EXPORT_FLOATS_DIMS > 5:
-            ret[5] = float(self.low/baseline_Price)
+            ret[5] = floatNormalize(self.low, baseline_Price, priceDiffNormalizeMultiple)
         if EXPORT_FLOATS_DIMS > 6:
-            ret[6] = float(self.open/baseline_Price)
+            ret[6] = floatNormalize(self.open, baseline_Price, priceDiffNormalizeMultiple)
 
         return ret
 
@@ -202,7 +205,7 @@ class KLineData(MarketData):
     '''
 
     @abstractmethod
-    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0, priceDiffNormalizeMultiple=10.0) :
         '''
         @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
         '''
@@ -211,18 +214,17 @@ class KLineData(MarketData):
 
         # the basic dims, min=4
         ret = [
-            float(self.close/baseline_Price), 
-            float(self.volume/baseline_Volume),
-            float(self.high/baseline_Price), 
-            float(self.low/baseline_Price), 
+            floatNormalize(self.close, baseline_Price, priceDiffNormalizeMultiple), 
+            floatNormalize(self.volume, baseline_Volume),
+            floatNormalize(self.high, baseline_Price, priceDiffNormalizeMultiple), 
+            floatNormalize(self.low, baseline_Price, priceDiffNormalizeMultiple), 
         ] + [0.0] * ( EXPORT_FLOATS_DIMS -4)
 
         # the optional dims
         if EXPORT_FLOATS_DIMS > 4:
-            ret[4] = float(self.open/baseline_Price)
+            ret[4] = floatNormalize(self.open, baseline_Price, priceDiffNormalizeMultiple)
         if EXPORT_FLOATS_DIMS > 5:
-            ret[5] = float(self.openInterest/baseline_Price)
-        
+            ret[5] = floatNormalize(self.openInterest, baseline_Price, priceDiffNormalizeMultiple)
 
         return ret
 

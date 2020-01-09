@@ -138,6 +138,8 @@ class MarketDirClassifier(BaseApplication):
             'VGG16d1'    : self.__createModel_VGG16d1,
             'Cnn1Dx4'    : self.__createModel_Cnn1Dx4,
             'Cnn1Dx4R1'  : self.__createModel_Cnn1Dx4R1,
+            'Cnn1Dx4R1a'  : self.__createModel_Cnn1Dx4R1a,
+            'Cnn1Dx4R2'  : self.__createModel_Cnn1Dx4R2,
             }
 
         STEPMETHODS = {
@@ -801,7 +803,7 @@ class MarketDirClassifier(BaseApplication):
                 except Exception as ex:
                     self.logexception(ex)
 
-            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from eval-result %s, %s epochs took %s' % (strEval, totalEpochs, (datetime.now() -stampStart)) )
+            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from eval%s, %s epochs took %s' % (strEval, totalEpochs, (datetime.now() -stampStart)) )
 
     #----------------------------------------------------------------------
     # model definitions
@@ -869,6 +871,66 @@ class MarketDirClassifier(BaseApplication):
         model.add(Conv1D(100, 3, activation='relu'))
         model.add(GlobalAveragePooling1D())
         model.add(Dropout(0.4))
+        model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
+        model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
+
+        return model
+
+    def __createModel_Cnn1Dx4R1a(self):
+        self._wkModelId = 'Cnn1Dx4R1a.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
+        model = Sequential()
+        model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
+        model.add(Conv1D(128, 3, activation='relu', input_shape=(self._stateSize/EXPORT_FLOATS_DIMS, EXPORT_FLOATS_DIMS)))
+        model.add(BatchNormalization())
+        model.add(Conv1D(256, 3, activation='relu'))
+        model.add(MaxPooling1D(2))
+        model.add(Conv1D(512, 3, activation='relu'))
+        model.add(Conv1D(256, 3, activation='relu'))
+        model.add(MaxPooling1D(2))
+        model.add(Dropout(0.3))
+        model.add(Conv1D(256, 3, activation='relu'))
+        model.add(MaxPooling1D(2))
+        model.add(Conv1D(100, 3, activation='relu'))
+        model.add(GlobalAveragePooling1D())
+        model.add(Dense(216, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(Dropout(0.4))
+        model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
+        model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
+
+        return model
+
+    def __createModel_Cnn1Dx4R2(self):
+        self._wkModelId = 'Cnn1Dx4R2.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
+        model = Sequential()
+        model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
+        model.add(Conv1D(128, 3, activation='relu', input_shape=(self._stateSize/EXPORT_FLOATS_DIMS, EXPORT_FLOATS_DIMS)))
+        model.add(BatchNormalization())
+        model.add(Conv1D(256, 3, activation='relu'))
+        model.add(MaxPooling1D(2))
+        model.add(Conv1D(512, 3, activation='relu'))
+        model.add(Conv1D(256, 3, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(2))
+        model.add(Dropout(0.3))
+        model.add(Conv1D(256, 3, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(2))
+        model.add(Conv1D(128, 3, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(2))
+        model.add(Conv1D(128, 3, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(2))
+        model.add(Conv1D(100, 3, activation='relu'))
+        model.add(GlobalAveragePooling1D())
+        model.add(Dense(512, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(Dropout(0.4))
+        model.add(Dense(20, activation='relu'))
+        
         model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
         model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
 

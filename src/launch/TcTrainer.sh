@@ -43,6 +43,7 @@ if [ -e ${OUTDIR}/${MODEL}.weights.h5 ] ; then
     
     nice tar cvfj /tmp/${MODEL}.tar.bz2~ /tmp/${MODEL}/*
     rm -f /tmp/${MODEL}.tar.bz2; mv -f /tmp/${MODEL}.tar.bz2~ /tmp/${MODEL}.tar.bz2
+    md5sum /tmp/${MODEL}.tar.bz2 > /tmp/${MODEL}.md5
     ls -lh /tmp/${MODEL}*.tar.bz2 ;
 fi
 

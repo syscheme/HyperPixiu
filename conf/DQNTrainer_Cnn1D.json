@@ -7,10 +7,10 @@
 
     "DQNTrainer": {
 
-        "modelId": "Cnn1Dx4R1", // default "Cnn1Dx4"
+        "modelId": "Cnn1Dx4R1a", // default "Cnn1Dx4"
         // "replayFrameFiles" : ["/mnt/e/AShareSample/ETF/RFrames_SH510050.h5"],
         // "replayFrameFiles" : ["/mnt/e/AShareSample/ETF/RFrames_SH510300.h5"],
-        "replayFrameDir": "/mnt/e/AShareSample/ETF/RFrames",
+        "replayFrameDir": "/mnt/e/AShareSample/ETF/RF0106",
 
         "batchSize": 64,
         "batchesPerTrain": 32,
@@ -19,11 +19,12 @@
         "startLR": 0.001, // start learningRate
 
         "GPU": {
-            "batchSize": 128,
-            // "startLR": 0.005,
-            "batchesPerTrain": 128, // 64 for GTX1050/2G, 128 for GTX1060/4G
+            "batchSize": 256,
+            "batchesPerTrain": 256, // 512x64 for GTX1050/2G, 512x128 for GTX1060/4G
             "poolReuses": 0,
             "initEpochs": 8,
+            "startLR": 0.0005,
+            "lossStop": 0.15,
         },
 
         "gamma": 0.01,

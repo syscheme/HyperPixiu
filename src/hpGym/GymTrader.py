@@ -10,7 +10,7 @@ from Application import MetaObj, BOOL_STRVAL_TRUE
 from Trader import MetaTrader, BaseTrader
 from BackTest import BackTestApp, RECCATE_ESPSUMMARY
 from Perspective import PerspectiveState, EXPORT_SIGNATURE
-from MarketData import EVENT_TICK, EVENT_KLINE_PREFIX, EXPORT_FLOATS_DIMS
+from MarketData import EVENT_TICK, EVENT_KLINE_PREFIX, EXPORT_FLOATS_DIMS, NORMALIZE_ID
 from HistoryData import listAllFiles
 
 import hpGym
@@ -1147,7 +1147,7 @@ class IdealDayTrader(Simulator):
     def __saveReplayFrame(self, frameId, col_state, col_action, col_reward, col_next_state, col_done) :
 
         # output the frame into a HDF5 file
-        fn_frame = os.path.join(self.wkTrader._outDir, 'RFrmM1x10_%s.h5' % self.wkTrader._tradeSymbol)
+        fn_frame = os.path.join(self.wkTrader._outDir, 'RFrm%s_%s.h5' % (NORMALIZE_ID, self.wkTrader._tradeSymbol) )
         dsargs={
             'compression':'gzip'
         }
@@ -1176,7 +1176,7 @@ class IdealDayTrader(Simulator):
                 g.create_dataset('next_state', data= col_next_state, **dsargs)
                 g.create_dataset('done',       data= col_done, **dsargs)
 
-        self.info('saved frame[%s] len[%s] to file %s' % (frameId, len(col_state), fn_frame))
+        self.info('saved frame[%s] len[%s] to file %s with sig[%s]' % (frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
 
 
 ########################################################################

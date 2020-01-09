@@ -23,7 +23,7 @@ DEFAULT_DEPTH_1min = 30
 DEFAULT_DEPTH_5min = 96
 DEFAULT_DEPTH_1day = 260
 
-EXPORT_SIGNATURE= '%dT%dM%dF%dD.M1X10:200109T17' % (DEFAULT_DEPTH_TICK, DEFAULT_DEPTH_1min, DEFAULT_DEPTH_5min, DEFAULT_DEPTH_1day)
+EXPORT_SIGNATURE= '%dT%dM%dF%dD.%s:200109T17' % (DEFAULT_DEPTH_TICK, DEFAULT_DEPTH_1min, DEFAULT_DEPTH_5min, DEFAULT_DEPTH_1day, NORMALIZE_ID)
 
 ########################################################################
 class EvictableStack(object):

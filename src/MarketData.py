@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 EXPORT_FLOATS_DIMS = 4 # take the minimal dim=4
+NORMALIZE_ID   = 'D%sM1X10' % EXPORT_FLOATS_DIMS
 
 # Market相关events
 EVENT_TICK          = MARKETDATE_EVENT_PREFIX + 'Tick'                   # TICK行情事件，可后接具体的vtSymbol

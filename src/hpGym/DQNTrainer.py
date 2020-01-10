@@ -10,13 +10,13 @@ from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 import HistoryData as hist
 from MarketData import EXPORT_FLOATS_DIMS
 
-from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.optimizers import Adam, SGD
 from tensorflow.keras.models import model_from_json
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 # from tensorflow.keras import backend
 from tensorflow.keras.layers import Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D,GlobalAveragePooling1D
-from tensorflow.keras.layers import BatchNormalization, Flatten
+from tensorflow.keras.layers import BatchNormalization, Flatten, Input
 from tensorflow.keras import regularizers
 from tensorflow.keras import backend as backend
 from tensorflow.keras.utils import Sequence
@@ -185,7 +185,8 @@ class MarketDirClassifier(BaseApplication):
             if not self._brain:
                 self.error('model_from_json failed')
                 return False
-        
+
+        # self._wkModelId = 'Cnn1Dx4R2' # testing
         if not self._brain and self._wkModelId and len(self._wkModelId) >0:
             wkModelId = '%s.S%sI%sA%s' % (self._wkModelId, self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
             inDir = os.path.join(self.dataRoot, wkModelId)
@@ -222,6 +223,39 @@ class MarketDirClassifier(BaseApplication):
             else:
                 with tf.device("/cpu:0"):
                     self._brain = self.__knownModels[self._wkModelId]()
+
+            if False: # wrapper the core model
+                coreModel = self._brain
+
+                self._wrapperLayers ={}
+                #TODO: how to customerize the input layer????
+                # inTensor = Input((self._stateSize,))
+                # self._wrapperLayers['wrpIn01'] = Reshape((int(self._stateSize/EXPORT_FLOATS_DIMS), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,))
+                # tensor = self._wrapperLayers['wrpIn01'](inTensor)
+                inModel = coreModel # inModel = Model(inputs=tensor, outputs=coreModel.input)
+
+                # additional Dense layers
+                tensor = coreModel.output
+                self._wrapperLayers['wrpOut01'] = Dense(1024, activation='relu', name='wrpOut01')
+                tensor = self._wrapperLayers['wrpOut01'](tensor)
+                self._wrapperLayers['wrpOut02'] = Dense(3, activation='softmax', name='wrpOut02')
+                tensor = self._wrapperLayers['wrpOut02'](tensor)
+
+                aaa = self._wrapperLayers['wrpOut01'].get_weights()
+
+                # self._brain = Model(inputs=coreModel.input, outputs=tensor)
+                self._brain = Model(inputs=inModel.input, outputs=tensor)
+
+                iL =0
+                for layer in self._brain.layers :
+                    if layer in coreModel.layers:
+                        self.info('layer %d inside coreModel' %iL)
+                    else:
+                        self.info('layer %d outside of coreModel' %iL)
+                    iL +=1
+
+            sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+            self._brain.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
 
         try :
             os.makedirs(self._outDir)
@@ -852,7 +886,7 @@ class MarketDirClassifier(BaseApplication):
         model.add(GlobalAveragePooling1D())
         model.add(Dropout(0.5))
         model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
-        model.compile(optimizer=Adam(lr=self._startLR, decay=1e-5), **MarketDirClassifier.COMPILE_ARGS)
+        # model.compile(optimizer=Adam(lr=self._startLR, decay=1e-5), **MarketDirClassifier.COMPILE_ARGS)
 
         return model
 
@@ -874,7 +908,7 @@ class MarketDirClassifier(BaseApplication):
         model.add(GlobalAveragePooling1D())
         model.add(Dropout(0.4))
         model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
-        model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
+        # model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
 
         return model
 
@@ -899,7 +933,7 @@ class MarketDirClassifier(BaseApplication):
         model.add(BatchNormalization())
         model.add(Dropout(0.4))
         model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
-        model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
+        # model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
 
         return model
 
@@ -934,7 +968,7 @@ class MarketDirClassifier(BaseApplication):
         model.add(Dense(20, activation='relu'))
         
         model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
-        model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
+        # model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
 
         return model
 
@@ -1198,8 +1232,8 @@ class MarketDirClassifier(BaseApplication):
 
         # 10
         # model.summary()
-        sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
-        model.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
+        # sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+        # model.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
 
         return model
 

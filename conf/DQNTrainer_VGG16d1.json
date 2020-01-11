@@ -9,11 +9,12 @@
 
         "modelId": "VGG16d1", // default "Cnn1Dx4"
         // "replayFrameFiles" : ["/mnt/e/AShareSample/ETF/RFrames_SH510300.h5", "/mnt/e/AShareSample/ETF/RFrames_SH510050.h5", "/mnt/e/AShareSample/ETF/RFrames_SH510050_1229.h5"],
-        "replayFrameDir": "/mnt/e/AShareSample/ETF/RFrames",
+        "replayFrameDir": "/mnt/e/AShareSample/ETF/RF0106",
         "batchSize": 64,
-        "batchesPerTrain": 8,
+        "batchesPerTrain": 32,
         "poolReuses": 0,
         "initEpochs": 2,
+
         "startLR": 0.005, // 0.005, // start learningRate
 
         "GPU": {

@@ -800,6 +800,8 @@ class MarketDirClassifier(BaseApplication):
             statechunk = np.concatenate(tuple(statebths))
             actionchunk = np.concatenate(tuple(actionbths))
             statebths, actionbths, idxBths =[], [], []
+
+            trainSize = statechunk.shape[0]
             
             stampStart = datetime.now()
             totalEpochs = 0
@@ -839,7 +841,7 @@ class MarketDirClassifier(BaseApplication):
                 except Exception as ex:
                     self.logexception(ex)
 
-            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from eval%s, %s epochs took %s' % (strEval, totalEpochs, (datetime.now() -stampStart)) )
+            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from eval%s, %s/%s steps x%s epochs took %s: %s' % (strEval, trainSize, self._batchSize, totalEpochs, (datetime.now() -stampStart), str(result.history["loss"])) )
 
     #----------------------------------------------------------------------
     # model definitions

@@ -33,11 +33,13 @@ if [ -e ${OUTDIR}/${MODEL}.weights.h5 ] ; then
     mkdir -p /tmp/${MODEL}/tb
     echo "dir ${OUTDIR} before moving"
     ls -lh ${OUTDIR}
+    cp -f ${OUTDIR}/*.json /tmp/${MODEL}/
     mv ${OUTDIR}/*.h5 /tmp/${MODEL}/
     mv ${OUTDIR}/tb/* /tmp/${MODEL}/tb/
     echo "dir ${OUTDIR} after moving"
     ls -lh ${OUTDIR}
 
+    rm -f /tmp/${MODEL}/DQNTrainer_*.log
     cp -f /tmp/DQNTrainer_${PID}_*.log /tmp/${MODEL}/
     mv -f /tmp/DQNTrainer_${PID}_*.log.*bz2 /tmp/${MODEL}/
     

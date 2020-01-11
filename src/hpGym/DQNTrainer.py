@@ -363,16 +363,21 @@ class MarketDirClassifier(BaseApplication):
         if not notes or len(notes) <0: notes=''
 
         losshist, accuhist = result.history["loss"], result.history["acc"] if 'acc' in result.history.keys() else [ -1.0 ]
-        loss = losshist[-1]
-        accu = accuhist[-1]
-        stephist=[]
+        if len(accuhist) <=1 and 'accuracy' in result.history.keys():
+            accuhist = result.history["accuracy"]
+
+        losshist.reverse()
+        accuhist.reverse()
+        loss, accu, stephist = losshist[0], accuhist[0], []
         if len(losshist) == len(accuhist) :
-            stephist = ['%.3f%%_%.3f' % (accuhist[i], losshist[i]) for i in range(len(losshist))]
+            stephist = ['%.2f%%^%.3f' % (accuhist[i]*100, losshist[i]) for i in range(len(losshist))]
+        else:
+            stephist = ['%.2f' % (losshist[i]) for i in range(len(losshist))]
 
         fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
         self._brain.save(fn_weights)
 
-        self.info('%s() done, saved weights %s, loss[%s] accu[%s] %s; hist: %s' % (methodName, fn_weights, loss, accu, notes, ', '.join(stephist)))
+        self.info('%s() done, saved weights %s, result[%.2f%%^%.3f] %s; lastItrn: %s' % (methodName, fn_weights, accu*100, loss, notes, ', '.join(stephist)))
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
@@ -782,8 +787,8 @@ class MarketDirClassifier(BaseApplication):
             while epochs > 0:
                 if len(strEval) <=0:
                     try :
-                        strEval += '%s' %  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
-                        strEval += '/%s' % (datetime.now() -stampStart)
+                        resEval =  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
+                        strEval += 'eval[%.2f%%^%.3f]/%s' % (resEval[1]*100, resEval[0], datetime.now() -stampStart)
                     except Exception as ex:
                         self.logexception(ex)
 
@@ -811,7 +816,7 @@ class MarketDirClassifier(BaseApplication):
                 except Exception as ex:
                     self.logexception(ex)
 
-            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from eval%s, %s/%s steps x%s epochs took %s' % (strEval, trainSize, self._batchSize, totalEpochs, (datetime.now() -stampStart)) )
+            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from %s, %s/%s steps x %s epochs took %s' % (strEval, trainSize, self._batchSize, totalEpochs, (datetime.now() -stampStart)) )
 
     #----------------------------------------------------------------------
     # model definitions

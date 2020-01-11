@@ -367,7 +367,7 @@ class MarketDirClassifier(BaseApplication):
         accu = accuhist[-1]
         stephist=[]
         if len(losshist) == len(accuhist) :
-            stephist = ['%.3f%%L%.3f' % (accuhist[i], losshist[i]) for i in range(len(losshist))]
+            stephist = ['%.3f%%_%.3f' % (accuhist[i], losshist[i]) for i in range(len(losshist))]
 
         fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
         self._brain.save(fn_weights)

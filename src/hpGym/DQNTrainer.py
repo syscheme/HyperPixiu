@@ -360,13 +360,19 @@ class MarketDirClassifier(BaseApplication):
 
     def __logAndSaveResult(self, result, methodName, notes=''):
         if not result: return
-        loss = result.history["loss"][-1]
-        accu = result.history["acc"][-1] if 'acc' in result.history.keys() else -1.0
-        if accu <0 and 'accuracy' in result.history.keys(): accu = result.history["accuracy"][-1]
+        if not notes or len(notes) <0: notes=''
+
+        losshist, accuhist = result.history["loss"], result.history["acc"] if 'acc' in result.history.keys() else [ -1.0 ]
+        loss = losshist[-1]
+        accu = accuhist[-1]
+        stephist=[]
+        if len(losshist) == len(accuhist) :
+            stephist = ['%.3f%%L%.3f' % (accuhist[i], losshist[i]) for i in range(len(losshist))]
+
         fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
         self._brain.save(fn_weights)
 
-        self.info('%s() done, saved weights %s, loss[%s] accu[%s] %s' % (methodName, fn_weights, loss, accu, notes if len(notes) >0 else ''))
+        self.info('%s() done, saved weights %s, loss[%s] accu[%s] %s; hist: %s' % (methodName, fn_weights, loss, accu, notes, ', '.join(stephist)))
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
@@ -805,7 +811,7 @@ class MarketDirClassifier(BaseApplication):
                 except Exception as ex:
                     self.logexception(ex)
 
-            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from eval%s, %s/%s steps x%s epochs took %s: %s' % (strEval, trainSize, self._batchSize, totalEpochs, (datetime.now() -stampStart), str(result.history["loss"])) )
+            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from eval%s, %s/%s steps x%s epochs took %s' % (strEval, trainSize, self._batchSize, totalEpochs, (datetime.now() -stampStart)) )
 
     #----------------------------------------------------------------------
     # model definitions

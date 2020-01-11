@@ -805,7 +805,7 @@ class MarketDirClassifier(BaseApplication):
                 except Exception as ex:
                     self.logexception(ex)
 
-            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from eval%s, steps %s/%s x%s epochs took %s: %s' % (strEval, trainSize, self._batchSize, totalEpochs, (datetime.now() -stampStart), str(result.history["loss"])) )
+            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from eval%s, %s/%s steps x%s epochs took %s: %s' % (strEval, trainSize, self._batchSize, totalEpochs, (datetime.now() -stampStart), str(result.history["loss"])) )
 
     #----------------------------------------------------------------------
     # model definitions

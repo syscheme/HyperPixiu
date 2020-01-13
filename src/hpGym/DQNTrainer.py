@@ -129,7 +129,7 @@ class MarketDirClassifier(BaseApplication):
         self.__lock = threading.Lock()
         self.__thrdsReadAhead = []
         self.__chunksReadAhead = []
-        self.__samplePool2 =[]
+        self.__newChunks =[]
         self.__convertFrame = self.__frameToBatchs
 
         self.__latestBthNo=0
@@ -369,6 +369,9 @@ class MarketDirClassifier(BaseApplication):
         losshist.reverse()
         accuhist.reverse()
         loss, accu, stephist = losshist[0], accuhist[0], []
+        del losshist[0]
+        del accuhist[0]
+        
         if len(losshist) == len(accuhist) :
             stephist = ['%.2f%%^%.3f' % (accuhist[i]*100, losshist[i]) for i in range(len(losshist))]
         else:
@@ -435,7 +438,7 @@ class MarketDirClassifier(BaseApplication):
     
     @property
     def chunksInPool(self):
-        return len(self.__samplePool2)
+        return len(self.__newChunks)
 
     def refreshPool(self):
         # build up self.__samplePool
@@ -470,9 +473,9 @@ class MarketDirClassifier(BaseApplication):
             self.__readAheadChunks(thrdSeqId=-1, cChunks=cChunks)
 
         with self.__lock:
-            self.__samplePool2, self.__samplesFrom = self.__chunksReadAhead, self.__framesReadAhead
-            self.__chunksReadAhead, self.__framesReadAhead = [] , ''
-            self.debug('refreshPool() pool refreshed from readAhead: %s chunks x(%s bth/c, %s samples/bth), reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__samplePool2), self._batchesPerTrain, self._batchSize, len(self.__chunksReadAhead)))
+            self.__newChunks, self.__samplesFrom = self.__chunksReadAhead, self.__framesReadAhead
+            self.__chunksReadAhead, self.__framesReadAhead = [] , []
+            self.debug('refreshPool() pool refreshed from readAhead: %s chunks x(%s bth/c, %s samples/bth), reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__newChunks), self._batchesPerTrain, self._batchSize, len(self.__chunksReadAhead)))
 
             # # Approach 1. kickoff multiple readAhead threads to read one frame each
             # for i in range(cChunks) :
@@ -486,11 +489,31 @@ class MarketDirClassifier(BaseApplication):
             thrd.start()
 
         newsize = self.chunksInPool
-        self.info('refreshPool() pool refreshed from readAhead: %s chunks x(%s bth/c, %s samples/bth) from %s %s readahead started' % (newsize, self._batchesPerTrain, self._batchSize, self.__samplesFrom, cChunks))
+        self.info('refreshPool() pool refreshed from readAhead: %s chunks x(%s bth/c, %s samples/bth) from %s; %s readahead started' % (newsize, self._batchesPerTrain, self._batchSize, ','.join(self.__samplesFrom), cChunks))
         return newsize
 
     def readDataChunk(self, chunkNo):
-        return self.__samplePool2[chunkNo]
+        return self.__newChunks[chunkNo]
+
+    # def nextChunk(self):
+    #     if self.__newChunks and len(self.__newChunks) >0:
+    #         ret = self.__newChunks[0]
+    #         del self.__newChunks[0]
+    #         thrdRecycle = Thread(self.__recycleChunk(kwargs={chunk=ret}))
+    #         thrdRecycle.start()
+    #         return ret
+
+    #     if self.__recycledChunk and len(self.__recycledChunk) >0:
+    #         ret = self.__recycledChunk[0]
+    #         del self.__recycledChunk[0]
+    #         return ret
+
+    #     self.__thrdReadAhead.join()
+    #     ret = self.__newChunks[0]
+    #     del self.__newChunks[0]
+    #     thrdRecycle = Thread(self.__recycleChunk(kwargs={chunk=ret}))
+    #     thrdRecycle.start()
+    #     return ret
 
     def __frameToSlices(self, frameDict):
         framelen = 1
@@ -682,7 +705,7 @@ class MarketDirClassifier(BaseApplication):
         reading H5 only works on CPU and is quite slow, so take a seperate thread to read-ahead
         '''
         stampStart = datetime.now()
-        strFrames =''
+        strFrames =[]
         awaitSize =-1
         addSize, raSize=0, 0
 
@@ -696,7 +719,7 @@ class MarketDirClassifier(BaseApplication):
                 break
 
             self.debug('readAheadChunks(%s) read %s samples from %s@%s' % (thrdSeqId, lenFrame, nextFrameName, h5fileName) )
-            strFrames += '%s@%s,' % (nextFrameName, os.path.basename(h5fileName))
+            strFrames.append('%s@%s' % (nextFrameName, os.path.basename(h5fileName)))
             cvnted = frameDict
             try :
                 if self.__convertFrame :
@@ -724,8 +747,8 @@ class MarketDirClassifier(BaseApplication):
             raSize = len(self.__chunksReadAhead)
             self.__framesReadAhead = strFrames
 
-        self.info('readAheadChunks(%s) prepared %s->%s chunks x%s s/bth from %s took %s, %d frames await' % 
-            (thrdSeqId, addSize, raSize, self._batchSize, strFrames, str(datetime.now() - stampStart), awaitSize))
+        self.info('readAheadChunks(%s) took %s to prepare %s->%s chunks x%s s/bth from %dframes:%s; %d frames await' % 
+            (thrdSeqId, str(datetime.now() - stampStart), addSize, raSize, self._batchSize, len(strFrames), ','.join(strFrames), awaitSize))
 
     def __generator_local(self):
 

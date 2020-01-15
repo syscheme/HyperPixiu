@@ -101,7 +101,7 @@ class MarketDirClassifier(BaseApplication):
         self._exportTB            = self.getConfig('tensorBoard', 'no').lower() in BOOL_STRVAL_TRUE
         self._batchSize           = self.getConfig('batchSize', 128)
         self._batchesPerTrain     = self.getConfig('batchesPerTrain', 8)
-        self._poolReuses          = self.getConfig('poolReuses', 0)
+        self._recycleSize         = self.getConfig('recycles', 1)
         self._initEpochs          = self.getConfig('initEpochs', 2)
         self._lossStop            = self.getConfig('lossStop', 0.24) # 0.24 according to average loss value by： grep 'from eval' /mnt/d/tmp/DQNTrainer_14276_0106.log |sed 's/.*loss\[\([^]]*\)\].*/\1/g' | awk '{ total += $1; count++ } END { print total/count }'
         self._lossPctStop         = self.getConfig('lossPctStop', 5)
@@ -116,7 +116,7 @@ class MarketDirClassifier(BaseApplication):
             self._batchSize       = self.getConfig('GPU/batchSize',    self._batchSize)
             self._batchesPerTrain = self.getConfig('GPU/batchesPerTrain', 64)  # usually 64 is good for a bottom-line model of GTX1050oc/2G
             self._initEpochs      = self.getConfig('GPU/initEpochs', self._initEpochs)
-            self._poolReuses      = self.getConfig('GPU/poolReuses',   self._poolReuses)
+            self._recycleSize     = self.getConfig('GPU/recycles',   self._recycleSize)
             self._startLR         = self.getConfig('GPU/startLR',      self._startLR)
 
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
@@ -130,6 +130,7 @@ class MarketDirClassifier(BaseApplication):
         self.__thrdsReadAhead = []
         self.__chunksReadAhead = []
         self.__newChunks =[]
+        self.__recycledChunks =[]
         self.__convertFrame = self.__frameToBatchs
 
         self.__latestBthNo=0
@@ -249,7 +250,6 @@ class MarketDirClassifier(BaseApplication):
                     # embeddings_metadata=None)
 
             self._fitCallbacks.append(cbTensorBoard)
-
 
         self._gen = self.__generator_local()
 
@@ -495,25 +495,75 @@ class MarketDirClassifier(BaseApplication):
     def readDataChunk(self, chunkNo):
         return self.__newChunks[chunkNo]
 
-    # def nextChunk(self):
-    #     if self.__newChunks and len(self.__newChunks) >0:
-    #         ret = self.__newChunks[0]
-    #         del self.__newChunks[0]
-    #         thrdRecycle = Thread(self.__recycleChunk(kwargs={chunk=ret}))
-    #         thrdRecycle.start()
-    #         return ret
+    def nextDataChunk(self):
+        '''
+        @return chunk, bRecycledData   - bRecycledData=True if it is from the recycled data
+        '''
+        ret = None
+        with self.__lock:
+            if self.__newChunks and len(self.__newChunks) >0:
+                ret = self.__newChunks[0]
+                del self.__newChunks[0]
+                self.__recycledChunks.append(ret)
+                if len(self.__recycledChunks) >= ((1+self._recycleSize) *self._batchesPerTrain):
+                    random.shuffle(self.__recycledChunks)
+                    del self.__recycledChunks[(self._recycleSize *self._batchesPerTrain):]
 
-    #     if self.__recycledChunk and len(self.__recycledChunk) >0:
-    #         ret = self.__recycledChunk[0]
-    #         del self.__recycledChunk[0]
-    #         return ret
+                return ret, False
 
-    #     self.__thrdReadAhead.join()
-    #     ret = self.__newChunks[0]
-    #     del self.__newChunks[0]
-    #     thrdRecycle = Thread(self.__recycleChunk(kwargs={chunk=ret}))
-    #     thrdRecycle.start()
-    #     return ret
+            if self._recycleSize>0 and len(self.__recycledChunks) >0:
+                ret = self.__recycledChunks[0]
+                del self.__recycledChunks[0]
+                self.__recycledChunks.append(ret)
+        
+        bRecycled = True
+        # no chunk addressed if reach here, copy the original impl of refreshPool()
+        thrdBusy = True # dummy init value
+        while not thrdBusy is None:
+            thrdBusy =None
+            with self.__lock:
+                for th in self.__thrdsReadAhead:
+                    thrdBusy = th
+                    if thrdBusy: break
+        
+            if ret and thrdBusy: # there is already a background read-ahead thread, so return the result instantly
+                return ret, bRecycled
+
+            if thrdBusy:
+                self.warn('nextDataChunk() readAhead thread is still running, waiting for its completion')
+                thrdBusy.join()
+
+        cChunks=0
+        with self.__lock:
+            if self._frameSize >0:
+                cChunks = ((self.__maxChunks * self._batchesPerTrain * self._batchSize) + self._frameSize -1) // self._frameSize
+            if cChunks<=0: cChunks =1
+            cChunks =int(cChunks)
+
+            self.__thrdsReadAhead = [None] * cChunks
+
+        if not ret and not self.__chunksReadAhead or len(self.__chunksReadAhead) <=0:
+            self.warn('nextDataChunk() no readAhead ready, force to read sync-ly')
+            self.__readAheadChunks(thrdSeqId=-1, cChunks=cChunks)
+
+        with self.__lock:
+            self.__newChunks, self.__samplesFrom = self.__chunksReadAhead, self.__framesReadAhead
+            self.__chunksReadAhead, self.__framesReadAhead = [], []
+            newsize = len(self.__newChunks)
+            self.debug('nextDataChunk() pool refreshed from readAhead: %s chunks x(%s bth/c, %s samples/bth), reset readAhead to %d and kicking off new round of read-ahead' % (newsize, self._batchesPerTrain, self._batchSize, len(self.__chunksReadAhead)))
+            
+            if not ret and self.__newChunks and newsize >0:
+                ret = self.__newChunks[0]
+                del self.__newChunks[0]
+                self.__recycledChunks.append(ret)
+                bRecycled = False
+
+            thrd = threading.Thread(target=self.__readAheadChunks, kwargs={'thrdSeqId': 0, 'cChunks': cChunks } )
+            self.__thrdsReadAhead[0] =thrd
+            thrd.start()
+
+        self.info('nextDataChunk() data from recycled[%s], pool refreshed: %s chunks x(%s bth/c, %s samples/bth) from %s %s readahead started' % (bRecycled, newsize, self._batchesPerTrain, self._batchSize, self.__samplesFrom, cChunks))
+        return ret, bRecycled
 
     def __frameToSlices(self, frameDict):
         framelen = 1
@@ -767,20 +817,17 @@ class MarketDirClassifier(BaseApplication):
         loss = DUMMY_BIG_VAL
         lossMax = loss
         idxBatchInPool =int(DUMMY_BIG_VAL)
-        statebths, actionbths =[], []
         while True : #TODO temporarily loop for ever: lossMax > self._lossStop or abs(loss-lossMax) > (lossMax * self._lossPctStop/100) :
-            if idxBatchInPool >= self.chunksInPool:
-                self.refreshPool()
-                idxBatchInPool =0
 
-            while idxBatchInPool< self.chunksInPool:
-                bth = self.readDataChunk(idxBatchInPool)
-                idxBatchInPool +=1
+            statebths, actionbths =[], []
+            freshData = False
+            while len(statebths) < self._batchesPerTrain :
+                bth, recycled = self.nextDataChunk() #= self.readDataChunk(idxBatchInPool)
+                if not recycled:
+                    freshData = True
 
                 statebths.append(bth['state'])
                 actionbths.append(bth['action'])
-                if len(statebths) >= self._batchesPerTrain:
-                    break
 
             #----------------------------------------------------------
             # continue # if only test read-ahead and pool making-up   #
@@ -790,14 +837,9 @@ class MarketDirClassifier(BaseApplication):
             if cBths < self._batchesPerTrain:
                 continue
 
-            # idxBths = [i for i in range(cBths)]
-            # random.shuffle(idxBths)
-            
-            # statechunk = np.concatenate(tuple([statebths[i] for i in idxBths]))
-            # actionchunk = np.concatenate(tuple([actionbths[i] for i in idxBths]))
             statechunk = np.concatenate(tuple(statebths))
             actionchunk = np.concatenate(tuple(actionbths))
-            statebths, actionbths, idxBths =[], [], []
+            statebths, actionbths =[], []
 
             trainSize = statechunk.shape[0]
             
@@ -806,7 +848,7 @@ class MarketDirClassifier(BaseApplication):
             result = None
             strEval =''
             loss = max(11, loss)
-            epochs = self._initEpochs
+            epochs = self._initEpochs if freshData else 2
             while epochs > 0:
                 if len(strEval) <=0:
                     try :
@@ -827,7 +869,7 @@ class MarketDirClassifier(BaseApplication):
                     if len(result.history["loss"]) >1 :
                         lossImprove = result.history["loss"][-2] - loss
 
-                    if loss > self._lossStop and lossImprove > (loss * self._lossPctStop/100) :
+                    if freshData and loss > self._lossStop and lossImprove > (loss * self._lossPctStop/100) :
                         epochs = epochs2run
                         if lossImprove > (loss * self._lossPctStop *2 /100) :
                             epochs += int(epochs2run/2)
@@ -1315,9 +1357,9 @@ class DQNTrainer(MarketDirClassifier):
             # random sample a dataset with size=trainSize from self.__samplePool
             sampleSeq = [a for a in range(poolSize)]
             random.shuffle(sampleSeq)
-            if self._poolReuses >0:
+            if self._recycleSize >0:
                 tmpseq = copy.copy(sampleSeq)
-                for i in range(self._poolReuses) :
+                for i in range(self._recycleSize) :
                     random.shuffle(tmpseq)
                     sampleSeq += tmpseq
 

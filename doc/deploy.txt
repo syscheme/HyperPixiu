@@ -1,0 +1,73 @@
+TRANINER_URL=http://tc.syscheme.com:10088/trainer
+MODEL=VGG16d1.S1548I4A3
+WGET=wget --user=trainer --password=r654321
+
+mkdir -p ~/.ssh
+${WGET} -O- ${TRANINER_URL}/authorized_keys >> ~/.ssh/authorized_keys
+
+pip3 install json-cfg websocket websocket-client pathlib matplotlib &
+
+WKSPACE=$(realpath ~/wkspaces)
+mkdir ${WKSPACE}
+cd ${WKSPACE}
+git clone https://github.com/syscheme/HyperPixiu.git
+cd ${WKSPACE}/HyperPixiu/
+git pull
+git checkout -f gym
+git pull
+
+mkdir -p ${WKSPACE}/HyperPixiu/ETF
+cd ${WKSPACE}/HyperPixiu/ETF
+${WGET} -O- ${TRANINER_URL}/RFrames.tar.bz2 |tar xfvj - 
+
+mkdir -p ${WKSPACE}/HyperPixiu/ETF/out/${MODEL}
+cd ${WKSPACE}/HyperPixiu/ETF/out/${MODEL}
+${WGET} -O- ${TRANINER_URL}/VGG16d1.S1548I4A3.tar.bz2 |tar xfvj - 
+mv ${MODEL}.model.json model.json
+mv ${MODEL}.weights.h5 weights.h5
+
+cd /tmp/
+
+scp -r -P 49058 root@111.44.254.182:/tmp/VGG16d1*.tar.bz2 /tmp/
+   cd /tmp/
+   tar xfvj VGG16d1.S1548I4A3.tar.bz2 
+   cd tmp/VGG16d1.S1548I4A3/
+   rm -rf *.log tb
+   
+   cp VGG16d1.S1548I4A3.weights.h5 ~/wkspaces/HyperPixiu/out/VGG16d1.S1548I4A3/weights.h5
+
+/tmp/VGG16d1.S1548I4A3.weights.h5 ~/wkspaces/HyperPixiu/out/VGG16d1.S1548I4A3/weights.h5
+
+cd ${WKSPACE}/HyperPixiu/
+
+   49  cd ~/wkspaces/HyperPixiu/
+   50  ./run.sh src/hpGym/DQNTrainer.py -f conf/DQNTrainer_VGG16d1.json &
+   54  mv out/DQNTrainer_3865/VGG16d1.S1548I4A3.model.json out/VGG16d1.S1548I4A3/model.json
+
+   57  ./run.sh src/hpGym/DQNTrainer.py -f conf/DQNTrainer_VGG16d1.json &
+   63  crontab -l
+   64  /root/wkspaces/HyperPixiu/src/launch/TcTrainer.sh &
+
+   71  top
+   72  vi src/launch/TcTrainer.sh 
+   73  vi conf/DQNTrainer_U16TfGpu.json 
+   74  /root/wkspaces/HyperPixiu/src/launch/TcTrainer.sh &
+   75  /root/wkspaces/HyperPixiu/src/launch/TcTrainer.sh &
+   76  cd ~/wkspaces/HyperPixiu
+   77  cd "~/wkspaces/HyperPixiu"
+   78  cd $(realpath ~/wkspaces/HyperPixiu)
+   79  git status
+   80  git diff
+   81  git status
+   82  git checkout -f
+   83  git pull
+   84  /root/wkspaces/HyperPixiu/src/launch/TcTrainer.sh &
+   85  top
+   86  vi conf/DQNTrainer_U16TfGpu.json 
+   87  top
+   88  ps aux|grep python
+   89  kill -9 15013
+   90  ./run.sh src/hpGym/DQNTrainer.py -f conf/DQNTrainer_U16TfGpu.json &
+   91  cat conf/DQNTrainer_U16TfGpu.json 
+   92  top
+   93  history

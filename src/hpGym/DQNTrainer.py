@@ -380,7 +380,7 @@ class MarketDirClassifier(BaseApplication):
         fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
         self._brain.save(fn_weights)
 
-        self.info('%s() done, saved weights %s, result[%.2f%%^%.3f] %s; lastItrn: %s' % (methodName, fn_weights, accu*100, loss, notes, ', '.join(stephist)))
+        self.info('%s() saved weights %s, result[%.2f%%^%.3f] %s; lastItrn: %s' % (methodName, fn_weights, accu*100, loss, notes, ', '.join(stephist)))
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
@@ -562,7 +562,7 @@ class MarketDirClassifier(BaseApplication):
             self.__thrdsReadAhead[0] =thrd
             thrd.start()
 
-        self.info('nextDataChunk() data from recycled[%s], pool refreshed: %s chunks x(%s bth/c, %s samples/bth) from %s %s readahead started' % (bRecycled, newsize, self._batchesPerTrain, self._batchSize, self.__samplesFrom, cChunks))
+        self.info('nextDataChunk() data from recycled[%s], pool refreshed: %s chunks x(%s bth/c, %s samples/bth) from %s; %s readahead started' % (bRecycled, newsize, self._batchesPerTrain, self._batchSize, ','.join(self.__samplesFrom), cChunks))
         return ret, bRecycled
 
     def __frameToSlices(self, frameDict):
@@ -844,7 +844,7 @@ class MarketDirClassifier(BaseApplication):
             trainSize = statechunk.shape[0]
             
             stampStart = datetime.now()
-            totalEpochs = 0
+            lstEpochs = []
             result = None
             strEval =''
             loss = max(11, loss)
@@ -863,7 +863,7 @@ class MarketDirClassifier(BaseApplication):
                     epochs2run = epochs
                     epochs =0
                     result = self._brain.fit(x=statechunk, y=actionchunk, epochs=epochs2run, shuffle=True, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
-                    totalEpochs += epochs2run
+                    lstEpochs.append(epochs2run)
                     loss = result.history["loss"][-1]
                     lossImprove =0.0
                     if len(result.history["loss"]) >1 :
@@ -881,7 +881,8 @@ class MarketDirClassifier(BaseApplication):
                 except Exception as ex:
                     self.logexception(ex)
 
-            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from %s, %s/%s steps x %s epochs took %s' % (strEval, trainSize, self._batchSize, totalEpochs, (datetime.now() -stampStart)) )
+            strEpochs = '+'.join([str(i) for i in lstEpochs])
+            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from %s, %s/%s steps x %s epochs on %s samples took %s' % (strEval, trainSize, self._batchSize, strEpochs, 'fresh' if freshData else 'recycled', (datetime.now() -stampStart)) )
 
     #----------------------------------------------------------------------
     # model definitions

@@ -544,7 +544,7 @@ class MarketDirClassifier(BaseApplication):
         cChunks=0
         with self.__lock:
             if self._frameSize >0:
-                cChunks = ((self.__maxChunks * self._batchesPerTrain * self._batchSize) + self._frameSize -1) // self._frameSize
+                cChunks = (self.__maxChunks * self._batchesPerTrain * self._batchSize) // self._frameSize
             if cChunks<=0: cChunks =1
             cChunks =int(cChunks)
 
@@ -572,7 +572,7 @@ class MarketDirClassifier(BaseApplication):
             self.__thrdsReadAhead[0] =thrd
             thrd.start()
 
-        self.info('nextDataChunk() pool refreshed: %s x(%s samples/bth) from %s; %s readahead started, recycled-size:%s' % (newsize, self._batchSize, ','.join(self.__samplesFrom), cChunks, szRecycled))
+        self.info('nextDataChunk() pool refreshed: %s x(%s samples/bth) from %s; started reading %s frames ahead, recycled-size:%s' % (newsize, self._batchSize, ','.join(self.__samplesFrom), cChunks, szRecycled))
         return ret, bRecycled
 
     def __frameToSlices(self, frameDict):
@@ -802,13 +802,12 @@ class MarketDirClassifier(BaseApplication):
             frameDict, cvnted = None, None
 
         with self.__lock:
-            random.shuffle(self.__chunksReadAhead)
             raSize = len(self.__chunksReadAhead)
             self.__framesReadAhead = strFrames
+            random.shuffle(self.__chunksReadAhead)
 
             if thrdSeqId>=0 and thrdSeqId < len(self.__thrdsReadAhead) :
                 self.__thrdsReadAhead[thrdSeqId] = None
-
 
         self.info('readAheadChunks(%s) took %s to prepare %s->%s x%s s/bth from %dframes:%s; %d frames await' % 
             (thrdSeqId, str(datetime.now() - stampStart), addSize, raSize, self._batchSize, len(strFrames), ','.join(strFrames), awaitSize))
@@ -896,6 +895,9 @@ class MarketDirClassifier(BaseApplication):
 
                 except Exception as ex:
                     self.logexception(ex)
+
+            if len(histEpochs) <=0:
+                continue
 
             strEpochs = '+'.join([str(i) for i in lstEpochs])
             if sampledAhead :

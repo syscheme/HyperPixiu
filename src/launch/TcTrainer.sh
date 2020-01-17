@@ -41,9 +41,10 @@ if [ -e ${OUTDIR}/${MODEL}.weights.h5 ] ; then
 
     rm -f /tmp/${MODEL}/DQNTrainer_*.log
     cp -f /tmp/DQNTrainer_${PID}_*.log /tmp/${MODEL}/
-    mv -f /tmp/DQNTrainer_${PID}_*.log.*bz2 /tmp/${MODEL}/
+    cp -f /tmp/DQNTrainer_${PID}_*.log.*bz2 /tmp/${MODEL}/
     
-    nice tar cvfj /tmp/${MODEL}.tar.bz2~ /tmp/${MODEL}/*
+    cd /tmp/${MODEL}/
+    nice tar cvfj /tmp/${MODEL}.tar.bz2~ .
     rm -f /tmp/${MODEL}.tar.bz2; mv -f /tmp/${MODEL}.tar.bz2~ /tmp/${MODEL}.tar.bz2
     md5sum /tmp/${MODEL}.tar.bz2 > /tmp/${MODEL}.md5
     ls -lh /tmp/${MODEL}*.tar.bz2 ;

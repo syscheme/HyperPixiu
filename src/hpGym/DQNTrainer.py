@@ -25,6 +25,7 @@ import tensorflow as tf
 
 import sys, os, platform, random, copy, threading
 from datetime import datetime
+from time import sleep
 
 import h5py, tarfile
 import numpy as np
@@ -280,11 +281,15 @@ class MarketDirClassifier(BaseApplication):
         # random.shuffle(frameSeq)
         # result = self._brain.fit_generator(generator=self.__gen_readBatchFromFrameEx(frameSeq), workers=2, use_multiprocessing=True, epochs=self._initEpochs, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
 
+        result, histEpochs = None, []
         self.refreshPool()
         use_multiprocessing = not 'windows' in self._program.ostype
 
-        result = self._brain.fit_generator(generator=Hd5DataGenerator(self, self._batchSize), workers=8, use_multiprocessing=use_multiprocessing, epochs=self._initEpochs, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
-        if result : self.__logAndSaveResult(result, 'doAppStep_keras_batchGenerator')
+        try:
+            result = self._brain.fit_generator(generator=Hd5DataGenerator(self, self._batchSize), workers=8, use_multiprocessing=use_multiprocessing, epochs=self._initEpochs, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
+            histEpochs += self.__resultToStepHist(result)
+            self.__logAndSaveResult(histEpochs[-1], 'doAppStep_keras_batchGenerator')
+        except Exception as ex: self.logexception(ex)
 
     def doAppStep_keras_dsGenerator(self):
         # ref: https://pastebin.com/kRLLmdxN
@@ -294,8 +299,8 @@ class MarketDirClassifier(BaseApplication):
         #     epochs=_EPOCHS, validation_data=testing_set.make_one_shot_iterator(), validation_steps=len(x_test) // _BATCH_SIZE,
         #     verbose=1)
 
+        result, histEpochs = None, []
         self.refreshPool()
-        result = None
         dataset = tf.data.Dataset.from_generator(generator =self.__gen_readDataFromFrame,
                                                 output_types=(tf.float32, tf.float32),
                                                 output_shapes=((self._stateSize,), (self._actionSize,)))
@@ -307,15 +312,15 @@ class MarketDirClassifier(BaseApplication):
 
         try :
             result = self._brain.fit(dataset.make_one_shot_iterator(), epochs=self._initEpochs, steps_per_epoch=self.chunksInPool, verbose=1, callbacks=self._fitCallbacks)
+            histEpochs += self.__resultToStepHist(result)
+            self.__logAndSaveResult(histEpochs[-1], 'doAppStep_keras_dsGenerator')
         except Exception as ex: self.logexception(ex)
-
-        self.__logAndSaveResult(result, 'doAppStep_keras_dsGenerator')
 
     def doAppStep_keras_slice2dataset(self):
 
         self.__convertFrame = self.__frameToSlices
+        result, histEpochs = None, []
         self.refreshPool()
-        result = None
 
         for i in range(self.chunksInPool) :
             slice = self.readDataChunk(i)
@@ -333,16 +338,16 @@ class MarketDirClassifier(BaseApplication):
             if 0 ==i: self.info('doAppStep_keras_slice2dataset() starts fitting slice %sx %s' % (length, str(dataset.output_shapes)))
             try :
                 result = self._brain.fit(dataset, epochs=self._initEpochs, steps_per_epoch=self._batchesPerTrain, verbose=1, callbacks=self._fitCallbacks)
-                # result = self._brain.fit(dataset, epochs=1, steps_per_epoch=stepsPerEp, verbose=1, callbacks=self._fitCallbacks)
+                histEpochs += self.__resultToStepHist(result)
             except Exception as ex: self.logexception(ex)
 
-        self.__logAndSaveResult(result, 'doAppStep_keras_slice2dataset')
+        self.__logAndSaveResult(histEpochs[-1], 'doAppStep_keras_slice2dataset')
 
     def doAppStep_keras_datasetPool(self):
 
         self.__convertFrame = self.__frameToDatasets
+        result, histEpochs = None, []
         self.refreshPool()
-        result = None
 
         for i in range(self.chunksInPool) :
             dataset = self.readDataChunk(i)
@@ -354,33 +359,36 @@ class MarketDirClassifier(BaseApplication):
             if 0 ==i: self.info('doAppStep_keras_datasetPool() starts fitting ds %s' % str(dataset.output_shapes))
             try :
                 result = self._brain.fit(dataset, epochs=self._initEpochs, steps_per_epoch=self._batchesPerTrain, verbose=1, callbacks=self._fitCallbacks)
+                histEpochs += self.__resultToStepHist(result)
             except Exception as ex: self.logexception(ex)
 
-        self.__logAndSaveResult(result, 'doAppStep_keras_datasetPool')
+        self.__logAndSaveResult(histEpochs[-1], 'doAppStep_keras_datasetPool')
 
-    def __logAndSaveResult(self, result, methodName, notes=''):
-        if not result: return
-        if not notes or len(notes) <0: notes=''
+    def __resultToStepHist(self, result):
+        if not result: return []
 
         losshist, accuhist = result.history["loss"], result.history["acc"] if 'acc' in result.history.keys() else [ -1.0 ]
         if len(accuhist) <=1 and 'accuracy' in result.history.keys():
             accuhist = result.history["accuracy"]
 
-        losshist.reverse()
-        accuhist.reverse()
-        loss, accu, stephist = losshist[0], accuhist[0], []
-        del losshist[0]
-        del accuhist[0]
+        #losshist.reverse()
+        #accuhist.reverse()
+        #loss, accu, stephist = losshist[0], accuhist[0], []
         
         if len(losshist) == len(accuhist) :
             stephist = ['%.2f%%^%.3f' % (accuhist[i]*100, losshist[i]) for i in range(len(losshist))]
         else:
             stephist = ['%.2f' % (losshist[i]) for i in range(len(losshist))]
 
+        return stephist
+
+    def __logAndSaveResult(self, resFinal, methodName, notes=''):
+        if not notes or len(notes) <0: notes=''
+
         fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
         self._brain.save(fn_weights)
 
-        self.info('%s() saved weights %s, result[%.2f%%^%.3f] %s; lastItrn: %s' % (methodName, fn_weights, accu*100, loss, notes, ', '.join(stephist)))
+        self.info('%s() saved weights %s, result[%s] %s' % (methodName, fn_weights, resFinal, notes))
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
@@ -475,7 +483,7 @@ class MarketDirClassifier(BaseApplication):
         with self.__lock:
             self.__newChunks, self.__samplesFrom = self.__chunksReadAhead, self.__framesReadAhead
             self.__chunksReadAhead, self.__framesReadAhead = [] , []
-            self.debug('refreshPool() pool refreshed from readAhead: %s chunks x(%s bth/c, %s samples/bth), reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__newChunks), self._batchesPerTrain, self._batchSize, len(self.__chunksReadAhead)))
+            self.debug('refreshPool() pool refreshed from readAhead: %s x(%s bth/c, %s samples/bth), reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__newChunks), self._batchesPerTrain, self._batchSize, len(self.__chunksReadAhead)))
 
             # # Approach 1. kickoff multiple readAhead threads to read one frame each
             # for i in range(cChunks) :
@@ -489,7 +497,7 @@ class MarketDirClassifier(BaseApplication):
             thrd.start()
 
         newsize = self.chunksInPool
-        self.info('refreshPool() pool refreshed from readAhead: %s chunks x(%s bth/c, %s samples/bth) from %s; %s readahead started' % (newsize, self._batchesPerTrain, self._batchSize, ','.join(self.__samplesFrom), cChunks))
+        self.info('refreshPool() pool refreshed from readAhead: %s x(%s bth/c, %s samples/bth) from %s; %s readahead started' % (newsize, self._batchesPerTrain, self._batchSize, ','.join(self.__samplesFrom), cChunks))
         return newsize
 
     def readDataChunk(self, chunkNo):
@@ -546,23 +554,25 @@ class MarketDirClassifier(BaseApplication):
             self.warn('nextDataChunk() no readAhead ready, force to read sync-ly')
             self.__readAheadChunks(thrdSeqId=-1, cChunks=cChunks)
 
+        szRecycled = 0
         with self.__lock:
             self.__newChunks, self.__samplesFrom = self.__chunksReadAhead, self.__framesReadAhead
             self.__chunksReadAhead, self.__framesReadAhead = [], []
             newsize = len(self.__newChunks)
-            self.debug('nextDataChunk() pool refreshed from readAhead: %s chunks x(%s bth/c, %s samples/bth), reset readAhead to %d and kicking off new round of read-ahead' % (newsize, self._batchesPerTrain, self._batchSize, len(self.__chunksReadAhead)))
+            self.debug('nextDataChunk() pool refreshed from readAhead: %s x(%s bth/c, %s samples/bth), reset readAhead to %d and kicking off new round of read-ahead' % (newsize, self._batchesPerTrain, self._batchSize, len(self.__chunksReadAhead)))
             
             if not ret and self.__newChunks and newsize >0:
                 ret = self.__newChunks[0]
                 del self.__newChunks[0]
                 self.__recycledChunks.append(ret)
                 bRecycled = False
+            szRecycled = len(self.__recycledChunks)
 
             thrd = threading.Thread(target=self.__readAheadChunks, kwargs={'thrdSeqId': 0, 'cChunks': cChunks } )
             self.__thrdsReadAhead[0] =thrd
             thrd.start()
 
-        self.info('nextDataChunk() data from recycled[%s], pool refreshed: %s chunks x(%s bth/c, %s samples/bth) from %s; %s readahead started' % (bRecycled, newsize, self._batchesPerTrain, self._batchSize, ','.join(self.__samplesFrom), cChunks))
+        self.info('nextDataChunk() pool refreshed: %s x(%s samples/bth) from %s; %s readahead started, recycled-size:%s' % (newsize, self._batchSize, ','.join(self.__samplesFrom), cChunks, szRecycled))
         return ret, bRecycled
 
     def __frameToSlices(self, frameDict):
@@ -746,7 +756,7 @@ class MarketDirClassifier(BaseApplication):
                 addSize, raSize = 1, len(self.__chunksReadAhead)
 
         frameDict, cvnted = None, None
-        self.info('readAhead(%s) prepared %s->%s chunks x%s s/bth from %s took %s, %d frames await' % 
+        self.info('readAhead(%s) prepared %s->%s x%s s/bth from %s took %s, %d frames await' % 
             (thrdSeqId, addSize, raSize, self._batchSize, nextFrameName, str(datetime.now() - stampStart), awaitSize))
 
     def __readAheadChunks(self, thrdSeqId=0, cChunks=1):
@@ -792,12 +802,15 @@ class MarketDirClassifier(BaseApplication):
             frameDict, cvnted = None, None
 
         with self.__lock:
-            if thrdSeqId>=0 and thrdSeqId < len(self.__thrdsReadAhead) :
-                self.__thrdsReadAhead[thrdSeqId] = None
+            random.shuffle(self.__chunksReadAhead)
             raSize = len(self.__chunksReadAhead)
             self.__framesReadAhead = strFrames
 
-        self.info('readAheadChunks(%s) took %s to prepare %s->%s chunks x%s s/bth from %dframes:%s; %d frames await' % 
+            if thrdSeqId>=0 and thrdSeqId < len(self.__thrdsReadAhead) :
+                self.__thrdsReadAhead[thrdSeqId] = None
+
+
+        self.info('readAheadChunks(%s) took %s to prepare %s->%s x%s s/bth from %dframes:%s; %d frames await' % 
             (thrdSeqId, str(datetime.now() - stampStart), addSize, raSize, self._batchSize, len(strFrames), ','.join(strFrames), awaitSize))
 
     def __generator_local(self):
@@ -820,11 +833,13 @@ class MarketDirClassifier(BaseApplication):
         while True : #TODO temporarily loop for ever: lossMax > self._lossStop or abs(loss-lossMax) > (lossMax * self._lossPctStop/100) :
 
             statebths, actionbths =[], []
-            freshData = False
+            cFresh, cRecycled = 0, 0
             while len(statebths) < self._batchesPerTrain :
                 bth, recycled = self.nextDataChunk() #= self.readDataChunk(idxBatchInPool)
-                if not recycled:
-                    freshData = True
+                if recycled:
+                    cRecycled += 1
+                else:
+                    cFresh += 1
 
                 statebths.append(bth['state'])
                 actionbths.append(bth['action'])
@@ -844,13 +859,13 @@ class MarketDirClassifier(BaseApplication):
             trainSize = statechunk.shape[0]
             
             stampStart = datetime.now()
-            lstEpochs = []
-            result = None
+            result, lstEpochs, histEpochs = None, [], []
             strEval =''
             loss = max(11, loss)
-            epochs = self._initEpochs if freshData else 2
+            sampledAhead = cFresh>(cRecycled*4)
+            epochs = self._initEpochs if sampledAhead else 2
             while epochs > 0:
-                if len(strEval) <=0:
+                if len(strEval) <=0 and sampledAhead:
                     try :
                         resEval =  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
                         strEval += 'eval[%.2f%%^%.3f]/%s' % (resEval[1]*100, resEval[0], datetime.now() -stampStart)
@@ -869,12 +884,13 @@ class MarketDirClassifier(BaseApplication):
                     if len(result.history["loss"]) >1 :
                         lossImprove = result.history["loss"][-2] - loss
 
-                    if freshData and loss > self._lossStop and lossImprove > (loss * self._lossPctStop/100) :
+                    if sampledAhead and loss > self._lossStop and lossImprove > (loss * self._lossPctStop/100) :
                         epochs = epochs2run
                         if lossImprove > (loss * self._lossPctStop *2 /100) :
                             epochs += int(epochs2run/2)
 
                     if lossMax>=DUMMY_BIG_VAL-1 or lossMax < loss: lossMax = loss
+                    histEpochs += self.__resultToStepHist(result)
 
                     yield result # this is a step
 
@@ -882,7 +898,10 @@ class MarketDirClassifier(BaseApplication):
                     self.logexception(ex)
 
             strEpochs = '+'.join([str(i) for i in lstEpochs])
-            self.__logAndSaveResult(result, 'doAppStep_local_generator', 'from %s, %s/%s steps x %s epochs on %s samples took %s' % (strEval, trainSize, self._batchSize, strEpochs, 'fresh' if freshData else 'recycled', (datetime.now() -stampStart)) )
+            if sampledAhead :
+                self.__logAndSaveResult(histEpochs[-1], 'doAppStep_local_generator', 'from %s, %s/%s steps x %s epochs on %dN+%dR samples took %s, hist: %s' % (strEval, trainSize, self._batchSize, strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
+            else :
+                self.info('doAppStep_local_generator() %s epochs on recycled %dN+%dR samples took %s, hist: %s' % (strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
 
     #----------------------------------------------------------------------
     # model definitions

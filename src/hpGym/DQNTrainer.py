@@ -618,12 +618,18 @@ class MarketDirClassifier(BaseApplication):
     def __frameToBatchs(self, frameDict):
         COLS = ['state','action']
         framelen = len(frameDict[COLS[0]])
+        
+        # to shuffle within the frame
+        shuffledIndx =[i for i in range(framelen)]
+        random.shuffle(shuffledIndx)
+
         bths = []
         cBth = framelen // self._batchSize
         for i in range(cBth):
             batch = {}
             for col in COLS :
-                batch[col] = np.array(frameDict[col][self._batchSize*i: self._batchSize*(i+1)]).astype(NN_FLOAT)
+                # batch[col] = np.array(frameDict[col][self._batchSize*i: self._batchSize*(i+1)]).astype(NN_FLOAT)
+                batch[col] = np.array([frameDict[col][j] for j in shuffledIndx[self._batchSize*i: self._batchSize*(i+1)]]).astype(NN_FLOAT)
             
             bths.append(batch)
 

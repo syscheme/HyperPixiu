@@ -852,7 +852,7 @@ class Account(MetaAccount):
         cTrades =0
         positions, _ = self.calcDailyPositions()
         self._todayResult.cash, self._todayResult.posValue = self.summrizeBalance()
-        self._todayResult.endBalance = self._todayResult.cash + self._todayResult.posValue
+        self._todayResult.endBalance = round(self._todayResult.cash + self._todayResult.posValue, 3)
 
         # part 1. 汇总 the confirmed trades, and save
         with self._lock :

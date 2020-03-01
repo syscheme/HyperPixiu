@@ -49,7 +49,7 @@ if len(GPUs) >1:
 
 ########################################################################
 class agentDQN(MetaAgent):
-    DEFAULT_BRAIN_ID = 'Cnn1Dx4R2' # 'VGG16d1' # 'Cnn1Dx4R2' # 'DQN_Cnn1Dx4' # 'DQN_DrDrDl' 'DQN_Dr64Dr32x3' 'DQN_Cnn1Dx4'
+    DEFAULT_BRAIN_ID = 'VGG16d1' # 'VGG16d1' 'Cnn1Dx4R2'
 
     def __init__(self, gymTrader, **kwargs):
         self.__brainDict = {

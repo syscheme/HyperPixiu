@@ -33,8 +33,8 @@ import numpy as np
 DUMMY_BIG_VAL = 999999
 NN_FLOAT = 'float32'
 RFGROUP_PREFIX = 'ReplayFrame:'
-# GPUs = backend.tensorflow_backend._get_available_gpus()
 
+# GPUs = backend.tensorflow_backend._get_available_gpus()
 def get_available_gpus():
     from tensorflow.python.client import device_lib
     local_device_protos = device_lib.list_local_devices()
@@ -620,6 +620,10 @@ class MarketDirClassifier(BaseApplication):
         framelen = len(frameDict[COLS[0]])
         
         # to shuffle within the frame
+
+
+
+        
         shuffledIndx =[i for i in range(framelen)]
         random.shuffle(shuffledIndx)
 

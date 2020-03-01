@@ -47,7 +47,8 @@ if __name__ == '__main__':
     gymtdr = p.createApp(GymTrader, configNode ='trainer', tradeSymbol=SYMBOL, account=acc)
     p.info('all objects registered piror to Simulator: %s' % p.listByType())
 
-    trainer = p.createApp(IdealDayTrader, configNode ='trainer', trader=gymtdr, histdata=csvreader) # trainer = p.createApp(Simulator, configNode ='trainer', trader=gymtdr, histdata=csvreader)
+    # trainer = p.createApp(IdealDayTrader, configNode ='trainer', trader=gymtdr, histdata=csvreader) # ideal trader to generator ReplayFrames
+    trainer = p.createApp(Simulator, configNode ='trainer', trader=gymtdr, histdata=csvreader) # the simulator with brain loaded to verify training result
     rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(trainer.outdir, 'CsvToRF_%s.tcsv' % SYMBOL))
     trainer.setRecorder(rec)
 

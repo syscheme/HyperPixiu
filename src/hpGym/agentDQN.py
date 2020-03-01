@@ -13,12 +13,22 @@ from MarketData import EXPORT_FLOATS_DIMS
 import random
 
 import numpy as np
-from keras.layers import Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D,GlobalAveragePooling1D
-from keras.models import Sequential
-from keras.optimizers import Adam
-from keras.models import model_from_json
-from keras.callbacks import ModelCheckpoint, TensorBoard
-from keras import backend
+# from keras.layers import Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D,GlobalAveragePooling1D
+# from keras.models import Sequential
+# from keras.optimizers import Adam
+# from keras.models import model_from_json
+# from keras.callbacks import ModelCheckpoint, TensorBoard
+# from keras import backend
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.optimizers import Adam, SGD
+from tensorflow.keras.models import model_from_json
+from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
+# from tensorflow.keras import backend
+from tensorflow.keras.layers import Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D,GlobalAveragePooling1D
+from tensorflow.keras.layers import BatchNormalization, Flatten
+from tensorflow.keras import regularizers
+from tensorflow.keras import backend as backend
+from tensorflow.keras.utils import Sequence
 
 from abc import ABCMeta, abstractmethod
 from datetime import datetime, timedelta
@@ -26,11 +36,20 @@ import os, threading
 import json
 import h5py, tarfile, numpy
 
-GPUs = backend.tensorflow_backend._get_available_gpus()
+# GPUs = backend.tensorflow_backend._get_available_gpus()
+def get_available_gpus():
+    from tensorflow.python.client import device_lib
+    local_device_protos = device_lib.list_local_devices()
+    return [x.name for x in local_device_protos if x.device_type == 'GPU']
+
+GPUs = get_available_gpus()
+
+if len(GPUs) >1:
+    from keras.utils.training_utils import multi_gpu_model
 
 ########################################################################
 class agentDQN(MetaAgent):
-    DEFAULT_BRAIN_ID = 'DQN_Cnn1Dx4' # 'DQN_DrDrDl' 'DQN_Dr64Dr32x3' 'DQN_Cnn1Dx4'
+    DEFAULT_BRAIN_ID = 'Cnn1Dx4R2' # 'VGG16d1' # 'Cnn1Dx4R2' # 'DQN_Cnn1Dx4' # 'DQN_DrDrDl' 'DQN_Dr64Dr32x3' 'DQN_Cnn1Dx4'
 
     def __init__(self, gymTrader, **kwargs):
         self.__brainDict = {
@@ -115,7 +134,7 @@ class agentDQN(MetaAgent):
                 self._brain = builder()
 
         if self._brain:
-            self._wkBrainId = '%s.%s_%s' %(brainId, self._stateSize, self._actionSize)
+            self._wkBrainId = '%s.S%dA%d' %(brainId, self._stateSize, self._actionSize)
             self._brain.compile(loss='mse', optimizer=Adam(lr=self._learningRate))
             # checkpointPath ='best.h5'
             # checkpoint = ModelCheckpoint(filepath=checkpointPath, monitor='val_acc', verbose=1, save_best_only=True, save_weights_only=True, mode='max', period=1)
@@ -188,7 +207,7 @@ class agentDQN(MetaAgent):
 
     @property
     def explorable(self):
-        return self._epsilon > self._epsilonMin
+        return False # self._epsilon > self._epsilonMin
 
     @property
     def trainable(self):
@@ -245,7 +264,7 @@ class agentDQN(MetaAgent):
         if not self._gymTrader :
             raise ValueError("Null trader")
 
-        brainDir = '%s%s.%s_%s/' % (self._gymTrader.dataRoot, brainId, self._stateSize, self._actionSize)
+        brainDir = '%s%s.S%dI%dA%d/' % (self._gymTrader.dataRoot, brainId, self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         brain = None
         try : 
             # step 1. read the model file in json
@@ -255,8 +274,8 @@ class agentDQN(MetaAgent):
             brain = model_from_json(model_json)
 
             # step 2. read the weights of the model
-            self._gymTrader.debug('loading saved brain weight from %s' %brainDir)
-            brain.load_weights('%smodel.json.h5' % brainDir)
+            self._gymTrader.debug('loading saved brain weights from %s' %brainDir)
+            brain.load_weights('%sweights.h5' % brainDir)
 
             # step 3. if load weight successfully, do not start over to mess-up the trained model by
             # limiting epsilon from status.json
@@ -273,8 +292,8 @@ class agentDQN(MetaAgent):
 
             self._epsilon = float(self._statusAttrs['epsilon']) if 'epsilon' in self._statusAttrs.keys() else self._epsilon*0.7
             self._learningRate = float(self._statusAttrs['learningRate']) if 'learningRate' in self._statusAttrs.keys() else self._learningRate/2
-        except:
-            pass
+        except Exception as ex:
+            self._gymTrader.logexception(ex)
 
         if brain:
             self._gymTrader.info('loaded brain from %s by taking initial epsilon[%s] learningRate[%s]' % (brainDir, self._epsilon, self._learningRate))

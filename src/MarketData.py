@@ -9,6 +9,12 @@ from datetime import datetime, timedelta
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 EXPORT_FLOATS_DIMS = 4 # take the minimal dim=4
 
+def floatNormalize_M1X5(var, base=1.0):
+    return (float(var/base) -1) *5.0 + 0.5
+
+NORMALIZE_ID        = 'D%sM1X5' % EXPORT_FLOATS_DIMS
+FUNC_floatNormalize = floatNormalize_M1X5
+
 # Market相关events
 EVENT_TICK          = MARKETDATE_EVENT_PREFIX + 'Tick'                   # TICK行情事件，可后接具体的vtSymbol
 EVENT_MARKET_DEPTH0 = MARKETDATE_EVENT_PREFIX + 'MD0'           # Market depth0
@@ -155,19 +161,19 @@ class TickData(MarketData):
 
         # the basic dims, min=4
         ret = [
-            float(self.price/baseline_Price), 
-            float(self.volume/baseline_Volume),
+            FUNC_floatNormalize(self.price, baseline_Price), 
+            FUNC_floatNormalize(self.volume, baseline_Volume),
             float(leanAsks), 
             float(leanBids)
         ] + [0.0] * ( EXPORT_FLOATS_DIMS -4)
 
         # the optional dims
         if EXPORT_FLOATS_DIMS > 4:
-            ret[4] = float(self.high/baseline_Price)
+            ret[4] = FUNC_floatNormalize(self.high, baseline_Price)
         if EXPORT_FLOATS_DIMS > 5:
-            ret[5] = float(self.low/baseline_Price)
+            ret[5] = FUNC_floatNormalize(self.low, baseline_Price)
         if EXPORT_FLOATS_DIMS > 6:
-            ret[6] = float(self.open/baseline_Price)
+            ret[6] = FUNC_floatNormalize(self.open, baseline_Price)
 
         return ret
 
@@ -211,18 +217,17 @@ class KLineData(MarketData):
 
         # the basic dims, min=4
         ret = [
-            float(self.close/baseline_Price), 
-            float(self.volume/baseline_Volume),
-            float(self.high/baseline_Price), 
-            float(self.low/baseline_Price), 
+            FUNC_floatNormalize(self.close, baseline_Price), 
+            FUNC_floatNormalize(self.volume, baseline_Volume),
+            FUNC_floatNormalize(self.high, baseline_Price), 
+            FUNC_floatNormalize(self.low, baseline_Price), 
         ] + [0.0] * ( EXPORT_FLOATS_DIMS -4)
 
         # the optional dims
         if EXPORT_FLOATS_DIMS > 4:
-            ret[4] = float(self.open/baseline_Price)
+            ret[4] = FUNC_floatNormalize(self.open, baseline_Price)
         if EXPORT_FLOATS_DIMS > 5:
-            ret[5] = float(self.openInterest/baseline_Price)
-        
+            ret[5] = FUNC_floatNormalize(self.openInterest, baseline_Price)
 
         return ret
 

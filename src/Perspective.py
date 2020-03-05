@@ -23,6 +23,8 @@ DEFAULT_DEPTH_1min = 30
 DEFAULT_DEPTH_5min = 96
 DEFAULT_DEPTH_1day = 260
 
+EXPORT_SIGNATURE= '%dT%dM%dF%dD.%s:200109T17' % (DEFAULT_DEPTH_TICK, DEFAULT_DEPTH_1min, DEFAULT_DEPTH_5min, DEFAULT_DEPTH_1day, NORMALIZE_ID)
+
 ########################################################################
 class EvictableStack(object):
     def __init__(self, evictSize=0, nildata=None):
@@ -327,7 +329,7 @@ class Perspective(MarketData):
             if i >= stk.size:
                 result += [0.0] * EXPORT_FLOATS_DIMS
             else:
-                v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= bV )
+                v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= bV)
                 # Perspective.TICK_FLOATS = len(v)
                 result += v
 
@@ -338,7 +340,7 @@ class Perspective(MarketData):
                 if i >= stk.size:
                     result += [0.0] * EXPORT_FLOATS_DIMS
                 else:
-                    v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= bV )
+                    v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= bV)
                     # Perspective.KLINE_FLOATS = len(v)
                     result += v
 

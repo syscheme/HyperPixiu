@@ -674,9 +674,11 @@ class MarketDirClassifier(BaseApplication):
                                 continue
 
                             f1st = RFGROUP_PREFIX + framesInHd5[0]
-                            frameSize  = h5f[f1st]['state'].shape[0]
-                            stateSize  = h5f[f1st]['state'].shape[1]
-                            actionSize = h5f[f1st]['action'].shape[1]
+                            frm = h5f[f1st]
+                            frameSize  = frm['state'].shape[0]
+                            stateSize  = frm['state'].shape[1]
+                            actionSize = frm['action'].shape[1]
+                            signature =  frm.attrs['signature'] if 'signature' in frm.attrs.keys() else 'n/a'
 
                             if self._stateSize and self._stateSize != stateSize or self._actionSize and self._actionSize != actionSize:
                                 self._replayFrameFiles.remove(h5fileName)
@@ -688,7 +690,7 @@ class MarketDirClassifier(BaseApplication):
                             self._stateSize = stateSize
                             self._actionSize = actionSize
 
-                            self.info('%d ReplayFrames found in %s with dims: %s/state, %s/action' % (len(framesInHd5), h5fileName, self._stateSize, self._actionSize) )
+                            self.info('%d ReplayFrames found in %s with signature[%s] dims: %s/state, %s/action' % (len(framesInHd5), h5fileName, signature, self._stateSize, self._actionSize) )
 
                     except Exception as ex:
                         self._replayFrameFiles.remove(h5fileName)

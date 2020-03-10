@@ -651,14 +651,14 @@ class MarketDirClassifier(BaseApplication):
             cRowToKeep = ((cRowToKeep + self._batchSize -1) // self._batchSize) *self._batchSize
             
         idxHolds = np.where(AD[1] ==0)[0].tolist()
-        random.shuffle(idxHolds)
         cHoldsToDel = len(idxHolds) - (cRowToKeep - sum(kI[1:]))
         if cHoldsToDel>0 :
+            random.shuffle(idxHolds)
             del idxHolds[cHoldsToDel:]
             frameDict['action'] = np.delete(frameDict['action'], idxHolds, axis=0)
             frameDict['state']  = np.delete(frameDict['state'],  idxHolds, axis=0)
 
-        return cRowToKeep
+        return len(frameDict['action'])
 
     def __nextFrameName(self, bPop1stFrameName=False):
         '''

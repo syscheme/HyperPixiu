@@ -134,6 +134,7 @@ class MarketDirClassifier(BaseApplication):
         self.__newChunks =[]
         self.__recycledChunks =[]
         self.__convertFrame = self.__frameToBatchs
+        self.__filterFrame  = self.__balanceSamples
 
         self.__latestBthNo=0
 
@@ -621,10 +622,6 @@ class MarketDirClassifier(BaseApplication):
         framelen = len(frameDict[COLS[0]])
         
         # to shuffle within the frame
-
-
-
-        
         shuffledIndx =[i for i in range(framelen)]
         random.shuffle(shuffledIndx)
 
@@ -639,6 +636,29 @@ class MarketDirClassifier(BaseApplication):
             bths.append(batch)
 
         return bths
+
+    def __balanceSamples(self, frameDict) :
+        '''
+            balance the samples, usually reduce some action=HOLD, which appears too many
+        '''
+        actionchunk = np.array(frameDict['action'])
+        AD = np.where(actionchunk >=0.99) # to match 1 because action is float read from RFrames
+        kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
+        cRowToKeep = max(kI[1:]) *3
+
+        # round up by batchSize
+        if self._batchSize >0:
+            cRowToKeep = ((cRowToKeep + self._batchSize -1) // self._batchSize) *self._batchSize
+            
+        idxHolds = np.where(AD[1] ==0)[0].tolist()
+        random.shuffle(idxHolds)
+        cHoldsToDel = len(idxHolds) - (cRowToKeep - sum(kI[1:]))
+        if cHoldsToDel>0 :
+            del idxHolds[cHoldsToDel:]
+            frameDict['action'] = np.delete(frameDict['action'], idxHolds, axis=0)
+            frameDict['state']  = np.delete(frameDict['state'],  idxHolds, axis=0)
+
+        return cRowToKeep
 
     def __nextFrameName(self, bPop1stFrameName=False):
         '''
@@ -794,6 +814,14 @@ class MarketDirClassifier(BaseApplication):
             self.debug('readAheadChunks(%s) read %s samples from %s@%s' % (thrdSeqId, lenFrame, nextFrameName, h5fileName) )
             strFrames.append('%s@%s' % (nextFrameName, os.path.basename(h5fileName)))
             cvnted = frameDict
+            try :
+                nAfterFilter = lenFrame
+                if self.__filterFrame :
+                    nAfterFilter = self.__filterFrame(frameDict)
+                    self.debug('readAheadChunks(%s) filtered %s samples into %s samples' % (thrdSeqId, lenFrame, nAfterFilter) )
+            except Exception as ex:
+                self.logexception(ex)
+
             try :
                 if self.__convertFrame :
                     cvnted = self.__convertFrame(frameDict)

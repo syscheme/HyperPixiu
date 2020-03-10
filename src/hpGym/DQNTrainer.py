@@ -107,6 +107,7 @@ class MarketDirClassifier(BaseApplication):
         self._lossStop            = self.getConfig('lossStop', 0.24) # 0.24 according to average loss value by： grep 'from eval' /mnt/d/tmp/DQNTrainer_14276_0106.log |sed 's/.*loss\[\([^]]*\)\].*/\1/g' | awk '{ total += $1; count++ } END { print total/count }'
         self._lossPctStop         = self.getConfig('lossPctStop', 5)
         self._startLR             = self.getConfig('startLR', 0.01)
+        self._evaluateSamples     = self.getConfig('evaluateSamples', 'yes').lower() in BOOL_STRVAL_TRUE
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
         #     self._poolEvictRate =1
@@ -876,10 +877,18 @@ class MarketDirClassifier(BaseApplication):
             sampledAhead = cFresh>(cRecycled*4)
             epochs = self._initEpochs if sampledAhead else 2
             while epochs > 0:
-                if len(strEval) <=0 and sampledAhead:
+                if self._evaluateSamples and len(strEval) <=0 and sampledAhead:
                     try :
+                        AD = np.where(actionchunk ==1)[1]
+                        kI = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(3)] # the actions percentage in sample
+                        predict = self._brain.predict(x=statechunk)
+                        predact = np.zeros(len(predict) *3).reshape(len(predict), 3)
+                        for r in range(len(predict)):
+                            predact[r][np.argmax(predict[r])] =1
+                        AD = np.where(predact ==1)[1]
+                        kP = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(3)] # the actions percentage in predictions
                         resEval =  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
-                        strEval += 'eval[%.2f%%^%.3f]/%s' % (resEval[1]*100, resEval[0], datetime.now() -stampStart)
+                        strEval += 'eval[%.2f%%^%.3f]/%s A%s->%s%%' % (resEval[1]*100, resEval[0], datetime.now() -stampStart, '+'.join(kI), '+'.join(kP))
                     except Exception as ex:
                         self.logexception(ex)
 

@@ -990,6 +990,9 @@ class IdealDayTrader(Simulator):
         return price_open, price_high, price_low, price_close, T_high, T_low
 
     def scanEventsAndFakeOrders(self) :
+        '''
+        this will generate 3 actions
+        '''
         # step 1. scan self.__mdEventsToday and determine TH TL
         price_open, price_high, price_low, price_close, T_high, T_low = self.__scanEventsSequence(self.__mdEventsToday)
         tomorrow_open, tomorrow_high, tomorrow_low, tomorrow_close, tT_high, tT_low = self.__scanEventsSequence(self.__mdEventsTomrrow)
@@ -997,6 +1000,7 @@ class IdealDayTrader(Simulator):
         if not T_high:
             return
 
+        latestDir = OrderData.DIRECTION_NONE
         T_win = timedelta(minutes=2)
         slip = 0.02
 
@@ -1050,17 +1054,20 @@ class IdealDayTrader(Simulator):
             if price <= buy_stop :
                 order.direction = OrderData.DIRECTION_LONG 
                 self.__ordersToPlace.append(copy.copy(order))
+                latestDir = order.direction
                 continue
 
             if price >= sell_stop :
                 order.direction = OrderData.DIRECTION_SHORT 
                 self.__ordersToPlace.append(copy.copy(order))
+                latestDir = order.direction
                 continue
 
             if T > max(T_high, T_low) :
                 if price < catchback: # whether to catch back after sold
                     order.direction = OrderData.DIRECTION_LONG 
                     self.__ordersToPlace.append(copy.copy(order))
+                    latestDir = order.direction
 
     # def filterFakeOrders(self) :
     #     idx = 0
@@ -1075,7 +1082,6 @@ class IdealDayTrader(Simulator):
     #             self.__ordersToPlace
 
     #         self.__ordersToPlace.append(copy.copy(order))
-
 
     def scanEventsAndFakeOrders000(self) :
         # step 1. scan self.__mdEventsToday and determine TH TL

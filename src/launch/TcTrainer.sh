@@ -32,7 +32,7 @@ OUTDIR="./out/DQNTrainer_${PID}"
 echo "current ${OUTDIR} before moving"
 ls -lh ${OUTDIR}
 
-if ! [ -e ${OUTDIR}/${MODEL}.*.h5 ] ; then 
+if ! [ -e ${OUTDIR}/${MODEL}.weights.h5 ] ; then 
     echo "no new ${OUTDIR}/${MODEL}.weights.h5 generated"
 else
     echo "patching ${OUTDIR} best into ./out/${MODEL}"

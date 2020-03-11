@@ -3,7 +3,8 @@
 # usually put the following in crontab -e:
 # 2,12,22,32,42,52 * * * * ~/wkspaces/HyperPixiu/src/launch/TcTrainer.sh 2>&1 | tee -a /tmp/TcTrainer.log &
 
-MODEL="VGG16d1.S1548I4A3"
+# MODEL="VGG16d1.S1548I4A3"
+MODEL="Cnn1Dx4R2.S1548I4A3"
 CONF="DQNTrainer_U16TfGpu.json"
 
 PROJLOC=~/wkspaces/HyperPixiu
@@ -28,19 +29,23 @@ if [ -z ${PID} ]; then
 fi
 
 OUTDIR="./out/DQNTrainer_${PID}"
+echo "current ${OUTDIR} before moving"
+ls -lh ${OUTDIR}
 
-if [ -e ${OUTDIR}/${MODEL}.weights.h5 ] ; then 
+if ! [ -e ${OUTDIR}/${MODEL}.*.h5 ] ; then 
+    echo "no new ${OUTDIR}/${MODEL}.weights.h5 generated"
+else
     echo "patching ${OUTDIR} best into ./out/${MODEL}"
     cp -vf ${OUTDIR}/${MODEL}.best.h5 ./out/${MODEL}/weights.h5
 
     echo "packaging ${OUTDIR} into /tmp/${MODEL}_${STAMP}.tar.bz2"
     
     mkdir -p /tmp/${MODEL}/tb
-    echo "dir ${OUTDIR} before moving"
-    ls -lh ${OUTDIR}
+
     cp -vf ${OUTDIR}/*.json /tmp/${MODEL}/
-    mv ${OUTDIR}/*.h5 /tmp/${MODEL}/
-    mv ${OUTDIR}/tb/* /tmp/${MODEL}/tb/
+    cp -vf ./conf/${CONF} /tmp/${MODEL}/
+    mv -v ${OUTDIR}/*.h5 /tmp/${MODEL}/
+    mv -v ${OUTDIR}/tb/* /tmp/${MODEL}/tb/
     echo "dir ${OUTDIR} after moving"
     ls -lh ${OUTDIR}
 
@@ -51,7 +56,7 @@ if [ -e ${OUTDIR}/${MODEL}.weights.h5 ] ; then
     cd /tmp/${MODEL}/
     nice tar cvfj /tmp/${MODEL}.tar.bz2~ .
     rm -vf /tmp/${MODEL}.tar.bz2; mv -f /tmp/${MODEL}.tar.bz2~ /tmp/${MODEL}.tar.bz2
-    md5sum /tmp/${MODEL}.tar.bz2 > /tmp/${MODEL}.md5
+    md5sum /tmp/${MODEL}.tar.bz2 | tee /tmp/${MODEL}.md5
     ls -lh /tmp/${MODEL}*.tar.bz2 ;
 fi
 

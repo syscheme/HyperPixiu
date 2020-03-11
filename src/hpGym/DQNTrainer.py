@@ -644,7 +644,7 @@ class MarketDirClassifier(BaseApplication):
         actionchunk = np.array(frameDict['action'])
         AD = np.where(actionchunk >=0.99) # to match 1 because action is float read from RFrames
         kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
-        cRowToKeep = max(kI[1:]) *3
+        cRowToKeep = max(kI[1:]) + sum(kI[1:]) # = max(kI[1:]) *3
 
         # round up by batchSize
         if self._batchSize >0:
@@ -906,7 +906,7 @@ class MarketDirClassifier(BaseApplication):
             result, lstEpochs, histEpochs = None, [], []
             strEval =''
             loss = max(11, loss)
-            sampledAhead = cFresh >0 and (cFresh > cRecycled or skippedSaves >4)
+            sampledAhead = cFresh >0 and (cFresh > cRecycled/4 or skippedSaves >10)
             epochs = self._initEpochs if sampledAhead else 2
             while epochs > 0:
                 if self._evaluateSamples and len(strEval) <=0 and sampledAhead:
@@ -920,7 +920,7 @@ class MarketDirClassifier(BaseApplication):
                         AD = np.where(predact ==1)[1]
                         kP = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(3)] # the actions percentage in predictions
                         resEval =  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
-                        strEval += 'eval[%.2f%%^%.3f]/%s A%s->%s%%' % (resEval[1]*100, resEval[0], datetime.now() -stampStart, '+'.join(kI), '+'.join(kP))
+                        strEval += 'eval[%.2f%%^%.3f]/%s A%ss%%->Pred%s%%' % (resEval[1]*100, resEval[0], datetime.now() -stampStart, '+'.join(kI), '+'.join(kP))
                     except Exception as ex:
                         self.logexception(ex)
 

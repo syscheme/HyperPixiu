@@ -736,7 +736,7 @@ class Account(BaseApplication):
     @abstractmethod
     def stdout(self, message):
         """输出内容"""
-        print str(self._broker_datetimeAsOf()) + " ACC[" + self.ident + "] " + message
+        print(str(self._broker_datetimeAsOf()) + " ACC[" + self.ident + "] " + message)
 
     def debug(self, msg):
         self._trader._engine.debug('ACC[%s,%s] %s' % (self.ident, self._broker_datetimeAsOf().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], msg))

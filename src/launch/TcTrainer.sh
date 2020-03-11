@@ -2,7 +2,6 @@
 
 MODEL="VGG16d1.S1548I4A3"
 CONF="DQNTrainer_U16TfGpu.json"
-# CONF="DQNTrainer_VGG16d1.json"
 
 PROJLOC=~/wkspaces/HyperPixiu
 
@@ -18,7 +17,7 @@ if [ -z ${PID} ]; then
      fi
 
     ./run.sh src/hpGym/DQNTrainer.py -f conf/${CONF} 2>&1 >/dev/null &
-    PID=$(ps aux|grep 'DQNTrainer.py'|grep VGG16d1|awk '{print $2;}')
+    PID=$(ps aux|grep 'DQNTrainer.py'|grep ${CONF}|awk '{print $2;}')
     echo "started DQNTrainer with PID ${PID}"
 fi
 

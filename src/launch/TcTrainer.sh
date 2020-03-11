@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# usually put the following in crontab -e:
+# 2,12,22,32,42,52 * * * * ~/wkspaces/HyperPixiu/src/launch/TcTrainer.sh 2>&1 | tee -a /tmp/TcTrainer.log &
+
 MODEL="VGG16d1.S1548I4A3"
 CONF="DQNTrainer_U16TfGpu.json"
 

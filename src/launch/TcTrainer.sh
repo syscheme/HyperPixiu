@@ -17,8 +17,9 @@ if [ -z ${PID} ]; then
      fi
 
     ./run.sh src/hpGym/DQNTrainer.py -f conf/${CONF} 2>&1 >/dev/null &
+    sleep 1 # to wait the above command starts
     PID=$(ps aux|grep 'DQNTrainer.py'|grep ${CONF}|awk '{print $2;}')
-    echo "started DQNTrainer with PID ${PID}"
+    echo "started DQNTrainer with PID=${PID}"
 fi
 
 OUTDIR="./out/DQNTrainer_${PID}"

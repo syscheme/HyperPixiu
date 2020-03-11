@@ -543,18 +543,18 @@ class MarketDirClassifier(BaseApplication):
                 self.warn('nextDataChunk() readAhead thread is still running, waiting for its completion')
                 thrdBusy.join()
 
-        cChunks=0
+        cFrames=0
         with self.__lock:
             if self._frameSize >0:
-                cChunks = (self.__maxChunks * self._batchesPerTrain * self._batchSize) // self._frameSize
-            if cChunks<=0: cChunks =1
-            cChunks =int(cChunks)
+                cFrames = (self.__maxChunks * self._batchesPerTrain * self._batchSize) // self._frameSize
+            if cFrames<=0: cFrames =1
+            cFrames = int(cFrames)
 
-            self.__thrdsReadAhead = [None] * cChunks
+            self.__thrdsReadAhead = [None] * cFrames
 
         if not ret and not self.__chunksReadAhead or len(self.__chunksReadAhead) <=0:
             self.warn('nextDataChunk() no readAhead ready, force to read sync-ly')
-            self.__readAheadChunks(thrdSeqId=-1, cChunks=cChunks)
+            self.__readAheadChunks(thrdSeqId=-1, cChunks=self._batchesPerTrain) # cChunks=cFrames)
 
         szRecycled = 0
         with self.__lock:
@@ -570,11 +570,11 @@ class MarketDirClassifier(BaseApplication):
                 bRecycled = False
             szRecycled = len(self.__recycledChunks)
 
-            thrd = threading.Thread(target=self.__readAheadChunks, kwargs={'thrdSeqId': 0, 'cChunks': cChunks } )
+            thrd = threading.Thread(target=self.__readAheadChunks, kwargs={'thrdSeqId': 0, 'cChunks': self._batchesPerTrain } ) # kwargs={'thrdSeqId': 0, 'cChunks': cChunks } )
             self.__thrdsReadAhead[0] =thrd
             thrd.start()
 
-        self.info('nextDataChunk() pool refreshed: %s x(%s samples/bth) from %s; started reading %s frames ahead, recycled-size:%s' % (newsize, self._batchSize, ','.join(self.__samplesFrom), cChunks, szRecycled))
+        self.info('nextDataChunk() pool refreshed: %s x(%s samples/bth) from %s; started reading %s+ chunks ahead, recycled-size:%s' % (newsize, self._batchSize, ','.join(self.__samplesFrom), self._batchesPerTrain, szRecycled))
         return ret, bRecycled
 
     def __frameToSlices(self, frameDict):
@@ -802,6 +802,8 @@ class MarketDirClassifier(BaseApplication):
         awaitSize =-1
         addSize, raSize=0, 0
 
+        self.debug('readAheadChunks(%s) reading samples for %d chunks x %ds/chunk' % (thrdSeqId, cChunks, self._batchSize) )
+
         while cChunks >0 :
 
             h5fileName, nextFrameName, awaitSize = self.__nextFrameName(True)
@@ -814,30 +816,31 @@ class MarketDirClassifier(BaseApplication):
             self.debug('readAheadChunks(%s) read %s samples from %s@%s' % (thrdSeqId, lenFrame, nextFrameName, h5fileName) )
             strFrames.append('%s@%s' % (nextFrameName, os.path.basename(h5fileName)))
             cvnted = frameDict
+            nAfterFilter = lenFrame
             try :
-                nAfterFilter = lenFrame
                 if self.__filterFrame :
                     nAfterFilter = self.__filterFrame(frameDict)
-                    self.debug('readAheadChunks(%s) filtered %s samples into %s samples' % (thrdSeqId, lenFrame, nAfterFilter) )
             except Exception as ex:
                 self.logexception(ex)
 
             try :
                 if self.__convertFrame :
                     cvnted = self.__convertFrame(frameDict)
-                    self.debug('readAheadChunks(%s) converted %s samples into %s chunks' % (thrdSeqId, lenFrame, len(cvnted)) )
             except Exception as ex:
                 self.logexception(ex)
+
+            self.debug('readAheadChunks(%s) filtered %s from %s samples and converted into %s chunks' % (thrdSeqId, nAfterFilter, lenFrame, len(cvnted)) )
 
             with self.__lock:
                 size =1
                 if isinstance(cvnted, list) :
                     self.__chunksReadAhead += cvnted
                     size = len(cvnted)
+                    cChunks -= size
                 else:
                     self.__chunksReadAhead.append(cvnted)
+                    cChunks -= 1
 
-                cChunks -= 1
                 addSize += size
 
             frameDict, cvnted = None, None
@@ -850,7 +853,7 @@ class MarketDirClassifier(BaseApplication):
             if thrdSeqId>=0 and thrdSeqId < len(self.__thrdsReadAhead) :
                 self.__thrdsReadAhead[thrdSeqId] = None
 
-        self.info('readAheadChunks(%s) took %s to prepare %s->%s x%s s/bth from %dframes:%s; %d frames await' % 
+        self.info('readAheadChunks(%s) took %s to prepare %s->%s x%s s/bth from %d frames:%s; %d frames await' % 
             (thrdSeqId, str(datetime.now() - stampStart), addSize, raSize, self._batchSize, len(strFrames), ','.join(strFrames), awaitSize))
 
     def __generator_local(self):

@@ -870,6 +870,7 @@ class MarketDirClassifier(BaseApplication):
         loss = DUMMY_BIG_VAL
         lossMax = loss
         idxBatchInPool =int(DUMMY_BIG_VAL)
+        skippedSaves =0
         while True : #TODO temporarily loop for ever: lossMax > self._lossStop or abs(loss-lossMax) > (lossMax * self._lossPctStop/100) :
 
             statebths, actionbths =[], []
@@ -902,7 +903,7 @@ class MarketDirClassifier(BaseApplication):
             result, lstEpochs, histEpochs = None, [], []
             strEval =''
             loss = max(11, loss)
-            sampledAhead = cFresh>(cRecycled*4)
+            sampledAhead = cFresh >0 and (cFresh > cRecycled or skippedSaves >4)
             epochs = self._initEpochs if sampledAhead else 2
             while epochs > 0:
                 if self._evaluateSamples and len(strEval) <=0 and sampledAhead:
@@ -949,10 +950,12 @@ class MarketDirClassifier(BaseApplication):
                 continue
 
             strEpochs = '+'.join([str(i) for i in lstEpochs])
-            if sampledAhead :
+            if sampledAhead:
                 self.__logAndSaveResult(histEpochs[-1], 'doAppStep_local_generator', 'from %s, %s/%s steps x %s epochs on %dN+%dR samples took %s, hist: %s' % (strEval, trainSize, self._batchSize, strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
+                skippedSaves =0
             else :
                 self.info('doAppStep_local_generator() %s epochs on recycled %dN+%dR samples took %s, hist: %s' % (strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
+                skippedSaves +=1
 
     #----------------------------------------------------------------------
     # model definitions

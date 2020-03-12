@@ -69,7 +69,7 @@ def balanceSamples(filepathRFrm) :
                 if len(frmState) >= OUTFRM_SIZE:
                     col_state = frmState[:OUTFRM_SIZE]
                     col_action = frmAction[:OUTFRM_SIZE]
-                    frmState = frmState[OUTFRM_SIZE:]
+                    frmState  = frmState[OUTFRM_SIZE:]
                     frmAction = frmAction[OUTFRM_SIZE:]
 
                     g = h5out.create_group('%s%s' % (RFGROUP_PREFIX, frmId))
@@ -82,7 +82,7 @@ def balanceSamples(filepathRFrm) :
 
                     st = g.create_dataset('state', data= col_state, **dsargs)
                     st.attrs['dim'] = col_state.shape[1]
-                    ac = g.create_dataset('action', data= col_state, **dsargs)
+                    ac = g.create_dataset('action', data= col_action, **dsargs)
                     ac.attrs['dim'] = col_action.shape[1]
                     print("outfrm[%s] saved, pending %s" % (frmId, len(frmState)))
                     frmId +=1
@@ -100,12 +100,15 @@ def balanceSamples(filepathRFrm) :
 
                 st = g.create_dataset('state', data= col_state, **dsargs)
                 st.attrs['dim'] = col_state.shape[1]
-                ac = g.create_dataset('action', data= col_state, **dsargs)
+                ac = g.create_dataset('action', data= col_action, **dsargs)
                 ac.attrs['dim'] = col_action.shape[1]
 
                 print("lastfrm[%s] saved, size %s" % (frmId, len(frmState)))
 
 if __name__ == '__main__':
+    # balanceSamples('/mnt/e/AShareSample/RFrmD4M1X5_SH601688.h5')
+    # quit()
+
     if '-b' in sys.argv :
         idx = sys.argv.index('-b') +1
         if idx >0 and idx < len(sys.argv):

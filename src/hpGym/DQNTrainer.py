@@ -644,12 +644,13 @@ class MarketDirClassifier(BaseApplication):
         actionchunk = np.array(frameDict['action'])
         AD = np.where(actionchunk >=0.99) # to match 1 because action is float read from RFrames
         kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
-        # cRowToKeep = max(kI[1:]) + sum(kI[1:]) # = max(kI[1:]) *3
-        cRowToKeep = int(sum(kI[1:]) /2 *3 +1)
+
+        cRowToKeep = max(kI[1:]) + sum(kI[1:]) # = max(kI[1:]) *3
+        # cRowToKeep = int(sum(kI[1:]) /2 *3 +1)
 
         # round up by batchSize
         if self._batchSize >0:
-            cRowToKeep = ((cRowToKeep + self._batchSize -1) // self._batchSize) *self._batchSize
+            cRowToKeep = int((cRowToKeep + self._batchSize/2) // self._batchSize) *self._batchSize
             
         idxHolds = np.where(AD[1] ==0)[0].tolist()
         cHoldsToDel = len(idxHolds) - (cRowToKeep - sum(kI[1:]))

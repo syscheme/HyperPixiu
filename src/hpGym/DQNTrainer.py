@@ -134,7 +134,7 @@ class MarketDirClassifier(BaseApplication):
         self.__newChunks =[]
         self.__recycledChunks =[]
         self.__convertFrame = self.__frameToBatchs
-        self.__filterFrame  = None # self.__balanceSamples
+        self.__filterFrame  = self.__balanceSamples
 
         self.__latestBthNo=0
 

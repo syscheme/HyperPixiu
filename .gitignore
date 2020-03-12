@@ -8,6 +8,10 @@ build/
 .idea/
 .vscode/
 dist/
+*.rst
+aaa*
+*.h5
+*-checkpoint.ipynb
 
 *.temp
 *.vt
@@ -33,3 +37,5 @@ Untitled*.*
 # 压缩文件
 *.zip
 *.bz2
+*.xz
+*.gz

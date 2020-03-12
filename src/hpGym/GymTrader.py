@@ -23,6 +23,8 @@ from datetime import datetime, timedelta
 import copy
 import h5py, tarfile, numpy
 
+RFGROUP_PREFIX = 'ReplayFrame:'
+
 plt.style.use('dark_background')
 mpl.rcParams.update(
     {
@@ -1159,7 +1161,7 @@ class IdealDayTrader(Simulator):
         }
 
         with h5py.File(fn_frame, 'a') as h5file:
-            g = h5file.create_group('ReplayFrame:%s' % frameId)
+            g = h5file.create_group('%s%s' % (RFGROUP_PREFIX, frameId))
             g.attrs['state'] = 'state'
             g.attrs['action'] = 'action'
             g.attrs[u'default'] = 'state'

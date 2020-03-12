@@ -110,7 +110,7 @@ if __name__ == '__main__':
         idx = sys.argv.index('-b') +1
         if idx >0 and idx < len(sys.argv):
             h5fn = sys.argv[idx]
-            balanceSamples('/mnt/e/AShareSample/500top50/RFrmD4M1X5_SH600201.h5')
+            balanceSamples(h5fn)
             quit()
 
     if not '-f' in sys.argv :

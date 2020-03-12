@@ -14,13 +14,13 @@ RFGROUP_PREFIX = 'ReplayFrame:'
 OUTFRM_SIZE = 8*1024
 import random
 
-def balanceSamples(filepathRFrm) :
+def balanceSamples(filepathRFrm, compress=True) :
     '''
     read a frame from H5 file
     '''
-    dsargs={
-        'compression':'gzip'
-    }
+    dsargs={}
+    if compress :
+        dsargs['compression'] = 'gzip'
 
     print("balancing samples in %s to %sb" % (filepathRFrm, filepathRFrm))
     with h5py.File(filepathRFrm+'b', 'w') as h5out:
@@ -113,7 +113,8 @@ if __name__ == '__main__':
         idx = sys.argv.index('-b') +1
         if idx >0 and idx < len(sys.argv):
             h5fn = sys.argv[idx]
-            balanceSamples(h5fn)
+            compress = '-z' in sys.argv
+            balanceSamples(h5fn, compress)
             quit()
 
     if not '-f' in sys.argv :

@@ -84,19 +84,6 @@ class MarketDirClassifier(BaseApplication):
             self._replayFrameFiles = self.getConfig('replayFrameFiles', [])
             self._replayFrameFiles = [ Program.fixupPath(f) for f in self._replayFrameFiles ]
 
-        if not self._replayFrameFiles or len(self._replayFrameFiles) <=0: 
-            self._replayFrameFiles =[]
-            replayFrameDir = self.getConfig('replayFrameDir', None)
-            if replayFrameDir:
-                replayFrameDir = Program.fixupPath(replayFrameDir)
-                try :
-                    for _, subdirs, files in os.walk(replayFrameDir, topdown=False):
-                        for name in files:
-                            if '.h5' != name[-3:] : continue
-                            self._replayFrameFiles.append(os.path.join(replayFrameDir, name))
-                except:
-                    pass
-
         self._stepMethod          = self.getConfig('stepMethod', None)
         self._repeatsInFile       = self.getConfig('repeatsInFile', 0)
         self._exportTB            = self.getConfig('tensorBoard', 'no').lower() in BOOL_STRVAL_TRUE
@@ -108,6 +95,7 @@ class MarketDirClassifier(BaseApplication):
         self._lossPctStop         = self.getConfig('lossPctStop', 5)
         self._startLR             = self.getConfig('startLR', 0.01)
         self._evaluateSamples     = self.getConfig('evaluateSamples', 'yes').lower() in BOOL_STRVAL_TRUE
+        self._preBalanced         = self.getConfig('preBalanced',      'no').lower() in BOOL_STRVAL_TRUE
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
         #     self._poolEvictRate =1
@@ -120,6 +108,23 @@ class MarketDirClassifier(BaseApplication):
             self._initEpochs      = self.getConfig('GPU/initEpochs', self._initEpochs)
             self._recycleSize     = self.getConfig('GPU/recycles',   self._recycleSize)
             self._startLR         = self.getConfig('GPU/startLR',      self._startLR)
+
+        if not self._replayFrameFiles or len(self._replayFrameFiles) <=0: 
+            self._replayFrameFiles =[]
+            replayFrameDir = self.getConfig('replayFrameDir', None)
+            if replayFrameDir:
+                replayFrameDir = Program.fixupPath(replayFrameDir)
+                try :
+                    for _, subdirs, files in os.walk(replayFrameDir, topdown=False):
+                        for name in files:
+                            if self._preBalanced :
+                                if '.h5b' != name[-4:] : continue
+                            elif '.h5' != name[-3:] : 
+                                continue
+
+                            self._replayFrameFiles.append(os.path.join(replayFrameDir, name))
+                except:
+                    pass
 
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
@@ -134,7 +139,7 @@ class MarketDirClassifier(BaseApplication):
         self.__newChunks =[]
         self.__recycledChunks =[]
         self.__convertFrame = self.__frameToBatchs
-        self.__filterFrame  = self.__balanceSamples
+        self.__filterFrame  = None if self._preBalanced else self.__balanceSamples
 
         self.__latestBthNo=0
 

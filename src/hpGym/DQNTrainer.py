@@ -75,7 +75,7 @@ class MarketDirClassifier(BaseApplication):
     def __init__(self, program, replayFrameFiles=None, model_json=None, initWeights= None, recorder =None, **kwargs):
         super(MarketDirClassifier, self).__init__(program, **kwargs)
 
-        self._wkModelId           = self.getConfig('modelId', MarketDirClassifier.DEFAULT_MODEL)
+        self._wkModelId           = self.getConfig('brainId', MarketDirClassifier.DEFAULT_MODEL)
 
         self._model_json =model_json
         self._replayFrameFiles =replayFrameFiles
@@ -927,7 +927,7 @@ class MarketDirClassifier(BaseApplication):
                         AD = np.where(predact ==1)[1]
                         kP = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(3)] # the actions percentage in predictions
                         resEval =  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
-                        strEval += 'eval[%.2f%%^%.3f]/%s A%ss%%->Pred%s%%' % (resEval[1]*100, resEval[0], datetime.now() -stampStart, '+'.join(kI), '+'.join(kP))
+                        strEval += 'eval[%.2f%%^%.3f]/%s A%s%%->Pred%s%%' % (resEval[1]*100, resEval[0], datetime.now() -stampStart, '+'.join(kI), '+'.join(kP))
                     except Exception as ex:
                         self.logexception(ex)
 
@@ -961,7 +961,7 @@ class MarketDirClassifier(BaseApplication):
 
             strEpochs = '+'.join([str(i) for i in lstEpochs])
             if sampledAhead:
-                self.__logAndSaveResult(histEpochs[-1], 'doAppStep_local_generator', 'from %s, %s/%s steps x %s epochs on %dN+%dR samples took %s, hist: %s' % (strEval, trainSize, self._batchSize, strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
+                self.__logAndSaveResult(histEpochs[-1], 'doAppStep_local_generator', 'from %s, %s/%s steps x%s epochs on %dN+%dR samples took %s, hist: %s' % (strEval, trainSize, self._batchSize, strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
                 skippedSaves =0
             else :
                 self.info('doAppStep_local_generator() %s epochs on recycled %dN+%dR samples took %s, hist: %s' % (strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )

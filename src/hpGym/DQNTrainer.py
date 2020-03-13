@@ -689,7 +689,7 @@ class MarketDirClassifier(BaseApplication):
                                     framesInHd5.append(name[len(RFGROUP_PREFIX):])
 
                             # I'd like to skip frame-0 as it most-likly includes many zero-samples
-                            if len(framesInHd5)>3:
+                            if not self._preBalanced and len(framesInHd5)>3:
                                 del framesInHd5[0:3] # 3frames is about 4mon
                                 # del framesInHd5[-1]
                             
@@ -698,7 +698,7 @@ class MarketDirClassifier(BaseApplication):
 
                             if len(framesInHd5) <=1:
                                 self._replayFrameFiles.remove(h5fileName)
-                                self.error('file %s elimited as too few ReplayFrames in it' % (h5fileName) )
+                                self.error('file %s eliminated as too few ReplayFrames in it' % (h5fileName) )
                                 continue
 
                             f1st = RFGROUP_PREFIX + framesInHd5[0]
@@ -710,7 +710,7 @@ class MarketDirClassifier(BaseApplication):
 
                             if self._stateSize and self._stateSize != stateSize or self._actionSize and self._actionSize != actionSize:
                                 self._replayFrameFiles.remove(h5fileName)
-                                self.error('file %s elimited as its dims: %s/state %s/action mismatch working dims %s/state %s/action' % (h5fileName, stateSize, actionSize, self._stateSize, self._actionSize) )
+                                self.error('file %s eliminated as its dims: %s/state %s/action mismatch working dims %s/state %s/action' % (h5fileName, stateSize, actionSize, self._stateSize, self._actionSize) )
                                 continue
 
                             if self._frameSize < frameSize:

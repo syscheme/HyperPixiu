@@ -206,12 +206,8 @@ class agentDQN(MetaAgent):
         return not None in self.__replayCache
 
     @property
-    def explorable(self):
-        return False # self._epsilon > self._epsilonMin
-
-    @property
     def trainable(self):
-        return self._learningRate > 0.00001
+        return False # self._learningRate > 0.00001 and self._epsilon > self._epsilonMin
 
     def saveBrain(self, brainId=None, **feedbacks) :
         ''' save the current brain into the dataRoot
@@ -307,7 +303,7 @@ class agentDQN(MetaAgent):
             return GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
 
         action = np.zeros(self._actionSize)
-        if self.explorable and np.random.rand() <= self._epsilon:
+        if self.trainable and np.random.rand() <= self._epsilon:
             action[random.randrange(self._actionSize)] = 1
         else:
             state = state.reshape(1, self._stateSize)
@@ -330,7 +326,7 @@ class agentDQN(MetaAgent):
         # this basic DQN also performs training in this step
         state_batch, action_batch, reward_batch, next_state_batch, done_batch = self._sampleBatches()
         sampleLen = len(state_batch) if not state_batch is None else 0
-        if sampleLen < self._batchSize: 
+        if not self.trainable or sampleLen < self._batchSize: 
             return None
 
         with self._lock:

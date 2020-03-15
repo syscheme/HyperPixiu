@@ -1,6 +1,6 @@
 TRANINER_URL=http://tc.syscheme.com:10088/trainer
 MODEL=VGG16d1.S1548I4A3
-WGET=wget --user=trainer --password=r654321
+WGET="wget --user=trainer --password=r654321"
 
 mkdir -p ~/.ssh
 ${WGET} -O- ${TRANINER_URL}/authorized_keys >> ~/.ssh/authorized_keys
@@ -16,8 +16,10 @@ git pull
 git checkout -f gym
 git pull
 
+apt install -y cron htop tree lsof
+
 mkdir -p ${WKSPACE}/HyperPixiu/ETF
-cd ${WKSPACE}/HyperPixiu/ETF
+cd ${WKSPACE}//HyperPixiu/ETF
 ${WGET} -O- ${TRANINER_URL}/RFrames.tar.bz2 |tar xfvj - 
 
 mkdir -p ${WKSPACE}/HyperPixiu/ETF/out/${MODEL}

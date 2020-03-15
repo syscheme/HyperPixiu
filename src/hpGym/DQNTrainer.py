@@ -65,7 +65,7 @@ class Hd5DataGenerator(Sequence):
 ########################################################################
 class MarketDirClassifier(BaseApplication):
 
-    DEFAULT_MODEL = 'Cnn1Dx4'
+    DEFAULT_MODEL = 'Cnn1Dx4R2'
     COMPILE_ARGS ={
     'loss':'categorical_crossentropy', 
     # 'optimizer': sgd,

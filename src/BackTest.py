@@ -245,6 +245,7 @@ class BackTestApp(MetaTrader):
             # all tests have been done
             self.stop()
             self.info('all %d episodes have been done, took %s, app stopped. obj-in-program: %s' % (self._episodes, str(datetime.now() - self.__execStamp_appStart), self._program.listByType(MetaObj)))
+            exit(0)
             return
 
         self.info('-' *30)

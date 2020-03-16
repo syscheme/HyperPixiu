@@ -142,6 +142,7 @@ class MarketDirClassifier(BaseApplication):
         self.__filterFrame  = None if self._preBalanced else self.__balanceSamples
 
         self.__latestBthNo=0
+        self.__accuTotal =0.0
 
         self.__knownModels = {
             'VGG16d1'    : self.__createModel_VGG16d1,
@@ -731,7 +732,8 @@ class MarketDirClassifier(BaseApplication):
                         self._frameSeq += seq
 
                 random.shuffle(self._frameSeq)
-                self.info('frame sequence rebuilt: %s frames from %s replay files' % (len(self._frameSeq), len(self._replayFrameFiles)) )
+                self.info('frame sequence rebuilt: %s frames from %s replay files, latest accuTotal[%.2f]' % (len(self._frameSeq), len(self._replayFrameFiles), self.__accuTotal) )
+                self.__accuTotal =0.0
 
             h5fileName, nextFrameName = self._frameSeq[0]
 
@@ -928,6 +930,7 @@ class MarketDirClassifier(BaseApplication):
                         kP = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(3)] # the actions percentage in predictions
                         resEval =  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
                         strEval += 'eval[%.2f%%^%.3f]/%s A%s%%->Pred%s%%' % (resEval[1]*100, resEval[0], datetime.now() -stampStart, '+'.join(kI), '+'.join(kP))
+                        self.__accuTotal += len(actionchunk) * resEval[1]
                     except Exception as ex:
                         self.logexception(ex)
 

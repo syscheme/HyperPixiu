@@ -142,8 +142,7 @@ class MarketDirClassifier(BaseApplication):
         self.__filterFrame  = None if self._preBalanced else self.__balanceSamples
 
         self.__latestBthNo=0
-        self.__totalAccu    =0.0
-        self.__totalSamples =0
+        self.__totalAccu, self.__totalSamples, self.__stampRound = 0.0, 0, datetime.now()
 
         self.__knownModels = {
             'VGG16d1'    : self.__createModel_VGG16d1,
@@ -733,9 +732,8 @@ class MarketDirClassifier(BaseApplication):
                         self._frameSeq += seq
 
                 random.shuffle(self._frameSeq)
-                self.info('frame sequence rebuilt: %s frames from %s replay files, %.2f%%ov%s' % (len(self._frameSeq), len(self._replayFrameFiles), self.__totalAccu*100.0/(1+self.__totalSamples), self.__totalSamples) )
-                self.__totalAccu    =0.0
-                self.__totalSamples =0
+                self.info('frame sequence rebuilt: %s frames from %s replay files, %.2f%%ov%s took %s/round' % (len(self._frameSeq), len(self._replayFrameFiles), self.__totalAccu*100.0/(1+self.__totalSamples), self.__totalSamples, str(datetime.now() - self.__stampRound)) )
+                self.__totalAccu, self.__totalSamples, self.__stampRound = 0.0, 0, datetime.now()
 
             h5fileName, nextFrameName = self._frameSeq[0]
 

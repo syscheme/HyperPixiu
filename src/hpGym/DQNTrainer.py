@@ -733,7 +733,7 @@ class MarketDirClassifier(BaseApplication):
                         self._frameSeq += seq
 
                 random.shuffle(self._frameSeq)
-                self.info('frame sequence rebuilt: %s frames from %s replay files, latest accuTotal[%.2f]' % (len(self._frameSeq), len(self._replayFrameFiles), self.__totalAccu) )
+                self.info('frame sequence rebuilt: %s frames from %s replay files, %.2f%%ov%s' % (len(self._frameSeq), len(self._replayFrameFiles), self.__totalAccu*100.0/(1+self.__totalSamples), self.__totalSamples) )
                 self.__totalAccu    =0.0
                 self.__totalSamples =0
 

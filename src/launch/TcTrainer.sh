@@ -46,6 +46,7 @@ else
     cp -vf ./conf/${CONF} /tmp/${MODEL}/
     mv -v ${OUTDIR}/*.h5 /tmp/${MODEL}/
     mv -v ${OUTDIR}/tb/* /tmp/${MODEL}/tb/
+    rm -rf /tmp/${MODEL}/tb
     echo "dir ${OUTDIR} after moving"
     ls -lh ${OUTDIR}
 

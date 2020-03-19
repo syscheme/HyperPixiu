@@ -896,7 +896,6 @@ class MarketDirClassifier(BaseApplication):
 
                 statebths.append(bth['state'])
                 actionbths.append(bth['action'])
-                trainId +=1
 
             #----------------------------------------------------------
             # continue # if only test read-ahead and pool making-up   #
@@ -909,6 +908,7 @@ class MarketDirClassifier(BaseApplication):
             statechunk = np.concatenate(tuple(statebths))
             actionchunk = np.concatenate(tuple(actionbths))
             statebths, actionbths =[], []
+            trainId +=1
 
             trainSize = statechunk.shape[0]
             self.__totalSamples += trainSize

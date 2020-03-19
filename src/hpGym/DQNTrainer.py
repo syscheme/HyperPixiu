@@ -875,7 +875,7 @@ class MarketDirClassifier(BaseApplication):
             'action':[],
         }
 
-        itrId=0
+        trainId, itrId = 0, 0
         samplePerFrame =0
         trainSize = self._batchesPerTrain*self._batchSize
 
@@ -896,6 +896,7 @@ class MarketDirClassifier(BaseApplication):
 
                 statebths.append(bth['state'])
                 actionbths.append(bth['action'])
+                trainId +=1
 
             #----------------------------------------------------------
             # continue # if only test read-ahead and pool making-up   #
@@ -919,7 +920,7 @@ class MarketDirClassifier(BaseApplication):
             sampledAhead = cFresh >0 and (cFresh > cRecycled/4 or skippedSaves >10)
             epochs = self._initEpochs if sampledAhead else 2
             while epochs > 0:
-                if self._evaluateSamples and len(strEval) <=0 and sampledAhead and 0 == (itrId %5):
+                if self._evaluateSamples and len(strEval) <=0 and sampledAhead and 0 == (trainId %5):
                     try :
                         # eval.1 eval on the samples
                         resEval =  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)

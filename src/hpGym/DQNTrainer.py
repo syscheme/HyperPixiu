@@ -920,11 +920,11 @@ class MarketDirClassifier(BaseApplication):
             sampledAhead = cFresh >0 and (cFresh > cRecycled/4 or skippedSaves >10)
             epochs = self._initEpochs if sampledAhead else 2
             while epochs > 0:
-                if self._evaluateSamples and len(strEval) <=0 and sampledAhead and 0 == (trainId %5):
+                if self._evaluateSamples and len(strEval) <=0 and sampledAhead and 1 == (trainId %5):
                     try :
                         # eval.1 eval on the samples
                         resEval =  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
-                        strEval += 'from eval[%.2f%%^%.3f]%.2f%%ov%s' % (resEval[1]*100, resEval[0], self.__totalAccu*100.0/(1+self.__totalEval), self.__totalSamples)
+                        strEval += 'from eval[%.2f%%^%.3f]' % (resEval[1]*100, resEval[0])
                         self.__totalAccu += trainSize * resEval[1]
                         self.__totalEval += trainSize
 
@@ -974,7 +974,7 @@ class MarketDirClassifier(BaseApplication):
 
             strEpochs = '+'.join([str(i) for i in lstEpochs])
             if sampledAhead:
-                self.__logAndSaveResult(histEpochs[-1], 'doAppStep_local_generator', '%s%s/%s steps x%s epochs on %dN+%dR samples took %s, hist: %s' % (strEval, trainSize, self._batchSize, strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
+                self.__logAndSaveResult(histEpochs[-1], 'doAppStep_local_generator', '%s%s/%s steps x%s epochs on %dN+%dR samples %.2f%%ov%s took %s, hist: %s' % (strEval, trainSize, self._batchSize, strEpochs, cFresh, cRecycled, self.__totalAccu*100.0/(1+self.__totalEval), self.__totalSamples, (datetime.now() -stampStart), ', '.join(histEpochs)) )
                 skippedSaves =0
             else :
                 self.info('doAppStep_local_generator() %s epochs on recycled %dN+%dR samples took %s, hist: %s' % (strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )

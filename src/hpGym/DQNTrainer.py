@@ -142,7 +142,7 @@ class MarketDirClassifier(BaseApplication):
         self.__filterFrame  = None if self._preBalanced else self.__balanceSamples
 
         self.__latestBthNo=0
-        self.__accuTotal =0.0
+        self.__totalAccu, self.__totalEval, self.__totalSamples, self.__stampRound = 0.0, 0, 0, datetime.now()
 
         self.__knownModels = {
             'VGG16d1'    : self.__createModel_VGG16d1,
@@ -732,8 +732,8 @@ class MarketDirClassifier(BaseApplication):
                         self._frameSeq += seq
 
                 random.shuffle(self._frameSeq)
-                self.info('frame sequence rebuilt: %s frames from %s replay files, latest accuTotal[%.2f]' % (len(self._frameSeq), len(self._replayFrameFiles), self.__accuTotal) )
-                self.__accuTotal =0.0
+                self.info('frame sequence rebuilt: %s frames from %s replay files, %.2f%%ov%s took %s/round' % (len(self._frameSeq), len(self._replayFrameFiles), self.__totalAccu*100.0/(1+self.__totalEval), self.__totalSamples, str(datetime.now() - self.__stampRound)) )
+                self.__totalAccu, self.__totalEval, self.__totalSamples, self.__stampRound = 0.0, 0, 0, datetime.now()
 
             h5fileName, nextFrameName = self._frameSeq[0]
 
@@ -910,6 +910,7 @@ class MarketDirClassifier(BaseApplication):
             statebths, actionbths =[], []
 
             trainSize = statechunk.shape[0]
+            self.__totalSamples += trainSize
             
             stampStart = datetime.now()
             result, lstEpochs, histEpochs = None, [], []
@@ -922,8 +923,9 @@ class MarketDirClassifier(BaseApplication):
                     try :
                         # eval.1 eval on the samples
                         resEval =  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
-                        strEval += ' from eval[%.2f%%^%.3f]' % (resEval[1]*100, resEval[0])
-                        self.__accuTotal += len(actionchunk) * resEval[1]
+                        strEval += 'from eval[%.2f%%^%.3f]%.2f%%ov%s' % (resEval[1]*100, resEval[0], self.__totalAccu*100.0/(1+self.__totalEval), self.__totalSamples)
+                        self.__totalAccu += trainSize * resEval[1]
+                        self.__totalEval += trainSize
 
                         # eval.2 action distrib in samples/prediction
                         AD = np.where(actionchunk ==1)[1]
@@ -934,7 +936,7 @@ class MarketDirClassifier(BaseApplication):
                             predact[r][np.argmax(predict[r])] =1
                         AD = np.where(predact ==1)[1]
                         kP = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(3)] # the actions percentage in predictions
-                        strEval += 'A%s%%->Pred%s%%' % ('+'.join(kI), '+'.join(kP))
+                        strEval += ',A%s%%->Pred%s%%' % ('+'.join(kI), '+'.join(kP))
                         
                         # eval.3 duration taken
                         strEval += '/%s, ' % (datetime.now() -stampStart)

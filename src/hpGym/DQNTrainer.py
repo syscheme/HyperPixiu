@@ -918,8 +918,14 @@ class MarketDirClassifier(BaseApplication):
             sampledAhead = cFresh >0 and (cFresh > cRecycled/4 or skippedSaves >10)
             epochs = self._initEpochs if sampledAhead else 2
             while epochs > 0:
-                if self._evaluateSamples and len(strEval) <=0 and sampledAhead:
+                if self._evaluateSamples and len(strEval) <=0 and sampledAhead and 0 == (itrId %5):
                     try :
+                        # eval.1 eval on the samples
+                        resEval =  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
+                        strEval += ' from eval[%.2f%%^%.3f]' % (resEval[1]*100, resEval[0])
+                        self.__accuTotal += len(actionchunk) * resEval[1]
+
+                        # eval.2 action distrib in samples/prediction
                         AD = np.where(actionchunk ==1)[1]
                         kI = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(3)] # the actions percentage in sample
                         predict = self._brain.predict(x=statechunk)
@@ -928,9 +934,10 @@ class MarketDirClassifier(BaseApplication):
                             predact[r][np.argmax(predict[r])] =1
                         AD = np.where(predact ==1)[1]
                         kP = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(3)] # the actions percentage in predictions
-                        resEval =  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
-                        strEval += 'eval[%.2f%%^%.3f]/%s A%s%%->Pred%s%%' % (resEval[1]*100, resEval[0], datetime.now() -stampStart, '+'.join(kI), '+'.join(kP))
-                        self.__accuTotal += len(actionchunk) * resEval[1]
+                        strEval += 'A%s%%->Pred%s%%' % ('+'.join(kI), '+'.join(kP))
+                        
+                        # eval.3 duration taken
+                        strEval += '/%s, ' % (datetime.now() -stampStart)
                     except Exception as ex:
                         self.logexception(ex)
 
@@ -964,7 +971,7 @@ class MarketDirClassifier(BaseApplication):
 
             strEpochs = '+'.join([str(i) for i in lstEpochs])
             if sampledAhead:
-                self.__logAndSaveResult(histEpochs[-1], 'doAppStep_local_generator', 'from %s, %s/%s steps x%s epochs on %dN+%dR samples took %s, hist: %s' % (strEval, trainSize, self._batchSize, strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
+                self.__logAndSaveResult(histEpochs[-1], 'doAppStep_local_generator', '%s%s/%s steps x%s epochs on %dN+%dR samples took %s, hist: %s' % (strEval, trainSize, self._batchSize, strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
                 skippedSaves =0
             else :
                 self.info('doAppStep_local_generator() %s epochs on recycled %dN+%dR samples took %s, hist: %s' % (strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )

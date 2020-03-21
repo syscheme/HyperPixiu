@@ -96,6 +96,7 @@ class MarketDirClassifier(BaseApplication):
         self._startLR             = self.getConfig('startLR', 0.01)
         self._evaluateSamples     = self.getConfig('evaluateSamples', 'yes').lower() in BOOL_STRVAL_TRUE
         self._preBalanced         = self.getConfig('preBalanced',      'no').lower() in BOOL_STRVAL_TRUE
+        self._evalAt              = self.getConfig('evalAt', 5) # how often on trains to perform evaluation
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
         #     self._poolEvictRate =1
@@ -130,6 +131,7 @@ class MarketDirClassifier(BaseApplication):
         self._fitCallbacks =[]
         self._frameSeq =[]
 
+        self._evalAt =int(self._evalAt)
         self._stateSize, self._actionSize, self._frameSize = None, None, 0
         self._brain = None
         self._outDir = os.path.join(self.dataRoot, self._program.progId)
@@ -920,7 +922,7 @@ class MarketDirClassifier(BaseApplication):
             sampledAhead = cFresh >0 and (cFresh > cRecycled/4 or skippedSaves >10)
             epochs = self._initEpochs if sampledAhead else 2
             while epochs > 0:
-                if self._evaluateSamples and len(strEval) <=0 and sampledAhead and 1 == (trainId %5):
+                if self._evaluateSamples and len(strEval) <=0 and sampledAhead and (self._evalAt <=0 or 1 == (trainId % self._evalAt)):
                     try :
                         # eval.1 eval on the samples
                         resEval =  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)

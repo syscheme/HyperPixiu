@@ -25,6 +25,7 @@ class MarketCrawler(BaseApplication):
 
         self._recorder = recorder
         self._symbolsToPoll = []
+        self._postCaptured = False
         # the MarketData instance Id
         # self._id = settings.id("")
         # if len(self._id)<=0 :
@@ -155,6 +156,13 @@ class MarketCrawler(BaseApplication):
         '''
         pos = key.find('>')
         return key[:pos], key[pos+1:]
+
+    def OnEventCaptured(self, ev):
+        if self._recorder:
+            self._recorder.pushRow(ev.type, ev.data)
+
+        if self._postCaptured:
+            self.postEvent(ev)
 
     #----------------------------------------------------------------------
     def onError(self, msg):

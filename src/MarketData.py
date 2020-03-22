@@ -330,7 +330,7 @@ class TickToKLineMerger(object):
         # 初始化新一分钟的K线数据
         if not kline:
             # 创建新的K线对象
-            kline = KLineData(tick.exchange + '_t2k', tick.exchasymbolnge)
+            kline = KLineData(tick.exchange + '_t2k', tick.symbol)
             kline.open = tick.price
             kline.high = tick.price
             kline.low = tick.price

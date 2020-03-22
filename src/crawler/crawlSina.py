@@ -309,6 +309,10 @@ class SinaCrawler(MarketCrawler):
         ev.setData(kl1m)
         self.OnEventCaptured(ev)
 
+        if kl1m.symbol in self.__cacheKLs.keys():
+            self.__cacheKLs[kl1m.symbol].push(ev)
+
+        self.debug("onKL1mMerged() merged from ticks: %s" %(kl1m.desc))
 
     # end of sub-steps
     #------------------------------------------------

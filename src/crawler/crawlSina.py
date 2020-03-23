@@ -44,7 +44,7 @@ class SinaTickToKL1m(object):
         
             # 推送已经结束的上一分钟K线
             if self.__onKline1min :
-                kl = copy.deepcopy(self.__kline)
+                kl = copy(self.__kline)
                 kl.volume -= self.__lastVol
                 self.__lastVol = self.__kline.volume
                 self.__onKline1min(kl)
@@ -111,6 +111,7 @@ class SinaCrawler(MarketCrawler):
         self._proxies = {}
 
         self._depth_ticks  = self.getConfig('depth/ticks', 120) # covers 2min at least, if we have TickTo1min built in
+        self._depth_1min   = self.getConfig('depth/1min',  60)  # 48lines during an AShare day, 96 to cover two days
         self._depth_5min   = self.getConfig('depth/5min',  96)  # 48lines during an AShare day, 96 to cover two days
         self._depth_1day   = self.getConfig('depth/1day',  260) # for exmaple, thereTrue are 245 trading-days in AShare market during YR2018, so take 280 to keep a year
         self._secYield456  = self.getConfig('yield456',    230)
@@ -205,7 +206,7 @@ class SinaCrawler(MarketCrawler):
             cBusy +=1
             s = tk.symbol
             if not s in self.__cacheKLs.keys():
-                self.__cacheKLs[s] = Perspective('AShare', symbol =s, KLDepth_1min=0, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
+                self.__cacheKLs[s] = Perspective('AShare', symbol =s, KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
             if not s in self.__tickToKL1m.keys():
                 self.__tickToKL1m[s] = SinaTickToKL1m(self.__onKL1mMerged)
             psp = self.__cacheKLs[s]
@@ -251,7 +252,7 @@ class SinaCrawler(MarketCrawler):
             return 1 # return as busy for this error case
 
         if not s in self.__cacheKLs.keys():
-            self.__cacheKLs[s] = Perspective('AShare', symbol=s, KLDepth_1min=0, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
+            self.__cacheKLs[s] = Perspective('AShare', symbol=s, KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
 
         psp = self.__cacheKLs[s]
 

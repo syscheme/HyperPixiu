@@ -24,6 +24,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import shutil
 import codecs
+import math
 
 # 如果安装了seaborn则设置为白色风格
 try:
@@ -860,7 +861,7 @@ def calculateSummary(startBalance, dayResultDict):
     dailyTradeCount = totalTradeCount / totalDays
     
     totalReturn = (endBalance/startBalance - 1) * 100
-    annualizedReturn = totalReturn / totalDays * 240
+    annualizedReturn =  (math.exp(math.log(endBalance/startBalance) / (totalDays /Account_AShare.ANNUAL_TRADE_DAYS)) -1) *100 # = totalReturn / totalDays * 240
     dailyReturn = df['return'].mean() * 100
     returnStd = df['return'].std() * 100
     

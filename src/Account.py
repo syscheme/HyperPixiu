@@ -1020,6 +1020,8 @@ class Account_AShare(Account):
     A股帐号，主要实现交易费和T+1
     """
 
+    ANNUAL_TRADE_DAYS = 244 # AShare has about 244 trade days every year
+
     #----------------------------------------------------------------------
     def __init__(self, program, **kwargs):
         """Constructor"""

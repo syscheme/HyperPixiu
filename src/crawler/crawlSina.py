@@ -36,7 +36,7 @@ class SinaTickToKL1m(object):
     def pushTick(self, tick):
         """TICK更新"""
 
-        if self.__kline and self.__kline.datetime.minute != tick.datetime.minute:
+        if self.__kline and self.__kline.datetime.minute != tick.datetime.minute and SinaCrawler.duringTradeHours(tick.datetime):
             # 生成上一分钟K线的时间戳
             self.__kline.datetime = self.__kline.datetime.replace(second=0, microsecond=0)  # 将秒和微秒设为0
             self.__kline.date = self.__kline.datetime.strftime('%Y-%m-%d')
@@ -58,6 +58,9 @@ class SinaTickToKL1m(object):
             self.__kline.open = tick.price
             self.__kline.high = tick.price
             self.__kline.low = tick.price
+            if self.__lastVol <=0:
+                self.__lastVol = tick.volume
+
         # 累加更新老一分钟的K线数据
         else:                                   
             self.__kline.high = max(self.__kline.high, tick.price)
@@ -145,10 +148,10 @@ class SinaCrawler(MarketCrawler):
         if not dt.hour in [9, 10, 11, 13, 14] :
             return False
         
-        if 9 == dt.hour and dt.minute < 28 :
+        if 9 == dt.hour and dt.minute < 29 :
             return False
         
-        if 11 == dt.hour and dt.minute >32 :
+        if 11 == dt.hour and dt.minute >31 :
             return False
 
         return True

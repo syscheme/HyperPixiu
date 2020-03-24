@@ -432,18 +432,38 @@ class PerspectiveState(MarketState):
         
         return self.__dictPerspective[symbol].latestPrice
 
-    def getAsOf(self, symbol=None) :
+    def getAsOf(self, symbol=None, evType =None) :
         ''' 
         @return the datetime as of latest observing
         '''
         if symbol and symbol in self.__dictPerspective.keys():
-            return self.__dictPerspective[symbol].asof
+            psp = self.__dictPerspective[symbol]
+            if psp:
+                if evType and evType in psp._stacks.keys():
+                    return psp.getAsOf(evType)
+                return psp.asof
 
         ret = None
         for s, p in self.__dictPerspective.items() :
             if not ret or ret > p.asof:
                 ret = p.asof
         return ret if ret else DT_EPOCH
+
+    def sizesOf(self, symbol, evType =None) :
+        ''' 
+        @return the size of specified symbol/evType
+        '''
+        if symbol and symbol in self.__dictPerspective.keys():
+            return self.__dictPerspective[symbol].sizesOf(evType)
+        return 0, 0
+
+    def descOf(self, symbol) :
+        ''' 
+        @return the desc of specified symbol
+        '''
+        if symbol and symbol in self.__dictPerspective.keys():
+            return self.__dictPerspective[symbol].desc
+        return '%s unknown' % symbol
 
     def dailyOHLC_sofar(self, symbol) :
         ''' 

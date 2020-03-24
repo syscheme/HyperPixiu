@@ -5,6 +5,7 @@ from __future__ import division
 from Application import BaseApplication
 from EventData import datetime2float
 from MarketData import *
+from Perspective import PerspectiveState
 
 import traceback
 from datetime import datetime
@@ -18,7 +19,7 @@ class MarketCrawler(BaseApplication):
     __lastId__ =100
 
     #----------------------------------------------------------------------
-    def __init__(self, program, recorder=None, **kwargs):
+    def __init__(self, program, exchange, recorder=None, **kwargs):
         '''Constructor
         '''
         super(MarketCrawler, self).__init__(program, **kwargs)
@@ -26,6 +27,8 @@ class MarketCrawler(BaseApplication):
         self._recorder = recorder
         self._symbolsToPoll = []
         self._postCaptured = False
+        self.__collectedState = PerspectiveState(exchange) # {} # dict of symbol to Perspective
+
         # the MarketData instance Id
         # self._id = settings.id("")
         # if len(self._id)<=0 :
@@ -41,8 +44,8 @@ class MarketCrawler(BaseApplication):
     
     #----------------------------------------------------------------------
     @property
-    def exchange(self) :
-        return self._exchange
+    def collectedState(self) :
+        return self.__collectedState
 
     @property
     def subscriptions(self):
@@ -69,6 +72,7 @@ class MarketCrawler(BaseApplication):
         return reqId
    
     def subscribe(self, symbols):
+        """订阅成交细节"""
         c =0
         for s in symbols:
             if s in self._symbolsToPoll:
@@ -84,6 +88,7 @@ class MarketCrawler(BaseApplication):
         return c
 
     def unsubscribe(self, symbols):
+        """取消订阅主题"""
         c = len(self._symbolsToPoll)
         for s in symbols:
             self._symbolsToPoll.remove(s)
@@ -169,26 +174,3 @@ class MarketCrawler(BaseApplication):
         """错误推送"""
         self.error(msg)
         
-'''
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def subscribe(self, symbol, eventType =EVENT_TICK):
-        """订阅成交细节"""
-        pass
-
-    #----------------------------------------------------------------------
-    def unsubscribe(self, symbol, eventType):
-        """取消订阅主题"""
-        key = self.fmtSubscribeKey(symbol, eventType)
-        if key not in self.subDict:
-            return
-
-        self.doUnsubscribe(key)
-        del self.subDict[key]
-
-    #----------------------------------------------------------------------
-    @abstractmethod
-    def doUnsubscribe(self, key):
-        """取消订阅主题"""
-        raise NotImplementedError
-'''

@@ -5,7 +5,6 @@ from __future__ import division
 from MarketCrawler import *
 from EventData import Event, datetime2float
 from MarketData import KLineData, TickData, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
-from Perspective import Perspective
 
 import requests # pip3 install requests
 from copy import copy
@@ -19,63 +18,6 @@ import re
 [{cate_type:"2",cate_name:"银行业",category:"hangye_ZI01"}]
 '''
 
-class SinaTickToKL1m(object):
-    """
-    SINA Tick合成1分钟K线
-    """
-
-    #----------------------------------------------------------------------
-    def __init__(self, onKLine1min):
-        """Constructor"""
-        self.__lastTick = None
-        self.__onKline1min = onKLine1min      # 1分钟K线回调函数
-        self.__kline = None
-        self.__lastVol = 0
-        
-    #----------------------------------------------------------------------
-    def pushTick(self, tick):
-        """TICK更新"""
-
-        if self.__kline and self.__kline.datetime.minute != tick.datetime.minute and SinaCrawler.duringTradeHours(tick.datetime):
-            # 生成上一分钟K线的时间戳
-            self.__kline.datetime = self.__kline.datetime.replace(second=0, microsecond=0)  # 将秒和微秒设为0
-            self.__kline.date = self.__kline.datetime.strftime('%Y-%m-%d')
-            self.__kline.time = self.__kline.datetime.strftime('%H:%M:%S.%f')
-        
-            # 推送已经结束的上一分钟K线
-            if self.__onKline1min :
-                kl = copy(self.__kline)
-                kl.volume -= self.__lastVol
-                self.__lastVol = self.__kline.volume
-                self.__onKline1min(kl)
-            
-            self.__kline = None # 创建新的K线对象
-            
-        # 初始化新一分钟的K线数据
-        if not self.__kline:
-            # 创建新的K线对象
-            self.__kline = KLineData(tick.exchange + '_t2k', tick.symbol)
-            self.__kline.open = tick.price
-            self.__kline.high = tick.price
-            self.__kline.low = tick.price
-            if self.__lastVol <=0:
-                self.__lastVol = tick.volume
-
-        # 累加更新老一分钟的K线数据
-        else:                                   
-            self.__kline.high = max(self.__kline.high, tick.price)
-            self.__kline.low = min(self.__kline.low, tick.price)
-
-        # 通用更新部分
-        self.__kline.close = tick.price        
-        self.__kline.datetime = tick.datetime  
-        self.__kline.openInterest = tick.openInterest
-   
-        volumeChange = tick.volume - self.__kline.volume   # 当前K线内的成交量
-        self.__kline.volume += max(volumeChange, 0)             # 避免夜盘开盘lastTick.volume为昨日收盘数据，导致成交量变化为负的情况
-            
-        # 缓存Tick
-        self.__lastTick = tick
 
 ########################################################################
 class SinaCrawler(MarketCrawler):
@@ -103,7 +45,7 @@ class SinaCrawler(MarketCrawler):
 
     def __init__(self, program, recorder=None, **kwargs):
         """Constructor"""
-        super(SinaCrawler, self).__init__(program, recorder, **kwargs)
+        super(SinaCrawler, self).__init__(program, 'AShare', recorder, **kwargs)
         
         # SinaCrawler take multiple HTTP requests to collect data, each of them may take different
         # duration to complete, so this crawler should be threaded
@@ -113,10 +55,10 @@ class SinaCrawler(MarketCrawler):
 
         self._proxies = {}
 
-        self._depth_ticks  = self.getConfig('depth/ticks', 120) # covers 2min at least, if we have TickTo1min built in
-        self._depth_1min   = self.getConfig('depth/1min',  60)  # 48lines during an AShare day, 96 to cover two days
-        self._depth_5min   = self.getConfig('depth/5min',  96)  # 48lines during an AShare day, 96 to cover two days
-        self._depth_1day   = self.getConfig('depth/1day',  260) # for exmaple, thereTrue are 245 trading-days in AShare market during YR2018, so take 280 to keep a year
+        # self._depth_ticks  = self.getConfig('depth/ticks', 120) # covers 2min at least, if we have TickTo1min built in
+        # self._depth_1min   = self.getConfig('depth/1min',  60)  # 48lines during an AShare day, 96 to cover two days
+        # self._depth_5min   = self.getConfig('depth/5min',  96)  # 48lines during an AShare day, 96 to cover two days
+        # self._depth_1day   = self.getConfig('depth/1day',  260) # for exmaple, thereTrue are 245 trading-days in AShare market during YR2018, so take 280 to keep a year
         self._secYield456  = self.getConfig('yield456',    230)
         self.__excludeAt404= self.getConfig('excludeAt404',True)
         self.__minimalKLYield = self.getConfig('minimalKLYield', 0.4) # 0.4sec, the minimal interval between two KL query in order not to trigger SINA 456
@@ -127,7 +69,6 @@ class SinaCrawler(MarketCrawler):
         self.__idxTickBatch = 0
         self.__nextStamp_PollTick = None
 
-        self.__cacheKLs = {} # dict of symbol to Perspective
         self.__tickToKL1m = {} # dict of symbol to SinaTickToKL1m
         self.__idxKL = 0
 
@@ -208,16 +149,21 @@ class SinaCrawler(MarketCrawler):
         for tk in result:
             cBusy +=1
             s = tk.symbol
-            if not s in self.__cacheKLs.keys():
-                self.__cacheKLs[s] = Perspective('AShare', symbol =s, KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
-            if not s in self.__tickToKL1m.keys():
-                self.__tickToKL1m[s] = SinaTickToKL1m(self.__onKL1mMerged)
-            psp = self.__cacheKLs[s]
+
             ev = Event(EVENT_TICK)
             ev.setData(tk)
-            ev = psp.push(ev)
+
+            # if not s in self.collectedState.keys():
+            #     self.collectedState[s] = Perspective('AShare', symbol =s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
+            # psp = self.collectedState[s]
+            self.collectedState.updateByEvent(ev) # ev = psp.push(ev)
+
+            if not s in self.__tickToKL1m.keys():
+                self.__tickToKL1m[s] = SinaTickToKL1m(self.__onKL1mMerged)
             self.__tickToKL1m[s].pushTick(tk)
-            self.debug("step_pollTicks() pushed tick %s into psp, now: %s" %(tk.desc, psp.desc))
+
+            self.debug("step_pollTicks() pushed tick %s into psp, now: %s" %(tk.desc, self.collectedState.descOf(s)))
+
             if ev and self._recorder:
                 cMerged +=1
                 self.OnEventCaptured(ev)
@@ -254,19 +200,18 @@ class SinaCrawler(MarketCrawler):
             del self._symbolsToPoll[s]
             return 1 # return as busy for this error case
 
-        if not s in self.__cacheKLs.keys():
-            self.__cacheKLs[s] = Perspective('AShare', symbol=s, KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
-
-        psp = self.__cacheKLs[s]
+        # if not s in self.collectedState.keys():
+        #     self.collectedState[s] = Perspective('AShare', symbol=s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
+        # psp = self.collectedState[s]
 
         for evType in [EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
             minutes = SinaCrawler.MINs_OF_EVENT[evType]
-            etimatedNext = datetime2float(psp.getAsOf(evType)) + 60*(minutes if minutes < 240 else int(minutes /240)*60*24) -1
+            etimatedNext = datetime2float(self.collectedState.getAsOf(s, evType)) + 60*(minutes if minutes < 240 else int(minutes /240)*60*24) -1
             self.__END_OF_TODAY = datetime2float(stampStart.replace(hour=15, minute=1))
             if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
                 continue
 
-            size, lines = psp.sizesOf(evType)
+            size, lines = self.collectedState.sizesOf(s, evType)
             if size >0:
                 lines = 0
             lines +=10
@@ -292,14 +237,14 @@ class SinaCrawler(MarketCrawler):
                 cBusy +=1
                 ev = Event(evType)
                 ev.setData(i)
-                ev = psp.push(ev)
+                self.collectedState.updateByEvent(ev) # ev = psp.push(ev)
                 if ev and self._recorder:
                     cMerged +=1
                     self.OnEventCaptured(ev)
 
             stampNow = datetime.now()
             if cMerged >0:
-                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" %(s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), psp.desc))
+                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.collectedState.descOf(s)))
             elif not SinaCrawler.duringTradeHours(stampNow):
                 self.__stampYieldTill_KL = stampNow + timedelta(minutes=2)
                 self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-time of AShare, actively yielding 2min to avoid 456" %(s, evType, self.__idxKL, cSyms))
@@ -313,8 +258,8 @@ class SinaCrawler(MarketCrawler):
         ev.setData(kl1m)
         self.OnEventCaptured(ev)
 
-        if kl1m.symbol in self.__cacheKLs.keys():
-            self.__cacheKLs[kl1m.symbol].push(ev)
+        if kl1m.symbol in self.collectedState.keys():
+            self.collectedState[kl1m.symbol].push(ev)
 
         self.debug("onKL1mMerged() merged from ticks: %s" %(kl1m.desc))
 
@@ -574,6 +519,66 @@ class SinaCrawler(MarketCrawler):
             ret.append({k, v.float()})
         return True, ret
 
+########################################################################
+class SinaTickToKL1m(object):
+    """
+    SINA Tick合成1分钟K线
+    """
+
+    #----------------------------------------------------------------------
+    def __init__(self, onKLine1min):
+        """Constructor"""
+        self.__lastTick = None
+        self.__onKline1min = onKLine1min      # 1分钟K线回调函数
+        self.__kline = None
+        self.__lastVol = 0
+        
+    #----------------------------------------------------------------------
+    def pushTick(self, tick):
+        """TICK更新"""
+
+        if self.__kline and self.__kline.datetime.minute != tick.datetime.minute and SinaCrawler.duringTradeHours(tick.datetime):
+            # 生成上一分钟K线的时间戳
+            self.__kline.datetime = self.__kline.datetime.replace(second=0, microsecond=0)  # 将秒和微秒设为0
+            self.__kline.date = self.__kline.datetime.strftime('%Y-%m-%d')
+            self.__kline.time = self.__kline.datetime.strftime('%H:%M:%S.%f')
+        
+            # 推送已经结束的上一分钟K线
+            if self.__onKline1min :
+                kl = copy(self.__kline)
+                kl.volume -= self.__lastVol
+                self.__lastVol = self.__kline.volume
+                self.__onKline1min(kl)
+            
+            self.__kline = None # 创建新的K线对象
+            
+        # 初始化新一分钟的K线数据
+        if not self.__kline:
+            # 创建新的K线对象
+            self.__kline = KLineData(tick.exchange + '_t2k', tick.symbol)
+            self.__kline.open = tick.price
+            self.__kline.high = tick.price
+            self.__kline.low = tick.price
+            if self.__lastVol <=0:
+                self.__lastVol = tick.volume
+
+        # 累加更新老一分钟的K线数据
+        else:                                   
+            self.__kline.high = max(self.__kline.high, tick.price)
+            self.__kline.low = min(self.__kline.low, tick.price)
+
+        # 通用更新部分
+        self.__kline.close = tick.price        
+        self.__kline.datetime = tick.datetime  
+        self.__kline.openInterest = tick.openInterest
+   
+        volumeChange = tick.volume - self.__kline.volume   # 当前K线内的成交量
+        self.__kline.volume += max(volumeChange, 0)             # 避免夜盘开盘lastTick.volume为昨日收盘数据，导致成交量变化为负的情况
+            
+        # 缓存Tick
+        self.__lastTick = tick
+
+########################################################################
 if __name__ == '__main__':
     from Application import Program
 

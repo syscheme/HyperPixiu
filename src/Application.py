@@ -1045,7 +1045,7 @@ class Program(object):
 
         if filename and len(filename) >0:
             filepath = '%s%s' % (logdir, filename)
-            self.__hdlrFile = RotatingFileHandler(filepath, maxBytes=50*1024*1024, backupCount=20) # 50MB about to 10MB after bzip2
+            self.__hdlrFile = RotatingFileHandler(filepath, maxBytes=80*1024*1024, backupCount=20) # 50MB about to 10MB after bzip2
             # = TimedRotatingFileHandler(filepath, when='W5', backupCount=9) # when='W5' for Satday, 'D' daily, 'midnight' rollover at midnight
             self.__hdlrFile.rotator  = self.__rotator
             self.__hdlrFile.namer    = self.__rotating_namer

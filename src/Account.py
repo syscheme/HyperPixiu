@@ -881,6 +881,10 @@ class Account(MetaAccount):
             self._todayResult.totalPnl = round(self._todayResult.tradingPnl + self._todayResult.positionPnl, 2)
             self._todayResult.netPnl = round(self._todayResult.totalPnl - self._todayResult.commission - self._todayResult.slippage, 2)
 
+            self._todayResult.turnover   = round(self._todayResult.turnover, 3)
+            self._todayResult.commission = round(self._todayResult.commission, 3)
+            self._todayResult.slippage   = round(self._todayResult.slippage, 3)
+
             cTds = len(self._dictTrades)
             if cTds >0 :
                 self.info('onDayClose(%s) summed %s/%s trades: %s' % (self._dateToday, cTrades, cTds, self._todayResult.txnHist))

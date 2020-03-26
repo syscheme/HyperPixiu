@@ -12,7 +12,7 @@ import sys, os, platform
 if __name__ == '__main__':
 
     if not '-f' in sys.argv :
-        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/Trader.json']
+        sys.argv += ['-f', os.path.realpath(os.path.dirname(os.path.abspath(__file__))+ '/../../conf') + '/Trader.json']
 
     p = Program()
     p._heartbeatInterval = -1 # TODO 0.2 # yield at idle for 200msec

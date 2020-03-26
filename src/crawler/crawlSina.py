@@ -121,6 +121,10 @@ class SinaCrawler(MarketCrawler):
         batches = len(self.__tickBatches)
         if batches <=0:
             return cBusy
+
+        if self._stepAsOf > self.__END_OF_TODAY :
+            for k, v in self.__tickToKL1m.items():
+                v.flushAtClose()
             
         #step 2. check if to yield time
         self.__idxTickBatch = self.__idxTickBatch % batches
@@ -546,8 +550,8 @@ class SinaTickToKL1m(object):
         """TICK更新"""
 
         if self.__kline and self.__kline.datetime.minute != tick.datetime.minute and SinaCrawler.duringTradeHours(tick.datetime):
-            # 生成上一分钟K线的时间戳
-            self.__kline.datetime = self.__kline.datetime.replace(second=0, microsecond=0)  # 将秒和微秒设为0
+            # 生成一分钟K线的时间戳
+            self.__kline.datetime = self.__kline.datetime.replace(second=0, microsecond=0) +timedelta(minutes=1)  # align to the next minute:00.000
             self.__kline.date = self.__kline.datetime.strftime('%Y-%m-%d')
             self.__kline.time = self.__kline.datetime.strftime('%H:%M:%S.%f')
         
@@ -555,6 +559,7 @@ class SinaTickToKL1m(object):
             if self.__onKline1min :
                 kl = copy(self.__kline)
                 kl.volume -= self.__lastVol
+
                 self.__lastVol = self.__kline.volume
                 self.__onKline1min(kl)
             
@@ -585,6 +590,24 @@ class SinaTickToKL1m(object):
             
         # 缓存Tick
         self.__lastTick = tick
+
+    def flushAtClose(self):
+        if not self.__lastTick or not self.__kline:
+            return
+
+        self.__kline.datetime = (self.__lastTick.datetime +timedelta(seconds=30)).replace(second=0, microsecond=0)
+        self.__kline.date = self.__kline.datetime.strftime('%Y-%m-%d')
+        self.__kline.time = self.__kline.datetime.strftime('%H:%M:%S.%f')
+    
+        # 推送已经结束的上一分钟K线
+        if self.__onKline1min :
+            kl = copy(self.__kline)
+            kl.volume -= self.__lastVol
+
+            self.__lastVol = self.__kline.volume
+            self.__onKline1min(kl)
+        
+        self.__kline = None # 创建新的K线对象
 
 ########################################################################
 if __name__ == '__main__':

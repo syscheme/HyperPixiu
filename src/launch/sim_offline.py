@@ -154,7 +154,7 @@ if __name__ == '__main__':
 
     # trader = p.createApp(IdealDayTrader, configNode ='trader', trader=gymtdr, histdata=csvreader) # ideal trader to generator ReplayFrames
     trader = p.createApp(OfflineSimulator, configNode ='trader', trader=gymtdr, histdata=csvreader) # the simulator with brain loaded to verify training result
-    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(trader.outdir, 'CsvToRF_%s.tcsv' % SYMBOL))
+    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(trader.outdir, 'offline_%s.tcsv' % SYMBOL))
     trader.setRecorder(rec)
 
     p.start()

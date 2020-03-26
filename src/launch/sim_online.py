@@ -4,6 +4,7 @@ from Account import Account_AShare
 import HistoryData as hist
 
 from hpGym.GymTrader import *
+from BackTest import OnlineSimulator
 
 from crawler.crawlSina import *
 import sys, os, platform
@@ -45,9 +46,9 @@ if __name__ == '__main__':
     gymtdr = p.createApp(GymTrader, configNode ='trader', tradeSymbol=SYMBOL, account=acc)
     p.info('all objects registered piror to OfflineSimulator: %s' % p.listByType())
 
-    trainer = p.createApp(OfflineSimulator, configNode ='trader', trader=gymtdr, histdata=csvreader) # the simulator with brain loaded to verify training result
+    trainer = p.createApp(OnlineSimulator, configNode ='trader', trader=gymtdr) # the simulator with brain loaded to verify training result
 
-    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(trainer.outdir, 'TraderSt1_%s.tcsv' % SYMBOL))
+    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(trainer.outdir, 'online_%s.tcsv' % SYMBOL))
     trainer.setRecorder(rec)
     rec.registerCategory(EVENT_TICK, params={'columns': TickData.COLUMNS})
     rec.registerCategory(EVENT_KLINE_1MIN, params={'columns': KLineData.COLUMNS})

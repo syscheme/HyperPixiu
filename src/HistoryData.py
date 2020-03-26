@@ -156,9 +156,13 @@ class TaggedCsvRecorder(Recorder):
         self._daysToZip   = self.getConfig('daysToZip', 7)
         filename          = self.getConfig('filename', '%s_%s.tcsv' % (self._program.progId, datetime.now().strftime('%m%d')))
         self._filepath    = self.getConfig('filepath', '%s%s' % (self.dataRoot, filename))
+        self._fileMB      = self.getConfig('fileMB', 50) # 50MB before rolling
+        self._fileCount   = self.getConfig('fileCount', 50) # maximal 50 rolling files before overwrite
         tmp = min(self._daysToRoll *2, self._daysToRoll +2)
         if self._daysToZip < tmp:
             self._daysToZip = tmp
+        if self._fileMB <=1:
+            self._fileMB =10
 
         # employing the logger
         self.__fakedcsv   = logging.Logger(name=self.ident) #getLogger()
@@ -174,7 +178,7 @@ class TaggedCsvRecorder(Recorder):
             except:
                 pass
 
-        self.__hdlrFile = logging.handlers.RotatingFileHandler(self._filepath, maxBytes=20*1024*1024, backupCount=50) # 20MB about to 3MB after bzip2
+        self.__hdlrFile = logging.handlers.RotatingFileHandler(self._filepath, maxBytes=self._fileMB*1024*1024, backupCount=self._fileCount) # 20MB about to 3MB after bzip2
         self.__hdlrFile.rotator  = self.__rotator
         self.__hdlrFile.namer    = self.__rotating_namer
         self.__hdlrFile.setLevel(logging.DEBUG)

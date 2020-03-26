@@ -1394,11 +1394,13 @@ class AccountWrapper(MetaAccount):
 
         symbol = None
         maxCrossVolume =-1
+        dtEvent = None
 
         # 先确定会撮合成交的价格
         if EVENT_TICK == ev.type:
             tkdata = ev.data
             symbol = tkdata.symbol
+            dtEvent = tkdata.datetime
             buyCrossPrice      = tkdata.a1P
             sellCrossPrice     = tkdata.b1P
             buyBestCrossPrice  = tkdata.a1P
@@ -1406,6 +1408,7 @@ class AccountWrapper(MetaAccount):
         elif EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
             kldata = ev.data
             symbol = kldata.symbol
+            dtEvent = kldata.datetime
             bestPrice          = round(((kldata.open + kldata.close) *4 + kldata.high + kldata.low) /10, 2)
 
             buyCrossPrice      = kldata.low        # 若买入方向限价单价格高于该价格，则会成交
@@ -1424,9 +1427,9 @@ class AccountWrapper(MetaAccount):
             return # ignore those non-tick/kline events
 
         # 先撮合限价单
-        self.__crossLimitOrder(kldata.symbol, kldata.datetime, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
+        self.__crossLimitOrder(symbol, dtEvent, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
         # 再撮合停止单
-        self.__crossStopOrder(kldata.symbol, kldata.datetime, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
+        self.__crossStopOrder(symbol, dtEvent, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
 
     def __crossLimitOrder(self, symbol, dtAsOf, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume=-1):
         """基于最新数据撮合限价单

@@ -421,7 +421,8 @@ class PerspectiveState(MarketState):
     def addMonitor(self, symbol) :
         ''' add a symbol to monitor
         '''
-        raise NotImplementedError
+        if symbol and not symbol in self.__dictPerspective.keys() :
+            self.__dictPerspective[symbol] = Perspective(self.exchange, symbol)
 
     def latestPrice(self, symbol) :
         ''' query for latest price of the given symbol

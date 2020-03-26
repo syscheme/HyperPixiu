@@ -170,6 +170,8 @@ class BaseTrader(MetaTrader):
                 if marketstate and marketstate.exchange == self._account.exchange:
                     self._marketState = marketstate
                     break
+        elif not self._marketState.exchange:
+            self._marketState._exchange = self._account.exchange
                 
         if not self._marketState :
             self.error('no MarketState found')
@@ -183,7 +185,7 @@ class BaseTrader(MetaTrader):
 
         if self._marketState :
             for symbol in self._dictObjectives.keys():
-                self._marketState.addMonitor(self, symbol)
+                self._marketState.addMonitor(symbol)
 
         # step 4. subscribe account events
         self.subscribeEvent(Account.EVENT_ORDER)

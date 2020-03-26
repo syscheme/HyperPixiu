@@ -168,12 +168,20 @@ class BaseApplication(MetaApp):
 
     def _generator(self) :
         while self.isActive :
-            event = yield self.ident
-            if isinstance(event, Event):
-                self.OnEvent(event)
+            try:
+                event = yield self.ident
+                if isinstance(event, Event):
+                    self.OnEvent(event)
+            # except StopIteration:
+            #     self.info('reached the end')
+            except Exception as ex:
+                self.logexception(ex)
 
     def _procEvent(self, event) : # called by Program
-        return self.__gen.send(event)
+        try:
+            return self.__gen.send(event)
+        except:
+            pass
 
     def getConfig(self, configName, defaultVal, pop=False) :
         try :
@@ -209,11 +217,11 @@ class BaseApplication(MetaApp):
         return jn
 
     #---- event operations ---------------------------
-    def subscribeEvent(self, ev) :
+    def subscribeEvent(self, eventType) :
         if not self._program:
             pass
         
-        self._program.subscribe(EnvironmentError, self)
+        self._program.subscribe(eventType, self)
 
     def postEventData(self, eventType, edata):
         '''发出事件'''

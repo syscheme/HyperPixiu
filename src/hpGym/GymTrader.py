@@ -170,6 +170,8 @@ class GymTrader(BaseTrader):
         self._agent = None
         self._timeCostYrRate = self.getConfig('timeCostYrRate', 0)
         self._tradeSymbol    = self.getConfig('tradeSymbol', '000001')
+        self.openObjective(self._tradeSymbol)
+
         #TODO: the separate the Trader for real account and training account
         
         self.__1stRender = True
@@ -240,7 +242,7 @@ class GymTrader(BaseTrader):
 
     def __processMarketEvent(self, ev):
         '''processing an incoming MarketEvent'''
-        bObserveOnly, action = self.determinActionByMarketEvent(ev)
+        bObserveOnly, action, strAdj = self.determinActionByMarketEvent(ev)
         next_state, reward, done, info = self.gymStep(action, bObserveOnly)
 
         self._gymState = next_state

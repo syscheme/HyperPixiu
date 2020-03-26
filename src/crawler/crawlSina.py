@@ -3,7 +3,7 @@
 from __future__ import division
 
 from MarketCrawler import *
-from EventData import Event, datetime2float
+from EventData import Event, datetime2float, DT_EPOCH
 from MarketData import KLineData, TickData, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
 
 import requests # pip3 install requests
@@ -150,6 +150,15 @@ class SinaCrawler(MarketCrawler):
             cBusy +=1
             s = tk.symbol
 
+            if not s in self.__tickToKL1m.keys():
+                self.__tickToKL1m[s] = SinaTickToKL1m(self.__onKL1mMerged)
+            
+            tkstate=self.__tickToKL1m[s]
+            if tk.datetime <= tkstate.lastTickAsOf :
+                continue
+
+            tkstate.pushTick(tk)
+
             ev = Event(EVENT_TICK)
             ev.setData(tk)
 
@@ -157,10 +166,6 @@ class SinaCrawler(MarketCrawler):
             #     self.collectedState[s] = Perspective('AShare', symbol =s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
             # psp = self.collectedState[s]
             self.collectedState.updateByEvent(ev) # ev = psp.push(ev)
-
-            if not s in self.__tickToKL1m.keys():
-                self.__tickToKL1m[s] = SinaTickToKL1m(self.__onKL1mMerged)
-            self.__tickToKL1m[s].pushTick(tk)
 
             self.debug("step_pollTicks() pushed tick %s into psp, now: %s" %(tk.desc, self.collectedState.descOf(s)))
 
@@ -531,6 +536,10 @@ class SinaTickToKL1m(object):
         self.__onKline1min = onKLine1min      # 1分钟K线回调函数
         self.__kline = None
         self.__lastVol = 0
+
+    @property
+    def lastTickAsOf(self):
+        return self.__lastTick.datetime if self.__lastTick else DT_EPOCH
         
     #----------------------------------------------------------------------
     def pushTick(self, tick):

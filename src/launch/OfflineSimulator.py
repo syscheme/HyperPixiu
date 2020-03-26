@@ -118,7 +118,7 @@ if __name__ == '__main__':
             quit()
 
     if not '-f' in sys.argv :
-        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/CsvToDQN.json']
+        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))+ '/../conf') + '/Trader.json']
 
     p = Program()
     p._heartbeatInterval =-1
@@ -126,11 +126,11 @@ if __name__ == '__main__':
     sourceCsvDir = None
     SYMBOL = ''
     try:
-        jsetting = p.jsettings('trainer/sourceCsvDir')
+        jsetting = p.jsettings('trader/sourceCsvDir')
         if not jsetting is None:
             sourceCsvDir = jsetting(None)
 
-        jsetting = p.jsettings('trainer/objectives')
+        jsetting = p.jsettings('trader/objectives')
         if not jsetting is None:
             SYMBOL = jsetting([SYMBOL])[0]
     except Exception as ex:
@@ -149,13 +149,13 @@ if __name__ == '__main__':
     p.info('taking input dir %s for symbol[%s]' % (sourceCsvDir, SYMBOL))
     csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=sourceCsvDir, fields='date,time,open,high,low,close,volume,ammount')
 
-    gymtdr = p.createApp(GymTrader, configNode ='trainer', tradeSymbol=SYMBOL, account=acc)
-    p.info('all objects registered piror to Simulator: %s' % p.listByType())
+    gymtdr = p.createApp(GymTrader, configNode ='trader', tradeSymbol=SYMBOL, account=acc)
+    p.info('all objects registered piror to OfflineSimulator: %s' % p.listByType())
 
-    # trainer = p.createApp(IdealDayTrader, configNode ='trainer', trader=gymtdr, histdata=csvreader) # ideal trader to generator ReplayFrames
-    trainer = p.createApp(Simulator, configNode ='trainer', trader=gymtdr, histdata=csvreader) # the simulator with brain loaded to verify training result
-    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(trainer.outdir, 'CsvToRF_%s.tcsv' % SYMBOL))
-    trainer.setRecorder(rec)
+    # trader = p.createApp(IdealDayTrader, configNode ='trader', trader=gymtdr, histdata=csvreader) # ideal trader to generator ReplayFrames
+    trader = p.createApp(OfflineSimulator, configNode ='trader', trader=gymtdr, histdata=csvreader) # the simulator with brain loaded to verify training result
+    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(trader.outdir, 'CsvToRF_%s.tcsv' % SYMBOL))
+    trader.setRecorder(rec)
 
     p.start()
     p.loop()

@@ -497,21 +497,21 @@ class GymTrader(BaseTrader):
         self.__closed_plot = True
 
 ########################################################################
-class Simulator(BackTestApp):
+class OfflineSimulator(BackTestApp):
     '''
-    Simulator extends GymTrader by reading history and perform training
+    OfflineSimulator extends GymTrader by reading history and perform training
     '''
     def __init__(self, program, trader, histdata, **kwargs):
         '''Constructor
         '''
-        super(Simulator, self).__init__(program, trader, histdata, **kwargs)
+        super(OfflineSimulator, self).__init__(program, trader, histdata, **kwargs)
         self._iterationsPerEpisode = self.getConfig('iterationsPerEpisode', 1)
 
         self._masterExportHomeDir = self.getConfig('master/homeDir', None) # this agent work as the master when configured, usually point to a dir under webroot
         if self._masterExportHomeDir and '/' != self._masterExportHomeDir[-1]: self._masterExportHomeDir +='/'
         
         # the base URL of local web for the slaves to GET/POST the tasks
-        # current Simulator works as slave if this masterExportURL presents but masterExportHomeDir abendons
+        # current OfflineSimulator works as slave if this masterExportURL presents but masterExportHomeDir abendons
         self._masterExportURL = self.getConfig('master/exportURL', self._masterExportHomeDir)
 
         self.__lastEpisode_loss = DUMMY_BIG_VAL
@@ -543,12 +543,12 @@ class Simulator(BackTestApp):
     # impl/overwrite of BaseApplication
     def doAppInit(self): # return True if succ
 
-        # make sure Simulator is ONLY wrappering GymTrader
+        # make sure OfflineSimulator is ONLY wrappering GymTrader
         if not self._initTrader or not isinstance(self._initTrader, GymTrader) :
             self.error('doAppInit() invalid initTrader')
             return False
 
-        if not super(Simulator, self).doAppInit() :
+        if not super(OfflineSimulator, self).doAppInit() :
             return False
 
         self.wkTrader.gymReset()
@@ -609,7 +609,7 @@ class Simulator(BackTestApp):
     #------------------------------------------------
     # BackTest related entries
     def OnEpisodeDone(self, reachedEnd=True):
-        super(Simulator, self).OnEpisodeDone(reachedEnd)
+        super(OfflineSimulator, self).OnEpisodeDone(reachedEnd)
 
         # determin whether it is a best episode
         lstImproved=[]
@@ -692,7 +692,7 @@ class Simulator(BackTestApp):
         @return:
             observation (numpy.array): observation of the state
         '''
-        super(Simulator, self).resetEpisode()
+        super(OfflineSimulator, self).resetEpisode()
         self.wkTrader._lstMarketEventProc =[self.__trainPerMarketEvent] # replace GymTrader's with training method
         self.__recentLoss = None
         self._total_reward = 0.0
@@ -700,7 +700,7 @@ class Simulator(BackTestApp):
         return self.wkTrader.gymReset()
 
     def formatSummary(self, summary=None):
-        strReport = super(Simulator, self).formatSummary(summary)
+        strReport = super(OfflineSimulator, self).formatSummary(summary)
         if not isinstance(summary, dict) :
             summary = self._episodeSummary
 
@@ -780,9 +780,9 @@ class Simulator(BackTestApp):
         self.info('__updateSimulatorTask() task updated: %s->%s' % (target_task_file, fn_task))
 
 ########################################################################
-class IdealDayTrader(Simulator):
+class IdealDayTrader(OfflineSimulator):
     '''
-    IdealTrader extends Simulator by scanning the MarketEvents occurs in a day, determining
+    IdealTrader extends OfflineSimulator by scanning the MarketEvents occurs in a day, determining
     the ideal actions then pass the events down to the models
     '''
     def __init__(self, program, trader, histdata, **kwargs):
@@ -810,7 +810,7 @@ class IdealDayTrader(Simulator):
         self.__mdEventsTomrrow = [] # list of the datetime of open, high, low, close price occured 'tomorrow'
 
 
-    # to replace Simulator's __trainPerMarketEvent
+    # to replace OfflineSimulator's __trainPerMarketEvent
     def __idealActionPerMarketEvent(self, ev):
         '''processing an incoming MarketEvent'''
 
@@ -1242,10 +1242,10 @@ def main_prog():
 
     gymtdr = p.createApp(GymTrader, configNode ='trainer', tradeSymbol=SYMBOL, account=acc)
     
-    p.info('all objects registered piror to Simulator: %s' % p.listByType())
+    p.info('all objects registered piror to OfflineSimulator: %s' % p.listByType())
     
-    trainer = p.createApp(Simulator, configNode ='trainer', trader=gymtdr, histdata=csvreader)
-    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = '%s/Simulator.tcsv' % trainer.outdir)
+    trainer = p.createApp(OfflineSimulator, configNode ='trainer', trader=gymtdr, histdata=csvreader)
+    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = '%s/OfflineSimulator.tcsv' % trainer.outdir)
     trainer.setRecorder(rec)
 
     p.start()

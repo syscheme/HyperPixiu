@@ -5,7 +5,7 @@
         // "console": "False",
     },
 
-    "trainer": { // the configuration schema is extending "trader"
+    "trader": {
         "accountId" : "blah",
         "startCapitial": 100000,
         "episodes": 1,

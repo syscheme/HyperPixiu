@@ -43,9 +43,9 @@ class SinaCrawler(MarketCrawler):
             EVENT_KLINE_1DAY: 240,
         }
 
-    def __init__(self, program, recorder=None, **kwargs):
+    def __init__(self, program, marketState=None, recorder=None, **kwargs):
         """Constructor"""
-        super(SinaCrawler, self).__init__(program, 'AShare', recorder, **kwargs)
+        super(SinaCrawler, self).__init__(program, marketState, recorder, **kwargs)
         
         # SinaCrawler take multiple HTTP requests to collect data, each of them may take different
         # duration to complete, so this crawler should be threaded
@@ -166,12 +166,12 @@ class SinaCrawler(MarketCrawler):
             ev = Event(EVENT_TICK)
             ev.setData(tk)
 
-            # if not s in self.collectedState.keys():
-            #     self.collectedState[s] = Perspective('AShare', symbol =s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
-            # psp = self.collectedState[s]
-            self.collectedState.updateByEvent(ev) # ev = psp.push(ev)
+            # if not s in self.marketState.keys():
+            #     self.marketState[s] = Perspective('AShare', symbol =s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
+            # psp = self.marketState[s]
+            self.marketState.updateByEvent(ev) # ev = psp.push(ev)
 
-            self.debug("step_pollTicks() pushed tick %s into psp, now: %s" %(tk.desc, self.collectedState.descOf(s)))
+            self.debug("step_pollTicks() pushed tick %s into psp, now: %s" %(tk.desc, self.marketState.descOf(s)))
 
             if ev and self._recorder:
                 cMerged +=1
@@ -209,18 +209,18 @@ class SinaCrawler(MarketCrawler):
             del self._symbolsToPoll[s]
             return 1 # return as busy for this error case
 
-        # if not s in self.collectedState.keys():
-        #     self.collectedState[s] = Perspective('AShare', symbol=s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
-        # psp = self.collectedState[s]
+        # if not s in self.marketState.keys():
+        #     self.marketState[s] = Perspective('AShare', symbol=s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
+        # psp = self.marketState[s]
 
         for evType in [EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
             minutes = SinaCrawler.MINs_OF_EVENT[evType]
-            etimatedNext = datetime2float(self.collectedState.getAsOf(s, evType)) + 60*(minutes if minutes < 240 else int(minutes /240)*60*24) -1
+            etimatedNext = datetime2float(self.marketState.getAsOf(s, evType)) + 60*(minutes if minutes < 240 else int(minutes /240)*60*24) -1
             self.__END_OF_TODAY = datetime2float(stampStart.replace(hour=15, minute=1))
             if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
                 continue
 
-            size, lines = self.collectedState.sizesOf(s, evType)
+            size, lines = self.marketState.sizesOf(s, evType)
             if size >0:
                 lines = 0
             lines +=10
@@ -246,14 +246,14 @@ class SinaCrawler(MarketCrawler):
                 cBusy +=1
                 ev = Event(evType)
                 ev.setData(i)
-                self.collectedState.updateByEvent(ev) # ev = psp.push(ev)
+                self.marketState.updateByEvent(ev) # ev = psp.push(ev)
                 if ev and self._recorder:
                     cMerged +=1
                     self.OnEventCaptured(ev)
 
             stampNow = datetime.now()
             if cMerged >0:
-                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.collectedState.descOf(s)))
+                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
             elif not SinaCrawler.duringTradeHours(stampNow):
                 self.__stampYieldTill_KL = stampNow + timedelta(minutes=2)
                 self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-time of AShare, actively yielding 2min to avoid 456" %(s, evType, self.__idxKL, cSyms))
@@ -267,7 +267,7 @@ class SinaCrawler(MarketCrawler):
         ev.setData(kl1m)
         self.OnEventCaptured(ev)
 
-        self.collectedState.updateByEvent(ev)
+        self.marketState.updateByEvent(ev)
 
         self.debug("onKL1mMerged() merged from ticks: %s" %(kl1m.desc))
 

@@ -489,11 +489,26 @@ class MarketState(MetaObj):
         raise NotImplementedError
 
     @abstractmethod
-    def getAsOf(self, symbol=None) :
+    def getAsOf(self, symbol=None, evType =None) :
         ''' 
         @return the datetime as of latest observing
         '''
         raise NotImplementedError
+
+    @abstractmethod
+    def sizesOf(self, symbol, evType =None) :
+        ''' 
+        @return the size of specified symbol/evType
+        '''
+        raise NotImplementedError
+        return 0, 0
+
+    @abstractmethod
+    def descOf(self, symbol) :
+        ''' 
+        @return the desc of specified symbol
+        '''
+        return '%s unknown' % symbol
 
     @abstractmethod
     def dailyOHLC_sofar(self, symbol) :
@@ -511,7 +526,7 @@ class MarketState(MetaObj):
         raise NotImplementedError
 
     @abstractmethod
-    def toNNFloats(self) :
+    def toNNFloats(self, symbol=None) :
         '''@return an array_like data as toNNFloats, maybe [] or numpy.array
         '''
         raise NotImplementedError

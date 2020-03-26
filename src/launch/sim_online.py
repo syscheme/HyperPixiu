@@ -44,18 +44,19 @@ if __name__ == '__main__':
     csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=sourceCsvDir, fields='date,time,open,high,low,close,volume,ammount')
 
     gymtdr = p.createApp(GymTrader, configNode ='trader', tradeSymbol=SYMBOL, account=acc)
-    p.info('all objects registered piror to OfflineSimulator: %s' % p.listByType())
+    p.info('all objects registered piror to OnlineSimulator: %s' % p.listByType())
 
-    trainer = p.createApp(OnlineSimulator, configNode ='trader', trader=gymtdr) # the simulator with brain loaded to verify training result
+    simulator = p.createApp(OnlineSimulator, configNode ='trader', trader=gymtdr) # the simulator with brain loaded to verify training result
 
-    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(trainer.outdir, 'online_%s.tcsv' % SYMBOL))
-    trainer.setRecorder(rec)
+    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(simulator.outdir, 'online_%s.tcsv' % SYMBOL))
+    simulator.setRecorder(rec)
     rec.registerCategory(EVENT_TICK, params={'columns': TickData.COLUMNS})
     rec.registerCategory(EVENT_KLINE_1MIN, params={'columns': KLineData.COLUMNS})
     rec.registerCategory(EVENT_KLINE_5MIN, params={'columns': KLineData.COLUMNS})
     rec.registerCategory(EVENT_KLINE_1DAY, params={'columns': KLineData.COLUMNS})
 
-    mc = p.createApp(SinaCrawler, configNode ='crawler', recorder=rec) # md = SinaCrawler(p, None);
+    mc = p.createApp(SinaCrawler, configNode ='crawler', marketState = gymtdr._marketState, recorder=rec) # md = SinaCrawler(p, None);
+    mc._postCaptured = True
     mc.subscribe([SYMBOL])
 
     p.start()

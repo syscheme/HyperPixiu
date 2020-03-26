@@ -9,6 +9,8 @@ from Application import *
 from Account import *
 from Trader import *
 import HistoryData as hist
+from MarketData import TickData, KLineData, EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
+
 from Perspective import *
 import vn.VnTrader as vn
 
@@ -745,15 +747,18 @@ class OnlineSimulator(MetaTrader):
         """Constructor"""
 
         super(OnlineSimulator, self).__init__(program, **kwargs)
-        self._initTrader = trader
-        self._initMarketState = None # to populate from _initTrader
-        self._originAcc = None # to populate from _initTrader then wrapper
+        self.__wkTrader = trader
 
+        self._originAcc = None # to populate from _initTrader then wrapper
         self._account = None # the working account inherit from MetaTrader
         self._marketState = None
-        self.__wkTrader = None
-        
-        self.setRecorder(self._initTrader.recorder)
+
+        self._dataBegin_date = None
+        self._dataBegin_openprice = 0.0
+        self._dataEnd_date = None
+        self._dataEnd_closeprice = 0.0
+
+        self.setRecorder(self.__wkTrader.recorder)
 
         # attributes of virtual account
         # -----------------------------------------
@@ -765,14 +770,14 @@ class OnlineSimulator(MetaTrader):
         self._maxBalance = self._startBalance
 
         # backtest will always clear the datapath
-        self._initTrader._outDir = '%s%s%s' % (self.dataRoot, self.ident, self.program.progId)
+        self.__wkTrader._outDir = '%s%s%s' % (self.dataRoot, self.ident, self.program.progId)
         try :
-            shutil.rmtree(self._initTrader._outDir)
+            shutil.rmtree(self.__wkTrader._outDir)
         except:
             pass
 
         try :
-            os.makedirs(self._initTrader._outDir)
+            os.makedirs(self.__wkTrader._outDir)
         except:
             pass
 
@@ -784,7 +789,7 @@ class OnlineSimulator(MetaTrader):
 
     @property
     def outdir(self) :
-        return self._initTrader._outDir
+        return self.__wkTrader._outDir
 
     def setRecorder(self, recorder) :
         self._recorder = recorder
@@ -827,20 +832,18 @@ class OnlineSimulator(MetaTrader):
             return False
 
         # step 1. wrapper the Trader
-        if not self._initTrader :
+        if not self.__wkTrader :
             return False
         
-        self.info('doAppInit() taking trader-template[%s]' % (self._initTrader.ident))
-        self._program.removeApp(self._initTrader.ident)
+        self.info('doAppInit() taking trader[%s]' % (self.__wkTrader.ident))
+        self._program.removeApp(self.__wkTrader)
         self._program.addApp(self)
-        if not self._initTrader.doAppInit() :
-            self.info('doAppInit() failed to initialize trader-template[%s]' % (self._initTrader.ident))
+        if not self.__wkTrader.doAppInit() :
+            self.info('doAppInit() failed to initialize trader[%s]' % (self.__wkTrader.ident))
             return False
 
-        self._initMarketState = self._initTrader._marketState
-        self._originAcc = self._initTrader.account
-        if self._originAcc and not isinstance(self._originAcc, AccountWrapper):
-            self._program.removeApp(self._originAcc.ident)
+        self._marketState = self.__wkTrader._marketState
+        self._originAcc = self.__wkTrader.account
 
         # # ADJ_1. adjust the Trader._dictObjectives to append suffix MarketData.TAG_BACKTEST
         # for obj in self._dictObjectives.values() :
@@ -849,7 +852,39 @@ class OnlineSimulator(MetaTrader):
         #     if len(obj["ds1min"]) >0 :
         #         obj["ds1min"] += MarketData.TAG_BACKTEST
 
-        self.resetEpisode()
+        # step 2. connects the trader and account 
+        if self._account :
+            self._program.removeApp(self._account)
+            self._account =None
+        
+        # step 3. wrapper the broker drivers of the accounts
+        if self._originAcc and not isinstance(self._originAcc, AccountWrapper):
+            self._program.removeApp(self._originAcc)
+            self._account = AccountWrapper(self._program, btTrader =self, account=copy.copy(self._originAcc)) # duplicate the original account for test espoches
+            self._account.hostTrader(self) # adopt the account by pointing its._trader to self
+            self._account.setCapital(self._startBalance, True)
+            self.__wkTrader._dailyCapCost = 0
+            self._program.addApp(self._account)
+            self._account._marketState = self._marketState
+            self.__wkTrader._account = self._account
+            self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d]' % (self._originAcc.ident, self._account.ident, self._startBalance))
+
+        self._maxBalance = self._startBalance
+        if len(self.__wkTrader._dictObjectives) <=0:
+            sl = self._marketState.listOberserves()
+            for symbol in sl:
+                self.__wkTrader.openObjective(symbol)
+
+        # step 4. subscribe events
+        self.subscribeEvent(Account.EVENT_ORDER)
+        self.subscribeEvent(Account.EVENT_TRADE)
+
+        self.subscribeEvent(EVENT_TICK)
+        self.subscribeEvent(EVENT_KLINE_1MIN)
+        self.subscribeEvent(EVENT_KLINE_5MIN)
+        self.subscribeEvent(EVENT_KLINE_1DAY)
+
+        self.info('doAppInit() done, obj-in-program: %s' % (self._program.listByType(MetaObj)))
         return True
 
     def doAppStep(self):
@@ -898,71 +933,6 @@ class OnlineSimulator(MetaTrader):
     def onDayOpen(self, symbol, date):
         return self.__wkTrader.onDayOpen(symbol, date)
 
-    def resetEpisode(self) :
-
-        # step 1. start over the market state
-        if self._marketState:
-            self._program.removeObj(self._marketState)
-        
-        if self._initMarketState:
-            self._marketState = copy.deepcopy(self._initMarketState)
-            self._program.addObj(self._marketState)
-
-        # step 2. create clean trader and account from self._account and  
-        if self.__wkTrader:
-            self._program.removeObj(self.__wkTrader)
-        self.__wkTrader = copy.deepcopy(self._initTrader)
-        self._program.addApp(self.__wkTrader)
-        self.__wkTrader._marketState = self._marketState
-        # self.__wkTrader._recorder = self._recorder
-
-        if self._account :
-            self._program.removeApp(self._account)
-            self._account =None
-        
-        # step 3. wrapper the broker drivers of the accounts
-        if self._originAcc and not isinstance(self._originAcc, AccountWrapper):
-            self._program.removeApp(self._originAcc.ident)
-            self._account = AccountWrapper(self._program, btTrader =self, account=copy.copy(self._originAcc)) # duplicate the original account for test espoches
-            self._account.hostTrader(self) # adopt the account by pointing its._trader to self
-            self._account.setCapital(self._startBalance, True)
-            self.__wkTrader._dailyCapCost = 0
-            self._program.addApp(self._account)
-            self._account._marketState = self._marketState
-            self.__wkTrader._account = self._account
-            self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d]' % (self._originAcc.ident, self._account.ident, self._startBalance))
-
-        self._maxBalance = self._startBalance
-        # self._wkHistData.resetRead()
-           
-        # self._dataBegin_date = None
-        # self._dataBegin_openprice = 0.0
-        
-        # self._dataEnd_date = None
-        # self._dataEnd_closeprice = 0.0
-
-        # # 当前最新数据，用于模拟成交用
-        # self.tick = None
-        # self.bar  = None
-        # self.__dtLastData  = None      # 最新数据的时间
-
-        # if self._marketState :
-        #     for i in range(30) : # initially feed 20 data from histread to the marketstate
-        #         ev = next(self._wkHistData)
-        #         if not ev : continue
-        #         self._marketState.updateByEvent(ev)
-
-        #     if len(self.__wkTrader._dictObjectives) <=0:
-        #         sl = self._marketState.listOberserves()
-        #         for symbol in sl:
-        #             self.__wkTrader.openObjective(symbol)
-
-        # step 4. subscribe account events
-        self.subscribeEvent(Account.EVENT_ORDER)
-        self.subscribeEvent(Account.EVENT_TRADE)
-
-        # self.info('resetEpisode() done for episode[%d/%d], obj-in-program: %s' % (self._episodeNo, self._episodes, self._program.listByType(MetaObj)))
-        return True
 
 ##--##--##--##--##--##--##--##--##--##--##--##--##--##--##--##--##--##--
 
@@ -1063,8 +1033,8 @@ def calculateSummary(startBalance, dayResultDict):
     endDate = df.index[-1]
 
     totalDays  = len(df)
-    profitDays = len(df[df['netPnl']>0])
-    lossDays   = len(df[df['netPnl']<0])
+    profitDays = len(df[df['netPnl']>0.01])
+    lossDays   = len(df[df['netPnl']<-0.01])
     daysHaveTrades = df[(df['tcBuy'] + df['tcSell']) >0].index
     tcBuys = df['tcBuy'].sum()
     tcSells = df['tcSell'].sum()

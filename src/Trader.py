@@ -262,7 +262,7 @@ class BaseTrader(MetaTrader):
     # usually back test will overwrite this
     def onDayOpen(self, symbol, date):
         # step1. notify accounts
-        self.debug('onDayOpen(%s) dispatching to account' % symbol)
+        self.debug('onDayOpen(%s:%s) dispatching to account' % (symbol, date))
         if self._account :
             try :
                 self._account.onDayOpen(date)

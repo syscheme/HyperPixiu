@@ -798,7 +798,6 @@ class OnlineSimulator(MetaTrader):
             self._recorder.registerCategory(Account.RECCATE_TRADE,       params= {'columns' : TradeData.COLUMNS})
             self._recorder.registerCategory(Account.RECCATE_DAILYPOS,    params= {'columns' : DailyPosition.COLUMNS})
             self._recorder.registerCategory(Account.RECCATE_DAILYRESULT, params= {'columns' : DailyResult.COLUMNS})
-            self._recorder.registerCategory(RECCATE_ESPSUMMARY,          params= {'columns' : COLUMNS_ESPSUMMARY })
 
         if self.__wkTrader :
             self.__wkTrader._recorder = self._recorder

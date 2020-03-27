@@ -242,7 +242,7 @@ class GymTrader(BaseTrader):
 
     def __processMarketEvent(self, ev):
         '''processing an incoming MarketEvent'''
-        bObserveOnly, action, strAdj = self.determinActionByMarketEvent(ev)
+        action, bObserveOnly, strAdj = self.determinActionByMarketEvent(ev)
         next_state, reward, done, info = self.gymStep(action, bObserveOnly)
 
         self._gymState = next_state

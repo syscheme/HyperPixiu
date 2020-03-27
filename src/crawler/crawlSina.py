@@ -200,7 +200,7 @@ class SinaCrawler(MarketCrawler):
 
         stampStart = datetime.now()
         if self.__stampYieldTill_KL and stampStart < self.__stampYieldTill_KL:
-            self.debug("step_pollKline(%s) symb[%d/%d] yield per SINA(456), %s left" %(s, self.__idxKL, cSyms, self.__stampYieldTill_KL -stampStart))
+            # self.debug("step_pollKline(%s) symb[%d/%d] yield per SINA(456), %s left" %(s, self.__idxKL, cSyms, self.__stampYieldTill_KL -stampStart))
             return cBusy
 
         self.__idxKL += 1
@@ -269,7 +269,7 @@ class SinaCrawler(MarketCrawler):
 
         self.marketState.updateByEvent(ev)
 
-        self.debug("onKL1mMerged() merged from ticks: %s" %(kl1m.desc))
+        self.debug("onKL1mMerged() merged from ticks: %s ->psp: %s" % (kl1m.desc, self.marketState.descOf(kl1m.symbol)))
 
     # end of sub-steps
     #------------------------------------------------
@@ -339,12 +339,12 @@ class SinaCrawler(MarketCrawler):
 
         for kl in jsonData :
             kldata = KLineData("AShare", symbol)
-            kldata.open = kl['open']             # OHLC
-            kldata.high = kl['high']             # OHLC
-            kldata.low = kl['low']             # OHLC
-            kldata.close = kl['close']             # OHLC
-            kldata.volume = kl['volume']
-            kldata.close = kl['close']
+            kldata.open = float(kl['open'])             # OHLC
+            kldata.high = float(kl['high'])             # OHLC
+            kldata.low = float(kl['low'])             # OHLC
+            kldata.close = float(kl['close'])             # OHLC
+            kldata.volume = float(kl['volume'])
+            kldata.close = float(kl['close'])
             try :
                 kldata.datetime = datetime.strptime(kl['day'][:10], '%Y-%m-%d').replace(hour=15, minute=0, second=0, microsecond=0)
                 kldata.datetime = datetime.strptime(kl['day'], '%Y-%m-%d %H:%M:%S')

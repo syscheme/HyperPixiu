@@ -161,15 +161,23 @@ class Perspective(MarketData):
     @property
     def latestPrice(self) :
         ret =0.0
-        stk = self._stacks[self.__focusLast]
-        if stk or stk.size >0:
-            ret = stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
-        else:
-            for et in Perspective.EVENT_SEQ:
-                stk = self._readers[self.__focusLast]
-                if not stk or stk.size <=0:
-                    continue
-                ret = stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
+        # stk = self._stacks[self.__focusLast]
+        # if stk and stk.size >0:
+        #     ret = stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
+        # else:
+        #     for et in Perspective.EVENT_SEQ:
+        #         stk = self._stacks[et]
+        #         if not stk or stk.size <=0:
+        #             continue
+        #         ret = stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
+
+        seq = [self.__focusLast]  if self.__focusLast else []
+        seq += Perspective.EVENT_SEQ
+        for et in seq:
+            stk = self._stacks[et]
+            if not stk or stk.size <=0:
+                continue
+            ret = stk.top.price if EVENT_TICK == et else stk.top.close
         
         return round(ret, 3)
 
@@ -253,15 +261,15 @@ class Perspective(MarketData):
         latestevd = self._stacks[ev.type].top
         if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
             self._stacks[ev.type].push(ev.data)
-            self.__focusLast = ev.type
-            if not self.__stampLast or self.__stampLast < ev.data.datetime :
-                self.__stampLast = ev.data.datetime
+            if self._stacks[ev.type].size >0:
+                self.__focusLast = ev.type
+                if not self.__stampLast or self.__stampLast < ev.data.datetime :
+                    self.__stampLast = ev.data.datetime
             return ev
         
         if not ev.data.exchange or (latestevd.exchange and not ('_k2x' in latestevd.exchange or '_t2k' in latestevd.exchange)) :
             return None # not overwritable
 
-        self.__focusLast = ev.type
         for i in range(self._stacks[ev.type].size) :
             if ev.data.datetime > self._stacks[ev.type][i].datetime :
                 continue
@@ -274,6 +282,10 @@ class Perspective(MarketData):
         self._stacks[ev.type].insert(-1, ev.data)
         while self._stacks[ev.type].evictSize >=0 and self._stacks[ev.type].size > self._stacks[ev.type].evictSize:
             del(self._stacks[ev.type]._data[-1])
+
+        if self._stacks[ev.type].size >0:
+            self.__focusLast = ev.type
+
         return ev
 
     TICK_FLOATS=7

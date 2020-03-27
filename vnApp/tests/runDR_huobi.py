@@ -1,4 +1,4 @@
-# encoding: UTF-8
+#coding=utf8
 
 from __future__ import print_function
 
@@ -14,6 +14,8 @@ from vnApp.EventChannel import EventChannel
 
 import os
 import jsoncfg # pip install json-cfg
+import sys
+# reload(sys)
 
 #----------------------------------------------------------------------
 def processErrorEvent(event):
@@ -109,5 +111,6 @@ def runParentProcess():
 
 
 if __name__ == '__main__':
+    # sys.setdefaultencoding('utf8')
     runChildProcess()
     # runParentProcess()

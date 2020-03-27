@@ -1,0 +1,35 @@
+# docker build -t syscheme/bizdata -f Dockerfile.ubuntu .
+# build env files:
+#    -rwxrwxr-x 1 ahs ahs     528 9  29 15:25 Dockerfile.ubuntu
+#    -rw-r--r-- 1 ahs ahs 1330299 9  29 14:46 ta-lib-0.4.0-src.tar.gz
+
+FROM tensorflow/tensorflow:latest-gpu
+MAINTAINER hui.shao@xor-media.tv
+
+# add TA-Lib
+ADD ta-lib-0.4.0-src.tar.gz /tmp/build/
+RUN mkdir -p /tmp/build && \
+cd /tmp/build/ta-lib && ./configure --prefix=/usr && make && make install && pip install --cache-dir /tmp/build/ TA-Lib \
+&& rm -rf /tmp/build
+
+# add TuShare
+RUN mkdir -p /tmp/build && \
+pip install --cache-dir /tmp/build/ tushare bs4 xlrd \
+&& rm -rf /tmp/build
+
+# for vnApp
+RUN mkdir -p /tmp/build && \
+pip install --cache-dir /tmp/build/ websocket websocket-client pathlib seaborn qtpy pymongo \
+&& rm -rf /tmp/build
+
+# more, TO merge into above
+RUN pip install --cache-dir /tmp/build/ pytrends mpl_finance; \
+pip install --cache-dir /tmp/build/ cryptory statsmodels
+
+RUN mkdir -p /data /proj; rm -rf /notebooks; ln -sf /proj/notebooks /notebooks
+VOLUME /proj
+VOLUME /data
+
+RUN mkdir -p ~/.keras/ ; rm -rf ~/.keras/datasets/; ln -sf /notebooks/kerasdata ~/.keras/datasets
+
+# CMD /usr/bin/bash

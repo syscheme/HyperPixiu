@@ -106,8 +106,6 @@ def balanceSamples(filepathRFrm, compress=True) :
                 print("lastfrm[%s] saved, size %s" % (frmId, len(frmState)))
 
 if __name__ == '__main__':
-    # balanceSamples('/mnt/e/AShareSample/RFrmD4M1X5_SH601688.h5')
-    # quit()
 
     if '-b' in sys.argv :
         idx = sys.argv.index('-b') +1
@@ -152,8 +150,11 @@ if __name__ == '__main__':
     gymtdr = p.createApp(GymTrader, configNode ='trader', tradeSymbol=SYMBOL, account=acc)
     p.info('all objects registered piror to OfflineSimulator: %s' % p.listByType())
 
-    # trader = p.createApp(IdealDayTrader, configNode ='trader', trader=gymtdr, histdata=csvreader) # ideal trader to generator ReplayFrames
-    trader = p.createApp(OfflineSimulator, configNode ='trader', trader=gymtdr, histdata=csvreader) # the simulator with brain loaded to verify training result
+    if '-I' in sys.argv :
+        trader = p.createApp(IdealDayTrader, configNode ='trader', trader=gymtdr, histdata=csvreader) # ideal trader to generator ReplayFrames
+    else :
+        trader = p.createApp(OfflineSimulator, configNode ='trader', trader=gymtdr, histdata=csvreader) # the simulator with brain loaded to verify training result
+
     rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(trader.outdir, 'offline_%s.tcsv' % SYMBOL))
     trader.setRecorder(rec)
 

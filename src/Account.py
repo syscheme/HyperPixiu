@@ -1261,7 +1261,7 @@ class PositionData(EventData):
         self.stampByBroker   = EventData.EMPTY_INT        # 该持仓数是基于与broker的数据同步
 
 ########################################################################
-class DailyPosition(object):
+class DailyPosition(EventData):
     '''每日交易的结果'''
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
@@ -1295,7 +1295,7 @@ class DailyPosition(object):
         self.cBuy        = EventData.EMPTY_INT   # 成交数量
         self.cSell       = EventData.EMPTY_INT  # 成交数量
         self.txns        = EventData.EMPTY_STRING
-        self.asof        = []
+        self._asofList   = []
 
     def initPositions(self, account, symbol, currentPos, prevPos, ohlc =None):
         """Constructor"""
@@ -1309,7 +1309,7 @@ class DailyPosition(object):
         self.calcPos     = round(prevPos.position, 3)     # 
         self.prevClose   = round(prevPos.price, 3)     # 昨日收盘
         self.prevPos     = round(prevPos.position, 3)     # 昨日收盘
-        self.asof        =[ currentPos.stampByTrader, currentPos.stampByBroker ]
+        self._asofList   =[ currentPos.stampByTrader, currentPos.stampByBroker ]
         # 持仓部分
         self.positionPnl = round(prevPos.position * (currentPos.price - currentPos.avgPrice) * account._contractSize, 3)
 

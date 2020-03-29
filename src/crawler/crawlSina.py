@@ -4,7 +4,7 @@ from __future__ import division
 
 from MarketCrawler import *
 from EventData import Event, datetime2float, DT_EPOCH
-from MarketData import KLineData, TickData, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
+from MarketData import KLineData, TickData, MoneyflowData, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
 
 import requests # pip3 install requests
 from copy import copy
@@ -18,6 +18,12 @@ import re
 [{cate_type:"2",cate_name:"银行业",category:"hangye_ZI01"}]
 '''
 
+def toFloatVal(val, defaultval=0.0) :
+    try :
+        return float(val) if val else defaultval
+    except:
+        pass
+    return defaultval
 
 ########################################################################
 class SinaCrawler(MarketCrawler):
@@ -339,12 +345,12 @@ class SinaCrawler(MarketCrawler):
 
         for kl in jsonData :
             kldata = KLineData("AShare", symbol)
-            kldata.open = float(kl['open'])             # OHLC
-            kldata.high = float(kl['high'])             # OHLC
-            kldata.low = float(kl['low'])             # OHLC
-            kldata.close = float(kl['close'])             # OHLC
-            kldata.volume = float(kl['volume'])
-            kldata.close = float(kl['close'])
+            kldata.open   = toFloatVal(kl['open'])             # OHLC
+            kldata.high   = toFloatVal(kl['high'])             # OHLC
+            kldata.low    = toFloatVal(kl['low'])             # OHLC
+            kldata.close  = toFloatVal(kl['close'])             # OHLC
+            kldata.volume = toFloatVal(kl['volume'])
+            kldata.close  = toFloatVal(kl['close'])
             try :
                 kldata.datetime = datetime.strptime(kl['day'][:10], '%Y-%m-%d').replace(hour=15, minute=0, second=0, microsecond=0)
                 kldata.datetime = datetime.strptime(kl['day'], '%Y-%m-%d %H:%M:%S')
@@ -354,12 +360,12 @@ class SinaCrawler(MarketCrawler):
             kldata.time = kldata.datetime.strftime('%H:%M:%S')
             klineseq.append(kldata)
 
-        klineseq.sort(key=SinaCrawler.sortKeyOfKL)
+        klineseq.sort(key=SinaCrawler.sortKeyOfMD)
         # klineseq.reverse() # SINA returns from oldest to newest
         return httperr, klineseq
 
-    def sortKeyOfKL(KL) : # for sort
-        return KL.datetime
+    def sortKeyOfMD(md) : # for sort
+        return md.datetime
 
     def fixupSymbolPrefix(symbol):
         if symbol.isdigit() :
@@ -404,45 +410,45 @@ class SinaCrawler(MarketCrawler):
             ncols = min([len(HEADERS), len(row)])
             d = {HEADERS[i]:row[i] for i in range(ncols)}
             tickdata = TickData("AShare", s)
-            tickdata.price = float(d['price'])
-            tickdata.volume = float(d['volume'])
-            tickdata.total = float(d['total'])
+            tickdata.price  = toFloatVal(d['price'])
+            tickdata.volume = toFloatVal(d['volume'])
+            tickdata.total  = toFloatVal(d['total'])
 
             tickdata.datetime = datetime.strptime(d['date'] + 'T' + d['time'], '%Y-%m-%dT%H:%M:%S')
             tickdata.date = tickdata.datetime.strftime('%Y-%m-%d')
             tickdata.time = tickdata.datetime.strftime('%H:%M:%S')
             
-            tickdata.open = float(d['open'])
-            tickdata.high = float(d['high'])
-            tickdata.low = float(d['low'])
-            tickdata.prevClose = float(d['prevClose'])
+            tickdata.open      = toFloatVal(d['open'])
+            tickdata.high      = toFloatVal(d['high'])
+            tickdata.low       = toFloatVal(d['low'])
+            tickdata.prevClose = toFloatVal(d['prevClose'])
 
             # tickdata.upperLimit = EventData.EMPTY_FLOAT           # 涨停价
             # tickdata.lowerLimit = EventData.EMPTY_FLOAT           # 跌停价
             
             # 五档行情
-            tickdata.b1P = float(d['bid1'])
-            tickdata.b1V = float(d['bid1v'])
-            tickdata.b2P = float(d['bid2'])
-            tickdata.b2V = float(d['bid2v'])
-            tickdata.b3P = float(d['bid3'])
-            tickdata.b3V = float(d['bid3v'])
-            tickdata.b4P = float(d['bid4'])
-            tickdata.b4V = float(d['bid4v'])
-            tickdata.b5P = float(d['bid5'])
-            tickdata.b5V = float(d['bid5v'])
+            tickdata.b1P = toFloatVal(d['bid1'])
+            tickdata.b1V = toFloatVal(d['bid1v'])
+            tickdata.b2P = toFloatVal(d['bid2'])
+            tickdata.b2V = toFloatVal(d['bid2v'])
+            tickdata.b3P = toFloatVal(d['bid3'])
+            tickdata.b3V = toFloatVal(d['bid3v'])
+            tickdata.b4P = toFloatVal(d['bid4'])
+            tickdata.b4V = toFloatVal(d['bid4v'])
+            tickdata.b5P = toFloatVal(d['bid5'])
+            tickdata.b5V = toFloatVal(d['bid5v'])
             
             # ask to sell: price and volume
-            tickdata.a1P = float(d['ask1'])
-            tickdata.a1V = float(d['ask1v'])
-            tickdata.a2P = float(d['ask2'])
-            tickdata.a2V = float(d['ask2v'])
-            tickdata.a3P = float(d['ask3'])
-            tickdata.a3V = float(d['ask3v'])
-            tickdata.a4P = float(d['ask4'])
-            tickdata.a4V = float(d['ask4v'])
-            tickdata.a5P = float(d['ask5'])
-            tickdata.a5V = float(d['ask5v'])
+            tickdata.a1P = toFloatVal(d['ask1'])
+            tickdata.a1V = toFloatVal(d['ask1v'])
+            tickdata.a2P = toFloatVal(d['ask2'])
+            tickdata.a2V = toFloatVal(d['ask2v'])
+            tickdata.a3P = toFloatVal(d['ask3'])
+            tickdata.a3V = toFloatVal(d['ask3v'])
+            tickdata.a4P = toFloatVal(d['ask4'])
+            tickdata.a4V = toFloatVal(d['ask4v'])
+            tickdata.a5P = toFloatVal(d['ask5'])
+            tickdata.a5V = toFloatVal(d['ask5v'])
 
             tickseq.append(tickdata)
         
@@ -450,7 +456,7 @@ class SinaCrawler(MarketCrawler):
         return httperr, tickseq
 
     #------------------------------------------------    
-    def GET_MoneyFlow(self, symbol):
+    def GET_MoneyFlow(self, symbol, byMinutes=False):
         ''' 查询现金流
         will call cortResp.send(csvline) when the result comes
         ({r0_in:"0.0000",r0_out:"0.0000",r0:"0.0000",r1_in:"3851639.0000",r1_out:"4794409.0000",r1:"9333936.0000",r2_in:"8667212.0000",r2_out:"10001938.0000",r2:"18924494.0000",r3_in:"7037186.0000",r3_out:"7239931.2400",r3:"15039741.2400",curr_capital:"9098",name:"朗科智能",trade:"24.4200",changeratio:"0.000819672",volume:"1783866.0000",turnover:"196.083",r0x_ratio:"0",netamount:"-2480241.2400"})
@@ -465,15 +471,42 @@ class SinaCrawler(MarketCrawler):
               trade收盘价3.50,changeratio涨跌幅+1.156%,turnover换手率0.0485%,netamount净流入/万2989.37,ratioamount净流入率8.40%,r0_net主力净流入/万2732.06,r0_ratio主力净流入率7.68%,r0x_ratio主力罗盘81.43°,cate_ra行业净流入率10.34%
               {opendate:"2020-03-19",trade:"3.4600",changeratio:"-0.0114286",turnover:"5.71814",netamount:"-6206568.4600",ratioamount:"-0.0148799",r0_net:"-21194529.9100",r0_ratio:"-0.05081268",r0x_ratio:"-102.676",cnt_r0x_ratio:"-2",cate_ra:"-0.0122277",cate_na:"-253623190.4100"},
               '''
-        url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssi_ssfx_flzjtj?daima=%s' % (mdSina.fixupSymbolPrefix(symbol))
+        url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssi_ssfx_flzjtj?daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol))
+        url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol))
+        if byMinutes:
+            url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol))
+
         httperr, text = self.__sinaGET(url, 'GET_MoneyFlow')
         if httperr != 200:
             return httperr, text
 
-        str=text[text.find('{'):text.rfind('}')+1]
-        jsonData = demjson.decode(str)
+        if byMinutes:
+            text = text[text.find('[{'):text.rfind('}]')] + '}]'
+        if len(text)>80*1024: # maximal 80KB is enough to cover 1Yr
+            # EOM = text[text.find('}'):]
+            text = text[:80*1024]
+            text = text[:text.rfind('},{')]
+            text += "}]" # EOM
+        mfseq =[]
+        jsonData = demjson.decode(text)
 
-        return True, jsonData
+        for mf in jsonData :
+            mfdata = MoneyflowData("AShare", symbol)
+            mfdata.price        = toFloatVal(mf['trade'])
+            mfdata.netamount    = toFloatVal(mf['netamount'])
+            mfdata.r0_ratio     = toFloatVal(mf['r0_ratio'])
+            mfdata.r3cate_ratio = toFloatVal(mf['r3_ratio']) if byMinutes else toFloatVal(mf['cate_ra'])
+            mfdata.datetime     = datetime.strptime(mf['opendate'], '%Y-%m-%d').replace(hour=15, minute=0, second=0, microsecond=0)
+            if byMinutes:
+                mfdata.datetime = datetime.strptime(mf['opendate'] + ' ' + mf['ticktime'], '%Y-%m-%d %H:%M:%S')
+            elif len(mfseq) >260 :
+                break
+            mfdata.date = mfdata.datetime.strftime('%Y-%m-%d')
+            mfdata.time = mfdata.datetime.strftime('%H:%M:%S')
+            mfseq.append(mfdata)
+
+        mfseq.sort(key=SinaCrawler.sortKeyOfMD)
+        return True, mfseq
 
     #------------------------------------------------    
     def GET_Transactions(self, symbol):
@@ -488,7 +521,7 @@ class SinaCrawler(MarketCrawler):
         HEADERSEQ="time,volume,price,type"
         HEADERS=HEADERSEQ.split(',')
         SYNTAX = re.compile('^.*trade_item_list.*Array\(([^\)]*)\).*')
-        url = 'http://vip.stock.finance.sina.com.cn/quotes_service/view/CN_TransListV2.php?symbol=%s' % (mdSina.fixupSymbolPrefix(symbol))
+        url = 'http://vip.stock.finance.sina.com.cn/quotes_service/view/CN_TransListV2.php?symbol=%s' % (SinaCrawler.fixupSymbolPrefix(symbol))
         httperr, text = self.__sinaGET(url, 'GET_Transactions')
         if httperr != 200:
             return httperr, text
@@ -524,7 +557,7 @@ class SinaCrawler(MarketCrawler):
         jsonData = demjson.decode(re.sub('_([0-9]{4})_([0-9]{2})_([0-9]{2})', r'\1-\2-\3', str)) # convert _2019_05_14 to 2019-05-14
         ret = []
         for k,v in jsonData['data'].items() : 
-            ret.append({k, v.float()})
+            ret.append({k, v.toFloatVal()})
         return True, ret
 
 ########################################################################
@@ -614,11 +647,13 @@ if __name__ == '__main__':
     from Application import Program
 
     p = Program()
-    md = SinaCrawler(p, None);
+    # mc = p.createApp(SinaCrawler, configNode ='crawler', marketState = gymtdr._marketState, recorder=rec) # md = SinaCrawler(p, None);
+    md = SinaCrawler(p, None)
+    _, result = md.GET_MoneyFlow("SH601005")
     # _, result = md.searchKLines("000002", EVENT_KLINE_5MIN)
     # _, result = md.GET_RecentTicks('sh601006,sh601005,sh000001,sz000001')
     # _, result = md.GET_SplitRate('sh601006')
-    # print(result)
-    md.subscribe(['601006','sh601005','sh000001','000001'])
-    while True:
-        md.step()
+    print(result)
+    # md.subscribe(['601006','sh601005','sh000001','000001'])
+    # while True:
+    #     md.doAppStep()

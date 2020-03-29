@@ -32,6 +32,9 @@ EVENT_T2KLINE_1MIN  = MARKETDATE_EVENT_PREFIX + 'T2K1m'
 
 EVENT_MARKET_HOUR   = MARKETDATE_EVENT_PREFIX + 'Hr'
 
+EVENT_MONEYFLOW_1MIN = MARKETDATE_EVENT_PREFIX + 'MF1m'
+EVENT_MONEYFLOW_1DAY = MARKETDATE_EVENT_PREFIX + 'MF1d'
+
 ########################################################################
 class MarketData(EventData):
     """Tick行情数据类"""
@@ -231,6 +234,74 @@ class KLineData(MarketData):
 
         return ret
 
+
+########################################################################
+class MoneyflowData(MarketData):
+    '''资金流数据
+
+        1MIN!!:  http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?daima=SH601988
+                ["240",[{opendate:"2020-03-20",ticktime:"15:00:00",trade:"3.5000",changeratio:"0.0115607",inamount:"173952934.3200",outamount:"144059186.4000",netamount:"29893747.9200",ratioamount:"0.0839833",r0_ratio:"0.0767544",r3_ratio:"0.010566"},
+                ticktime时间15:00:00,
+                trade价格3.50,
+                inamount流入资金/万17395.29,
+                outamount流出资金/万14405.92,
+                netamount净流入/万2989.37,
+                ratioamount净流入率8.40%,
+                r0_ratio主力流入率7.68%,
+                r3_ratio散户流入率1.06%
+
+                {opendate:"2020-03-20",ticktime:"14:58:00",trade:"3.5200",changeratio:"0.017341",inamount:"173952934.3200",outamount:"144059186.4000",netamount:"29893747.9200",ratioamount:"0.093927",r0_ratio:"0.0858422",r3_ratio:"0.011817"},
+
+        DAILY: http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?daima=SH601988
+              [{opendate:"2020-03-20",trade:"3.5000",changeratio:"0.0115607",turnover:"4.84651",netamount:"29893747.9200",ratioamount:"0.0839833",r0_net:"27320619.5800",r0_ratio:"0.07675441",r0x_ratio:"81.4345",cnt_r0x_ratio:"1",cate_ra:"0.103445",cate_na:"1648659621.3400"},
+              trade收盘价3.50
+              turnover换手率0.0485%,
+              netamount净流入/万2989.37,
+              ratioamount净流入率8.40%,
+              r0_net主力净流入/万2732.06,
+              r0_ratio主力净流入率7.68%,
+              r0x_ratio主力罗盘81.43°,
+              cate_ra行业净流入率10.34%
+              {opendate:"2020-03-19",trade:"3.4600",changeratio:"-0.0114286",turnover:"5.71814",netamount:"-6206568.4600",ratioamount:"-0.0148799",r0_net:"-21194529.9100",r0_ratio:"-0.05081268",r0x_ratio:"-102.676",cnt_r0x_ratio:"-2",cate_ra:"-0.0122277",cate_na:"-253623190.4100"},
+
+'''
+
+    #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
+    COLUMNS = 'symbol,exchange,date,time,price,netamount,r0_ratio,r3cate_ratio' #,openInterest'
+
+    #----------------------------------------------------------------------
+    def __init__(self, exchange, symbol =None):
+        """Constructor"""
+        super(MoneyflowData, self).__init__(exchange, symbol)
+        
+        self.price        = EventData.EMPTY_FLOAT      # 价格
+        self.netamount    = EventData.EMPTY_FLOAT      # 净流入金额
+        self.r0_ratio     = EventData.EMPTY_FLOAT      # 主力流入率
+        self.r3cate_ratio = EventData.EMPTY_FLOAT      # 散户流入率（分钟资金流时）或 行业净流入率（日资金流时）
+
+    @property
+    def desc(self) :
+        return 'mf.%s@%s>%s/%.2f,%.2f' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.netamount, self.r0_ratio, self.r3cate_ratio)
+
+    @abstractmethod
+    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+        '''
+        @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
+        '''
+        if baseline_Price <=0: baseline_Price=1.0
+        if baseline_Volume <=0: baseline_Volume=1.0
+
+        # the basic dims, min=4
+        ret = [
+            FUNC_floatNormalize(self.price,     baseline_Price), 
+            FUNC_floatNormalize(self.netamount, baseline_Price*baseline_Volume),
+            FUNC_floatNormalize(self.r0_ratio, 1.0), 
+            FUNC_floatNormalize(self.r3cate_ratio, 1.0), 
+        ] + [0.0] * ( EXPORT_FLOATS_DIMS -4)
+
+        # the optional dims
+
+        return ret
 
 ########################################################################
 class DictToKLine(object):

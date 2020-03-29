@@ -237,34 +237,7 @@ class KLineData(MarketData):
 
 ########################################################################
 class MoneyflowData(MarketData):
-    '''资金流数据
-
-        1MIN!!:  http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?daima=SH601988
-                ["240",[{opendate:"2020-03-20",ticktime:"15:00:00",trade:"3.5000",changeratio:"0.0115607",inamount:"173952934.3200",outamount:"144059186.4000",netamount:"29893747.9200",ratioamount:"0.0839833",r0_ratio:"0.0767544",r3_ratio:"0.010566"},
-                ticktime时间15:00:00,
-                trade价格3.50,
-                inamount流入资金/万17395.29,
-                outamount流出资金/万14405.92,
-                netamount净流入/万2989.37,
-                ratioamount净流入率8.40%,
-                r0_ratio主力流入率7.68%,
-                r3_ratio散户流入率1.06%
-
-                {opendate:"2020-03-20",ticktime:"14:58:00",trade:"3.5200",changeratio:"0.017341",inamount:"173952934.3200",outamount:"144059186.4000",netamount:"29893747.9200",ratioamount:"0.093927",r0_ratio:"0.0858422",r3_ratio:"0.011817"},
-
-        DAILY: http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?daima=SH601988
-              [{opendate:"2020-03-20",trade:"3.5000",changeratio:"0.0115607",turnover:"4.84651",netamount:"29893747.9200",ratioamount:"0.0839833",r0_net:"27320619.5800",r0_ratio:"0.07675441",r0x_ratio:"81.4345",cnt_r0x_ratio:"1",cate_ra:"0.103445",cate_na:"1648659621.3400"},
-              trade收盘价3.50
-              turnover换手率0.0485%,
-              netamount净流入/万2989.37,
-              ratioamount净流入率8.40%,
-              r0_net主力净流入/万2732.06,
-              r0_ratio主力净流入率7.68%,
-              r0x_ratio主力罗盘81.43°,
-              cate_ra行业净流入率10.34%
-              {opendate:"2020-03-19",trade:"3.4600",changeratio:"-0.0114286",turnover:"5.71814",netamount:"-6206568.4600",ratioamount:"-0.0148799",r0_net:"-21194529.9100",r0_ratio:"-0.05081268",r0x_ratio:"-102.676",cnt_r0x_ratio:"-2",cate_ra:"-0.0122277",cate_na:"-253623190.4100"},
-
-'''
+    '''资金流数据'''
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
     COLUMNS = 'symbol,exchange,date,time,price,netamount,r0_ratio,r3cate_ratio' #,openInterest'
@@ -597,7 +570,7 @@ class MarketState(MetaObj):
         raise NotImplementedError
 
     @abstractmethod
-    def toNNFloats(self, symbol=None) :
+    def exportKLFloats(self, symbol=None) :
         '''@return an array_like data as toNNFloats, maybe [] or numpy.array
         '''
         raise NotImplementedError

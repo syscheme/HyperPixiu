@@ -47,6 +47,8 @@ class SinaCrawler(MarketCrawler):
     MINs_OF_EVENT = {
             EVENT_KLINE_5MIN: 5,
             EVENT_KLINE_1DAY: 240,
+            EVENT_MONEYFLOW_1MIN : 1,
+            EVENT_MONEYFLOW_1DAY : 240,
         }
 
     def __init__(self, program, marketState=None, recorder=None, **kwargs):
@@ -57,7 +59,7 @@ class SinaCrawler(MarketCrawler):
         # duration to complete, so this crawler should be threaded
         # self._threadless = False
 
-        self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline]
+        self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline] #, self.__step_pollMoneyflow]
 
         self._proxies = {}
 
@@ -72,13 +74,12 @@ class SinaCrawler(MarketCrawler):
         symbols            = self.getConfig('symbolsToCrawl', [])
 
         self.__tickBatches = None
-        self.__idxTickBatch = 0
-        self.__nextStamp_PollTick = None
+        self.__idxTickBatch, self.__nextStamp_PollTick = 0, None
 
         self.__tickToKL1m = {} # dict of symbol to SinaTickToKL1m
-        self.__idxKL = 0
-
-        self.__stampYieldTill_KL = None #
+        self.__idxKL, self.__stampYieldTill_KL = 0, None
+        
+        self.__idxMF, self.__stampYieldMF = 0, None
 
         self.__step_poll1st() # perform an init-step
 
@@ -282,16 +283,16 @@ class SinaCrawler(MarketCrawler):
         s = None
         cSyms = len(self._symbolsToPoll)
         if cSyms >0:
-            self.__idxKL = self.__idxKL % cSyms
-            s = self._symbolsToPoll[self.__idxKL]
+            self.__idxMF = self.__idxMF % cSyms
+            s = self._symbolsToPoll[self.__idxMF]
 
         stampStart = datetime.now()
-        
-        if self.__stampYieldTill_KL and stampStart < self.__stampYieldTill_KL:
+
+        if self.__stampYieldMF and stampStart < self.__stampYieldMF:
             # self.debug("step_pollKline(%s) symb[%d/%d] yield per SINA(456), %s left" %(s, self.__idxKL, cSyms, self.__stampYieldTill_KL -stampStart))
             return cBusy
 
-        self.__idxKL += 1
+        self.__idxMF += 1
 
         if not s or len(s) <=0:
             del self._symbolsToPoll[s]
@@ -299,36 +300,31 @@ class SinaCrawler(MarketCrawler):
 
         # if not s in self.marketState.keys():
         #     self.marketState[s] = Perspective('AShare', symbol=s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
-        # psp = self.marketState[s]
 
-        for evType in [EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
+        # psp = self.marketState[s]
+        for evType in [EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY] :
             minutes = SinaCrawler.MINs_OF_EVENT[evType]
-            etimatedNext = datetime2float(self.marketState.getAsOf(s, evType)) + 60*(minutes if minutes < 240 else int(minutes /240)*60*24) -1
+            etimatedNext = datetime2float(self.marketState.moneyflowAsOf(s, evType)) + 60*(minutes if minutes < 240 else int(minutes /240)*60*24) -1
             self.__END_OF_TODAY = datetime2float(stampStart.replace(hour=15, minute=1))
             if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
                 continue
 
-            size, lines = self.marketState.sizesOf(s, evType)
-            if size >0:
-                lines = 0
-            lines +=10
-
-            httperr, result = self.GET_RecentKLines(s, minutes, lines)
+            httperr, result = self.GET_MoneyFlow(s, EVENT_MONEYFLOW_1MIN== evType)
             if httperr !=200:
-                self.error("step_pollKline(%s:%s) failed, err(%s)" %(s, evType, httperr))
+                self.error("step_pollMoneyflow(%s:%s) failed, err(%s)" %(s, evType, httperr))
                 if httperr == 456:
-                    self.__stampYieldTill_KL = datetime.now() + timedelta(seconds=self._secYield456)
-                    self.warn("step_pollKline(%s:%s) [%d/%d]sym SINA complained err(%s), yielding %ssec" %(s, evType, self.__idxKL, cSyms, httperr, self._secYield456))
+                    self.__stampYieldMF = datetime.now() + timedelta(seconds=self._secYield456)
+                    self.warn("step_pollMoneyflow(%s:%s) [%d/%d]sym SINA complained err(%s), yielding %ssec" %(s, evType, self.__idxKL, cSyms, httperr, self._secYield456))
                     return cBusy
            
                 if httperr == 404 and self.__excludeAt404:
-                    del self._symbolsToPoll[s]
-                    self.warn("step_pollKline(%s:%s) [%d/%d]sym excluded symbol per err(%s)" %(s, evType, self.__idxKL, cSyms, httperr))
+                    # del self._symbolsToPoll[s]
+                    self.warn("step_pollMoneyflow(%s:%s) [%d/%d]sym excluded symbol per err(%s)" %(s, evType, self.__idxKL, cSyms, httperr))
 
                 continue
 
             # succ at query
-            self.__stampYieldTill_KL = stampStart + self.__minimalKLYield
+            self.__stampYieldMF = stampStart + self.__minimalMFYield
             cMerged =0
             for i in result:
                 cBusy +=1
@@ -341,10 +337,10 @@ class SinaCrawler(MarketCrawler):
 
             stampNow = datetime.now()
             if cMerged >0:
-                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
+                self.info("step_pollMoneyflow(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
             elif not SinaCrawler.duringTradeHours(stampNow):
-                self.__stampYieldTill_KL = stampNow + timedelta(minutes=2)
-                self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-time of AShare, actively yielding 2min to avoid 456" %(s, evType, self.__idxKL, cSyms))
+                self.__minimalMFYield = stampNow + timedelta(minutes=2)
+                self.info("step_pollMoneyflow(%s:%s) [%d/%d]sym no new KLs during off-time of AShare, actively yielding 2min to avoid 456" %(s, evType, self.__idxKL, cSyms))
 
             stampStart = stampNow
 
@@ -544,7 +540,6 @@ class SinaCrawler(MarketCrawler):
               trade收盘价3.50,changeratio涨跌幅+1.156%,turnover换手率0.0485%,netamount净流入/万2989.37,ratioamount净流入率8.40%,r0_net主力净流入/万2732.06,r0_ratio主力净流入率7.68%,r0x_ratio主力罗盘81.43°,cate_ra行业净流入率10.34%
               {opendate:"2020-03-19",trade:"3.4600",changeratio:"-0.0114286",turnover:"5.71814",netamount:"-6206568.4600",ratioamount:"-0.0148799",r0_net:"-21194529.9100",r0_ratio:"-0.05081268",r0x_ratio:"-102.676",cnt_r0x_ratio:"-2",cate_ra:"-0.0122277",cate_na:"-253623190.4100"},
               '''
-        url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssi_ssfx_flzjtj?daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol))
         url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol))
         if byMinutes:
             url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol))
@@ -553,14 +548,19 @@ class SinaCrawler(MarketCrawler):
         if httperr != 200:
             return httperr, text
 
+        mfseq =[]
         if byMinutes:
-            text = text[text.find('[{'):text.rfind('}]')] + '}]'
+            pbeg, pend = text.find('[{'), text.rfind('}]')
+            if pbeg<0 or pbeg>=pend:
+                return mfseq
+            text = text[pbeg:pend] + '}]'
         if len(text)>80*1024: # maximal 80KB is enough to cover 1Yr
             # EOM = text[text.find('}'):]
             text = text[:80*1024]
-            text = text[:text.rfind('},{')]
-            text += "}]" # EOM
-        mfseq =[]
+            pend = text.rfind('},{')
+            if pend<=0:
+                return mfseq
+            text = text[:pend] + "}]"
         jsonData = demjson.decode(text)
 
         for mf in jsonData :

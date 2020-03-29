@@ -528,6 +528,7 @@ class PerspectiveState(MarketState):
         """Constructor"""
         super(PerspectiveState, self).__init__(exchange)
         self.__dictPerspective ={} # dict of symbol to Perspective
+        self.__dictMoneyflow ={} # dict of symbol to MoneyflowPerspective
 
     # -- impl of MarketState --------------------------------------------------------------
     def listOberserves(self) :
@@ -565,6 +566,16 @@ class PerspectiveState(MarketState):
                 ret = p.asof
         return ret if ret else DT_EPOCH
 
+    def moneyflowAsOf(self, symbol=None, evType =None) :
+        if symbol and symbol in self.__dictMoneyflow.keys():
+            psp = self.__dictMoneyflow[symbol]
+            if psp:
+                if evType and evType in psp._stacks.keys():
+                    return psp.getAsOf(evType)
+                return psp.asof
+
+        return DT_EPOCH
+
     def sizesOf(self, symbol, evType =None) :
         ''' 
         @return the size of specified symbol/evType
@@ -597,15 +608,19 @@ class PerspectiveState(MarketState):
         '''
         if EVENT_Perspective == ev.type :
             self.__dictPerspective[ev.data.symbol] = ev.data
-            return
+            return None
 
-        if not ev.type in Perspective.EVENT_SEQ :
-            return
-            
+        ret = None
         s = ev.data.symbol
-        if not s in self.__dictPerspective.keys() :
-            self.__dictPerspective[s] = Perspective(self.exchange, s)
-        self.__dictPerspective[s].push(ev)
+        if ev.type in Perspective.EVENT_SEQ :
+            if not s in self.__dictPerspective.keys() :
+                self.__dictPerspective[s] = Perspective(self.exchange, s)
+            self.__dictPerspective[s].push(ev)
+
+        if ev.type in MoneyflowPerspective.EVENT_SEQ :
+            if not s in self.__dictMoneyflow.keys() :
+                self.__dictMoneyflow[s] = MoneyflowPerspective(self.exchange, s)
+            self.__dictMoneyflow[s].push(ev)
 
     __dummy = None
     def exportKLFloats(self, symbol=None) :

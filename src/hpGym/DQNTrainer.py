@@ -939,7 +939,7 @@ class MarketDirClassifier(BaseApplication):
                             predact[r][np.argmax(predict[r])] =1
                         AD = np.where(predact ==1)[1]
                         kP = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(3)] # the actions percentage in predictions
-                        strEval += ',A%s%%->Pred%s%%' % ('+'.join(kI), '+'.join(kP))
+                        strEval += 'A%s%%->Prd%s%%' % ('+'.join(kI), '+'.join(kP))
                         
                         # eval.3 duration taken
                         strEval += '/%s, ' % (datetime.now() -stampStart)

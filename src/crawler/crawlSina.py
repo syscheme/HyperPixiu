@@ -107,6 +107,7 @@ class SinaCrawler(MarketCrawler):
     #------------------------------------------------
     # sub-steps
     def __step_poll1st(self):
+        self.__BEGIN_OF_TODAY = datetime2float(datetime.now().replace(hour=9, minute=29))
         self.__END_OF_TODAY = datetime2float(datetime.now().replace(hour=15, minute=1))
         return 0
 
@@ -222,7 +223,15 @@ class SinaCrawler(MarketCrawler):
 
         for evType in [EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
             minutes = SinaCrawler.MINs_OF_EVENT[evType]
-            etimatedNext = datetime2float(self.marketState.getAsOf(s, evType)) + 60*(minutes if minutes < 240 else int(minutes /240)*60*24) -1
+            if minutes < 240:
+                # in-day events
+                etimatedNext = datetime2float(self.marketState.getAsOf(s, evType)) + 60*minutes -1
+            else :
+                etimatedNext = datetime2float(self.marketState.getAsOf(s, evType)) + 60*(int((minutes) /240)*60*24)  -1
+                sz, esz = self.marketState.sizesOf(s, evType)
+                tmpStamp = datetime2float(self.marketState.stampUpdatedOf(s, evType))
+                if sz >=esz and tmpStamp and tmpStamp >= self.__BEGIN_OF_TODAY:
+                    etimatedNext = tmpStamp + 60*60 # one hr later
             self.__END_OF_TODAY = datetime2float(stampStart.replace(hour=15, minute=1))
             if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
                 continue

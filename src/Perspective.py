@@ -36,6 +36,7 @@ class EvictableStack(object):
         self.__data =[]
         self.__evictSize = evictSize
         self.__dataNIL = copy.copy(nildata) if nildata else None
+        self.__stampUpdated = None
         # if self.__dataNIL and self.__evictSize and self.__evictSize >0 :
         #     for i in range(self.__evictSize) :
         #         self.__data.insert(0, nildata)
@@ -63,6 +64,10 @@ class EvictableStack(object):
     def exportList(self):
         return _exportList(self, nilFilled=True)
 
+    @property
+    def stampUpdated(self):
+        return self.__stampUpdated if self.__stampUpdated else DT_EPOCH
+
     def _exportList(self, nilFilled=False):
         if nilFilled :
             fillsize = (self.evictSize - self.size) if self.evictSize >=0 else 0
@@ -78,6 +83,7 @@ class EvictableStack(object):
         self.__data[index] =item
         while self.evictSize >=0 and self.size > self.evictSize:
             del(self.__data[-1])
+        self.__stampUpdated = datetime.now()
 
     # no pop here: def pop(self):
     #    del(self.__data[-1])
@@ -86,6 +92,7 @@ class EvictableStack(object):
         self.__data.insert(0, item)
         while self.evictSize >=0 and self.size > self.evictSize:
             del(self.__data[-1])
+        self.__stampUpdated = datetime.now()
 
 ########################################################################
 class Perspective(MarketData):
@@ -142,6 +149,12 @@ class Perspective(MarketData):
         
         stack = self._stacks[evType]
         return DT_EPOCH if stack.size <=0 else stack.top.asof
+
+    def stampUpdatedOf(self, evType=None) :
+        if not evType or not evType in self._stacks.keys():
+            return DT_EPOCH
+        
+        return self._stacks[evType].stampUpdated
 
     def sizesOf(self, evType=None) :
         if not evType or len(evType) <=0:
@@ -564,6 +577,23 @@ class PerspectiveState(MarketState):
         for s, p in self.__dictPerspective.items() :
             if not ret or ret > p.asof:
                 ret = p.asof
+        return ret if ret else DT_EPOCH
+
+    def stampUpdatedOf(self, symbol=None, evType=None) :
+        dict = {}
+        if evType in Perspective.EVENT_SEQ:
+            dict = self.__dictPerspective
+        elif evType in MoneyflowPerspective.EVENT_SEQ:
+            dict = self.__dictMoneyflow
+        
+        if symbol and symbol in dict:
+            return dict[symbol].stampUpdatedOf(evType)
+
+        ret = None
+        for s, p in dict.items() :
+            if not ret or ret > p.asof:
+                ret = p.asof
+                
         return ret if ret else DT_EPOCH
 
     def moneyflowAsOf(self, symbol=None, evType =None) :

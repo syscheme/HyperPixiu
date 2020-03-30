@@ -15,7 +15,7 @@ if __name__ == '__main__':
         sys.argv += ['-f', os.path.realpath(os.path.dirname(os.path.abspath(__file__))+ '/../../conf') + '/Trader.json']
 
     p = Program()
-    p._heartbeatInterval = -1 # TODO 0.2 # yield at idle for 200msec
+    p._heartbeatInterval = 0.1 # 0.1 yield at idle for 100msec
 
     sourceCsvDir = None
     SYMBOL = ''

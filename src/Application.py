@@ -521,6 +521,7 @@ class Program(object):
         # dirname(dirname(abspath(file)))
         self.__jsettings = None
         self.__ostype = platform.platform().lower()
+        self._shelve = None
 
         try:
             opts, args = getopt.getopt(argvs[1:], "hf:o:", ["config=","outdir="])
@@ -1164,25 +1165,29 @@ class Program(object):
 
     #-----about shelve -----------------------------------------------------
     @abstractmethod
-    def saveObject(self, sobj):
+    def saveObject(self, sobj, objId=None):
         if not self._shelve :
-            return False
-        self._shelve[sobj.ident] = sobj
-        self._shelve.close()
+            self._shelve = shelve.open(self._shelvefn)
+
+        if not objId or len(objId) <=0:
+            objId = sobj.ident
+
+        self._shelve[objId] = sobj
+        self.debug('saveObject() object[%s] saved' %(objId))
 
     @abstractmethod
-    def loadObject(self, category, id):
+    def loadObject(self, objId):
         '''读取对象'''
         try :
-            fn = '%s/objects/%s' % (self.dataRoot, category)
-            f = shelve.open(fn)
-            if id in f :
-                return f[id].value
+            if not self._shelve :
+                self._shelve = shelve.open(self._shelvefn)
+            if objId in self._shelve :
+                self.debug('loadObject() object[%s] loaded' %(objId))
+                return self._shelve[objId]
         except Exception as ex:
-            print("loadObject() error: %s %s" % (ex, traceback.format_exc()))
+            self.logexception(ex)
 
         return None
-
 
 '''
     #----------------------------------------------------------------------

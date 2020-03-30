@@ -841,7 +841,14 @@ class OnlineSimulator(MetaTrader):
             self.info('doAppInit() failed to initialize trader[%s]' % (self.__wkTrader.ident))
             return False
 
+        prevState = self.program.loadObject('%s/marketState' % 'OnlineSimulator') # '%s/marketState' % self.__class__)
+        if prevState:
+            self.__wkTrader._marketState = prevState
         self._marketState = self.__wkTrader._marketState
+
+        prevAccount = self.program.loadObject('%s/account' % 'OnlineSimulator') # '%s/marketState' % self.__class__)
+        if prevAccount:
+            self.__wkTrader.account = prevAccount
         self._originAcc = self.__wkTrader.account
 
         # # ADJ_1. adjust the Trader._dictObjectives to append suffix MarketData.TAG_BACKTEST
@@ -924,12 +931,15 @@ class OnlineSimulator(MetaTrader):
     #----------------------------------------------------------------------
     # Overrides of Events handling
     def eventHdl_Order(self, ev):
+        self.program.saveObject(self._originAcc, '%s/account' % 'OnlineSimulator')
         return self.__wkTrader.eventHdl_Order(ev)
             
     def eventHdl_Trade(self, ev):
+        self.program.saveObject(self._originAcc, '%s/account' % 'OnlineSimulator')
         return self.__wkTrader.eventHdl_Trade(ev)
 
     def onDayOpen(self, symbol, date):
+        self.program.saveObject(self._originAcc, '%s/account' % 'OnlineSimulator')
         return self.__wkTrader.onDayOpen(symbol, date)
 
 
@@ -1346,6 +1356,7 @@ class AccountWrapper(MetaAccount):
         """发单"""
         orderData.brokerOrderId = "$" + orderData.reqId
         orderData.status = OrderData.STATUS_SUBMITTED
+        self.debug('faking order placed: %s' % orderData.desc)
 
         # redirectly simulate a place ok
         self._broker_onOrderPlaced(orderData)
@@ -1354,6 +1365,7 @@ class AccountWrapper(MetaAccount):
         # simuate a cancel by orderData
         orderData.status = OrderData.STATUS_CANCELLED
         orderData.stampCanceled = self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
+        self.debug('faking order cancelled: %s' % orderData.desc)
         self._broker_onCancelled(orderData)
 
     def onDayOpen(self, newDate):

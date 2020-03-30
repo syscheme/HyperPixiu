@@ -342,6 +342,8 @@ class GymTrader(BaseTrader):
                     maxBuy = int(maxBuy * self._maxValuePerOrder / (maxBuy* latestPrice*100))
                 if self._maxValuePerOrder < (maxSell*1.5 * latestPrice*100):
                     maxSell = int(maxSell * self._maxValuePerOrder / (maxSell * latestPrice*100))
+            if self._minBuyPerOrder >0 and (maxBuy * latestPrice*100) < self._minBuyPerOrder :
+                maxBuy =0
 
             # TODO: the first version only support FULL-BUY and FULL-SELL
             if all(action == GymTrader.ACTIONS[GymTrader.ACTION_BUY]) :

@@ -19,7 +19,8 @@ import re
 [{cate_type:"2",cate_name:"银行业",category:"hangye_ZI01"}]
 '''
 
-CLOCK_ERROR = timedelta(minutes=2)
+CLOCK_ERROR_SEC   = 2*60.0  # 2min
+OFFHOUR_ERROR_SEC = 60*60.0 # 1hr
 
 def toFloatVal(val, defaultval=0.0) :
     try :
@@ -92,13 +93,16 @@ class SinaCrawler(MarketCrawler):
     #------------------------------------------------
     # sub-steps
     def __step_poll1st(self):
-        self.__BEGIN_OF_TODAY = datetime2float(Account_AShare.tradeBeginOfDay() -CLOCK_ERROR)
-        self.__END_OF_TODAY = datetime2float(Account_AShare.tradeEndOfDay() + CLOCK_ERROR)
+        self.__BEGIN_OF_TODAY = datetime2float(Account_AShare.tradeBeginOfDay()) -CLOCK_ERROR_SEC
+        self.__END_OF_TODAY = datetime2float(Account_AShare.tradeEndOfDay()) + CLOCK_ERROR_SEC
         return 0
 
     def __step_pollTicks(self):
         
         cBusy =0 
+        if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC/2) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC/2):
+            return cBusy # well off-trade hours
+
         #step 1. build up self.__tickBatches if necessary
         if (not self.__tickBatches or len(self.__tickBatches)<=0) and len(self._symbolsToPoll) >0:
             self.__tickBatches = []
@@ -201,6 +205,9 @@ class SinaCrawler(MarketCrawler):
         if not s or len(s) <=0:
             del self._symbolsToPoll[s]
             return 1 # return as busy for this error case
+
+        if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC):
+            return cBusy # well off-trade hours
 
         # if not s in self.marketState.keys():
         #     self.marketState[s] = Perspective('AShare', symbol=s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
@@ -653,11 +660,12 @@ class SinaTickToKL1m(object):
         
             # 推送已经结束的上一分钟K线
             if self.__onKline1min :
-                kl = copy(self.__kline)
-                kl.volume -= self.__lastVol
-
-                self.__lastVol = self.__kline.volume
-                self.__onKline1min(kl)
+                while self.__kline.datetime <= tick.datetime : # the new tick time might stepped more than 1min, so make a loop here
+                    kl = copy(self.__kline)
+                    kl.volume -= self.__lastVol
+                    self.__lastVol = self.__kline.volume
+                    self.__onKline1min(kl)
+                    self.__kline.datetime += timedelta(minutes=1)
             
             self.__kline = None # 创建新的K线对象
             

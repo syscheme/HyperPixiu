@@ -858,7 +858,7 @@ class OnlineSimulator(MetaTrader):
         prevState = self.__restoreMarketState()
         if prevState:
             self.__wkTrader._marketState = prevState
-            self.info('doAppInit() previous market state restored' % (self.__wkTrader.ident))
+            self.info('doAppInit() previous market state restored')
         self._marketState = self.__wkTrader._marketState
 
         # prevAccount = self.program.loadObject('%s/account' % 'OnlineSimulator') # '%s/marketState' % self.__class__)
@@ -897,7 +897,7 @@ class OnlineSimulator(MetaTrader):
 
             if capitalTotal > self._maxBalance:
                 self._maxBalance = capitalTotal
-            self.info('doAppInit() wrappered account[%s] restored[%s] to [%s] with capitalTotal[%s=%scash+%spos] max[%s]' % (self._account.account.ident, self._account.ident, 'T' if prevState else 'F', capitalTotal, cashTotal, posvalue, self._maxBalance))
+            self.info('doAppInit() wrappered account[%s] to [%s] with restored[%s] capitalTotal[%s=%scash+%spos] max[%s]' % (self._account.account.ident, self._account.ident, 'T' if prevState else 'F', capitalTotal, cashTotal, posvalue, self._maxBalance))
 
         if len(self.__wkTrader._dictObjectives) <=0:
             sl = self._marketState.listOberserves()

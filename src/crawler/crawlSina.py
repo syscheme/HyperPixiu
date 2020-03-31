@@ -5,6 +5,7 @@ from __future__ import division
 from MarketCrawler import *
 from EventData import Event, datetime2float, DT_EPOCH
 from MarketData import KLineData, TickData, MoneyflowData, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
+from Account import Account_AShare
 
 import requests # pip3 install requests
 from copy import copy
@@ -17,6 +18,8 @@ import re
 分类-中国银行: http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssi_gupiao_fenlei?daima=SH601988
 [{cate_type:"2",cate_name:"银行业",category:"hangye_ZI01"}]
 '''
+
+CLOCK_ERROR = timedelta(minutes=2)
 
 def toFloatVal(val, defaultval=0.0) :
     try :
@@ -86,29 +89,11 @@ class SinaCrawler(MarketCrawler):
         if len(symbols) >0:
             self.subscribe(symbols)
 
-    def duringTradeHours(dt =None) : # to test if the time is in 9:28 ~11:32 and 13:00 ~15:00
-        if not dt:
-            dt = datetime.now()
-        
-        if dt.weekday() in [5,6] : # datetime.now().weekday() map 0-Mon,1-Tue,2-Wed,3-Thu,4-Fri,5-Sat,6-Sun
-            return False
-        
-        if not dt.hour in [9, 10, 11, 13, 14] :
-            return False
-        
-        if 9 == dt.hour and dt.minute < 29 :
-            return False
-        
-        if 11 == dt.hour and dt.minute >31 :
-            return False
-
-        return True
-
     #------------------------------------------------
     # sub-steps
     def __step_poll1st(self):
-        self.__BEGIN_OF_TODAY = datetime2float(datetime.now().replace(hour=9, minute=29))
-        self.__END_OF_TODAY = datetime2float(datetime.now().replace(hour=15, minute=1))
+        self.__BEGIN_OF_TODAY = datetime2float(Account_AShare.tradeBeginOfDay() -CLOCK_ERROR)
+        self.__END_OF_TODAY = datetime2float(Account_AShare.tradeEndOfDay() + CLOCK_ERROR)
         return 0
 
     def __step_pollTicks(self):
@@ -190,7 +175,7 @@ class SinaCrawler(MarketCrawler):
         if cMerged >0:
             self.info("step_pollTicks() btch[%d/%d] cached %d new-tick of %d/%d symbols into psp: %s" %(idxBtch +1, batches, cMerged, len(result), len(self.__tickBatches[idxBtch]), ','.join(updated)))
         else :
-            if not SinaCrawler.duringTradeHours(stampNow):
+            if not Account_AShare.duringTradeHours(stampNow):
                 self.__nextStamp_PollTick += (61 - stampNow.second)
                 self.info("step_pollTicks() btch[%d/%d] no new ticks during off-market time, extended sleep time" %(idxBtch +1, batches))
             else :
@@ -232,7 +217,7 @@ class SinaCrawler(MarketCrawler):
                 tmpStamp = datetime2float(self.marketState.stampUpdatedOf(s, evType))
                 if sz >=esz and tmpStamp and tmpStamp >= self.__BEGIN_OF_TODAY:
                     etimatedNext = tmpStamp + 60*60 # one hr later
-            self.__END_OF_TODAY = datetime2float(stampStart.replace(hour=15, minute=1))
+
             if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
                 continue
 
@@ -270,8 +255,8 @@ class SinaCrawler(MarketCrawler):
             stampNow = datetime.now()
             if cMerged >0:
                 self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
-            elif not SinaCrawler.duringTradeHours(stampNow):
-                self.__stampYieldTill_KL = stampNow + timedelta(minutes=2)
+            elif not Account_AShare.duringTradeHours(stampNow):
+                self.__stampYieldTill_KL = stampNow + CLOCK_ERROR
                 self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-time of AShare, actively yielding 2min to avoid 456" %(s, evType, self.__idxKL, cSyms))
 
             stampStart = stampNow
@@ -308,14 +293,10 @@ class SinaCrawler(MarketCrawler):
             del self._symbolsToPoll[s]
             return 1 # return as busy for this error case
 
-        # if not s in self.marketState.keys():
-        #     self.marketState[s] = Perspective('AShare', symbol=s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
-
         # psp = self.marketState[s]
         for evType in [EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY] :
             minutes = SinaCrawler.MINs_OF_EVENT[evType]
             etimatedNext = datetime2float(self.marketState.moneyflowAsOf(s, evType)) + 60*(minutes if minutes < 240 else int(minutes /240)*60*24) -1
-            self.__END_OF_TODAY = datetime2float(stampStart.replace(hour=15, minute=1))
             if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
                 continue
 
@@ -348,8 +329,8 @@ class SinaCrawler(MarketCrawler):
             stampNow = datetime.now()
             if cMerged >0:
                 self.info("step_pollMoneyflow(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
-            elif not SinaCrawler.duringTradeHours(stampNow):
-                self.__minimalMFYield = stampNow + timedelta(minutes=2)
+            elif not Account_AShare.duringTradeHours(stampNow):
+                self.__minimalMFYield = stampNow + CLOCK_ERROR
                 self.info("step_pollMoneyflow(%s:%s) [%d/%d]sym no new KLs during off-time of AShare, actively yielding 2min to avoid 456" %(s, evType, self.__idxKL, cSyms))
 
             stampStart = stampNow
@@ -665,7 +646,7 @@ class SinaTickToKL1m(object):
     def pushTick(self, tick):
         """TICK更新"""
 
-        if self.__kline and self.__kline.datetime.minute != tick.datetime.minute and SinaCrawler.duringTradeHours(tick.datetime):
+        if self.__kline and self.__kline.datetime.minute != tick.datetime.minute and Account_AShare.duringTradeHours(tick.datetime):
             # 生成一分钟K线的时间戳
             self.__kline.datetime = self.__kline.datetime.replace(second=0, microsecond=0) +timedelta(minutes=1)  # align to the next minute:00.000
             self.__kline.date = self.__kline.datetime.strftime('%Y-%m-%d')

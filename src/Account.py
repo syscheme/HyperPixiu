@@ -297,6 +297,18 @@ class Account(MetaAccount):
 
         return round(cashTotal,2), round(posValueSubtotal,2)
 
+    def tradeBeginOfDay(dt = None):
+        return (dt if dt else datetime.now()).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def tradeEndOfDay(dt = None):
+        return (dt if dt else datetime.now()).replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    def duringTradeHours(dt =None) : # to test if the time is trading hours
+        if not dt:
+            dt = datetime.now()
+
+        return (dt >= Account.tradeBeginOfDay(dt) and dt <= Account.tradeEndOfDay(dt))
+
     #----------------------------------------------------------------------
     def datetimeAsOfMarket(self):
         return self.trader.marketState.getAsOf() if self.trader.marketState else datetime.now()
@@ -1038,6 +1050,30 @@ class Account_AShare(Account):
             kwargs['priceTick'] = 0.01
 
         super(Account_AShare, self).__init__(program, **kwargs) # accountId, exchange ='AShare', ratePer10K =ratePer10K, contractSize=100, slippage =0.0, priceTick=0.01, jsettings =jsettings)
+
+    def tradeBeginOfDay(dt = None):
+        return (dt if dt else datetime.now()).replace(hour=9, minute=30, second=0, microsecond=0)
+
+    def tradeEndOfDay(dt = None):
+        return (dt if dt else datetime.now()).replace(hour=15, minute=0, second=0, microsecond=0)
+
+    def duringTradeHours(dt =None) : # to test if the time is in 9:28 ~11:32 and 13:00 ~15:00
+        if not dt:
+            dt = datetime.now()
+        
+        if dt.weekday() in [5,6] : # datetime.now().weekday() map 0-Mon,1-Tue,2-Wed,3-Thu,4-Fri,5-Sat,6-Sun
+            return False
+        
+        if not dt.hour in [9, 10, 11, 13, 14] :
+            return False
+        
+        if 9 == dt.hour and dt.minute < 29 :
+            return False
+        
+        if 11 == dt.hour and dt.minute >31 :
+            return False
+
+        return True
 
     #----------------------------------------------------------------------
     def calcAmountOfTrade(self, symbol, price, volume):

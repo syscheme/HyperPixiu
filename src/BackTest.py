@@ -928,6 +928,7 @@ class OnlineSimulator(MetaTrader):
                 elif EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
                     self._dataBegin_date = evd.date
                     self._dataBegin_openprice = evd.close
+        
 
         if matchNeeded :
             self._account.matchTrades(ev)

@@ -267,7 +267,7 @@ class Account(MetaAccount):
             return True
         except Exception as ex:
             self.logexception(ex)
-            
+
         return False
 
     #----------------------------------------------------------------------
@@ -992,7 +992,7 @@ class Account(MetaAccount):
 
         self._dictTrades.clear() # clean the trade list
         self._state = Account.STATE_OPEN
-        self.debug('onDayOpen(%s) updated todayResult: %s+%s' % (self._dateToday, self._todayResult.cash, self._todayResult.posValue))
+        self.debug('onDayOpen(%s) updated todayResult: %scash +%spos' % (self._dateToday, self._todayResult.cash, self._todayResult.posValue))
     
     def onTimer(self, dt):
         # TODO refresh from BrokerDriver

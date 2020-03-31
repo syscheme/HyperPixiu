@@ -864,18 +864,27 @@ class OnlineSimulator(MetaTrader):
             self._account =None
         
         # step 3. wrapper the broker drivers of the accounts
+        self._maxBalance = self._startBalance
         if self._originAcc and not isinstance(self._originAcc, AccountWrapper):
             self._program.removeApp(self._originAcc)
             self._account = AccountWrapper(self._program, btTrader =self, account=copy.copy(self._originAcc)) # duplicate the original account for test espoches
             self._account.hostTrader(self) # adopt the account by pointing its._trader to self
-            self._account.setCapital(self._startBalance, True)
-            self.__wkTrader._dailyCapCost = 0
+            if not prevAccount:
+                self._account.setCapital(self._startBalance, True)
+                self.__wkTrader._dailyCapCost = 0
+
             self._program.addApp(self._account)
             self._account._marketState = self._marketState
             self.__wkTrader._account = self._account
-            self.info('doAppInit() wrappered account[%s] to [%s] with startBalance[%d]' % (self._originAcc.ident, self._account.ident, self._startBalance))
+            
+            cashAvail, cashTotal, positions = self._account.positionState()
+            _, posvalue = self._account.summrizeBalance(positions, cashTotal)
+            capitalTotal = cashTotal + posvalue
 
-        self._maxBalance = self._startBalance
+            if capitalTotal > self._maxBalance:
+                self._maxBalance = capitalTotal
+            self.info('doAppInit() wrappered account[%s] restored[%s] to [%s] with capitalTotal[%s=%s+%s] max[%s]' % (self._originAcc.ident, self._account.ident, 'T' if prevState else 'F', capitalTotal, cashTotal, posvalue, self._maxBalance))
+
         if len(self.__wkTrader._dictObjectives) <=0:
             sl = self._marketState.listOberserves()
             for symbol in sl:

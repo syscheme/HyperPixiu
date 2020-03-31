@@ -40,8 +40,8 @@ if __name__ == '__main__':
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
 
-    p.info('taking input dir %s for symbol[%s]' % (sourceCsvDir, SYMBOL))
-    csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=sourceCsvDir, fields='date,time,open,high,low,close,volume,ammount')
+    # p.info('taking input dir %s for symbol[%s]' % (sourceCsvDir, SYMBOL))
+    # csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=sourceCsvDir, fields='date,time,open,high,low,close,volume,ammount')
 
     gymtdr = p.createApp(GymTrader, configNode ='trader', tradeSymbol=SYMBOL, account=acc)
     p.info('all objects registered piror to OnlineSimulator: %s' % p.listByType())

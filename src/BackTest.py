@@ -757,6 +757,7 @@ class OnlineSimulator(MetaTrader):
         self._dataBegin_openprice = 0.0
         self._dataEnd_date = None
         self._dataEnd_closeprice = 0.0
+        self.__stampLastSaveState = None
 
         self.setRecorder(self.__wkTrader.recorder)
 
@@ -804,6 +805,19 @@ class OnlineSimulator(MetaTrader):
             
         return self._recorder
 
+    def __saveMarketState(self) :
+        try :
+            self.program.saveObject(self.marketState, '%s/marketState' % 'OnlineSimulator')
+        except Exception as ex:
+            self.logexception(ex)
+
+    def __restoreMarketState(self) :
+        try :
+            return self.program.loadObject('%s/marketState' % 'OnlineSimulator') # '%s/marketState' % self.__class__)
+        except Exception as ex:
+            self.logexception(ex)
+        return False
+
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
     @property
@@ -841,15 +855,15 @@ class OnlineSimulator(MetaTrader):
             self.info('doAppInit() failed to initialize trader[%s]' % (self.__wkTrader.ident))
             return False
 
-        prevState = self.program.loadObject('%s/marketState' % 'OnlineSimulator') # '%s/marketState' % self.__class__)
+        prevState = self.__restoreMarketState()
         if prevState:
             self.__wkTrader._marketState = prevState
+            self.info('doAppInit() previous market state restored' % (self.__wkTrader.ident))
         self._marketState = self.__wkTrader._marketState
 
-        prevAccount = self.program.loadObject('%s/account' % 'OnlineSimulator') # '%s/marketState' % self.__class__)
-        if prevAccount:
-            self.__wkTrader.account = prevAccount
-        self._originAcc = self.__wkTrader.account
+        # prevAccount = self.program.loadObject('%s/account' % 'OnlineSimulator') # '%s/marketState' % self.__class__)
+        originAcc = self.__wkTrader.account
+        bAccRestored = self.__wkTrader.account.restore()
 
         # # ADJ_1. adjust the Trader._dictObjectives to append suffix MarketData.TAG_BACKTEST
         # for obj in self._dictObjectives.values() :
@@ -865,11 +879,11 @@ class OnlineSimulator(MetaTrader):
         
         # step 3. wrapper the broker drivers of the accounts
         self._maxBalance = self._startBalance
-        if self._originAcc and not isinstance(self._originAcc, AccountWrapper):
-            self._program.removeApp(self._originAcc)
-            self._account = AccountWrapper(self._program, btTrader =self, account=copy.copy(self._originAcc)) # duplicate the original account for test espoches
+        if originAcc and not isinstance(originAcc, AccountWrapper):
+            self._program.removeApp(originAcc)
+            self._account = AccountWrapper(self._program, btTrader =self, account=originAcc)
             self._account.hostTrader(self) # adopt the account by pointing its._trader to self
-            if not prevAccount:
+            if not bAccRestored:
                 self._account.setCapital(self._startBalance, True)
                 self.__wkTrader._dailyCapCost = 0
 
@@ -883,7 +897,7 @@ class OnlineSimulator(MetaTrader):
 
             if capitalTotal > self._maxBalance:
                 self._maxBalance = capitalTotal
-            self.info('doAppInit() wrappered account[%s] restored[%s] to [%s] with capitalTotal[%s=%s+%s] max[%s]' % (self._originAcc.ident, self._account.ident, 'T' if prevState else 'F', capitalTotal, cashTotal, posvalue, self._maxBalance))
+            self.info('doAppInit() wrappered account[%s] restored[%s] to [%s] with capitalTotal[%s=%scash+%spos] max[%s]' % (self._account.account.ident, self._account.ident, 'T' if prevState else 'F', capitalTotal, cashTotal, posvalue, self._maxBalance))
 
         if len(self.__wkTrader._dictObjectives) <=0:
             sl = self._marketState.listOberserves()
@@ -905,6 +919,21 @@ class OnlineSimulator(MetaTrader):
     def doAppStep(self):
         super(OnlineSimulator, self).doAppStep()
         self._account.doAppStep()
+        stampNow = datetime.now()
+        saveInterval = timedelta(hours=1)
+        if Account.STATE_OPEN == self._account.account._state:
+            saveInterval = timedelta(minutes=1)
+            today = stampNow.strftime('%Y-%m-%d')
+            if self._account.account._dateToday == today and stampNow > self._account.account.__class__.tradeEndOfDay() + timedelta(hours=1) and self._marketState.getAsOf().strftime('%Y-%m-%d') == today:
+                self._account.onDayClose()
+                self._account.account.save()
+                self.__saveMarketState()
+            
+        if not self.__stampLastSaveState:
+            self.__stampLastSaveState = stampNow
+        if stampNow - self.__stampLastSaveState > saveInterval:
+            self.__stampLastSaveState = stampNow
+            self.__saveMarketState()
 
     def OnEvent(self, ev): 
         # step 2. 收到行情后，在启动策略前的处理
@@ -928,7 +957,6 @@ class OnlineSimulator(MetaTrader):
                 elif EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
                     self._dataBegin_date = evd.date
                     self._dataBegin_openprice = evd.close
-        
 
         if matchNeeded :
             self._account.matchTrades(ev)
@@ -941,15 +969,15 @@ class OnlineSimulator(MetaTrader):
     #----------------------------------------------------------------------
     # Overrides of Events handling
     def eventHdl_Order(self, ev):
-        self.program.saveObject(self._originAcc, '%s/account' % 'OnlineSimulator')
+        self._account.account.save()
         return self.__wkTrader.eventHdl_Order(ev)
             
     def eventHdl_Trade(self, ev):
-        self.program.saveObject(self._originAcc, '%s/account' % 'OnlineSimulator')
+        self._account.account.save()
         return self.__wkTrader.eventHdl_Trade(ev)
 
     def onDayOpen(self, symbol, date):
-        self.program.saveObject(self._originAcc, '%s/account' % 'OnlineSimulator')
+        self._account.account.save()
         return self.__wkTrader.onDayOpen(symbol, date)
 
 
@@ -1174,9 +1202,14 @@ class AccountWrapper(MetaAccount):
         # 日线回测结果计算用
         self.__dailyResultDict = OrderedDict()
         self._warmupDays =0
+
     @property
     def dailyResultDict(self):
         return self.__dailyResultDict
+
+    @property
+    def account(self):
+        return self._nest.account
 
     @property
     def executable(self):

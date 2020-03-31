@@ -260,7 +260,6 @@ class SinaCrawler(MarketCrawler):
                 self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-time of AShare, actively yielding 2min to avoid 456" %(s, evType, self.__idxKL, cSyms))
 
             stampStart = stampNow
-            self.program.saveObject(self.marketState, '%s/marketState' % 'OnlineSimulator')
 
         return cBusy
 

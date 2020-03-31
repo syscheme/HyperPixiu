@@ -47,6 +47,8 @@ class MetaAccount(BaseApplication):
     def exchange(self) : return self._exchange
     @property
     def trader(self): return self.__trader
+    @property
+    def account(self): return self
     def hostTrader(self, trader): self.__trader = trader
 
     @property
@@ -226,6 +228,47 @@ class Account(MetaAccount):
         # self._cashAvail =0
         self._stampLastSync =0
         self._syncInterval  = 10
+
+    def save(self):
+        objId = '%s/%s' % (self.__class__.__name__, self._id)
+        
+        state = ( \
+        self._dateToday, \
+        self._datePrevClose, \
+        self._prevPositions, \
+        self._todayResult)
+
+        self.program.saveObject(state, objId +'/s1')
+        self.program.saveObject(self._dictOutgoingOrders, objId +'/outOrders')
+        self.program.saveObject(self._lstOrdersToCancel, objId +'/ordersToCancel')
+        self.program.saveObject(self._dictPositions, objId +'/positions')
+        self.program.saveObject(self._dictTrades, objId +'/trades')
+        self.program.saveObject((self._dictStopOrders,self._dictLimitOrders), objId +'/orders')
+
+    def restore(self):  
+        objId = '%s/%s' % (self.__class__.__name__, self._id)
+
+        try:
+            s1 = self.program.loadObject(objId +'/s1')
+            if not s1:
+                return False
+
+            self._dateToday, \
+            self._datePrevClose, \
+            self._prevPositions, \
+            self._todayResult \
+            = s1
+
+            self._dictOutgoingOrders = self.program.loadObject(objId +'/outOrders')
+            self._lstOrdersToCancel = self.program.loadObject(objId +'/ordersToCancel')
+            self._dictPositions = self.program.loadObject(objId +'/positions')
+            self._dictTrades = self.program.loadObject(objId +'/trades')
+            self._dictStopOrders,self._dictLimitOrders = self.program.loadObject(objId +'/orders')
+            return True
+        except Exception as ex:
+            self.logexception(ex)
+            
+        return False
 
     #----------------------------------------------------------------------
     #  properties
@@ -860,6 +903,9 @@ class Account(MetaAccount):
 
     def onDayClose(self):
 
+        if Account.STATE_CLOSE == self._state:
+            return
+
         self.debug('onDayClose() calculating daily result')
         cTrades =0
         positions, _ = self.calcDailyPositions()
@@ -920,11 +966,11 @@ class Account(MetaAccount):
         self._dateToday = None
         
         self._state = Account.STATE_CLOSE
-        self.debug('onDayClose(%s) saved positions, updated state' % self._dateToday)
+        self.debug('onDayClose(%s) saved positions, updated state' % self._datePrevClose)
 
     def onDayOpen(self, newDate):
         if Account.STATE_OPEN == self._state:
-            if newDate == self._dateToday :
+            if self._dateToday and newDate <= self._dateToday :
                 return
             self.onDayClose()
 
@@ -946,7 +992,7 @@ class Account(MetaAccount):
 
         self._dictTrades.clear() # clean the trade list
         self._state = Account.STATE_OPEN
-        self.debug('onDayOpen(%s) updated todayResult' % self._dateToday)
+        self.debug('onDayOpen(%s) updated todayResult: %s+%s' % (self._dateToday, self._todayResult.cash, self._todayResult.posValue))
     
     def onTimer(self, dt):
         # TODO refresh from BrokerDriver

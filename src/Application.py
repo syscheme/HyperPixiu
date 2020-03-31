@@ -1171,9 +1171,8 @@ class Program(object):
         if not objId or len(objId) <=0:
             objId = sobj.ident
 
-
         with FileLock(self._shelvefn + ".lock"):
-            with shelve.open(self._shelvefn, flag='w') as sh:
+            with shelve.open(self._shelvefn) as sh:
                 sh[objId] = sobj
                 self.debug('saveObject() object[%s] saved' %(objId))
 

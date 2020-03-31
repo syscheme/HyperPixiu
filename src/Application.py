@@ -15,6 +15,7 @@ from abc import ABC, abstractmethod
 import traceback
 
 import shelve
+from filelock import FileLock
 import jsoncfg # pip install json-cfg
 import json
 import bz2
@@ -522,6 +523,7 @@ class Program(object):
         self.__jsettings = None
         self.__ostype = platform.platform().lower()
         # self._shelve = None
+        self.__lock = threading.Lock()
 
         try:
             opts, args = getopt.getopt(argvs[1:], "hf:o:", ["config=","outdir="])
@@ -1169,22 +1171,27 @@ class Program(object):
         if not objId or len(objId) <=0:
             objId = sobj.ident
 
-        with shelve.open(self._shelvefn, flag='w') as sh:
-            sh[objId] = sobj
-            self.debug('saveObject() object[%s] saved' %(objId))
+
+        with FileLock(self._shelvefn + ".lock"):
+            with shelve.open(self._shelvefn, flag='w') as sh:
+                sh[objId] = sobj
+                self.debug('saveObject() object[%s] saved' %(objId))
 
     @abstractmethod
     def loadObject(self, objId):
         '''读取对象'''
+        ret = None
         try :
-            with shelve.open(self._shelvefn, flag='r') as sh:
-                if objId in sh :
-                    self.debug('loadObject() object[%s] loaded' %(objId))
-                    return sh[objId]
+            with FileLock(self._shelvefn + ".lock"):
+                with shelve.open(self._shelvefn, flag='r') as sh:
+                    if objId in sh :
+                        ret = sh[objId]
         except Exception as ex:
             self.logexception(ex)
 
-        return None
+        if ret:
+            self.debug('loadObject() object[%s] loaded' %(objId))
+        return ret
 
 '''
     #----------------------------------------------------------------------

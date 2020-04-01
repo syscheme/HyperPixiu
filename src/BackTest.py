@@ -736,7 +736,7 @@ class BackTestApp(MetaTrader):
         return self.settleResult()
         
 '''
-##--##--##--##--##--##--##--##--##--##--##--##--##--##--##--##--##--##--
+
 ########################################################################
 class OnlineSimulator(MetaTrader):
     '''
@@ -922,7 +922,7 @@ class OnlineSimulator(MetaTrader):
         stampNow = datetime.now()
         saveInterval = timedelta(hours=1)
         if Account.STATE_OPEN == self._account.account._state:
-            saveInterval = timedelta(minutes=1)
+            saveInterval = timedelta(minutes=2)
             today = stampNow.strftime('%Y-%m-%d')
             if self._account.account._dateToday == today and stampNow > self._account.account.__class__.tradeEndOfDay() + timedelta(hours=1) and self._marketState.getAsOf().strftime('%Y-%m-%d') == today:
                 self._account.onDayClose()
@@ -979,9 +979,6 @@ class OnlineSimulator(MetaTrader):
     def onDayOpen(self, symbol, date):
         self._account.account.save()
         return self.__wkTrader.onDayOpen(symbol, date)
-
-
-##--##--##--##--##--##--##--##--##--##--##--##--##--##--##--##--##--##--
 
 ########################################################################
 class OptimizationSetting(object):

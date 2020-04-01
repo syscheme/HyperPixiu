@@ -922,7 +922,7 @@ class MarketDirClassifier(BaseApplication):
             sampledAhead = cFresh >0 and (cFresh > cRecycled/4 or skippedSaves >10)
             epochs = self._initEpochs if sampledAhead else 2
             while epochs > 0:
-                if self._evaluateSamples and len(strEval) <=0 and sampledAhead and (self._evalAt <=0 or 1 == (trainId % self._evalAt)):
+                if self._evaluateSamples and len(strEval) <=0 and sampledAhead and (self._evalAt <=0 or self.__totalEval<=0 or 1 == (trainId % self._evalAt)):
                     try :
                         # eval.1 eval on the samples
                         resEval =  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)

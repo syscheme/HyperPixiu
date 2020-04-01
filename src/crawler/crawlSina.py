@@ -73,8 +73,8 @@ class SinaCrawler(MarketCrawler):
         # self._depth_1day   = self.getConfig('depth/1day',  260) # for exmaple, thereTrue are 245 trading-days in AShare market during YR2018, so take 280 to keep a year
         self._secYield456  = self.getConfig('yield456',    230)
         self.__excludeAt404= self.getConfig('excludeAt404',True)
-        self.__minimalKLYield = self.getConfig('minimalKLYield', 0.4) # 0.4sec, the minimal interval between two KL query in order not to trigger SINA 456
-        self.__minimalKLYield = timedelta(seconds=int(self.__minimalKLYield), microseconds=(int(self.__minimalKLYield *1000) % 1000) *1000)
+        # self.__minimalKLYield = self.getConfig('minimalKLYield', 0.4) # 0.4sec, the minimal interval between two KL query in order not to trigger SINA 456
+        # self.__minimalKLYield = timedelta(seconds=int(self.__minimalKLYield), microseconds=(int(self.__minimalKLYield *1000) % 1000) *1000)
         symbols            = self.getConfig('symbolsToCrawl', [])
 
         self.__tickBatches = None
@@ -212,9 +212,13 @@ class SinaCrawler(MarketCrawler):
         # if not s in self.marketState.keys():
         #     self.marketState[s] = Perspective('AShare', symbol=s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
         # psp = self.marketState[s]
+        minIntvKL = 30*60 # initialize with a large 30min
 
         for evType in [EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
             minutes = SinaCrawler.MINs_OF_EVENT[evType]
+            if minIntvKL > minutes /2:
+                minIntvKL = minutes /2.0
+
             if minutes < 240:
                 # in-day events
                 etimatedNext = datetime2float(self.marketState.getAsOf(s, evType)) + 60*minutes -1
@@ -248,7 +252,7 @@ class SinaCrawler(MarketCrawler):
                 continue
 
             # succ at query
-            self.__stampYieldTill_KL = stampStart + self.__minimalKLYield
+            self.__stampYieldTill_KL = stampStart + minIntvKL
             cMerged =0
             for i in result:
                 cBusy +=1
@@ -263,8 +267,8 @@ class SinaCrawler(MarketCrawler):
             if cMerged >0:
                 self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
             elif not Account_AShare.duringTradeHours(stampNow):
-                self.__stampYieldTill_KL = stampNow + CLOCK_ERROR
-                self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-time of AShare, actively yielding 2min to avoid 456" %(s, evType, self.__idxKL, cSyms))
+                self.__stampYieldTill_KL += minIntvKL
+                self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-hours" %(s, evType, self.__idxKL, cSyms))
 
             stampStart = stampNow
 

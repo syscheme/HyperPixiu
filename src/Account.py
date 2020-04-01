@@ -259,11 +259,12 @@ class Account(MetaAccount):
             self._todayResult \
             = s1
 
+            self._dictPositions = self.program.loadObject(objId +'/positions')
             self._dictOutgoingOrders = self.program.loadObject(objId +'/outOrders')
             self._lstOrdersToCancel = self.program.loadObject(objId +'/ordersToCancel')
-            self._dictPositions = self.program.loadObject(objId +'/positions')
             self._dictTrades = self.program.loadObject(objId +'/trades')
             self._dictStopOrders,self._dictLimitOrders = self.program.loadObject(objId +'/orders')
+            self.info('restored with %d postions, %d outgoing-orders, %d order-to-cancel, %d trades' % (len(self._dictPositions), len(self._dictOutgoingOrders), len(self._lstOrdersToCancel), len(self._dictTrades)))
             return True
         except Exception as ex:
             self.logexception(ex)

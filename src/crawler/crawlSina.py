@@ -195,9 +195,7 @@ class SinaCrawler(MarketCrawler):
             self.__idxKL = self.__idxKL % cSyms
             s = self._symbolsToPoll[self.__idxKL]
 
-        stampStart = datetime.now()
-        if self.__stampYieldTill_KL and stampStart < self.__stampYieldTill_KL:
-            # self.debug("step_pollKline(%s) symb[%d/%d] yield per SINA(456), %s left" %(s, self.__idxKL, cSyms, self.__stampYieldTill_KL -stampStart))
+        if self.__stampYieldTill_KL and self._stepAsOf < self.__stampYieldTill_KL:
             return cBusy
 
         self.__idxKL += 1
@@ -214,7 +212,10 @@ class SinaCrawler(MarketCrawler):
         # psp = self.marketState[s]
         minIntvKL = 30*60 # initialize with a large 30min
 
+        stampNow = datetime2float(datetime.now())
         for evType in [EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
+
+            stampStart = stampNow
             minutes = SinaCrawler.MINs_OF_EVENT[evType]
             if minIntvKL > minutes /2:
                 minIntvKL = minutes /2.0
@@ -229,7 +230,7 @@ class SinaCrawler(MarketCrawler):
                 if sz >=esz and tmpStamp and tmpStamp >= self.__BEGIN_OF_TODAY:
                     etimatedNext = tmpStamp + 60*60 # one hr later
 
-            if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
+            if etimatedNext > self.__END_OF_TODAY or stampStart < etimatedNext:
                 continue
 
             size, lines = self.marketState.sizesOf(s, evType)
@@ -263,14 +264,12 @@ class SinaCrawler(MarketCrawler):
                     cMerged +=1
                     self.OnEventCaptured(ev)
 
-            stampNow = datetime.now()
+            stampNow = datetime2float(datetime.now())
             if cMerged >0:
-                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
+                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %.2fsec, psp now: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
             elif not Account_AShare.duringTradeHours(stampNow):
                 self.__stampYieldTill_KL += minIntvKL
                 self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-hours" %(s, evType, self.__idxKL, cSyms))
-
-            stampStart = stampNow
 
         return cBusy
 

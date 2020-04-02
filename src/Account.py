@@ -264,7 +264,10 @@ class Account(MetaAccount):
             self._lstOrdersToCancel = self.program.loadObject(objId +'/ordersToCancel')
             self._dictTrades = self.program.loadObject(objId +'/trades')
             self._dictStopOrders,self._dictLimitOrders = self.program.loadObject(objId +'/orders')
-            self.info('restored with %d postions, %d outgoing-orders, %d order-to-cancel, %d trades' % (len(self._dictPositions), len(self._dictOutgoingOrders), len(self._lstOrdersToCancel), len(self._dictTrades)))
+            cashAvail, cashTotal, positions = self.positionState()
+            _, posvalue = self.summrizeBalance(positions, cashTotal)
+
+            self.info('restored with bal:%.2f+%.2f, %d postions, %d outgoing-orders, %d order-to-cancel, %d trades' % (cashTotal, posvalue, len(self._dictPositions), len(self._dictOutgoingOrders), len(self._lstOrdersToCancel), len(self._dictTrades)))
             return True
         except Exception as ex:
             self.logexception(ex)

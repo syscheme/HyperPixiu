@@ -898,6 +898,8 @@ class OnlineSimulator(MetaTrader):
             if capitalTotal > self._maxBalance:
                 self._maxBalance = capitalTotal
             self.info('doAppInit() wrappered account[%s] to [%s] with restored[%s] capitalTotal[%s=%scash+%spos] max[%s]' % (self._account.account.ident, self._account.ident, 'T' if prevState else 'F', capitalTotal, cashTotal, posvalue, self._maxBalance))
+            
+        self._account.account.save()
 
         if len(self.__wkTrader._dictObjectives) <=0:
             sl = self._marketState.listOberserves()

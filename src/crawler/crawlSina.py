@@ -253,7 +253,7 @@ class SinaCrawler(MarketCrawler):
                 continue
 
             # succ at query
-            self.__stampYieldTill_KL = stampStart + minIntvKL
+            self.__stampYieldTill_KL = self._stepAsOf + minIntvKL *60
             cMerged =0
             for i in result:
                 cBusy +=1

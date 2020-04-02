@@ -618,10 +618,16 @@ class PerspectiveState(MarketState):
         ''' 
         @return the desc of specified symbol
         '''
-        if symbol and symbol in self.__dictPerspective.keys():
-            return self.__dictPerspective[symbol].desc
-        return '%s unknown' % symbol
-
+        if symbol :
+            if symbol in self.__dictPerspective.keys():
+                return self.__dictPerspective[symbol].desc
+            return '%s unknown' % symbol
+        
+        strDesc=''
+        for s, v in self.__dictPerspective.items() :
+            strDesc += '%s{%s};' %(s, v.desc)
+        return strDesc
+        
     def dailyOHLC_sofar(self, symbol) :
         ''' 
         @return (date, open, high, low, close) as of today

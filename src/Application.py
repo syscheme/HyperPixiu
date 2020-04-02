@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 import traceback
 
 import shelve
-from filelock import FileLock
+from filelock import FileLock # pip install filelock
 import jsoncfg # pip install json-cfg
 import json
 import bz2

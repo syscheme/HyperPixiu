@@ -5,7 +5,7 @@ WGET="wget --user=trainer --password=r654321"
 mkdir -p ~/.ssh
 ${WGET} -O- ${TRANINER_URL}/authorized_keys >> ~/.ssh/authorized_keys
 
-pip3 install json-cfg websocket websocket-client pathlib matplotlib &
+pip3 install json-cfg websocket websocket-client pathlib matplotlib filelock &
 
 WKSPACE=$(realpath ~/wkspaces)
 mkdir ${WKSPACE}

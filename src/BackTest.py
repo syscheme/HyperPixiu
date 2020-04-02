@@ -858,12 +858,12 @@ class OnlineSimulator(MetaTrader):
         prevState = self.__restoreMarketState()
         if prevState:
             self.__wkTrader._marketState = prevState
-            self.info('doAppInit() previous market state restored')
+            self.info('doAppInit() previous market state restored: %s' % self.__wkTrader._marketState.descOf(None))
         self._marketState = self.__wkTrader._marketState
 
         # prevAccount = self.program.loadObject('%s/account' % 'OnlineSimulator') # '%s/marketState' % self.__class__)
         originAcc = self.__wkTrader.account
-        bAccRestored = self.__wkTrader.account.restore()
+        bAccRestored = originAcc.restore()
 
         # # ADJ_1. adjust the Trader._dictObjectives to append suffix MarketData.TAG_BACKTEST
         # for obj in self._dictObjectives.values() :

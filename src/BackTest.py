@@ -387,11 +387,8 @@ class BackTestApp(MetaTrader):
         self._maxBalance = self._startBalance
         self._wkHistData.resetRead()
            
-        self._dataBegin_date = None
-        self._dataBegin_openprice = 0.0
-        
-        self._dataEnd_date = None
-        self._dataEnd_closeprice = 0.0
+        self._dataBegin_date, self._dataEnd_date = None, None
+        self._dataBegin_openprice, self._dataEnd_closeprice = 0.0, 0.0
 
         # 当前最新数据，用于模拟成交用
         self.tick = None
@@ -753,10 +750,10 @@ class OnlineSimulator(MetaTrader):
         self._account = None # the working account inherit from MetaTrader
         self._marketState = None
 
-        self._dataBegin_date = None
-        self._dataBegin_openprice = 0.0
-        self._dataEnd_date = None
-        self._dataEnd_closeprice = 0.0
+        # self._dataBegin_date = None
+        # self._dataBegin_openprice = 0.0
+        # self._dataEnd_date = None
+        # self._dataEnd_closeprice = 0.0
         self.__stampLastSaveState = None
 
         self.setRecorder(self.__wkTrader.recorder)
@@ -921,10 +918,11 @@ class OnlineSimulator(MetaTrader):
     def doAppStep(self):
         super(OnlineSimulator, self).doAppStep()
         self._account.doAppStep()
+
         stampNow = datetime.now()
         saveInterval = timedelta(hours=1)
         if Account.STATE_OPEN == self._account.account._state:
-            saveInterval = timedelta(minutes=2)
+            saveInterval = timedelta(minutes=3)
             today = stampNow.strftime('%Y-%m-%d')
             if self._account.account._dateToday == today and stampNow > self._account.account.__class__.tradeEndOfDay() + timedelta(hours=1) and self._marketState.getAsOf().strftime('%Y-%m-%d') == today:
                 self._account.onDayClose()
@@ -933,6 +931,7 @@ class OnlineSimulator(MetaTrader):
             
         if not self.__stampLastSaveState:
             self.__stampLastSaveState = stampNow
+            
         if stampNow - self.__stampLastSaveState > saveInterval:
             self.__stampLastSaveState = stampNow
             self.__saveMarketState()
@@ -943,22 +942,8 @@ class OnlineSimulator(MetaTrader):
         matchNeeded = False
         if not self.__dtLastData or self.__dtLastData < evd.asof :
             self.__dtLastData = evd.asof
-            self._dataEnd_date = evd.date
-            if EVENT_TICK == ev.type:
-                self._dataEnd_closeprice = evd.price
+            if EVENT_TICK == ev.type or EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
                 matchNeeded = True
-            elif EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
-                self._dataEnd_closeprice = evd.close
-                matchNeeded = True
-
-            if not self._dataBegin_date:
-                # NO self._dataBegin_date = evd.date here because events other than tick and KL could be in
-                if EVENT_TICK == ev.type:
-                    self._dataBegin_date = evd.date
-                    self._dataBegin_openprice = evd.price
-                elif EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
-                    self._dataBegin_date = evd.date
-                    self._dataBegin_openprice = evd.close
 
         if matchNeeded :
             self._account.matchTrades(ev)

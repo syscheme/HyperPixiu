@@ -272,9 +272,12 @@ class agentDQN(MetaAgent):
             # step 2. read the weights of the model
             self._gymTrader.debug('loading saved brain weights from %s' %brainDir)
             brain.load_weights('%sweights.h5' % brainDir)
+        except Exception as ex:
+            self._gymTrader.logexception(ex)
 
             # step 3. if load weight successfully, do not start over to mess-up the trained model by
             # limiting epsilon from status.json
+        try :
             with open('%sstatus.json' % brainDir, 'r') as f:
                 self._statusAttrs = json.loads(f.read())
 
@@ -288,8 +291,8 @@ class agentDQN(MetaAgent):
 
             self._epsilon = float(self._statusAttrs['epsilon']) if 'epsilon' in self._statusAttrs.keys() else self._epsilon*0.7
             self._learningRate = float(self._statusAttrs['learningRate']) if 'learningRate' in self._statusAttrs.keys() else self._learningRate/2
-        except Exception as ex:
-            self._gymTrader.logexception(ex)
+        except:
+            self._gymTrader.warn('no status.json under %s' % (brainDir))
 
         if brain:
             self._gymTrader.info('loaded brain from %s by taking initial epsilon[%s] learningRate[%s]' % (brainDir, self._epsilon, self._learningRate))

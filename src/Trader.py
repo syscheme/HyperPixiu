@@ -92,20 +92,7 @@ class BaseTrader(MetaTrader):
 
         if self._outDir and '/' != self._outDir[-1]: self._outDir +='/'
         
-        #--------------------
-        # from old 数据引擎
-
-        # moved to MarketState: self._dictLatestTick = {}         # the latest tick of each symbol
-        # moved to MarketState: self._dictLatestKline1min = {}    #SSS the latest kline1min of each symbol
-        # self._dictLatestContract = {}
-
-        # inside of Account self._dictTrade = {}
-        # inside of Account self._dictPositions= {}
-
-        self.debug('local data cache initialized')
-        
         # 持仓细节相关
-        # inside of Account self._dictDetails = {}                        # vtSymbol:PositionDetail
         # self._lstTdPenalty = settings.tdPenalty       # 平今手续费惩罚的产品代码列表
 
         # 读取保存在硬盘的合约数据
@@ -113,6 +100,8 @@ class BaseTrader(MetaTrader):
         
         # 风控引擎实例（特殊独立对象）
         self._riskMgm = None
+
+        self.debug('local data cache initialized')
 
         #------from old ctaEngine--------------
         self._pathContracts = self.dataRoot + 'contracts'
@@ -131,8 +120,6 @@ class BaseTrader(MetaTrader):
 
         self._lstMarketEventProc = []
 
-
-        
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
     def doAppInit(self): # return True if succ
@@ -183,6 +170,8 @@ class BaseTrader(MetaTrader):
         # step 3. subscribe the market events
         self.subscribeEvent(EVENT_TICK)
         self.subscribeEvent(EVENT_KLINE_1MIN)
+        self.subscribeEvent(EVENT_KLINE_5MIN)
+        self.subscribeEvent(EVENT_KLINE_1DAY)
 
         if self._marketState :
             for symbol in self._dictObjectives.keys():

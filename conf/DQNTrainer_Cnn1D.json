@@ -7,7 +7,7 @@
 
     "DQNTrainer": {
 
-        "modelId": "Cnn1Dx4R2", // default "Cnn1Dx4"
+        "brainId": "Cnn1Dx4R2", // default "Cnn1Dx4"
         // "replayFrameFiles" : ["/mnt/e/AShareSample/ETF/RFrames_SH510050.h5"],
         // "replayFrameFiles" : ["/mnt/e/AShareSample/ETF/RFrames_SH510300.h5"],
         "replayFrameDir": "/mnt/e/AShareSample/500top50",

@@ -19,7 +19,7 @@ class MarketCrawler(BaseApplication):
     __lastId__ =100
 
     #----------------------------------------------------------------------
-    def __init__(self, program, exchange, recorder=None, **kwargs):
+    def __init__(self, program, marketState, recorder=None, **kwargs):
         '''Constructor
         '''
         super(MarketCrawler, self).__init__(program, **kwargs)
@@ -27,7 +27,7 @@ class MarketCrawler(BaseApplication):
         self._recorder = recorder
         self._symbolsToPoll = []
         self._postCaptured = False
-        self.__collectedState = PerspectiveState(exchange) # {} # dict of symbol to Perspective
+        self.__marketStateToUpdate = marketState
 
         # the MarketData instance Id
         # self._id = settings.id("")
@@ -44,12 +44,16 @@ class MarketCrawler(BaseApplication):
     
     #----------------------------------------------------------------------
     @property
-    def collectedState(self) :
-        return self.__collectedState
+    def marketState(self) :
+        return self.__marketStateToUpdate
 
     @property
     def subscriptions(self):
         return self.subDict
+
+    # def attachMarketState(self, marketState) :
+    #     if marketState:
+    #         self.__marketStateToUpdate = marketState
 
     #----------------------------------------------------------------------
     # inqueries to some market data
@@ -115,6 +119,9 @@ class MarketCrawler(BaseApplication):
     def doAppInit(self): # return True if succ
         if not super(MarketCrawler, self).doAppInit() :
             return False
+
+        if not self.__marketStateToUpdate :
+            self.__marketStateToUpdate = PerspectiveState(exchange="na") # dummy state if not specified
 
         return self.connect()
 

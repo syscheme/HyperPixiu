@@ -15,6 +15,7 @@ from abc import ABC, abstractmethod
 import traceback
 
 import shelve
+from filelock import FileLock # pip install filelock
 import jsoncfg # pip install json-cfg
 import json
 import bz2
@@ -168,12 +169,20 @@ class BaseApplication(MetaApp):
 
     def _generator(self) :
         while self.isActive :
-            event = yield self.ident
-            if isinstance(event, Event):
-                self.OnEvent(event)
+            try:
+                event = yield self.ident
+                if isinstance(event, Event):
+                    self.OnEvent(event)
+            # except StopIteration:
+            #     self.info('reached the end')
+            except Exception as ex:
+                self.logexception(ex)
 
     def _procEvent(self, event) : # called by Program
-        return self.__gen.send(event)
+        try:
+            return self.__gen.send(event)
+        except:
+            pass
 
     def getConfig(self, configName, defaultVal, pop=False) :
         try :
@@ -209,11 +218,11 @@ class BaseApplication(MetaApp):
         return jn
 
     #---- event operations ---------------------------
-    def subscribeEvent(self, ev) :
+    def subscribeEvent(self, eventType) :
         if not self._program:
             pass
         
-        self._program.subscribe(EnvironmentError, self)
+        self._program.subscribe(eventType, self)
 
     def postEventData(self, eventType, edata):
         '''发出事件'''
@@ -230,7 +239,7 @@ class BaseApplication(MetaApp):
             return
 
         self._program.publish(ev)
-        self.debug('posted event[%s]' % ev.type)
+        self.debug('posted event[%s] %s' % (ev.type, ev.data.desc))
 
     #---logging -----------------------
     def log(self, level, msg):
@@ -513,6 +522,8 @@ class Program(object):
         # dirname(dirname(abspath(file)))
         self.__jsettings = None
         self.__ostype = platform.platform().lower()
+        # self._shelve = None
+        self.__lock = threading.Lock()
 
         try:
             opts, args = getopt.getopt(argvs[1:], "hf:o:", ["config=","outdir="])
@@ -1156,25 +1167,30 @@ class Program(object):
 
     #-----about shelve -----------------------------------------------------
     @abstractmethod
-    def saveObject(self, sobj):
-        if not self._shelve :
-            return False
-        self._shelve[sobj.ident] = sobj
-        self._shelve.close()
+    def saveObject(self, sobj, objId=None):
+        if not objId or len(objId) <=0:
+            objId = sobj.ident
+
+        with FileLock(self._shelvefn + ".lock"):
+            with shelve.open(self._shelvefn) as sh:
+                sh[objId] = sobj
+                self.debug('saveObject() object[%s] saved' %(objId))
 
     @abstractmethod
-    def loadObject(self, category, id):
+    def loadObject(self, objId):
         '''读取对象'''
+        ret = None
         try :
-            fn = '%s/objects/%s' % (self.dataRoot, category)
-            f = shelve.open(fn)
-            if id in f :
-                return f[id].value
+            with FileLock(self._shelvefn + ".lock"):
+                with shelve.open(self._shelvefn, flag='r') as sh:
+                    if objId in sh :
+                        ret = sh[objId]
         except Exception as ex:
-            print("loadObject() error: %s %s" % (ex, traceback.format_exc()))
+            self.logexception(ex)
 
-        return None
-
+        if ret:
+            self.debug('loadObject() object[%s] loaded' %(objId))
+        return ret
 
 '''
     #----------------------------------------------------------------------

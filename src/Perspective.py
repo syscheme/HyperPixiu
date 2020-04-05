@@ -17,13 +17,16 @@ import copy
 
 EVENT_Perspective  = MARKETDATE_EVENT_PREFIX + 'Persp'   # 错误回报事件
 
-DEFAULT_DEPTH_TICK = 0
-# DEFAULT_DEPTH_TICK = 120
-DEFAULT_DEPTH_1min = 30
-DEFAULT_DEPTH_5min = 96
-DEFAULT_DEPTH_1day = 260
+DEFAULT_KLDEPTH_TICK = 0
+# DEFAULT_KLDEPTH_TICK = 120
+DEFAULT_KLDEPTH_1min = 30
+DEFAULT_KLDEPTH_5min = 96
+DEFAULT_KLDEPTH_1day = 260
 
-EXPORT_SIGNATURE= '%dT%dM%dF%dD.%s:200109T17' % (DEFAULT_DEPTH_TICK, DEFAULT_DEPTH_1min, DEFAULT_DEPTH_5min, DEFAULT_DEPTH_1day, NORMALIZE_ID)
+EXPORT_SIGNATURE= '%dT%dM%dF%dD.%s:200109T17' % (DEFAULT_KLDEPTH_TICK, DEFAULT_KLDEPTH_1min, DEFAULT_KLDEPTH_5min, DEFAULT_KLDEPTH_1day, NORMALIZE_ID)
+
+DEFAULT_MFDEPTH_1min = 240
+DEFAULT_MFDEPTH_1day = 120
 
 ########################################################################
 class EvictableStack(object):
@@ -33,6 +36,7 @@ class EvictableStack(object):
         self.__data =[]
         self.__evictSize = evictSize
         self.__dataNIL = copy.copy(nildata) if nildata else None
+        self.__stampUpdated = None
         # if self.__dataNIL and self.__evictSize and self.__evictSize >0 :
         #     for i in range(self.__evictSize) :
         #         self.__data.insert(0, nildata)
@@ -60,6 +64,10 @@ class EvictableStack(object):
     def exportList(self):
         return _exportList(self, nilFilled=True)
 
+    @property
+    def stampUpdated(self):
+        return self.__stampUpdated if self.__stampUpdated else DT_EPOCH
+
     def _exportList(self, nilFilled=False):
         if nilFilled :
             fillsize = (self.evictSize - self.size) if self.evictSize >=0 else 0
@@ -75,6 +83,7 @@ class EvictableStack(object):
         self.__data[index] =item
         while self.evictSize >=0 and self.size > self.evictSize:
             del(self.__data[-1])
+        self.__stampUpdated = datetime.now()
 
     # no pop here: def pop(self):
     #    del(self.__data[-1])
@@ -83,6 +92,7 @@ class EvictableStack(object):
         self.__data.insert(0, item)
         while self.evictSize >=0 and self.size > self.evictSize:
             del(self.__data[-1])
+        self.__stampUpdated = datetime.now()
 
 ########################################################################
 class Perspective(MarketData):
@@ -100,7 +110,7 @@ class Perspective(MarketData):
     KLVOLS_TO_EXP = 'volume'
 
     #----------------------------------------------------------------------
-    def __init__(self, exchange, symbol=None, KLDepth_1min=DEFAULT_DEPTH_1min, KLDepth_5min=DEFAULT_DEPTH_5min, KLDepth_1day=DEFAULT_DEPTH_1day, tickDepth=DEFAULT_DEPTH_TICK) :
+    def __init__(self, exchange, symbol=None, KLDepth_1min=DEFAULT_KLDEPTH_1min, KLDepth_5min=DEFAULT_KLDEPTH_5min, KLDepth_1day=DEFAULT_KLDEPTH_1day, tickDepth=DEFAULT_KLDEPTH_TICK) :
         '''Constructor'''
         super(Perspective, self).__init__(exchange, symbol)
 
@@ -140,6 +150,12 @@ class Perspective(MarketData):
         stack = self._stacks[evType]
         return DT_EPOCH if stack.size <=0 else stack.top.asof
 
+    def stampUpdatedOf(self, evType=None) :
+        if not evType or not evType in self._stacks.keys():
+            return DT_EPOCH
+        
+        return self._stacks[evType].stampUpdated
+
     def sizesOf(self, evType=None) :
         if not evType or len(evType) <=0:
             size =0
@@ -161,15 +177,23 @@ class Perspective(MarketData):
     @property
     def latestPrice(self) :
         ret =0.0
-        stk = self._stacks[self.__focusLast]
-        if stk or stk.size >0:
-            ret = stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
-        else:
-            for et in Perspective.EVENT_SEQ:
-                stk = self._readers[self.__focusLast]
-                if not stk or stk.size <=0:
-                    continue
-                ret = stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
+        # stk = self._stacks[self.__focusLast]
+        # if stk and stk.size >0:
+        #     ret = stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
+        # else:
+        #     for et in Perspective.EVENT_SEQ:
+        #         stk = self._stacks[et]
+        #         if not stk or stk.size <=0:
+        #             continue
+        #         ret = stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
+
+        seq = [self.__focusLast]  if self.__focusLast else []
+        seq += Perspective.EVENT_SEQ
+        for et in seq:
+            stk = self._stacks[et]
+            if not stk or stk.size <=0:
+                continue
+            ret = stk.top.price if EVENT_TICK == et else stk.top.close
         
         return round(ret, 3)
 
@@ -253,15 +277,15 @@ class Perspective(MarketData):
         latestevd = self._stacks[ev.type].top
         if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
             self._stacks[ev.type].push(ev.data)
-            self.__focusLast = ev.type
-            if not self.__stampLast or self.__stampLast < ev.data.datetime :
-                self.__stampLast = ev.data.datetime
+            if self._stacks[ev.type].size >0:
+                self.__focusLast = ev.type
+                if not self.__stampLast or self.__stampLast < ev.data.datetime :
+                    self.__stampLast = ev.data.datetime
             return ev
         
         if not ev.data.exchange or (latestevd.exchange and not ('_k2x' in latestevd.exchange or '_t2k' in latestevd.exchange)) :
             return None # not overwritable
 
-        self.__focusLast = ev.type
         for i in range(self._stacks[ev.type].size) :
             if ev.data.datetime > self._stacks[ev.type][i].datetime :
                 continue
@@ -274,6 +298,10 @@ class Perspective(MarketData):
         self._stacks[ev.type].insert(-1, ev.data)
         while self._stacks[ev.type].evictSize >=0 and self._stacks[ev.type].size > self._stacks[ev.type].evictSize:
             del(self._stacks[ev.type]._data[-1])
+
+        if self._stacks[ev.type].size >0:
+            self.__focusLast = ev.type
+
         return ev
 
     TICK_FLOATS=7
@@ -287,15 +315,33 @@ class Perspective(MarketData):
         return (itemsize +1) * EXPORT_FLOATS_DIMS
 
     @property
-    def NNFloats(self):
+    def KLFloats(self):
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
             return [0.0] * self.NNFloatsSize # toNNFloats not available
         
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
-        return self.toNNFloats(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume)
+        return self._KLFloats(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume)
+
+    @property
+    def TickFloats(self) :
+        if self._stacks[EVENT_KLINE_1DAY].size <=0:
+            return [0.0] * self.NNFloatsSize # toNNFloats not available
+        
+        klbaseline = self._stacks[EVENT_KLINE_1DAY].top
+
+        result = []
+        stk = self._stacks[EVENT_TICK]
+        bV= (klbaseline.volume / self._evsPerDay[EVENT_TICK])
+        for i in range(stk.evictSize):
+            if i >= stk.size:
+                result += [0.0] * EXPORT_FLOATS_DIMS
+            else:
+                v = stk[i].toNNFloats(baseline_Price=klbaseline.close, baseline_Volume= bV)
+                result += v
+        return result
     
     @abstractmethod
-    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def _KLFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] for numpy
         '''
@@ -321,18 +367,6 @@ class Perspective(MarketData):
         #     EVENT_KLINE_1DAY: 1,
         # }
 
-
-        # part 1, EVENT_TICK
-        stk = self._stacks[EVENT_TICK]
-        bV= (baseline_Volume / self._evsPerDay[EVENT_TICK])
-        for i in range(stk.evictSize):
-            if i >= stk.size:
-                result += [0.0] * EXPORT_FLOATS_DIMS
-            else:
-                v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= bV)
-                # Perspective.TICK_FLOATS = len(v)
-                result += v
-
         for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]:
             stk = self._stacks[et]
             bV= (baseline_Volume / self._evsPerDay[et])
@@ -351,6 +385,100 @@ class Perspective(MarketData):
         for f in fields:
             fdata.append(float(mdata.__dict__[f]))
         return fdata
+
+########################################################################
+class MoneyflowPerspective(MarketData):
+    '''
+    Data structure of Perspective:
+    1. 1min moneyflow
+    4. 1day moneyflow
+    '''
+    EVENT_SEQ = [EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY]
+
+    #----------------------------------------------------------------------
+    def __init__(self, exchange, symbol=None, MFDepth_1min=DEFAULT_MFDEPTH_1min, MFDepth_1day =DEFAULT_MFDEPTH_1day) :
+        '''Constructor'''
+        super(MoneyflowPerspective, self).__init__(exchange, symbol)
+
+        self._stacks = {
+            EVENT_MONEYFLOW_1MIN: EvictableStack(MFDepth_1min, MoneyflowData(self.exchange, self.symbol)),
+            EVENT_MONEYFLOW_1DAY: EvictableStack(MFDepth_1day, MoneyflowData(self.exchange, self.symbol)),
+        }
+
+        self.__stampLast = None
+        self.__focusLast = None
+
+    @property
+    def desc(self) :
+        str = '%s>%s ' % (self.focus[len(MARKETDATE_EVENT_PREFIX):], self.getAsOf(self.focus).strftime('%Y-%m-%dT%H:%M:%S'))
+        for i in Perspective.EVENT_SEQ :
+            str += '%sX%d/%d,' % (i[len(MARKETDATE_EVENT_PREFIX):], self._stacks[i].size, self._stacks[i].evictSize)
+        return str
+
+    @property
+    def asof(self) : return self.getAsOf(None)
+    def getAsOf(self, evType=None) :
+        if not evType or not evType in self._stacks.keys():
+            return self.__stampLast if self.__stampLast else DT_EPOCH
+        
+        stack = self._stacks[evType]
+        return DT_EPOCH if stack.size <=0 else stack.top.asof
+
+    def sizesOf(self, evType=None) :
+        if not evType or len(evType) <=0:
+            size =0
+            esize =0
+            for k in self._stacks.keys():
+                size += self._stacks[k].size
+                esize += self._stacks[k].evcitSize
+            return size, esize
+
+        if evType in self._stacks.keys():
+            return self._stacks[evType].size, self._stacks[evType].evictSize
+        return 0, 0
+
+    @property
+    def focus(self) :
+        return self.__focusLast if self.__focusLast else ''
+
+    @property
+    def NNFloatsSize(self):
+        itemsize = sum([self._stacks[et].evictSize for et in EVENT_SEQ])
+        return (itemsize +1) * EXPORT_FLOATS_DIMS
+
+    def push(self, ev) :
+        '''
+        @return the ev that has been successully pushed into the proper stack, otherwise None
+        '''
+        if not ev or not ev.type in self._stacks.keys():
+            return None
+
+        latestevd = self._stacks[ev.type].top
+        if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
+            self._stacks[ev.type].push(ev.data)
+            if self._stacks[ev.type].size >0:
+                self.__focusLast = ev.type
+                if not self.__stampLast or self.__stampLast < ev.data.datetime :
+                    self.__stampLast = ev.data.datetime
+            return ev
+        
+        for i in range(self._stacks[ev.type].size) :
+            if ev.data.datetime > self._stacks[ev.type][i].datetime :
+                continue
+            if ev.data.datetime == self._stacks[ev.type][i].datetime :
+                self._stacks[ev.type][i] = ev.data
+            else :
+                self._stacks[ev.type].insert(i, ev.data)
+            return ev
+        
+        self._stacks[ev.type].insert(-1, ev.data)
+        while self._stacks[ev.type].evictSize >=0 and self._stacks[ev.type].size > self._stacks[ev.type].evictSize:
+            del(self._stacks[ev.type]._data[-1])
+
+        if self._stacks[ev.type].size >0:
+            self.__focusLast = ev.type
+
+        return ev
 
 ########################################################################
 class PerspectiveGenerator(Iterable):
@@ -413,6 +541,7 @@ class PerspectiveState(MarketState):
         """Constructor"""
         super(PerspectiveState, self).__init__(exchange)
         self.__dictPerspective ={} # dict of symbol to Perspective
+        self.__dictMoneyflow ={} # dict of symbol to MoneyflowPerspective
 
     # -- impl of MarketState --------------------------------------------------------------
     def listOberserves(self) :
@@ -421,7 +550,8 @@ class PerspectiveState(MarketState):
     def addMonitor(self, symbol) :
         ''' add a symbol to monitor
         '''
-        raise NotImplementedError
+        if symbol and not symbol in self.__dictPerspective.keys() :
+            self.__dictPerspective[symbol] = Perspective(self.exchange, symbol)
 
     def latestPrice(self, symbol) :
         ''' query for latest price of the given symbol
@@ -449,6 +579,33 @@ class PerspectiveState(MarketState):
                 ret = p.asof
         return ret if ret else DT_EPOCH
 
+    def stampUpdatedOf(self, symbol=None, evType=None) :
+        dict = {}
+        if evType in Perspective.EVENT_SEQ:
+            dict = self.__dictPerspective
+        elif evType in MoneyflowPerspective.EVENT_SEQ:
+            dict = self.__dictMoneyflow
+        
+        if symbol and symbol in dict:
+            return dict[symbol].stampUpdatedOf(evType)
+
+        ret = None
+        for s, p in dict.items() :
+            if not ret or ret > p.asof:
+                ret = p.asof
+                
+        return ret if ret else DT_EPOCH
+
+    def moneyflowAsOf(self, symbol=None, evType =None) :
+        if symbol and symbol in self.__dictMoneyflow.keys():
+            psp = self.__dictMoneyflow[symbol]
+            if psp:
+                if evType and evType in psp._stacks.keys():
+                    return psp.getAsOf(evType)
+                return psp.asof
+
+        return DT_EPOCH
+
     def sizesOf(self, symbol, evType =None) :
         ''' 
         @return the size of specified symbol/evType
@@ -461,10 +618,16 @@ class PerspectiveState(MarketState):
         ''' 
         @return the desc of specified symbol
         '''
-        if symbol and symbol in self.__dictPerspective.keys():
-            return self.__dictPerspective[symbol].desc
-        return '%s unknown' % symbol
-
+        if symbol :
+            if symbol in self.__dictPerspective.keys():
+                return self.__dictPerspective[symbol].desc
+            return '%s unknown' % symbol
+        
+        strDesc=''
+        for s, v in self.__dictPerspective.items() :
+            strDesc += '%s{%s};' %(s, v.desc)
+        return strDesc
+        
     def dailyOHLC_sofar(self, symbol) :
         ''' 
         @return (date, open, high, low, close) as of today
@@ -481,22 +644,26 @@ class PerspectiveState(MarketState):
         '''
         if EVENT_Perspective == ev.type :
             self.__dictPerspective[ev.data.symbol] = ev.data
-            return
+            return None
 
-        if not ev.type in Perspective.EVENT_SEQ :
-            return
-            
+        ret = None
         s = ev.data.symbol
-        if not s in self.__dictPerspective.keys() :
-            self.__dictPerspective[s] = Perspective(self.exchange, s)
-        self.__dictPerspective[s].push(ev)
+        if ev.type in Perspective.EVENT_SEQ :
+            if not s in self.__dictPerspective.keys() :
+                self.__dictPerspective[s] = Perspective(self.exchange, s)
+            self.__dictPerspective[s].push(ev)
+
+        if ev.type in MoneyflowPerspective.EVENT_SEQ :
+            if not s in self.__dictMoneyflow.keys() :
+                self.__dictMoneyflow[s] = MoneyflowPerspective(self.exchange, s)
+            self.__dictMoneyflow[s].push(ev)
 
     __dummy = None
-    def toNNFloats(self, symbol=None) :
-        '''@return an array_like data as toNNFloats, maybe [] or numpy.array
+    def exportKLFloats(self, symbol=None) :
+        '''@return an array_like data as exportKLFloats, maybe [] or numpy.array
         '''
         if symbol and symbol in self.__dictPerspective.keys():
-            return self.__dictPerspective[symbol].NNFloats
+            return self.__dictPerspective[symbol].KLFloats
 
         if not PerspectiveState.__dummy:
             PerspectiveState.__dummy = Perspective(self.exchange, 'Dummy')

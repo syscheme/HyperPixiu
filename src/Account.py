@@ -47,6 +47,8 @@ class MetaAccount(BaseApplication):
     def exchange(self) : return self._exchange
     @property
     def trader(self): return self.__trader
+    @property
+    def account(self): return self
     def hostTrader(self, trader): self.__trader = trader
 
     @property
@@ -227,6 +229,51 @@ class Account(MetaAccount):
         self._stampLastSync =0
         self._syncInterval  = 10
 
+    def save(self):
+        objId = '%s/%s' % (self.__class__.__name__, self._id)
+        
+        state = ( \
+        self._dateToday, \
+        self._datePrevClose, \
+        self._prevPositions, \
+        self._todayResult)
+
+        self.program.saveObject(state, objId +'/s1')
+        self.program.saveObject(self._dictOutgoingOrders, objId +'/outOrders')
+        self.program.saveObject(self._lstOrdersToCancel, objId +'/ordersToCancel')
+        self.program.saveObject(self._dictPositions, objId +'/positions')
+        self.program.saveObject(self._dictTrades, objId +'/trades')
+        self.program.saveObject((self._dictStopOrders,self._dictLimitOrders), objId +'/orders')
+
+    def restore(self):  
+        objId = '%s/%s' % (self.__class__.__name__, self._id)
+
+        try:
+            s1 = self.program.loadObject(objId +'/s1')
+            if not s1:
+                return False
+
+            self._dateToday, \
+            self._datePrevClose, \
+            self._prevPositions, \
+            self._todayResult \
+            = s1
+
+            self._dictPositions = self.program.loadObject(objId +'/positions')
+            self._dictOutgoingOrders = self.program.loadObject(objId +'/outOrders')
+            self._lstOrdersToCancel = self.program.loadObject(objId +'/ordersToCancel')
+            self._dictTrades = self.program.loadObject(objId +'/trades')
+            self._dictStopOrders,self._dictLimitOrders = self.program.loadObject(objId +'/orders')
+            cashAvail, cashTotal, positions = self.positionState()
+            _, posvalue = self.summrizeBalance(positions, cashTotal)
+
+            self.info('restored with bal:%.2f+%.2f, %d postions, %d outgoing-orders, %d order-to-cancel, %d trades' % (cashTotal, posvalue, len(self._dictPositions), len(self._dictOutgoingOrders), len(self._lstOrdersToCancel), len(self._dictTrades)))
+            return True
+        except Exception as ex:
+            self.logexception(ex)
+
+        return False
+
     #----------------------------------------------------------------------
     #  properties
     #----------------------------------------------------------------------
@@ -296,6 +343,18 @@ class Account(MetaAccount):
             posValueSubtotal += pos.position * pos.price * self.contractSize
 
         return round(cashTotal,2), round(posValueSubtotal,2)
+
+    def tradeBeginOfDay(dt = None):
+        return (dt if dt else datetime.now()).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def tradeEndOfDay(dt = None):
+        return (dt if dt else datetime.now()).replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    def duringTradeHours(dt =None) : # to test if the time is trading hours
+        if not dt:
+            dt = datetime.now()
+
+        return (dt >= Account.tradeBeginOfDay(dt) and dt <= Account.tradeEndOfDay(dt))
 
     #----------------------------------------------------------------------
     def datetimeAsOfMarket(self):
@@ -467,6 +526,7 @@ class Account(MetaAccount):
                     pos.posAvail = round(pos.posAvail - orderData.totalVolume, 2)
 
         self.postEvent_Order(orderData)
+        self.save()
         self.record(Account.RECCATE_ORDER, orderData)
 
     def _broker_cancelOrder(self, brokerOrderId):
@@ -502,6 +562,7 @@ class Account(MetaAccount):
 
         self.info('order.brokerOrderId[%s] canceled' % orderData.brokerOrderId)
         self.postEvent_Order(orderData)
+        self.save()
 
     def findOrdersOfStrategy(self, strategyId, symbol=None):
         ret = []
@@ -537,6 +598,7 @@ class Account(MetaAccount):
                 self.__changePos(self.cashSymbol, turnover + commission + slippage)
 
         self.postEvent_Order(orderData)
+        self.save()
 
     def _broker_onTrade(self, trade):
         """交易成功回调"""
@@ -594,6 +656,7 @@ class Account(MetaAccount):
         cashAvail, cashTotal = self.cashAmount()
         self.info('broker_onTrade() trade[%s] processed, pos[%s->%s/%s] cash[%.2f/%.2f]' % (trade.desc, strPrevPos, pos.posAvail, pos.position, cashAvail, cashTotal))#, pos.desc))
         self.postEventData(Account.EVENT_TRADE, copy.copy(trade))
+        self.save()
         self.record(Account.RECCATE_TRADE, trade)
 
     def _broker_onOpenOrders(self, dictOrders):
@@ -848,6 +911,9 @@ class Account(MetaAccount):
 
     def onDayClose(self):
 
+        if Account.STATE_CLOSE == self._state:
+            return
+
         self.debug('onDayClose() calculating daily result')
         cTrades =0
         positions, _ = self.calcDailyPositions()
@@ -908,11 +974,11 @@ class Account(MetaAccount):
         self._dateToday = None
         
         self._state = Account.STATE_CLOSE
-        self.debug('onDayClose(%s) saved positions, updated state' % self._dateToday)
+        self.debug('onDayClose(%s) saved positions, updated state' % self._datePrevClose)
 
     def onDayOpen(self, newDate):
         if Account.STATE_OPEN == self._state:
-            if newDate == self._dateToday :
+            if self._dateToday and newDate <= self._dateToday :
                 return
             self.onDayClose()
 
@@ -934,7 +1000,7 @@ class Account(MetaAccount):
 
         self._dictTrades.clear() # clean the trade list
         self._state = Account.STATE_OPEN
-        self.debug('onDayOpen(%s) updated todayResult' % self._dateToday)
+        self.debug('onDayOpen(%s) updated todayResult: %scash +%spos' % (self._dateToday, self._todayResult.cash, self._todayResult.posValue))
     
     def onTimer(self, dt):
         # TODO refresh from BrokerDriver
@@ -1038,6 +1104,30 @@ class Account_AShare(Account):
             kwargs['priceTick'] = 0.01
 
         super(Account_AShare, self).__init__(program, **kwargs) # accountId, exchange ='AShare', ratePer10K =ratePer10K, contractSize=100, slippage =0.0, priceTick=0.01, jsettings =jsettings)
+
+    def tradeBeginOfDay(dt = None):
+        return (dt if dt else datetime.now()).replace(hour=9, minute=30, second=0, microsecond=0)
+
+    def tradeEndOfDay(dt = None):
+        return (dt if dt else datetime.now()).replace(hour=15, minute=0, second=0, microsecond=0)
+
+    def duringTradeHours(dt =None) : # to test if the time is in 9:28 ~11:32 and 13:00 ~15:00
+        if not dt:
+            dt = datetime.now()
+        
+        if dt.weekday() in [5,6] : # datetime.now().weekday() map 0-Mon,1-Tue,2-Wed,3-Thu,4-Fri,5-Sat,6-Sun
+            return False
+        
+        if not dt.hour in [9, 10, 11, 13, 14] :
+            return False
+        
+        if 9 == dt.hour and dt.minute < 29 :
+            return False
+        
+        if 11 == dt.hour and dt.minute >31 :
+            return False
+
+        return True
 
     #----------------------------------------------------------------------
     def calcAmountOfTrade(self, symbol, price, volume):
@@ -1261,7 +1351,7 @@ class PositionData(EventData):
         self.stampByBroker   = EventData.EMPTY_INT        # 该持仓数是基于与broker的数据同步
 
 ########################################################################
-class DailyPosition(object):
+class DailyPosition(EventData):
     '''每日交易的结果'''
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
@@ -1295,7 +1385,7 @@ class DailyPosition(object):
         self.cBuy        = EventData.EMPTY_INT   # 成交数量
         self.cSell       = EventData.EMPTY_INT  # 成交数量
         self.txns        = EventData.EMPTY_STRING
-        self.asof        = []
+        self._asofList   = []
 
     def initPositions(self, account, symbol, currentPos, prevPos, ohlc =None):
         """Constructor"""
@@ -1309,7 +1399,7 @@ class DailyPosition(object):
         self.calcPos     = round(prevPos.position, 3)     # 
         self.prevClose   = round(prevPos.price, 3)     # 昨日收盘
         self.prevPos     = round(prevPos.position, 3)     # 昨日收盘
-        self.asof        =[ currentPos.stampByTrader, currentPos.stampByBroker ]
+        self._asofList   =[ currentPos.stampByTrader, currentPos.stampByBroker ]
         # 持仓部分
         self.positionPnl = round(prevPos.position * (currentPos.price - currentPos.avgPrice) * account._contractSize, 3)
 

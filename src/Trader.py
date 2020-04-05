@@ -88,6 +88,7 @@ class BaseTrader(MetaTrader):
         self._outDir         = self.getConfig('outDir', self.dataRoot)
         self._annualCostRatePcnt = self.getConfig('annualCostRatePcnt', 10) # the annual cost rate of capital time, 10% by default
         self._maxValuePerOrder = self.getConfig('maxValuePerOrder', 0) # the max value limitation of a single order
+        self._minBuyPerOrder   = self.getConfig('minBuyPerOrder', 1000.0) # the min value limitation of a single buy
 
         if self._outDir and '/' != self._outDir[-1]: self._outDir +='/'
         
@@ -170,6 +171,8 @@ class BaseTrader(MetaTrader):
                 if marketstate and marketstate.exchange == self._account.exchange:
                     self._marketState = marketstate
                     break
+        elif not self._marketState.exchange:
+            self._marketState._exchange = self._account.exchange
                 
         if not self._marketState :
             self.error('no MarketState found')
@@ -183,7 +186,7 @@ class BaseTrader(MetaTrader):
 
         if self._marketState :
             for symbol in self._dictObjectives.keys():
-                self._marketState.addMonitor(self, symbol)
+                self._marketState.addMonitor(symbol)
 
         # step 4. subscribe account events
         self.subscribeEvent(Account.EVENT_ORDER)
@@ -260,7 +263,7 @@ class BaseTrader(MetaTrader):
     # usually back test will overwrite this
     def onDayOpen(self, symbol, date):
         # step1. notify accounts
-        self.debug('onDayOpen(%s) dispatching to account' % symbol)
+        self.debug('onDayOpen(%s:%s) dispatching to account' % (symbol, date))
         if self._account :
             try :
                 self._account.onDayOpen(date)

@@ -828,7 +828,7 @@ class PlaybackDay(MarketState):
             self.__onKLineX(ev)
             return
 
-    def toNNFloats(self) :
+    def exportKLFloats(self) :
         '''@return an array_like data as [float] for neural network computing
         '''
         raise NotImplementedError

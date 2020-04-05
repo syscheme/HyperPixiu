@@ -4,7 +4,8 @@ from __future__ import division
 
 from MarketCrawler import *
 from EventData import Event, datetime2float, DT_EPOCH
-from MarketData import KLineData, TickData, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
+from MarketData import KLineData, TickData, MoneyflowData, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
+from Account import Account_AShare
 
 import requests # pip3 install requests
 from copy import copy
@@ -18,6 +19,15 @@ import re
 [{cate_type:"2",cate_name:"银行业",category:"hangye_ZI01"}]
 '''
 
+CLOCK_ERROR_SEC   = 2*60.0  # 2min
+OFFHOUR_ERROR_SEC = 60*60.0 # 1hr
+
+def toFloatVal(val, defaultval=0.0) :
+    try :
+        return float(val) if val else defaultval
+    except:
+        pass
+    return defaultval
 
 ########################################################################
 class SinaCrawler(MarketCrawler):
@@ -41,17 +51,19 @@ class SinaCrawler(MarketCrawler):
     MINs_OF_EVENT = {
             EVENT_KLINE_5MIN: 5,
             EVENT_KLINE_1DAY: 240,
+            EVENT_MONEYFLOW_1MIN : 1,
+            EVENT_MONEYFLOW_1DAY : 240,
         }
 
-    def __init__(self, program, recorder=None, **kwargs):
+    def __init__(self, program, marketState=None, recorder=None, **kwargs):
         """Constructor"""
-        super(SinaCrawler, self).__init__(program, 'AShare', recorder, **kwargs)
+        super(SinaCrawler, self).__init__(program, marketState, recorder, **kwargs)
         
         # SinaCrawler take multiple HTTP requests to collect data, each of them may take different
         # duration to complete, so this crawler should be threaded
         # self._threadless = False
 
-        self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline]
+        self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline] #, self.__step_pollMoneyflow]
 
         self._proxies = {}
 
@@ -61,51 +73,36 @@ class SinaCrawler(MarketCrawler):
         # self._depth_1day   = self.getConfig('depth/1day',  260) # for exmaple, thereTrue are 245 trading-days in AShare market during YR2018, so take 280 to keep a year
         self._secYield456  = self.getConfig('yield456',    230)
         self.__excludeAt404= self.getConfig('excludeAt404',True)
-        self.__minimalKLYield = self.getConfig('minimalKLYield', 0.4) # 0.4sec, the minimal interval between two KL query in order not to trigger SINA 456
-        self.__minimalKLYield = timedelta(seconds=int(self.__minimalKLYield), microseconds=(int(self.__minimalKLYield *1000) % 1000) *1000)
+        # self.__minimalKLYield = self.getConfig('minimalKLYield', 0.4) # 0.4sec, the minimal interval between two KL query in order not to trigger SINA 456
+        # self.__minimalKLYield = timedelta(seconds=int(self.__minimalKLYield), microseconds=(int(self.__minimalKLYield *1000) % 1000) *1000)
         symbols            = self.getConfig('symbolsToCrawl', [])
 
         self.__tickBatches = None
-        self.__idxTickBatch = 0
-        self.__nextStamp_PollTick = None
+        self.__idxTickBatch, self.__nextStamp_PollTick = 0, None
 
         self.__tickToKL1m = {} # dict of symbol to SinaTickToKL1m
-        self.__idxKL = 0
-
-        self.__stampYieldTill_KL = None #
+        self.__idxKL, self.__stampYieldTill_KL = 0, None
+        
+        self.__idxMF, self.__stampYieldMF = 0, None
 
         self.__step_poll1st() # perform an init-step
 
         if len(symbols) >0:
             self.subscribe(symbols)
 
-    def duringTradeHours(dt =None) : # to test if the time is in 9:28 ~11:32 and 13:00 ~15:00
-        if not dt:
-            dt = datetime.now()
-        
-        if dt.weekday() in [5,6] : # datetime.now().weekday() map 0-Mon,1-Tue,2-Wed,3-Thu,4-Fri,5-Sat,6-Sun
-            return False
-        
-        if not dt.hour in [9, 10, 11, 13, 14] :
-            return False
-        
-        if 9 == dt.hour and dt.minute < 29 :
-            return False
-        
-        if 11 == dt.hour and dt.minute >31 :
-            return False
-
-        return True
-
     #------------------------------------------------
     # sub-steps
     def __step_poll1st(self):
-        self.__END_OF_TODAY = datetime2float(datetime.now().replace(hour=15, minute=1))
+        self.__BEGIN_OF_TODAY = datetime2float(Account_AShare.tradeBeginOfDay()) -CLOCK_ERROR_SEC
+        self.__END_OF_TODAY = datetime2float(Account_AShare.tradeEndOfDay()) + CLOCK_ERROR_SEC
         return 0
 
     def __step_pollTicks(self):
         
         cBusy =0 
+        if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC/2) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC/2):
+            return cBusy # well off-trade hours
+
         #step 1. build up self.__tickBatches if necessary
         if (not self.__tickBatches or len(self.__tickBatches)<=0) and len(self._symbolsToPoll) >0:
             self.__tickBatches = []
@@ -121,6 +118,10 @@ class SinaCrawler(MarketCrawler):
         batches = len(self.__tickBatches)
         if batches <=0:
             return cBusy
+
+        if self._stepAsOf > self.__END_OF_TODAY :
+            for k, v in self.__tickToKL1m.items():
+                v.flushAtClose()
             
         #step 2. check if to yield time
         self.__idxTickBatch = self.__idxTickBatch % batches
@@ -162,12 +163,12 @@ class SinaCrawler(MarketCrawler):
             ev = Event(EVENT_TICK)
             ev.setData(tk)
 
-            # if not s in self.collectedState.keys():
-            #     self.collectedState[s] = Perspective('AShare', symbol =s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
-            # psp = self.collectedState[s]
-            self.collectedState.updateByEvent(ev) # ev = psp.push(ev)
+            # if not s in self.marketState.keys():
+            #     self.marketState[s] = Perspective('AShare', symbol =s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
+            # psp = self.marketState[s]
+            self.marketState.updateByEvent(ev) # ev = psp.push(ev)
 
-            self.debug("step_pollTicks() pushed tick %s into psp, now: %s" %(tk.desc, self.collectedState.descOf(s)))
+            self.debug("step_pollTicks() pushed tick %s into psp, now: %s" %(tk.desc, self.marketState.descOf(s)))
 
             if ev and self._recorder:
                 cMerged +=1
@@ -178,7 +179,7 @@ class SinaCrawler(MarketCrawler):
         if cMerged >0:
             self.info("step_pollTicks() btch[%d/%d] cached %d new-tick of %d/%d symbols into psp: %s" %(idxBtch +1, batches, cMerged, len(result), len(self.__tickBatches[idxBtch]), ','.join(updated)))
         else :
-            if not SinaCrawler.duringTradeHours(stampNow):
+            if not Account_AShare.duringTradeHours(stampNow):
                 self.__nextStamp_PollTick += (61 - stampNow.second)
                 self.info("step_pollTicks() btch[%d/%d] no new ticks during off-market time, extended sleep time" %(idxBtch +1, batches))
             else :
@@ -194,9 +195,7 @@ class SinaCrawler(MarketCrawler):
             self.__idxKL = self.__idxKL % cSyms
             s = self._symbolsToPoll[self.__idxKL]
 
-        stampStart = datetime.now()
-        if self.__stampYieldTill_KL and stampStart < self.__stampYieldTill_KL:
-            self.debug("step_pollKline(%s) symb[%d/%d] yield per SINA(456), %s left" %(s, self.__idxKL, cSyms, self.__stampYieldTill_KL -stampStart))
+        if self.__stampYieldTill_KL and self._stepAsOf < self.__stampYieldTill_KL:
             return cBusy
 
         self.__idxKL += 1
@@ -205,18 +204,36 @@ class SinaCrawler(MarketCrawler):
             del self._symbolsToPoll[s]
             return 1 # return as busy for this error case
 
-        # if not s in self.collectedState.keys():
-        #     self.collectedState[s] = Perspective('AShare', symbol=s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
-        # psp = self.collectedState[s]
+        if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC):
+            return cBusy # well off-trade hours
 
+        # if not s in self.marketState.keys():
+        #     self.marketState[s] = Perspective('AShare', symbol=s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
+        # psp = self.marketState[s]
+        minIntvKL = 30*60 # initialize with a large 30min
+
+        stampNow = datetime2float(datetime.now())
         for evType in [EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
+
+            stampStart = stampNow
             minutes = SinaCrawler.MINs_OF_EVENT[evType]
-            etimatedNext = datetime2float(self.collectedState.getAsOf(s, evType)) + 60*(minutes if minutes < 240 else int(minutes /240)*60*24) -1
-            self.__END_OF_TODAY = datetime2float(stampStart.replace(hour=15, minute=1))
-            if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
+            if minIntvKL > minutes /2:
+                minIntvKL = minutes /2.0
+
+            if minutes < 240:
+                # in-day events
+                etimatedNext = datetime2float(self.marketState.getAsOf(s, evType)) + 60*minutes -1
+            else :
+                etimatedNext = datetime2float(self.marketState.getAsOf(s, evType)) + 60*(int((minutes) /240)*60*24)  -1
+                sz, esz = self.marketState.sizesOf(s, evType)
+                tmpStamp = datetime2float(self.marketState.stampUpdatedOf(s, evType))
+                if sz >=esz and tmpStamp and tmpStamp >= self.__BEGIN_OF_TODAY:
+                    etimatedNext = tmpStamp + 60*60 # one hr later
+
+            if etimatedNext > self.__END_OF_TODAY or stampStart < etimatedNext:
                 continue
 
-            size, lines = self.collectedState.sizesOf(s, evType)
+            size, lines = self.marketState.sizesOf(s, evType)
             if size >0:
                 lines = 0
             lines +=10
@@ -236,25 +253,23 @@ class SinaCrawler(MarketCrawler):
                 continue
 
             # succ at query
-            self.__stampYieldTill_KL = stampStart + self.__minimalKLYield
+            self.__stampYieldTill_KL = self._stepAsOf + minIntvKL *60
             cMerged =0
             for i in result:
                 cBusy +=1
                 ev = Event(evType)
                 ev.setData(i)
-                self.collectedState.updateByEvent(ev) # ev = psp.push(ev)
+                self.marketState.updateByEvent(ev) # ev = psp.push(ev)
                 if ev and self._recorder:
                     cMerged +=1
                     self.OnEventCaptured(ev)
 
-            stampNow = datetime.now()
+            stampNow = datetime2float(datetime.now())
             if cMerged >0:
-                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.collectedState.descOf(s)))
-            elif not SinaCrawler.duringTradeHours(stampNow):
-                self.__stampYieldTill_KL = stampNow + timedelta(minutes=2)
-                self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-time of AShare, actively yielding 2min to avoid 456" %(s, evType, self.__idxKL, cSyms))
-
-            stampStart = stampNow
+                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %.2fsec, psp now: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
+            elif not Account_AShare.duringTradeHours(stampNow):
+                self.__stampYieldTill_KL += minIntvKL
+                self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-hours" %(s, evType, self.__idxKL, cSyms))
 
         return cBusy
 
@@ -263,9 +278,73 @@ class SinaCrawler(MarketCrawler):
         ev.setData(kl1m)
         self.OnEventCaptured(ev)
 
-        self.collectedState.updateByEvent(ev)
+        self.marketState.updateByEvent(ev)
 
-        self.debug("onKL1mMerged() merged from ticks: %s" %(kl1m.desc))
+        self.debug("onKL1mMerged() merged from ticks: %s ->psp: %s" % (kl1m.desc, self.marketState.descOf(kl1m.symbol)))
+
+    def __step_pollMoneyflow(self):
+        cBusy =0       
+        s = None
+        cSyms = len(self._symbolsToPoll)
+        if cSyms >0:
+            self.__idxMF = self.__idxMF % cSyms
+            s = self._symbolsToPoll[self.__idxMF]
+
+        stampStart = datetime.now()
+
+        if self.__stampYieldMF and stampStart < self.__stampYieldMF:
+            # self.debug("step_pollKline(%s) symb[%d/%d] yield per SINA(456), %s left" %(s, self.__idxKL, cSyms, self.__stampYieldTill_KL -stampStart))
+            return cBusy
+
+        self.__idxMF += 1
+
+        if not s or len(s) <=0:
+            del self._symbolsToPoll[s]
+            return 1 # return as busy for this error case
+
+        # psp = self.marketState[s]
+        for evType in [EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY] :
+            minutes = SinaCrawler.MINs_OF_EVENT[evType]
+            etimatedNext = datetime2float(self.marketState.moneyflowAsOf(s, evType)) + 60*(minutes if minutes < 240 else int(minutes /240)*60*24) -1
+            if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
+                continue
+
+            httperr, result = self.GET_MoneyFlow(s, EVENT_MONEYFLOW_1MIN== evType)
+            if httperr !=200:
+                self.error("step_pollMoneyflow(%s:%s) failed, err(%s)" %(s, evType, httperr))
+                if httperr == 456:
+                    self.__stampYieldMF = datetime.now() + timedelta(seconds=self._secYield456)
+                    self.warn("step_pollMoneyflow(%s:%s) [%d/%d]sym SINA complained err(%s), yielding %ssec" %(s, evType, self.__idxKL, cSyms, httperr, self._secYield456))
+                    return cBusy
+           
+                if httperr == 404 and self.__excludeAt404:
+                    # del self._symbolsToPoll[s]
+                    self.warn("step_pollMoneyflow(%s:%s) [%d/%d]sym excluded symbol per err(%s)" %(s, evType, self.__idxKL, cSyms, httperr))
+
+                continue
+
+            # succ at query
+            self.__stampYieldMF = stampStart + self.__minimalMFYield
+            cMerged =0
+            for i in result:
+                cBusy +=1
+                ev = Event(evType)
+                ev.setData(i)
+                self.marketState.updateByEvent(ev) # ev = psp.push(ev)
+                if ev and self._recorder:
+                    cMerged +=1
+                    self.OnEventCaptured(ev)
+
+            stampNow = datetime.now()
+            if cMerged >0:
+                self.info("step_pollMoneyflow(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
+            elif not Account_AShare.duringTradeHours(stampNow):
+                self.__minimalMFYield = stampNow + CLOCK_ERROR
+                self.info("step_pollMoneyflow(%s:%s) [%d/%d]sym no new KLs during off-time of AShare, actively yielding 2min to avoid 456" %(s, evType, self.__idxKL, cSyms))
+
+            stampStart = stampNow
+
+        return cBusy
 
     # end of sub-steps
     #------------------------------------------------
@@ -335,12 +414,12 @@ class SinaCrawler(MarketCrawler):
 
         for kl in jsonData :
             kldata = KLineData("AShare", symbol)
-            kldata.open = kl['open']             # OHLC
-            kldata.high = kl['high']             # OHLC
-            kldata.low = kl['low']             # OHLC
-            kldata.close = kl['close']             # OHLC
-            kldata.volume = kl['volume']
-            kldata.close = kl['close']
+            kldata.open   = toFloatVal(kl['open'])             # OHLC
+            kldata.high   = toFloatVal(kl['high'])             # OHLC
+            kldata.low    = toFloatVal(kl['low'])             # OHLC
+            kldata.close  = toFloatVal(kl['close'])             # OHLC
+            kldata.volume = toFloatVal(kl['volume'])
+            kldata.close  = toFloatVal(kl['close'])
             try :
                 kldata.datetime = datetime.strptime(kl['day'][:10], '%Y-%m-%d').replace(hour=15, minute=0, second=0, microsecond=0)
                 kldata.datetime = datetime.strptime(kl['day'], '%Y-%m-%d %H:%M:%S')
@@ -350,12 +429,12 @@ class SinaCrawler(MarketCrawler):
             kldata.time = kldata.datetime.strftime('%H:%M:%S')
             klineseq.append(kldata)
 
-        klineseq.sort(key=SinaCrawler.sortKeyOfKL)
+        klineseq.sort(key=SinaCrawler.sortKeyOfMD)
         # klineseq.reverse() # SINA returns from oldest to newest
         return httperr, klineseq
 
-    def sortKeyOfKL(KL) : # for sort
-        return KL.datetime
+    def sortKeyOfMD(md) : # for sort
+        return md.datetime
 
     def fixupSymbolPrefix(symbol):
         if symbol.isdigit() :
@@ -400,45 +479,45 @@ class SinaCrawler(MarketCrawler):
             ncols = min([len(HEADERS), len(row)])
             d = {HEADERS[i]:row[i] for i in range(ncols)}
             tickdata = TickData("AShare", s)
-            tickdata.price = float(d['price'])
-            tickdata.volume = float(d['volume'])
-            tickdata.total = float(d['total'])
+            tickdata.price  = toFloatVal(d['price'])
+            tickdata.volume = toFloatVal(d['volume'])
+            tickdata.total  = toFloatVal(d['total'])
 
             tickdata.datetime = datetime.strptime(d['date'] + 'T' + d['time'], '%Y-%m-%dT%H:%M:%S')
             tickdata.date = tickdata.datetime.strftime('%Y-%m-%d')
             tickdata.time = tickdata.datetime.strftime('%H:%M:%S')
             
-            tickdata.open = float(d['open'])
-            tickdata.high = float(d['high'])
-            tickdata.low = float(d['low'])
-            tickdata.prevClose = float(d['prevClose'])
+            tickdata.open      = toFloatVal(d['open'])
+            tickdata.high      = toFloatVal(d['high'])
+            tickdata.low       = toFloatVal(d['low'])
+            tickdata.prevClose = toFloatVal(d['prevClose'])
 
             # tickdata.upperLimit = EventData.EMPTY_FLOAT           # 涨停价
             # tickdata.lowerLimit = EventData.EMPTY_FLOAT           # 跌停价
             
             # 五档行情
-            tickdata.b1P = float(d['bid1'])
-            tickdata.b1V = float(d['bid1v'])
-            tickdata.b2P = float(d['bid2'])
-            tickdata.b2V = float(d['bid2v'])
-            tickdata.b3P = float(d['bid3'])
-            tickdata.b3V = float(d['bid3v'])
-            tickdata.b4P = float(d['bid4'])
-            tickdata.b4V = float(d['bid4v'])
-            tickdata.b5P = float(d['bid5'])
-            tickdata.b5V = float(d['bid5v'])
+            tickdata.b1P = toFloatVal(d['bid1'])
+            tickdata.b1V = toFloatVal(d['bid1v'])
+            tickdata.b2P = toFloatVal(d['bid2'])
+            tickdata.b2V = toFloatVal(d['bid2v'])
+            tickdata.b3P = toFloatVal(d['bid3'])
+            tickdata.b3V = toFloatVal(d['bid3v'])
+            tickdata.b4P = toFloatVal(d['bid4'])
+            tickdata.b4V = toFloatVal(d['bid4v'])
+            tickdata.b5P = toFloatVal(d['bid5'])
+            tickdata.b5V = toFloatVal(d['bid5v'])
             
             # ask to sell: price and volume
-            tickdata.a1P = float(d['ask1'])
-            tickdata.a1V = float(d['ask1v'])
-            tickdata.a2P = float(d['ask2'])
-            tickdata.a2V = float(d['ask2v'])
-            tickdata.a3P = float(d['ask3'])
-            tickdata.a3V = float(d['ask3v'])
-            tickdata.a4P = float(d['ask4'])
-            tickdata.a4V = float(d['ask4v'])
-            tickdata.a5P = float(d['ask5'])
-            tickdata.a5V = float(d['ask5v'])
+            tickdata.a1P = toFloatVal(d['ask1'])
+            tickdata.a1V = toFloatVal(d['ask1v'])
+            tickdata.a2P = toFloatVal(d['ask2'])
+            tickdata.a2V = toFloatVal(d['ask2v'])
+            tickdata.a3P = toFloatVal(d['ask3'])
+            tickdata.a3V = toFloatVal(d['ask3v'])
+            tickdata.a4P = toFloatVal(d['ask4'])
+            tickdata.a4V = toFloatVal(d['ask4v'])
+            tickdata.a5P = toFloatVal(d['ask5'])
+            tickdata.a5V = toFloatVal(d['ask5v'])
 
             tickseq.append(tickdata)
         
@@ -446,7 +525,7 @@ class SinaCrawler(MarketCrawler):
         return httperr, tickseq
 
     #------------------------------------------------    
-    def GET_MoneyFlow(self, symbol):
+    def GET_MoneyFlow(self, symbol, byMinutes=False):
         ''' 查询现金流
         will call cortResp.send(csvline) when the result comes
         ({r0_in:"0.0000",r0_out:"0.0000",r0:"0.0000",r1_in:"3851639.0000",r1_out:"4794409.0000",r1:"9333936.0000",r2_in:"8667212.0000",r2_out:"10001938.0000",r2:"18924494.0000",r3_in:"7037186.0000",r3_out:"7239931.2400",r3:"15039741.2400",curr_capital:"9098",name:"朗科智能",trade:"24.4200",changeratio:"0.000819672",volume:"1783866.0000",turnover:"196.083",r0x_ratio:"0",netamount:"-2480241.2400"})
@@ -461,15 +540,46 @@ class SinaCrawler(MarketCrawler):
               trade收盘价3.50,changeratio涨跌幅+1.156%,turnover换手率0.0485%,netamount净流入/万2989.37,ratioamount净流入率8.40%,r0_net主力净流入/万2732.06,r0_ratio主力净流入率7.68%,r0x_ratio主力罗盘81.43°,cate_ra行业净流入率10.34%
               {opendate:"2020-03-19",trade:"3.4600",changeratio:"-0.0114286",turnover:"5.71814",netamount:"-6206568.4600",ratioamount:"-0.0148799",r0_net:"-21194529.9100",r0_ratio:"-0.05081268",r0x_ratio:"-102.676",cnt_r0x_ratio:"-2",cate_ra:"-0.0122277",cate_na:"-253623190.4100"},
               '''
-        url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssi_ssfx_flzjtj?daima=%s' % (mdSina.fixupSymbolPrefix(symbol))
+        url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol))
+        if byMinutes:
+            url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol))
+
         httperr, text = self.__sinaGET(url, 'GET_MoneyFlow')
         if httperr != 200:
             return httperr, text
 
-        str=text[text.find('{'):text.rfind('}')+1]
-        jsonData = demjson.decode(str)
+        mfseq =[]
+        if byMinutes:
+            pbeg, pend = text.find('[{'), text.rfind('}]')
+            if pbeg<0 or pbeg>=pend:
+                return mfseq
+            text = text[pbeg:pend] + '}]'
+        if len(text)>80*1024: # maximal 80KB is enough to cover 1Yr
+            # EOM = text[text.find('}'):]
+            text = text[:80*1024]
+            pend = text.rfind('},{')
+            if pend<=0:
+                return mfseq
+            text = text[:pend] + "}]"
+        jsonData = demjson.decode(text)
 
-        return True, jsonData
+        for mf in jsonData :
+            mfdata = MoneyflowData("AShare", symbol)
+            mfdata.price        = toFloatVal(mf['trade'])
+            mfdata.netamount    = toFloatVal(mf['netamount'])
+            mfdata.r0_ratio     = toFloatVal(mf['r0_ratio'])
+            mfdata.r3cate_ratio = toFloatVal(mf['r3_ratio']) if byMinutes else toFloatVal(mf['cate_ra'])
+            mfdata.datetime     = datetime.strptime(mf['opendate'], '%Y-%m-%d').replace(hour=15, minute=0, second=0, microsecond=0)
+            if byMinutes:
+                mfdata.datetime = datetime.strptime(mf['opendate'] + ' ' + mf['ticktime'], '%Y-%m-%d %H:%M:%S')
+            elif len(mfseq) >260 :
+                break
+            mfdata.date = mfdata.datetime.strftime('%Y-%m-%d')
+            mfdata.time = mfdata.datetime.strftime('%H:%M:%S')
+            mfseq.append(mfdata)
+
+        mfseq.sort(key=SinaCrawler.sortKeyOfMD)
+        return True, mfseq
 
     #------------------------------------------------    
     def GET_Transactions(self, symbol):
@@ -484,7 +594,7 @@ class SinaCrawler(MarketCrawler):
         HEADERSEQ="time,volume,price,type"
         HEADERS=HEADERSEQ.split(',')
         SYNTAX = re.compile('^.*trade_item_list.*Array\(([^\)]*)\).*')
-        url = 'http://vip.stock.finance.sina.com.cn/quotes_service/view/CN_TransListV2.php?symbol=%s' % (mdSina.fixupSymbolPrefix(symbol))
+        url = 'http://vip.stock.finance.sina.com.cn/quotes_service/view/CN_TransListV2.php?symbol=%s' % (SinaCrawler.fixupSymbolPrefix(symbol))
         httperr, text = self.__sinaGET(url, 'GET_Transactions')
         if httperr != 200:
             return httperr, text
@@ -520,7 +630,7 @@ class SinaCrawler(MarketCrawler):
         jsonData = demjson.decode(re.sub('_([0-9]{4})_([0-9]{2})_([0-9]{2})', r'\1-\2-\3', str)) # convert _2019_05_14 to 2019-05-14
         ret = []
         for k,v in jsonData['data'].items() : 
-            ret.append({k, v.float()})
+            ret.append({k, v.toFloatVal()})
         return True, ret
 
 ########################################################################
@@ -545,18 +655,20 @@ class SinaTickToKL1m(object):
     def pushTick(self, tick):
         """TICK更新"""
 
-        if self.__kline and self.__kline.datetime.minute != tick.datetime.minute and SinaCrawler.duringTradeHours(tick.datetime):
-            # 生成上一分钟K线的时间戳
-            self.__kline.datetime = self.__kline.datetime.replace(second=0, microsecond=0)  # 将秒和微秒设为0
+        if self.__kline and self.__kline.datetime.minute != tick.datetime.minute and Account_AShare.duringTradeHours(tick.datetime):
+            # 生成一分钟K线的时间戳
+            self.__kline.datetime = self.__kline.datetime.replace(second=0, microsecond=0) +timedelta(minutes=1)  # align to the next minute:00.000
             self.__kline.date = self.__kline.datetime.strftime('%Y-%m-%d')
             self.__kline.time = self.__kline.datetime.strftime('%H:%M:%S.%f')
         
             # 推送已经结束的上一分钟K线
             if self.__onKline1min :
-                kl = copy(self.__kline)
-                kl.volume -= self.__lastVol
-                self.__lastVol = self.__kline.volume
-                self.__onKline1min(kl)
+                while self.__kline.datetime <= tick.datetime : # the new tick time might stepped more than 1min, so make a loop here
+                    kl = copy(self.__kline)
+                    kl.volume -= self.__lastVol
+                    self.__lastVol = self.__kline.volume
+                    self.__onKline1min(kl)
+                    self.__kline.datetime += timedelta(minutes=1)
             
             self.__kline = None # 创建新的K线对象
             
@@ -586,16 +698,36 @@ class SinaTickToKL1m(object):
         # 缓存Tick
         self.__lastTick = tick
 
+    def flushAtClose(self):
+        if not self.__lastTick or not self.__kline:
+            return
+
+        self.__kline.datetime = (self.__lastTick.datetime +timedelta(seconds=30)).replace(second=0, microsecond=0)
+        self.__kline.date = self.__kline.datetime.strftime('%Y-%m-%d')
+        self.__kline.time = self.__kline.datetime.strftime('%H:%M:%S.%f')
+    
+        # 推送已经结束的上一分钟K线
+        if self.__onKline1min :
+            kl = copy(self.__kline)
+            kl.volume -= self.__lastVol
+
+            self.__lastVol = self.__kline.volume
+            self.__onKline1min(kl)
+        
+        self.__kline = None # 创建新的K线对象
+
 ########################################################################
 if __name__ == '__main__':
     from Application import Program
 
     p = Program()
-    md = SinaCrawler(p, None);
+    # mc = p.createApp(SinaCrawler, configNode ='crawler', marketState = gymtdr._marketState, recorder=rec) # md = SinaCrawler(p, None);
+    md = SinaCrawler(p, None)
+    _, result = md.GET_MoneyFlow("SH601005")
     # _, result = md.searchKLines("000002", EVENT_KLINE_5MIN)
     # _, result = md.GET_RecentTicks('sh601006,sh601005,sh000001,sz000001')
     # _, result = md.GET_SplitRate('sh601006')
-    # print(result)
-    md.subscribe(['601006','sh601005','sh000001','000001'])
-    while True:
-        md.step()
+    print(result)
+    # md.subscribe(['601006','sh601005','sh000001','000001'])
+    # while True:
+    #     md.doAppStep()

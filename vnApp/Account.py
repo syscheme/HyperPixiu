@@ -1032,11 +1032,13 @@ class PositionData(EventData):
         self.stampByBroker = EventData.EMPTY_INT        # 该持仓数是基于与broker的数据同步
 
 ########################################################################
-class DailyPosition(object):
+class DailyPosition(EventData):
     """每日交易的结果"""
 
     def __init__(self):
         """Constructor"""
+        super(DailyPosition, self).__init__()
+
         self.symbol      = EventData.EMPTY_STRING
         self.date        = EventData.EMPTY_STRING   # 日期
         self.recentPrice = EventData.EMPTY_FLOAT     # 当日收盘

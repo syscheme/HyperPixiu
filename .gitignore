@@ -12,6 +12,7 @@ dist/
 aaa*
 *.h5
 *-checkpoint.ipynb
+[0-9]*.ipynb
 
 *.temp
 *.vt

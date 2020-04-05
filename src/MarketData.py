@@ -32,6 +32,9 @@ EVENT_T2KLINE_1MIN  = MARKETDATE_EVENT_PREFIX + 'T2K1m'
 
 EVENT_MARKET_HOUR   = MARKETDATE_EVENT_PREFIX + 'Hr'
 
+EVENT_MONEYFLOW_1MIN = MARKETDATE_EVENT_PREFIX + 'MF1m'
+EVENT_MONEYFLOW_1DAY = MARKETDATE_EVENT_PREFIX + 'MF1d'
+
 ########################################################################
 class MarketData(EventData):
     """Tick行情数据类"""
@@ -231,6 +234,47 @@ class KLineData(MarketData):
 
         return ret
 
+
+########################################################################
+class MoneyflowData(MarketData):
+    '''资金流数据'''
+
+    #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
+    COLUMNS = 'symbol,exchange,date,time,price,netamount,r0_ratio,r3cate_ratio' #,openInterest'
+
+    #----------------------------------------------------------------------
+    def __init__(self, exchange, symbol =None):
+        """Constructor"""
+        super(MoneyflowData, self).__init__(exchange, symbol)
+        
+        self.price        = EventData.EMPTY_FLOAT      # 价格
+        self.netamount    = EventData.EMPTY_FLOAT      # 净流入金额
+        self.r0_ratio     = EventData.EMPTY_FLOAT      # 主力流入率
+        self.r3cate_ratio = EventData.EMPTY_FLOAT      # 散户流入率（分钟资金流时）或 行业净流入率（日资金流时）
+
+    @property
+    def desc(self) :
+        return 'mf.%s@%s>%s/%.2f,%.2f' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.netamount, self.r0_ratio, self.r3cate_ratio)
+
+    @abstractmethod
+    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+        '''
+        @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
+        '''
+        if baseline_Price <=0: baseline_Price=1.0
+        if baseline_Volume <=0: baseline_Volume=1.0
+
+        # the basic dims, min=4
+        ret = [
+            FUNC_floatNormalize(self.price,     baseline_Price), 
+            FUNC_floatNormalize(self.netamount, baseline_Price*baseline_Volume),
+            FUNC_floatNormalize(self.r0_ratio, 1.0), 
+            FUNC_floatNormalize(self.r3cate_ratio, 1.0), 
+        ] + [0.0] * ( EXPORT_FLOATS_DIMS -4)
+
+        # the optional dims
+
+        return ret
 
 ########################################################################
 class DictToKLine(object):
@@ -489,11 +533,26 @@ class MarketState(MetaObj):
         raise NotImplementedError
 
     @abstractmethod
-    def getAsOf(self, symbol=None) :
+    def getAsOf(self, symbol=None, evType =None) :
         ''' 
         @return the datetime as of latest observing
         '''
         raise NotImplementedError
+
+    @abstractmethod
+    def sizesOf(self, symbol, evType =None) :
+        ''' 
+        @return the size of specified symbol/evType
+        '''
+        raise NotImplementedError
+        return 0, 0
+
+    @abstractmethod
+    def descOf(self, symbol) :
+        ''' 
+        @return the desc of specified symbol
+        '''
+        return '%s unknown' % symbol
 
     @abstractmethod
     def dailyOHLC_sofar(self, symbol) :
@@ -511,7 +570,7 @@ class MarketState(MetaObj):
         raise NotImplementedError
 
     @abstractmethod
-    def toNNFloats(self) :
+    def exportKLFloats(self, symbol=None) :
         '''@return an array_like data as toNNFloats, maybe [] or numpy.array
         '''
         raise NotImplementedError

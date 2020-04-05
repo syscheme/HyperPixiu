@@ -1,22 +1,21 @@
 // configuration of a BackTest
 {
     "logger": {
-        "level": "info", //40
+        "level": "debug", //40
         // "console": "False",
     },
 
-    "trainer": { // the configuration schema is extending "trader"
+    "trader": {
         "accountId" : "blah",
         "startCapitial": 100000,
         "episodes": 1,
         "warmupDays": 120,
         "agent" :{
-                "brainId": "Cnn1Dx4R2", // the model ID to take
-
+            "brainId": "Cnn1Dx4R2", // the model ID to take
             // "epochsPerObservOnGpu" :2,
         },
 
-        "sourceCsvDir": "/mnt/e/AShareSample/ETF",
+        "sourceCsvDir": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
         "objectives": ["SH510050"],
     },
 

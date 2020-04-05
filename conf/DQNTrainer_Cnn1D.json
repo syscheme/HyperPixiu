@@ -1,7 +1,7 @@
 // configuration of a DQNTrainer
 {
     "logger": {
-        "level": "info", //40
+        "level": "debug", //40
         // "console": "False",
     },
 
@@ -10,13 +10,14 @@
         "brainId": "Cnn1Dx4R2", // default "Cnn1Dx4"
         // "replayFrameFiles" : ["/mnt/e/AShareSample/ETF/RFrames_SH510050.h5"],
         // "replayFrameFiles" : ["/mnt/e/AShareSample/ETF/RFrames_SH510300.h5"],
-        "replayFrameDir": "/mnt/e/AShareSample/500top50",
+        "replayFrameDir": "/mnt/e/AShareSample/",
 
         "batchSize": 64,
         "batchesPerTrain": 32,
         "poolReuses": 0,
         "initEpochs": 2,
         "startLR": 0.002, // start learningRate
+        "preBalanced": "yes",
 
         "GPU": {
             "batchSize": 128,

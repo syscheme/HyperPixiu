@@ -552,7 +552,7 @@ class Program(object):
                 print('failed to load configure[%s]: %s' % (config_filename, e))
                 sys.exit(3)
 
-        self._shelvefn = '%s/%s.sobj' % (self._outdir, self.__progName)
+        self.__shelvefn = '%s/%s.sobj' % (self._outdir, self.__progName)
         # 记录今日日期
         self._runStartDate = datetime.now().strftime('%Y-%m-%d')
 
@@ -590,8 +590,12 @@ class Program(object):
         return self.__logger
 
     @property
+    def pid(self) : 
+        return self.__pid
+
+    @property
     def progId(self) : 
-        return '%s_%s' % (self.__progName, self.__pid)
+        return '%s_%s' % (self.__progName, self.pid)
 
     @property
     def ostype(self) :
@@ -606,6 +610,13 @@ class Program(object):
             drive = '%s:' % path[5]
             path = path.replace(path[:6], drive)
         return path
+
+    @property
+    def shelveFilename(self) :
+        return self.__shelvefn
+
+    def setShelveFilename(self, filename) :
+        self.__shelvefn = filename
 
     #----------------------------------------------------------------------
     def __addMetaObj(self, id, obj):
@@ -1171,8 +1182,8 @@ class Program(object):
         if not objId or len(objId) <=0:
             objId = sobj.ident
 
-        with FileLock(self._shelvefn + ".lock"):
-            with shelve.open(self._shelvefn) as sh:
+        with FileLock(self.shelveFilename + ".lock"):
+            with shelve.open(self.shelveFilename) as sh:
                 sh[objId] = sobj
                 self.debug('saveObject() object[%s] saved' %(objId))
 
@@ -1181,8 +1192,8 @@ class Program(object):
         '''读取对象'''
         ret = None
         try :
-            with FileLock(self._shelvefn + ".lock"):
-                with shelve.open(self._shelvefn, flag='r') as sh:
+            with FileLock(self.shelveFilename + ".lock"):
+                with shelve.open(self.shelveFilename, flag='r') as sh:
                     if objId in sh :
                         ret = sh[objId]
         except Exception as ex:

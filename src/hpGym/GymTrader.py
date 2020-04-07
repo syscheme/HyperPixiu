@@ -558,7 +558,7 @@ class OfflineSimulator(BackTestApp):
 
         self.wkTrader.gymReset()
         self.wkTrader._agent.enableMaster(self._masterExportHomeDir)
-        self.wkTrader.account._skipSavingByEvent = True
+        self._account.account._skipSavingByEvent = True
         return True
 
     def OnEvent(self, ev): # this overwrite BackTest's because there are some different needs

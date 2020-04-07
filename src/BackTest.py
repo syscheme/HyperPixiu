@@ -768,7 +768,9 @@ class OnlineSimulator(MetaTrader):
         self._maxBalance = self._startBalance
 
         # backtest will always clear the datapath
-        self.__wkTrader._outDir = '%s%s%s' % (self.dataRoot, self.ident, self.program.progId)
+        self.__wkTrader._outDir = '%s%s.P%s' % (self.dataRoot, self.ident, self.program.pid)
+        self.program.setShelveFilename('%s%s.sobj' % (self.dataRoot, self.ident))
+
         try :
             shutil.rmtree(self.__wkTrader._outDir)
         except:
@@ -797,6 +799,11 @@ class OnlineSimulator(MetaTrader):
             self._recorder.registerCategory(Account.RECCATE_DAILYPOS,    params= {'columns' : DailyPosition.COLUMNS})
             self._recorder.registerCategory(Account.RECCATE_DAILYRESULT, params= {'columns' : DailyResult.COLUMNS})
 
+            self._recorder.registerCategory(EVENT_TICK,       params={'columns': TickData.COLUMNS})
+            self._recorder.registerCategory(EVENT_KLINE_1MIN, params={'columns': KLineData.COLUMNS})
+            self._recorder.registerCategory(EVENT_KLINE_5MIN, params={'columns': KLineData.COLUMNS})
+            self._recorder.registerCategory(EVENT_KLINE_1DAY, params={'columns': KLineData.COLUMNS})
+
         if self.__wkTrader :
             self.__wkTrader._recorder = self._recorder
             
@@ -819,7 +826,19 @@ class OnlineSimulator(MetaTrader):
     # impl/overwrite of BaseApplication
     @property
     def ident(self) :
-        return '%s/%s' % (self.__class__.__name__, (self.__wkTrader.ident if self.__wkTrader else self._id))
+        ret = self.__class__.__name__
+        if self._id and len(self._id) >0:
+            ret += '.%s' % self._id
+        if not self.__wkTrader:
+            return ret
+        
+        ret += '/%s' % self.__wkTrader.__class__.__name__
+        try :
+            if self.__wkTrader._tradeSymbol:
+                ret += '.%s' % self.__wkTrader._tradeSymbol
+        except:
+            pass
+        return ret
 
     def stop(self):
         """退出程序前调用，保证正常退出"""

@@ -50,10 +50,6 @@ if __name__ == '__main__':
 
     rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(simulator.outdir, 'online_%s.tcsv' % SYMBOL))
     simulator.setRecorder(rec)
-    rec.registerCategory(EVENT_TICK, params={'columns': TickData.COLUMNS})
-    rec.registerCategory(EVENT_KLINE_1MIN, params={'columns': KLineData.COLUMNS})
-    rec.registerCategory(EVENT_KLINE_5MIN, params={'columns': KLineData.COLUMNS})
-    rec.registerCategory(EVENT_KLINE_1DAY, params={'columns': KLineData.COLUMNS})
 
     mc = p.createApp(SinaCrawler, configNode ='crawler', marketState = gymtdr._marketState, recorder=rec) # md = SinaCrawler(p, None);
     mc._postCaptured = True

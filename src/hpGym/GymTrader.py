@@ -504,7 +504,7 @@ class GymTrader(BaseTrader):
 ########################################################################
 class OfflineSimulator(BackTestApp):
     '''
-    OfflineSimulator extends GymTrader by reading history and perform training
+    OfflineSimulator extends BackTestApp by reading history and perform training
     '''
     def __init__(self, program, trader, histdata, **kwargs):
         '''Constructor

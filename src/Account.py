@@ -198,6 +198,7 @@ class Account(MetaAccount):
 
         self._state        = Account.STATE_CLOSE
         self._mode         = Account.BROKER_API_ASYNC
+        self._skipSavingByEvent = False
 
         self._recorder = None
         if self._contractSize <=0:
@@ -526,7 +527,7 @@ class Account(MetaAccount):
                     pos.posAvail = round(pos.posAvail - orderData.totalVolume, 2)
 
         self.postEvent_Order(orderData)
-        self.save()
+        if not self._skipSavingByEvent : self.save()
         self.record(Account.RECCATE_ORDER, orderData)
 
     def _broker_cancelOrder(self, brokerOrderId):
@@ -562,7 +563,7 @@ class Account(MetaAccount):
 
         self.info('order.brokerOrderId[%s] canceled' % orderData.brokerOrderId)
         self.postEvent_Order(orderData)
-        self.save()
+        if not self._skipSavingByEvent : self.save()
 
     def findOrdersOfStrategy(self, strategyId, symbol=None):
         ret = []
@@ -598,7 +599,7 @@ class Account(MetaAccount):
                 self.__changePos(self.cashSymbol, turnover + commission + slippage)
 
         self.postEvent_Order(orderData)
-        self.save()
+        if not self._skipSavingByEvent : self.save()
 
     def _broker_onTrade(self, trade):
         """交易成功回调"""
@@ -656,7 +657,7 @@ class Account(MetaAccount):
         cashAvail, cashTotal = self.cashAmount()
         self.info('broker_onTrade() trade[%s] processed, pos[%s->%s/%s] cash[%.2f/%.2f]' % (trade.desc, strPrevPos, pos.posAvail, pos.position, cashAvail, cashTotal))#, pos.desc))
         self.postEventData(Account.EVENT_TRADE, copy.copy(trade))
-        self.save()
+        if not self._skipSavingByEvent : self.save()
         self.record(Account.RECCATE_TRADE, trade)
 
     def _broker_onOpenOrders(self, dictOrders):

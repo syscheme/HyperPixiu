@@ -411,7 +411,7 @@ class MoneyflowPerspective(MarketData):
     @property
     def desc(self) :
         str = '%s>%s ' % (self.focus[len(MARKETDATE_EVENT_PREFIX):], self.getAsOf(self.focus).strftime('%Y-%m-%dT%H:%M:%S'))
-        for i in Perspective.EVENT_SEQ :
+        for i in MoneyflowPerspective.EVENT_SEQ :
             str += '%sX%d/%d,' % (i[len(MARKETDATE_EVENT_PREFIX):], self._stacks[i].size, self._stacks[i].evictSize)
         return str
 
@@ -618,10 +618,13 @@ class PerspectiveState(MarketState):
         ''' 
         @return the desc of specified symbol
         '''
+        strDesc=''
         if symbol :
             if symbol in self.__dictPerspective.keys():
-                return self.__dictPerspective[symbol].desc
-            return '%s unknown' % symbol
+                strDesc += self.__dictPerspective[symbol].desc
+            if symbol in self.__dictMoneyflow.keys():
+                strDesc += self.__dictMoneyflow[symbol].desc
+            return strDesc
         
         strDesc=''
         for s, v in self.__dictPerspective.items() :

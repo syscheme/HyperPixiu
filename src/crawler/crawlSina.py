@@ -63,32 +63,35 @@ class SinaCrawler(MarketCrawler):
         # duration to complete, so this crawler should be threaded
         # self._threadless = False
 
-        self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline] #, self.__step_pollMoneyflow]
-
+        self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline, self.__step_pollMoneyflow]
         self._proxies = {}
 
-        # self._depth_ticks  = self.getConfig('depth/ticks', 120) # covers 2min at least, if we have TickTo1min built in
-        # self._depth_1min   = self.getConfig('depth/1min',  60)  # 48lines during an AShare day, 96 to cover two days
-        # self._depth_5min   = self.getConfig('depth/5min',  96)  # 48lines during an AShare day, 96 to cover two days
-        # self._depth_1day   = self.getConfig('depth/1day',  260) # for exmaple, thereTrue are 245 trading-days in AShare market during YR2018, so take 280 to keep a year
         self._secYield456  = self.getConfig('yield456',    230)
         self.__excludeAt404= self.getConfig('excludeAt404',True)
-        # self.__minimalKLYield = self.getConfig('minimalKLYield', 0.4) # 0.4sec, the minimal interval between two KL query in order not to trigger SINA 456
-        # self.__minimalKLYield = timedelta(seconds=int(self.__minimalKLYield), microseconds=(int(self.__minimalKLYield *1000) % 1000) *1000)
         symbols            = self.getConfig('symbolsToCrawl', [])
 
+        self.__idxTickBatch, self.__idxKL, self.__idxMF = 0,0,0
         self.__tickBatches = None
-        self.__idxTickBatch, self.__nextStamp_PollTick = 0, None
 
         self.__tickToKL1m = {} # dict of symbol to SinaTickToKL1m
-        self.__idxKL, self.__stampYieldTill_KL = 0, None
-        
-        self.__idxMF, self.__stampYieldMF = 0, None
-
-        self.__step_poll1st() # perform an init-step
+        self.__stampNextPolls = {} # dict of symbol_event to float stamp
 
         if len(symbols) >0:
             self.subscribe(symbols)
+
+        self.__step_poll1st() # perform an init-step
+
+    def __stampOfNext(self, symbol, eventType):
+        key = '%s_%s' % (symbol, eventType)
+        if key in self.__stampNextPolls.keys():
+            return self.__stampNextPolls[key]
+        return 0
+
+    def __scheduleNext(self, symbol, eventType, seconds):
+        key = '%s_%s' % (symbol, eventType)
+        ftime = datetime2float(datetime.now()) + seconds
+        self.__stampNextPolls[key]= ftime
+        return ftime
 
     #------------------------------------------------
     # sub-steps
@@ -127,11 +130,11 @@ class SinaCrawler(MarketCrawler):
         self.__idxTickBatch = self.__idxTickBatch % batches
         if 0 == self.__idxTickBatch : # this is a new round
             # yield some time in order not to poll SiNA too frequently
-            if self.__nextStamp_PollTick and (self._stepAsOf < self.__nextStamp_PollTick 
-                or self.__nextStamp_PollTick > self.__END_OF_TODAY):
+            nextStamp = self.__stampOfNext('all', 'tick')
+            if self._stepAsOf < nextStamp  or nextStamp > self.__END_OF_TODAY :
                 return cBusy
 
-            self.__nextStamp_PollTick = self._stepAsOf +0.7
+            self.__scheduleNext('all', 'tick', 0.7)
 
         idxBtch = self.__idxTickBatch
         self.__idxTickBatch +=1
@@ -144,7 +147,7 @@ class SinaCrawler(MarketCrawler):
             
         # succ at previous batch here
         if len(result) <=0 : 
-            self.__nextStamp_PollTick + 60*10 # likely after a trade-day closed 10min
+            self.__scheduleNext('all', 'tick', 60*10) # likely after a trade-day closed 10min
 
         cMerged =0
         for tk in result:
@@ -180,7 +183,7 @@ class SinaCrawler(MarketCrawler):
             self.info("step_pollTicks() btch[%d/%d] cached %d new-tick of %d/%d symbols into psp: %s" %(idxBtch +1, batches, cMerged, len(result), len(self.__tickBatches[idxBtch]), ','.join(updated)))
         else :
             if not Account_AShare.duringTradeHours(stampNow):
-                self.__nextStamp_PollTick += (61 - stampNow.second)
+                self.__scheduleNext('all', 'tick', (61 - stampNow.second))
                 self.info("step_pollTicks() btch[%d/%d] no new ticks during off-market time, extended sleep time" %(idxBtch +1, batches))
             else :
                 self.debug("step_pollTicks() btch[%d/%d] no new ticks updated" %(idxBtch +1, batches))
@@ -189,14 +192,14 @@ class SinaCrawler(MarketCrawler):
 
     def __step_pollKline(self):
         cBusy =0       
+        if self._stepAsOf < self.__stampOfNext('all', 'KL'):
+            return cBusy
+
         s = None
         cSyms = len(self._symbolsToPoll)
         if cSyms >0:
             self.__idxKL = self.__idxKL % cSyms
             s = self._symbolsToPoll[self.__idxKL]
-
-        if self.__stampYieldTill_KL and self._stepAsOf < self.__stampYieldTill_KL:
-            return cBusy
 
         self.__idxKL += 1
 
@@ -215,23 +218,25 @@ class SinaCrawler(MarketCrawler):
         stampNow = datetime2float(datetime.now())
         for evType in [EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
 
+            if self._stepAsOf < self.__stampOfNext(s, evType):
+                continue
+
             stampStart = stampNow
             minutes = SinaCrawler.MINs_OF_EVENT[evType]
-            if minIntvKL > minutes /2:
-                minIntvKL = minutes /2.0
+            self.__scheduleNext(s, evType, min(30, minutes)*60*0.7)
 
-            if minutes < 240:
-                # in-day events
-                etimatedNext = datetime2float(self.marketState.getAsOf(s, evType)) + 60*minutes -1
-            else :
-                etimatedNext = datetime2float(self.marketState.getAsOf(s, evType)) + 60*(int((minutes) /240)*60*24)  -1
-                sz, esz = self.marketState.sizesOf(s, evType)
-                tmpStamp = datetime2float(self.marketState.stampUpdatedOf(s, evType))
-                if sz >=esz and tmpStamp and tmpStamp >= self.__BEGIN_OF_TODAY:
-                    etimatedNext = tmpStamp + 60*60 # one hr later
+            # if minutes < 240:
+            #     # in-day events
+            #     etimatedNext = datetime2float(self.marketState.getAsOf(s, evType)) + 60*minutes -1
+            # else :
+            #     etimatedNext = datetime2float(self.marketState.getAsOf(s, evType)) + 60*(int((minutes) /240)*60*24)  -1
+            #     sz, esz = self.marketState.sizesOf(s, evType)
+            #     tmpStamp = datetime2float(self.marketState.stampUpdatedOf(s, evType))
+            #     if sz >=esz and tmpStamp and tmpStamp >= self.__BEGIN_OF_TODAY:
+            #         etimatedNext = tmpStamp + 60*60 # one hr later
 
-            if etimatedNext > self.__END_OF_TODAY or stampStart < etimatedNext:
-                continue
+            # if etimatedNext > self.__END_OF_TODAY or stampStart < etimatedNext:
+            #     continue
 
             size, lines = self.marketState.sizesOf(s, evType)
             if size >0:
@@ -242,7 +247,7 @@ class SinaCrawler(MarketCrawler):
             if httperr !=200:
                 self.error("step_pollKline(%s:%s) failed, err(%s)" %(s, evType, httperr))
                 if httperr == 456:
-                    self.__stampYieldTill_KL = datetime.now() + timedelta(seconds=self._secYield456)
+                    self.__scheduleNext('all', 'KL', self._secYield456)
                     self.warn("step_pollKline(%s:%s) [%d/%d]sym SINA complained err(%s), yielding %ssec" %(s, evType, self.__idxKL, cSyms, httperr, self._secYield456))
                     return cBusy
            
@@ -253,7 +258,7 @@ class SinaCrawler(MarketCrawler):
                 continue
 
             # succ at query
-            self.__stampYieldTill_KL = self._stepAsOf + minIntvKL *60
+            self.__scheduleNext(s, evType, min(60, minutes)*60*0.7)
             cMerged =0
             for i in result:
                 cBusy +=1
@@ -266,9 +271,9 @@ class SinaCrawler(MarketCrawler):
 
             stampNow = datetime2float(datetime.now())
             if cMerged >0:
-                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %.2fsec, psp now: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
+                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %.2fsec, psp: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
             elif not Account_AShare.duringTradeHours(stampNow):
-                self.__stampYieldTill_KL += minIntvKL
+                self.__scheduleNext('all', 'KL', 60*60)
                 self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-hours" %(s, evType, self.__idxKL, cSyms))
 
         return cBusy
@@ -284,47 +289,45 @@ class SinaCrawler(MarketCrawler):
 
     def __step_pollMoneyflow(self):
         cBusy =0       
+        if self._stepAsOf < self.__stampOfNext('all', 'MF'):
+            return cBusy
+
         s = None
         cSyms = len(self._symbolsToPoll)
         if cSyms >0:
             self.__idxMF = self.__idxMF % cSyms
             s = self._symbolsToPoll[self.__idxMF]
 
-        stampStart = datetime.now()
-
-        if self.__stampYieldMF and stampStart < self.__stampYieldMF:
-            # self.debug("step_pollKline(%s) symb[%d/%d] yield per SINA(456), %s left" %(s, self.__idxKL, cSyms, self.__stampYieldTill_KL -stampStart))
-            return cBusy
-
         self.__idxMF += 1
 
-        if not s or len(s) <=0:
-            del self._symbolsToPoll[s]
-            return 1 # return as busy for this error case
+        if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC):
+            return cBusy # well off-trade hours
 
-        # psp = self.marketState[s]
+        stampNow = datetime2float(datetime.now())
         for evType in [EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY] :
-            minutes = SinaCrawler.MINs_OF_EVENT[evType]
-            etimatedNext = datetime2float(self.marketState.moneyflowAsOf(s, evType)) + 60*(minutes if minutes < 240 else int(minutes /240)*60*24) -1
-            if etimatedNext > self.__END_OF_TODAY or self._stepAsOf < etimatedNext:
+
+            if self._stepAsOf < self.__stampOfNext(s, evType):
                 continue
+
+            stampStart = stampNow
+            minutes = SinaCrawler.MINs_OF_EVENT[evType]
+            self.__scheduleNext(s, evType, min(30, minutes)*60*0.7)
 
             httperr, result = self.GET_MoneyFlow(s, EVENT_MONEYFLOW_1MIN== evType)
             if httperr !=200:
                 self.error("step_pollMoneyflow(%s:%s) failed, err(%s)" %(s, evType, httperr))
                 if httperr == 456:
-                    self.__stampYieldMF = datetime.now() + timedelta(seconds=self._secYield456)
+                    self.__scheduleNext('all', 'MF', self._secYield456)
                     self.warn("step_pollMoneyflow(%s:%s) [%d/%d]sym SINA complained err(%s), yielding %ssec" %(s, evType, self.__idxKL, cSyms, httperr, self._secYield456))
                     return cBusy
            
                 if httperr == 404 and self.__excludeAt404:
-                    # del self._symbolsToPoll[s]
                     self.warn("step_pollMoneyflow(%s:%s) [%d/%d]sym excluded symbol per err(%s)" %(s, evType, self.__idxKL, cSyms, httperr))
 
                 continue
 
             # succ at query
-            self.__stampYieldMF = stampStart + self.__minimalMFYield
+            self.__scheduleNext(s, evType, min(60, minutes)*60*0.7)
             cMerged =0
             for i in result:
                 cBusy +=1
@@ -335,14 +338,12 @@ class SinaCrawler(MarketCrawler):
                     cMerged +=1
                     self.OnEventCaptured(ev)
 
-            stampNow = datetime.now()
+            stampNow = datetime2float(datetime.now())
             if cMerged >0:
-                self.info("step_pollMoneyflow(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %s, psp now: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
+                self.info("step_pollMoneyflow(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %.3fs, psp: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
             elif not Account_AShare.duringTradeHours(stampNow):
-                self.__minimalMFYield = stampNow + CLOCK_ERROR
-                self.info("step_pollMoneyflow(%s:%s) [%d/%d]sym no new KLs during off-time of AShare, actively yielding 2min to avoid 456" %(s, evType, self.__idxKL, cSyms))
-
-            stampStart = stampNow
+                self.__scheduleNext('all', 'MF', 60*60)
+                self.info("step_pollMoneyflow(%s:%s) [%d/%d]sym no new MFs during off-hours" %(s, evType, self.__idxKL, cSyms))
 
         return cBusy
 
@@ -579,7 +580,7 @@ class SinaCrawler(MarketCrawler):
             mfseq.append(mfdata)
 
         mfseq.sort(key=SinaCrawler.sortKeyOfMD)
-        return True, mfseq
+        return httperr, mfseq
 
     #------------------------------------------------    
     def GET_Transactions(self, symbol):

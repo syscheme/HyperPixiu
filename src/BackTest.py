@@ -803,6 +803,8 @@ class OnlineSimulator(MetaTrader):
             self._recorder.registerCategory(EVENT_KLINE_1MIN, params={'columns': KLineData.COLUMNS})
             self._recorder.registerCategory(EVENT_KLINE_5MIN, params={'columns': KLineData.COLUMNS})
             self._recorder.registerCategory(EVENT_KLINE_1DAY, params={'columns': KLineData.COLUMNS})
+            self._recorder.registerCategory(EVENT_MONEYFLOW_1MIN, params={'columns': MoneyflowData.COLUMNS})
+            self._recorder.registerCategory(EVENT_MONEYFLOW_1DAY, params={'columns': MoneyflowData.COLUMNS})
 
         if self.__wkTrader :
             self.__wkTrader._recorder = self._recorder

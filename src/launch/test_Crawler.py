@@ -53,10 +53,13 @@ class TestCrawler(unittest.TestCase):
         p._heartbeatInterval =0.2 # yield at idle for 200msec
 
         rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder')
-        rec.registerCategory(EVENT_TICK, params={'columns': TickData.COLUMNS})
-        rec.registerCategory(EVENT_KLINE_1MIN, params={'columns': KLineData.COLUMNS})
-        rec.registerCategory(EVENT_KLINE_5MIN, params={'columns': KLineData.COLUMNS})
-        rec.registerCategory(EVENT_KLINE_1DAY, params={'columns': KLineData.COLUMNS})
+        rec.registerCategory(EVENT_TICK,           params={'columns': TickData.COLUMNS})
+        rec.registerCategory(EVENT_KLINE_1MIN,     params={'columns': KLineData.COLUMNS})
+        rec.registerCategory(EVENT_KLINE_5MIN,     params={'columns': KLineData.COLUMNS})
+        rec.registerCategory(EVENT_KLINE_1DAY,     params={'columns': KLineData.COLUMNS})
+        rec.registerCategory(EVENT_MONEYFLOW_1MIN, params={'columns': MoneyflowData.COLUMNS})
+        rec.registerCategory(EVENT_MONEYFLOW_1DAY, params={'columns': MoneyflowData.COLUMNS})
+
         mc = p.createApp(SinaCrawler, configNode ='crawler', recorder=rec) # md = SinaCrawler(p, None);
         # _, result = md.searchKLines("000002", EVENT_KLINE_5MIN)
         # _, result = md.getRecentTicks('sh601006,sh601005,sh000001,sz000001')

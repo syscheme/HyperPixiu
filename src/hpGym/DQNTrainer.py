@@ -16,10 +16,11 @@ from tensorflow.keras.models import model_from_json
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 # from tensorflow.keras import backend
 from tensorflow.keras.layers import Input, Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D, GlobalAveragePooling1D, ZeroPadding1D
-from tensorflow.keras.layers import BatchNormalization, Flatten
+from tensorflow.keras.layers import BatchNormalization, Flatten, add
 from tensorflow.keras import regularizers
 from tensorflow.keras import backend as backend
 from tensorflow.keras.utils import Sequence
+# from keras.layers.merge import add
 
 import tensorflow as tf
 
@@ -153,6 +154,7 @@ class MarketDirClassifier(BaseApplication):
             'Cnn1Dx4R1a' : self.__createModel_Cnn1Dx4R1a,
             'Cnn1Dx4R2'  : self.__createModel_Cnn1Dx4R2,
             'ResNet34d1' : self.__createModel_ResNet34d1,
+            'ResNet50d1' : self.__createModel_ResNet50d1
             }
 
         STEPMETHODS = {
@@ -1379,56 +1381,101 @@ class MarketDirClassifier(BaseApplication):
 
         return model
 
-    # not ready
+    # ResNet refer to：https://blog.csdn.net/qq_25491201/java/article/details/78405549
     def __createModel_ResNet34d1(self):
 
         self._wkModelId = 'ResNet34d1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
-
-        # input = Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,))
-        input = Input(shape=(self._stateSize,))
-        x = input # = ZeroPadding1D()(input)
+        layerIn = Input((self._stateSize,))
+        x = Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,))(layerIn)
 
         #conv1
-        x= self.__Conv1d_BN(x, nb_filter=64, kernel_size=3, padding='valid')
+        x= self.__resBlk_basic(x, nb_filter=64, kernel_size=3, padding='valid')
         x= MaxPooling1D(2)(x)
 
         #conv2_x
-        x = self.__identityBlock(x, nb_filter=64, kernel_size=3)
-        x = self.__identityBlock(x, nb_filter=64, kernel_size=3)
-        x = self.__identityBlock(x, nb_filter=64, kernel_size=3)
-        x = self.__identityBlock(x, nb_filter=64, kernel_size=3)
+        x = self.__resBlk_identity(x, nb_filter=64, kernel_size=3)
+        x = self.__resBlk_identity(x, nb_filter=64, kernel_size=3)
+        x = self.__resBlk_identity(x, nb_filter=64, kernel_size=3)
+        x = self.__resBlk_identity(x, nb_filter=64, kernel_size=3)
 
         #conv3_x
-        x = self.__identityBlock(x, nb_filter=128, kernel_size=3, with_conv_shortcut=True)
-        x = self.__identityBlock(x, nb_filter=128, kernel_size=3)
-        x = self.__identityBlock(x, nb_filter=128, kernel_size=3)
-        x = self.__identityBlock(x, nb_filter=128, kernel_size=3)
+        x = self.__resBlk_identity(x, nb_filter=128, kernel_size=3, with_conv_shortcut=True)
+        x = self.__resBlk_identity(x, nb_filter=128, kernel_size=3)
+        x = self.__resBlk_identity(x, nb_filter=128, kernel_size=3)
+        x = self.__resBlk_identity(x, nb_filter=128, kernel_size=3)
 
         #conv4_x
-        x = self.__identityBlock(x, nb_filter=256, kernel_size=3, with_conv_shortcut=True)
-        x = self.__identityBlock(x, nb_filter=256, kernel_size=3)
-        x = self.__identityBlock(x, nb_filter=256, kernel_size=3)
-        x = self.__identityBlock(x, nb_filter=256, kernel_size=3)
-        x = self.__identityBlock(x, nb_filter=256, kernel_size=3)
-        x = self.__identityBlock(x, nb_filter=256, kernel_size=3)
+        x = self.__resBlk_identity(x, nb_filter=256, kernel_size=3, with_conv_shortcut=True)
+        x = self.__resBlk_identity(x, nb_filter=256, kernel_size=3)
+        x = self.__resBlk_identity(x, nb_filter=256, kernel_size=3)
+        x = self.__resBlk_identity(x, nb_filter=256, kernel_size=3)
+        x = self.__resBlk_identity(x, nb_filter=256, kernel_size=3)
+        x = self.__resBlk_identity(x, nb_filter=256, kernel_size=3)
 
         #conv5_x
-        x = self.__identityBlock(x, nb_filter=512, kernel_size=3, with_conv_shortcut=True)
-        x = self.__identityBlock(x, nb_filter=512, kernel_size=3)
-        x = self.__identityBlock(x, nb_filter=512, kernel_size=3)
+        x = self.__resBlk_identity(x, nb_filter=512, kernel_size=3, with_conv_shortcut=True)
+        x = self.__resBlk_identity(x, nb_filter=512, kernel_size=3)
+        x = self.__resBlk_identity(x, nb_filter=512, kernel_size=3)
         x = GlobalAveragePooling1D()(x)
         x = Flatten()(x)
         x = Dense(self._actionSize, activation='softmax')(x)
 
-        model = Model(inputs=inpt, outputs=x)
+        model = Model(inputs=layerIn, outputs=x)
+        sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+        model.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
         return model
 
-        model.add(Conv1D(512, 3, padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
+    def __createModel_ResNet50d1(self):
 
-    def __Conv1d_BN(self, x, nb_filter, kernel_size, padding='same', regularizer=None, name=None):
+        self._wkModelId = 'ResNet50d1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
+        weight_decay = 0.0005
+
+        layerIn = Input((self._stateSize,))
+        x = Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,))(layerIn)
+
+        #conv1
+        x = self.__resBlk_basic(x, nb_filter=64, kernel_size=3, padding='valid')
+        x = MaxPooling1D(2)(x)
+
+        #conv2_x
+        x = self.__resBlk_bottleneck(x, nb_filters=[64,64,256], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[64,64,256])
+        x = self.__resBlk_bottleneck(x, nb_filters=[64,64,256])
+
+        #conv3_x
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512])
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512])
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512])
+
+        #conv4_x
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 1024], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 1024])
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 1024])
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 1024])
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 1024])
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 1024])
+
+        #conv5_x
+        x = self.__resBlk_bottleneck(x, nb_filters=[512, 512, 2048], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[512, 512, 2048])
+        x = self.__resBlk_bottleneck(x, nb_filters=[512, 512, 2048])
+
+        x = GlobalAveragePooling1D()(x)
+        x = Flatten()(x)
+        x = Dense(self._actionSize, activation='softmax')(x)
+
+        model = Model(inputs=layerIn, outputs=x)
+        sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+        model.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
+        return model
+
+
+    def __resBlk_basic(self, x, nb_filter, kernel_size, padding='same', regularizer=None, name=None):
         if name is not None:
             bn_name = name + '_bn'
             conv_name = name + '_conv'
@@ -1440,71 +1487,30 @@ class MarketDirClassifier(BaseApplication):
         x = BatchNormalization(name=bn_name)(x)
         return x
 
-    def __identityBlock(self, inpt, nb_filter, kernel_size, with_conv_shortcut=False):
-        x = self.__Conv1d_BN(inpt, nb_filter=nb_filter, kernel_size=kernel_size, padding='same')
-        x = self.__Conv1d_BN(x, nb_filter=nb_filter, kernel_size=kernel_size, padding='same')
+    def __resBlk_identity(self, inpt, nb_filter, kernel_size, with_conv_shortcut=False):
+        x = self.__resBlk_basic(inpt, nb_filter=nb_filter, kernel_size=kernel_size, padding='same')
+        x = self.__resBlk_basic(x, nb_filter=nb_filter, kernel_size=kernel_size, padding='same')
         if with_conv_shortcut:
-            shortcut = self.__Conv1d_BN(inpt, nb_filter=nb_filter, kernel_size=kernel_size)
+            shortcut = self.__resBlk_basic(inpt, nb_filter=nb_filter, kernel_size=kernel_size)
             x = add([x, shortcut])
             return x
         else:
             x = add([x, inpt])
             return x
 
-    def __bottleneckBlock(self, inpt,nb_filters,strides=(1,1),with_conv_shortcut=False):
+    def __resBlk_bottleneck(self, inpt, nb_filters, with_conv_shortcut=False):
         k1,k2,k3=nb_filters
-        x = self.__Conv1d_BN(inpt, nb_filter=k1, kernel_size=1, strides=strides, padding='same')
-        x = self.__Conv1d_BN(x, nb_filter=k2, kernel_size=3, padding='same')
-        x = self.__Conv1d_BN(x, nb_filter=k3, kernel_size=1, padding='same')
+        x = self.__resBlk_basic(inpt, nb_filter=k1, kernel_size=1, padding='same')
+        x = self.__resBlk_basic(x, nb_filter=k2, kernel_size=3, padding='same')
+        x = self.__resBlk_basic(x, nb_filter=k3, kernel_size=1, padding='same')
         if with_conv_shortcut:
-            shortcut = self.__Conv1d_BN(inpt, nb_filter=k3, strides=strides, kernel_size=1)
+            shortcut = self.__resBlk_basic(inpt, nb_filter=k3, kernel_size=1)
             x = add([x, shortcut])
             return x
         else:
             x = add([x, inpt])
             return x
 
-'''
-# 原文链接：https://blog.csdn.net/qq_25491201/java/article/details/78405549
-
-
-def resnet_50(width,height,channel,classes):
-    inpt = Input(shape=(width, height, channel))
-    x = ZeroPadding2D((3, 3))(inpt)
-    x = __Conv1d_BN(x, nb_filter=64, kernel_size=(7, 7), strides=(2, 2), padding='valid')
-    x = MaxPooling2D(pool_size=(3, 3), strides=(2, 2), padding='same')(x)
-
-    #conv2_x
-    x = __bottleneckBlock(x, nb_filters=[64,64,256],strides=(1,1),with_conv_shortcut=True)
-    x = __bottleneckBlock(x, nb_filters=[64,64,256])
-    x = __bottleneckBlock(x, nb_filters=[64,64,256])
-
-    #conv3_x
-    x = __bottleneckBlock(x, nb_filters=[128, 128, 512],strides=(2,2),with_conv_shortcut=True)
-    x = __bottleneckBlock(x, nb_filters=[128, 128, 512])
-    x = __bottleneckBlock(x, nb_filters=[128, 128, 512])
-    x = __bottleneckBlock(x, nb_filters=[128, 128, 512])
-
-    #conv4_x
-    x = __bottleneckBlock(x, nb_filters=[256, 256, 1024],strides=(2,2),with_conv_shortcut=True)
-    x = __bottleneckBlock(x, nb_filters=[256, 256, 1024])
-    x = __bottleneckBlock(x, nb_filters=[256, 256, 1024])
-    x = __bottleneckBlock(x, nb_filters=[256, 256, 1024])
-    x = __bottleneckBlock(x, nb_filters=[256, 256, 1024])
-    x = __bottleneckBlock(x, nb_filters=[256, 256, 1024])
-
-    #conv5_x
-    x = __bottleneckBlock(x, nb_filters=[512, 512, 2048], strides=(2, 2), with_conv_shortcut=True)
-    x = __bottleneckBlock(x, nb_filters=[512, 512, 2048])
-    x = __bottleneckBlock(x, nb_filters=[512, 512, 2048])
-
-    x = AveragePooling2D(pool_size=(7, 7))(x)
-    x = Flatten()(x)
-    x = Dense(classes, activation='softmax')(x)
-
-    model = Model(inputs=inpt, outputs=x)
-    return model
-'''
 
 ########################################################################
 # to work as a generator for Keras fit_generator() by reading replay-buffers from HDF5 file

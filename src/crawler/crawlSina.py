@@ -182,7 +182,7 @@ class SinaCrawler(MarketCrawler):
         if cMerged >0:
             self.info("step_pollTicks() btch[%d/%d] cached %d new-tick of %d/%d symbols into psp: %s" %(idxBtch +1, batches, cMerged, len(result), len(self.__tickBatches[idxBtch]), ','.join(updated)))
         else :
-            if not Account_AShare.duringTradeHours(stampNow):
+            if not Account_AShare.duringTradeHours():
                 self.__scheduleNext('all', 'tick', (61 - stampNow.second))
                 self.info("step_pollTicks() btch[%d/%d] no new ticks during off-market time, extended sleep time" %(idxBtch +1, batches))
             else :
@@ -271,8 +271,8 @@ class SinaCrawler(MarketCrawler):
 
             stampNow = datetime2float(datetime.now())
             if cMerged >0:
-                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %.2fsec, psp: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
-            elif not Account_AShare.duringTradeHours(stampNow):
+                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %.2fs, psp: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
+            elif not Account_AShare.duringTradeHours():
                 self.__scheduleNext('all', 'KL', 60*60)
                 self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-hours" %(s, evType, self.__idxKL, cSyms))
 
@@ -340,8 +340,8 @@ class SinaCrawler(MarketCrawler):
 
             stampNow = datetime2float(datetime.now())
             if cMerged >0:
-                self.info("step_pollMoneyflow(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %.3fs, psp: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
-            elif not Account_AShare.duringTradeHours(stampNow):
+                self.info("step_pollMoneyflow(%s:%s) [%d/%d]sym merged %d/%d MFs into stack, took %.3fs, psp: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
+            elif not Account_AShare.duringTradeHours():
                 self.__scheduleNext('all', 'MF', 60*60)
                 self.info("step_pollMoneyflow(%s:%s) [%d/%d]sym no new MFs during off-hours" %(s, evType, self.__idxKL, cSyms))
 
@@ -412,6 +412,8 @@ class SinaCrawler(MarketCrawler):
         # result.decode('utf-8')
         klineseq =[]
         jsonData = demjson.decode(text)
+        if not jsonData:
+            return httperr, klineseq
 
         for kl in jsonData :
             kldata = KLineData("AShare", symbol)
@@ -553,16 +555,19 @@ class SinaCrawler(MarketCrawler):
         if byMinutes:
             pbeg, pend = text.find('[{'), text.rfind('}]')
             if pbeg<0 or pbeg>=pend:
-                return mfseq
+                return httperr, mfseq
             text = text[pbeg:pend] + '}]'
         if len(text)>80*1024: # maximal 80KB is enough to cover 1Yr
             # EOM = text[text.find('}'):]
             text = text[:80*1024]
             pend = text.rfind('},{')
             if pend<=0:
-                return mfseq
+                return httperr, mfseq
             text = text[:pend] + "}]"
+
         jsonData = demjson.decode(text)
+        if not jsonData:
+            return httperr, mfseq
 
         for mf in jsonData :
             mfdata = MoneyflowData("AShare", symbol)
@@ -628,11 +633,15 @@ class SinaCrawler(MarketCrawler):
 
         spliterates = []
         str=text[text.find('{'):text.rfind('}')+1]
-        jsonData = demjson.decode(re.sub('_([0-9]{4})_([0-9]{2})_([0-9]{2})', r'\1-\2-\3', str)) # convert _2019_05_14 to 2019-05-14
+
         ret = []
+        jsonData = demjson.decode(re.sub('_([0-9]{4})_([0-9]{2})_([0-9]{2})', r'\1-\2-\3', str)) # convert _2019_05_14 to 2019-05-14
+        if not jsonData:
+            return httperr, ret
+
         for k,v in jsonData['data'].items() : 
             ret.append({k, v.toFloatVal()})
-        return True, ret
+        return httperr, ret
 
 ########################################################################
 class SinaTickToKL1m(object):

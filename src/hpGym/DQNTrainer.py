@@ -154,6 +154,7 @@ class MarketDirClassifier(BaseApplication):
             'Cnn1Dx4R1a' : self.__createModel_Cnn1Dx4R1a,
             'Cnn1Dx4R2'  : self.__createModel_Cnn1Dx4R2,
             'ResNet18d1' : self.__createModel_ResNet18d1,
+            'ResNet2Xd1' : self.__createModel_ResNet2Xd1,
             'ResNet34d1' : self.__createModel_ResNet34d1,
             'ResNet50d1' : self.__createModel_ResNet50d1,
 
@@ -1673,14 +1674,50 @@ class MarketDirClassifier(BaseApplication):
         x = self.__resBlk_identity(x, nb_filter=64, kernel_size=3, with_conv_shortcut=True)
         x = self.__resBlk_identity(x, nb_filter=64, kernel_size=3, with_conv_shortcut=True)
         #res2
-        x = self.__resBlk_identity(x, nb_filter=128, kernel_size=3) # , with_conv_shortcut=True)
+        x = self.__resBlk_identity(x, nb_filter=128, kernel_size=3, with_conv_shortcut=True)
         x = self.__resBlk_identity(x, nb_filter=128, kernel_size=3, with_conv_shortcut=True)
         #res3
-        x = self.__resBlk_identity(x, nb_filter=256, kernel_size=3) # , with_conv_shortcut=True)
+        x = self.__resBlk_identity(x, nb_filter=256, kernel_size=3, with_conv_shortcut=True)
         x = self.__resBlk_identity(x, nb_filter=256, kernel_size=3, with_conv_shortcut=True)
         #res4
-        x = self.__resBlk_identity(x, nb_filter=512, kernel_size=3) # , with_conv_shortcut=True)
         x = self.__resBlk_identity(x, nb_filter=512, kernel_size=3, with_conv_shortcut=True)
+        x = self.__resBlk_identity(x, nb_filter=512, kernel_size=3, with_conv_shortcut=True)
+
+        x = GlobalAveragePooling1D()(x)
+        x = Flatten()(x)
+        x = Dense(self._actionSize, activation='softmax')(x)
+
+        model = Model(inputs=layerIn, outputs=x)
+        sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+        model.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
+        # model.summary()
+        return model
+
+    def __createModel_ResNet2Xd1(self):
+
+        self._wkModelId = 'ResNet2Xd1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
+        weight_decay = 0.0005
+
+        layerIn = Input((self._stateSize,))
+        x = Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,))(layerIn)
+
+        #conv1
+        x= self.__resBlk_basic(x, nb_filter=64, kernel_size=3, padding='valid')
+        x= MaxPooling1D(2)(x)
+
+        #res1
+        x = self.__resBlk_bottleneck(x, nb_filters=[64,64,256], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[64,64,256])
+        #res2
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512])
+        #res3
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 1024], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 1024])
+        # #res4
+        # x = self.__resBlk_bottleneck(x, nb_filters=[512, 512, 2048], with_conv_shortcut=True)
+        # x = self.__resBlk_bottleneck(x, nb_filters=[512, 512, 2048])
 
         x = GlobalAveragePooling1D()(x)
         x = Flatten()(x)

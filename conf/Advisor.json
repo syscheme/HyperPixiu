@@ -10,7 +10,8 @@
         "type": "NeuralNetAdvisor",
         "brainId" : "Cnn1Dx4R2",
         "exchange" : "AShare",
-        "sourceCsvDir": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
+        // "eventSource": "sina", 
+        "eventSource": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
         "objectives": ["SH510050"],
     },
 

@@ -8,6 +8,7 @@ from hpGym.GymTrader import *
 from TradeAdvisor import *
 from Application import *
 import HistoryData as hist
+from crawler.crawlSina import *
 
 import sys, os, platform
 RFGROUP_PREFIX = 'ReplayFrame:'
@@ -22,12 +23,12 @@ if __name__ == '__main__':
     p = Program()
     p._heartbeatInterval =-1
 
-    sourceCsvDir = None
+    eventSource = None
     SYMBOL = ''
     try:
-        jsetting = p.jsettings('advisor/sourceCsvDir')
+        jsetting = p.jsettings('advisor/eventSource')
         if not jsetting is None:
-            sourceCsvDir = jsetting(None)
+            eventSource = jsetting(None)
 
         jsetting = p.jsettings('advisor/objectives')
         if not jsetting is None:
@@ -39,16 +40,19 @@ if __name__ == '__main__':
     if 'SYMBOL' in os.environ.keys():
         SYMBOL = os.environ['SYMBOL']
 
-    sourceCsvDir = Program.fixupPath(sourceCsvDir)
-
-    p.info('taking input dir %s for symbol[%s]' % (sourceCsvDir, SYMBOL))
-    csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=sourceCsvDir, fields='date,time,open,high,low,close,volume,ammount')
-    pbApp = p.createApp(hist.PlaybackApp, playback= csvreader)
-
     rec    = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.logdir, 'advisor_%s.tcsv' % SYMBOL))
     p.info('all objects registered piror to Advisor: %s' % p.listByType())
-
     advisor = p.createApp(NeuralNetAdvisor, configNode ='advisor', objectives=[SYMBOL], recorder=rec)
+
+    if 'sina' == eventSource:
+        mc = p.createApp(SinaCrawler, configNode ='sina', marketState = advisor.marketState, recorder=rec)
+        mc._postCaptured = True
+        mc.subscribe([SYMBOL])
+    elif '/' in eventSource: # eventSource looks like a file or directory
+        sourceCsvDir = Program.fixupPath(eventSource)
+        p.info('taking input dir %s for symbol[%s]' % (eventSource, SYMBOL))
+        csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=sourceCsvDir, fields='date,time,open,high,low,close,volume,ammount')
+        pbApp = p.createApp(hist.PlaybackApp, playback= csvreader)
 
     p.start()
     p.loop()

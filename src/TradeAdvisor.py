@@ -38,7 +38,7 @@ class TradeAdvisor(BaseApplication):
         self._dictAdvices = {} # dict of symbol to recent AdviceData
         self._dictPerf = {} # dict of symbol to performance {'Rdaily':,'Rdstd':}
 
-        self._minAdvInterval = self.getConfig('minInterval', 1) # minimal interval in seconds between two advice s
+        self._minimalAdvIntv = self.getConfig('minimalInterval', 30) # minimal interval in seconds between two advice s
         self._exchange = self.getConfig('exchange', 'AShare')
         if not objectives or not isinstance(objectives, list) or len(objectives) <=0:
             objectives = self.getConfig('objectives', [])
@@ -97,12 +97,12 @@ class TradeAdvisor(BaseApplication):
         prevState = self.__restoreMarketState()
         if prevState:
             self._marketState = prevState
-            self.info('doAppInit() previous market state restored: %s' % self.__wkTrader._marketState.descOf(None))
+            self.info('doAppInit() previous market state restored: %s' % self._marketState.descOf(None))
 
         if not self._marketState :
             for obsId in self._program.listByType(MarketState) :
                 marketstate = self._program.getObj(obsId)
-                if marketstate and marketstate.exchange == self._account.exchange:
+                if marketstate and marketstate.exchange == self._exchange:
                     self._marketState = marketstate
                     break
 
@@ -179,7 +179,7 @@ class TradeAdvisor(BaseApplication):
             latestAdvc = self._dictAdvices[symbol] if symbol in self._dictAdvices.keys() else None
             if latestAdvc :
                 elapsed = datetime2float(d.datetime) - datetime2float(latestAdvc.asof)
-                if (elapsed < self._minAdvInterval) :
+                if (elapsed < self._minimalAdvIntv) :
                     return # too frequently
 
             # if not latestAdvc.asof['date'] or d.date > objective['date'] :

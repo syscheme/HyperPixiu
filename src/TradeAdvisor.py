@@ -40,6 +40,7 @@ class TradeAdvisor(BaseApplication):
 
         self._minimalAdvIntv = self.getConfig('minimalInterval', 30) # minimal interval in seconds between two advice s
         self._exchange = self.getConfig('exchange', 'AShare')
+        self.__recMarketEvent = self.getConfig('recMarketEvent', 'False').lower() in BOOL_STRVAL_TRUE
         if not objectives or not isinstance(objectives, list) or len(objectives) <=0:
             objectives = self.getConfig('objectives', [])
 
@@ -221,7 +222,8 @@ class TradeAdvisor(BaseApplication):
             self.postEvent(evAdv)
             self._dictAdvices[symbol] = newAdvice
 
-            # self._recorder.pushRow(ev.type, d)
+            if self.__recMarketEvent :
+                self._recorder.pushRow(ev.type, d)
             self._recorder.pushRow(EVENT_ADVICE, newAdvice)
 
             return

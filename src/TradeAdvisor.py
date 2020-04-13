@@ -348,3 +348,5 @@ class NeuralNetAdvisor(TradeAdvisor):
 
         return super(NeuralNetAdvisor, self).doAppInit()
 
+    # end of BaseApplication routine
+    #----------------------------------------------------------------------

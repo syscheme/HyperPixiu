@@ -94,10 +94,8 @@ class EventProxy(BaseApplication):
 
 
 import zmq
-__ctxZerMQ = zmq.Context()
 ZMQPORT_PUB = 1818
 ZMQPORT_SUB = 1819
-
 
 ########################################################################
 class ZeroMqProxy(EventProxy):
@@ -106,8 +104,10 @@ class ZeroMqProxy(EventProxy):
         super(ZeroMqProxy, self).__init__(program, **kwargs)
 
         self._endPointEventCh = "localhost"
-        self.__soPub = __ctxZerMQ.socket(zmq.PUB)
-        self.__soSub = __ctxZerMQ.socket(zmq.SUB)
+
+        ctxZMQ = zmq.Context()
+        self.__soPub = ctxZMQ.socket(zmq.PUB)
+        self.__soSub = ctxZMQ.socket(zmq.SUB)
         self.__soPub.setsockopt(zmq.LINGER, 0)
         self.__soSub.setsockopt(zmq.LINGER, 0)
 
@@ -141,16 +141,26 @@ class ZeroMqEventChannel(BaseApplication):
     '''
     def __init__(self, program, **kwargs) :
         super(ZeroMqEventChannel, self).__init__(program, **kwargs)
-        self.__msTimeout = 200 # 200msec
-        self.__soPub = __ctxZerMQ.socket(zmq.PUB)
-        self.__soSub = __ctxZerMQ.socket(zmq.SUB)
+
+        self._bind = self.getConfig('bind', '*') # anyaddr
+        self.__msTimeout = self.getConfig('timeout', 200) # 200msec by default
+        if not self._id or len(self._id) <=0:
+            self._id = self.program.hostname
+
+        if not self._bind or len(self._bind) <=0:
+            self._bind = "*"
+
+        ctxZMQ = zmq.Context()
+        self.__soPub = ctxZMQ.socket(zmq.PUB)
+        self.__soSub = ctxZMQ.socket(zmq.SUB)
 
         # event channel's portNum is reverse
-        self.__soSub.bind("tcp://*:%d" % ZMQPORT_SUB)
-        self.__soPub.bind("tcp://*:%d" % ZMQPORT_PUB)
+        self.__soSub.bind("tcp://%s:%d" % (self._bind, ZMQPORT_SUB))
+        self.__soPub.bind("tcp://%s:%d" % (self._bind, ZMQPORT_PUB))
 
         self.__poller = zmq.Poller()
         self.__poller.register(self.__soSub, zmq.POLLIN)
+        self.info('bind on %s' % self._bind)
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -176,4 +186,13 @@ class ZeroMqEventChannel(BaseApplication):
             except Exception as ex:
                 self.logexception(ex)
                 break
+
+        if c >0 :
+            self.debug('delivered %s events' % c)
+
         return c
+
+    def OnEvent(self, ev): pass
+
+    # end of BaseApplication routine
+    #----------------------------------------------------------------------

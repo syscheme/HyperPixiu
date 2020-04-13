@@ -24,31 +24,29 @@ if __name__ == '__main__':
     p._heartbeatInterval =-1
 
     eventSource = None
-    SYMBOL = ''
     try:
         jsetting = p.jsettings('advisor/eventSource')
         if not jsetting is None:
             eventSource = jsetting(None)
-
-        jsetting = p.jsettings('advisor/objectives')
-        if not jsetting is None:
-            SYMBOL = jsetting([SYMBOL])[0]
-    except Exception as ex:
-        SYMBOL =''
+    except:
+        pass
 
     # In the case that this utility is started from a shell script, this reads env variables for the symbols
+    objectives = None
     if 'SYMBOL' in os.environ.keys():
-        SYMBOL = os.environ['SYMBOL']
+        objectives = [os.environ['SYMBOL']]
 
-    rec    = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.logdir, 'advisor_%s.tcsv' % SYMBOL))
+    rec    = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.logdir, '%s.tcsv' % p.progId))
     p.info('all objects registered piror to Advisor: %s' % p.listByType())
-    advisor = p.createApp(NeuralNetAdvisor, configNode ='advisor', objectives=[SYMBOL], recorder=rec)
+    advisor = p.createApp(NeuralNetAdvisor, configNode ='advisor', objectives=objectives, recorder=rec)
+    objectives = advisor.objectives
 
     if 'sina' == eventSource:
         mc = p.createApp(SinaCrawler, configNode ='sina', marketState = advisor.marketState, recorder=rec)
         mc._postCaptured = True
-        mc.subscribe([SYMBOL])
+        mc.subscribe(objectives)
     elif '/' in eventSource: # eventSource looks like a file or directory
+        SYMBOL = objectives[0] # csvPlayback can only cover one symbol
         sourceCsvDir = Program.fixupPath(eventSource)
         p.info('taking input dir %s for symbol[%s]' % (eventSource, SYMBOL))
         csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=sourceCsvDir, fields='date,time,open,high,low,close,volume,ammount')

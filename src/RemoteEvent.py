@@ -8,11 +8,17 @@ from EventData    import *
 from Application  import BaseApplication
 
 import os
-import json   # to save params
+import pickle, json   # to save params
 from datetime import datetime, timedelta
 from copy import copy, deepcopy
 from abc import ABCMeta, abstractmethod
 import traceback
+
+import sys
+if sys.version_info <(3,):
+    from Queue import Queue, Empty
+else:
+    from queue import Queue, Empty
 
 ########################################################################
 class EventProxy(BaseApplication):
@@ -22,10 +28,11 @@ class EventProxy(BaseApplication):
         super(EventProxy, self).__init__(program, **kwargs)
 
         # 事件队列
-        self.__queueTo = Queue()
+        self.__queOutgoing = Queue(maxsize=100)
         self.__conn = None
-        self.__evTypesToFwd = []
-        self.__evTypesToRecv = []
+
+        self.__evTypesOutgoing  = self.getConfig('outgoing', [])
+        self.__evTypesIncoming  = self.getConfig('incoming', [])
 
     @abstractmethod
     def send(self, event):
@@ -35,20 +42,35 @@ class EventProxy(BaseApplication):
     def recv(self, secTimeout=0.1):
         return None
 
+    def registerOutgoing(self, evTypes):
+        if isinstance(evTypes, list) :
+            for et in evTypes:
+                if not et in self.__evTypesOutgoing:
+                    self.__evTypesOutgoing.append(et)
+        elif not evTypes in self.__evTypesOutgoing:
+            self.__evTypesOutgoing.append(et)
+
+    def subscribeIncoming(self, evTypes):
+        if isinstance(evTypes, list) :
+            for et in evTypes:
+                if not et in self.__evTypesIncoming:
+                    self.__evTypesIncoming.append(et)
+        elif not evTypes in self.__evTypesIncoming:
+            self.__evTypesIncoming.append(et)
+
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
     def OnEvent(self, ev):
         '''
         dispatch the event
         '''
-        if not ev.type in self.__evTypesToFwd:
+        if not ev.type in self.__evTypesOutgoing:
             return
         
-        self.__queueTo.put(ev)
+        self.__queOutgoing.put(ev)
 
     def doAppStep(self):
-        if not super(TradeAdvisor, self).doAppInit() :
-            return False
+        super(EventProxy, self).doAppStep()
         
         # step 1. forward the outgoing events
         ev = True # dummy
@@ -56,7 +78,7 @@ class EventProxy(BaseApplication):
         while ev and cSent <10:
             ev = None
             try :
-                ev = self.__queueTo.get(block = enabledHB, timeout = 0.1)  # 获取事件的阻塞时间设为0.1秒
+                ev = self.__queOutgoing.get(block =False, timeout = 0.1)  # 获取事件的阻塞时间设为0.1秒
                 if ev :
                     self.send(ev)
             except Empty:
@@ -70,7 +92,7 @@ class EventProxy(BaseApplication):
             
         # step 2. receive the incomming events
         ev = self.recv(0.1)
-        if ev and ev.type in self.__evTypesToRecv:
+        if ev and ev.type in self.__evTypesIncoming:
             self.postEvent(ev)
             cRecv +=1
 
@@ -81,10 +103,10 @@ class EventProxy(BaseApplication):
         if not super(EventProxy, self).doAppInit() :
             return False
 
-        if len(self.__evTypesToFwd) + len(self.__evTypesToRecv) <=0 :
+        if len(self.__evTypesOutgoing) + len(self.__evTypesIncoming) <=0 :
             return False
 
-        for et in self.__evTypesToFwd:
+        for et in self.__evTypesOutgoing:
             self.subscribeEvent(et)
         
         return True
@@ -94,16 +116,17 @@ class EventProxy(BaseApplication):
 
 
 import zmq
+import socket
 ZMQPORT_PUB = 1818
 ZMQPORT_SUB = 1819
 
 ########################################################################
 class ZeroMqProxy(EventProxy):
-    def __init__(self, advisorId, symbol, exchange):
-        """Constructor"""
+
+    def __init__(self, program, **kwargs) :
         super(ZeroMqProxy, self).__init__(program, **kwargs)
 
-        self._endPointEventCh = "localhost"
+        self._endPointEventCh = self.getConfig('endpoint', "localhost")
 
         ctxZMQ = zmq.Context()
         self.__soPub = ctxZMQ.socket(zmq.PUB)
@@ -114,26 +137,42 @@ class ZeroMqProxy(EventProxy):
         self.__poller = zmq.Poller()
         self.__poller.register(self.__soSub, zmq.POLLIN)
 
-    def connect(self):
+    def __connect(self):
         self.__soPub.connect('tcp://%s:%d' % (self._endPointEventCh, ZMQPORT_PUB))
         self.__soSub.connect('tcp://%s:%d' % (self._endPointEventCh, ZMQPORT_SUB))
 
     def send(self, ev):
         if not ev: return
         pklstr = pickle.dumps(ev)
-        self.__soPub.send('%s>%s' % (ev.type, pklstr))
+        self.__soPub.send_string('%s>%s' % (ev.type, pklstr))
 
     def recv(self, secTimeout=0.1):
         ev = None
         if not self.__poller.poll(int(secTimeout*1000)): # 10s timeout in milliseconds
             return None
 
-        msg = self.__soPub.recv()
+        msg = self.__soPub.recv_string()
         evtype, pklstr = msg.split('>')
-        if evtype in self.__evTypesToRecv:
+        if evtype in self.__evTypesIncoming:
             ev = pickle.loads(pklstr)
 
         return ev
+
+    #----------------------------------------------------------------------
+    # impl/overwrite of BaseApplication
+    def doAppInit(self): # return True if succ
+        if not super(ZeroMqProxy, self).doAppInit() :
+            return False
+
+        try:
+            self.__connect()
+            return True
+        except Exception as ex:
+            self.logexception(ex)
+        
+        return True #???
+    # end of BaseApplication routine
+    #----------------------------------------------------------------------
 
 ########################################################################
 class ZeroMqEventChannel(BaseApplication):
@@ -149,6 +188,8 @@ class ZeroMqEventChannel(BaseApplication):
 
         if not self._bind or len(self._bind) <=0:
             self._bind = "*"
+        if self._bind !="*":
+            self._bind = socket.gethostbyname(self._bind) # zmq only take IP address instead of hostname
 
         ctxZMQ = zmq.Context()
         self.__soPub = ctxZMQ.socket(zmq.PUB)

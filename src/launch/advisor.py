@@ -8,6 +8,7 @@ from hpGym.GymTrader import *
 from TradeAdvisor import *
 from Application import *
 import HistoryData as hist
+from RemoteEvent import ZeroMqProxy
 from crawler.crawlSina import *
 
 import sys, os, platform
@@ -37,6 +38,9 @@ if __name__ == '__main__':
         objectives = [os.environ['SYMBOL']]
 
     rec    = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.logdir, '%s.tcsv' % p.progId))
+    revents = p.createApp(ZeroMqProxy, configNode ='remoteEvents')
+    revents.registerOutgoing([EVENT_ADVICE, EVENT_KLINE_1MIN]) # should be revents.registerOutgoing(EVENT_ADVICE)
+
     p.info('all objects registered piror to Advisor: %s' % p.listByType())
     advisor = p.createApp(NeuralNetAdvisor, configNode ='advisor', objectives=objectives, recorder=rec)
     objectives = advisor.objectives

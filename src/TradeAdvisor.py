@@ -48,7 +48,7 @@ class TradeAdvisor(BaseApplication):
                 self.__dictAdvices[o]=None
 
         self._marketState = PerspectiveState(self._exchange) # take PerspectiveState by default
-        self.__stampLastSaveState = None
+        self.__stampMStateRestored, self.__stampMStateSaved = None, None
         try :
             shutil.rmtree(self.__wkTrader._outDir)
         except:
@@ -100,6 +100,7 @@ class TradeAdvisor(BaseApplication):
         prevState = self.__restoreMarketState()
         if prevState:
             self._marketState = prevState
+            self.__stampMStateRestored = datetime.now()
             self.info('doAppInit() previous market state restored: %s' % self._marketState.descOf(None))
 
         if not self._marketState :
@@ -152,11 +153,11 @@ class TradeAdvisor(BaseApplication):
         stampNow = datetime.now()
         today = stampNow.strftime('%Y-%m-%d')
             
-        if not self.__stampLastSaveState:
-            self.__stampLastSaveState = stampNow
+        if not self.__stampMStateSaved:
+            self.__stampMStateSaved = stampNow
             
-        if stampNow - self.__stampLastSaveState > saveInterval:
-            self.__stampLastSaveState = stampNow
+        if stampNow - self.__stampMStateSaved > saveInterval:
+            self.__stampMStateSaved = stampNow
             self.__saveMarketState()
 
     def OnEvent(self, ev):
@@ -238,7 +239,7 @@ class AdviceData(EventData):
     '''投顾建议'''
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
-    COLUMNS = 'datetime,symbol,exchange,advisorId,price,dirLONG,dirSHORT,dirNONE,strDir,Rdaily,Rdstd'
+    COLUMNS = 'datetime,symbol,exchange,advisorId,price,dirNONE,dirLONG,dirSHORT,strDir,Rdaily,Rdstd'
     DIRSTR = ['NONE','LONG','SHORT']
 
     def __init__(self, advisorId, symbol, exchange):

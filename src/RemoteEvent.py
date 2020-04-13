@@ -1,55 +1,35 @@
 # encoding: UTF-8
 '''
-Trader maps to the agent in OpenAI/Gym
+EventProxy to remote ZeroMQ
 '''
 from __future__ import division
 
-from EventData    import EventData, datetime2float, EVENT_NAME_PREFIX
-from MarketData   import *
-from Perspective  import PerspectiveState
-from Application  import BaseApplication, BOOL_STRVAL_TRUE
-
-# event type
-EVENT_ADVICE  = EVENT_NAME_PREFIX + 'TAdv'  # 交易建议事件
-NN_FLOAT      = 'float32'
+from EventData    import *
+from Application  import BaseApplication
 
 import os
-import logging
 import json   # to save params
-from collections import OrderedDict
 from datetime import datetime, timedelta
 from copy import copy, deepcopy
 from abc import ABCMeta, abstractmethod
 import traceback
-import numpy as np
 
 ########################################################################
-class TradeAdvisor(BaseApplication):
-    '''TradeAdvisor
-        TradeAdvisor observe the marketState and perform evaluation and prediction
-        then publish its AdviceData into the EventChannel, which could be referenced
-        by the Traders who subscribe the AdviceData. The latter may issue orders thru
-        Accounts
+class EventProxy(BaseApplication):
     '''
-    def __init__(self, program, recorder =None, objectives =None, **kwargs) :
-        super(TradeAdvisor, self).__init__(program, **kwargs)
+    '''
+    def __init__(self, program, **kwargs) :
+        super(EventProxy, self).__init__(program, **kwargs)
 
-        self._recorder = recorder
-        self.__dictAdvices = {} # dict of symbol to recent AdviceData
-        self.__dictPerf = {} # dict of symbol to performance {'Rdaily':,'Rdstd':}
-
-        self._minimalAdvIntv = self.getConfig('minimalInterval', 5) # minimal interval in seconds between two advice s
-        self._exchange = self.getConfig('exchange', 'AShare')
-        self.__recMarketEvent = self.getConfig('recMarketEvent', 'False').lower() in BOOL_STRVAL_TRUE
-        if not objectives or not isinstance(objectives, list) or len(objectives) <=0:
-            objectives = self.getConfig('objectives', [])
+        # 事件队列
+        self.__queue = Queue()
 
         if isinstance(objectives, list):
             for o in objectives:
-                self.__dictAdvices[o]=None
+                self._dictAdvices[o]=None
 
         self._marketState = PerspectiveState(self._exchange) # take PerspectiveState by default
-        self.__stampMStateRestored, self.__stampMStateSaved = None, None
+        self.__stampLastSaveState = None
         try :
             shutil.rmtree(self.__wkTrader._outDir)
         except:
@@ -61,11 +41,9 @@ class TradeAdvisor(BaseApplication):
             pass
         self.program.setShelveFilename('%s%s.sobj' % (self.dataRoot, self.ident))
 
-    @property
-    def marketState(self): return self._marketState # the default account
-    
-    @property
-    def objectives(self): return list(self.__dictAdvices.keys())
+    def publish(self, event):
+        '''向事件队列中存入事件'''
+        self.__queue.put(event)
 
     @property
     def recorder(self): return self._recorder
@@ -101,7 +79,6 @@ class TradeAdvisor(BaseApplication):
         prevState = self.__restoreMarketState()
         if prevState:
             self._marketState = prevState
-            self.__stampMStateRestored = datetime.now()
             self.info('doAppInit() previous market state restored: %s' % self._marketState.descOf(None))
 
         if not self._marketState :
@@ -117,13 +94,13 @@ class TradeAdvisor(BaseApplication):
 
             self.info('taking MarketState[%s]' % self._marketState.ident)
 
-        if len(self.__dictAdvices) <=0:
+        if len(self._dictAdvices) <=0:
             sl = self._marketState.listOberserves()
             # for symbol in sl:
-            #     self.__dictAdvices[symbol] = AdviceData(self.ident, symbol, self._marketState.exchange)
+            #     self._dictAdvices[symbol] = AdviceData(self.ident, symbol, self._marketState.exchange)
 
         if self._marketState :
-            for symbol in self.objectives:
+            for symbol in self._dictAdvices.keys():
                 self._marketState.addMonitor(symbol)
 
         self.subscribeEvent(EVENT_TICK)
@@ -149,17 +126,74 @@ class TradeAdvisor(BaseApplication):
         if not super(TradeAdvisor, self).doAppInit() :
             return False
 
-        saveInterval = timedelta(minutes=10)
-        #TODO: increase the saveInterval if it is off-hours
-        stampNow = datetime.now()
-        today = stampNow.strftime('%Y-%m-%d')
-            
-        if not self.__stampMStateSaved:
-            self.__stampMStateSaved = stampNow
-            
-        if stampNow - self.__stampMStateSaved > saveInterval:
-            self.__stampMStateSaved = stampNow
-            self.__saveMarketState()
+            # pop the event to dispatch
+            bEmpty = False
+            while self._bRun and not bEmpty:
+                event = None
+                try :
+                    event = self.__queue.get(block = enabledHB, timeout = timeout)  # 获取事件的阻塞时间设为0.1秒
+                    bEmpty = False
+                except Empty:
+                    bEmpty = True
+                except KeyboardInterrupt:
+                    self.error("quit per KeyboardInterrupt")
+                    self._bRun = False
+                    break
+
+                # do the step only when there is no event
+                if not event :
+                    # if blocking: # ????
+                    #     continue
+                    cApps =0
+                    for appId in self.__activeApps :
+                        app = self.getObj(appId)
+                        # if threaded, it has its own trigger to step()
+                        # if isinstance(app, ThreadedAppWrapper)
+                        #   continue
+                        if not isinstance(app, MetaApp):
+                            continue
+
+                        if not app.isActive :
+                            continue
+                        cApps +=1
+
+                        if not isinstance(app, BaseApplication):
+                            continue
+                        
+                        try:
+                            app.doAppStep()
+                        except KeyboardInterrupt:
+                            self.error("quit per KeyboardInterrupt")
+                            self._bRun = False
+                            break
+                        except Exception as ex:
+                            self.error("app[%s] step exception %s %s" % (appId, ex, traceback.format_exc()))
+
+                    if cApps <=0:
+                        self.info("Program has no more active apps running, update running state")
+                        self._bRun = False
+                        break
+                            
+                    continue
+
+                # 检查是否存在对该事件进行监听的处理函数
+                if not event.type in self.__subscribers.keys():
+                    continue
+
+                # 若存在，则按顺序将事件传递给处理函数执行
+                for appId in self.__subscribers[event.type] :
+                    app = self.getApp(appId)
+                    if not app or not app.isActive:
+                        continue
+
+                    try:
+                        app._procEvent(event)
+                    except KeyboardInterrupt:
+                        self.error("quit per KeyboardInterrupt")
+                        self._bRun = False
+                        break
+                    except Exception as ex:
+                        self.error("app step exception %s %s" % (ex, traceback.format_exc()))
 
     def OnEvent(self, ev):
         '''
@@ -173,7 +207,7 @@ class TradeAdvisor(BaseApplication):
             tokens = (d.vtSymbol.split('.'))
             symbol = tokens[0]
             ds = tokens[1] if len(tokens) >1 else d.exchange
-            if not symbol in self.objectives :
+            if not symbol in self._dictAdvices.keys() :
                 return # ignore those not interested
 
             if d.asof > (datetime.now() + timedelta(days=7)):
@@ -181,7 +215,7 @@ class TradeAdvisor(BaseApplication):
                 self.eventHdl_TradeEnd(ev)
                 return
 
-            latestAdvc = self.__dictAdvices[symbol] if symbol in self.objectives else None
+            latestAdvc = self._dictAdvices[symbol] if symbol in self._dictAdvices.keys() else None
             if latestAdvc :
                 elapsed = datetime2float(d.datetime) - datetime2float(latestAdvc.asof)
                 if (elapsed < self._minimalAdvIntv) :
@@ -209,8 +243,8 @@ class TradeAdvisor(BaseApplication):
             if not newAdvice.exchange or len(newAdvice.exchange)<=0:
                 newAdvice.exchange = self._marketState.exchange
 
-            if symbol in self.__dictPerf.keys():
-                perf = self.__dictPerf[symbol]
+            if symbol in self._dictPerf.keys():
+                perf = self._dictPerf[symbol]
                 newAdvice.Rdaily = perf['Rdaily']
                 newAdvice.Rdstd  = perf['Rdstd']
             
@@ -224,10 +258,9 @@ class TradeAdvisor(BaseApplication):
             evAdv = Event(EVENT_ADVICE)
             evAdv.setData(newAdvice)
             self.postEvent(evAdv)
-            self.__dictAdvices[symbol] = newAdvice
+            self._dictAdvices[symbol] = newAdvice
 
-            if self.__recMarketEvent :
-                self._recorder.pushRow(ev.type, d)
+            # self._recorder.pushRow(ev.type, d)
             self._recorder.pushRow(EVENT_ADVICE, newAdvice)
 
             return
@@ -241,7 +274,7 @@ class AdviceData(EventData):
     '''交易建议'''
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
-    COLUMNS = 'datetime,symbol,exchange,advisorId,price,dirNONE,dirLONG,dirSHORT,strDir,Rdaily,Rdstd'
+    COLUMNS = 'datetime,symbol,exchange,advisorId,price,dirLONG,dirSHORT,dirNONE,strDir,Rdaily,Rdstd'
     DIRSTR = ['NONE','LONG','SHORT']
 
     def __init__(self, advisorId, symbol, exchange):

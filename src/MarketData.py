@@ -55,7 +55,7 @@ class MarketData(EventData):
         # self.sourceType = md._sourceType          # 数据来源类型
         if symbol and len(symbol)>0:
             self.symbol = self.vtSymbol = symbol
-            if  len(exchange)>0 :
+            if exchange and len(exchange)>0 :
                 self.vtSymbol = '.'.join([self.symbol, self.exchange])
         
         self.datetime = None                    # python的datetime时间对象
@@ -284,7 +284,7 @@ class DictToKLine(object):
         super(DictToKLine, self).__init__()
         self._type = eventType
         self._symbol = symbol
-        self._exchange = exchange if exchange else 'na'
+        self._exchange = exchange if exchange else ''
 
     @property
     def fields(self) :

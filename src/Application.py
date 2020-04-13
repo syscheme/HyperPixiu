@@ -494,12 +494,14 @@ class Iterable(MetaObj):
 
 ########################################################################
 import sys, getopt, platform
+import socket
 
 if sys.version_info <(3,):
     from Queue import Queue, Empty
 else:
     from queue import Queue, Empty
 
+import tempfile
 class Program(object):
     ''' main program '''
 
@@ -514,6 +516,8 @@ class Program(object):
         if not argvs or len(argvs) <1:
             argvs = sys.argv
 
+        self.__logdir = tempfile.gettempdir()
+        self.__hostname = socket.gethostname()
         self.__pid = os.getpid() # process id
         self.__progName = os.path.basename(argvs[0])[0:-3] # cut off the .py extname
         self._outdir = './out' #TODO
@@ -586,24 +590,31 @@ class Program(object):
         return n
 
     @property
-    def logger(self) : 
-        return self.__logger
+    def logger(self) : return self.__logger
 
     @property
-    def pid(self) : 
-        return self.__pid
+    def pid(self) :    return self.__pid
 
     @property
-    def progId(self) : 
-        return '%s_%s' % (self.__progName, self.pid)
+    def progId(self) : return '%s_%s' % (self.__progName, self.pid)
 
     @property
-    def ostype(self) :
-        return self.__ostype
+    def logdir(self) :  return self.__logdir
 
     @property
-    def settings(self) :
-        return self.__jsettings
+    def ostype(self) :   return self.__ostype
+
+    @property
+    def hostname(self) : return self.__hostname        
+
+    @property
+    def settings(self) :  return self.__jsettings
+
+    @property
+    def shelveFilename(self) : return self.__shelvefn
+
+    def setShelveFilename(self, filename) :
+        self.__shelvefn = filename
 
     def fixupPath(path) :
         if 'Windows' in platform.platform() and '/mnt/' == path[:5] and '/' == path[6]:
@@ -611,14 +622,7 @@ class Program(object):
             path = path.replace(path[:6], drive)
         return path
 
-    @property
-    def shelveFilename(self) :
-        return self.__shelvefn
-
-    def setShelveFilename(self, filename) :
-        self.__shelvefn = filename
-
-    #----------------------------------------------------------------------
+   #----------------------------------------------------------------------
     def __addMetaObj(self, id, obj):
         '''添加上层应用'''
         # 创建应用实例
@@ -1026,7 +1030,6 @@ class Program(object):
 
         level = STR2LEVEL['info']
         echoToConsole = True
-        logdir = '/tmp'
         filename = '%s_%s.log' % (self.progId, datetime.now().strftime('%m%d'))
         loggingEvent = True
 
@@ -1036,7 +1039,7 @@ class Program(object):
                 level = STR2LEVEL[str(level).lower()]
         
             echoToConsole = self.__jsettings.logger.console(str(echoToConsole)).lower() in BOOL_STRVAL_TRUE
-            logdir = self.__jsettings.logger.dir(logdir)
+            self.__logdir = self.__jsettings.logger.dir(self.__logdir)
             filename = self.__jsettings.logger.filename(filename)
             loggingEvent = self.__jsettings.logger.event(str(loggingEvent)).lower() in BOOL_STRVAL_TRUE
         
@@ -1063,10 +1066,10 @@ class Program(object):
             nullHandler = logging.NullHandler()
             self.__logger.addHandler(nullHandler)    
 
-        if '/' != logdir[-1]: logdir +='/'
+        if '/' != self.__logdir[-1]: self.__logdir +='/'
 
         if filename and len(filename) >0:
-            filepath = '%s%s' % (logdir, filename)
+            filepath = '%s%s' % (self.__logdir, filename)
             self.__hdlrFile = RotatingFileHandler(filepath, maxBytes=80*1024*1024, backupCount=20) # 50MB about to 10MB after bzip2
             # = TimedRotatingFileHandler(filepath, when='W5', backupCount=9) # when='W5' for Satday, 'D' daily, 'midnight' rollover at midnight
             self.__hdlrFile.rotator  = self.__rotator

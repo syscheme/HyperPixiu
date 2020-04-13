@@ -326,7 +326,7 @@ class Playback(Iterable):
         super(Playback, self).__init__(**kwargs)
         self._symbol = symbol
         self._category = category if category else EVENT_KLINE_1MIN
-        self._exchange = exchange if exchange else 'na'
+        self._exchange = exchange if exchange else ''
         self._dbNamePrefix = Recorder.DEFAULT_DBPrefix
         
         self._startDate = startDate if startDate else Playback.DUMMY_DATE_START
@@ -367,6 +367,50 @@ class Playback(Iterable):
         evMH.setData(evdMH)
         self.enquePending(evMH)
         return evdMH
+
+########################################################################
+class PlaybackApp(BaseApplication):
+    
+    #----------------------------------------------------------------------
+    def __init__(self, program, playback, **kwargs):
+        """Constructor"""
+        super(PlaybackApp, self).__init__(program, **kwargs)
+        self.__playback = playback
+
+    # impl of BaseApplication
+    #----------------------------------------------------------------------
+    def doAppInit(self): # return True if succ
+        if not super(PlaybackApp, self).doAppInit() :
+            return False
+
+        if self.__playback is None :
+            return False
+        
+        self.__playback.setProgram(self.program)
+        return True
+
+    def doAppStep(self):
+        if not self.isActive or not self.__playback:
+            return False
+
+        ev = None
+        try :
+            ev = next(self.__playback)
+        except StopIteration:
+            self.__playback = NoneTrue
+            self.info('hist-read: end of playback')
+        except Exception as ex:
+            self.logexception(ex)
+
+        if ev:
+            self.postEvent(ev)
+        return True
+
+    def OnEvent(self, event):
+        pass # do nothing for Recorder unless it is an auto-recorder
+
+    #----------------------------------------------------------------------
+
 
 ########################################################################
 class CsvPlayback(Playback):
@@ -583,50 +627,6 @@ class MongoRecorder(Recorder):
     def configIndex(self, category, definition, unique=False):
         """定义某category collection的index"""
         # TODO
-
-########################################################################
-class MongoPlayback(Playback):
-
-    def __init__(self, program, settings, symbol=None):
-        super(MongoPlayback, self).__init__(program, settings)
-
-    #--- impl of BaseApplication -----------------------
-    def doAppStep(self):
-        '''
-        @return True if busy at this step
-        '''
-        if not self._lst :
-            return False
-        
-        try :
-            data = next(lst)
-        except Exception:
-            self._lst = None
-            return True
-        
-        ev = KLineData(node['ds'], symbol)
-        ev.__dict__ = data
-            # if self._cvsToEvent:
-            #     # self.debug('line: %s' % (line))
-            #     ev = self._cvsToEvent.pushCvsRow(line, self._category, self._exchange, self._symbol)
-        self.__queue.put(ev)
-        return True
-
-    # -- Impl of Playback --------------------------------------------------------------
-    def resetRead(self):
-        category = self._category[len(MARKETDATE_EVENT_PREFIX):]
-        stampSince = self._startDate
-        stampTill  = self._endDate
-
-        if not category in self._dictDR.keys() or not symbol in self._dictDR[category].keys():
-            return False
-
-        node = self._dictDR[category][symbol]
-        if not 'coll' in node.keys() :
-            return False
-
-        flt = {'datetime':{'$gte':startDate}}
-        self._lst = self.dbQuery(node['coll']['collectionName'], flt, 'datetime', INDEX_ASCENDING, node['coll']['dbName'])
 
 ########################################################################
 class MarketRecorder(BaseApplication):

@@ -1,0 +1,18 @@
+// configuration of a BackTest
+{
+    "logger": {
+        "level": "debug", //40
+        // "console": "False",
+    },
+
+    "advisor": {
+        "id" : "blah",
+        "type": "NeuralNetAdvisor",
+        "brainId" : "Cnn1Dx4R2",
+        "exchange" : "AShare",
+        // "eventSource": "sina", 
+        "eventSource": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
+        "objectives": ["SH510050"],
+    },
+
+}

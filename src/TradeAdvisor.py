@@ -10,8 +10,8 @@ from Perspective  import PerspectiveState
 from Application  import BaseApplication
 
 # event type
-EVENT_ADVICE     = EVENT_NAME_PREFIX + 'Advc'  # 投顾建议事件
-NN_FLOAT = 'float32'
+EVENT_ADVICE  = EVENT_NAME_PREFIX + 'TAdv'  # 投顾建议事件
+NN_FLOAT      = 'float32'
 
 import os
 import logging
@@ -35,17 +35,17 @@ class TradeAdvisor(BaseApplication):
         super(TradeAdvisor, self).__init__(program, **kwargs)
 
         self._recorder = recorder
-        self._dictAdvices = {} # dict of symbol to recent AdviceData
-        self._dictPerf = {} # dict of symbol to performance {'Rdaily':,'Rdstd':}
+        self.__dictAdvices = {} # dict of symbol to recent AdviceData
+        self.__dictPerf = {} # dict of symbol to performance {'Rdaily':,'Rdstd':}
 
-        self._minimalAdvIntv = self.getConfig('minimalInterval', 30) # minimal interval in seconds between two advice s
+        self._minimalAdvIntv = self.getConfig('minimalInterval', 5) # minimal interval in seconds between two advice s
         self._exchange = self.getConfig('exchange', 'AShare')
         if not objectives or not isinstance(objectives, list) or len(objectives) <=0:
             objectives = self.getConfig('objectives', [])
 
         if isinstance(objectives, list):
             for o in objectives:
-                self._dictAdvices[o]=None
+                self.__dictAdvices[o]=None
 
         self._marketState = PerspectiveState(self._exchange) # take PerspectiveState by default
         self.__stampLastSaveState = None
@@ -62,6 +62,9 @@ class TradeAdvisor(BaseApplication):
 
     @property
     def marketState(self): return self._marketState # the default account
+    
+    @property
+    def objectives(self): return self.__dictAdvices.keys()
 
     @property
     def recorder(self): return self._recorder
@@ -112,13 +115,13 @@ class TradeAdvisor(BaseApplication):
 
             self.info('taking MarketState[%s]' % self._marketState.ident)
 
-        if len(self._dictAdvices) <=0:
+        if len(self.__dictAdvices) <=0:
             sl = self._marketState.listOberserves()
             # for symbol in sl:
-            #     self._dictAdvices[symbol] = AdviceData(self.ident, symbol, self._marketState.exchange)
+            #     self.__dictAdvices[symbol] = AdviceData(self.ident, symbol, self._marketState.exchange)
 
         if self._marketState :
-            for symbol in self._dictAdvices.keys():
+            for symbol in self.objectives:
                 self._marketState.addMonitor(symbol)
 
         self.subscribeEvent(EVENT_TICK)
@@ -168,7 +171,7 @@ class TradeAdvisor(BaseApplication):
             tokens = (d.vtSymbol.split('.'))
             symbol = tokens[0]
             ds = tokens[1] if len(tokens) >1 else d.exchange
-            if not symbol in self._dictAdvices.keys() :
+            if not symbol in self.objectives :
                 return # ignore those not interested
 
             if d.asof > (datetime.now() + timedelta(days=7)):
@@ -176,7 +179,7 @@ class TradeAdvisor(BaseApplication):
                 self.eventHdl_TradeEnd(ev)
                 return
 
-            latestAdvc = self._dictAdvices[symbol] if symbol in self._dictAdvices.keys() else None
+            latestAdvc = self.__dictAdvices[symbol] if symbol in self.objectives else None
             if latestAdvc :
                 elapsed = datetime2float(d.datetime) - datetime2float(latestAdvc.asof)
                 if (elapsed < self._minimalAdvIntv) :
@@ -204,8 +207,8 @@ class TradeAdvisor(BaseApplication):
             if not newAdvice.exchange or len(newAdvice.exchange)<=0:
                 newAdvice.exchange = self._marketState.exchange
 
-            if symbol in self._dictPerf.keys():
-                perf = self._dictPerf[symbol]
+            if symbol in self.__dictPerf.keys():
+                perf = self.__dictPerf[symbol]
                 newAdvice.Rdaily = perf['Rdaily']
                 newAdvice.Rdstd  = perf['Rdstd']
             
@@ -219,7 +222,7 @@ class TradeAdvisor(BaseApplication):
             evAdv = Event(EVENT_ADVICE)
             evAdv.setData(newAdvice)
             self.postEvent(evAdv)
-            self._dictAdvices[symbol] = newAdvice
+            self.__dictAdvices[symbol] = newAdvice
 
             # self._recorder.pushRow(ev.type, d)
             self._recorder.pushRow(EVENT_ADVICE, newAdvice)

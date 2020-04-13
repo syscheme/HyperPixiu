@@ -45,7 +45,7 @@ if __name__ == '__main__':
         mc = p.createApp(SinaCrawler, configNode ='sina', marketState = advisor.marketState, recorder=rec)
         mc._postCaptured = True
         mc.subscribe(objectives)
-    elif '/' in eventSource: # eventSource looks like a file or directory
+    elif '/' in eventSource and len(objectives)>0: # eventSource looks like a file or directory
         SYMBOL = objectives[0] # csvPlayback can only cover one symbol
         sourceCsvDir = Program.fixupPath(eventSource)
         p.info('taking input dir %s for symbol[%s]' % (eventSource, SYMBOL))

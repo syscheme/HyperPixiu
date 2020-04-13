@@ -7,7 +7,7 @@ from __future__ import division
 from EventData    import EventData, datetime2float, EVENT_NAME_PREFIX
 from MarketData   import *
 from Perspective  import PerspectiveState
-from Application  import BaseApplication
+from Application  import BaseApplication, BOOL_STRVAL_TRUE
 
 # event type
 EVENT_ADVICE  = EVENT_NAME_PREFIX + 'TAdv'  # 投顾建议事件
@@ -65,7 +65,7 @@ class TradeAdvisor(BaseApplication):
     def marketState(self): return self._marketState # the default account
     
     @property
-    def objectives(self): return self.__dictAdvices.keys()
+    def objectives(self): return list(self.__dictAdvices.keys())
 
     @property
     def recorder(self): return self._recorder
@@ -240,7 +240,7 @@ class AdviceData(EventData):
     '''投顾建议'''
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
-    COLUMNS = 'datetime,symbol,exchange,advisorId,price,dirLONG,dirSHORT,dirNONE,strDir,Rdaily,Rdstd'
+    COLUMNS = 'datetime,symbol,exchange,advisorId,price,dirNONE,dirLONG,dirSHORT,strDir,Rdaily,Rdstd'
     DIRSTR = ['NONE','LONG','SHORT']
 
     def __init__(self, advisorId, symbol, exchange):

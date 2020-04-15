@@ -2049,13 +2049,13 @@ class MarketDirClassifier(BaseApplication):
         __________________________________________________________________________________________________
         dropout_4 (Dropout)             (None, 1024)         0           flatten[0][0]                    
         __________________________________________________________________________________________________
-        dense (Dense)                   (None, 32)           32800       dropout_4[0][0]                  
+        dense (Dense)                   (None, 88)           90200       dropout_4[0][0]                  
         __________________________________________________________________________________________________
-        dense_1 (Dense)                 (None, 3)            99          dense[0][0]                      
+        dense_1 (Dense)                 (None, 3)            267         dense[0][0]                      
         ==================================================================================================
-        Total params: 2,457,795
-        Trainable params: 2,443,331
-        Non-trainable params: 14,464        
+        Total params: 2,515,363
+        Trainable params: 2,500,899
+        Non-trainable params: 14,464
         '''
         self._wkModelId = 'ResNet2xR1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
@@ -2088,7 +2088,7 @@ class MarketDirClassifier(BaseApplication):
         x = GlobalAveragePooling1D()(x)
         x = Flatten()(x)
         x = Dropout(0.5)(x)
-        x = Dense(32)(x)
+        x = Dense(88)(x)
         x = Dense(self._actionSize, activation='softmax')(x)
 
         model = Model(inputs=layerIn, outputs=x)

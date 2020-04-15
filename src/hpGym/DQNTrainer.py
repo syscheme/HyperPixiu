@@ -159,8 +159,6 @@ class MarketDirClassifier(BaseApplication):
             'ResNet34d1' : self.__createModel_ResNet34d1,
             'ResNet50d1' : self.__createModel_ResNet50d1,
 
-            'ResNet34d1R1': self.__createModel_ResNet34d1R1
-
             }
 
         STEPMETHODS = {
@@ -1716,7 +1714,7 @@ class MarketDirClassifier(BaseApplication):
         model = Model(inputs=layerIn, outputs=x)
         sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
         model.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
-        model.summary()
+        # model.summary()
         return model
 
     def __createModel_ResNet18d1(self):
@@ -2094,58 +2092,7 @@ class MarketDirClassifier(BaseApplication):
         model = Model(inputs=layerIn, outputs=x)
         sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
         model.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
-        model.summary()
-        return model
-
-    def __createModel_ResNet34d1R1(self):
-
-        self._wkModelId = 'ResNet34d1R1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
-        tuples = self._stateSize/EXPORT_FLOATS_DIMS
-        weight_decay = 0.0005
-
-        layerIn = Input((self._stateSize,))
-        x = Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,))(layerIn)
-
-        #conv1
-        x= self.__resBlk_basic(x, nb_filter=64, kernel_size=3, padding='valid')
-        x= MaxPooling1D(2)(x)
-
-    #    self.layer1 = self.make_layer(ResidualBlock, 64,  2, stride=1)
-    #     self.layer2 = self.make_layer(ResidualBlock, 128, 2, stride=2)
-    #     self.layer3 = self.make_layer(ResidualBlock, 256, 2, stride=2)
-    #     self.layer4 = self.make_layer(ResidualBlock, 512, 2, stride=2)
-
-        x = self.__resBlk_identity(x, nb_filter=64, kernel_size=3)
-        x = self.__resBlk_identity(x, nb_filter=64, kernel_size=3)
-        x = self.__resBlk_identity(x, nb_filter=64, kernel_size=3)
-        # x = self.__resBlk_identity(x, nb_filter=64, kernel_size=3)
-
-        #conv3_x
-        x = self.__resBlk_identity(x, nb_filter=128, kernel_size=3, with_conv_shortcut=True)
-        x = self.__resBlk_identity(x, nb_filter=128, kernel_size=3)
-        x = self.__resBlk_identity(x, nb_filter=128, kernel_size=3)
-        # x = self.__resBlk_identity(x, nb_filter=128, kernel_size=3)
-
-        #conv4_x
-        x = self.__resBlk_identity(x, nb_filter=256, kernel_size=3, with_conv_shortcut=True)
-        x = self.__resBlk_identity(x, nb_filter=256, kernel_size=3)
-        x = self.__resBlk_identity(x, nb_filter=256, kernel_size=3)
-        # x = self.__resBlk_identity(x, nb_filter=256, kernel_size=3)
-        # x = self.__resBlk_identity(x, nb_filter=256, kernel_size=3)
-        # x = self.__resBlk_identity(x, nb_filter=256, kernel_size=3)
-
-        #conv5_x
-        x = self.__resBlk_identity(x, nb_filter=512, kernel_size=3, with_conv_shortcut=True)
-        x = self.__resBlk_identity(x, nb_filter=512, kernel_size=3)
-        # x = self.__resBlk_identity(x, nb_filter=512, kernel_size=3)
-        x = GlobalAveragePooling1D()(x)
-        x = Flatten()(x)
-        x = Dense(self._actionSize, activation='softmax')(x)
-
-        model = Model(inputs=layerIn, outputs=x)
-        sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
-        model.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
-        model.summary()
+        # model.summary()
         return model
 
     def __createModel_ResNet50d1(self):

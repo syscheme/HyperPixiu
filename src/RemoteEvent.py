@@ -129,8 +129,8 @@ class ZeroMqProxy(EventProxy):
         self._endPointEventCh = self.getConfig('endpoint', "localhost")
 
         ctxZMQ = zmq.Context()
-        self.__soPub = ctxZMQ.socket(zmq.PUB)
-        self.__soSub = ctxZMQ.socket(zmq.SUB)
+        self.__soPub = ctxZMQ.socket(zmq.REQ) # = ctxZMQ.socket(zmq.PUB)
+        self.__soSub = ctxZMQ.socket(zmq.REQ) # = ctxZMQ.socket(zmq.SUB)
         self.__soPub.setsockopt(zmq.LINGER, 0)
         self.__soSub.setsockopt(zmq.LINGER, 0)
 
@@ -140,18 +140,20 @@ class ZeroMqProxy(EventProxy):
     def __connect(self):
         self.__soPub.connect('tcp://%s:%d' % (self._endPointEventCh, ZMQPORT_PUB))
         self.__soSub.connect('tcp://%s:%d' % (self._endPointEventCh, ZMQPORT_SUB))
+        self.info('connect to event channel[%s:(%s,%s)]' % (self._bind, ZMQPORT_PUB, ZMQPORT_SUB))
 
     def send(self, ev):
         if not ev: return
         pklstr = pickle.dumps(ev)
-        self.__soPub.send_string('%s>%s' % (ev.type, pklstr))
+        msg = '%s>%s' % (ev.type, pklstr)
+        self.__soPub.send(msg.encode())
 
     def recv(self, secTimeout=0.1):
         ev = None
         if not self.__poller.poll(int(secTimeout*1000)): # 10s timeout in milliseconds
             return None
 
-        msg = self.__soPub.recv_string()
+        msg = self.__soPub.recv().decode()
         evtype, pklstr = msg.split('>')
         if evtype in self.__evTypesIncoming:
             ev = pickle.loads(pklstr)
@@ -192,8 +194,8 @@ class ZeroMqEventChannel(BaseApplication):
             self._bind = socket.gethostbyname(self._bind) # zmq only take IP address instead of hostname
 
         ctxZMQ = zmq.Context()
-        self.__soPub = ctxZMQ.socket(zmq.PUB)
-        self.__soSub = ctxZMQ.socket(zmq.SUB)
+        self.__soPub = ctxZMQ.socket(zmq.REP) # ctxZMQ.socket(zmq.PUB)
+        self.__soSub = ctxZMQ.socket(zmq.REP) # ctxZMQ.socket(zmq.SUB)
 
         # event channel's portNum is reverse
         self.__soSub.bind("tcp://%s:%d" % (self._bind, ZMQPORT_SUB))
@@ -201,7 +203,7 @@ class ZeroMqEventChannel(BaseApplication):
 
         self.__poller = zmq.Poller()
         self.__poller.register(self.__soSub, zmq.POLLIN)
-        self.info('bind on %s' % self._bind)
+        self.info('bind on %s:(%s,%s)' % (self._bind, ZMQPORT_SUB, ZMQPORT_PUB))
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -216,7 +218,8 @@ class ZeroMqEventChannel(BaseApplication):
         c =0
         ev = True # dummy
         while fNow < fExp:
-            if not self.__poller.poll(int(fExp - fNow)): # 10s timeout in milliseconds
+            msTimeout  = fExp - fNow
+            if not self.__poller.poll(int(msTimeout)): # 10s timeout in milliseconds
                 break
 
             try:

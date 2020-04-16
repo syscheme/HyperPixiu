@@ -1614,8 +1614,8 @@ class MarketDirClassifier(BaseApplication):
         x = Flatten()(x)
 
         # unified final layers Dense(VirtualFeature88) then Dense(self._actionSize)
-        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
-        x = Dense(88, name='VirtualFeature88')(x)
+        # x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        # x = Dense(88, name='VirtualFeature88')(x)
         x = Dense(self._actionSize, activation='softmax')(x)
 
         model = Model(inputs=layerIn, outputs=x)
@@ -1654,8 +1654,8 @@ class MarketDirClassifier(BaseApplication):
         x = Flatten()(x)
 
         # unified final layers Dense(VirtualFeature88) then Dense(self._actionSize)
-        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
-        x = Dense(88, name='VirtualFeature88')(x)
+        # x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        # x = Dense(88, name='VirtualFeature88')(x)
         x = Dense(self._actionSize, activation='softmax')(x)
 
         model = Model(inputs=layerIn, outputs=x)
@@ -1820,8 +1820,8 @@ class MarketDirClassifier(BaseApplication):
         x = Flatten()(x)
 
         # unified final layers Dense(VirtualFeature88) then Dense(self._actionSize)
-        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
-        x = Dense(88, name='VirtualFeature88')(x)
+        # x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        # x = Dense(88, name='VirtualFeature88')(x)
         x = Dense(self._actionSize, activation='softmax')(x)
 
         model = Model(inputs=layerIn, outputs=x)

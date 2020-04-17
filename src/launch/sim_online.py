@@ -7,6 +7,9 @@ from hpGym.GymTrader import *
 from BackTest import OnlineSimulator
 
 from crawler.crawlSina import *
+from RemoteEvent import ZeroMqProxy
+from TradeAdvisor import EVENT_ADVICE
+
 import sys, os, platform
 
 if __name__ == '__main__':
@@ -50,6 +53,9 @@ if __name__ == '__main__':
 
     rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(simulator.outdir, 'online_%s.tcsv' % SYMBOL))
     simulator.setRecorder(rec)
+
+    revents = p.createApp(ZeroMqProxy, configNode ='remoteEvents')
+    revents.subscribeIncoming([EVENT_ADVICE])
 
     mc = p.createApp(SinaCrawler, configNode ='crawler', marketState = gymtdr._marketState, recorder=rec) # md = SinaCrawler(p, None);
     mc._postCaptured = True

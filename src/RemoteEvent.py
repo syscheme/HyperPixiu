@@ -95,8 +95,9 @@ class EventProxy(BaseApplication):
             
         # step 2. receive the incomming events
         ev = self.recv(0.1)
-        if ev and ev.type in self._topicsIncomming:
-            self.postEvent(ev)
+        if ev:
+            if ev.type in self._topicsIncomming:
+                self.postEvent(ev)
             cRecv +=1
 
         return cRecv + cSent;
@@ -122,6 +123,7 @@ import zmq
 import socket
 ZMQPORT_PUB = 1818
 ZMQPORT_SUB = ZMQPORT_PUB +1
+ZMQ_DELIMITOR_TOPIC='>'
 
 ########################################################################
 class ZeroMqProxy(EventProxy):
@@ -131,7 +133,7 @@ class ZeroMqProxy(EventProxy):
 
         self._endPointEventCh = self.getConfig('endpoint', "localhost")
         portPUB   = self.getConfig('portPUB', ZMQPORT_PUB)
-        portSUB   = self.getConfig('portPUB', 0)
+        portSUB   = self.getConfig('portSUB', 0)
 
         if portPUB <=0:
             portPUB = ZMQPORT_PUB
@@ -151,9 +153,9 @@ class ZeroMqProxy(EventProxy):
             self.__soPub = self.__ctxZMQ.socket(zmq.PUB)
             self.__soPub.connect(self.__epPUB)
 
-        pklstr = pickle.dumps(ev)
-        msg = '%s %s' % (self.topicOfEvent(ev), pklstr)
-        self.__soPub.send(msg.encode())
+        pklstr = pickle.dumps(ev) # this is bytes
+        msg = self.topicOfEvent(ev).encode() + ZMQ_DELIMITOR_TOPIC.encode() + pklstr # this is bytes
+        self.__soPub.send(msg) # send must take bytes
 
     def recv(self, secTimeout=0.1):
         ev = None
@@ -162,20 +164,22 @@ class ZeroMqProxy(EventProxy):
             self.__soSub.connect(self.__epSUB)
             for s in self._topicsIncomming:
                 topicfilter = '%s' % s
-                socket.setsockopt(zmq.SUBSCRIBE, topicfilter.encode())
+                self.__soSub.setsockopt(zmq.SUBSCRIBE, topicfilter.encode())
 
             self.__poller.register(self.__soSub, zmq.POLLIN)
 
         if not self.__poller.poll(int(100)): # 100msec timeout
             return None
 
-        msg = self.__soSub.recv().decode()
-        topic, pklstr = msg.split('>')
+        msg = self.__soSub.recv()
+        pos = msg.find(ZMQ_DELIMITOR_TOPIC.encode())
+        if pos <=0: return None
+
+        topic, pklstr = msg[:pos].decode(), msg[pos+1:]
 
         # necessary to filter arrivals as topicfilter covered it: 
         # if topic in self._topicsIncomming:
         ev = pickle.loads(pklstr)
-
         return ev
 
     #----------------------------------------------------------------------
@@ -191,6 +195,7 @@ class ZeroMqProxy(EventProxy):
             self.logexception(ex)
         
         return True #???
+
     # end of BaseApplication routine
     #----------------------------------------------------------------------
 

@@ -339,6 +339,8 @@ class ThreadedAppWrapper(MetaApp):
     def isActive(self) :
         return False if self.__stopped or not self._app else self._app.isActive
 
+    def OnEvent(self, ev): pass
+
     def doAppInit(self):
         '''
         return True if started

@@ -40,12 +40,20 @@ class Event:
         """Constructor"""
         self.dict_['data'] = data
 
+    def tagRemote(self, tag):
+        """Constructor"""
+        self.dict_['rtag'] = tag
+
     @property
     def type(self) : return self.__type
 
     @property
     def data(self) :
         return self.dict_['data'] if 'data' in self.dict_.keys() else None
+
+    @property
+    def rtag(self) :
+        return self.dict_['rtag'] if 'rtag' in self.dict_.keys() else None
 
     @property
     def desc(self) :

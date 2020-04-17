@@ -29,7 +29,7 @@ class EventProxy(BaseApplication):
 
         # 事件队列
         self.__queOutgoing = Queue(maxsize=100)
-        self.__conn = None
+        self.__selfstamp = '%s@%s' % (self.program.progId, self.program.hostname)
 
         self._topicsOutgoing  = self.getConfig('outgoing', [])
         self._topicsIncomming  = self.getConfig('incoming', ['*'])
@@ -67,9 +67,11 @@ class EventProxy(BaseApplication):
         '''
         dispatch the event
         '''
-        if not ev.type in self._topicsOutgoing:
+        if ev.rtag or not ev.type in self._topicsOutgoing:
             return
         
+        ev = copy(ev)
+        ev.tagRemote(self.__selfstamp)
         self.__queOutgoing.put(ev)
 
     def doAppStep(self):
@@ -95,13 +97,12 @@ class EventProxy(BaseApplication):
             
         # step 2. receive the incomming events
         ev = self.recv(0.1)
-        if ev:
-            if ev.type in self._topicsIncomming:
+        if ev and self.topicOfEvent(ev) in self._topicsIncomming:
+            if ev.rtag and not self.__selfstamp in ev.rtag:
                 self.postEvent(ev)
             cRecv +=1
 
         return cRecv + cSent;
-
 
     def doAppInit(self): # return True if succ
         if not super(EventProxy, self).doAppInit() :
@@ -146,6 +147,10 @@ class ZeroMqProxy(EventProxy):
         self.__soPub, self.__soSub = None, None
         self.__ctxZMQ = zmq.Context()
         self.__poller = zmq.Poller()
+
+    @property
+    def myStamp(self):
+        return self.__epSUB
 
     def send(self, ev):
         if not ev: return

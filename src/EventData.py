@@ -7,6 +7,7 @@ from collections import defaultdict
 from datetime import datetime
 import traceback
 from abc import ABCMeta, abstractmethod
+from zlib import crc32
 
 EVENT_NAME_PREFIX = 'ev'    # 事件名字前缀
 
@@ -40,12 +41,21 @@ class Event:
         """Constructor"""
         self.dict_['data'] = data
 
+    def sign(self, publisher): # before the event is being delivered to remote
+        """Constructor"""
+        self.dict_['publisher'] = publisher
+        self.dict_['sig'] = '%08X' % crc32(('%s+%s' %(publisher, self.desc)).encode()) # make crc32 of pub+desc as the signature
+
     @property
     def type(self) : return self.__type
 
     @property
     def data(self) :
         return self.dict_['data'] if 'data' in self.dict_.keys() else None
+
+    @property
+    def publisher(self) :
+        return self.dict_['publisher'] if 'publisher' in self.dict_.keys() else None
 
     @property
     def desc(self) :

@@ -1,0 +1,15 @@
+// configuration of a BackTest
+{
+    "logger": {
+        "level": "debug", //40
+        "console": "True",
+    },
+
+    "eventChannel": {
+        "type": "ZeroMQ",
+        "bind" : "localhost",
+        "timeout" : 200,
+        "threaded": "False",
+        "daemonize": "False",
+    },
+}

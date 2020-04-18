@@ -333,6 +333,7 @@ class BaseTrader(MetaTrader):
                 self.debug('OnAdvice() issuing max%s' % strExec)
                 self._account.cancelAllOrders()
                 vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, strategy=None)
+                dirExeced = OrderData.DIRECTION_SHORT
 
         # step 3. calculate the rewards
         self._latestCash, self._latestPosValue = self._account.summrizeBalance() # most likely the cashAmount changed due to comission

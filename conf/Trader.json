@@ -6,7 +6,6 @@
     },
 
     "trader": {
-        "accountId" : "blah",
         "startCapitial": 100000,
         "episodes": 1,
         "warmupDays": 120,
@@ -15,8 +14,18 @@
             // "epochsPerObservOnGpu" :2,
         },
 
-        "sourceCsvDir": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
+        "evMdSource": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
         "objectives": ["SH510050"],
+    },
+
+    "advisor": {
+        "id" : "blah",
+        "type": "NeuralNetAdvisor",
+        "brainId" : "Cnn1Dx4R2",
+        "exchange" : "AShare",
+        // "eventSource": "sina", 
+        "eventSource": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
+        "objectives": ["SH510050","SH510500","SZ159949"],
     },
 
     "account": { // account settings

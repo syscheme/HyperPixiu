@@ -3,11 +3,11 @@
 This utility reads csv history data and generate ReplayFrame for offline DQN training
 '''
 
-from hpGym.GymTrader import *
-
+from BackTest import *
 from Account import Account_AShare
 from Application import *
 import HistoryData as hist
+from dnn.Advisors import DnnAdvisor
 
 import sys, os, platform
 RFGROUP_PREFIX = 'ReplayFrame:'
@@ -121,44 +121,64 @@ if __name__ == '__main__':
     p = Program()
     p._heartbeatInterval =-1
 
-    sourceCsvDir = None
-    SYMBOL = ''
+    evMdSource  = None # market data event source
+    advisorType = "remote"
     try:
-        jsetting = p.jsettings('trader/sourceCsvDir')
+        jsetting = p.jsettings('trader/eventSource')
         if not jsetting is None:
-            sourceCsvDir = jsetting(None)
+            eventSource = jsetting(None)
 
-        jsetting = p.jsettings('trader/objectives')
+        jsetting = p.jsettings('advisor/type')
         if not jsetting is None:
-            SYMBOL = jsetting([SYMBOL])[0]
-    except Exception as ex:
-        SYMBOL =''
+            advisorType = jsetting(advisorType)
+        if "remote" != advisorType:
+            # this is a local advisor, so the trader's source of market data event must be the same of the local advisor
+            jsetting = p.jsettings('advisor/eventSource')
+            if not jsetting is None:
+                evMdSource = jsetting(None)
+    except:
+        pass
 
     # In the case that this utility is started from a shell script, this reads env variables for the symbols
+    objectives = None
     if 'SYMBOL' in os.environ.keys():
-        SYMBOL = os.environ['SYMBOL']
-
-    if 'Windows' in platform.platform() and '/mnt/' == sourceCsvDir[:5] and '/' == sourceCsvDir[6]:
-        drive = '%symbol:' % sourceCsvDir[5]
-        sourceCsvDir = sourceCsvDir.replace(sourceCsvDir[:6], drive)
+        objectives = [os.environ['SYMBOL']]
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
+    tdrCore = p.createApp(BaseTrader, configNode ='trader', objectives=objectives, account=acc)
+    objectives = tdrCore.objectives
+    SYMBOL = objectives[0]
 
-    p.info('taking input dir %s for symbol[%s]' % (sourceCsvDir, SYMBOL))
-    csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=sourceCsvDir, fields='date,time,open,high,low,close,volume,ammount')
+    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.logdir, '%s_%s.tcsv' % (SYMBOL, p.progId)))
+    revents = None
 
-    gymtdr = p.createApp(GymTrader, configNode ='trader', tradeSymbol=SYMBOL, account=acc)
-    p.info('all objects registered piror to OfflineSimulator: %s' % p.listByType())
+    SYMBOL = objectives[0] # csvPlayback can only cover one symbol
+    evMdSource = Program.fixupPath(evMdSource)
+    p.info('taking input dir %s for symbol[%s]' % (evMdSource, SYMBOL))
+    csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
+
+    if 'remote' == advisorType :
+        p.error('sim_offline only takes local advisor')
+        quit()
+        # revents = p.createApp(ZeroMqProxy, configNode ='remoteEvents')
+        # revs = [EVENT_ADVICE]
+        # if not evMdSource:
+        #     revs += [EVENT_TICK, EVENT_KLINE_1MIN]
+        # revents.subscribe(revs)
+    else :
+        p.info('all objects registered piror to local Advisor: %s' % p.listByType())
+        advisor = p.createApp(DnnAdvisor, configNode ='advisor', objectives=objectives, recorder=rec)
+        advisor._exchange = tdrCore.account.exchange
+
+    p.info('all objects registered piror to simulator: %s' % p.listByType())
 
     if '-I' in sys.argv :
-        trader = p.createApp(IdealDayTrader, configNode ='trader', trader=gymtdr, histdata=csvreader) # ideal trader to generator ReplayFrames
+        tdrWraper = p.createApp(IdealDayTrader, configNode ='trader',   trader=tdrCore, histdata=csvreader) # ideal trader to generator ReplayFrames
     else :
-        trader = p.createApp(OfflineSimulator, configNode ='trader', trader=gymtdr, histdata=csvreader) # the simulator with brain loaded to verify training result
+        tdrWraper = p.createApp(OfflineSimulator, configNode ='trader', trader=tdrCore, histdata=csvreader) # the simulator with brain loaded to verify training result
 
-    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(trader.outdir, 'offline_%s.tcsv' % SYMBOL))
-    trader.setRecorder(rec)
+    tdrWraper.setRecorder(rec)
 
     p.start()
     p.loop()
-    
     p.stop()

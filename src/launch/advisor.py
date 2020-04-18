@@ -51,9 +51,9 @@ if __name__ == '__main__':
         mc.subscribe(objectives)
     elif '/' in eventSource and len(objectives)>0: # eventSource looks like a file or directory
         SYMBOL = objectives[0] # csvPlayback can only cover one symbol
-        sourceCsvDir = Program.fixupPath(eventSource)
+        eventSource = Program.fixupPath(eventSource)
         p.info('taking input dir %s for symbol[%s]' % (eventSource, SYMBOL))
-        csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=sourceCsvDir, fields='date,time,open,high,low,close,volume,ammount')
+        csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=eventSource, fields='date,time,open,high,low,close,volume,ammount')
         pbApp = p.createApp(hist.PlaybackApp, playback= csvreader)
 
     p.start()

@@ -5,7 +5,7 @@ This utility reads csv history data and generate ReplayFrame for offline DQN tra
 
 from hpGym.GymTrader import *
 
-from TradeAdvisor import *
+from dnn.TradeAdvisor import DnnAdvisor
 from Application import *
 import HistoryData as hist
 from RemoteEvent import ZeroMqProxy
@@ -42,7 +42,7 @@ if __name__ == '__main__':
     revents.registerOutgoing([EVENT_ADVICE, EVENT_KLINE_1MIN]) # should be revents.registerOutgoing(EVENT_ADVICE)
 
     p.info('all objects registered piror to Advisor: %s' % p.listByType())
-    advisor = p.createApp(NeuralNetAdvisor, configNode ='advisor', objectives=objectives, recorder=rec)
+    advisor = p.createApp(DnnAdvisor, configNode ='advisor', objectives=objectives, recorder=rec)
     objectives = advisor.objectives
 
     if 'sina' == eventSource:

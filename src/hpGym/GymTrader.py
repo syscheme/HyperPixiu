@@ -595,6 +595,9 @@ class OfflineSimulator(BackTestApp):
     # end of BaseApplication routine
     #----------------------------------------------------------------------
 
+    def OnAdvice(self, evAdvice):
+        self.wkTrader.OnAdvice(evAdvice)
+
     # to replace GymTrader's __actPerMarketEvent
     def __trainPerMarketEvent(self, ev):
         '''processing an incoming MarketEvent'''

@@ -190,6 +190,12 @@ class BackTestApp(MetaTrader):
         #     if len(obj["ds1min"]) >0 :
         #         obj["ds1min"] += MarketData.TAG_BACKTEST
 
+        # step 3. subscribe the market events
+        self.subscribeEvent(EVENT_TICK)
+        self.subscribeEvent(EVENT_KLINE_1MIN)
+        self.subscribeEvent(EVENT_KLINE_5MIN)
+        self.subscribeEvent(EVENT_KLINE_1DAY)
+
         self.resetEpisode()
         _quitEpisode = False
         return True
@@ -208,7 +214,7 @@ class BackTestApp(MetaTrader):
                     self._marketState.updateByEvent(ev)
                     s = ev.data.symbol
                     self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type[len(MARKETDATE_EVENT_PREFIX):], self._marketState.getAsOf(s).strftime('%Y%m%dT%H%M'), self._marketState.latestPrice(s), self._marketState.dailyOHLC_sofar(s)))
-                    self.OnEvent(ev) # call Trader
+                    self.postEvent(ev) # self.OnEvent(ev) # call Trader
                     self._stepNoInEpisode += 1
                     return # successfully performed a step by pushing an Event
 
@@ -295,8 +301,8 @@ class BackTestApp(MetaTrader):
     def eventHdl_Trade(self, ev):
         return self.__wkTrader.eventHdl_Trade(ev)
 
-    def onDayOpen(self, symbol, date):
-        return self.__wkTrader.onDayOpen(symbol, date)
+    def eventHdl_DayOpen(self, symbol, date):
+        return self.__wkTrader.eventHdl_DayOpen(symbol, date)
 
     #------------------------------------------------
     # 数据回放结果计算相关
@@ -984,9 +990,9 @@ class OnlineSimulator(MetaTrader):
         self._account.account.save()
         return self.__wkTrader.eventHdl_Trade(ev)
 
-    def onDayOpen(self, symbol, date):
+    def eventHdl_DayOpen(self, symbol, date):
         self._account.account.save()
-        return self.__wkTrader.onDayOpen(symbol, date)
+        return self.__wkTrader.eventHdl_DayOpen(symbol, date)
 
 ########################################################################
 class OptimizationSetting(object):
@@ -1693,6 +1699,108 @@ class AccountWrapper(MetaAccount):
             self._broker_onTrade(trade)
             self.info('OnPlaybackEnd() faked a trade: %s' % trade.desc)
 
+########################################################################
+class OfflineSimulator(BackTestApp):
+    '''
+    OfflineSimulator extends BackTestApp by reading history and perform training
+    '''
+    def __init__(self, program, trader, histdata, **kwargs):
+        '''Constructor
+        '''
+        super(OfflineSimulator, self).__init__(program, trader, histdata, **kwargs)
+
+        self._masterExportHomeDir = self.getConfig('master/homeDir', None) # this agent work as the master when configured, usually point to a dir under webroot
+        if self._masterExportHomeDir and '/' != self._masterExportHomeDir[-1]: self._masterExportHomeDir +='/'
+        
+        # the base URL of local web for the slaves to GET/POST the tasks
+        # current OfflineSimulator works as slave if this masterExportURL presents but masterExportHomeDir abendons
+        self._masterExportURL = self.getConfig('master/exportURL', self._masterExportHomeDir)
+
+        self.__savedEpisode_Id = -1
+        self.__savedEpisode_opendays = 0
+        self.__maxKnownOpenDays =0
+        self.__prevMaxBalance =0
+
+    #----------------------------------------------------------------------
+    # impl/overwrite of BaseApplication
+    def doAppInit(self): # return True if succ
+        # make sure OfflineSimulator is ONLY wrappering GymTrader
+        if not self._initTrader or not isinstance(self._initTrader, BaseTrader) :
+            self.error('doAppInit() invalid initTrader')
+            return False
+
+        if not super(OfflineSimulator, self).doAppInit() :
+            return False
+
+        self._account.account._skipSavingByEvent = True
+        return True
+
+    def OnEvent(self, ev): # this overwrite BackTest's because there are some different needs
+        symbol  = None
+        if EVENT_TICK == ev.type or EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
+            try :
+                symbol = ev.data.symbol
+            except:
+                pass
+            self._account.matchTrades(ev)
+
+        self.wkTrader.OnEvent(ev) # to perform the gym step
+
+        asOf = self.wkTrader.marketState.getAsOf(symbol)
+
+        # get some additional reward when survived for one more day
+        self._dataEnd_date = asOf
+        self._dataEnd_closeprice = self.wkTrader.marketState.latestPrice(symbol)
+
+        if not self._dataBegin_date:
+            self._dataBegin_date = self._dataEnd_date
+            self._dataBegin_openprice = self._dataEnd_closeprice
+            self.debug('OnEvent() taking dataBegin(%s @%s)' % (self._dataBegin_openprice, self._dataBegin_date))
+
+        if (self.wkTrader._latestCash  + self.wkTrader._latestPosValue) < (self.wkTrader._maxBalance*(100.0 -self._pctMaxDrawDown)/100):
+            self._bGameOver = True
+            self._episodeSummary['reason'] = '%s cash +%s pv drewdown %s%% of maxBalance[%s]' % (self.wkTrader._latestCash, self.wkTrader._latestPosValue, self._pctMaxDrawDown, self.wkTrader._maxBalance)
+            self.error('episode[%s] has been KO-ed: %s' % (self.episodeId, self._episodeSummary['reason']))
+        
+    # end of BaseApplication routine
+    #----------------------------------------------------------------------
+
+    def OnAdvice(self, evAdvice):
+        self.wkTrader.OnAdvice(evAdvice)
+
+    #------------------------------------------------
+    # BackTest related entries
+    def OnEpisodeDone(self, reachedEnd=True):
+        super(OfflineSimulator, self).OnEpisodeDone(reachedEnd)
+
+        # determin whether it is a best episode
+        lstImproved=[]
+
+        opendays = self._episodeSummary['openDays']
+        if opendays > self.__maxKnownOpenDays:
+            self.__maxKnownOpenDays = opendays
+            lstImproved.append('openDays')
+
+        if self.wkTrader._maxBalance > self.__prevMaxBalance :
+            lstImproved.append('maxBalance')
+            self.debug('OnEpisodeDone() maxBalance improved from %s to %s' % (self.__prevMaxBalance, self.wkTrader._maxBalance))
+            self.__prevMaxBalance = self.wkTrader._maxBalance
+
+        if reachedEnd or (opendays>2 and opendays > (self.__maxKnownOpenDays *3/4)): # at least stepped most of known days
+            # determin if best episode
+            pass
+
+        # save brain and decrease epsilon if improved
+        if len(lstImproved) >0 :
+            self.__savedEpisode_opendays = opendays
+            self.__savedEpisode_Id = self.episodeId
+
+        mySummary = {
+            'savedEId'    : self.__savedEpisode_Id,
+            'savedODays'  : self.__savedEpisode_opendays,
+        }
+
+        self._episodeSummary = {**self._episodeSummary, **mySummary}
 
 if __name__ == '__main__':
     print('-'*20)

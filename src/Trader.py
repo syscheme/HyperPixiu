@@ -283,6 +283,7 @@ class BaseTrader(MetaTrader):
         adv = evAdvice.data
         symbol = adv.symbol
         if not self.marketState.exchange in adv.exchange or not symbol in self.objectives:
+            self.debug('OnAdvice() advice ignored: exchange[%s] %s' % (adv.exchange, adv.desc))
             return
 
         # if bObserveOnly:

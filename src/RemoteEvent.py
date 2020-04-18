@@ -67,11 +67,11 @@ class EventProxy(BaseApplication):
         '''
         dispatch the event
         '''
-        if ev.rtag or not ev.type in self._topicsOutgoing:
+        if ev.publisher or not ev.type in self._topicsOutgoing: # ignore those undeclared type and were captured from remote
             return
         
         ev = copy(ev)
-        ev.tagRemote(self.__selfstamp)
+        ev.sign(self.__selfstamp)
         self.__queOutgoing.put(ev)
 
     def doAppStep(self):
@@ -98,7 +98,7 @@ class EventProxy(BaseApplication):
         # step 2. receive the incomming events
         ev = self.recv(0.1)
         if ev and self.topicOfEvent(ev) in self._topicsIncomming:
-            if ev.rtag and not self.__selfstamp in ev.rtag:
+            if ev.publisher and not self.__selfstamp in ev.publisher:
                 self.postEvent(ev)
             cRecv +=1
 
@@ -193,12 +193,6 @@ class ZeroMqProxy(EventProxy):
         if not super(ZeroMqProxy, self).doAppInit() :
             return False
 
-        try:
-            self.__connect()
-            return True
-        except Exception as ex:
-            self.logexception(ex)
-        
         return True #???
 
     # end of BaseApplication routine

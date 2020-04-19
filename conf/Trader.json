@@ -6,10 +6,14 @@
     },
 
     "trader": { // a trader operating an account by depending on advisor and marketEvents
-        "startCapitial": 100000,
-        "episodes": 1,
-        "warmupDays": 120,
         "objectives": ["SH510050"],
+
+        "backTest":{
+            "startBalance": 100000,
+            "episodes": 1,
+            "warmupDays": 120,
+            // "ideal": "T+1",
+        }
     },
 
     "account": { // account settings

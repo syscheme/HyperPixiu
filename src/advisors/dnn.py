@@ -46,7 +46,7 @@ class DnnAdvisor_S1548I4A3(TradeAdvisor):
     '''
     STATE_DIMS  = 1548
     ITEM_FLOATS = EXPORT_FLOATS_DIMS
-    ACTION_DIMS = 3
+    ACTION_DIMS = len(ADVICE_DIRECTIONS) # =3
 
     def __init__(self, program, **kwargs) :
         self._brainId = None

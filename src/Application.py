@@ -32,6 +32,7 @@ LOGLEVEL_CRITICAL = logging.CRITICAL
 LOGFMT_GENERAL    = '%(asctime)s %(levelname)s\t%(message)s'
 
 BOOL_STRVAL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh', True, 1]
+DUMMY_BIG_VAL    = 999999.9
 
 ########################################################################
 class MetaObj(ABC):
@@ -591,6 +592,16 @@ class Program(object):
             n = None
         return n
 
+    # def getConfig(self, configName, defaultVal) :
+    #     try :
+    #         jn = self.jsettings(configName)
+    #         if not jn is None:
+    #             return jn(defaultVal)
+    #     except:
+    #         pass
+
+    #     return defaultVal
+
     @property
     def logger(self) : return self.__logger
 
@@ -987,9 +998,6 @@ class Program(object):
 
     def getConfig(self, configName, defaultVal, pop=False) :
         try :
-            if configName in self._kwargs.keys() :
-                return self._kwargs.pop(configName, defaultVal) if pop else self._kwargs[configName]
-
             if self.__jsettings:
                 jn = self.__jsettings
                 for i in configName.split('/') :

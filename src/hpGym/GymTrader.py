@@ -501,6 +501,7 @@ class GymTrader(BaseTrader):
     def __OnRenderClosed(self, evt):
         self.__closed_plot = True
 
+"""
 ########################################################################
 class OfflineSimulator(BackTestApp):
     '''
@@ -1194,6 +1195,7 @@ class IdealDayTrader(OfflineSimulator):
 
         self.info('saved frame[%s] len[%s] to file %s with sig[%s]' % (frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
 
+"""
 
 ########################################################################
 from Application import Program

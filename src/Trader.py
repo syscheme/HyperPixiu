@@ -173,18 +173,22 @@ class BaseTrader(MetaTrader):
         for symbol in self._dictObjectives.keys():
             self._marketState.addMonitor(symbol)
 
-        # step 3. subscribe the TradeAdvices
+        # step 3.1 subscribe the TradeAdvices
         self.subscribeEvent(EVENT_ADVICE)
 
-        # step 3. subscribe the market events
+        # step 3.2 subscribe the account and market events
+        self.subscribeEvent(Account.EVENT_ORDER)
+        self.subscribeEvent(Account.EVENT_TRADE)
         self.subscribeEvent(EVENT_TICK)
         self.subscribeEvent(EVENT_KLINE_1MIN)
         # self.subscribeEvent(EVENT_KLINE_5MIN)
         # self.subscribeEvent(EVENT_KLINE_1DAY)
 
-        # step 4. subscribe account events
-        self.subscribeEvent(Account.EVENT_ORDER)
-        self.subscribeEvent(Account.EVENT_TRADE)
+        if self._recorder :
+            self._recorder.registerCategory(Account.RECCATE_ORDER,       params= {'columns' : OrderData.COLUMNS})
+            self._recorder.registerCategory(Account.RECCATE_TRADE,       params= {'columns' : TradeData.COLUMNS})
+            self._recorder.registerCategory(Account.RECCATE_DAILYPOS,    params= {'columns' : DailyPosition.COLUMNS})
+            self._recorder.registerCategory(Account.RECCATE_DAILYRESULT, params= {'columns' : DailyResult.COLUMNS})
 
         return True
 

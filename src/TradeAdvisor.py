@@ -11,7 +11,7 @@ from Application  import BaseApplication, BOOL_STRVAL_TRUE
 from Account      import OrderData
 
 # event type
-EVENT_ADVICE  = EVENT_NAME_PREFIX + 'TAdv'  # 交易建议事件
+EVENT_ADVICE      = EVENT_NAME_PREFIX + 'TAdv'  # 交易建议事件
 ADVICE_DIRECTIONS = [OrderData.DIRECTION_NONE, OrderData.DIRECTION_LONG, OrderData.DIRECTION_SHORT]
 
 import os

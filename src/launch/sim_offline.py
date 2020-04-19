@@ -121,24 +121,16 @@ if __name__ == '__main__':
     p = Program()
     p._heartbeatInterval =-1
 
-    evMdSource  = None # market data event source
-    advisorType = "remote"
-    try:
-        jsetting = p.jsettings('marketEvents/source')
-        if not jsetting is None:
-            evMdSource = jsetting(None)
+    evMdSource  = p.getConfig('marketEvents/source', None) # market data event source
+    advisorType = p.getConfig('advisor/type', "remote")
+    ideal       = p.getConfig('trader/backTest/ideal', None) # None
 
-        jsetting = p.jsettings('advisor/type')
-        if not jsetting is None:
-            advisorType = jsetting(advisorType)
-        if "remote" != advisorType:
-            # this is a local advisor, so the trader's source of market data event must be the same of the local advisor
-            pass
-            # jsetting = p.jsettings('advisor/eventSource')
-            # if not jsetting is None:
-            #     evMdSource = jsetting(None)
-    except:
+    if "remote" != advisorType:
+        # this is a local advisor, so the trader's source of market data event must be the same of the local advisor
         pass
+        # jsetting = p.jsettings('advisor/eventSource')
+        # if not jsetting is None:
+        #     evMdSource = jsetting(None)
 
     # In the case that this utility is started from a shell script, this reads env variables for the symbols
     objectives = None
@@ -173,8 +165,8 @@ if __name__ == '__main__':
 
     p.info('all objects registered piror to simulator: %s' % p.listByType())
 
-    if '-I' in sys.argv :
-        tdrWraper = p.createApp(IdealDayTrader, configNode ='trader',   trader=tdrCore, histdata=csvreader) # ideal trader to generator ReplayFrames
+    if 'T+1' == ideal :
+        tdrWraper = p.createApp(IdealTrader_Tplus1, configNode ='trader',  trader=tdrCore, histdata=csvreader) # ideal trader to generator ReplayFrames
     else :
         tdrWraper = p.createApp(OfflineSimulator, configNode ='trader', trader=tdrCore, histdata=csvreader) # the simulator with brain loaded to verify training result
 

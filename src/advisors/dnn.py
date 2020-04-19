@@ -40,20 +40,23 @@ def _loadBrain(app, brainDir) :
     return None
 
 ########################################################################
-class DnnAdvisor(TradeAdvisor):
+class DnnAdvisor_S1548I4A3(TradeAdvisor):
     '''
-    DnnAdvisor impls TradeAdvisor by employing a pre-trained DNN model
+    DnnAdvisor_S1548I4A3 impls TradeAdvisor by employing a pre-trained DNN model for state S1548I4A3
     '''
+    STATE_DIMS  = 1548
+    ITEM_FLOATS = EXPORT_FLOATS_DIMS
+    ACTION_DIMS = 3
+
     def __init__(self, program, **kwargs) :
         self._brainId = None
-        super(DnnAdvisor, self).__init__(program, **kwargs)
+        super(DnnAdvisor_S1548I4A3, self).__init__(program, **kwargs)
 
         self._brainId = self.getConfig('brainId', "default")
-        self.__stateSize, self.__actionSize = 1548, 3 #TODO
 
     @property
     def ident(self) :
-        return 'NNAdv.%s.%s' % (self._brainId, self._id) if self._brainId else super(DnnAdvisor,self).ident
+        return 'S1548I4A3.%s.%s' % (self._brainId, self._id) if self._brainId else super(DnnAdvisor_S1548I4A3,self).ident
 
     def generateAdviceOnMarketEvent(self, ev):
         '''processing an incoming MarketEvent and generate an advice'''
@@ -66,10 +69,10 @@ class DnnAdvisor(TradeAdvisor):
         symbol = tokens[0]
 
         market_state = self._marketState.exportKLFloats(symbol)
-        market_state = np.array(market_state).astype(NN_FLOAT).reshape(1, self.__stateSize)
+        market_state = np.array(market_state).astype(NN_FLOAT).reshape(1, DnnAdvisor_S1548I4A3.STATE_DIMS)
 
         act_values = self._brain.predict(market_state)
-        action = np.zeros(self.__actionSize)
+        action = np.zeros(DnnAdvisor_S1548I4A3.ACTION_DIMS)
         action[np.argmax(act_values[0])] = 1
         advice = AdviceData(self.ident, symbol, d.exchange)
         advice.dirNONE, advice.dirLONG, advice.dirSHORT = act_values[0][0], act_values[0][1], act_values[0][2]
@@ -81,13 +84,13 @@ class DnnAdvisor(TradeAdvisor):
     # impl/overwrite of BaseApplication
     def doAppInit(self): # return True if succ
 
-        brainDir = '%s%s.S%dI%dA%d/' % (self.dataRoot, self._brainId, self.__stateSize, EXPORT_FLOATS_DIMS, self.__actionSize)
+        brainDir = '%s%s.S1548I4A3/' % (self.dataRoot, self._brainId)
         self._brain = _loadBrain(self, brainDir)
         if not self._brain:
             self.error('doAppInit() failed to load brain[%s]' %self._brainId)
             return False
 
-        return super(DnnAdvisor, self).doAppInit()
+        return super(DnnAdvisor_S1548I4A3, self).doAppInit()
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------

@@ -1,31 +1,15 @@
 // configuration of a BackTest
 {
     "logger": {
-        "level": "debug", //40
+        "level": "info", //40
         // "console": "False",
     },
 
-    "trader": {
+    "trader": { // a trader operating an account by depending on advisor and marketEvents
         "startCapitial": 100000,
         "episodes": 1,
         "warmupDays": 120,
-        "agent" :{
-            "brainId": "Cnn1Dx4R2", // the model ID to take
-            // "epochsPerObservOnGpu" :2,
-        },
-
-        "evMdSource": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
         "objectives": ["SH510050"],
-    },
-
-    "advisor": {
-        "id" : "blah",
-        "type": "NeuralNetAdvisor",
-        "brainId" : "Cnn1Dx4R2",
-        "exchange" : "AShare",
-        // "eventSource": "sina", 
-        "eventSource": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
-        "objectives": ["SH510050","SH510500","SZ159949"],
     },
 
     "account": { // account settings
@@ -36,5 +20,28 @@
         "ratePer10K" : 30,    // 佣金比例（per 10K）
         "size" : 100,         // 合约大小，默认为1
         "priceTick" : 0,      // 价格最小变动 
+    },
+
+    "advisor": {
+        "id" : "blah",
+        // "type": "remote", // if type=remote, the program will refer to "remoteEvents" for TradeAdvices, 
+        // otherwise take local advisor
+        "type": "dnn.S1548I4A3",
+        "brainId" : "Cnn1Dx4R2",
+        "objectives": ["SH510050","SH510500","SZ159949"],
+    },
+
+    "marketEvents": { // the source of market events
+        // "source": "sina", // as a crawler to get alive event from SINA
+        "source": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
+        "exchange" : "AShare", // optional for trader, which take that of account normally
+    },
+
+    "remoteEvents": {
+        "ZeroMQ": {
+            "endpoint" : "localhost",
+            "outgoing": [],
+            "incoming": ["evTAdv"],
+        }
     },
 }

@@ -7,7 +7,7 @@ from BackTest import *
 from Account import Account_AShare
 from Application import *
 import HistoryData as hist
-from dnn.Advisors import DnnAdvisor
+from advisors.dnn import DnnAdvisor_S1548I4A3
 
 import sys, os, platform
 RFGROUP_PREFIX = 'ReplayFrame:'
@@ -124,18 +124,19 @@ if __name__ == '__main__':
     evMdSource  = None # market data event source
     advisorType = "remote"
     try:
-        jsetting = p.jsettings('trader/eventSource')
+        jsetting = p.jsettings('marketEvents/source')
         if not jsetting is None:
-            eventSource = jsetting(None)
+            evMdSource = jsetting(None)
 
         jsetting = p.jsettings('advisor/type')
         if not jsetting is None:
             advisorType = jsetting(advisorType)
         if "remote" != advisorType:
             # this is a local advisor, so the trader's source of market data event must be the same of the local advisor
-            jsetting = p.jsettings('advisor/eventSource')
-            if not jsetting is None:
-                evMdSource = jsetting(None)
+            pass
+            # jsetting = p.jsettings('advisor/eventSource')
+            # if not jsetting is None:
+            #     evMdSource = jsetting(None)
     except:
         pass
 
@@ -152,9 +153,9 @@ if __name__ == '__main__':
     rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.logdir, '%s_%s.tcsv' % (SYMBOL, p.progId)))
     revents = None
 
-    SYMBOL = objectives[0] # csvPlayback can only cover one symbol
     evMdSource = Program.fixupPath(evMdSource)
     p.info('taking input dir %s for symbol[%s]' % (evMdSource, SYMBOL))
+    # csvPlayback can only cover one symbol
     csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
 
     if 'remote' == advisorType :
@@ -167,7 +168,7 @@ if __name__ == '__main__':
         # revents.subscribe(revs)
     else :
         p.info('all objects registered piror to local Advisor: %s' % p.listByType())
-        advisor = p.createApp(DnnAdvisor, configNode ='advisor', objectives=objectives, recorder=rec)
+        advisor = p.createApp(DnnAdvisor_S1548I4A3, configNode ='advisor', objectives=objectives, recorder=rec)
         advisor._exchange = tdrCore.account.exchange
 
     p.info('all objects registered piror to simulator: %s' % p.listByType())

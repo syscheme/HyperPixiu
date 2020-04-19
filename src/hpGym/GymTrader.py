@@ -66,7 +66,7 @@ class MetaAgent(MetaObj): # TODO:
         if self._trainInterval < 10:
             self._trainInterval =10
 
-        self._outDir = self.getConfig('outDir', self._gymTrader.dataRoot)
+        self._outDir = self.getConfig('outDir', self._gymTrader._outDir)
         if '/' != self._outDir[-1]: self._outDir +='/'
 
         self._statusAttrs = {}

@@ -101,24 +101,17 @@ class BaseApplication(MetaApp):
         self._threadWished = False
         self._id =""
         self.__jsettings = None
-        self.__dataDir = './out'
 
         self._kwargs = kwargs
         if 'jsettings' in self._kwargs.keys():
             self.__jsettings = self._kwargs.pop('jsettings', None)
             self._id        = self.__jsettings.id(self._id)
-            self.__dataDir  = self.__jsettings.dataDir(self.__dataDir)
             self._threadWished = self.__jsettings.threaded('False').lower() in BOOL_STRVAL_TRUE
 
         self._id = self._kwargs.pop('id', self._id)
-        self.__dataDir  = self._kwargs.pop('dataDir', self.__dataDir)
         self._threadWished = self._kwargs.pop('threaded', str(self._threadWished)).lower() in BOOL_STRVAL_TRUE
 
-        if '/' != self.__dataDir[-1]:
-            self.__dataDir +='/'
-
         self.__gen = self._generator()
-
         self.__fstampInnerStart, self.__fstampInnerEnd, self.__fdurInner, self.__fdurOuter = 0.0, 0.0, 0.0, 0.0
 
     def __deepcopy__(self, other):
@@ -132,8 +125,11 @@ class BaseApplication(MetaApp):
         return self
 
     @property
-    def dataRoot(self) :
-        return self.__dataDir
+    def dataRoot(self) : return self.program.dataRoot
+
+    @property
+    def outdir(self) :
+        return self.program.outdir
 
     @property
     def program(self) :
@@ -523,7 +519,8 @@ class Program(object):
         self.__hostname = socket.gethostname()
         self.__pid = os.getpid() # process id
         self.__progName = os.path.basename(argvs[0])[0:-3] # cut off the .py extname
-        self._outdir = './out' #TODO
+        self.__dataRoot = './out/' # should be './data'
+        self.__outdir = os.path.join(self.__dataRoot, self.__progName)
         self._heartbeatInterval = BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # heartbeat间隔（默认1秒）
         self.__daemonize =False
         # dirname(dirname(abspath(file)))
@@ -545,8 +542,8 @@ class Program(object):
                 sys.exit()
             elif opt in ("-f", "--ifile"):
                 config_filename = arg
-            elif opt in ("-o", "--ofile"):
-                self._outdir = arg
+            elif opt in ("-o", "--odir"):
+                self.__outdir = arg
 
         if config_filename :
             try :
@@ -559,7 +556,7 @@ class Program(object):
                 print('failed to load configure[%s]: %s' % (config_filename, e))
                 sys.exit(3)
 
-        self.__shelvefn = '%s/%s.sobj' % (self._outdir, self.__progName)
+        self.__shelvefn = '%s/%s.sobj' % (self.__outdir, self.__progName)
         # 记录今日日期
         self._runStartDate = datetime.now().strftime('%Y-%m-%d')
 
@@ -613,6 +610,12 @@ class Program(object):
 
     @property
     def logdir(self) :  return self.__logdir
+
+    @property
+    def outdir(self) :  return self.__outdir
+
+    @property
+    def dataRoot(self) : return self.__dataRoot # return os.path.join(self.__dataRoot, self.__progName)
 
     @property
     def ostype(self) :   return self.__ostype

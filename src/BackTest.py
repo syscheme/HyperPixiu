@@ -20,6 +20,7 @@ from itertools import product
 import multiprocessing
 import copy
 
+import os
 # import pymongo
 import pandas as pd
 import numpy as np
@@ -82,13 +83,12 @@ class BackTestApp(MetaTrader):
         self._maxBalance = self._startBalance
 
         # backtest will always clear the datapath
-        self._initTrader._outDir = '%s%s%s' % (self.dataRoot, self.ident, self.program.progId)
         try :
-            shutil.rmtree(self._initTrader._outDir)
+            shutil.rmtree(self.outdir)
         except:
             pass
         try :
-            os.makedirs(self._initTrader._outDir)
+            os.makedirs(self.outdir)
         except:
             pass
 
@@ -103,10 +103,6 @@ class BackTestApp(MetaTrader):
     @property
     def wkTrader(self) :
         return self.__wkTrader
-
-    @property
-    def outdir(self) :
-        return self._initTrader._outDir
 
     def setRecorder(self, recorder) :
         self._recorder = recorder
@@ -769,10 +765,9 @@ class OnlineSimulator(MetaTrader):
         self.__dtLastData = None
         self._maxBalance = self._startBalance
 
-        # backtest will always clear the datapath
-        self.__wkTrader._outDir = '%s%s.P%s' % (self.dataRoot, self.ident, self.program.pid)
         self.program.setShelveFilename('%s%s.sobj' % (self.dataRoot, self.ident))
 
+        # backtest will always clear the datapath
         try :
             shutil.rmtree(self.__wkTrader._outDir)
         except:
@@ -788,10 +783,6 @@ class OnlineSimulator(MetaTrader):
     @property
     def wkTrader(self) :
         return self.__wkTrader
-
-    @property
-    def outdir(self) :
-        return self.__wkTrader._outDir
 
     def setRecorder(self, recorder) :
         self._recorder = recorder

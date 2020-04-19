@@ -135,7 +135,7 @@ class MarketDirClassifier(BaseApplication):
         self._evalAt =int(self._evalAt)
         self._stateSize, self._actionSize, self._frameSize = None, None, 0
         self._brain = None
-        self._outDir = os.path.join(self.dataRoot, self._program.progId)
+        self._outDir = os.path.join(self.outdir, 'P%s/' % self.program.pid)
         self.__lock = threading.Lock()
         self.__thrdsReadAhead = []
         self.__chunksReadAhead = []

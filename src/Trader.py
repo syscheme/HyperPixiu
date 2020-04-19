@@ -44,12 +44,17 @@ class MetaTrader(BaseApplication):
         self._recorder =recorder
         self._latestCash, self._latestPosValue =0.0, 0.0
         self._maxBalance =0.0
+        self.__outDir  = self.getConfig('outDir', os.path.join(super(MetaTrader, self).outdir, 'Tdr.P%s/' % self.program.pid) )
+        if self.__outDir and '/' != self.__outDir[-1]: self.__outDir +='/'
 
     def __deepcopy__(self, other):
         result = object.__new__(type(self))
         result.__dict__ = copy(self.__dict__)
         result._dictObjectives = deepcopy(self._dictObjectives)
         return result
+
+    @property
+    def outdir(self) : return self.__outDir # replace that of BaseApplication 
 
     @property
     def account(self): return self._account # the default account
@@ -92,7 +97,6 @@ class BaseTrader(MetaTrader):
         # self._tradeType = TRADER_TYPE_TRADING
         if not self._accountId:
             self._accountId      = self.getConfig('accountId', self._accountId)
-        self._outDir             = self.getConfig('outDir', self.dataRoot)
         self._annualCostRatePcnt = self.getConfig('annualCostRatePcnt', 10) # the annual cost rate of capital time, 10% by default
         self._maxValuePerOrder   = self.getConfig('maxValuePerOrder', 0) # the max value limitation of a single order
         self._minBuyPerOrder     = self.getConfig('minBuyPerOrder', 1000.0) # the min value limitation of a single buy
@@ -100,8 +104,6 @@ class BaseTrader(MetaTrader):
             objectives  = self.getConfig('objectives', [])
 
         self._minBuyPerOrder   = self.getConfig('minBuyPerOrder', 1000.0) # the min value limitation of a single buy
-
-        if self._outDir and '/' != self._outDir[-1]: self._outDir +='/'
         
         for symbol in objectives:
             self.openObjective(symbol)

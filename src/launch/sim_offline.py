@@ -142,7 +142,7 @@ if __name__ == '__main__':
     objectives = tdrCore.objectives
     SYMBOL = objectives[0]
 
-    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.logdir, '%s_%s.tcsv' % (SYMBOL, p.progId)))
+    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.outdir, '%s_P%s.tcsv' % (SYMBOL, p.pid)))
     revents = None
 
     evMdSource = Program.fixupPath(evMdSource)

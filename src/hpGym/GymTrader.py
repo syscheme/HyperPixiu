@@ -66,7 +66,7 @@ class MetaAgent(MetaObj): # TODO:
         if self._trainInterval < 10:
             self._trainInterval =10
 
-        self._outDir = self.getConfig('outDir', self._gymTrader.dataRoot)
+        self._outDir = self.getConfig('outDir', self._gymTrader._outDir)
         if '/' != self._outDir[-1]: self._outDir +='/'
 
         self._statusAttrs = {}
@@ -501,6 +501,7 @@ class GymTrader(BaseTrader):
     def __OnRenderClosed(self, evt):
         self.__closed_plot = True
 
+"""
 ########################################################################
 class OfflineSimulator(BackTestApp):
     '''
@@ -594,6 +595,9 @@ class OfflineSimulator(BackTestApp):
         
     # end of BaseApplication routine
     #----------------------------------------------------------------------
+
+    def OnAdvice(self, evAdvice):
+        self.wkTrader.OnAdvice(evAdvice)
 
     # to replace GymTrader's __actPerMarketEvent
     def __trainPerMarketEvent(self, ev):
@@ -1191,6 +1195,7 @@ class IdealDayTrader(OfflineSimulator):
 
         self.info('saved frame[%s] len[%s] to file %s with sig[%s]' % (frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
 
+"""
 
 ########################################################################
 from Application import Program

@@ -655,7 +655,7 @@ class Account(MetaAccount):
             pos.stampByTrader = trade.datetime  # the current position is calculated based on trade
         
         cashAvail, cashTotal = self.cashAmount()
-        self.info('broker_onTrade() trade[%s] processed, pos[%s->%s/%s] cash[%.2f/%.2f]' % (trade.desc, strPrevPos, pos.posAvail, pos.position, cashAvail, cashTotal))#, pos.desc))
+        self.info('broker_onTrade() trade[%s]@%s processed, pos[%s->%s/%s] cash[%.2f/%.2f]' % (trade.desc, trade.asof.strftime('%Y%m%dT%H%M%S'), strPrevPos, pos.posAvail, pos.position, cashAvail, cashTotal))#, pos.desc))
         self.postEventData(Account.EVENT_TRADE, copy.copy(trade))
         if not self._skipSavingByEvent : self.save()
         self.record(Account.RECCATE_TRADE, trade)

@@ -5,11 +5,12 @@
         "console": "True",
     },
 
+    "daemonize": "True",
+    
     "eventChannel": {
         "type": "ZeroMQ",
         "bind" : "*",
         "timeout" : 200,
         "threaded": "False",
-        "daemonize": "False",
     },
 }

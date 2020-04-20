@@ -5,11 +5,12 @@ This utility reads csv history data and generate ReplayFrame for offline DQN tra
 
 from hpGym.GymTrader import *
 
-from TradeAdvisor import *
-from Application import *
+from   TradeAdvisor import EVENT_ADVICE
+from   advisors.dnn  import DnnAdvisor_S1548I4A3
+from   Application   import *
 import HistoryData as hist
-from RemoteEvent import ZeroMqProxy
-from crawler.crawlSina import *
+from   RemoteEvent import ZeroMqProxy
+from   crawler.crawlSina import *
 
 import sys, os, platform
 RFGROUP_PREFIX = 'ReplayFrame:'
@@ -24,11 +25,21 @@ if __name__ == '__main__':
     p = Program()
     p._heartbeatInterval =-1
 
-    eventSource = None
+    evMdSource = None
+    advType = 'dnn.S1548I4A3'
+    exchange = 'AShare'
     try:
-        jsetting = p.jsettings('advisor/eventSource')
+        jsetting = p.jsettings('marketEvents/source')
         if not jsetting is None:
-            eventSource = jsetting(None)
+            evMdSource = jsetting(None)
+
+        jsetting = p.jsettings('marketEvents/exchange')
+        if not jsetting is None:
+            exchange = jsetting(exchange)
+
+        jsetting = p.jsettings('advisor/type')
+        if not jsetting is None:
+            advType = jsetting(advType)
     except:
         pass
 
@@ -42,18 +53,19 @@ if __name__ == '__main__':
     revents.registerOutgoing([EVENT_ADVICE, EVENT_KLINE_1MIN]) # should be revents.registerOutgoing(EVENT_ADVICE)
 
     p.info('all objects registered piror to Advisor: %s' % p.listByType())
-    advisor = p.createApp(NeuralNetAdvisor, configNode ='advisor', objectives=objectives, recorder=rec)
+    advisor = p.createApp(DnnAdvisor_S1548I4A3, configNode ='advisor', objectives=objectives, recorder=rec)
+    advisor._exchange = exchange
     objectives = advisor.objectives
 
-    if 'sina' == eventSource:
+    if 'sina' == evMdSource:
         mc = p.createApp(SinaCrawler, configNode ='sina', marketState = advisor.marketState, recorder=rec)
         mc._postCaptured = True
         mc.subscribe(objectives)
-    elif '/' in eventSource and len(objectives)>0: # eventSource looks like a file or directory
+    elif '/' in evMdSource and len(objectives)>0: # evMdSource looks like a file or directory
         SYMBOL = objectives[0] # csvPlayback can only cover one symbol
-        sourceCsvDir = Program.fixupPath(eventSource)
-        p.info('taking input dir %s for symbol[%s]' % (eventSource, SYMBOL))
-        csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=sourceCsvDir, fields='date,time,open,high,low,close,volume,ammount')
+        evMdSource = Program.fixupPath(evMdSource)
+        p.info('taking input dir %s for symbol[%s]' % (evMdSource, SYMBOL))
+        csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
         pbApp = p.createApp(hist.PlaybackApp, playback= csvreader)
 
     p.start()

@@ -62,15 +62,15 @@ class VnTrader(BaseTrader):
 
    #----------------------------------------------------------------------
     # about the event handling
-    def onDayOpen(self, symbol, date):
+    def eventHdl_DayOpen(self, symbol, date):
 
-        super(VnTrader, self).onDayOpen(symbol, date)
+        super(VnTrader, self).eventHdl_DayOpen(symbol, date)
 
         # step1. notify stategies
         if symbol in self.__idxSymbolToStrategy:
             # 逐个推送到策略实例中
             l = self.__idxSymbolToStrategy[symbol]
-            self.debug('onDayOpen(%s) dispatching to %d strategies' % (symbol, len(l)))
+            self.debug('eventHdl_DayOpen(%s) dispatching to %d strategies' % (symbol, len(l)))
             for strategy in l:
                 self._stg_call(strategy, strategy.onDayOpen, date)
 

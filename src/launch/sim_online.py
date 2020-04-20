@@ -49,7 +49,7 @@ if __name__ == '__main__':
     simulator.setRecorder(rec)
 
     if 'remote' == advisorType :
-        revents = p.createApp(ZmqProxy, configNode ='remoteEvents')
+        revents = p.createApp(ZmqProxy, configNode ='remoteEvents/zmq')
         revents.subscribeIncoming([EVENT_ADVICE])
     else :
         p.info('all objects registered piror to local Advisor: %s' % p.listByType())

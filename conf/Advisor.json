@@ -14,7 +14,8 @@
 
     "remoteEvents": {
         "zmq": {
-            "endpoint" : "localhost", // "tc.syscheme.com",
+            "endpoint" : "localhost", 
+            //"endpoint" : "tc.syscheme.com",
             "outgoing": ["evTAdv"],
             "incoming": [],
         },

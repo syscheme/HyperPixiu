@@ -5,7 +5,7 @@ EventProxy to remote ZeroMQ
 from __future__ import division
 
 from EventData    import *
-from Application  import BaseApplication
+from Application  import BaseApplication, BOOL_STRVAL_TRUE
 
 import os
 import pickle, json   # to save params
@@ -173,7 +173,7 @@ class ZmqProxy(EventProxy):
             for s in self._topicsIncomming:
                 topicfilter = '%s' % s
                 if len(topicfilter) <=0: continue
-                if '*' == topicfilter: topicfilter ='' # all topics
+                # if '*' == topicfilter: topicfilter ='' # all topics
                 self.__soSub.setsockopt(zmq.SUBSCRIBE, topicfilter.encode())
                 subscribedTopics.append(topicfilter)
 
@@ -218,6 +218,7 @@ class ZmqEventChannel(BaseApplication):
         self._bind    = self.getConfig('bind', '*') # anyaddr
         self._portIN  = self.getConfig('portIN', ZMQPORT_PUB)
         self._portOUT = self.getConfig('portOUT', 0)
+        self._monitor = self.getConfig('monitor', 'False').lower() in BOOL_STRVAL_TRUE
 
         if not self._id or len(self._id) <=0:
             self._id = self.program.hostname
@@ -240,22 +241,24 @@ class ZmqEventChannel(BaseApplication):
         self.__endIN.bind("tcp://*:%d" % self._portIN)
         self.__endIN.setsockopt(zmq.SUBSCRIBE, "".encode())
 
-        self.__monIN = self.__ctxZMQ.socket(zmq.PAIR)
-        self.__endIN.monitor('inproc://zmqchIN', zmq.EVENT_ALL)
-        self.__monIN.connect('inproc://zmqchIN')
-
         # Socket facing SUBs
         self.__endOUT = self.__ctxZMQ.socket(zmq.PUB)
         self.__endOUT.bind("tcp://*:%d" % self._portOUT)
 
-        self.__monOUT = self.__ctxZMQ.socket(zmq.PAIR)
-        self.__endOUT.monitor('inproc://zmqchOUT', zmq.EVENT_ALL)
-        self.__monOUT.connect('inproc://zmqchOUT')
-        
-        self.__poller = zmq.Poller()
-        self.__poller.register(self.__monIN, zmq.POLLIN)
-        self.__poller.register(self.__monOUT, zmq.POLLIN)
         self.__thread = threading.Thread(target=self.__forwarder)
+
+        if self._monitor:
+            self.__monIN = self.__ctxZMQ.socket(zmq.PAIR)
+            self.__endIN.monitor('inproc://zmqchIN', zmq.EVENT_ALL)
+            self.__monIN.connect('inproc://zmqchIN')
+
+            self.__monOUT = self.__ctxZMQ.socket(zmq.PAIR)
+            self.__endOUT.monitor('inproc://zmqchOUT', zmq.EVENT_ALL)
+            self.__monOUT.connect('inproc://zmqchOUT')
+        
+            self.__poller = zmq.Poller()
+            self.__poller.register(self.__monIN, zmq.POLLIN)
+            self.__poller.register(self.__monOUT, zmq.POLLIN)
 
         self.info('bind on %s:(%s->%s)' % (self._bind, self._portIN, self._portOUT))
 
@@ -281,6 +284,10 @@ class ZmqEventChannel(BaseApplication):
 
     def doAppStep(self):
 
+        c =0
+        if not self._monitor:
+            return c
+
         while True:
             socks = self.__poller.poll(int(10)) # 10msec timeout
             if not socks: return None
@@ -291,10 +298,14 @@ class ZmqEventChannel(BaseApplication):
                 # ev = zmq.utils.monitor.parse_monitor_message(msg)
                 # if not ev: return 0
                 self.debug('IN: %s' % msg)
+                c+=1
 
             if self.__monOUT in socks and socks[self.__monOUT] == zmq.POLLIN:
                 msg = self.__monOUT.recv()
                 self.debug('OUT: %s' % msg)
+                c+=1
+
+        return c
 
     def stop(self):
         ''' call to stop this

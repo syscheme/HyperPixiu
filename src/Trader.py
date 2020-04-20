@@ -7,7 +7,7 @@ from __future__ import division
 from EventData    import EventData, datetime2float
 from MarketData   import *
 from Application  import BaseApplication
-from Account      import Account, Account_AShare, PositionData, TradeData, OrderData
+from Account      import *
 from TradeAdvisor import *
 
 '''
@@ -72,8 +72,9 @@ class MetaTrader(BaseApplication):
     @abstractmethod
     def eventHdl_DayOpen(self, symbol, date): raise NotImplementedError
 
-    @abstractmethod
-    def OnAdvice(self, evAdvice): raise NotImplementedError
+    # start from BaseTrader, trader becomes advice-driven
+    # # @abstractmethod
+    # def OnAdvice(self, evAdvice): raise NotImplementedError
 
     def openObjective(self, symbol):
         if not symbol in self._dictObjectives.keys() :

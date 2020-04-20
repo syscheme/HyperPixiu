@@ -978,6 +978,9 @@ class OnlineSimulator(MetaTrader):
         self._account.account.save()
         return self.__wkTrader.eventHdl_DayOpen(symbol, date)
 
+    # def OnAdvice(self, evAdvice):
+    #     self.__wkTrader.OnAdvice(evAdvice)  # unnecessary as OnEvent()->self.__wkTrader.OnEvent(ev) has covered this
+
 ########################################################################
 class OptimizationSetting(object):
     """优化设置"""
@@ -1728,7 +1731,7 @@ class OfflineSimulator(BackTestApp):
                 pass
             self._account.matchTrades(ev)
 
-        self.wkTrader.OnEvent(ev) # to perform the gym step
+        self.wkTrader.OnEvent(ev) # to perform the real handling
 
         asOf = self.wkTrader.marketState.getAsOf(symbol)
 
@@ -1749,8 +1752,8 @@ class OfflineSimulator(BackTestApp):
     # end of BaseApplication routine
     #----------------------------------------------------------------------
 
-    def OnAdvice(self, evAdvice):
-        self.wkTrader.OnAdvice(evAdvice)
+    # def OnAdvice(self, evAdvice):
+    #     self.wkTrader.OnAdvice(evAdvice)
 
     #------------------------------------------------
     # BackTest related entries

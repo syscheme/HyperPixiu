@@ -1,14 +1,15 @@
 from Application import Program
-from MarketData import TickData, KLineData, EVENT_TICK, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
+
 from Account import Account_AShare
+from Trader import BaseTrader
+from BackTest import OnlineSimulator
 import HistoryData as hist
 
-from hpGym.GymTrader import *
-from BackTest import OnlineSimulator
+from TradeAdvisor import EVENT_ADVICE
+from advisors.dnn import DnnAdvisor_S1548I4A3
 
 from crawler.crawlSina import *
 from RemoteEvent import ZeroMqProxy
-from TradeAdvisor import EVENT_ADVICE
 
 import sys, os, platform
 
@@ -20,46 +21,47 @@ if __name__ == '__main__':
     p = Program()
     p._heartbeatInterval = 0.1 # 0.1 yield at idle for 100msec
 
-    sourceCsvDir = None
-    SYMBOL = ''
-    try:
-        jsetting = p.jsettings('trader/sourceCsvDir')
-        if not jsetting is None:
-            sourceCsvDir = jsetting(None)
-
-        jsetting = p.jsettings('trader/objectives')
-        if not jsetting is None:
-            SYMBOL = jsetting([SYMBOL])[0]
-    except Exception as ex:
-        SYMBOL =''
+    evMdSource  = p.getConfig('marketEvents/source', None) # market data event source
+    advisorType = p.getConfig('advisor/type', "dnn.S1548I4A3")
+    objectives = p.getConfig('trader/objectives', ['SH510050'])
 
     # In the case that this utility is started from a shell script, this reads env variables for the symbols
     if 'SYMBOL' in os.environ.keys():
         SYMBOL = os.environ['SYMBOL']
+        if len(SYMBOL) >0:
+            objectives.remove(SYMBOL)
+            objectives = [SYMBOL] + objectives
+    
+    if len(objectives) <=0:
+        p.error('no objectives specified')
+        quit()
 
-    if 'Windows' in platform.platform() and '/mnt/' == sourceCsvDir[:5] and '/' == sourceCsvDir[6]:
-        drive = '%symbol:' % sourceCsvDir[5]
-        sourceCsvDir = sourceCsvDir.replace(sourceCsvDir[:6], drive)
+    SYMBOL = objectives[0]
 
-    acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
+    # evMdSource = Program.fixupPath(evMdSource)
+    acc     = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
+    # tdrCore = p.createApp(GymTrader, configNode ='trader', tradeSymbol=SYMBOL, account=acc)
+    tdrCore = p.createApp(BaseTrader, configNode ='trader', objectives=objectives, account=acc)
 
-    # p.info('taking input dir %s for symbol[%s]' % (sourceCsvDir, SYMBOL))
-    # csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=sourceCsvDir, fields='date,time,open,high,low,close,volume,ammount')
-
-    gymtdr = p.createApp(GymTrader, configNode ='trader', tradeSymbol=SYMBOL, account=acc)
     p.info('all objects registered piror to OnlineSimulator: %s' % p.listByType())
-
-    simulator = p.createApp(OnlineSimulator, configNode ='trader', trader=gymtdr) # the simulator with brain loaded to verify training result
-
-    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(simulator.outdir, 'online_%s.tcsv' % SYMBOL))
+    simulator = p.createApp(OnlineSimulator, configNode ='trader', trader=tdrCore) # the simulator with brain loaded to verify training result
+    rec     = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(simulator.outdir, 'online_%s.tcsv' % SYMBOL))
     simulator.setRecorder(rec)
 
-    revents = p.createApp(ZeroMqProxy, configNode ='remoteEvents')
-    revents.subscribeIncoming([EVENT_ADVICE])
+    if 'remote' == advisorType :
+        revents = p.createApp(ZeroMqProxy, configNode ='remoteEvents')
+        revents.subscribeIncoming([EVENT_ADVICE])
+    else :
+        p.info('all objects registered piror to local Advisor: %s' % p.listByType())
+        advisor = p.createApp(DnnAdvisor_S1548I4A3, configNode ='advisor', objectives=objectives, recorder=rec)
+        advisor._exchange = tdrCore.account.exchange
 
-    mc = p.createApp(SinaCrawler, configNode ='crawler', marketState = gymtdr._marketState, recorder=rec) # md = SinaCrawler(p, None);
-    mc._postCaptured = True
-    mc.subscribe([SYMBOL])
+    if False: # 'sina' != evMdSource
+        pass
+    else:
+        mc = p.createApp(SinaCrawler, configNode ='crawler', marketState = tdrCore._marketState, recorder=rec) # md = SinaCrawler(p, None);
+        mc._postCaptured = True
+        mc.subscribe([SYMBOL])
 
     p.start()
     p.loop()

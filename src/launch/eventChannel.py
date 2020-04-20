@@ -14,7 +14,7 @@ if __name__ == '__main__':
         sys.argv += ['-f', os.path.realpath(os.path.dirname(os.path.abspath(__file__))+ '/../../conf') + '/EventChannel.json']
 
     p = Program()
-    p._heartbeatInterval =0.5
+    p._heartbeatInterval =2.0
 
     chType = None
     try:

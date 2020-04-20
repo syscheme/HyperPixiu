@@ -208,6 +208,7 @@ class ZmqProxy(EventProxy):
 
 ########################################################################
 import threading
+from time import sleep
 class ZmqEventChannel(BaseApplication):
     '''
     '''
@@ -286,6 +287,7 @@ class ZmqEventChannel(BaseApplication):
 
         c =0
         if not self._monitor:
+            sleep(0.2)
             return c
 
         while True:

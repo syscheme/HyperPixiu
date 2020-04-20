@@ -7,7 +7,7 @@
 
     "eventChannel": {
         "type": "ZeroMQ",
-        "bind" : "localhost",
+        "bind" : "*",
         "timeout" : 200,
         "threaded": "False",
         "daemonize": "False",

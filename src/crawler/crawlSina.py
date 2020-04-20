@@ -140,7 +140,8 @@ class SinaCrawler(MarketCrawler):
         self.__idxTickBatch +=1
         
         updated=[]
-        httperr, result = self.GET_RecentTicks(self.__tickBatches[idxBtch])
+        bth = self.__tickBatches[idxBtch]
+        httperr, result = self.GET_RecentTicks(bth)
         if httperr !=200:
             self.error("step_pollTicks() GET_RecentTicks failed, err(%s) bth:%s" %(httperr, bth))
             return cBusy

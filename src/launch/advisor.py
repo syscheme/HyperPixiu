@@ -25,30 +25,25 @@ if __name__ == '__main__':
     p = Program()
     p._heartbeatInterval =-1
 
-    evMdSource = None
-    advType = 'dnn.S1548I4A3'
-    exchange = 'AShare'
-    try:
-        jsetting = p.jsettings('marketEvents/source')
-        if not jsetting is None:
-            evMdSource = jsetting(None)
-
-        jsetting = p.jsettings('marketEvents/exchange')
-        if not jsetting is None:
-            exchange = jsetting(exchange)
-
-        jsetting = p.jsettings('advisor/type')
-        if not jsetting is None:
-            advType = jsetting(advType)
-    except:
-        pass
+    advType     = p.getConfig('advisor/type', "dnn.S1548I4A3")
+    evMdSource  = p.getConfig('marketEvents/source', 'sina') # market data event source
+    exchange    = p.getConfig('marketEvents/exchange', 'AShare')
+    objectives  = p.getConfig('advisor/objectives', [])
 
     # In the case that this utility is started from a shell script, this reads env variables for the symbols
-    objectives = None
     if 'SYMBOL' in os.environ.keys():
-        objectives = [os.environ['SYMBOL']]
+        SYMBOL = os.environ['SYMBOL']
+        if len(SYMBOL) >0:
+            objectives.remove(SYMBOL)
+            objectives = [SYMBOL] + objectives
 
-    rec    = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.logdir, '%s.tcsv' % p.progId))
+    if len(objectives) <=0:
+        p.error('no objectives specified')
+        quit()
+
+    SYMBOL = objectives[0]
+
+    rec    = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.outdir, '%s.tcsv' % p.progId))
     revents = p.createApp(ZeroMqProxy, configNode ='remoteEvents')
     revents.registerOutgoing([EVENT_ADVICE, EVENT_KLINE_1MIN]) # should be revents.registerOutgoing(EVENT_ADVICE)
 

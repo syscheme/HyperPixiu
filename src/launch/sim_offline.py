@@ -153,7 +153,7 @@ if __name__ == '__main__':
     if 'remote' == advisorType :
         p.error('sim_offline only takes local advisor')
         quit()
-        # revents = p.createApp(ZeroMqProxy, configNode ='remoteEvents')
+        # revents = p.createApp(ZmqProxy, configNode ='remoteEvents')
         # revs = [EVENT_ADVICE]
         # if not evMdSource:
         #     revs += [EVENT_TICK, EVENT_KLINE_1MIN]

@@ -13,16 +13,16 @@
     },
 
     "remoteEvents": {
-        "ZeroMQ": {
-            "endpoint" : "localhost",
+        "zmq": {
+            "endpoint" : "localhost", // "tc.syscheme.com",
             "outgoing": ["evTAdv"],
             "incoming": [],
         },
     },
 
     "marketEvents": { // the source of market events
-        "source": "sina", 
-        // "source": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
+        // "source": "sina", 
+        "source": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
         "exchange" : "AShare",
     },
 

@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
     # TODO launch EventChannel per specified type
     # if chType == 'ZeroMQ':
-    evCh  = p.createApp(ZeroMqEventChannel, configNode ='eventChannel')
+    evCh  = p.createApp(ZmqEventChannel, configNode ='eventChannel')
 
     p.start()
     p.loop()

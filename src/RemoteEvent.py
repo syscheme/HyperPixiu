@@ -216,10 +216,11 @@ class ZmqEventChannel(BaseApplication):
         super(ZmqEventChannel, self).__init__(program, **kwargs)
         self._threadWished = True # always thread-ed because zmq.device(zmq.FORWARDER) is blocking
 
-        self._bind    = self.getConfig('bind', '*') # anyaddr
+        self._bind    = self.getConfig('bind', '0.0.0.0') # anyaddr
         self._portIN  = self.getConfig('portIN', ZMQPORT_PUB)
         self._portOUT = self.getConfig('portOUT', 0)
-        self._monitor = self.getConfig('monitor', 'False').lower() in BOOL_STRVAL_TRUE
+        self._portDBG = self.getConfig('portDBG', 0)
+        self._monitor = False # self._portDBG >1000
 
         if not self._id or len(self._id) <=0:
             self._id = self.program.hostname
@@ -238,17 +239,22 @@ class ZmqEventChannel(BaseApplication):
         self.__ctxZMQ = zmq.Context(1)
 
         # Socket facing PUBs
-        self.__endIN = self.__ctxZMQ.socket(zmq.SUB)
-        self.__endIN.bind("tcp://*:%d" % self._portIN)
-        self.__endIN.setsockopt(zmq.SUBSCRIBE, "".encode())
+        self.__endIN = self.__ctxZMQ.socket(zmq.XSUB)
+        self.__endIN.bind("tcp://%s:%d" % (self._bind, self._portIN))
+        # self.__endIN.setsockopt(zmq.SUBSCRIBE, b'')
 
         # Socket facing SUBs
-        self.__endOUT = self.__ctxZMQ.socket(zmq.PUB)
-        self.__endOUT.bind("tcp://*:%d" % self._portOUT)
+        self.__endOUT = self.__ctxZMQ.socket(zmq.XPUB)
+        self.__endOUT.bind("tcp://%s:%d" % (self._bind, self._portOUT))
 
-        self.__thread = threading.Thread(target=self.__forwarder)
+        self.__endDBG = None
+        if self._portDBG > 1000:
+            self.__endDBG = ctx.socket(zmq.PUB)
+            self.__endDBG.bind("tcp://%s:%d" % (self._bind, self._portDBG))
 
         if self._monitor:
+            self.__thread = threading.Thread(target=self.__loop)
+
             self.__monIN = self.__ctxZMQ.socket(zmq.PAIR)
             self.__endIN.monitor('inproc://zmqchIN', zmq.EVENT_ALL)
             self.__monIN.connect('inproc://zmqchIN')
@@ -261,7 +267,7 @@ class ZmqEventChannel(BaseApplication):
             self.__poller.register(self.__monIN, zmq.POLLIN)
             self.__poller.register(self.__monOUT, zmq.POLLIN)
 
-        self.info('bind on %s:(%s->%s)' % (self._bind, self._portIN, self._portOUT))
+        self.info('bind on %s:%s->%s' % (self._bind, self._portIN, self._portOUT))
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -269,17 +275,26 @@ class ZmqEventChannel(BaseApplication):
         if not super(ZmqEventChannel, self).doAppInit():
             return False
         
-        if not self.__endIN or not self.__endOUT or not self.__thread:
+        if not self.__endIN or not self.__endOUT:
             return False
 
-        self.__thread.start()
+        if self._monitor:
+            if not self.__thread: return False
+
+            self.__thread.start()
+
         return True
 
-    def __forwarder(self):
-        self.info('starting channel %s:(%s->%s)' % (self._bind, self._portIN, self._portOUT))
-        zmq.device(zmq.FORWARDER, self.__endIN, self.__endOUT) # this is a blocking call
+    def __loop(self):
+        self.info('starting channel tcp://%s:%s->%s' % (self._bind, self._portIN, self._portOUT))
+        # zmq.device(zmq.FORWARDER, self.__endIN, self.__endOUT) # this is a blocking call
+        try:
+            zmq.proxy(self.__endIN, self.__endOUT, self.__endDBG)
+        except zmq.error.ContextTerminated:
+            pass
         if self.__endIN:  self.__endIN.close()
         if self.__endOUT: self.__endOUT.close()
+        if self.__endDBG: self.__endDBG.close()
         if self.__ctxZMQ: self.__ctxZMQ.term()
         self.info('channel[%s] stopped: %s->%s' % (self._bind, self._portIN, self._portOUT))
 
@@ -287,7 +302,7 @@ class ZmqEventChannel(BaseApplication):
 
         c =0
         if not self._monitor:
-            sleep(0.2)
+            self.__loop()
             return c
 
         while True:

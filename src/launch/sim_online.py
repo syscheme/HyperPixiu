@@ -9,7 +9,7 @@ from TradeAdvisor import EVENT_ADVICE
 from advisors.dnn import DnnAdvisor_S1548I4A3
 
 from crawler.crawlSina import *
-from RemoteEvent import ZmqProxy
+from RemoteEvent import ZmqEE
 
 import sys, os, platform
 
@@ -49,7 +49,7 @@ if __name__ == '__main__':
     simulator.setRecorder(rec)
 
     if 'remote' == advisorType :
-        revents = p.createApp(ZmqProxy, configNode ='remoteEvents/zmq')
+        revents = p.createApp(ZmqEE, configNode ='remoteEvents/zmq')
         revents.subscribeIncoming([EVENT_ADVICE])
     else :
         p.info('all objects registered piror to local Advisor: %s' % p.listByType())

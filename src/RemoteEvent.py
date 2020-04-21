@@ -1,6 +1,6 @@
 # encoding: UTF-8
 '''
-EventProxy to remote ZeroMQ
+EventEnd to remote ZeroMQ
 '''
 from __future__ import division
 
@@ -21,11 +21,11 @@ else:
     from queue import Queue, Empty
 
 ########################################################################
-class EventProxy(BaseApplication):
+class EventEnd(BaseApplication):
     '''
     '''
     def __init__(self, program, **kwargs) :
-        super(EventProxy, self).__init__(program, **kwargs)
+        super(EventEnd, self).__init__(program, **kwargs)
 
         # 事件队列
         self.__queOutgoing = Queue(maxsize=100)
@@ -75,7 +75,7 @@ class EventProxy(BaseApplication):
         self.__queOutgoing.put(ev)
 
     def doAppStep(self):
-        super(EventProxy, self).doAppStep()
+        super(EventEnd, self).doAppStep()
         
         # step 1. forward the outgoing events
         ev = True # dummy
@@ -105,7 +105,7 @@ class EventProxy(BaseApplication):
         return cRecv + cSent;
 
     def doAppInit(self): # return True if succ
-        if not super(EventProxy, self).doAppInit() :
+        if not super(EventEnd, self).doAppInit() :
             return False
 
         if len(self._topicsOutgoing) + len(self._topicsIncomming) <=0 :
@@ -127,10 +127,10 @@ ZMQPORT_SUB = ZMQPORT_PUB +1
 ZMQ_DELIMITOR_TOPIC='>'
 
 ########################################################################
-class ZmqProxy(EventProxy):
+class ZmqEE(EventEnd):
 
     def __init__(self, program, **kwargs) :
-        super(ZmqProxy, self).__init__(program, **kwargs)
+        super(ZmqEE, self).__init__(program, **kwargs)
 
         self._endPointEventCh = self.getConfig('endpoint', "localhost")
         portPUB   = self.getConfig('portPUB', ZMQPORT_PUB)
@@ -198,7 +198,7 @@ class ZmqProxy(EventProxy):
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
     def doAppInit(self): # return True if succ
-        if not super(ZmqProxy, self).doAppInit() :
+        if not super(ZmqEE, self).doAppInit() :
             return False
 
         return True #???

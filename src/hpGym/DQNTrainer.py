@@ -153,9 +153,9 @@ class MarketDirClassifier(BaseApplication):
             'ResNet18d1' : self.__createModel_ResNet18d1,
             'ResNet2Xd1' : self.__createModel_ResNet2Xd1,
             'ResNet2xR1' : self.__createModel_ResNet2xR1,
+            'ResNet21' : self.__createModel_ResNet21,
             'ResNet34d1' : self.__createModel_ResNet34d1,
             'ResNet50d1' : self.__createModel_ResNet50d1,
-
             }
 
         STEPMETHODS = {
@@ -1076,9 +1076,10 @@ class MarketDirClassifier(BaseApplication):
         model.add(GlobalAveragePooling1D())
         model.add(Dense(512, activation='relu'))
         model.add(BatchNormalization())
+
         model.add(Dropout(0.4))
-        model.add(Dense(20, activation='relu'))
-        
+        # unified final layers Dense(VFt20) then Dense(self._actionSize)
+        model.add(Dense(20, name='VFt20', activation='relu'))
         model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
         model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
         # model.summary()
@@ -2003,6 +2004,184 @@ class MarketDirClassifier(BaseApplication):
         # unified final layers Dense(VirtualFeature88) then Dense(self._actionSize)
         x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
         x = Dense(88, name='VirtualFeature88')(x)
+        x = Dense(self._actionSize, activation='softmax')(x)
+
+        model = Model(inputs=layerIn, outputs=x)
+        sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+        model.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
+        # model.summary()
+        return model
+
+    def __createModel_ResNet21(self):
+        '''
+        Model: "model"
+        __________________________________________________________________________________________________
+        Layer (type)                    Output Shape         Param #     Connected to                     
+        ==================================================================================================
+        input_1 (InputLayer)            [(None, 1548)]       0                                            
+        __________________________________________________________________________________________________
+        ReshapedIn.S1548I4A3 (Reshape)  (None, 387, 4)       0           input_1[0][0]                    
+        __________________________________________________________________________________________________
+        conv1d (Conv1D)                 (None, 385, 256)     3328        ReshapedIn.S1548I4A3[0][0]       
+        __________________________________________________________________________________________________
+        batch_normalization (BatchNorma (None, 385, 256)     1024        conv1d[0][0]                     
+        __________________________________________________________________________________________________
+        conv1d_1 (Conv1D)               (None, 385, 128)     32896       batch_normalization[0][0]        
+        __________________________________________________________________________________________________
+        batch_normalization_1 (BatchNor (None, 385, 128)     512         conv1d_1[0][0]                   
+        __________________________________________________________________________________________________
+        conv1d_2 (Conv1D)               (None, 385, 128)     49280       batch_normalization_1[0][0]      
+        __________________________________________________________________________________________________
+        batch_normalization_2 (BatchNor (None, 385, 128)     512         conv1d_2[0][0]                   
+        __________________________________________________________________________________________________
+        conv1d_3 (Conv1D)               (None, 385, 256)     33024       batch_normalization_2[0][0]      
+        __________________________________________________________________________________________________
+        conv1d_4 (Conv1D)               (None, 385, 256)     65792       batch_normalization[0][0]        
+        __________________________________________________________________________________________________
+        batch_normalization_3 (BatchNor (None, 385, 256)     1024        conv1d_3[0][0]                   
+        __________________________________________________________________________________________________
+        batch_normalization_4 (BatchNor (None, 385, 256)     1024        conv1d_4[0][0]                   
+        __________________________________________________________________________________________________
+        add (Add)                       (None, 385, 256)     0           batch_normalization_3[0][0]      
+                                                                        batch_normalization_4[0][0]      
+        __________________________________________________________________________________________________
+        conv1d_5 (Conv1D)               (None, 385, 128)     32896       add[0][0]                        
+        __________________________________________________________________________________________________
+        batch_normalization_5 (BatchNor (None, 385, 128)     512         conv1d_5[0][0]                   
+        __________________________________________________________________________________________________
+        conv1d_6 (Conv1D)               (None, 385, 128)     49280       batch_normalization_5[0][0]      
+        __________________________________________________________________________________________________
+        batch_normalization_6 (BatchNor (None, 385, 128)     512         conv1d_6[0][0]                   
+        __________________________________________________________________________________________________
+        conv1d_7 (Conv1D)               (None, 385, 256)     33024       batch_normalization_6[0][0]      
+        __________________________________________________________________________________________________
+        batch_normalization_7 (BatchNor (None, 385, 256)     1024        conv1d_7[0][0]                   
+        __________________________________________________________________________________________________
+        add_1 (Add)                     (None, 385, 256)     0           batch_normalization_7[0][0]      
+                                                                        add[0][0]                        
+        __________________________________________________________________________________________________
+        dropout (Dropout)               (None, 385, 256)     0           add_1[0][0]                      
+        __________________________________________________________________________________________________
+        conv1d_8 (Conv1D)               (None, 385, 128)     32896       dropout[0][0]                    
+        __________________________________________________________________________________________________
+        batch_normalization_8 (BatchNor (None, 385, 128)     512         conv1d_8[0][0]                   
+        __________________________________________________________________________________________________
+        conv1d_9 (Conv1D)               (None, 385, 128)     49280       batch_normalization_8[0][0]      
+        __________________________________________________________________________________________________
+        batch_normalization_9 (BatchNor (None, 385, 128)     512         conv1d_9[0][0]                   
+        __________________________________________________________________________________________________
+        conv1d_10 (Conv1D)              (None, 385, 512)     66048       batch_normalization_9[0][0]      
+        __________________________________________________________________________________________________
+        conv1d_11 (Conv1D)              (None, 385, 512)     131584      dropout[0][0]                    
+        __________________________________________________________________________________________________
+        batch_normalization_10 (BatchNo (None, 385, 512)     2048        conv1d_10[0][0]                  
+        __________________________________________________________________________________________________
+        batch_normalization_11 (BatchNo (None, 385, 512)     2048        conv1d_11[0][0]                  
+        __________________________________________________________________________________________________
+        add_2 (Add)                     (None, 385, 512)     0           batch_normalization_10[0][0]     
+                                                                        batch_normalization_11[0][0]     
+        __________________________________________________________________________________________________
+        conv1d_12 (Conv1D)              (None, 385, 128)     65664       add_2[0][0]                      
+        __________________________________________________________________________________________________
+        batch_normalization_12 (BatchNo (None, 385, 128)     512         conv1d_12[0][0]                  
+        __________________________________________________________________________________________________
+        conv1d_13 (Conv1D)              (None, 385, 128)     49280       batch_normalization_12[0][0]     
+        __________________________________________________________________________________________________
+        batch_normalization_13 (BatchNo (None, 385, 128)     512         conv1d_13[0][0]                  
+        __________________________________________________________________________________________________
+        conv1d_14 (Conv1D)              (None, 385, 512)     66048       batch_normalization_13[0][0]     
+        __________________________________________________________________________________________________
+        batch_normalization_14 (BatchNo (None, 385, 512)     2048        conv1d_14[0][0]                  
+        __________________________________________________________________________________________________
+        add_3 (Add)                     (None, 385, 512)     0           batch_normalization_14[0][0]     
+                                                                        add_2[0][0]                      
+        __________________________________________________________________________________________________
+        dropout_1 (Dropout)             (None, 385, 512)     0           add_3[0][0]                      
+        __________________________________________________________________________________________________
+        conv1d_15 (Conv1D)              (None, 385, 256)     131328      dropout_1[0][0]                  
+        __________________________________________________________________________________________________
+        batch_normalization_15 (BatchNo (None, 385, 256)     1024        conv1d_15[0][0]                  
+        __________________________________________________________________________________________________
+        conv1d_16 (Conv1D)              (None, 385, 256)     196864      batch_normalization_15[0][0]     
+        __________________________________________________________________________________________________
+        batch_normalization_16 (BatchNo (None, 385, 256)     1024        conv1d_16[0][0]                  
+        __________________________________________________________________________________________________
+        conv1d_17 (Conv1D)              (None, 385, 1024)    263168      batch_normalization_16[0][0]     
+        __________________________________________________________________________________________________
+        conv1d_18 (Conv1D)              (None, 385, 1024)    525312      dropout_1[0][0]                  
+        __________________________________________________________________________________________________
+        batch_normalization_17 (BatchNo (None, 385, 1024)    4096        conv1d_17[0][0]                  
+        __________________________________________________________________________________________________
+        batch_normalization_18 (BatchNo (None, 385, 1024)    4096        conv1d_18[0][0]                  
+        __________________________________________________________________________________________________
+        add_4 (Add)                     (None, 385, 1024)    0           batch_normalization_17[0][0]     
+                                                                        batch_normalization_18[0][0]     
+        __________________________________________________________________________________________________
+        conv1d_19 (Conv1D)              (None, 385, 256)     262400      add_4[0][0]                      
+        __________________________________________________________________________________________________
+        batch_normalization_19 (BatchNo (None, 385, 256)     1024        conv1d_19[0][0]                  
+        __________________________________________________________________________________________________
+        conv1d_20 (Conv1D)              (None, 385, 256)     196864      batch_normalization_19[0][0]     
+        __________________________________________________________________________________________________
+        batch_normalization_20 (BatchNo (None, 385, 256)     1024        conv1d_20[0][0]                  
+        __________________________________________________________________________________________________
+        conv1d_21 (Conv1D)              (None, 385, 1024)    263168      batch_normalization_20[0][0]     
+        __________________________________________________________________________________________________
+        batch_normalization_21 (BatchNo (None, 385, 1024)    4096        conv1d_21[0][0]                  
+        __________________________________________________________________________________________________
+        add_5 (Add)                     (None, 385, 1024)    0           batch_normalization_21[0][0]     
+                                                                        add_4[0][0]                      
+        __________________________________________________________________________________________________
+        dropout_2 (Dropout)             (None, 385, 1024)    0           add_5[0][0]                      
+        __________________________________________________________________________________________________
+        global_average_pooling1d (Globa (None, 1024)         0           dropout_2[0][0]                  
+        __________________________________________________________________________________________________
+        flatten (Flatten)               (None, 1024)         0           global_average_pooling1d[0][0]   
+        __________________________________________________________________________________________________
+        dropout_3 (Dropout)             (None, 1024)         0           flatten[0][0]                    
+        __________________________________________________________________________________________________
+        VFt66 (Dense)                   (None, 66)           67650       dropout_3[0][0]                  
+        __________________________________________________________________________________________________
+        dense (Dense)                   (None, 3)            201         VFt66[0][0]                      
+        ==================================================================================================
+        Total params: 2,697,995
+        Trainable params: 2,682,635
+        Non-trainable params: 15,360
+        '''
+        self._wkModelId = 'ResNet21.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
+        weight_decay = 0.0005
+
+        layerIn = Input((self._stateSize,))
+        x = Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,), name='ReshapedIn.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize))(layerIn)
+
+        #conv1
+        x= self.__resBlk_basic(x, nb_filter=256, kernel_size=3, padding='valid')
+
+        #res1
+        x = self.__resBlk_bottleneck(x, nb_filters=[128,128,256], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[128,128,256])
+        # Good news here is that Dropout layer doesn't have parameters to train so when dropout rate is changed,
+        # such as x= Dropout(0.5)(x), the previous trained weights still can be loaded
+        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        #res2
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512])
+        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        #res3
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 1024], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 1024])
+        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        # #res4
+        # x = self.__resBlk_bottleneck(x, nb_filters=[512, 512, 2048], with_conv_shortcut=True)
+        # x = self.__resBlk_bottleneck(x, nb_filters=[512, 512, 2048])
+
+        x = GlobalAveragePooling1D()(x)
+        x = Flatten()(x)
+        
+        x = Dropout(0.4)(x) #  x= Dropout(0.5)(x)
+        # unified final layers Dense(VFt20) then Dense(self._actionSize)
+        x = Dense(66, name='VFt66', activation='relu')(x)
         x = Dense(self._actionSize, activation='softmax')(x)
 
         model = Model(inputs=layerIn, outputs=x)

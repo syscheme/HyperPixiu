@@ -153,7 +153,7 @@ class MarketDirClassifier(BaseApplication):
             'ResNet18d1' : self.__createModel_ResNet18d1,
             'ResNet2Xd1' : self.__createModel_ResNet2Xd1,
             'ResNet2xR1' : self.__createModel_ResNet2xR1,
-            'ResNet21' : self.__createModel_ResNet21,
+            'ResNet21'   : self.__createModel_ResNet21,
             'ResNet34d1' : self.__createModel_ResNet34d1,
             'ResNet50d1' : self.__createModel_ResNet50d1,
             }

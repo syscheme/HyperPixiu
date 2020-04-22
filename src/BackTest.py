@@ -1820,6 +1820,13 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self.__dtTomrrow = None
         self.__mdEventsTomrrow = [] # list of the datetime of open, high, low, close price occured 'tomorrow'
 
+    def doAppInit(self): # return True if succ
+        if not super(IdealTrader_Tplus1, self).doAppInit() :
+            return False
+
+        self._tradeSymbol = self.wkTrader.objectives[0] # idealTrader only cover a single symbol from the objectives
+        return True
+    
     # to replace OfflineSimulator's OnEvent with some TradeAdvisor logic and execute the advice as order directly
     def OnEvent(self, ev):
         '''processing an incoming MarketEvent'''
@@ -1828,22 +1835,50 @@ class IdealTrader_Tplus1(OfflineSimulator):
         if not self.wkTrader._account.executable:
             bObserveOnly = True
 
+        self.wkTrader.OnEvent(ev)
+
+        if bObserveOnly:
+            return
+
         # see if need to perform the next order pre-determined
         dirToExec = OrderData.DIRECTION_NONE
+        action = [0] * len(ADVICE_DIRECTIONS)
+
         if len(self.__ordersToPlace) >0 :
             nextOrder = self.__ordersToPlace[0]
             if nextOrder.datetime <= ev.data.datetime :
                 dirToExec = nextOrder.direction
                 del self.__ordersToPlace[0]
 
-        if bObserveOnly:
-            return
+                # fake a TradeAdvice here to forward to wkTrader
+                d = ev.data
+                tokens = (d.vtSymbol.split('.'))
+                symbol = tokens[0]
+                self.debug('OnEvent(%s) faking an advice[%s] to wkTrader upon mstate: %s' % (d.desc, dirToExec, self._marketState.descOf(self._tradeSymbol)))
+                action[ADVICE_DIRECTIONS.index(dirToExec)] =1.0
+                advice = AdviceData(self.ident, symbol, d.exchange)
+                advice.dirNONE, advice.dirLONG, advice.dirSHORT = action[0], action[1], action[2]
+                advice.price = d.price if EVENT_TICK == ev.type else d.close
+                advice.advisorId = '%s' % self.ident
+                advice.datetime  = d.asof
+                if not advice.exchange or len(advice.exchange)<=0 or '_k2x' == advice.exchange:
+                    advice.exchange = self._marketState.exchange
+            
+                advice.Rdaily = 0.0
+                advice.Rdstd  = 0.0
+                advice.pdirLONG  = 0.0
+                advice.pdirSHORT = 0.0
+                advice.pdirNONE  = 0.0
+                advice.pdirPrice = 0.0
+                advice.pdirAsOf  = advice.datetime
+            
+                evAdv = Event(EVENT_ADVICE)
+                evAdv.setData(advice)
+                self.wkTrader.OnEvent(evAdv) # to perform the real handling
 
-        action = [0] * len(ADVICE_DIRECTIONS)
         action[ADVICE_DIRECTIONS.index(dirToExec)] =1
         self._mstate = self._marketState.exportKLFloats(self._tradeSymbol)
         self.__pushStateAction(self._mstate, action)
-
         self.debug('OnEvent(%s) performed %s upon mstate: %s' % (ev.desc, dirToExec, self._marketState.descOf(self._tradeSymbol)))
 
     def resetEpisode(self) :
@@ -1930,7 +1965,8 @@ class IdealTrader_Tplus1(OfflineSimulator):
         
         exit(0) # IdealTrader_Tplus1 is not supposed to run forever, just exit instead of return
 
-    def __pushStateAction(mstate, action):
+    def __pushStateAction(self, mstate, action):
+        return #TODO
         with self._lock:
             self.__sampleIdx = self.__sampleIdx % self.__replaySize
             if 0 == self.__sampleIdx and not None in self.__replayCache :

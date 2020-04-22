@@ -1,7 +1,7 @@
 // configuration of a BackTest
 {
     "logger": {
-        "level": "info", //40
+        "level": "debug", //40
         // "console": "False",
     },
 
@@ -30,7 +30,8 @@
         "id" : "blah",
         // "type": "remote", // if type=remote, the program will refer to "remoteEvents" for TradeAdvices, 
         // otherwise take local advisor
-        "type": "dnn.S1548I4A3",
+        // "type": "dnn.S1548I4A3",
+        "type": "remote",
         "brainId" : "Cnn1Dx4R2",
         "objectives": ["SH510050","SH510500","SZ159949"],
     },
@@ -42,8 +43,9 @@
     },
 
     "remoteEvents": {
-        "ZeroMQ": {
-            "endpoint" : "localhost",
+        "zmq": {
+            // "endpoint" : "localhost",
+            "endpoint" : "tc.syscheme.com",
             "outgoing": [],
             "incoming": ["evTAdv"],
         }

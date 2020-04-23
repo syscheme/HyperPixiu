@@ -167,12 +167,13 @@ class BackTestApp(MetaTrader):
         if not self._initTrader :
             return False
         
-        self.info('doAppInit() taking trader-template[%s]' % (self._initTrader.ident))
-        self._program.removeApp(self._initTrader.ident)
+        self.debug('doAppInit() taking trader-template[%s]' % (self._initTrader.ident))
+        self._program.removeApp(self._initTrader)
         self._program.addApp(self)
         if not self._initTrader.doAppInit() :
             self.info('doAppInit() failed to initialize trader-template[%s]' % (self._initTrader.ident))
             return False
+        self.info('doAppInit() wrapped[%s]' % (self._initTrader.ident))
 
         self._initMarketState = self._initTrader._marketState
         self._originAcc = self._initTrader.account
@@ -365,7 +366,7 @@ class BackTestApp(MetaTrader):
         if self.__wkTrader:
             self._program.removeObj(self.__wkTrader)
         self.__wkTrader = copy.deepcopy(self._initTrader)
-        self._program.addApp(self.__wkTrader)
+        # self._program.addApp(self.__wkTrader)
         self.__wkTrader._marketState = self._marketState
         # self.__wkTrader._recorder = self._recorder
 
@@ -1831,14 +1832,8 @@ class IdealTrader_Tplus1(OfflineSimulator):
     def OnEvent(self, ev):
         '''processing an incoming MarketEvent'''
 
-        bObserveOnly = False
-        if not self.wkTrader._account.executable:
-            bObserveOnly = True
-
-        self.wkTrader.OnEvent(ev)
-
-        if bObserveOnly:
-            return
+        super(IdealTrader_Tplus1, self).OnEvent(ev)
+        self.wkTrader._dtData = ev.data.asof
 
         # see if need to perform the next order pre-determined
         dirToExec = OrderData.DIRECTION_NONE
@@ -1874,7 +1869,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
             
                 evAdv = Event(EVENT_ADVICE)
                 evAdv.setData(advice)
-                self.wkTrader.OnEvent(evAdv) # to perform the real handling
+                super(IdealTrader_Tplus1, self).OnEvent(evAdv) # to perform the real handling
 
         action[ADVICE_DIRECTIONS.index(dirToExec)] =1
         self._mstate = self._marketState.exportKLFloats(self._tradeSymbol)

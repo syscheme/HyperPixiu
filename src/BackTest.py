@@ -1826,6 +1826,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
             return False
 
         self._tradeSymbol = self.wkTrader.objectives[0] # idealTrader only cover a single symbol from the objectives
+        self._episodes =1 # idealTrader only run one loop
         return True
     
     # to replace OfflineSimulator's OnEvent with some TradeAdvisor logic and execute the advice as order directly
@@ -1930,10 +1931,6 @@ class IdealTrader_Tplus1(OfflineSimulator):
         # this test should be done if reached here
         self.debug('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self._stepNoInEpisode, self._bGameOver, reachedEnd))
         
-        # for this IdealTrader, collect a single episode of ReplayFrames is enough to export
-        # so no more hooking
-        self.wkTrader._agent._cbNewReplayFrame = []
-
         try:
             self.OnEpisodeDone(reachedEnd)
         except Exception as ex:

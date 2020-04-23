@@ -9,7 +9,7 @@ from Application import *
 from Account import *
 from Trader import *
 import HistoryData as hist
-from MarketData import TickData, KLineData, EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
+from MarketData import TickData, KLineData, NORMALIZE_ID, EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
 
 from Perspective import *
 import vn.VnTrader as vn
@@ -21,6 +21,7 @@ import multiprocessing
 import copy
 
 import os
+import h5py, tarfile
 # import pymongo
 import pandas as pd
 import numpy as np
@@ -36,6 +37,7 @@ try:
 except ImportError:
     pass
 
+RFGROUP_PREFIX = 'ReplayFrame:'
 RECCATE_ESPSUMMARY = 'EspSum'
 COLUMNS_ESPSUMMARY ='episodeNo,endBalance,openDays,startDate,endDate,totalDays,tradeDay_1st,tradeDay_last,profitDays,lossDays,maxDrawdown,maxDdPercent,' \
     + 'totalNetPnl,dailyNetPnl,totalCommission,dailyCommission,totalSlippage,dailySlippage,totalTurnover,dailyTurnover,totalTradeCount,dailyTradeCount,totalReturn,annualizedReturn,dailyReturn,' \
@@ -1791,6 +1793,8 @@ class OfflineSimulator(BackTestApp):
         self._episodeSummary = {**self._episodeSummary, **mySummary}
 
 ########################################################################
+H5DSET_ARGS={ 'compression':'gzip' }
+
 class IdealTrader_Tplus1(OfflineSimulator):
     '''
     IdealTrader extends OfflineSimulator by scanning the MarketEvents occurs in a day, determining
@@ -1820,6 +1824,10 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         self.__dtTomrrow = None
         self.__mdEventsTomrrow = [] # list of the datetime of open, high, low, close price occured 'tomorrow'
+
+        self.__sampleFrmSize  = 1024*8
+        self.__sampleFrm = [None]  * self.__sampleFrmSize
+        self.__sampleIdx, self.__frameNo = 0, 0
 
     def doAppInit(self): # return True if succ
         if not super(IdealTrader_Tplus1, self).doAppInit() :
@@ -1861,9 +1869,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
             
                 advice.Rdaily = 0.0
                 advice.Rdstd  = 0.0
-                advice.pdirLONG  = 0.0
-                advice.pdirSHORT = 0.0
-                advice.pdirNONE  = 0.0
+                advice.pdirNONE, advice.pdirLONG, advice.pdirSHORT = 0.0, 0.0, 0.0
                 advice.pdirPrice = 0.0
                 advice.pdirAsOf  = nextOrder.datetime
                 advice.dirString() # generate the dirString to ease reading
@@ -1882,6 +1888,11 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self.__ordersToPlace = []
 
         return ret
+
+    def OnEpisodeDone(self, reachedEnd=True):
+        super(IdealTrader_Tplus1, self).OnEpisodeDone(reachedEnd)
+        if self.__sampleIdx >0 and not None in self.__sampleFrm :
+            self.__saveFrame(self.__sampleFrm[:self.__sampleIdx])
 
     # to replace BackTest's doAppStep
     def doAppStep(self):
@@ -1958,17 +1969,39 @@ class IdealTrader_Tplus1(OfflineSimulator):
         exit(0) # IdealTrader_Tplus1 is not supposed to run forever, just exit instead of return
 
     def __pushStateAction(self, mstate, action):
-        return #TODO
-        with self._lock:
-            self.__sampleIdx = self.__sampleIdx % self.__replaySize
-            if 0 == self.__sampleIdx and not None in self.__replayCache :
-                metrix = np.array(self.__replayCache)
-                col_state      = np.concatenate(metrix[:, 0]).reshape(samplelen, self._stateSize)
-                col_action     = np.concatenate(metrix[:, 1]).reshape(samplelen, self._actionSize)
-                flushFrame(col_state, col_action)
 
-            self.__replayCache[self.__sampleIdx] = (mstate, action)
-            self.__sampleIdx +=1
+        self.__sampleIdx = self.__sampleIdx % self.__sampleFrmSize
+        if 0 == self.__sampleIdx and not None in self.__sampleFrm :
+            # frame full, output it into a HDF5 file
+            self.__saveFrame(self.__sampleFrm)
+
+        self.__sampleFrm[self.__sampleIdx] = (mstate, action)
+        self.__sampleIdx +=1
+
+    def __saveFrame(self, rangedFrame):
+        metrix     = np.array(rangedFrame)
+        col_state  = np.concatenate(metrix[:, 0]).reshape(len(rangedFrame), len(rangedFrame[0][0]))
+        col_action = np.concatenate(metrix[:, 1]).reshape(len(rangedFrame), len(rangedFrame[0][1]))
+
+        fn_frame = os.path.join(self.wkTrader.outdir, 'RFrm%s_%s.h5' % (NORMALIZE_ID, self._tradeSymbol) )
+        with h5py.File(fn_frame, 'a') as h5file:
+            frameId = 'RF%s' % str(self.__frameNo).zfill(3)
+            self.__frameNo += 1
+
+            g = h5file.create_group(frameId)
+            g.attrs['state'] = 'state'
+            g.attrs['action'] = 'action'
+            g.attrs[u'default'] = 'state'
+            g.attrs['size'] = col_state.shape[0]
+            g.attrs['signature'] = EXPORT_SIGNATURE
+
+            g.create_dataset(u'title',      data= '%s replay %s of %s by %s' % (self._generateReplayFrames, frameId, self._tradeSymbol, self.ident))
+            st = g.create_dataset('state',  data= col_state, **H5DSET_ARGS)
+            st.attrs['dim'] = col_state.shape[1]
+            ac = g.create_dataset('action', data= col_action, **H5DSET_ARGS)
+            ac.attrs['dim'] = col_action.shape[1]
+            
+        self.info('saved %s len[%s] into file %s with sig[%s]' % (frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
 
     def __scanEventsSequence(self, evseq) :
 
@@ -2163,30 +2196,6 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 elif bMayBuy and (T > (T_low - T_win) and T <= (T_low + T_win) and price < round (price_close +price_low*3) /4, 3) :
                     order.direction = OrderData.DIRECTION_LONG 
                     self.__ordersToPlace.append(copy.copy(order))
-
-    def flushFrame(self, col_state, col_action) :
-
-        # output the frame into a HDF5 file
-        fn_frame = os.path.join(self.wkTrader._outDir, 'RFrm%s_%s.h5' % (NORMALIZE_ID, self.wkTrader._tradeSymbol) )
-        dsargs={
-            'compression':'gzip'
-        }
-
-        with h5py.File(fn_frame, 'a') as h5file:
-            g = h5file.create_group('%s%s' % (RFGROUP_PREFIX, frameId))
-            g.attrs['state'] = 'state'
-            g.attrs['action'] = 'action'
-            g.attrs[u'default'] = 'state'
-            g.attrs['size'] = col_state.shape[0]
-            g.attrs['signature'] = EXPORT_SIGNATURE
-
-            g.create_dataset(u'title',     data= '%s replay frame[%s] of %s for DQN training' % (self._generateReplayFrames, frameId, self.wkTrader._tradeSymbol))
-            st = g.create_dataset('state',      data= col_state, **dsargs)
-            st.attrs['dim'] = col_state.shape[1]
-            ac = g.create_dataset('action',     data= col_action, **dsargs)
-            ac.attrs['dim'] = col_action.shape[1]
-            
-        self.info('saved frame[%s] len[%s] to file %s with sig[%s]' % (frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
 
 ########################################################################
 if __name__ == '__main__':

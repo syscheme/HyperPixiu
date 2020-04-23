@@ -1817,7 +1817,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         self.__cOpenDays =0
 
-        self.__ordersToPlace = [] # list of faked OrderData, the OrderData only tells the direction withno amount
+        self.__adviceSeq = [] # list of faked OrderData, the OrderData only tells the direction withno amount
 
         self.__dtToday = None
         self.__mdEventsToday = [] # list of the datetime of open, high, low, close price occured today
@@ -1852,30 +1852,30 @@ class IdealTrader_Tplus1(OfflineSimulator):
         dirToExec = OrderData.DIRECTION_NONE
         action = [0] * len(ADVICE_DIRECTIONS)
 
-        if len(self.__ordersToPlace) >0 :
-            nextOrder = self.__ordersToPlace[0]
-            if nextOrder.datetime <= ev.data.datetime :
-                dirToExec = nextOrder.direction
-                del self.__ordersToPlace[0]
+        if len(self.__adviceSeq) >0 :
+            nextAdvice = self.__adviceSeq[0]
+            if nextAdvice.datetime <= ev.data.datetime :
+                dirToExec = nextAdvice.dirString()
+                del self.__adviceSeq[0]
 
                 # fake a TradeAdvice here to forward to wkTrader
-                self.debug('OnEvent(%s) faking an advice[%s] to wkTrader upon mstate: %s' % (d.desc, dirToExec, self._marketState.descOf(nextOrder.symbol)))
-                action[ADVICE_DIRECTIONS.index(dirToExec)] =1.0
-                advice = AdviceData(self.ident, symbol, self._marketState.exchange)
-                advice.dirNONE, advice.dirLONG, advice.dirSHORT = action[0], action[1], action[2]
-                advice.price = nextOrder.price if EVENT_TICK == ev.type else d.close
-                advice.datetime  = nextOrder.asof
-                advice.advisorId = '%s' % self.ident
+                self.debug('OnEvent(%s) excuted a faked advice[%s] upon mstate: %s' % (d.desc, dirToExec, self._marketState.descOf(nextAdvice.symbol)))
+                # action[ADVICE_DIRECTIONS.index(dirToExec)] =1.0
+                # advice = AdviceData(self.ident, symbol, self._marketState.exchange)
+                # advice.dirNONE, advice.dirLONG, advice.dirSHORT = action[0], action[1], action[2]
+                # advice.price = nextOrder.price if EVENT_TICK == ev.type else d.close
+                # advice.datetime  = nextOrder.asof
+                # advice.advisorId = '%s' % self.ident
             
-                advice.Rdaily = 0.0
-                advice.Rdstd  = 0.0
-                advice.pdirNONE, advice.pdirLONG, advice.pdirSHORT = 0.0, 0.0, 0.0
-                advice.pdirPrice = 0.0
-                advice.pdirAsOf  = nextOrder.datetime
-                advice.dirString() # generate the dirString to ease reading
+                # advice.Rdaily = 0.0
+                # advice.Rdstd  = 0.0
+                # advice.pdirNONE, advice.pdirLONG, advice.pdirSHORT = 0.0, 0.0, 0.0
+                # advice.pdirPrice = 0.0
+                # advice.pdirAsOf  = nextOrder.datetime
+                # advice.dirString() # generate the dirString to ease reading
 
                 evAdv = Event(EVENT_ADVICE)
-                evAdv.setData(advice)
+                evAdv.setData(nextAdvice)
                 super(IdealTrader_Tplus1, self).OnEvent(evAdv) # to perform the real handling
 
         action[ADVICE_DIRECTIONS.index(dirToExec)] =1
@@ -1885,7 +1885,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
     def resetEpisode(self) :
         ret = super(IdealTrader_Tplus1, self).resetEpisode()
-        self.__ordersToPlace = []
+        self.__adviceSeq = []
 
         return ret
 
@@ -1913,7 +1913,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
                         return
 
                     # day-close here
-                    self.scanEventsAndFakeOrders()
+                    self.scanEventsForAdvices()
                     for cachedEv in self.__mdEventsToday:
                         self._marketState.updateByEvent(cachedEv)
 
@@ -1956,6 +1956,11 @@ class IdealTrader_Tplus1(OfflineSimulator):
         for line in strReport.splitlines():
             if len(line) <2: continue
             self.info(line)
+
+        strReport += '\n'
+        with codecs.open(os.path.join(self.wkTrader.outdir, 'summary_%s.txt' % self._tradeSymbol), "w","utf-8") as rptfile:
+            rptfile.write(strReport)
+            self.debug('doAppStep() episode[%s] summary report generated' %(self.episodeId))
 
         # prepare for the next episode
         self._episodeNo +=1
@@ -2036,7 +2041,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         return price_open, price_high, price_low, price_close, T_high, T_low
 
-    def scanEventsAndFakeOrders(self) :
+    def scanEventsForAdvices(self) :
         '''
         this will generate 3 actions
         '''
@@ -2095,42 +2100,41 @@ class IdealTrader_Tplus1(OfflineSimulator):
             T = evd.datetime
 
             price = evd.price if EVENT_TICK == ev.type else evd.close
-            order = OrderData(self._account)
-            order.datetime = T
+            # order = OrderData(self._account)
+            # order.datetime = T
+
+            tokens = (evd.vtSymbol.split('.'))
+            symbol = tokens[0]
+            advice = AdviceData(self.ident, symbol, self._marketState.exchange)
+            advice.price = price
+            advice.datetime = T
+            advice.advisorId = '%s' % self.ident
+            advice.Rdaily = 0.0
+            advice.Rdstd  = 0.0
+            advice.pdirNONE, advice.pdirLONG, advice.pdirSHORT = 0.0, 0.0, 0.0
+            advice.pdirPrice = 0.0
+            advice.pdirAsOf  = T
+            advice.dirNONE, advice.dirLONG, advice.dirSHORT = 0.0, 0.0, 0.0
 
             if price <= buy_stop :
-                order.direction = OrderData.DIRECTION_LONG 
-                self.__ordersToPlace.append(copy.copy(order))
-                latestDir = order.direction
+                advice.dirLONG = 1
+                latestDir = advice.dirString()
+                self.__adviceSeq.append(copy.copy(advice))
                 continue
 
             if price >= sell_stop :
-                order.direction = OrderData.DIRECTION_SHORT 
-                self.__ordersToPlace.append(copy.copy(order))
-                latestDir = order.direction
+                advice.dirSHORT = 1
+                latestDir = advice.dirString()
+                self.__adviceSeq.append(copy.copy(advice))
                 continue
 
             if T > max(T_high, T_low) :
                 if price < catchback: # whether to catch back after sold
-                    order.direction = OrderData.DIRECTION_LONG 
-                    self.__ordersToPlace.append(copy.copy(order))
-                    latestDir = order.direction
+                    advice.dirLONG = 1
+                    latestDir = advice.dirString()
+                    self.__adviceSeq.append(copy.copy(advice))
 
-    # def filterFakeOrders(self) :
-    #     idx = 0
-    #     latestDir = None
-    #     cContinuousDir =0
-    #     while idx < len(self.__ordersToPlace):
-    #         if not latestDir or latestDir == self.__ordersToPlace[idx].direction:
-    #             latestDir = self.__ordersToPlace[idx].direction
-    #             cContinuousDir +=1
-    #             continue
-
-    #             self.__ordersToPlace
-
-    #         self.__ordersToPlace.append(copy.copy(order))
-
-    def scanEventsAndFakeOrders000(self) :
+    def scanEventsForAdvices000(self) :
         # step 1. scan self.__mdEventsToday and determine TH TL
         price_open, price_high, price_low, price_close, T_high, T_low = self.__scanEventsSequence(self.__mdEventsToday)
         tomorrow_open, tomorrow_high, tomorrow_low, tomorrow_close, tT_high, tT_low = self.__scanEventsSequence(self.__mdEventsTomrrow)
@@ -2168,34 +2172,50 @@ class IdealTrader_Tplus1(OfflineSimulator):
             T = evd.datetime
 
             price = evd.price if EVENT_TICK == ev.type else evd.close
-            order = OrderData(self._account)
-            order.datetime = T
+            tokens = (evd.vtSymbol.split('.'))
+            symbol = tokens[0]
+            advice = AdviceData(self.ident, symbol, self._marketState.exchange)
+            advice.price = price
+            advice.datetime = T
+            advice.advisorId = '%s' % self.ident
+            advice.Rdaily = 0.0
+            advice.Rdstd  = 0.0
+            advice.pdirNONE, advice.pdirLONG, advice.pdirSHORT = 0.0, 0.0, 0.0
+            advice.pdirPrice = 0.0
+            advice.pdirAsOf  = T
+            advice.dirNONE, advice.dirLONG, advice.dirSHORT = 0.0, 0.0, 0.0
 
             if T_low < T_high : # up-hill
                 if bMayBuy and (T <= T_low + T_win and price <= buy_stop) :
-                    order.direction = OrderData.DIRECTION_LONG 
-                    self.__ordersToPlace.append(copy.copy(order))
+                    advice.dirLONG = 1
+                    latestDir = advice.dirString()
+                    self.__adviceSeq.append(copy.copy(advice))
                 if T <= (T_high + T_win) and price >= (price_high -slip):
-                    order.direction = OrderData.DIRECTION_SHORT 
-                    self.__ordersToPlace.append(copy.copy(order))
+                    advice.dirSHORT = 1
+                    latestDir = advice.dirString()
+                    self.__adviceSeq.append(copy.copy(advice))
                 elif T > T_high :
-                    # if sell_stop < (uphill_catchback *1.002) and tomorrow_high > price_close:
+                    # if sell_stop < (uphill_catchback *1.002) and tomorrow_high > pSHORTrice_close:
                     #     continue # too narrow to perform any actions
 
                     if price > sell_stop:
-                        order.direction = OrderData.DIRECTION_SHORT 
-                        self.__ordersToPlace.append(copy.copy(order))
+                        advice.dirSHORT = 1
+                        latestDir = advice.dirString()
+                        self.__adviceSeq.append(copy.copy(advice))
                     elif price < uphill_catchback :
-                        order.direction = OrderData.DIRECTION_LONG 
-                        self.__ordersToPlace.append(copy.copy(order))
+                        advice.dirLONG = 1
+                        latestDir = advice.dirString()
+                        self.__adviceSeq.append(copy.copy(advice))
 
             if T_low > T_high : # down-hill
                 if price >= (price_high -slip) or (T < T_low and price >= (price_close*(100.0 +self._constraintSell_downHillOverClose)/100)):
-                    order.direction = OrderData.DIRECTION_SHORT 
-                    self.__ordersToPlace.append(copy.copy(order))
+                    advice.dirSHORT = 1
+                    latestDir = advice.dirString()
+                    self.__adviceSeq.append(copy.copy(advice))
                 elif bMayBuy and (T > (T_low - T_win) and T <= (T_low + T_win) and price < round (price_close +price_low*3) /4, 3) :
-                    order.direction = OrderData.DIRECTION_LONG 
-                    self.__ordersToPlace.append(copy.copy(order))
+                    advice.dirLONG = 1
+                    latestDir = advice.dirString()
+                    self.__adviceSeq.append(copy.copy(advice))
 
 ########################################################################
 if __name__ == '__main__':

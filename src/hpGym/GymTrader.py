@@ -8,7 +8,7 @@ from __future__ import division
 from Account import Account, OrderData, Account_AShare
 from Application import MetaObj, BOOL_STRVAL_TRUE
 from Trader import MetaTrader, BaseTrader
-from BackTest import BackTestApp, RECCATE_ESPSUMMARY
+from Simulator import BackTestApp, RECCATE_ESPSUMMARY
 from Perspective import PerspectiveState, EXPORT_SIGNATURE
 from MarketData import EVENT_TICK, EVENT_KLINE_PREFIX, EXPORT_FLOATS_DIMS, NORMALIZE_ID
 from HistoryData import listAllFiles

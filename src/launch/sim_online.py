@@ -2,7 +2,7 @@ from Application import Program
 
 from Account import Account_AShare
 from Trader import BaseTrader
-from BackTest import OnlineSimulator
+from Simulator import OnlineSimulator
 import HistoryData as hist
 
 from TradeAdvisor import EVENT_ADVICE

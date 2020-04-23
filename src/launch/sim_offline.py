@@ -3,7 +3,7 @@
 This utility reads csv history data and generate ReplayFrame for offline DQN training
 '''
 
-from BackTest import *
+from Simulator import *
 from Account import Account_AShare
 from Application import *
 import HistoryData as hist

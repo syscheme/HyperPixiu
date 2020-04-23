@@ -11,7 +11,7 @@ import MarketData as md
 # from vnApp.marketdata.mdBacktest import mdBacktest
 # from vnApp.DataRecorder import *
 # from vnApp.EventChannel import EventChannel
-from BackTest import *
+from Simulator import *
 
 import os
 

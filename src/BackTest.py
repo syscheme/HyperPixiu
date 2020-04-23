@@ -1831,15 +1831,13 @@ class IdealTrader_Tplus1(OfflineSimulator):
     def OnEvent(self, ev):
         '''processing an incoming MarketEvent'''
 
-        bObserveOnly = False
-        if not self.wkTrader._account.executable:
-            bObserveOnly = True
+        d = ev.data
+        tokens = (d.vtSymbol.split('.'))
+        symbol = tokens[0]
 
-        self.wkTrader.OnEvent(ev)
-
-        if bObserveOnly:
-            return
-
+        super(IdealTrader_Tplus1, self).OnEvent(ev) # self.wkTrader._dtData = d.asof # self.wkTrader.OnEvent(ev)
+        self.wkTrader._dtData = d.asof
+        
         # see if need to perform the next order pre-determined
         dirToExec = OrderData.DIRECTION_NONE
         action = [0] * len(ADVICE_DIRECTIONS)
@@ -1851,18 +1849,13 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 del self.__ordersToPlace[0]
 
                 # fake a TradeAdvice here to forward to wkTrader
-                d = ev.data
-                tokens = (d.vtSymbol.split('.'))
-                symbol = tokens[0]
-                self.debug('OnEvent(%s) faking an advice[%s] to wkTrader upon mstate: %s' % (d.desc, dirToExec, self._marketState.descOf(self._tradeSymbol)))
+                self.debug('OnEvent(%s) faking an advice[%s] to wkTrader upon mstate: %s' % (d.desc, dirToExec, self._marketState.descOf(nextOrder.symbol)))
                 action[ADVICE_DIRECTIONS.index(dirToExec)] =1.0
-                advice = AdviceData(self.ident, symbol, d.exchange)
+                advice = AdviceData(self.ident, symbol, self._marketState.exchange)
                 advice.dirNONE, advice.dirLONG, advice.dirSHORT = action[0], action[1], action[2]
-                advice.price = d.price if EVENT_TICK == ev.type else d.close
+                advice.price = nextOrder.price if EVENT_TICK == ev.type else d.close
+                advice.datetime  = nextOrder.asof
                 advice.advisorId = '%s' % self.ident
-                advice.datetime  = d.asof
-                if not advice.exchange or len(advice.exchange)<=0 or '_k2x' == advice.exchange:
-                    advice.exchange = self._marketState.exchange
             
                 advice.Rdaily = 0.0
                 advice.Rdstd  = 0.0
@@ -1870,11 +1863,12 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 advice.pdirSHORT = 0.0
                 advice.pdirNONE  = 0.0
                 advice.pdirPrice = 0.0
-                advice.pdirAsOf  = advice.datetime
-            
+                advice.pdirAsOf  = nextOrder.datetime
+                advice.dirString() # generate the dirString to ease reading
+
                 evAdv = Event(EVENT_ADVICE)
                 evAdv.setData(advice)
-                self.wkTrader.OnEvent(evAdv) # to perform the real handling
+                super(IdealTrader_Tplus1, self).OnEvent(evAdv) # to perform the real handling
 
         action[ADVICE_DIRECTIONS.index(dirToExec)] =1
         self._mstate = self._marketState.exportKLFloats(self._tradeSymbol)
@@ -2026,8 +2020,8 @@ class IdealTrader_Tplus1(OfflineSimulator):
         T_win = timedelta(minutes=2)
         slip = 0.02
 
-        if T_high.month==6 and T_high.day in [25,26]:
-             print('here')
+        # if T_high.month==6 and T_high.day in [25,26]:
+        #      print('here')
 
         # step 2. determine the stop prices
         sell_stop = price_high -slip
@@ -2113,8 +2107,8 @@ class IdealTrader_Tplus1(OfflineSimulator):
         if not T_high:
             return
 
-        if T_high.day==27 and T_high.month==2 :
-            print('here')
+        # if T_high.day==27 and T_high.month==2 :
+        #     print('here')
 
         # step 2. faking the ideal orders
         bMayBuy = price_close >= price_open*(100.0 +self._constraintBuy_closeOverOpen)/100 # may BUY today, >=price_open*1.005

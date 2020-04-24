@@ -290,11 +290,12 @@ class BaseTrader(MetaTrader):
         adv = evAdvice.data
         symbol = adv.symbol
         if not self.marketState.exchange in adv.exchange or not symbol in self.objectives:
-            self.debug('OnAdvice() advice ignored: exchange[%s] %s' % (adv.exchange, adv.desc))
+            self.debug('OnAdvice() ignored advice per objectives of exchange[%s]: %s' % (adv.exchange, adv.desc))
             return
 
-        # if bObserveOnly:
-        #     return GymTrader.ACTIONS[GymTrader.ACTION_HOLD]
+        if not self._account.executable:
+            self.debug('OnAdvice() ignored advice per account not executable: %s' % (adv.desc))
+            return
 
         # TODO: validate the advice's datetime
         # TODO: perform the risk management of advice

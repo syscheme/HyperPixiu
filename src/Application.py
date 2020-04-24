@@ -154,6 +154,14 @@ class BaseApplication(MetaApp):
     @abstractmethod
     def doAppInit(self): # return True if succ
         self.__active = True
+        try :
+            statinfo = os.stat(self.outdir)
+        except :
+            try :
+                os.makedirs(self.outdir)
+            except:
+                pass
+
         next(self.__gen)
         return self.__active
 

@@ -53,15 +53,15 @@ class TradeAdvisor(BaseApplication):
 
         self._marketState = PerspectiveState(self._exchange) # take PerspectiveState by default
         self.__stampMStateRestored, self.__stampMStateSaved = None, None
-        try :
-            shutil.rmtree(self.__wkTrader._outDir)
-        except:
-            pass
+        # try :
+        #     shutil.rmtree(self.__wkTrader.outdir)
+        # except:
+        #     pass
 
-        try :
-            os.makedirs(self.__wkTrader._outDir)
-        except:
-            pass
+        # try :
+        #     os.makedirs(self.__wkTrader.outdir)
+        # except:
+        #     pass
         self.program.setShelveFilename('%s%s.sobj' % (self.dataRoot, self.ident))
 
     @property

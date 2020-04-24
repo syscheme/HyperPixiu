@@ -165,6 +165,7 @@ if __name__ == '__main__':
     else :
         p.info('all objects registered piror to local Advisor: %s' % p.listByType())
         advisor = p.createApp(DnnAdvisor_S1548I4A3, configNode ='advisor', objectives=objectives, recorder=rec)
+        advisor._skipMStateStore = True # MUST!!!
         advisor._exchange = tdrCore.account.exchange
 
         p.info('all objects registered piror to simulator: %s' % p.listByType())

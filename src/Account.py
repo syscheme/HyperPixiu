@@ -937,7 +937,7 @@ class Account(MetaAccount):
                     posChange = -trade.volume
                     self._todayResult.tcSell += 1
                     
-                self._todayResult.txnHist += "%+dx%s@%s" % (posChange, trade.symbol, formatNumber(trade.price, 3))
+                self._todayResult.txnHist += "%+dx%s@%sT%s" % (posChange, trade.symbol, formatNumber(trade.price, 3), trade.asof.strftime('%H:%M'))
 
                 self._todayResult.tradingPnl += round(posChange * (self._marketState.latestPrice(trade.symbol) - trade.price) * self._contractSize, 2)
                 turnover, commission, slippagefee = self.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)

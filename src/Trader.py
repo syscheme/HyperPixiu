@@ -337,7 +337,7 @@ class BaseTrader(MetaTrader):
             if maxSell <=0:
                 dirExeced = OrderData.DIRECTION_NONE
             else:
-                strExec = '%s:%sx%s' %(dirToExec, latestPrice, maxBuy)
+                strExec = '%s:%sx%s' %(dirToExec, latestPrice, maxSell)
                 self.debug('OnAdvice() issuing max%s' % strExec)
                 self._account.cancelAllOrders()
                 vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, strategy=None)

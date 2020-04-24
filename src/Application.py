@@ -973,7 +973,7 @@ class Program(object):
             self.__subscribers[type_] = []
 
         # 若要注册的处理器不在该事件的处理器列表中，则注册该事件
-        if app.ident not in self.__subscribers[type_]:
+        if not app.ident in self.__subscribers[type_]:
             self.__subscribers[type_].append(app.ident)
             
     def unsubscribe(self, type_, app):
@@ -988,7 +988,7 @@ class Program(object):
             self.__subscribers[type_].remove(appId)
 
         # 如果函数列表为空，则从引擎中移除该事件类型
-        if not len(self.__subscribers[type_]) <=0:
+        if len(self.__subscribers[type_]) <=0:
             del self.__subscribers[type_]  
 
     def publish(self, event):

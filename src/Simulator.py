@@ -175,6 +175,8 @@ class BackTestApp(MetaTrader):
         if not self._initTrader.doAppInit() :
             self.info('doAppInit() failed to initialize trader-template[%s]' % (self._initTrader.ident))
             return False
+            
+        self._program.removeApp(self._initTrader) # in the case self._initTrader register itself again
         self.info('doAppInit() wrapped[%s]' % (self._initTrader.ident))
 
         self._initMarketState = self._initTrader._marketState
@@ -189,7 +191,10 @@ class BackTestApp(MetaTrader):
         #     if len(obj["ds1min"]) >0 :
         #         obj["ds1min"] += MarketData.TAG_BACKTEST
 
-        # step 3. subscribe the market events
+        # step 3.1 subscribe the TradeAdvices
+        self.subscribeEvent(EVENT_ADVICE)
+
+        # step 3.2 subscribe the market events
         self.subscribeEvent(EVENT_TICK)
         self.subscribeEvent(EVENT_KLINE_1MIN)
         self.subscribeEvent(EVENT_KLINE_5MIN)

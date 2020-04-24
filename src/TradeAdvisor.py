@@ -50,6 +50,7 @@ class TradeAdvisor(BaseApplication):
                 self.__dictAdvices[o]=None
 
         self._marketState = PerspectiveState(self._exchange) # take PerspectiveState by default
+        self._skipMStateStore = False # True to skip saving/restore the safestore of marketState, which is expected by BackTest/OfflineSimulator
         self.__stampMStateRestored, self.__stampMStateSaved = None, None
         try :
             shutil.rmtree(self.__wkTrader._outDir)
@@ -72,17 +73,19 @@ class TradeAdvisor(BaseApplication):
     def recorder(self): return self._recorder
 
     def __saveMarketState(self) :
+        if self._skipMStateStore : return
         try :
             self.program.saveObject(self.marketState, '%s/marketState' % 'OnlineSimulator')
         except Exception as ex:
             self.logexception(ex)
 
     def __restoreMarketState(self) :
+        if self._skipMStateStore : return None
         try :
             return self.program.loadObject('%s/marketState' % 'OnlineSimulator') # '%s/marketState' % self.__class__)
         except Exception as ex:
             self.logexception(ex)
-        return False
+        return None
 
     # @abstractmethod
     # def onDayOpen(self, symbol, date): raise NotImplementedError

@@ -72,8 +72,9 @@ class DnnAdvisor_S1548I4A3(TradeAdvisor):
         market_state = np.array(market_state).astype(NN_FLOAT).reshape(1, DnnAdvisor_S1548I4A3.STATE_DIMS)
 
         act_values = self._brain.predict(market_state)
-        action = np.zeros(DnnAdvisor_S1548I4A3.ACTION_DIMS)
-        action[np.argmax(act_values[0])] = 1
+        # action = [0.0] * DnnAdvisor_S1548I4A3.ACTION_DIMS
+        # idxAct = np.argmax(act_values[0])
+        # action[idxAct] = 1.0
         advice = AdviceData(self.ident, symbol, d.exchange)
         advice.dirNONE, advice.dirLONG, advice.dirSHORT = act_values[0][0], act_values[0][1], act_values[0][2]
         advice.price = d.price if EVENT_TICK == ev.type else d.close

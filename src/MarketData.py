@@ -574,3 +574,9 @@ class MarketState(MetaObj):
         '''@return an array_like data as toNNFloats, maybe [] or numpy.array
         '''
         raise NotImplementedError
+
+    # @abstractmethod
+    # def engorged(self, symbol=None) :
+    #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data
+    #     '''
+    #     raise NotImplementedError

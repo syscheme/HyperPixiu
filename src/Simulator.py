@@ -1885,6 +1885,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         action[ADVICE_DIRECTIONS.index(dirToExec)] =1
         self._mstate = self._marketState.exportKLFloats(self._tradeSymbol)
+        # if bFullState:
         self.__pushStateAction(self._mstate, action)
         self.debug('OnEvent(%s) performed %s upon mstate: %s' % (ev.desc, dirToExec, self._marketState.descOf(self._tradeSymbol)))
 

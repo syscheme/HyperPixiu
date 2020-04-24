@@ -42,6 +42,8 @@ class TradeAdvisor(BaseApplication):
         self._minimalAdvIntv = self.getConfig('minimalInterval', 5) # minimal interval in seconds between two advice s
         self._exchange = self.getConfig('exchange', 'AShare')
         self.__recMarketEvent = self.getConfig('recMarketEvent', 'False').lower() in BOOL_STRVAL_TRUE
+        self._enableMStateSS  = self.getConfig('enableMarketStateSafeStore', 'False').lower() in BOOL_STRVAL_TRUE # False to skip saving/restore the safestore of marketState, which is expected by BackTest/OfflineSimulator
+
         if not objectives or not isinstance(objectives, list) or len(objectives) <=0:
             objectives = self.getConfig('objectives', [])
 
@@ -50,7 +52,6 @@ class TradeAdvisor(BaseApplication):
                 self.__dictAdvices[o]=None
 
         self._marketState = PerspectiveState(self._exchange) # take PerspectiveState by default
-        self._skipMStateStore = False # True to skip saving/restore the safestore of marketState, which is expected by BackTest/OfflineSimulator
         self.__stampMStateRestored, self.__stampMStateSaved = None, None
         try :
             shutil.rmtree(self.__wkTrader._outDir)
@@ -73,14 +74,14 @@ class TradeAdvisor(BaseApplication):
     def recorder(self): return self._recorder
 
     def __saveMarketState(self) :
-        if self._skipMStateStore : return
+        if not self._enableMStateSS : return
         try :
             self.program.saveObject(self.marketState, '%s/marketState' % 'OnlineSimulator')
         except Exception as ex:
             self.logexception(ex)
 
     def __restoreMarketState(self) :
-        if self._skipMStateStore : return None
+        if not self._enableMStateSS : return None
         try :
             return self.program.loadObject('%s/marketState' % 'OnlineSimulator') # '%s/marketState' % self.__class__)
         except Exception as ex:

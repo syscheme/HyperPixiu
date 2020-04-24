@@ -316,11 +316,19 @@ class Perspective(MarketData):
 
     @property
     def KLFloats(self):
+        '''@return an array_like data as toNNFloats, maybe [] or numpy.array
+        '''
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
             return [0.0] * self.NNFloatsSize # toNNFloats not available
         
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
         return self._KLFloats(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume)
+    
+    # def engorged(self, symbol=None) :
+    #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data
+    #     '''
+    #     if symbol and symbol in self.__dictPerspective.keys():
+    #         return self.__dictPerspective[symbol].engorged
 
     @property
     def TickFloats(self) :
@@ -342,8 +350,7 @@ class Perspective(MarketData):
     
     @abstractmethod
     def _KLFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
-        '''
-        @return float[] for numpy
+        '''@return an array_like data as toNNFloats, maybe [] or numpy.array
         '''
         if baseline_Price <0.01: baseline_Price=1.0
         if baseline_Volume <0.001: baseline_Volume=1.0
@@ -663,12 +670,20 @@ class PerspectiveState(MarketState):
 
     __dummy = None
     def exportKLFloats(self, symbol=None) :
-        '''@return an array_like data as exportKLFloats, maybe [] or numpy.array
+        '''@return an array_like data as toNNFloats, maybe [] or numpy.array
         '''
         if symbol and symbol in self.__dictPerspective.keys():
             return self.__dictPerspective[symbol].KLFloats
 
         if not PerspectiveState.__dummy:
             PerspectiveState.__dummy = Perspective(self.exchange, 'Dummy')
+
         return [0.0] * PerspectiveState.__dummy.NNFloatsSize
 
+    # def engorged(self, symbol=None) :
+    #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data
+    #     '''
+    #     if symbol and symbol in self.__dictPerspective.keys():
+    #         return self.__dictPerspective[symbol].engorged
+        
+    #     return [0.0]

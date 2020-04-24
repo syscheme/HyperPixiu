@@ -829,7 +829,7 @@ class PlaybackDay(MarketState):
             return
 
     def exportKLFloats(self) :
-        '''@return an array_like data as [float] for neural network computing
+        '''@return an array_like data as toNNFloats, maybe [] or numpy.array
         '''
         raise NotImplementedError
 

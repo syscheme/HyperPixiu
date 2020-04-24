@@ -1316,11 +1316,11 @@ class AccountWrapper(MetaAccount):
     def cashChange(self, dAvail=0, dTotal=0): return self._nest.cashChange(dAvail, dTotal)
     def record(self, category, data): return self._nest.record(category, data)
     def postEvent_Order(self, orderData): return self._nest.postEvent_Order(orderData)
-    # def sendOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendOrder(vtSymbol, orderType, price, volume, strategy)
+    # def sendOrder(self, vtSymbol, orderType, price, volume, reason): return self._nest.sendOrder(vtSymbol, orderType, price, volume, reason)
     def cancelOrder(self, brokerOrderId): return self._nest.cancelOrder(brokerOrderId)
     def batchCancel(self, brokerOrderIds): return self._nest.batchCancel(brokerOrderIds)
     def cancelAllOrders(self): return self._nest.cancelAllOrders()
-    def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendStopOrder(vtSymbol, orderType, price, volume, strategy)
+    def sendStopOrder(self, vtSymbol, orderType, price, volume, reason): return self._nest.sendStopOrder(vtSymbol, orderType, price, volume, reason)
     def findOrdersOfStrategy(self, strategyId, symbol=None): return self._nest.findOrdersOfStrategy(strategyId, symbol)
     
     def datetimeAsOfMarket(self): return self._btTrader.wkTrader._dtData
@@ -1360,10 +1360,7 @@ class AccountWrapper(MetaAccount):
     #------------------------------------------------
     # overwrite of Account
     #------------------------------------------------    
-    def sendOrder(self, symbol, orderType, price, volume, strategy):
-        source = 'ACCOUNT'
-        if strategy:
-            source = strategy.id
+    def sendOrder(self, symbol, orderType, price, volume, reason):
 
         orderData = OrderData(self)
         # 代码编号相关
@@ -1371,8 +1368,8 @@ class AccountWrapper(MetaAccount):
         orderData.exchange    = self._exchange
         orderData.price       = self.roundToPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
-        orderData.source      = source
         orderData.datetime    = self.datetimeAsOfMarket()
+        orderData.reason      = reason if reason else ''
 
         # 报单方向
         if orderType == OrderData.ORDER_BUY:

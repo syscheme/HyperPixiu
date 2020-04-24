@@ -153,9 +153,9 @@ class BaseStrategy(MetaObj):
         # 如果stop为True，则意味着发本地停止单
         # self.log(u'sendOrder:%s %.2fx%d>%s' %(orderType, price, volume, stop))
         if stop:
-            vtOrderIDList = self._account.sendStopOrder(symbol, orderType, price, volume, self)
+            vtOrderIDList = self._account.sendStopOrder(symbol, orderType, price, volume, reason=self.id)
         else:
-            vtOrderIDList = self._account.sendOrder(symbol, orderType, price, volume, self) 
+            vtOrderIDList = self._account.sendOrder(symbol, orderType, price, volume, reason=self.id) 
 
         return vtOrderIDList
         

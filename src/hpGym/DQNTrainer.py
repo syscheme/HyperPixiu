@@ -155,6 +155,7 @@ class MarketDirClassifier(BaseApplication):
             'ResNet2Xd1' : self.__createModel_ResNet2Xd1,
             'ResNet2xR1' : self.__createModel_ResNet2xR1,
             'ResNet21'   : self.__createModel_ResNet21,
+            'ResNet21R1' : self.__createModel_ResNet21R1,
             'ResNet34d1' : self.__createModel_ResNet34d1,
             'ResNet50d1' : self.__createModel_ResNet50d1,
             }
@@ -229,16 +230,9 @@ class MarketDirClassifier(BaseApplication):
             except Exception as ex:
                 self.logexception(ex)
 
-            if not self._brain and not self._wkModelId in self.__knownModels.keys():
-                self.warn('unknown modelId[%s], taking % instead' % (self._wkModelId, MarketDirClassifier.DEFAULT_MODEL))
-                self._wkModelId = MarketDirClassifier.DEFAULT_MODEL
-
         if not self._brain:
-            if len(GPUs) <= 1:
-                self._brain = self.__knownModels[self._wkModelId]()
-            else:
-                with tf.device("/cpu:0"):
-                    self._brain = self.__knownModels[self._wkModelId]()
+            self._brain, self._wkModelId = self.createModel(self._wkModelId)
+            self._wkModelId += '.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
 
         try :
             os.makedirs(self._outDir)
@@ -986,6 +980,18 @@ class MarketDirClassifier(BaseApplication):
             else :
                 self.info('doAppStep_local_generator() %s epochs on recycled %dN+%dR samples took %s, hist: %s' % (strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
                 skippedSaves +=1
+    
+    #----------------------------------------------------------------------
+    def createModel(self, modelId):
+        if not modelId in self.__knownModels.keys():
+            self.warn('unknown modelId[%s], taking % instead' % (modelId, MarketDirClassifier.DEFAULT_MODEL))
+            modelId = MarketDirClassifier.DEFAULT_MODEL
+
+        if len(GPUs) <= 1:
+            return self.__knownModels[modelId](), modelId
+
+        with tf.device("/cpu:0"):
+            return self.__knownModels[modelId](), modelId
 
     #----------------------------------------------------------------------
     # model definitions
@@ -1051,7 +1057,6 @@ class MarketDirClassifier(BaseApplication):
         Trainable params: 1,335,351
         Non-trainable params: 2,816
         '''
-        self._wkModelId = 'Cnn1Dx4R2.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         model = Sequential()
         model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
@@ -1148,7 +1153,6 @@ class MarketDirClassifier(BaseApplication):
         Trainable params: 1,359,087
         Non-trainable params: 2,816
         '''
-        self._wkModelId = 'Cnn1Dx4R3.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         model = Sequential()
         model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
@@ -1320,7 +1324,6 @@ class MarketDirClassifier(BaseApplication):
             Trainable params: 8,332,459
             Non-trainable params: 10,496
         '''
-        self._wkModelId = 'VGG16d1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -1673,8 +1676,6 @@ class MarketDirClassifier(BaseApplication):
         Trainable params: 7,597,635
         Non-trainable params: 17,280
         '''
-
-        self._wkModelId = 'ResNet34d1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -1725,7 +1726,6 @@ class MarketDirClassifier(BaseApplication):
 
     def __createModel_ResNet18d1(self):
 
-        self._wkModelId = 'ResNet18d1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -1891,7 +1891,6 @@ class MarketDirClassifier(BaseApplication):
         Non-trainable params: 14,464
         '''
 
-        self._wkModelId = 'ResNet2Xd1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -2067,7 +2066,7 @@ class MarketDirClassifier(BaseApplication):
         Trainable params: 2,500,899
         Non-trainable params: 14,464
         '''
-        self._wkModelId = 'ResNet2xR1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -2246,7 +2245,7 @@ class MarketDirClassifier(BaseApplication):
         Trainable params: 1,988,875
         Non-trainable params: 12,288
         '''
-        self._wkModelId = 'ResNet21.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -2291,7 +2290,7 @@ class MarketDirClassifier(BaseApplication):
     def __createModel_ResNet21R1(self):
         '''
         '''
-        self._wkModelId = 'ResNet21.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -2335,7 +2334,6 @@ class MarketDirClassifier(BaseApplication):
 
     def __createModel_ResNet50d1(self):
 
-        self._wkModelId = 'ResNet50d1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -2531,7 +2529,7 @@ class DQNTrainer(MarketDirClassifier):
                 if lossMax < loss:
                     lossMax = loss
 
-            fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
+            fn_weights = os.path.join(self._outDir, '%s.weights.h5' % self._wkModelId)
             self._brain.save(fn_weights)
             self.info('saved weights to %s with loss[%s]' %(fn_weights, loss))
 
@@ -2576,12 +2574,6 @@ class DQNTrainer(MarketDirClassifier):
 ########################################################################
 def runTrainning() :
 
-    if not '-f' in sys.argv :
-        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/DQNTrainer_Cnn1D.json'] # 'DQNTrainer_VGG16d1.json' 'Gym_AShare.json'
-
-    p = Program()
-    p._heartbeatInterval =-1
-
     SYMBOL = '000001' # '000540' '000001'
     sourceCsvDir = None
     try:
@@ -2617,7 +2609,22 @@ def runTrainning() :
 
 ########################################################################
 if __name__ == '__main__':
-    runTrainning()
+
+    if not '-f' in sys.argv :
+        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/DQNTrainer_Cnn1D.json'] # 'DQNTrainer_VGG16d1.json' 'Gym_AShare.json'
+
+    p = Program()
+    p._heartbeatInterval =-1
+
+    # runTrainning()
+    # exit(0)
+
+    # ----------------------
+    app = p.createApp(MarketDirClassifier, configNode ='DQNTrainer')
+    p.start()
+
+    m1, m1name = app._brain, app.wkModelId
+    m2, m2name = app.createModel('ResNet21R1')
 
     # model = __createModel_ResNet21R1()
     # layerVClz20 = model.get_layer(name='VClz20')

@@ -64,6 +64,62 @@ class Hd5DataGenerator(Sequence):
             yield batch['state'], batch['action']
 
 ########################################################################
+H5DSET_ARGS={ 'compression':'lzf' }
+
+def exportLayerWeights(theModel, h5fileName, layerNames=[]) :
+    if not theModel or len(h5fileName) <=0 or len(layerNames) <=0:
+        return
+
+    print('exporting weights of layers[%s] into file %s' % (','.join(layerNames), h5fileName))
+    strExeced =''
+    with h5py.File(h5fileName, 'w') as h5file:
+        for lyname in layerNames:
+            try:
+                layer = m1.get_layer(name=lyname)
+            except:
+                continue
+
+            g = h5file.create_group('layer/%s' % lyname)
+            g.attrs['name'] = lyname
+            layerWeights = layer.get_weights()
+            w0 = np.array(layerWeights[0], dtype=float)
+            w1 = np.array(layerWeights[1], dtype=float)
+            wd0 = g.create_dataset('weights.0', data= w0, **H5DSET_ARGS)
+            wd1 = g.create_dataset('weights.1', data= w1, **H5DSET_ARGS)
+            strExeced += '%s,' % lyname
+        
+    print('saved weights of layers[%s] into file %s' % (strExeced, h5fileName))
+
+def importLayerWeights(theModel, h5fileName, layerNames=[]) :
+    if not theModel or len(h5fileName) <=0 or len(layerNames) <=0:
+        return
+
+    print('importing weights of layers[%s] from file %s' % (','.join(layerNames), h5fileName))
+    strExeced =''
+    with h5py.File(h5fileName, 'r') as h5file:
+        for lyname in layerNames:
+            try:
+                layer = m1.get_layer(name=lyname)
+            except:
+                continue
+
+            gName = 'layer/%s' % lyname
+            if not gName in h5file.keys():
+                continue
+
+            g = h5file['layer/%s' % lyname]
+            wd0 = g['weights.0']
+            wd1 = g['weights.1']
+            weights = [wd0, wd1]
+            layer.set_weights(weights)
+            layer.trainable = False
+            # weights = layer.get_weights()
+
+            strExeced += '%s,' % lyname
+        
+    print('loaded weights of layers[%s] from file %s' % (strExeced, h5fileName))
+
+########################################################################
 class MarketDirClassifier(BaseApplication):
 
     DEFAULT_MODEL = 'Cnn1Dx4R2'
@@ -98,6 +154,9 @@ class MarketDirClassifier(BaseApplication):
         self._evaluateSamples     = self.getConfig('evaluateSamples', 'yes').lower() in BOOL_STRVAL_TRUE
         self._preBalanced         = self.getConfig('preBalanced',      'no').lower() in BOOL_STRVAL_TRUE
         self._evalAt              = self.getConfig('evalAt', 5) # how often on trains to perform evaluation
+
+        self._nonTrainables       = self.getConfig('nonTrainables',  ['VClz512to20.1of2', 'VClz512to20.2of2']) # non-trainable layers
+
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
         #     self._poolEvictRate =1
@@ -226,6 +285,13 @@ class MarketDirClassifier(BaseApplication):
                 self.debug('loading saved weights from %s' %fn_weights)
                 self._brain.load_weights(fn_weights)
                 self.info('loaded model and weights from %s' %inDir)
+
+                fn_weights = os.path.join(inDir, 'nonTrainable.h5')
+                try :
+                    if len(self._nonTrainables) >0 and os.stat(fn_weights):
+                        importLayerWeights(self._brain, fn_weights, self._nonTrainables)
+                except :
+                    pass
 
             except Exception as ex:
                 self.logexception(ex)
@@ -993,6 +1059,10 @@ class MarketDirClassifier(BaseApplication):
         with tf.device("/cpu:0"):
             return self.__knownModels[modelId](), modelId
 
+    def exportLayerWeights(self):
+        exportLayerWeights(self._brain, os.path.join(self._outDir, '%s.nonTrainable.h5'% self._wkModelId), self._nonTrainables)
+
+
     #----------------------------------------------------------------------
     # model definitions
     def __createModel_Cnn1Dx4R2(self):
@@ -1082,11 +1152,10 @@ class MarketDirClassifier(BaseApplication):
         model.add(GlobalAveragePooling1D())
         model.add(Dense(512, activation='relu'))
         model.add(BatchNormalization())
-
         model.add(Dropout(0.4))
-        # unified final layers Dense(VFt20) then Dense(self._actionSize)
-        model.add(Dense(20, name='VFt20', activation='relu'))
-        model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
+        # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
+        model.add(Dense(20, name='VClz512to20.1of2', activation='relu'))
+        model.add(Dense(self._actionSize, name='VClz512to20.2of2', activation='softmax')) # this is not Q func, softmax is prefered
         model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
         # model.summary()
         return model
@@ -2277,7 +2346,7 @@ class MarketDirClassifier(BaseApplication):
         x = Flatten()(x)
         
         x = Dropout(0.4)(x) #  x= Dropout(0.5)(x)
-        # unified final layers Dense(VFt20) then Dense(self._actionSize)
+        # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
         x = Dense(66, name='VClz66', activation='relu')(x)
         x = Dense(self._actionSize, activation='softmax')(x)
 
@@ -2322,9 +2391,9 @@ class MarketDirClassifier(BaseApplication):
         x = Flatten()(x)
         
         x = Dropout(0.4)(x) #  x= Dropout(0.5)(x)
-        # unified final layers Dense(VFt20) then Dense(self._actionSize)
-        x = Dense(20, name='VFt20', activation='relu')
-        x = Dense(self._actionSize, activation='softmax')(x)
+        # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
+        x = Dense(20, name='VClz512to20.1of2', activation='relu')(x)
+        x = Dense(self._actionSize, name='VClz512to20.2of2', activation='softmax')(x)
 
         model = Model(inputs=layerIn, outputs=x)
         sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
@@ -2572,10 +2641,23 @@ class DQNTrainer(MarketDirClassifier):
         return brainTrain.fit(x=samples['state'], y=Q_target, epochs=self._initEpochs, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
 
 ########################################################################
-def runTrainning() :
+if __name__ == '__main__':
+
+    exportNonTrainable = False
+    sys.argv.append('-x')
+    if '-x' in sys.argv :
+        exportNonTrainable = True
+        sys.argv.remove('-x')
+
+    if not '-f' in sys.argv :
+        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/DQNTrainer_Cnn1D.json'] # 'DQNTrainer_VGG16d1.json' 'Gym_AShare.json'
 
     SYMBOL = '000001' # '000540' '000001'
     sourceCsvDir = None
+
+    p = Program()
+    p._heartbeatInterval =-1
+
     try:
         jsetting = p.jsettings('DQNTrainer/sourceCsvDir')
         if not jsetting is None:
@@ -2603,30 +2685,11 @@ def runTrainning() :
     trainer = p.createApp(MarketDirClassifier, configNode ='DQNTrainer')
 
     p.start()
+
+    if exportNonTrainable :
+        trainer.exportLayerWeights()
+        quit()
+
     p.loop()
     p.info('loop done, all objs: %s' % p.listByType())
     p.stop()
-
-########################################################################
-if __name__ == '__main__':
-
-    if not '-f' in sys.argv :
-        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/DQNTrainer_Cnn1D.json'] # 'DQNTrainer_VGG16d1.json' 'Gym_AShare.json'
-
-    p = Program()
-    p._heartbeatInterval =-1
-
-    # runTrainning()
-    # exit(0)
-
-    # ----------------------
-    app = p.createApp(MarketDirClassifier, configNode ='DQNTrainer')
-    p.start()
-
-    m1, m1name = app._brain, app.wkModelId
-    m2, m2name = app.createModel('ResNet21R1')
-
-    # model = __createModel_ResNet21R1()
-    # layerVClz20 = model.get_layer(name='VClz20')
-    # layerVClz20.set_weights(weights)
-    # layerVClz20.trainable = False

@@ -1140,7 +1140,7 @@ class MarketDirClassifier(BaseApplication):
         _________________________________________________________________
         dropout_1 (Dropout)          (None, 512)               0         
         _________________________________________________________________
-        VFt66 (Dense)                (None, 66)                33858     
+        VClz66 (Dense)                (None, 66)                33858     
         _________________________________________________________________
         dense_1 (Dense)              (None, 3)                 201       
         =================================================================
@@ -1176,8 +1176,8 @@ class MarketDirClassifier(BaseApplication):
         model.add(BatchNormalization())
 
         model.add(Dropout(0.4))
-        # unified final layers Dense(VFt66) then Dense(self._actionSize)
-        model.add(Dense(66, name='VFt66', activation='relu'))
+        # unified final layers Dense(VClz66) then Dense(self._actionSize)
+        model.add(Dense(66, name='VClz66', activation='relu'))
         model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
         model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
         # model.summary()
@@ -2238,9 +2238,9 @@ class MarketDirClassifier(BaseApplication):
         __________________________________________________________________________________________________
         dropout_3 (Dropout)             (None, 512)          0           flatten[0][0]                    
         __________________________________________________________________________________________________
-        VFt66 (Dense)                   (None, 66)           33858       dropout_3[0][0]                  
+        VClz66 (Dense)                   (None, 66)           33858       dropout_3[0][0]                  
         __________________________________________________________________________________________________
-        dense (Dense)                   (None, 3)            201         VFt66[0][0]                      
+        dense (Dense)                   (None, 3)            201         VClz66[0][0]                      
         ==================================================================================================
         Total params: 2,001,163
         Trainable params: 1,988,875
@@ -2279,7 +2279,52 @@ class MarketDirClassifier(BaseApplication):
         
         x = Dropout(0.4)(x) #  x= Dropout(0.5)(x)
         # unified final layers Dense(VFt20) then Dense(self._actionSize)
-        x = Dense(66, name='VFt66', activation='relu')(x)
+        x = Dense(66, name='VClz66', activation='relu')(x)
+        x = Dense(self._actionSize, activation='softmax')(x)
+
+        model = Model(inputs=layerIn, outputs=x)
+        sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+        model.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
+        # model.summary()
+        return model
+
+    def __createModel_ResNet21R1(self):
+        '''
+        '''
+        self._wkModelId = 'ResNet21.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
+        weight_decay = 0.0005
+
+        layerIn = Input((self._stateSize,))
+        x = Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,), name='ReshapedIn.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize))(layerIn)
+
+        #conv1
+        x= self.__resBlk_basic(x, nb_filter=256, kernel_size=3, padding='valid')
+
+        #res1
+        x = self.__resBlk_bottleneck(x, nb_filters=[128,128,256], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[128,128,256])
+        # Good news here is that Dropout layer doesn't have parameters to train so when dropout rate is changed,
+        # such as x= Dropout(0.5)(x), the previous trained weights still can be loaded
+        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        #res2
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512])
+        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        #res3
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 512], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 512])
+        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        # #res4
+        # x = self.__resBlk_bottleneck(x, nb_filters=[512, 512, 2048], with_conv_shortcut=True)
+        # x = self.__resBlk_bottleneck(x, nb_filters=[512, 512, 2048])
+
+        x = GlobalAveragePooling1D()(x)
+        x = Flatten()(x)
+        
+        x = Dropout(0.4)(x) #  x= Dropout(0.5)(x)
+        # unified final layers Dense(VFt20) then Dense(self._actionSize)
+        x = Dense(20, name='VFt20', activation='relu')
         x = Dense(self._actionSize, activation='softmax')(x)
 
         model = Model(inputs=layerIn, outputs=x)
@@ -2529,7 +2574,7 @@ class DQNTrainer(MarketDirClassifier):
         return brainTrain.fit(x=samples['state'], y=Q_target, epochs=self._initEpochs, batch_size=self._batchSize, verbose=0, callbacks=self._fitCallbacks)
 
 ########################################################################
-if __name__ == '__main__':
+def runTrainning() :
 
     if not '-f' in sys.argv :
         sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/DQNTrainer_Cnn1D.json'] # 'DQNTrainer_VGG16d1.json' 'Gym_AShare.json'
@@ -2569,3 +2614,12 @@ if __name__ == '__main__':
     p.loop()
     p.info('loop done, all objs: %s' % p.listByType())
     p.stop()
+
+########################################################################
+if __name__ == '__main__':
+    runTrainning()
+
+    # model = __createModel_ResNet21R1()
+    # layerVClz20 = model.get_layer(name='VClz20')
+    # layerVClz20.set_weights(weights)
+    # layerVClz20.trainable = False

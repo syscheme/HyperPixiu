@@ -352,7 +352,7 @@ class GymTrader(BaseTrader):
                     info['execAction'] = '%s:%sx%s' %(GymTrader.ACTION_BUY, latestPrice, maxBuy)
                     self.debug('gymStep() issuing max%s' % info['execAction'])
                     self._account.cancelAllOrders()
-                    vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, strategy=None)
+                    vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, reason=None)
                     info['status'] = 'buy issued'
                 else: reward -= 1 # penalty: is the agent blind to buy with no cash? :)
             elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]):
@@ -360,7 +360,7 @@ class GymTrader(BaseTrader):
                     info['execAction'] = '%s:%sx%s' %(GymTrader.ACTION_SELL, latestPrice, maxBuy)
                     self.debug('gymStep() issuing max%s' % info['execAction'])
                     self._account.cancelAllOrders()
-                    vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, strategy=None)
+                    vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, reason=None)
                     info['status'] = 'sell issued'
                 else: reward -= 1 # penalty: is the agent blind to sell with no position? :)
             else : reward += self.withdrawReward # only allow withdraw the depositted reward when action=HOLD

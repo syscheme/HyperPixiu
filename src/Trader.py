@@ -331,7 +331,7 @@ class BaseTrader(MetaTrader):
                 strExec = '%s:%sx%s' %(dirToExec, latestPrice, maxBuy)
                 self.debug('OnAdvice() issuing max%s' % strExec)
                 self._account.cancelAllOrders()
-                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, strategy=None)
+                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, reason=adv.desc)
                 dirExeced = OrderData.DIRECTION_LONG
 
         elif OrderData.DIRECTION_SHORT == dirToExec :
@@ -341,7 +341,7 @@ class BaseTrader(MetaTrader):
                 strExec = '%s:%sx%s' %(dirToExec, latestPrice, maxSell)
                 self.debug('OnAdvice() issuing max%s' % strExec)
                 self._account.cancelAllOrders()
-                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, strategy=None)
+                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, reason=adv.desc)
                 dirExeced = OrderData.DIRECTION_SHORT
 
         # step 3. calculate the rewards

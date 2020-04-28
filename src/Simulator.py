@@ -248,7 +248,7 @@ class BackTestApp(MetaTrader):
             self.info(line)
 
         strReport += '\n'
-        with codecs.open('%s/%s_summary.txt' %(self._initTrader._outDir, self.episodeId), "w","utf-8") as rptfile:
+        with codecs.open('%s/%s_summary.txt' %(self._initTrader.outdir, self.episodeId), "w","utf-8") as rptfile:
             rptfile.write(strReport)
             self.debug('doAppStep() episode[%s] summary report generated' %(self.episodeId))
 
@@ -337,7 +337,7 @@ class BackTestApp(MetaTrader):
 
         if not tradeDays is None:
             # has been covered by tcsv recorder
-            # csvfile = '%s/%s_DR.csv' %(self._initTrader._outDir, self.episodeId)
+            # csvfile = '%s/%s_DR.csv' %(self._initTrader.outdir, self.episodeId)
             # self.debug('OnEpisodeDone() episode[%s], saving trade-days into %s' % (self.episodeId, csvfile))
             # try :
             #     os.makedirs(os.path.dirname(csvfile))
@@ -359,7 +359,7 @@ class BackTestApp(MetaTrader):
         # NOTE: Any applications must be created prior to program.start()
         # if self._recorder:
         #     self._program.removeApp(self._recorder)
-        # self._recorder = self._program.createApp(hist.TaggedCsvRecorder, filepath ='%s/BT_%s.tcsv' % (self._initTrader._outDir, self.episodeId))
+        # self._recorder = self._program.createApp(hist.TaggedCsvRecorder, filepath ='%s/BT_%s.tcsv' % (self._initTrader.outdir, self.episodeId))
 
         # step 1. start over the market state
         if self._marketState:
@@ -503,7 +503,7 @@ class BackTestApp(MetaTrader):
     def plotResult(self, tradeDays):
         # 绘图
         
-        filename = '%s%s_DR.png' %(self._initTrader._outDir, self.episodeId)
+        filename = '%s%s_DR.png' %(self._initTrader.outdir, self.episodeId)
         self.debug('plotResult() episode[%s] plotting result to %s' % (self.episodeId, filename))
 
         plt.rcParams['agg.path.chunksize'] =10000
@@ -776,15 +776,15 @@ class OnlineSimulator(MetaTrader):
         self.program.setShelveFilename('%s%s.sobj' % (self.dataRoot, self.ident))
 
         # backtest will always clear the datapath
-        try :
-            shutil.rmtree(self.__wkTrader._outDir)
-        except:
-            pass
+        # try :
+        #     shutil.rmtree(self.__wkTrader.outdir)
+        # except:
+        #     pass
 
-        try :
-            os.makedirs(self.__wkTrader._outDir)
-        except:
-            pass
+        # try :
+        #     os.makedirs(self.__wkTrader.outdir)
+        # except:
+        #     pass
 
         self._openDays = 0
 
@@ -1316,11 +1316,11 @@ class AccountWrapper(MetaAccount):
     def cashChange(self, dAvail=0, dTotal=0): return self._nest.cashChange(dAvail, dTotal)
     def record(self, category, data): return self._nest.record(category, data)
     def postEvent_Order(self, orderData): return self._nest.postEvent_Order(orderData)
-    # def sendOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendOrder(vtSymbol, orderType, price, volume, strategy)
+    # def sendOrder(self, vtSymbol, orderType, price, volume, reason): return self._nest.sendOrder(vtSymbol, orderType, price, volume, reason)
     def cancelOrder(self, brokerOrderId): return self._nest.cancelOrder(brokerOrderId)
     def batchCancel(self, brokerOrderIds): return self._nest.batchCancel(brokerOrderIds)
     def cancelAllOrders(self): return self._nest.cancelAllOrders()
-    def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendStopOrder(vtSymbol, orderType, price, volume, strategy)
+    def sendStopOrder(self, vtSymbol, orderType, price, volume, reason): return self._nest.sendStopOrder(vtSymbol, orderType, price, volume, reason)
     def findOrdersOfStrategy(self, strategyId, symbol=None): return self._nest.findOrdersOfStrategy(strategyId, symbol)
     
     def datetimeAsOfMarket(self): return self._btTrader.wkTrader._dtData
@@ -1360,10 +1360,7 @@ class AccountWrapper(MetaAccount):
     #------------------------------------------------
     # overwrite of Account
     #------------------------------------------------    
-    def sendOrder(self, symbol, orderType, price, volume, strategy):
-        source = 'ACCOUNT'
-        if strategy:
-            source = strategy.id
+    def sendOrder(self, symbol, orderType, price, volume, reason):
 
         orderData = OrderData(self)
         # 代码编号相关
@@ -1371,8 +1368,8 @@ class AccountWrapper(MetaAccount):
         orderData.exchange    = self._exchange
         orderData.price       = self.roundToPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
-        orderData.source      = source
         orderData.datetime    = self.datetimeAsOfMarket()
+        orderData.reason      = reason if reason else ''
 
         # 报单方向
         if orderType == OrderData.ORDER_BUY:

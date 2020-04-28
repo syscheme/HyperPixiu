@@ -13,6 +13,7 @@ from Trader       import MetaTrader, BaseTrader
 from Account      import OrderData
 
 from tensorflow.keras.models import model_from_json
+import h5py
 
 NN_FLOAT = 'float32'
 
@@ -20,6 +21,7 @@ def _loadBrain(app, brainDir) :
     ''' load the previous saved brain
     @param brainDir must be given, in which there are model.json definition and weights.h5 parameters
     '''
+    brain = None
     try : 
         # step 1. read the model file in json
         app.debug('loading saved brain from %s' % brainDir)
@@ -29,15 +31,49 @@ def _loadBrain(app, brainDir) :
 
         # step 2. read the weights of the model
         app.debug('loading saved brain weights from %s' %brainDir)
-        brain.load_weights('%sweights.h5' % brainDir)
+        fn_weights = os.path.join(brainDir, 'weights.h5')
+        brain.load_weights(fn_weights)
+
+        fn_weights = os.path.join(brainDir, 'nonTrainables.h5')
+        try :
+            if os.stat(fn_weights):
+                app.debug('importing non-trainable weights from file %s' % fn_weights)
+                layerExec =[]
+                with h5py.File(fn_weights, 'r') as h5file:
+                    for lyname in h5file.keys():
+                        layer = None
+                        if lyname.index('layer.') !=0:
+                            continue # mismatched prefix
+
+                        g = h5file[lyname]
+                        lyname = lyname[len('layer.'):]
+                        try:
+                            wd0 = g['weights.0']
+                            wd1 = g['weights.1']
+                            weights = [wd0, wd1]
+
+                            layer = brain.get_layer(name=lyname)
+                        except:
+                            app.logexception(ex)
+
+                        if not layer: continue
+
+                        layer.set_weights(weights)
+                        layer.trainable = False
+                        # weights = layer.get_weights()
+
+                        layerExec.append(lyname)
+
+                app.info('imported non-trainable weights of layers[%s] from file %s' % (','.join(layerExec), fn_weights))
+        except Exception as ex:
+            app.logexception(ex)
 
         app.info('loaded brain from %s' % (brainDir))
-        return brain
 
     except Exception as ex:
         app.logexception(ex)
 
-    return None
+    return brain
 
 ########################################################################
 class DnnAdvisor_S1548I4A3(TradeAdvisor):

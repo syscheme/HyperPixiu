@@ -64,6 +64,60 @@ class Hd5DataGenerator(Sequence):
             yield batch['state'], batch['action']
 
 ########################################################################
+H5DSET_ARGS={ 'compression':'lzf' }
+
+def exportLayerWeights(theModel, h5fileName, layerNames=[]) :
+    if not theModel or len(h5fileName) <=0 or len(layerNames) <=0:
+        return
+
+    layerExec =[]
+    with h5py.File(h5fileName, 'w') as h5file:
+        for lyname in layerNames:
+            try:
+                layer = theModel.get_layer(name=lyname)
+            except:
+                continue
+
+            g = h5file.create_group('layer/%s' % lyname)
+            g.attrs['name'] = lyname
+            layerWeights = layer.get_weights()
+            w0 = np.array(layerWeights[0], dtype=float)
+            w1 = np.array(layerWeights[1], dtype=float)
+            wd0 = g.create_dataset('weights.0', data= w0, **H5DSET_ARGS)
+            wd1 = g.create_dataset('weights.1', data= w1, **H5DSET_ARGS)
+            layerExec.append(lyname)
+    return layerExec
+
+def importLayerWeights(theModel, h5fileName, layerNames=[]) :
+    if not theModel or len(h5fileName) <=0 or len(layerNames) <=0:
+        return
+
+    # print('importing weights of layers[%s] from file %s' % (','.join(layerNames), h5fileName))
+    layerExec =[]
+    with h5py.File(h5fileName, 'r') as h5file:
+        for lyname in layerNames:
+            try:
+                layer = theModel.get_layer(name=lyname)
+            except:
+                continue
+
+            gName = 'layer/%s' % lyname
+            if not gName in h5file.keys():
+                continue
+
+            g = h5file['layer/%s' % lyname]
+            wd0 = g['weights.0']
+            wd1 = g['weights.1']
+            weights = [wd0, wd1]
+            layer.set_weights(weights)
+            layer.trainable = False
+            # weights = layer.get_weights()
+
+            layerExec.append(lyname)
+    return layerExec
+    # print('loaded weights of layers[%s] from file %s' % (strExeced, h5fileName))
+
+########################################################################
 class MarketDirClassifier(BaseApplication):
 
     DEFAULT_MODEL = 'Cnn1Dx4R2'
@@ -98,6 +152,9 @@ class MarketDirClassifier(BaseApplication):
         self._evaluateSamples     = self.getConfig('evaluateSamples', 'yes').lower() in BOOL_STRVAL_TRUE
         self._preBalanced         = self.getConfig('preBalanced',      'no').lower() in BOOL_STRVAL_TRUE
         self._evalAt              = self.getConfig('evalAt', 5) # how often on trains to perform evaluation
+
+        self._nonTrainables       = self.getConfig('nonTrainables',  ['VClz512to20.1of2', 'VClz512to20.2of2']) # non-trainable layers
+
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
         #     self._poolEvictRate =1
@@ -155,6 +212,7 @@ class MarketDirClassifier(BaseApplication):
             'ResNet2Xd1' : self.__createModel_ResNet2Xd1,
             'ResNet2xR1' : self.__createModel_ResNet2xR1,
             'ResNet21'   : self.__createModel_ResNet21,
+            'ResNet21R1' : self.__createModel_ResNet21R1,
             'ResNet34d1' : self.__createModel_ResNet34d1,
             'ResNet50d1' : self.__createModel_ResNet50d1,
             }
@@ -226,19 +284,21 @@ class MarketDirClassifier(BaseApplication):
                 self._brain.load_weights(fn_weights)
                 self.info('loaded model and weights from %s' %inDir)
 
+                fn_weights = os.path.join(inDir, 'nonTrainables.h5')
+                try :
+                    if len(self._nonTrainables) >0 and os.stat(fn_weights):
+                        self.debug('importing weights of layers[%s] from file %s' % (','.join(self._nonTrainables), fn_weights))
+                        lns = importLayerWeights(self._brain, fn_weights, self._nonTrainables)
+                        self.info('imported weights of layers[%s] from file %s' % (','.join(lns), fn_weights))
+                except :
+                    pass
+
             except Exception as ex:
                 self.logexception(ex)
 
-            if not self._brain and not self._wkModelId in self.__knownModels.keys():
-                self.warn('unknown modelId[%s], taking % instead' % (self._wkModelId, MarketDirClassifier.DEFAULT_MODEL))
-                self._wkModelId = MarketDirClassifier.DEFAULT_MODEL
-
         if not self._brain:
-            if len(GPUs) <= 1:
-                self._brain = self.__knownModels[self._wkModelId]()
-            else:
-                with tf.device("/cpu:0"):
-                    self._brain = self.__knownModels[self._wkModelId]()
+            self._brain, self._wkModelId = self.createModel(self._wkModelId)
+            self._wkModelId += '.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
 
         try :
             os.makedirs(self._outDir)
@@ -986,6 +1046,24 @@ class MarketDirClassifier(BaseApplication):
             else :
                 self.info('doAppStep_local_generator() %s epochs on recycled %dN+%dR samples took %s, hist: %s' % (strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
                 skippedSaves +=1
+    
+    #----------------------------------------------------------------------
+    def createModel(self, modelId):
+        if not modelId in self.__knownModels.keys():
+            self.warn('unknown modelId[%s], taking % instead' % (modelId, MarketDirClassifier.DEFAULT_MODEL))
+            modelId = MarketDirClassifier.DEFAULT_MODEL
+
+        if len(GPUs) <= 1:
+            return self.__knownModels[modelId](), modelId
+
+        with tf.device("/cpu:0"):
+            return self.__knownModels[modelId](), modelId
+
+    def exportLayerWeights(self):
+        h5fileName = os.path.join(self._outDir, '%s.nonTrainables.h5'% self._wkModelId)
+        self.debug('exporting weights of layers[%s] into file %s' % (','.join(_nonTrainables), h5fileName))
+        lns = exportLayerWeights(self._brain, h5fileName, self._nonTrainables)
+        self.info('exported weights of layers[%s] into file %s' % (','.join(lns), h5fileName))
 
     #----------------------------------------------------------------------
     # model definitions
@@ -1051,7 +1129,6 @@ class MarketDirClassifier(BaseApplication):
         Trainable params: 1,335,351
         Non-trainable params: 2,816
         '''
-        self._wkModelId = 'Cnn1Dx4R2.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         model = Sequential()
         model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
@@ -1077,11 +1154,10 @@ class MarketDirClassifier(BaseApplication):
         model.add(GlobalAveragePooling1D())
         model.add(Dense(512, activation='relu'))
         model.add(BatchNormalization())
-
         model.add(Dropout(0.4))
-        # unified final layers Dense(VFt20) then Dense(self._actionSize)
-        model.add(Dense(20, name='VFt20', activation='relu'))
-        model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
+        # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
+        model.add(Dense(20, name='VClz512to20.1of2', activation='relu'))
+        model.add(Dense(self._actionSize, name='VClz512to20.2of2', activation='softmax')) # this is not Q func, softmax is prefered
         model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
         # model.summary()
         return model
@@ -1140,7 +1216,7 @@ class MarketDirClassifier(BaseApplication):
         _________________________________________________________________
         dropout_1 (Dropout)          (None, 512)               0         
         _________________________________________________________________
-        VFt66 (Dense)                (None, 66)                33858     
+        VClz66 (Dense)                (None, 66)                33858     
         _________________________________________________________________
         dense_1 (Dense)              (None, 3)                 201       
         =================================================================
@@ -1148,7 +1224,6 @@ class MarketDirClassifier(BaseApplication):
         Trainable params: 1,359,087
         Non-trainable params: 2,816
         '''
-        self._wkModelId = 'Cnn1Dx4R3.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         model = Sequential()
         model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
@@ -1176,8 +1251,8 @@ class MarketDirClassifier(BaseApplication):
         model.add(BatchNormalization())
 
         model.add(Dropout(0.4))
-        # unified final layers Dense(VFt66) then Dense(self._actionSize)
-        model.add(Dense(66, name='VFt66', activation='relu'))
+        # unified final layers Dense(VClz66) then Dense(self._actionSize)
+        model.add(Dense(66, name='VClz66', activation='relu'))
         model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
         model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
         # model.summary()
@@ -1320,7 +1395,6 @@ class MarketDirClassifier(BaseApplication):
             Trainable params: 8,332,459
             Non-trainable params: 10,496
         '''
-        self._wkModelId = 'VGG16d1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -1673,8 +1747,6 @@ class MarketDirClassifier(BaseApplication):
         Trainable params: 7,597,635
         Non-trainable params: 17,280
         '''
-
-        self._wkModelId = 'ResNet34d1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -1725,7 +1797,6 @@ class MarketDirClassifier(BaseApplication):
 
     def __createModel_ResNet18d1(self):
 
-        self._wkModelId = 'ResNet18d1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -1891,7 +1962,6 @@ class MarketDirClassifier(BaseApplication):
         Non-trainable params: 14,464
         '''
 
-        self._wkModelId = 'ResNet2Xd1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -2067,7 +2137,7 @@ class MarketDirClassifier(BaseApplication):
         Trainable params: 2,500,899
         Non-trainable params: 14,464
         '''
-        self._wkModelId = 'ResNet2xR1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -2238,15 +2308,15 @@ class MarketDirClassifier(BaseApplication):
         __________________________________________________________________________________________________
         dropout_3 (Dropout)             (None, 512)          0           flatten[0][0]                    
         __________________________________________________________________________________________________
-        VFt66 (Dense)                   (None, 66)           33858       dropout_3[0][0]                  
+        VClz66 (Dense)                   (None, 66)           33858       dropout_3[0][0]                  
         __________________________________________________________________________________________________
-        dense (Dense)                   (None, 3)            201         VFt66[0][0]                      
+        dense (Dense)                   (None, 3)            201         VClz66[0][0]                      
         ==================================================================================================
         Total params: 2,001,163
         Trainable params: 1,988,875
         Non-trainable params: 12,288
         '''
-        self._wkModelId = 'ResNet21.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -2278,9 +2348,54 @@ class MarketDirClassifier(BaseApplication):
         x = Flatten()(x)
         
         x = Dropout(0.4)(x) #  x= Dropout(0.5)(x)
-        # unified final layers Dense(VFt20) then Dense(self._actionSize)
-        x = Dense(66, name='VFt66', activation='relu')(x)
+        # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
+        x = Dense(66, name='VClz66', activation='relu')(x)
         x = Dense(self._actionSize, activation='softmax')(x)
+
+        model = Model(inputs=layerIn, outputs=x)
+        sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+        model.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
+        # model.summary()
+        return model
+
+    def __createModel_ResNet21R1(self):
+        '''
+        '''
+
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
+        weight_decay = 0.0005
+
+        layerIn = Input((self._stateSize,))
+        x = Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,), name='ReshapedIn.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize))(layerIn)
+
+        #conv1
+        x= self.__resBlk_basic(x, nb_filter=256, kernel_size=3, padding='valid')
+
+        #res1
+        x = self.__resBlk_bottleneck(x, nb_filters=[128,128,256], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[128,128,256])
+        # Good news here is that Dropout layer doesn't have parameters to train so when dropout rate is changed,
+        # such as x= Dropout(0.5)(x), the previous trained weights still can be loaded
+        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        #res2
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512])
+        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        #res3
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 512], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 512])
+        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        # #res4
+        # x = self.__resBlk_bottleneck(x, nb_filters=[512, 512, 2048], with_conv_shortcut=True)
+        # x = self.__resBlk_bottleneck(x, nb_filters=[512, 512, 2048])
+
+        x = GlobalAveragePooling1D()(x)
+        x = Flatten()(x)
+        
+        x = Dropout(0.4)(x) #  x= Dropout(0.5)(x)
+        # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
+        x = Dense(20, name='VClz512to20.1of2', activation='relu')(x)
+        x = Dense(self._actionSize, name='VClz512to20.2of2', activation='softmax')(x)
 
         model = Model(inputs=layerIn, outputs=x)
         sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
@@ -2290,7 +2405,6 @@ class MarketDirClassifier(BaseApplication):
 
     def __createModel_ResNet50d1(self):
 
-        self._wkModelId = 'ResNet50d1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -2486,7 +2600,7 @@ class DQNTrainer(MarketDirClassifier):
                 if lossMax < loss:
                     lossMax = loss
 
-            fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
+            fn_weights = os.path.join(self._outDir, '%s.weights.h5' % self._wkModelId)
             self._brain.save(fn_weights)
             self.info('saved weights to %s with loss[%s]' %(fn_weights, loss))
 
@@ -2531,14 +2645,21 @@ class DQNTrainer(MarketDirClassifier):
 ########################################################################
 if __name__ == '__main__':
 
+    exportNonTrainable = False
+    # sys.argv.append('-x')
+    if '-x' in sys.argv :
+        exportNonTrainable = True
+        sys.argv.remove('-x')
+
     if not '-f' in sys.argv :
         sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/DQNTrainer_Cnn1D.json'] # 'DQNTrainer_VGG16d1.json' 'Gym_AShare.json'
+
+    SYMBOL = '000001' # '000540' '000001'
+    sourceCsvDir = None
 
     p = Program()
     p._heartbeatInterval =-1
 
-    SYMBOL = '000001' # '000540' '000001'
-    sourceCsvDir = None
     try:
         jsetting = p.jsettings('DQNTrainer/sourceCsvDir')
         if not jsetting is None:
@@ -2566,6 +2687,11 @@ if __name__ == '__main__':
     trainer = p.createApp(MarketDirClassifier, configNode ='DQNTrainer')
 
     p.start()
+
+    if exportNonTrainable :
+        trainer.exportLayerWeights()
+        quit()
+
     p.loop()
     p.info('loop done, all objs: %s' % p.listByType())
     p.stop()

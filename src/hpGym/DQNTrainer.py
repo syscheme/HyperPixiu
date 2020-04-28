@@ -78,7 +78,7 @@ def exportLayerWeights(theModel, h5fileName, layerNames=[]) :
             except:
                 continue
 
-            g = h5file.create_group('layer/%s' % lyname)
+            g = h5file.create_group('layer.%s' % lyname)
             g.attrs['name'] = lyname
             layerWeights = layer.get_weights()
             w0 = np.array(layerWeights[0], dtype=float)
@@ -89,23 +89,34 @@ def exportLayerWeights(theModel, h5fileName, layerNames=[]) :
     return layerExec
 
 def importLayerWeights(theModel, h5fileName, layerNames=[]) :
-    if not theModel or len(h5fileName) <=0 or len(layerNames) <=0:
+    if not theModel or len(h5fileName) <=0:
         return
 
     # print('importing weights of layers[%s] from file %s' % (','.join(layerNames), h5fileName))
     layerExec =[]
     with h5py.File(h5fileName, 'r') as h5file:
+        if len(layerNames) <=0 or '*' in layerNames: # populate the layernames from the h5 file
+            while '*' in layerNames: layerNames.remove('*')
+
+            for lyname in h5file.keys():
+                if lyname.index('layer.') !=0:
+                    continue # mismatched prefix
+
+                lyname = lyname[len('layer.'):]
+                if not lyname in layerNames:
+                    layerNames.append(lyname)
+
         for lyname in layerNames:
             try:
                 layer = theModel.get_layer(name=lyname)
             except:
                 continue
 
-            gName = 'layer/%s' % lyname
+            gName = 'layer.%s' % lyname
             if not gName in h5file.keys():
                 continue
 
-            g = h5file['layer/%s' % lyname]
+            g = h5file['layer.%s' % lyname]
             wd0 = g['weights.0']
             wd1 = g['weights.1']
             weights = [wd0, wd1]
@@ -286,12 +297,12 @@ class MarketDirClassifier(BaseApplication):
 
                 fn_weights = os.path.join(inDir, 'nonTrainables.h5')
                 try :
-                    if len(self._nonTrainables) >0 and os.stat(fn_weights):
+                    if os.stat(fn_weights):
                         self.debug('importing weights of layers[%s] from file %s' % (','.join(self._nonTrainables), fn_weights))
                         lns = importLayerWeights(self._brain, fn_weights, self._nonTrainables)
-                        self.info('imported weights of layers[%s] from file %s' % (','.join(lns), fn_weights))
+                        self.info('imported non-trainable weights of layers[%s] from file %s' % (','.join(lns), fn_weights))
                 except :
-                    pass
+                    self.logexception(ex)
 
             except Exception as ex:
                 self.logexception(ex)
@@ -1061,7 +1072,7 @@ class MarketDirClassifier(BaseApplication):
 
     def exportLayerWeights(self):
         h5fileName = os.path.join(self._outDir, '%s.nonTrainables.h5'% self._wkModelId)
-        self.debug('exporting weights of layers[%s] into file %s' % (','.join(_nonTrainables), h5fileName))
+        self.debug('exporting weights of layers[%s] into file %s' % (','.join(self._nonTrainables), h5fileName))
         lns = exportLayerWeights(self._brain, h5fileName, self._nonTrainables)
         self.info('exported weights of layers[%s] into file %s' % (','.join(lns), h5fileName))
 

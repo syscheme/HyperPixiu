@@ -70,12 +70,11 @@ def exportLayerWeights(theModel, h5fileName, layerNames=[]) :
     if not theModel or len(h5fileName) <=0 or len(layerNames) <=0:
         return
 
-    print('exporting weights of layers[%s] into file %s' % (','.join(layerNames), h5fileName))
-    strExeced =''
+    layerExec =[]
     with h5py.File(h5fileName, 'w') as h5file:
         for lyname in layerNames:
             try:
-                layer = m1.get_layer(name=lyname)
+                layer = theModel.get_layer(name=lyname)
             except:
                 continue
 
@@ -86,20 +85,19 @@ def exportLayerWeights(theModel, h5fileName, layerNames=[]) :
             w1 = np.array(layerWeights[1], dtype=float)
             wd0 = g.create_dataset('weights.0', data= w0, **H5DSET_ARGS)
             wd1 = g.create_dataset('weights.1', data= w1, **H5DSET_ARGS)
-            strExeced += '%s,' % lyname
-        
-    print('saved weights of layers[%s] into file %s' % (strExeced, h5fileName))
+            layerExec.append(lyname)
+    return layerExec
 
 def importLayerWeights(theModel, h5fileName, layerNames=[]) :
     if not theModel or len(h5fileName) <=0 or len(layerNames) <=0:
         return
 
-    print('importing weights of layers[%s] from file %s' % (','.join(layerNames), h5fileName))
-    strExeced =''
+    # print('importing weights of layers[%s] from file %s' % (','.join(layerNames), h5fileName))
+    layerExec =[]
     with h5py.File(h5fileName, 'r') as h5file:
         for lyname in layerNames:
             try:
-                layer = m1.get_layer(name=lyname)
+                layer = theModel.get_layer(name=lyname)
             except:
                 continue
 
@@ -115,9 +113,9 @@ def importLayerWeights(theModel, h5fileName, layerNames=[]) :
             layer.trainable = False
             # weights = layer.get_weights()
 
-            strExeced += '%s,' % lyname
-        
-    print('loaded weights of layers[%s] from file %s' % (strExeced, h5fileName))
+            layerExec.append(lyname)
+    return layerExec
+    # print('loaded weights of layers[%s] from file %s' % (strExeced, h5fileName))
 
 ########################################################################
 class MarketDirClassifier(BaseApplication):
@@ -286,10 +284,12 @@ class MarketDirClassifier(BaseApplication):
                 self._brain.load_weights(fn_weights)
                 self.info('loaded model and weights from %s' %inDir)
 
-                fn_weights = os.path.join(inDir, 'nonTrainable.h5')
+                fn_weights = os.path.join(inDir, 'nonTrainables.h5')
                 try :
                     if len(self._nonTrainables) >0 and os.stat(fn_weights):
-                        importLayerWeights(self._brain, fn_weights, self._nonTrainables)
+                        self.debug('importing weights of layers[%s] from file %s' % (','.join(self._nonTrainables), fn_weights))
+                        lns = importLayerWeights(self._brain, fn_weights, self._nonTrainables)
+                        self.info('imported weights of layers[%s] from file %s' % (','.join(lns), fn_weights))
                 except :
                     pass
 
@@ -1060,8 +1060,10 @@ class MarketDirClassifier(BaseApplication):
             return self.__knownModels[modelId](), modelId
 
     def exportLayerWeights(self):
-        exportLayerWeights(self._brain, os.path.join(self._outDir, '%s.nonTrainable.h5'% self._wkModelId), self._nonTrainables)
-
+        h5fileName = os.path.join(self._outDir, '%s.nonTrainables.h5'% self._wkModelId)
+        self.debug('exporting weights of layers[%s] into file %s' % (','.join(_nonTrainables), h5fileName))
+        lns = exportLayerWeights(self._brain, h5fileName, self._nonTrainables)
+        self.info('exported weights of layers[%s] into file %s' % (','.join(lns), h5fileName))
 
     #----------------------------------------------------------------------
     # model definitions
@@ -2644,7 +2646,7 @@ class DQNTrainer(MarketDirClassifier):
 if __name__ == '__main__':
 
     exportNonTrainable = False
-    sys.argv.append('-x')
+    # sys.argv.append('-x')
     if '-x' in sys.argv :
         exportNonTrainable = True
         sys.argv.remove('-x')

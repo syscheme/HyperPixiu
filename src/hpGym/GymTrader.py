@@ -1162,7 +1162,7 @@ class IdealDayTrader(OfflineSimulator):
         # output the frame into a HDF5 file
         fn_frame = os.path.join(self.wkTrader._outDir, 'RFrm%s_%s.h5' % (NORMALIZE_ID, self.wkTrader._tradeSymbol) )
         dsargs={
-            'compression':'gzip'
+            'compression':'lzf'
         }
 
         with h5py.File(fn_frame, 'a') as h5file:

@@ -12,6 +12,7 @@ from TradeAdvisor import *
 from Trader       import MetaTrader, BaseTrader
 from Account      import OrderData
 
+import tensorflow as tf
 from tensorflow.keras.models import model_from_json
 import h5py
 
@@ -88,7 +89,9 @@ class DnnAdvisor_S1548I4A3(TradeAdvisor):
         self._brainId = None
         super(DnnAdvisor_S1548I4A3, self).__init__(program, **kwargs)
 
-        self._brainId = self.getConfig('brainId', "default")
+        self._brainId   = self.getConfig('brainId', "default")
+        self._processor = self.getConfig('processor', None)
+        self._brain     = None
 
     @property
     def ident(self) :
@@ -122,7 +125,26 @@ class DnnAdvisor_S1548I4A3(TradeAdvisor):
     def doAppInit(self): # return True if succ
 
         brainDir = '%s%s.S1548I4A3/' % (self.dataRoot, self._brainId)
-        self._brain = _loadBrain(self, brainDir)
+        if self._processor and len(self._processor) >1: # if specified to run on a given processor
+            from tensorflow.python.client import device_lib
+            local_device_protos = device_lib.list_local_devices()
+            devname = None
+            if '/device:' in self._processor:
+                devname = self._processor
+            else:
+                self._processor = self._processor.upper()
+                for x in local_device_protos:
+                    if x.device_type == self._processor or self._processor == x.name[len('/device:'):]:
+                        devname = x.name
+                        break
+            if devname:
+                devname = devname[len('/device:'):]
+                with tf.device('/%s' % devname) :
+                    self._brain = _loadBrain(self, brainDir)
+
+        if not self._brain:
+            self._brain = _loadBrain(self, brainDir)
+
         if not self._brain:
             self.error('doAppInit() failed to load brain[%s]' %self._brainId)
             return False

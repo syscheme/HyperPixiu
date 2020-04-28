@@ -33,6 +33,7 @@
         "type": "dnn.S1548I4A3",
         // "type": "remote",
         "brainId" : "Cnn1Dx4R2",
+        "processor" : "cpu",
         "objectives": ["SH510050","SH510500","SZ159949"],
     },
 

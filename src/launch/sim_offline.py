@@ -10,7 +10,8 @@ import HistoryData as hist
 from advisors.dnn import DnnAdvisor_S1548I4A3
 
 import sys, os, platform
-RFGROUP_PREFIX = 'ReplayFrame:'
+RFGROUP_PREFIX  = 'ReplayFrame:'
+RFGROUP_PREFIX2 = 'RF'
 OUTFRM_SIZE = 8*1024
 import random
 
@@ -31,13 +32,14 @@ def balanceSamples(filepathRFrm, compress=True) :
         with h5py.File(filepathRFrm, 'r') as h5f:
             framesInHd5 = []
             for name in h5f.keys() :
-                if RFGROUP_PREFIX == name[:len(RFGROUP_PREFIX)] :
+                if RFGROUP_PREFIX == name[:len(RFGROUP_PREFIX)] or RFGROUP_PREFIX2 == name[:len(RFGROUP_PREFIX2)] :
                     framesInHd5.append(name)
 
             framesInHd5.sort()
+            print("found frames in %s: %s" % (filepathRFrm, ','.join(framesInHd5)))
 
             for frmName in framesInHd5 :
-                print("opening frm[%s]" % frmName)
+                print("reading frm[%s]" % frmName)
                 frm = h5f[frmName]
                 if frmState is None:
                     frmState = np.array(list(frm['state']))
@@ -58,6 +60,7 @@ def balanceSamples(filepathRFrm, compress=True) :
                 cRowToKeep = max(kI[1:]) + sum(kI[1:]) # = max(kI[1:]) *3
                 idxHolds = np.where(AD[1] ==0)[0].tolist()
                 cHoldsToDel = len(idxHolds) - (cRowToKeep - sum(kI[1:]))
+                print("frm[%s] actCounts[%s,%s,%s]->evict %s" % (frmName, kI[0],kI[1],kI[2], cHoldsToDel))
                 if cHoldsToDel>0 :
                     random.shuffle(idxHolds)
                     del idxHolds[cHoldsToDel:]
@@ -106,6 +109,8 @@ def balanceSamples(filepathRFrm, compress=True) :
                 print("lastfrm[%s] saved, size %s" % (frmId, len(frmState)))
 
 if __name__ == '__main__':
+
+    sys.argv += ['-z', '-b', '/mnt/e/h5_to_h5b/RFrmD4M1X5_SZ159949.h5']
 
     if '-b' in sys.argv :
         idx = sys.argv.index('-b') +1

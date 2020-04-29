@@ -165,6 +165,7 @@ class MarketDirClassifier(BaseApplication):
         self._evalAt              = self.getConfig('evalAt', 5) # how often on trains to perform evaluation
 
         self._nonTrainables       = self.getConfig('nonTrainables',  ['VClz512to20.1of2', 'VClz512to20.2of2']) # non-trainable layers
+        self._nonTrainables       = [x('') for x in self._nonTrainables] # convert to string list
 
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
@@ -1263,8 +1264,9 @@ class MarketDirClassifier(BaseApplication):
 
         model.add(Dropout(0.4))
         # unified final layers Dense(VClz66) then Dense(self._actionSize)
-        model.add(Dense(66, name='VClz66', activation='relu'))
-        model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
+        model.add(Dense(66, name='VClz66from512.1of2', activation='relu'))
+        model.add(Dense(self._actionSize, name='VClz66from512.2of2', activation='softmax')) # this is not Q func, softmax is prefered
+        # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
         model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
         # model.summary()
         return model
@@ -2360,8 +2362,8 @@ class MarketDirClassifier(BaseApplication):
         
         x = Dropout(0.4)(x) #  x= Dropout(0.5)(x)
         # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
-        x = Dense(66, name='VClz66', activation='relu')(x)
-        x = Dense(self._actionSize, activation='softmax')(x)
+        x = Dense(66, name='VClz66from512.1of2', activation='relu')(x)
+        x = Dense(self._actionSize, name='VClz66from512.2of2', activation='softmax')(x)
 
         model = Model(inputs=layerIn, outputs=x)
         sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)

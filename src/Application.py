@@ -195,14 +195,14 @@ class BaseApplication(MetaApp):
                     jn = jn[i]
 
                 if defaultVal :
-                    if isinstance(defaultVal, list):
-                        return jsoncfg.expect_array(jn(defaultVal))
+                    if isinstance(defaultVal, list) :
+                        return jsoncfg.expect_array(jn) # jsoncfg.expect_array(jn(defaultVal))
                     if isinstance(defaultVal, dict):
-                        return jsoncfg.expect_object(jn(defaultVal))
+                        return jsoncfg.expect_object(jn) # jsoncfg.expect_object(jn(defaultVal))
 
                 return jn(defaultVal)
-        except:
-            pass
+        except Exception as ex:
+            self.logexception(ex)
 
         return defaultVal
 

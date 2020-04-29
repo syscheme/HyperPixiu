@@ -110,8 +110,6 @@ def balanceSamples(filepathRFrm, compress=True) :
 
 if __name__ == '__main__':
 
-    sys.argv += ['-z', '-b', '/mnt/e/h5_to_h5b/RFrmD4M1X5_SZ159949.h5']
-
     if '-b' in sys.argv :
         idx = sys.argv.index('-b') +1
         if idx >0 and idx < len(sys.argv):

@@ -123,8 +123,8 @@ def importLayerWeights(theModel, h5fileName, layerNames=[]) :
             layer.set_weights(weights)
             layer.trainable = False
             # weights = layer.get_weights()
-
             layerExec.append(lyname)
+    
     return layerExec
     # print('loaded weights of layers[%s] from file %s' % (strExeced, h5fileName))
 
@@ -302,8 +302,11 @@ class MarketDirClassifier(BaseApplication):
                     if os.stat(fn_weights):
                         self.debug('importing weights of layers[%s] from file %s' % (','.join(self._nonTrainables), fn_weights))
                         lns = importLayerWeights(self._brain, fn_weights, self._nonTrainables)
-                        self.info('imported non-trainable weights of layers[%s] from file %s' % (','.join(lns), fn_weights))
-                except :
+                        if len(lns) >0:
+                            sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+                            self._brain.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
+                            self.info('imported non-trainable weights of layers[%s] from file %s' % (','.join(lns), fn_weights))
+                except Exception as ex:
                     self.logexception(ex)
 
             except Exception as ex:

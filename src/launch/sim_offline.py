@@ -39,7 +39,7 @@ def balanceSamples(filepathRFrm, compress=True) :
             print("found frames in %s: %s" % (filepathRFrm, ','.join(framesInHd5)))
 
             for frmName in framesInHd5 :
-                print("reading frm[%s]" % frmName)
+                print("reading frm[%s] from %s" % (frmName, filepathRFrm))
                 frm = h5f[frmName]
                 if frmState is None:
                     frmState = np.array(list(frm['state']))
@@ -57,21 +57,11 @@ def balanceSamples(filepathRFrm, compress=True) :
                 npActions = frmAction[lenBefore:]
                 AD = np.where(npActions >=0.99) # to match 1 because action is float read from RFrames
                 kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
-                # cRowToKeep = max(kI[1:]) + sum(kI[1:]) # = max(kI[1:]) *3
-                # idxHolds = np.where(AD[1] ==0)[0].tolist()
-                # cHoldsToDel = len(idxHolds) - (cRowToKeep - sum(kI[1:]))
-                # print("frm[%s] actCounts[%s,%s,%s]->evict %s" % (frmName, kI[0],kI[1],kI[2], cHoldsToDel))
-                # if cHoldsToDel>0 :
-                #     random.shuffle(idxHolds)
-                #     del idxHolds[cHoldsToDel:]
-                #     idxToDel = [lenBefore +i for i in idxHolds]
-                #     frmState = np.delete(frmState, idxToDel, axis=0)
-                #     frmAction = np.delete(frmAction, idxToDel, axis=0)
                 kImax = max(kI)
                 idxMax = kI.index(kImax)
-                cToReduce = kImax - 2*(sum(kI) -kImax)
+                cToReduce = kImax - int(1.6*(sum(kI) -kImax))
                 if cToReduce >0:
-                    print("frm[%s] actCounts[%s,%s,%s]->evicting %d from act[%d]" % (frmName, kI[0],kI[1],kI[2], cToReduce, idxMax))
+                    print("frm[%s] actCounts[%s,%s,%s]->evicting %d samples of max-act[%d]" % (frmName, kI[0],kI[1],kI[2], cToReduce, idxMax))
                     idxItems = np.where(AD[1] ==idxMax)[0].tolist()
                     random.shuffle(idxItems)
                     del idxItems[cToReduce:]
@@ -90,6 +80,11 @@ def balanceSamples(filepathRFrm, compress=True) :
                     frmState  = frmState[OUTFRM_SIZE:]
                     frmAction = frmAction[OUTFRM_SIZE:]
 
+                    AD = np.where(col_action >=0.99)
+                    kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
+                    # AD = np.where(frmAction >=0.99)
+                    # kI = [np.count_nonzero(AD[1] ==i) for i in range(3)]
+
                     g = h5out.create_group('%s%s' % (RFGROUP_PREFIX, frmId))
                     g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
                     g.attrs['state'] = 'state'
@@ -102,12 +97,16 @@ def balanceSamples(filepathRFrm, compress=True) :
                     st.attrs['dim'] = col_state.shape[1]
                     ac = g.create_dataset('action', data= col_action, **dsargs)
                     ac.attrs['dim'] = col_action.shape[1]
-                    print("outfrm[%s] saved, pending %s" % (frmId, len(frmState)))
+                    print("outfrm[%s] actCounts[%s,%s,%s] saved, pending %s" % (frmId, kIout[0],kIout[1],kIout[2], len(frmState)))
                     frmId +=1
 
+            # the last frame
             if len(frmState) >= 0:
                 col_state = frmState
                 col_action = frmAction
+                AD = np.where(col_action >=0.99)
+                kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
+
                 g = h5out.create_group('%s%s' % (RFGROUP_PREFIX, frmId))
                 g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
                 g.attrs['state'] = 'state'
@@ -121,7 +120,7 @@ def balanceSamples(filepathRFrm, compress=True) :
                 ac = g.create_dataset('action', data= col_action, **dsargs)
                 ac.attrs['dim'] = col_action.shape[1]
 
-                print("lastfrm[%s] saved, size %s" % (frmId, len(frmState)))
+                print("lastfrm[%s] actCounts[%s,%s,%s] saved, size %s" % (frmId, kIout[0],kIout[1],kIout[2], len(col_action)))
 
 if __name__ == '__main__':
 

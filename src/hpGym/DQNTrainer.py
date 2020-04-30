@@ -726,23 +726,36 @@ class MarketDirClassifier(BaseApplication):
             balance the samples, usually reduce some action=HOLD, which appears too many
         '''
         actionchunk = np.array(frameDict['action'])
+        # AD = np.where(actionchunk >=0.99) # to match 1 because action is float read from RFrames
+        # kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
+
+        # cRowToKeep = max(kI[1:]) + sum(kI[1:]) # = max(kI[1:]) *3
+        # # cRowToKeep = int(sum(kI[1:]) /2 *3 +1)
+
+        # # round up by batchSize
+        # if self._batchSize >0:
+        #     cRowToKeep = int((cRowToKeep + self._batchSize/2) // self._batchSize) *self._batchSize
+            
+        # idxHolds = np.where(AD[1] ==0)[0].tolist()
+        # cHoldsToDel = len(idxHolds) - (cRowToKeep - sum(kI[1:]))
+        # if cHoldsToDel>0 :
+        #     random.shuffle(idxHolds)
+        #     del idxHolds[cHoldsToDel:]
+        #     frameDict['action'] = np.delete(frameDict['action'], idxHolds, axis=0)
+        #     frameDict['state']  = np.delete(frameDict['state'],  idxHolds, axis=0)
+
         AD = np.where(actionchunk >=0.99) # to match 1 because action is float read from RFrames
         kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
-
-        cRowToKeep = max(kI[1:]) + sum(kI[1:]) # = max(kI[1:]) *3
-        # cRowToKeep = int(sum(kI[1:]) /2 *3 +1)
-
-        # round up by batchSize
-        if self._batchSize >0:
-            cRowToKeep = int((cRowToKeep + self._batchSize/2) // self._batchSize) *self._batchSize
-            
-        idxHolds = np.where(AD[1] ==0)[0].tolist()
-        cHoldsToDel = len(idxHolds) - (cRowToKeep - sum(kI[1:]))
-        if cHoldsToDel>0 :
-            random.shuffle(idxHolds)
-            del idxHolds[cHoldsToDel:]
-            frameDict['action'] = np.delete(frameDict['action'], idxHolds, axis=0)
-            frameDict['state']  = np.delete(frameDict['state'],  idxHolds, axis=0)
+        kImax = max(kI)
+        idxMax = kI.index(kImax)
+        cToReduce = kImax - int(1.6*(sum(kI) -kImax))
+        if cToReduce >0:
+            idxItems = np.where(AD[1] ==idxMax)[0].tolist()
+            random.shuffle(idxItems)
+            del idxItems[cToReduce:]
+            idxToDel = [lenBefore +i for i in idxItems]
+            frameDict['action'] = np.delete(frameDict['action'], idxToDel, axis=0)
+            frameDict['state']  = np.delete(frameDict['state'], idxToDel, axis=0)
 
         return len(frameDict['action'])
 

@@ -83,7 +83,7 @@ def balanceSamples(filepathRFrm, compress=True) :
                 AD = np.where(frmAction >=0.99) # to match 1 because action is float read from RFrames
                 kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
                 print("frm[%s] processed, pending %s actCounts[%s,%s,%s]" % (frmName, len(frmState), kI[0],kI[1],kI[2]))
-                
+
                 if len(frmState) >= OUTFRM_SIZE:
                     col_state = frmState[:OUTFRM_SIZE]
                     col_action = frmAction[:OUTFRM_SIZE]
@@ -125,7 +125,7 @@ def balanceSamples(filepathRFrm, compress=True) :
 
 if __name__ == '__main__':
 
-    sys.argv += ['-z', '-b', '/mnt/e/h5_to_h5b/RFrmD4M1X5_SZ159949.h5']
+    # sys.argv += ['-z', '-b', '/mnt/e/h5_to_h5b/RFrmD4M1X5_SZ159949.h5']
 
     if '-b' in sys.argv :
         idx = sys.argv.index('-b') +1

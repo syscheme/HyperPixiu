@@ -129,7 +129,6 @@ def balanceSamples(filepathRFrm, compress=True) :
 
                 print("lastfrm[%s] actCounts[%s,%s,%s] saved, size %s" % (frmName, kIout[0],kIout[1],kIout[2], len(col_action)))
 
-        if subtotal:
             print("balanced %s to %sb: %s->%d frameOut, actSubtotal%s" % (filepathRFrm, filepathRFrm, frmInName, frmId, list(subtotal)))
 
 if __name__ == '__main__':

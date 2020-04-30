@@ -85,7 +85,8 @@ def balanceSamples(filepathRFrm, compress=True) :
                     # AD = np.where(frmAction >=0.99)
                     # kI = [np.count_nonzero(AD[1] ==i) for i in range(3)]
 
-                    g = h5out.create_group('%s%s' % (RFGROUP_PREFIX, frmId))
+                    frmName ='%s%s' % (RFGROUP_PREFIX, frmId)
+                    g = h5out.create_group(frmName)
                     g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
                     g.attrs['state'] = 'state'
                     g.attrs['action'] = 'action'
@@ -97,7 +98,7 @@ def balanceSamples(filepathRFrm, compress=True) :
                     st.attrs['dim'] = col_state.shape[1]
                     ac = g.create_dataset('action', data= col_action, **dsargs)
                     ac.attrs['dim'] = col_action.shape[1]
-                    print("outfrm[%s] actCounts[%s,%s,%s] saved, pending %s" % (frmId, kIout[0],kIout[1],kIout[2], len(frmState)))
+                    print("outfrm[%s] actCounts[%s,%s,%s] saved, pending %s" % (frmName, kIout[0],kIout[1],kIout[2], len(frmState)))
                     frmId +=1
 
             # the last frame
@@ -106,8 +107,9 @@ def balanceSamples(filepathRFrm, compress=True) :
                 col_action = frmAction
                 AD = np.where(col_action >=0.99)
                 kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
-
-                g = h5out.create_group('%s%s' % (RFGROUP_PREFIX, frmId))
+                
+                frmName ='%s%s' % (RFGROUP_PREFIX, frmId)
+                g = h5out.create_group(frmName)
                 g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
                 g.attrs['state'] = 'state'
                 g.attrs['action'] = 'action'
@@ -120,7 +122,7 @@ def balanceSamples(filepathRFrm, compress=True) :
                 ac = g.create_dataset('action', data= col_action, **dsargs)
                 ac.attrs['dim'] = col_action.shape[1]
 
-                print("lastfrm[%s] actCounts[%s,%s,%s] saved, size %s" % (frmId, kIout[0],kIout[1],kIout[2], len(col_action)))
+                print("lastfrm[%s] actCounts[%s,%s,%s] saved, size %s" % (frmName, kIout[0],kIout[1],kIout[2], len(col_action)))
 
 if __name__ == '__main__':
 

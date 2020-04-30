@@ -57,18 +57,33 @@ def balanceSamples(filepathRFrm, compress=True) :
                 npActions = frmAction[lenBefore:]
                 AD = np.where(npActions >=0.99) # to match 1 because action is float read from RFrames
                 kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
-                cRowToKeep = max(kI[1:]) + sum(kI[1:]) # = max(kI[1:]) *3
-                idxHolds = np.where(AD[1] ==0)[0].tolist()
-                cHoldsToDel = len(idxHolds) - (cRowToKeep - sum(kI[1:]))
-                print("frm[%s] actCounts[%s,%s,%s]->evict %s" % (frmName, kI[0],kI[1],kI[2], cHoldsToDel))
-                if cHoldsToDel>0 :
-                    random.shuffle(idxHolds)
-                    del idxHolds[cHoldsToDel:]
-                    idxToDel = [lenBefore +i for i in idxHolds]
-                    frmState = np.delete(frmState, idxToDel, axis=0)
+                # cRowToKeep = max(kI[1:]) + sum(kI[1:]) # = max(kI[1:]) *3
+                # idxHolds = np.where(AD[1] ==0)[0].tolist()
+                # cHoldsToDel = len(idxHolds) - (cRowToKeep - sum(kI[1:]))
+                # print("frm[%s] actCounts[%s,%s,%s]->evict %s" % (frmName, kI[0],kI[1],kI[2], cHoldsToDel))
+                # if cHoldsToDel>0 :
+                #     random.shuffle(idxHolds)
+                #     del idxHolds[cHoldsToDel:]
+                #     idxToDel = [lenBefore +i for i in idxHolds]
+                #     frmState = np.delete(frmState, idxToDel, axis=0)
+                #     frmAction = np.delete(frmAction, idxToDel, axis=0)
+                kImax = max(kI)
+                idxMax = kI.index(kImax)
+                cToReduce = kImax - 2*(sum(kI) -kImax)
+                if cToReduce >0:
+                    print("frm[%s] actCounts[%s,%s,%s]->evicting %d from act[%d]" % (frmName, kI[0],kI[1],kI[2], cToReduce, idxMax))
+                    idxItems = np.where(AD[1] ==idxMax)[0].tolist()
+                    random.shuffle(idxItems)
+                    del idxItems[cToReduce:]
+                    idxToDel = [lenBefore +i for i in idxItems]
                     frmAction = np.delete(frmAction, idxToDel, axis=0)
+                    frmState = np.delete(frmState, idxToDel, axis=0)
 
-                print("frm[%s] processed, pending %s" % (frmName, len(frmState)))
+                # update the stat now
+                AD = np.where(frmAction >=0.99) # to match 1 because action is float read from RFrames
+                kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
+                print("frm[%s] processed, pending %s actCounts[%s,%s,%s]" % (frmName, len(frmState), kI[0],kI[1],kI[2]))
+                
                 if len(frmState) >= OUTFRM_SIZE:
                     col_state = frmState[:OUTFRM_SIZE]
                     col_action = frmAction[:OUTFRM_SIZE]
@@ -109,6 +124,8 @@ def balanceSamples(filepathRFrm, compress=True) :
                 print("lastfrm[%s] saved, size %s" % (frmId, len(frmState)))
 
 if __name__ == '__main__':
+
+    sys.argv += ['-z', '-b', '/mnt/e/h5_to_h5b/RFrmD4M1X5_SZ159949.h5']
 
     if '-b' in sys.argv :
         idx = sys.argv.index('-b') +1

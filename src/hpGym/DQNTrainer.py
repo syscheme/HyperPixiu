@@ -123,8 +123,8 @@ def importLayerWeights(theModel, h5fileName, layerNames=[]) :
             layer.set_weights(weights)
             layer.trainable = False
             # weights = layer.get_weights()
-
             layerExec.append(lyname)
+    
     return layerExec
     # print('loaded weights of layers[%s] from file %s' % (strExeced, h5fileName))
 
@@ -164,7 +164,9 @@ class MarketDirClassifier(BaseApplication):
         self._preBalanced         = self.getConfig('preBalanced',      'no').lower() in BOOL_STRVAL_TRUE
         self._evalAt              = self.getConfig('evalAt', 5) # how often on trains to perform evaluation
 
-        self._nonTrainables       = self.getConfig('nonTrainables',  ['VClz512to20.1of2', 'VClz512to20.2of2']) # non-trainable layers
+        # self._nonTrainables       = self.getConfig('nonTrainables',  ['VClz512to20.1of2', 'VClz512to20.2of2']) # non-trainable layers
+        # self._nonTrainables       = [x('') for x in self._nonTrainables] # convert to string list
+        self._nonTrainables = []
 
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
@@ -300,8 +302,11 @@ class MarketDirClassifier(BaseApplication):
                     if os.stat(fn_weights):
                         self.debug('importing weights of layers[%s] from file %s' % (','.join(self._nonTrainables), fn_weights))
                         lns = importLayerWeights(self._brain, fn_weights, self._nonTrainables)
-                        self.info('imported non-trainable weights of layers[%s] from file %s' % (','.join(lns), fn_weights))
-                except :
+                        if len(lns) >0:
+                            sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+                            self._brain.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
+                            self.info('imported non-trainable weights of layers[%s] from file %s' % (','.join(lns), fn_weights))
+                except Exception as ex:
                     self.logexception(ex)
 
             except Exception as ex:
@@ -1276,8 +1281,9 @@ class MarketDirClassifier(BaseApplication):
 
         model.add(Dropout(0.4))
         # unified final layers Dense(VClz66) then Dense(self._actionSize)
-        model.add(Dense(66, name='VClz66', activation='relu'))
-        model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
+        model.add(Dense(66, name='VClz66from512.1of2', activation='relu'))
+        model.add(Dense(self._actionSize, name='VClz66from512.2of2', activation='softmax')) # this is not Q func, softmax is prefered
+        # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
         model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
         # model.summary()
         return model
@@ -2373,8 +2379,8 @@ class MarketDirClassifier(BaseApplication):
         
         x = Dropout(0.4)(x) #  x= Dropout(0.5)(x)
         # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
-        x = Dense(66, name='VClz66', activation='relu')(x)
-        x = Dense(self._actionSize, activation='softmax')(x)
+        x = Dense(66, name='VClz66from512.1of2', activation='relu')(x)
+        x = Dense(self._actionSize, name='VClz66from512.2of2', activation='softmax')(x)
 
         model = Model(inputs=layerIn, outputs=x)
         sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)

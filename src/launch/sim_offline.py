@@ -29,7 +29,7 @@ def balanceSamples(filepathRFrm, compress=True) :
         frmState=None
         frmAction=None
         frmInName=''
-        subtotal = None
+        subtotal = np.asarray([0]*3)
 
         with h5py.File(filepathRFrm, 'r') as h5f:
             framesInHd5 = []
@@ -84,7 +84,7 @@ def balanceSamples(filepathRFrm, compress=True) :
 
                     AD = np.where(col_action >=0.99)
                     kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
-                    subtotal = subtotal + np.asarray(kIout) if subtotal else np.asarray(kIout)
+                    subtotal += np.asarray(kIout)
                     # AD = np.where(frmAction >=0.99)
                     # kI = [np.count_nonzero(AD[1] ==i) for i in range(3)]
 
@@ -110,7 +110,7 @@ def balanceSamples(filepathRFrm, compress=True) :
                 col_action = frmAction
                 AD = np.where(col_action >=0.99)
                 kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
-                subtotal = subtotal + np.asarray(kIout) if subtotal else np.asarray(kIout)
+                subtotal += np.asarray(kIout)
                 
                 frmName ='%s%s' % (RFGROUP_PREFIX, frmId)
                 frmId +=1

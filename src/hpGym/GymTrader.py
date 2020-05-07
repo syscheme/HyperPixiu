@@ -20,6 +20,8 @@ import matplotlib as mpl # pip install matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
+mpl.use('Agg')
+
 from datetime import datetime, timedelta
 import copy
 import h5py, tarfile, numpy

@@ -25,10 +25,14 @@ import h5py, tarfile
 # import pymongo
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import shutil
 import codecs
 import math
+
+# TODO: move the plotting stuf into a separate python program
+# import matplotlib as mpl # pip install matplotlib
+# import matplotlib.pyplot as plt
+# mpl.use('Agg')
 
 # 如果安装了seaborn则设置为白色风格
 try:
@@ -499,6 +503,8 @@ class BackTestApp(MetaTrader):
         
         return strReport
 
+''' 
+    TODO: move the plotting stuf into a separate python program
     #----------------------------------------------------------------------
     def plotResult(self, tradeDays):
         # 绘图
@@ -530,7 +536,6 @@ class BackTestApp(MetaTrader):
         plt.show()
         plt.close()
        
-''' 
     #----------------------------------------------------------------------
     def runOptimization(self, strategyClass, optimizationSetting):
         """优化参数"""

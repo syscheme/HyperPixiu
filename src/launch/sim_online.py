@@ -23,12 +23,13 @@ if __name__ == '__main__':
 
     evMdSource  = p.getConfig('marketEvents/source', None) # market data event source
     advisorType = p.getConfig('advisor/type', "dnn.S1548I4A3")
-    objectives = p.getConfig('trader/objectives', ['SH510050'])
+    objectives  = p.getConfig('trader/objectives', ['SH510050'])
 
     # In the case that this utility is started from a shell script, this reads env variables for the symbols
     if 'SYMBOL' in os.environ.keys():
         SYMBOL = os.environ['SYMBOL']
-        if len(SYMBOL) >0:
+        # ensure SYMBOL is always the 1st item of objectives
+        if len(SYMBOL) >0 and SYMBOL in objectives:
             objectives.remove(SYMBOL)
             objectives = [SYMBOL] + objectives
     
@@ -43,7 +44,7 @@ if __name__ == '__main__':
     # tdrCore = p.createApp(GymTrader, configNode ='trader', tradeSymbol=SYMBOL, account=acc)
     tdrCore = p.createApp(BaseTrader, configNode ='trader', objectives=objectives, account=acc)
 
-    p.info('all objects registered piror to OnlineSimulator: %s' % p.listByType())
+    p.info('all objects registered piror to OnlineSimulator[%s]: %s' % (SYMBOL, p.listByType()))
     simulator = p.createApp(OnlineSimulator, configNode ='trader', trader=tdrCore) # the simulator with brain loaded to verify training result
     rec     = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(simulator.outdir, 'online_%s.tcsv' % SYMBOL))
     simulator.setRecorder(rec)
@@ -64,7 +65,8 @@ if __name__ == '__main__':
         mc.subscribe([SYMBOL])
 
     p.start()
-    p.loop()
+    if simulator.isActive : # and ...
+        p.loop()
     
     p.stop()
 

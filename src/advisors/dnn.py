@@ -23,17 +23,20 @@ def _loadBrain(app, brainDir) :
     @param brainDir must be given, in which there are model.json definition and weights.h5 parameters
     '''
     brain = None
+    partsLoaded=[]
     try : 
         # step 1. read the model file in json
         app.debug('loading saved brain from %s' % brainDir)
         with open('%smodel.json' % brainDir, 'r') as mjson:
             model_json = mjson.read()
         brain = model_from_json(model_json)
+        partsLoaded.append('model')
 
         # step 2. read the weights of the model
         app.debug('loading saved brain weights from %s' %brainDir)
         fn_weights = os.path.join(brainDir, 'weights.h5')
         brain.load_weights(fn_weights)
+        partsLoaded.append('weights')
 
         fn_weights = os.path.join(brainDir, 'nonTrainables.h5')
         try :
@@ -64,12 +67,13 @@ def _loadBrain(app, brainDir) :
                         # weights = layer.get_weights()
 
                         layerExec.append(lyname)
+                        partsLoaded.append('non-trainables')
 
                 app.info('imported non-trainable weights of layers[%s] from file %s' % (','.join(layerExec), fn_weights))
         except Exception as ex:
             app.logexception(ex)
 
-        app.info('loaded brain from %s' % (brainDir))
+        app.info('loaded brain[%s] from %s' % (','.join(partsLoaded), brainDir))
 
     except Exception as ex:
         app.logexception(ex)

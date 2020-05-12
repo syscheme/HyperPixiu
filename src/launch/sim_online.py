@@ -28,9 +28,10 @@ if __name__ == '__main__':
     # In the case that this utility is started from a shell script, this reads env variables for the symbols
     if 'SYMBOL' in os.environ.keys():
         SYMBOL = os.environ['SYMBOL']
-        # ensure SYMBOL is always the 1st item of objectives
-        if len(SYMBOL) >0 and SYMBOL in objectives:
-            objectives.remove(SYMBOL)
+        if len(SYMBOL) >0:
+            # ensure SYMBOL is always the 1st item of objectives
+            while SYMBOL in objectives:
+                objectives.remove(SYMBOL)
             objectives = [SYMBOL] + objectives
     
     if len(objectives) <=0:

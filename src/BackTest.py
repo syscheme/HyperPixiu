@@ -1473,8 +1473,8 @@ class AccountWrapper(MetaAccount):
             buyCrossPrice      = kldata.low        # 若买入方向限价单价格高于该价格，则会成交
             sellCrossPrice     = kldata.high      # 若卖出方向限价单价格低于该价格，则会成交
             maxCrossVolume     = kldata.volume
-            buyBestCrossPrice  = round(((kldata.open + kldata.close + kldata.high) *3 + kldata.low)  /10, 3)  # 在当前时间点前发出的买入委托可能的最优成交价
-            sellBestCrossPrice = round(((kldata.open + kldata.close + kldata.low)  *3 + kldata.high) /10, 3)  # 在当前时间点前发出的卖出委托可能的最优成交价
+            buyBestCrossPrice  = ((kldata.open + kldata.close + kldata.high) *3 + kldata.low)  /10  # 在当前时间点前发出的买入委托可能的最优成交价
+            sellBestCrossPrice = ((kldata.open + kldata.close + kldata.low)  *3 + kldata.high) /10  # 在当前时间点前发出的卖出委托可能的最优成交价
             
             # 张跌停封板
             if buyCrossPrice <= kldata.open*0.9 :
@@ -1484,6 +1484,9 @@ class AccountWrapper(MetaAccount):
 
         if not symbol :
             return # ignore those non-tick/kline events
+
+        buyBestCrossPrice  = self.roundToPriceTick(buyBestCrossPrice)
+        sellBestCrossPrice = self.roundToPriceTick(sellBestCrossPrice)
 
         # 先撮合限价单
         self.__crossLimitOrder(symbol, dtEvent, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)

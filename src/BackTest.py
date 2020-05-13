@@ -1468,13 +1468,13 @@ class AccountWrapper(MetaAccount):
             kldata = ev.data
             symbol = kldata.symbol
             dtEvent = kldata.datetime
-            bestPrice          = round(((kldata.open + kldata.close) *4 + kldata.high + kldata.low) /10, 2)
+            # bestPrice          = round(((kldata.open + kldata.close) *4 + kldata.high + kldata.low) /10, 3)
 
             buyCrossPrice      = kldata.low        # 若买入方向限价单价格高于该价格，则会成交
             sellCrossPrice     = kldata.high      # 若卖出方向限价单价格低于该价格，则会成交
             maxCrossVolume     = kldata.volume
-            buyBestCrossPrice  = bestPrice       # 在当前时间点前发出的买入委托可能的最优成交价
-            sellBestCrossPrice = bestPrice       # 在当前时间点前发出的卖出委托可能的最优成交价
+            buyBestCrossPrice  = round(((kldata.open + kldata.close + kldata.high) *3 + kldata.low)  /10, 3)  # 在当前时间点前发出的买入委托可能的最优成交价
+            sellBestCrossPrice = round(((kldata.open + kldata.close + kldata.low)  *3 + kldata.high) /10, 3)  # 在当前时间点前发出的卖出委托可能的最优成交价
             
             # 张跌停封板
             if buyCrossPrice <= kldata.open*0.9 :
@@ -1486,9 +1486,9 @@ class AccountWrapper(MetaAccount):
             return # ignore those non-tick/kline events
 
         # 先撮合限价单
-        self.__crossLimitOrder(symbol, dtEvent, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
+        self.__crossLimitOrder(symbol, dtEvent, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)
         # 再撮合停止单
-        self.__crossStopOrder(symbol, dtEvent, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
+        self.__crossStopOrder(symbol, dtEvent, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)
 
     def __crossLimitOrder(self, symbol, dtAsOf, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume=-1):
         """基于最新数据撮合限价单
@@ -1528,12 +1528,11 @@ class AccountWrapper(MetaAccount):
                             order.price<=sellCrossPrice and
                             sellCrossPrice > 0)    # 国内的tick行情在跌停时bidP1为0，此时卖无法成交
                 
-                # 如果发生了成交
                 if not buyCross and not sellCross:
                     pendingOrders.append(order)
                     continue
 
-                # 推送成交数据
+                # 如果发生了成交， 推送成交数据
                 self._tradeCount += 1            # 成交编号自增1
                 tradeID = str(self._tradeCount)
                 trade = TradeData(self._nest)

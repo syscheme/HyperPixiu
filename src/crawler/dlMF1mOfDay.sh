@@ -2,9 +2,11 @@
 
 LIST=$(bzcat ./symbols.txt.bz2)
 DATE=$(date +%Y%m%d)
+TARGETDIR="/mnt/d/OneDrives/OneDrive - edy/Quant/HyperPixiu_data/crawler/"
 
-mkdir -p MF${DATE}
-cd MF${DATE}
+mkdir -p MF1m${DATE}
+cp $(realpath $0) MF1m${DATE}/
+cd MF1m${DATE}
 
 while ! [ -z "${LIST}" ] ; do
     NEXT_LIST=""
@@ -48,7 +50,7 @@ while ! [ -z "${LIST}" ] ; do
     fi
 done
 
-echo "MF done, zipping to MF${DATE}.tar.bz2"
-tar cfvj ../MF${DATE}.tar.bz2 *
-
+echo "MF done, zipping to MF1m${DATE}.tar.bz2"
+tar cfvj ../MF1m${DATE}.tar.bz2 *
+if [ -d "${TARGETDIR}" ]; then mv -vf ../MF1m${DATE}.tar.bz2 "${TARGETDIR}"; fi
 

@@ -1919,8 +1919,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
                     # day-close here
                     self.scanEventsForAdvices()
                     for cachedEv in self.__mdEventsToday:
-                        self._marketState.updateByEvent(cachedEv)
-
+                        # !!NEVER!!! self._marketState.updateByEvent(cachedEv), let Trade.OnEvent() do so, otherwise will mess up the output RFrames
                         super(BackTestApp, self).doAppStep() # yes, this is to the super of BackTestApp
                         self._account.doAppStep()
 
@@ -1978,6 +1977,8 @@ class IdealTrader_Tplus1(OfflineSimulator):
         exit(0) # IdealTrader_Tplus1 is not supposed to run forever, just exit instead of return
 
     def __pushStateAction(self, mstate, action):
+
+        if (self.__sampleIdx + self.__frameNo) <=0 and all(v == 0.0 for v in mstate): return # skip the leading all[0.0]
 
         self.__sampleIdx = self.__sampleIdx % self.__sampleFrmSize
         if 0 == self.__sampleIdx and not None in self.__sampleFrm :

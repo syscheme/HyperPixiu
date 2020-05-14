@@ -21,7 +21,7 @@ def balanceSamples(filepathRFrm, compress=True) :
     '''
     dsargs={}
     if compress :
-        dsargs['compression'] = 'lzf'
+        dsargs['compression'] = 'lzf' # 'gzip' for HDFExplorer
 
     print("balancing samples in %s to %sb" % (filepathRFrm, filepathRFrm))
     with h5py.File(filepathRFrm+'b', 'w') as h5out:

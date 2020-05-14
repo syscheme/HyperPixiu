@@ -279,6 +279,10 @@ class Account(MetaAccount):
     #  properties
     #----------------------------------------------------------------------
     @property
+    def executable(self): 
+        return self.__class__.duringTradeHours(self.datetimeAsOfMarket())
+
+    @property
     def recorder(self):
         return self._recorder
 

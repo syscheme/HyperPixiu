@@ -2,7 +2,7 @@
 
 LIST=$(bzcat ./symbols.txt.bz2)
 DATE=$(date +%Y%m%d)
-TARGETDIR="/mnt/d/OneDrives/OneDrive - edy/Quant/HyperPixiu_data/crawler/"
+TARGETDIR="$(realpath ~/out)"
 
 mkdir -p MF1m${DATE}
 cp $(realpath $0) MF1m${DATE}/
@@ -52,5 +52,9 @@ done
 
 echo "MF done, zipping to MF1m${DATE}.tar.bz2"
 tar cfvj ../MF1m${DATE}.tar.bz2 *
-if [ -d "${TARGETDIR}" ]; then mv -vf ../MF1m${DATE}.tar.bz2 "${TARGETDIR}"; fi
+cd ..
 
+if [ -d "${TARGETDIR}" ]; then
+        mv -vf ./MF1m${DATE}.tar.bz2 "${TARGETDIR}"
+        ls -d MF1m*| grep -v tar|sort | head -n -5 | xargs rm -rf 
+fi

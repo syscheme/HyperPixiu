@@ -11,7 +11,9 @@
         "backTest":{
             "startBalance": 100000,
             "episodes": 1,
-            "warmupDays": 120,
+            "warmupDays": 60,
+            // "startDate": "2017-01-01",
+            // "endDate"  : "2019-06-30",
             // "ideal": "T+1",
         }
     },
@@ -23,7 +25,7 @@
         "slippage" : 0,       // 假设的滑点
         "ratePer10K" : 30,    // 佣金比例（per 10K）
         "size" : 100,         // 合约大小，默认为1
-        "priceTick" : 0,      // 价格最小变动 
+        "priceTick" : 0.01,      // 价格最小变动 
     },
 
     "advisor": {
@@ -32,8 +34,8 @@
         // otherwise take local advisor
         "type": "dnn.S1548I4A3",
         // "type": "remote",
-        "brainId" : "Cnn1Dx4R2",
-        "processor" : "cpu",
+        "brainId" : "Cnn1Dx4R2", // "ResNet21", "Cnn1Dx4R2",
+        // "processor" : "cpu",
         "objectives": ["SH510050","SH510500","SZ159949"],
     },
 

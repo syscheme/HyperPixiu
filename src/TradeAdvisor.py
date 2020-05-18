@@ -270,8 +270,10 @@ class AdviceData(EventData):
         self.pdirAsOf     = None                    # 前次Advice datetime
 
     def dirString(self) :
-        dirIdx = np.argmax([self.dirNONE,self.dirLONG,self.dirSHORT])
-        self.strDir = AdviceData.DIRSTR[dirIdx]
+        if not self.strDir or len(self.strDir) <=0 :
+            self.dirNONE, self.dirLONG, self.dirSHORT = round(self.dirNONE,4), round(self.dirLONG,4), round(self.dirSHORT,4)
+            dirIdx = np.argmax([self.dirNONE,self.dirLONG,self.dirSHORT])
+            self.strDir = AdviceData.DIRSTR[dirIdx]
         return self.strDir
 
     @property

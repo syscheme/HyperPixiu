@@ -111,10 +111,11 @@ class DnnAdvisor_S1548I4A3(TradeAdvisor):
         tokens = (d.vtSymbol.split('.'))
         symbol = tokens[0]
 
-        market_state = self._marketState.exportKLFloats(symbol)
-        market_state = np.array(market_state).astype(NN_FLOAT).reshape(1, DnnAdvisor_S1548I4A3.STATE_DIMS)
+        floatstate = self._marketState.exportKLFloats(symbol)
+        if all(v == 0.0 for v in floatstate): return None # skip advising pirior to plenty state data
 
-        act_values = self._brain.predict(market_state)
+        floatstate = np.array(floatstate).astype(NN_FLOAT).reshape(1, DnnAdvisor_S1548I4A3.STATE_DIMS)
+        act_values = self._brain.predict(floatstate)
         # action = [0.0] * DnnAdvisor_S1548I4A3.ACTION_DIMS
         # idxAct = np.argmax(act_values[0])
         # action[idxAct] = 1.0

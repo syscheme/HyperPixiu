@@ -62,13 +62,13 @@ class SubjectTrader(BaseApplication):
              maps to the configuration nodes under account/subjects
 
         "account": { // account settings
-            "id": "3733421",
+            "id": "37faked",
             "broker": "huobi",
 
             // the following is up to the broker driver
             "httpproxy": "localhost:8118",
-            "accessKey": "867bedde-0f59abba-cb645ccf-25714",
-            "secretKey": "c8694e94-7289bc81-6466c65e-87af9",
+            "accessKey": "867bedde-ThisIsAF-akedKey0-25714",
+            "secretKey": "c8694e94-ThisIsAF-akedKey0-87af9",
 
             "subjects" : {
                 "eosusdt" : {

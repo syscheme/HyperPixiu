@@ -8,7 +8,7 @@ from __future__ import division
 from Account import Account, OrderData, Account_AShare
 from Application import MetaObj, BOOL_STRVAL_TRUE
 from Trader import MetaTrader, BaseTrader
-from BackTest import BackTestApp, RECCATE_ESPSUMMARY
+from Simulator import BackTestApp, RECCATE_ESPSUMMARY
 from Perspective import PerspectiveState, EXPORT_SIGNATURE
 from MarketData import EVENT_TICK, EVENT_KLINE_PREFIX, EXPORT_FLOATS_DIMS, NORMALIZE_ID
 from HistoryData import listAllFiles
@@ -19,6 +19,8 @@ from abc import abstractmethod
 import matplotlib as mpl # pip install matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+
+mpl.use('Agg')
 
 from datetime import datetime, timedelta
 import copy
@@ -66,7 +68,7 @@ class MetaAgent(MetaObj): # TODO:
         if self._trainInterval < 10:
             self._trainInterval =10
 
-        self._outDir = self.getConfig('outDir', self._gymTrader.dataRoot)
+        self._outDir = self.getConfig('outDir', self._gymTrader._outDir)
         if '/' != self._outDir[-1]: self._outDir +='/'
 
         self._statusAttrs = {}
@@ -352,7 +354,7 @@ class GymTrader(BaseTrader):
                     info['execAction'] = '%s:%sx%s' %(GymTrader.ACTION_BUY, latestPrice, maxBuy)
                     self.debug('gymStep() issuing max%s' % info['execAction'])
                     self._account.cancelAllOrders()
-                    vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, strategy=None)
+                    vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, reason=None)
                     info['status'] = 'buy issued'
                 else: reward -= 1 # penalty: is the agent blind to buy with no cash? :)
             elif all(action == GymTrader.ACTIONS[GymTrader.ACTION_SELL]):
@@ -360,7 +362,7 @@ class GymTrader(BaseTrader):
                     info['execAction'] = '%s:%sx%s' %(GymTrader.ACTION_SELL, latestPrice, maxBuy)
                     self.debug('gymStep() issuing max%s' % info['execAction'])
                     self._account.cancelAllOrders()
-                    vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, strategy=None)
+                    vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, reason=None)
                     info['status'] = 'sell issued'
                 else: reward -= 1 # penalty: is the agent blind to sell with no position? :)
             else : reward += self.withdrawReward # only allow withdraw the depositted reward when action=HOLD
@@ -501,6 +503,7 @@ class GymTrader(BaseTrader):
     def __OnRenderClosed(self, evt):
         self.__closed_plot = True
 
+"""
 ########################################################################
 class OfflineSimulator(BackTestApp):
     '''
@@ -594,6 +597,9 @@ class OfflineSimulator(BackTestApp):
         
     # end of BaseApplication routine
     #----------------------------------------------------------------------
+
+    def OnAdvice(self, evAdvice):
+        self.wkTrader.OnAdvice(evAdvice)
 
     # to replace GymTrader's __actPerMarketEvent
     def __trainPerMarketEvent(self, ev):
@@ -1162,7 +1168,7 @@ class IdealDayTrader(OfflineSimulator):
         # output the frame into a HDF5 file
         fn_frame = os.path.join(self.wkTrader._outDir, 'RFrm%s_%s.h5' % (NORMALIZE_ID, self.wkTrader._tradeSymbol) )
         dsargs={
-            'compression':'gzip'
+            'compression':'lzf'
         }
 
         with h5py.File(fn_frame, 'a') as h5file:
@@ -1191,6 +1197,7 @@ class IdealDayTrader(OfflineSimulator):
 
         self.info('saved frame[%s] len[%s] to file %s with sig[%s]' % (frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
 
+"""
 
 ########################################################################
 from Application import Program

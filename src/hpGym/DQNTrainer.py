@@ -64,6 +64,71 @@ class Hd5DataGenerator(Sequence):
             yield batch['state'], batch['action']
 
 ########################################################################
+H5DSET_ARGS={ 'compression':'lzf' }
+
+def exportLayerWeights(theModel, h5fileName, layerNames=[]) :
+    if not theModel or len(h5fileName) <=0 or len(layerNames) <=0:
+        return
+
+    layerExec =[]
+    with h5py.File(h5fileName, 'w') as h5file:
+        for lyname in layerNames:
+            try:
+                layer = theModel.get_layer(name=lyname)
+            except:
+                continue
+
+            g = h5file.create_group('layer.%s' % lyname)
+            g.attrs['name'] = lyname
+            layerWeights = layer.get_weights()
+            w0 = np.array(layerWeights[0], dtype=float)
+            w1 = np.array(layerWeights[1], dtype=float)
+            wd0 = g.create_dataset('weights.0', data= w0, **H5DSET_ARGS)
+            wd1 = g.create_dataset('weights.1', data= w1, **H5DSET_ARGS)
+            layerExec.append(lyname)
+    return layerExec
+
+def importLayerWeights(theModel, h5fileName, layerNames=[]) :
+    if not theModel or len(h5fileName) <=0:
+        return
+
+    # print('importing weights of layers[%s] from file %s' % (','.join(layerNames), h5fileName))
+    layerExec =[]
+    with h5py.File(h5fileName, 'r') as h5file:
+        if len(layerNames) <=0 or '*' in layerNames: # populate the layernames from the h5 file
+            while '*' in layerNames: layerNames.remove('*')
+
+            for lyname in h5file.keys():
+                if lyname.index('layer.') !=0:
+                    continue # mismatched prefix
+
+                lyname = lyname[len('layer.'):]
+                if not lyname in layerNames:
+                    layerNames.append(lyname)
+
+        for lyname in layerNames:
+            try:
+                layer = theModel.get_layer(name=lyname)
+            except:
+                continue
+
+            gName = 'layer.%s' % lyname
+            if not gName in h5file.keys():
+                continue
+
+            g = h5file['layer.%s' % lyname]
+            wd0 = g['weights.0']
+            wd1 = g['weights.1']
+            weights = [wd0, wd1]
+            layer.set_weights(weights)
+            layer.trainable = False
+            # weights = layer.get_weights()
+            layerExec.append(lyname)
+    
+    return layerExec
+    # print('loaded weights of layers[%s] from file %s' % (strExeced, h5fileName))
+
+########################################################################
 class MarketDirClassifier(BaseApplication):
 
     DEFAULT_MODEL = 'Cnn1Dx4R2'
@@ -98,6 +163,11 @@ class MarketDirClassifier(BaseApplication):
         self._evaluateSamples     = self.getConfig('evaluateSamples', 'yes').lower() in BOOL_STRVAL_TRUE
         self._preBalanced         = self.getConfig('preBalanced',      'no').lower() in BOOL_STRVAL_TRUE
         self._evalAt              = self.getConfig('evalAt', 5) # how often on trains to perform evaluation
+
+        # self._nonTrainables       = self.getConfig('nonTrainables',  ['VClz512to20.1of2', 'VClz512to20.2of2']) # non-trainable layers
+        # self._nonTrainables       = [x('') for x in self._nonTrainables] # convert to string list
+        self._nonTrainables = []
+
         # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
         # if self._poolEvictRate>1 or self._poolEvictRate<=0:
         #     self._poolEvictRate =1
@@ -135,7 +205,7 @@ class MarketDirClassifier(BaseApplication):
         self._evalAt =int(self._evalAt)
         self._stateSize, self._actionSize, self._frameSize = None, None, 0
         self._brain = None
-        self._outDir = os.path.join(self.dataRoot, self._program.progId)
+        self._outDir = os.path.join(self.outdir, 'P%s/' % self.program.pid)
         self.__lock = threading.Lock()
         self.__thrdsReadAhead = []
         self.__chunksReadAhead = []
@@ -150,12 +220,14 @@ class MarketDirClassifier(BaseApplication):
         self.__knownModels = {
             'VGG16d1'    : self.__createModel_VGG16d1,
             'Cnn1Dx4R2'  : self.__createModel_Cnn1Dx4R2,
+            'Cnn1Dx4R3'  : self.__createModel_Cnn1Dx4R3,
             'ResNet18d1' : self.__createModel_ResNet18d1,
             'ResNet2Xd1' : self.__createModel_ResNet2Xd1,
             'ResNet2xR1' : self.__createModel_ResNet2xR1,
+            'ResNet21'   : self.__createModel_ResNet21,
+            'ResNet21R1' : self.__createModel_ResNet21R1,
             'ResNet34d1' : self.__createModel_ResNet34d1,
             'ResNet50d1' : self.__createModel_ResNet50d1,
-
             }
 
         STEPMETHODS = {
@@ -225,19 +297,24 @@ class MarketDirClassifier(BaseApplication):
                 self._brain.load_weights(fn_weights)
                 self.info('loaded model and weights from %s' %inDir)
 
+                fn_weights = os.path.join(inDir, 'nonTrainables.h5')
+                try :
+                    if os.stat(fn_weights):
+                        self.debug('importing weights of layers[%s] from file %s' % (','.join(self._nonTrainables), fn_weights))
+                        lns = importLayerWeights(self._brain, fn_weights, self._nonTrainables)
+                        if len(lns) >0:
+                            sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+                            self._brain.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
+                            self.info('imported non-trainable weights of layers[%s] from file %s' % (','.join(lns), fn_weights))
+                except Exception as ex:
+                    self.logexception(ex)
+
             except Exception as ex:
                 self.logexception(ex)
 
-            if not self._brain and not self._wkModelId in self.__knownModels.keys():
-                self.warn('unknown modelId[%s], taking % instead' % (self._wkModelId, MarketDirClassifier.DEFAULT_MODEL))
-                self._wkModelId = MarketDirClassifier.DEFAULT_MODEL
-
         if not self._brain:
-            if len(GPUs) <= 1:
-                self._brain = self.__knownModels[self._wkModelId]()
-            else:
-                with tf.device("/cpu:0"):
-                    self._brain = self.__knownModels[self._wkModelId]()
+            self._brain, self._wkModelId = self.createModel(self._wkModelId)
+            self._wkModelId += '.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
 
         try :
             os.makedirs(self._outDir)
@@ -654,23 +731,36 @@ class MarketDirClassifier(BaseApplication):
             balance the samples, usually reduce some action=HOLD, which appears too many
         '''
         actionchunk = np.array(frameDict['action'])
+        # AD = np.where(actionchunk >=0.99) # to match 1 because action is float read from RFrames
+        # kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
+
+        # cRowToKeep = max(kI[1:]) + sum(kI[1:]) # = max(kI[1:]) *3
+        # # cRowToKeep = int(sum(kI[1:]) /2 *3 +1)
+
+        # # round up by batchSize
+        # if self._batchSize >0:
+        #     cRowToKeep = int((cRowToKeep + self._batchSize/2) // self._batchSize) *self._batchSize
+            
+        # idxHolds = np.where(AD[1] ==0)[0].tolist()
+        # cHoldsToDel = len(idxHolds) - (cRowToKeep - sum(kI[1:]))
+        # if cHoldsToDel>0 :
+        #     random.shuffle(idxHolds)
+        #     del idxHolds[cHoldsToDel:]
+        #     frameDict['action'] = np.delete(frameDict['action'], idxHolds, axis=0)
+        #     frameDict['state']  = np.delete(frameDict['state'],  idxHolds, axis=0)
+
         AD = np.where(actionchunk >=0.99) # to match 1 because action is float read from RFrames
         kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
-
-        cRowToKeep = max(kI[1:]) + sum(kI[1:]) # = max(kI[1:]) *3
-        # cRowToKeep = int(sum(kI[1:]) /2 *3 +1)
-
-        # round up by batchSize
-        if self._batchSize >0:
-            cRowToKeep = int((cRowToKeep + self._batchSize/2) // self._batchSize) *self._batchSize
-            
-        idxHolds = np.where(AD[1] ==0)[0].tolist()
-        cHoldsToDel = len(idxHolds) - (cRowToKeep - sum(kI[1:]))
-        if cHoldsToDel>0 :
-            random.shuffle(idxHolds)
-            del idxHolds[cHoldsToDel:]
-            frameDict['action'] = np.delete(frameDict['action'], idxHolds, axis=0)
-            frameDict['state']  = np.delete(frameDict['state'],  idxHolds, axis=0)
+        kImax = max(kI)
+        idxMax = kI.index(kImax)
+        cToReduce = kImax - int(1.6*(sum(kI) -kImax))
+        if cToReduce >0:
+            idxItems = np.where(AD[1] ==idxMax)[0].tolist()
+            random.shuffle(idxItems)
+            del idxItems[cToReduce:]
+            idxToDel = [lenBefore +i for i in idxItems]
+            frameDict['action'] = np.delete(frameDict['action'], idxToDel, axis=0)
+            frameDict['state']  = np.delete(frameDict['state'], idxToDel, axis=0)
 
         return len(frameDict['action'])
 
@@ -985,6 +1075,24 @@ class MarketDirClassifier(BaseApplication):
             else :
                 self.info('doAppStep_local_generator() %s epochs on recycled %dN+%dR samples took %s, hist: %s' % (strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
                 skippedSaves +=1
+    
+    #----------------------------------------------------------------------
+    def createModel(self, modelId):
+        if not modelId in self.__knownModels.keys():
+            self.warn('unknown modelId[%s], taking % instead' % (modelId, MarketDirClassifier.DEFAULT_MODEL))
+            modelId = MarketDirClassifier.DEFAULT_MODEL
+
+        if len(GPUs) <= 1:
+            return self.__knownModels[modelId](), modelId
+
+        with tf.device("/cpu:0"):
+            return self.__knownModels[modelId](), modelId
+
+    def exportLayerWeights(self):
+        h5fileName = os.path.join(self._outDir, '%s.nonTrainables.h5'% self._wkModelId)
+        self.debug('exporting weights of layers[%s] into file %s' % (','.join(self._nonTrainables), h5fileName))
+        lns = exportLayerWeights(self._brain, h5fileName, self._nonTrainables)
+        self.info('exported weights of layers[%s] into file %s' % (','.join(lns), h5fileName))
 
     #----------------------------------------------------------------------
     # model definitions
@@ -1050,7 +1158,6 @@ class MarketDirClassifier(BaseApplication):
         Trainable params: 1,335,351
         Non-trainable params: 2,816
         '''
-        self._wkModelId = 'Cnn1Dx4R2.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         model = Sequential()
         model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
@@ -1077,9 +1184,106 @@ class MarketDirClassifier(BaseApplication):
         model.add(Dense(512, activation='relu'))
         model.add(BatchNormalization())
         model.add(Dropout(0.4))
-        model.add(Dense(20, activation='relu'))
-        
-        model.add(Dense(self._actionSize, activation='softmax')) # this is not Q func, softmax is prefered
+        # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
+        model.add(Dense(20, name='VClz512to20.1of2', activation='relu'))
+        model.add(Dense(self._actionSize, name='VClz512to20.2of2', activation='softmax')) # this is not Q func, softmax is prefered
+        model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
+        # model.summary()
+        return model
+
+    def __createModel_Cnn1Dx4R3(self):
+        '''
+        Model: "sequential"
+        _________________________________________________________________
+        Layer (type)                 Output Shape              Param #   
+        =================================================================
+        reshape (Reshape)            (None, 387, 4)            0         
+        _________________________________________________________________
+        conv1d (Conv1D)              (None, 385, 128)          1664      
+        _________________________________________________________________
+        batch_normalization (BatchNo (None, 385, 128)          512       
+        _________________________________________________________________
+        conv1d_1 (Conv1D)            (None, 383, 256)          98560     
+        _________________________________________________________________
+        max_pooling1d (MaxPooling1D) (None, 191, 256)          0         
+        _________________________________________________________________
+        conv1d_2 (Conv1D)            (None, 189, 512)          393728    
+        _________________________________________________________________
+        conv1d_3 (Conv1D)            (None, 187, 256)          393472    
+        _________________________________________________________________
+        batch_normalization_1 (Batch (None, 187, 256)          1024      
+        _________________________________________________________________
+        max_pooling1d_1 (MaxPooling1 (None, 93, 256)           0         
+        _________________________________________________________________
+        dropout (Dropout)            (None, 93, 256)           0         
+        _________________________________________________________________
+        conv1d_4 (Conv1D)            (None, 91, 256)           196864    
+        _________________________________________________________________
+        batch_normalization_2 (Batch (None, 91, 256)           1024      
+        _________________________________________________________________
+        max_pooling1d_2 (MaxPooling1 (None, 45, 256)           0         
+        _________________________________________________________________
+        conv1d_5 (Conv1D)            (None, 43, 128)           98432     
+        _________________________________________________________________
+        batch_normalization_3 (Batch (None, 43, 128)           512       
+        _________________________________________________________________
+        max_pooling1d_3 (MaxPooling1 (None, 21, 128)           0         
+        _________________________________________________________________
+        conv1d_6 (Conv1D)            (None, 19, 128)           49280     
+        _________________________________________________________________
+        batch_normalization_4 (Batch (None, 19, 128)           512       
+        _________________________________________________________________
+        max_pooling1d_4 (MaxPooling1 (None, 9, 128)            0         
+        _________________________________________________________________
+        conv1d_7 (Conv1D)            (None, 7, 100)            38500     
+        _________________________________________________________________
+        global_average_pooling1d (Gl (None, 100)               0         
+        _________________________________________________________________
+        dense (Dense)                (None, 512)               51712     
+        _________________________________________________________________
+        batch_normalization_5 (Batch (None, 512)               2048      
+        _________________________________________________________________
+        dropout_1 (Dropout)          (None, 512)               0         
+        _________________________________________________________________
+        VClz66 (Dense)                (None, 66)                33858     
+        _________________________________________________________________
+        dense_1 (Dense)              (None, 3)                 201       
+        =================================================================
+        Total params: 1,361,903
+        Trainable params: 1,359,087
+        Non-trainable params: 2,816
+        '''
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
+        model = Sequential()
+        model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
+        model.add(Conv1D(128, 3, activation='relu', input_shape=(self._stateSize/EXPORT_FLOATS_DIMS, EXPORT_FLOATS_DIMS)))
+        model.add(BatchNormalization())
+        model.add(Conv1D(256, 3, activation='relu'))
+        model.add(MaxPooling1D(2))
+        model.add(Conv1D(512, 3, activation='relu'))
+        model.add(Conv1D(256, 3, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(2))
+        model.add(Dropout(0.3))
+        model.add(Conv1D(256, 3, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(2))
+        model.add(Conv1D(128, 3, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(2))
+        model.add(Conv1D(128, 3, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(2))
+        model.add(Conv1D(100, 3, activation='relu'))
+        model.add(GlobalAveragePooling1D())
+        model.add(Dense(512, activation='relu'))
+        model.add(BatchNormalization())
+
+        model.add(Dropout(0.4))
+        # unified final layers Dense(VClz66) then Dense(self._actionSize)
+        model.add(Dense(66, name='VClz66from512.1of2', activation='relu'))
+        model.add(Dense(self._actionSize, name='VClz66from512.2of2', activation='softmax')) # this is not Q func, softmax is prefered
+        # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
         model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **MarketDirClassifier.COMPILE_ARGS)
         # model.summary()
         return model
@@ -1221,7 +1425,6 @@ class MarketDirClassifier(BaseApplication):
             Trainable params: 8,332,459
             Non-trainable params: 10,496
         '''
-        self._wkModelId = 'VGG16d1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -1574,8 +1777,6 @@ class MarketDirClassifier(BaseApplication):
         Trainable params: 7,597,635
         Non-trainable params: 17,280
         '''
-
-        self._wkModelId = 'ResNet34d1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -1626,7 +1827,6 @@ class MarketDirClassifier(BaseApplication):
 
     def __createModel_ResNet18d1(self):
 
-        self._wkModelId = 'ResNet18d1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -1792,7 +1992,6 @@ class MarketDirClassifier(BaseApplication):
         Non-trainable params: 14,464
         '''
 
-        self._wkModelId = 'ResNet2Xd1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -1968,7 +2167,7 @@ class MarketDirClassifier(BaseApplication):
         Trainable params: 2,500,899
         Non-trainable params: 14,464
         '''
-        self._wkModelId = 'ResNet2xR1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -2011,9 +2210,231 @@ class MarketDirClassifier(BaseApplication):
         # model.summary()
         return model
 
+    def __createModel_ResNet21(self):
+        '''
+        Model: "model"
+        __________________________________________________________________________________________________
+        Layer (type)                    Output Shape         Param #     Connected to                     
+        ==================================================================================================
+        input_1 (InputLayer)            [(None, 1548)]       0                                            
+        __________________________________________________________________________________________________
+        ReshapedIn.S1548I4A3 (Reshape)  (None, 387, 4)       0           input_1[0][0]                    
+        __________________________________________________________________________________________________
+        conv1d (Conv1D)                 (None, 385, 256)     3328        ReshapedIn.S1548I4A3[0][0]       
+        __________________________________________________________________________________________________
+        batch_normalization (BatchNorma (None, 385, 256)     1024        conv1d[0][0]                     
+        __________________________________________________________________________________________________
+        conv1d_1 (Conv1D)               (None, 385, 128)     32896       batch_normalization[0][0]        
+        __________________________________________________________________________________________________
+        batch_normalization_1 (BatchNor (None, 385, 128)     512         conv1d_1[0][0]                   
+        __________________________________________________________________________________________________
+        conv1d_2 (Conv1D)               (None, 385, 128)     49280       batch_normalization_1[0][0]      
+        __________________________________________________________________________________________________
+        batch_normalization_2 (BatchNor (None, 385, 128)     512         conv1d_2[0][0]                   
+        __________________________________________________________________________________________________
+        conv1d_3 (Conv1D)               (None, 385, 256)     33024       batch_normalization_2[0][0]      
+        __________________________________________________________________________________________________
+        conv1d_4 (Conv1D)               (None, 385, 256)     65792       batch_normalization[0][0]        
+        __________________________________________________________________________________________________
+        batch_normalization_3 (BatchNor (None, 385, 256)     1024        conv1d_3[0][0]                   
+        __________________________________________________________________________________________________
+        batch_normalization_4 (BatchNor (None, 385, 256)     1024        conv1d_4[0][0]                   
+        __________________________________________________________________________________________________
+        add (Add)                       (None, 385, 256)     0           batch_normalization_3[0][0]      
+                                                                        batch_normalization_4[0][0]      
+        __________________________________________________________________________________________________
+        conv1d_5 (Conv1D)               (None, 385, 128)     32896       add[0][0]                        
+        __________________________________________________________________________________________________
+        batch_normalization_5 (BatchNor (None, 385, 128)     512         conv1d_5[0][0]                   
+        __________________________________________________________________________________________________
+        conv1d_6 (Conv1D)               (None, 385, 128)     49280       batch_normalization_5[0][0]      
+        __________________________________________________________________________________________________
+        batch_normalization_6 (BatchNor (None, 385, 128)     512         conv1d_6[0][0]                   
+        __________________________________________________________________________________________________
+        conv1d_7 (Conv1D)               (None, 385, 256)     33024       batch_normalization_6[0][0]      
+        __________________________________________________________________________________________________
+        batch_normalization_7 (BatchNor (None, 385, 256)     1024        conv1d_7[0][0]                   
+        __________________________________________________________________________________________________
+        add_1 (Add)                     (None, 385, 256)     0           batch_normalization_7[0][0]      
+                                                                        add[0][0]                        
+        __________________________________________________________________________________________________
+        dropout (Dropout)               (None, 385, 256)     0           add_1[0][0]                      
+        __________________________________________________________________________________________________
+        conv1d_8 (Conv1D)               (None, 385, 128)     32896       dropout[0][0]                    
+        __________________________________________________________________________________________________
+        batch_normalization_8 (BatchNor (None, 385, 128)     512         conv1d_8[0][0]                   
+        __________________________________________________________________________________________________
+        conv1d_9 (Conv1D)               (None, 385, 128)     49280       batch_normalization_8[0][0]      
+        __________________________________________________________________________________________________
+        batch_normalization_9 (BatchNor (None, 385, 128)     512         conv1d_9[0][0]                   
+        __________________________________________________________________________________________________
+        conv1d_10 (Conv1D)              (None, 385, 512)     66048       batch_normalization_9[0][0]      
+        __________________________________________________________________________________________________
+        conv1d_11 (Conv1D)              (None, 385, 512)     131584      dropout[0][0]                    
+        __________________________________________________________________________________________________
+        batch_normalization_10 (BatchNo (None, 385, 512)     2048        conv1d_10[0][0]                  
+        __________________________________________________________________________________________________
+        batch_normalization_11 (BatchNo (None, 385, 512)     2048        conv1d_11[0][0]                  
+        __________________________________________________________________________________________________
+        add_2 (Add)                     (None, 385, 512)     0           batch_normalization_10[0][0]     
+                                                                        batch_normalization_11[0][0]     
+        __________________________________________________________________________________________________
+        conv1d_12 (Conv1D)              (None, 385, 128)     65664       add_2[0][0]                      
+        __________________________________________________________________________________________________
+        batch_normalization_12 (BatchNo (None, 385, 128)     512         conv1d_12[0][0]                  
+        __________________________________________________________________________________________________
+        conv1d_13 (Conv1D)              (None, 385, 128)     49280       batch_normalization_12[0][0]     
+        __________________________________________________________________________________________________
+        batch_normalization_13 (BatchNo (None, 385, 128)     512         conv1d_13[0][0]                  
+        __________________________________________________________________________________________________
+        conv1d_14 (Conv1D)              (None, 385, 512)     66048       batch_normalization_13[0][0]     
+        __________________________________________________________________________________________________
+        batch_normalization_14 (BatchNo (None, 385, 512)     2048        conv1d_14[0][0]                  
+        __________________________________________________________________________________________________
+        add_3 (Add)                     (None, 385, 512)     0           batch_normalization_14[0][0]     
+                                                                        add_2[0][0]                      
+        __________________________________________________________________________________________________
+        dropout_1 (Dropout)             (None, 385, 512)     0           add_3[0][0]                      
+        __________________________________________________________________________________________________
+        conv1d_15 (Conv1D)              (None, 385, 256)     131328      dropout_1[0][0]                  
+        __________________________________________________________________________________________________
+        batch_normalization_15 (BatchNo (None, 385, 256)     1024        conv1d_15[0][0]                  
+        __________________________________________________________________________________________________
+        conv1d_16 (Conv1D)              (None, 385, 256)     196864      batch_normalization_15[0][0]     
+        __________________________________________________________________________________________________
+        batch_normalization_16 (BatchNo (None, 385, 256)     1024        conv1d_16[0][0]                  
+        __________________________________________________________________________________________________
+        conv1d_17 (Conv1D)              (None, 385, 512)     131584      batch_normalization_16[0][0]     
+        __________________________________________________________________________________________________
+        conv1d_18 (Conv1D)              (None, 385, 512)     262656      dropout_1[0][0]                  
+        __________________________________________________________________________________________________
+        batch_normalization_17 (BatchNo (None, 385, 512)     2048        conv1d_17[0][0]                  
+        __________________________________________________________________________________________________
+        batch_normalization_18 (BatchNo (None, 385, 512)     2048        conv1d_18[0][0]                  
+        __________________________________________________________________________________________________
+        add_4 (Add)                     (None, 385, 512)     0           batch_normalization_17[0][0]     
+                                                                        batch_normalization_18[0][0]     
+        __________________________________________________________________________________________________
+        conv1d_19 (Conv1D)              (None, 385, 256)     131328      add_4[0][0]                      
+        __________________________________________________________________________________________________
+        batch_normalization_19 (BatchNo (None, 385, 256)     1024        conv1d_19[0][0]                  
+        __________________________________________________________________________________________________
+        conv1d_20 (Conv1D)              (None, 385, 256)     196864      batch_normalization_19[0][0]     
+        __________________________________________________________________________________________________
+        batch_normalization_20 (BatchNo (None, 385, 256)     1024        conv1d_20[0][0]                  
+        __________________________________________________________________________________________________
+        conv1d_21 (Conv1D)              (None, 385, 512)     131584      batch_normalization_20[0][0]     
+        __________________________________________________________________________________________________
+        batch_normalization_21 (BatchNo (None, 385, 512)     2048        conv1d_21[0][0]                  
+        __________________________________________________________________________________________________
+        add_5 (Add)                     (None, 385, 512)     0           batch_normalization_21[0][0]     
+                                                                        add_4[0][0]                      
+        __________________________________________________________________________________________________
+        dropout_2 (Dropout)             (None, 385, 512)     0           add_5[0][0]                      
+        __________________________________________________________________________________________________
+        global_average_pooling1d (Globa (None, 512)          0           dropout_2[0][0]                  
+        __________________________________________________________________________________________________
+        flatten (Flatten)               (None, 512)          0           global_average_pooling1d[0][0]   
+        __________________________________________________________________________________________________
+        dropout_3 (Dropout)             (None, 512)          0           flatten[0][0]                    
+        __________________________________________________________________________________________________
+        VClz66 (Dense)                   (None, 66)           33858       dropout_3[0][0]                  
+        __________________________________________________________________________________________________
+        dense (Dense)                   (None, 3)            201         VClz66[0][0]                      
+        ==================================================================================================
+        Total params: 2,001,163
+        Trainable params: 1,988,875
+        Non-trainable params: 12,288
+        '''
+
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
+        weight_decay = 0.0005
+
+        layerIn = Input((self._stateSize,))
+        x = Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,), name='ReshapedIn.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize))(layerIn)
+
+        #conv1
+        x= self.__resBlk_basic(x, nb_filter=256, kernel_size=3, padding='valid')
+
+        #res1
+        x = self.__resBlk_bottleneck(x, nb_filters=[128,128,256], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[128,128,256])
+        # Good news here is that Dropout layer doesn't have parameters to train so when dropout rate is changed,
+        # such as x= Dropout(0.5)(x), the previous trained weights still can be loaded
+        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        #res2
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512])
+        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        #res3
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 512], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 512])
+        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        # #res4
+        # x = self.__resBlk_bottleneck(x, nb_filters=[512, 512, 2048], with_conv_shortcut=True)
+        # x = self.__resBlk_bottleneck(x, nb_filters=[512, 512, 2048])
+
+        x = GlobalAveragePooling1D()(x)
+        x = Flatten()(x)
+        
+        x = Dropout(0.4)(x) #  x= Dropout(0.5)(x)
+        # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
+        x = Dense(66, name='VClz66from512.1of2', activation='relu')(x)
+        x = Dense(self._actionSize, name='VClz66from512.2of2', activation='softmax')(x)
+
+        model = Model(inputs=layerIn, outputs=x)
+        sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+        model.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
+        # model.summary()
+        return model
+
+    def __createModel_ResNet21R1(self):
+        '''
+        '''
+
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
+        weight_decay = 0.0005
+
+        layerIn = Input((self._stateSize,))
+        x = Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,), name='ReshapedIn.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize))(layerIn)
+
+        #conv1
+        x= self.__resBlk_basic(x, nb_filter=256, kernel_size=3, padding='valid')
+
+        #res1
+        x = self.__resBlk_bottleneck(x, nb_filters=[128,128,256], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[128,128,256])
+        # Good news here is that Dropout layer doesn't have parameters to train so when dropout rate is changed,
+        # such as x= Dropout(0.5)(x), the previous trained weights still can be loaded
+        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        #res2
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[128, 128, 512])
+        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        #res3
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 512], with_conv_shortcut=True)
+        x = self.__resBlk_bottleneck(x, nb_filters=[256, 256, 512])
+        x = Dropout(0.3)(x) #  x= Dropout(0.5)(x)
+        # #res4
+        # x = self.__resBlk_bottleneck(x, nb_filters=[512, 512, 2048], with_conv_shortcut=True)
+        # x = self.__resBlk_bottleneck(x, nb_filters=[512, 512, 2048])
+
+        x = GlobalAveragePooling1D()(x)
+        x = Flatten()(x)
+        
+        x = Dropout(0.4)(x) #  x= Dropout(0.5)(x)
+        # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
+        x = Dense(20, name='VClz512to20.1of2', activation='relu')(x)
+        x = Dense(self._actionSize, name='VClz512to20.2of2', activation='softmax')(x)
+
+        model = Model(inputs=layerIn, outputs=x)
+        sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+        model.compile(optimizer=sgd, **MarketDirClassifier.COMPILE_ARGS)
+        # model.summary()
+        return model
+
     def __createModel_ResNet50d1(self):
 
-        self._wkModelId = 'ResNet50d1.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         tuples = self._stateSize/EXPORT_FLOATS_DIMS
         weight_decay = 0.0005
 
@@ -2209,7 +2630,7 @@ class DQNTrainer(MarketDirClassifier):
                 if lossMax < loss:
                     lossMax = loss
 
-            fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
+            fn_weights = os.path.join(self._outDir, '%s.weights.h5' % self._wkModelId)
             self._brain.save(fn_weights)
             self.info('saved weights to %s with loss[%s]' %(fn_weights, loss))
 
@@ -2254,14 +2675,21 @@ class DQNTrainer(MarketDirClassifier):
 ########################################################################
 if __name__ == '__main__':
 
+    exportNonTrainable = False
+    # sys.argv.append('-x')
+    if '-x' in sys.argv :
+        exportNonTrainable = True
+        sys.argv.remove('-x')
+
     if not '-f' in sys.argv :
         sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/DQNTrainer_Cnn1D.json'] # 'DQNTrainer_VGG16d1.json' 'Gym_AShare.json'
+
+    SYMBOL = '000001' # '000540' '000001'
+    sourceCsvDir = None
 
     p = Program()
     p._heartbeatInterval =-1
 
-    SYMBOL = '000001' # '000540' '000001'
-    sourceCsvDir = None
     try:
         jsetting = p.jsettings('DQNTrainer/sourceCsvDir')
         if not jsetting is None:
@@ -2289,6 +2717,11 @@ if __name__ == '__main__':
     trainer = p.createApp(MarketDirClassifier, configNode ='DQNTrainer')
 
     p.start()
+
+    if exportNonTrainable :
+        trainer.exportLayerWeights()
+        quit()
+
     p.loop()
     p.info('loop done, all objs: %s' % p.listByType())
     p.stop()

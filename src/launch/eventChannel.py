@@ -14,7 +14,7 @@ if __name__ == '__main__':
         sys.argv += ['-f', os.path.realpath(os.path.dirname(os.path.abspath(__file__))+ '/../../conf') + '/EventChannel.json']
 
     p = Program()
-    p._heartbeatInterval =-1
+    p._heartbeatInterval =2.0
 
     chType = None
     try:
@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
     # TODO launch EventChannel per specified type
     # if chType == 'ZeroMQ':
-    evCh  = p.createApp(ZeroMqEventChannel, configNode ='eventChannel')
+    evCh  = p.createApp(ZmqEventChannel, configNode ='eventChannel')
 
     p.start()
     p.loop()

@@ -80,7 +80,7 @@ class MetaAccount(BaseApplication):
     @abstractmethod 
     def postEvent_Order(self, orderData): raise NotImplementedError
     @abstractmethod 
-    def sendOrder(self, vtSymbol, orderType, price, volume, strategy): raise NotImplementedError
+    def sendOrder(self, vtSymbol, orderType, price, volume, reason): raise NotImplementedError
     @abstractmethod 
     def cancelOrder(self, brokerOrderId): raise NotImplementedError
     @abstractmethod 
@@ -88,7 +88,7 @@ class MetaAccount(BaseApplication):
     @abstractmethod 
     def cancelAllOrders(self): raise NotImplementedError
     @abstractmethod 
-    def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): raise NotImplementedError
+    def sendStopOrder(self, vtSymbol, orderType, price, volume, reason): raise NotImplementedError
     @abstractmethod 
     def findOrdersOfStrategy(self, strategyId, symbol=None): raise NotImplementedError
     @abstractmethod 
@@ -179,11 +179,11 @@ class Account(MetaAccount):
         """
         super(Account, self).__init__(program, **kwargs)
 
-        self._slippage      = self.getConfig('slippage', 0.0)
-        self._ratePer10K    = self.getConfig('ratePer10K', 30)
+        self._slippage      = self.getConfig('slippage',     0.0)
+        self._ratePer10K    = self.getConfig('ratePer10K',    30)
         self._contractSize  = self.getConfig('contractSize', 0.0)
-        self._priceTick     = self.getConfig('priceTick', 0.0)
-        self._dbName        = self.getConfig('dbName', self._id) 
+        self._priceTick     = self.getConfig('priceTick',   0.01)
+        self._dbName        = self.getConfig('dbName',  self._id) 
 
         self._pctReservedCash = self.getConfig('pctReservedCash', 1.0) # cash at percent of total cap, in order not to buy securities at full
         if self._pctReservedCash < 0.5: self._pctReservedCash =0.5
@@ -278,6 +278,10 @@ class Account(MetaAccount):
     #----------------------------------------------------------------------
     #  properties
     #----------------------------------------------------------------------
+    @property
+    def executable(self): 
+        return self.__class__.duringTradeHours(self.datetimeAsOfMarket())
+
     @property
     def recorder(self):
         return self._recorder
@@ -389,19 +393,15 @@ class Account(MetaAccount):
 
     #----------------------------------------------------------------------
     # Account operations
-    def sendOrder(self, symbol, orderType, price, volume, strategy):
+    def sendOrder(self, symbol, orderType, price, volume, reason):
         """发单"""
-        source = 'ACCOUNT'
-        if strategy:
-            source = strategy.id
-
         orderData = OrderData(self)
         # 代码编号相关
         orderData.symbol      = symbol
         orderData.exchange    = self._exchange
         orderData.price       = self.roundToPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
-        orderData.source      = source
+        orderData.reason      = reason if reason else ''
 
         # 报单方向
         if orderType == OrderData.ORDER_BUY:
@@ -447,10 +447,7 @@ class Account(MetaAccount):
         if orderData :
             self._broker_cancelOrder(orderData)
 
-    def sendStopOrder(self, symbol, orderType, price, volume, strategy):
-        source = 'ACCOUNT'
-        if strategy:
-            source = strategy.name
+    def sendStopOrder(self, symbol, orderType, price, volume, reason):
 
         orderData = OrderData(self, True)
         # 代码编号相关
@@ -458,7 +455,7 @@ class Account(MetaAccount):
         orderData.exchange    = self._exchange
         orderData.price       = self.roundToPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
-        orderData.source      = source
+        orderData.reason      = reason if reason else ''
         
         # 报单方向
         if orderType == OrderData.ORDER_BUY:
@@ -515,7 +512,7 @@ class Account(MetaAccount):
             else :
                 self._dictLimitOrders[orderData.brokerOrderId] = orderData
 
-        self.info('order[%s] has been placed, got brokerOrderId[%s]' % (orderData.desc, orderData.brokerOrderId))
+        self.info('order[%s] has been placed, got brokerOrderId[%s] reason: %s' % (orderData.desc, orderData.brokerOrderId, orderData.reason))
 
         if orderData.direction == OrderData.DIRECTION_LONG:
             turnover, commission, slippage = self.calcAmountOfTrade(orderData.symbol, orderData.price, orderData.totalVolume)
@@ -569,13 +566,13 @@ class Account(MetaAccount):
         ret = []
         with self._lock :
             for o in self._dictLimitOrders.values():
-                if o.source == strategyId:
+                if o.reason == strategyId:
                     ret.append(o)
             for o in self._dictStopOrders.values():
-                if o.source == strategyId:
+                if o.reason == strategyId:
                     ret.append(o)
             for o in self._dictOutgoingOrders.values():
-                if o.source == strategyId:
+                if o.reason == strategyId:
                     ret.append(o)
 
         return ret
@@ -655,7 +652,7 @@ class Account(MetaAccount):
             pos.stampByTrader = trade.datetime  # the current position is calculated based on trade
         
         cashAvail, cashTotal = self.cashAmount()
-        self.info('broker_onTrade() trade[%s] processed, pos[%s->%s/%s] cash[%.2f/%.2f]' % (trade.desc, strPrevPos, pos.posAvail, pos.position, cashAvail, cashTotal))#, pos.desc))
+        self.info('broker_onTrade() trade[%s]@%s processed, pos[%s->%s/%s] cash[%.2f/%.2f]' % (trade.desc, trade.asof.strftime('%Y%m%dT%H%M%S'), strPrevPos, pos.posAvail, pos.position, cashAvail, cashTotal))#, pos.desc))
         self.postEventData(Account.EVENT_TRADE, copy.copy(trade))
         if not self._skipSavingByEvent : self.save()
         self.record(Account.RECCATE_TRADE, trade)
@@ -937,7 +934,7 @@ class Account(MetaAccount):
                     posChange = -trade.volume
                     self._todayResult.tcSell += 1
                     
-                self._todayResult.txnHist += "%+dx%s@%s" % (posChange, trade.symbol, formatNumber(trade.price,3))
+                self._todayResult.txnHist += "%+dx%s@%sP%s" % (posChange, trade.symbol, trade.asof.strftime('%H%M'), formatNumber(trade.price, 3))
 
                 self._todayResult.tradingPnl += round(posChange * (self._marketState.latestPrice(trade.symbol) - trade.price) * self._contractSize, 2)
                 turnover, commission, slippagefee = self.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
@@ -1101,10 +1098,13 @@ class Account_AShare(Account):
             kwargs['exchange'] ='AShare'
         if not 'contractSize' in kwargs.keys() :
             kwargs['contractSize'] =100
-        if not 'priceTick' in kwargs.keys() :
-            kwargs['priceTick'] = 0.01
+        # if not 'priceTick' in kwargs.keys() :
+        #     kwargs['priceTick'] = 0.01
 
         super(Account_AShare, self).__init__(program, **kwargs) # accountId, exchange ='AShare', ratePer10K =ratePer10K, contractSize=100, slippage =0.0, priceTick=0.01, jsettings =jsettings)
+
+        if self._priceTick < 0.0005:
+            self._priceTick = 0.01 # the default priceTick of AShare
 
     def tradeBeginOfDay(dt = None):
         return (dt if dt else datetime.now()).replace(hour=9, minute=30, second=0, microsecond=0)
@@ -1227,7 +1227,7 @@ class OrderData(EventData):
     STATUS_CLOSED     = STATUS_FINISHED + [STATUS_CANCELLED]
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
-    COLUMNS = 'datetime,symbol,reqId,brokerOrderId,direction,price,totalVolume,tradedVolume,offset,status,source' # ,stampSubmitted,stampCanceled,stampFinished'
+    COLUMNS = 'datetime,symbol,reqId,brokerOrderId,direction,price,totalVolume,tradedVolume,offset,status,reason' # ,stampSubmitted,stampCanceled,stampFinished'
 
     #----------------------------------------------------------------------
     def __init__(self, account, stopOrder=False, reqId = None):
@@ -1246,13 +1246,13 @@ class OrderData(EventData):
         self.symbol   = EventData.EMPTY_STRING         # 合约代码
         
         # 报单相关
-        self.direction = EventData.EMPTY_UNICODE  # 报单方向
-        self.offset = EventData.EMPTY_UNICODE     # 报单开平仓
-        self.price = EventData.EMPTY_FLOAT        # 报单价格
-        self.totalVolume = EventData.EMPTY_INT    # 报单总数量
+        self.direction    = EventData.EMPTY_UNICODE  # 报单方向
+        self.offset       = EventData.EMPTY_UNICODE     # 报单开平仓
+        self.price        = EventData.EMPTY_FLOAT        # 报单价格
+        self.totalVolume  = EventData.EMPTY_INT    # 报单总数量
         self.tradedVolume = EventData.EMPTY_INT   # 报单成交数量
-        self.status = OrderData.STATUS_CREATED     # 报单状态
-        self.source   = EventData.EMPTY_STRING  # trigger source
+        self.status       = OrderData.STATUS_CREATED     # 报单状态
+        self.reason       = EventData.EMPTY_STRING  # trigger reason
         
         self.stampSubmitted  = EventData.EMPTY_STRING # 发单时间
         self.stampCanceled   = EventData.EMPTY_STRING  # 撤单时间

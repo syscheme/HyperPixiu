@@ -442,7 +442,7 @@ class KlineToXminMerger(object):
         # 初始化新一分钟的K线数据
         if not self._klineWk:
             # 创建新的K线对象
-            self._klineWk = KLineData(kline.exchange + '_k2x', kline.symbol)
+            self._klineWk = KLineData(kline.exchange if '_k2x' in kline.exchange else kline.exchange + '_k2x', kline.symbol)
             self._klineWk.open = kline.open
             self._klineWk.high = kline.high
             self._klineWk.low = kline.low
@@ -574,3 +574,9 @@ class MarketState(MetaObj):
         '''@return an array_like data as toNNFloats, maybe [] or numpy.array
         '''
         raise NotImplementedError
+
+    # @abstractmethod
+    # def engorged(self, symbol=None) :
+    #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data
+    #     '''
+    #     raise NotImplementedError

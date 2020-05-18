@@ -3,14 +3,15 @@
 This utility reads csv history data and generate ReplayFrame for offline DQN training
 '''
 
-from hpGym.GymTrader import *
-
+from Simulator import *
 from Account import Account_AShare
 from Application import *
 import HistoryData as hist
+from advisors.dnn import DnnAdvisor_S1548I4A3
 
 import sys, os, platform
-RFGROUP_PREFIX = 'ReplayFrame:'
+RFGROUP_PREFIX  = 'ReplayFrame:'
+RFGROUP_PREFIX2 = 'RF'
 OUTFRM_SIZE = 8*1024
 import random
 
@@ -20,25 +21,28 @@ def balanceSamples(filepathRFrm, compress=True) :
     '''
     dsargs={}
     if compress :
-        dsargs['compression'] = 'gzip'
+        dsargs['compression'] = 'lzf' # 'gzip' for HDFExplorer
 
     print("balancing samples in %s to %sb" % (filepathRFrm, filepathRFrm))
     with h5py.File(filepathRFrm+'b', 'w') as h5out:
         frmId=0
         frmState=None
         frmAction=None
+        frmInName=''
+        subtotal = np.asarray([0]*3)
 
         with h5py.File(filepathRFrm, 'r') as h5f:
             framesInHd5 = []
             for name in h5f.keys() :
-                if RFGROUP_PREFIX == name[:len(RFGROUP_PREFIX)] :
+                if RFGROUP_PREFIX == name[:len(RFGROUP_PREFIX)] or RFGROUP_PREFIX2 == name[:len(RFGROUP_PREFIX2)] :
                     framesInHd5.append(name)
 
             framesInHd5.sort()
+            print("found frames in %s: %s" % (filepathRFrm, ','.join(framesInHd5)))
 
-            for frmName in framesInHd5 :
-                print("opening frm[%s]" % frmName)
-                frm = h5f[frmName]
+            for frmInName in framesInHd5 :
+                print("reading frmIn[%s] from %s" % (frmInName, filepathRFrm))
+                frm = h5f[frmInName]
                 if frmState is None:
                     frmState = np.array(list(frm['state']))
                     frmAction = np.array(list(frm['action']))
@@ -55,25 +59,39 @@ def balanceSamples(filepathRFrm, compress=True) :
                 npActions = frmAction[lenBefore:]
                 AD = np.where(npActions >=0.99) # to match 1 because action is float read from RFrames
                 kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
-                cRowToKeep = max(kI[1:]) + sum(kI[1:]) # = max(kI[1:]) *3
-                idxHolds = np.where(AD[1] ==0)[0].tolist()
-                cHoldsToDel = len(idxHolds) - (cRowToKeep - sum(kI[1:]))
-                if cHoldsToDel>0 :
-                    random.shuffle(idxHolds)
-                    del idxHolds[cHoldsToDel:]
-                    idxToDel = [lenBefore +i for i in idxHolds]
-                    frmState = np.delete(frmState, idxToDel, axis=0)
+                kImax = max(kI)
+                idxMax = kI.index(kImax)
+                cToReduce = kImax - int(1.2*(sum(kI) -kImax))
+                if cToReduce >0:
+                    print("frmIn[%s] actCounts[%s,%s,%s]->evicting %d samples of max-act[%d]" % (frmInName, kI[0],kI[1],kI[2], cToReduce, idxMax))
+                    idxItems = np.where(AD[1] ==idxMax)[0].tolist()
+                    random.shuffle(idxItems)
+                    del idxItems[cToReduce:]
+                    idxToDel = [lenBefore +i for i in idxItems]
                     frmAction = np.delete(frmAction, idxToDel, axis=0)
+                    frmState = np.delete(frmState, idxToDel, axis=0)
 
-                print("frm[%s] processed, pending %s" % (frmName, len(frmState)))
+                # update the stat now
+                AD = np.where(frmAction >=0.99) # to match 1 because action is float read from RFrames
+                kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
+                print("frmIn[%s] processed, pending %s actCounts[%s,%s,%s]" % (frmInName, len(frmState), kI[0],kI[1],kI[2]))
+
                 if len(frmState) >= OUTFRM_SIZE:
                     col_state = frmState[:OUTFRM_SIZE]
                     col_action = frmAction[:OUTFRM_SIZE]
                     frmState  = frmState[OUTFRM_SIZE:]
                     frmAction = frmAction[OUTFRM_SIZE:]
 
-                    g = h5out.create_group('%s%s' % (RFGROUP_PREFIX, frmId))
+                    AD = np.where(col_action >=0.99)
+                    kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
+                    subtotal += np.asarray(kIout)
+                    # AD = np.where(frmAction >=0.99)
+                    # kI = [np.count_nonzero(AD[1] ==i) for i in range(3)]
+
+                    frmName ='%s%s' % (RFGROUP_PREFIX, frmId)
+                    g = h5out.create_group(frmName)
                     g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
+                    frmId +=1
                     g.attrs['state'] = 'state'
                     g.attrs['action'] = 'action'
                     g.attrs[u'default'] = 'state'
@@ -84,13 +102,19 @@ def balanceSamples(filepathRFrm, compress=True) :
                     st.attrs['dim'] = col_state.shape[1]
                     ac = g.create_dataset('action', data= col_action, **dsargs)
                     ac.attrs['dim'] = col_action.shape[1]
-                    print("outfrm[%s] saved, pending %s" % (frmId, len(frmState)))
-                    frmId +=1
+                    print("outfrm[%s] actCounts[%s,%s,%s] saved, pending %s" % (frmName, kIout[0],kIout[1],kIout[2], len(frmState)))
 
+            # the last frame
             if len(frmState) >= 0:
                 col_state = frmState
                 col_action = frmAction
-                g = h5out.create_group('%s%s' % (RFGROUP_PREFIX, frmId))
+                AD = np.where(col_action >=0.99)
+                kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
+                subtotal += np.asarray(kIout)
+                
+                frmName ='%s%s' % (RFGROUP_PREFIX, frmId)
+                frmId +=1
+                g = h5out.create_group(frmName)
                 g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
                 g.attrs['state'] = 'state'
                 g.attrs['action'] = 'action'
@@ -103,9 +127,13 @@ def balanceSamples(filepathRFrm, compress=True) :
                 ac = g.create_dataset('action', data= col_action, **dsargs)
                 ac.attrs['dim'] = col_action.shape[1]
 
-                print("lastfrm[%s] saved, size %s" % (frmId, len(frmState)))
+                print("lastfrm[%s] actCounts[%s,%s,%s] saved, size %s" % (frmName, kIout[0],kIout[1],kIout[2], len(col_action)))
+
+            print("balanced %s to %sb: %s->%d frameOut, actSubtotal%s" % (filepathRFrm, filepathRFrm, frmInName, frmId, list(subtotal)))
 
 if __name__ == '__main__':
+
+    # sys.argv += ['-z', '-b', '/mnt/e/h5_to_h5b/RFrmD4M1X5_SZ159949.h5']
 
     if '-b' in sys.argv :
         idx = sys.argv.index('-b') +1
@@ -121,44 +149,58 @@ if __name__ == '__main__':
     p = Program()
     p._heartbeatInterval =-1
 
-    sourceCsvDir = None
-    SYMBOL = ''
-    try:
-        jsetting = p.jsettings('trader/sourceCsvDir')
-        if not jsetting is None:
-            sourceCsvDir = jsetting(None)
+    evMdSource  = p.getConfig('marketEvents/source', None) # market data event source
+    advisorType = p.getConfig('advisor/type', "remote")
+    ideal       = p.getConfig('trader/backTest/ideal', None) # None
 
-        jsetting = p.jsettings('trader/objectives')
-        if not jsetting is None:
-            SYMBOL = jsetting([SYMBOL])[0]
-    except Exception as ex:
-        SYMBOL =''
+    if "remote" != advisorType:
+        # this is a local advisor, so the trader's source of market data event must be the same of the local advisor
+        pass
+        # jsetting = p.jsettings('advisor/eventSource')
+        # if not jsetting is None:
+        #     evMdSource = jsetting(None)
 
     # In the case that this utility is started from a shell script, this reads env variables for the symbols
+    objectives = None
     if 'SYMBOL' in os.environ.keys():
-        SYMBOL = os.environ['SYMBOL']
-
-    if 'Windows' in platform.platform() and '/mnt/' == sourceCsvDir[:5] and '/' == sourceCsvDir[6]:
-        drive = '%symbol:' % sourceCsvDir[5]
-        sourceCsvDir = sourceCsvDir.replace(sourceCsvDir[:6], drive)
+        objectives = [os.environ['SYMBOL']]
 
     acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
+    tdrCore = p.createApp(BaseTrader, configNode ='trader', objectives=objectives, account=acc)
+    objectives = tdrCore.objectives
+    SYMBOL = objectives[0]
 
-    p.info('taking input dir %s for symbol[%s]' % (sourceCsvDir, SYMBOL))
-    csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=sourceCsvDir, fields='date,time,open,high,low,close,volume,ammount')
+    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.outdir, '%s_P%s.tcsv' % (SYMBOL, p.pid)))
+    revents = None
 
-    gymtdr = p.createApp(GymTrader, configNode ='trader', tradeSymbol=SYMBOL, account=acc)
-    p.info('all objects registered piror to OfflineSimulator: %s' % p.listByType())
+    evMdSource = Program.fixupPath(evMdSource)
+    p.info('taking input dir %s for symbol[%s]' % (evMdSource, SYMBOL))
+    # csvPlayback can only cover one symbol
+    csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
+    tdrWraper = None
 
-    if '-I' in sys.argv :
-        trader = p.createApp(IdealDayTrader, configNode ='trader', trader=gymtdr, histdata=csvreader) # ideal trader to generator ReplayFrames
+    if 'remote' == advisorType :
+        p.error('sim_offline only takes local advisor')
+        quit()
+        # revents = p.createApp(ZmqEE, configNode ='remoteEvents')
+        # revs = [EVENT_ADVICE]
+        # if not evMdSource:
+        #     revs += [EVENT_TICK, EVENT_KLINE_1MIN]
+        # revents.subscribe(revs)
+
+    if 'T+1' == ideal :
+        tdrWraper = p.createApp(IdealTrader_Tplus1, configNode ='trader', trader=tdrCore, histdata=csvreader) # ideal trader to generator ReplayFrames
     else :
-        trader = p.createApp(OfflineSimulator, configNode ='trader', trader=gymtdr, histdata=csvreader) # the simulator with brain loaded to verify training result
+        p.info('all objects registered piror to local Advisor: %s' % p.listByType())
+        advisor = p.createApp(DnnAdvisor_S1548I4A3, configNode ='advisor', objectives=objectives, recorder=rec)
+        advisor._enableMStateSS = False # MUST!!!
+        advisor._exchange = tdrCore.account.exchange
 
-    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(trader.outdir, 'offline_%s.tcsv' % SYMBOL))
-    trader.setRecorder(rec)
+        p.info('all objects registered piror to simulator: %s' % p.listByType())
+        tdrWraper = p.createApp(OfflineSimulator, configNode ='trader', trader=tdrCore, histdata=csvreader) # the simulator with brain loaded to verify training result
+
+    tdrWraper.setRecorder(rec)
 
     p.start()
     p.loop()
-    
     p.stop()

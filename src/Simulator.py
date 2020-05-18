@@ -9,7 +9,7 @@ from Application import *
 from Account import *
 from Trader import *
 import HistoryData as hist
-from MarketData import TickData, KLineData, EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
+from MarketData import TickData, KLineData, NORMALIZE_ID, EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
 
 from Perspective import *
 import vn.VnTrader as vn
@@ -20,13 +20,19 @@ from itertools import product
 import multiprocessing
 import copy
 
+import os
+import h5py, tarfile
 # import pymongo
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import shutil
 import codecs
 import math
+
+# TODO: move the plotting stuf into a separate python program
+# import matplotlib as mpl # pip install matplotlib
+# import matplotlib.pyplot as plt
+# mpl.use('Agg')
 
 # 如果安装了seaborn则设置为白色风格
 try:
@@ -35,6 +41,7 @@ try:
 except ImportError:
     pass
 
+RFGROUP_PREFIX = 'ReplayFrame:'
 RECCATE_ESPSUMMARY = 'EspSum'
 COLUMNS_ESPSUMMARY ='episodeNo,endBalance,openDays,startDate,endDate,totalDays,tradeDay_1st,tradeDay_last,profitDays,lossDays,maxDrawdown,maxDdPercent,' \
     + 'totalNetPnl,dailyNetPnl,totalCommission,dailyCommission,totalSlippage,dailySlippage,totalTurnover,dailyTurnover,totalTradeCount,dailyTradeCount,totalReturn,annualizedReturn,dailyReturn,' \
@@ -65,13 +72,13 @@ class BackTestApp(MetaTrader):
         # -----------------------------------------
         self._startBalance = 100000      # 10w
 
-        self._btStartDate  = datetime.strptime(self.getConfig('startDate', '2000-01-01'), '%Y-%m-%d').replace(hour=0, minute=0, second=0) # 回测数据开始日期，datetime对象
-        self._btEndDate    = datetime.strptime(self.getConfig('endDate', '2999-12-31'), '%Y-%m-%d').replace(hour=23, minute=59, second=59)
-        self._startBalance = self.getConfig('startBalance', 100000)
-        self._episodes     = self.getConfig('episodes', 1)
-        self._plotReport   = self.getConfig('plotReport', 'False').lower() in BOOL_STRVAL_TRUE
-        self._pctMaxDrawDown = self.getConfig('pctMaxDrawDown', 21) # we allow 30% lost during a episode
-        self._warmupDays     = self.getConfig('warmupDays', 5) # observe for a week by default to make the market state not so empty
+        self._btStartDate    = datetime.strptime(self.getConfig('backTest/startDate', '2000-01-01'), '%Y-%m-%d').replace(hour=0, minute=0, second=0) # 回测数据开始日期，datetime对象
+        self._btEndDate      = datetime.strptime(self.getConfig('backTest/endDate', '2999-12-31'), '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+        self._startBalance   = self.getConfig('backTest/startBalance', 100000)
+        self._episodes       = self.getConfig('backTest/episodes', 1)
+        self._pctMaxDrawDown = self.getConfig('backTest/pctMaxDrawDown', 21) # we allow 30% lost during a episode
+        self._warmupDays     = self.getConfig('backTest/warmupDays', 5) # observe for a week by default to make the market state not so empty
+        self._plotReport     = self.getConfig('backTest/plotReport', 'False').lower() in BOOL_STRVAL_TRUE
 
         self._episodeNo = 1 # count start from 1 to ease reading
         self._stepNoInEpisode =0
@@ -82,13 +89,12 @@ class BackTestApp(MetaTrader):
         self._maxBalance = self._startBalance
 
         # backtest will always clear the datapath
-        self._initTrader._outDir = '%s%s%s' % (self.dataRoot, self.ident, self.program.progId)
         try :
-            shutil.rmtree(self._initTrader._outDir)
+            shutil.rmtree(self.outdir)
         except:
             pass
         try :
-            os.makedirs(self._initTrader._outDir)
+            os.makedirs(self.outdir)
         except:
             pass
 
@@ -103,10 +109,6 @@ class BackTestApp(MetaTrader):
     @property
     def wkTrader(self) :
         return self.__wkTrader
-
-    @property
-    def outdir(self) :
-        return self._initTrader._outDir
 
     def setRecorder(self, recorder) :
         self._recorder = recorder
@@ -171,12 +173,15 @@ class BackTestApp(MetaTrader):
         if not self._initTrader :
             return False
         
-        self.info('doAppInit() taking trader-template[%s]' % (self._initTrader.ident))
-        self._program.removeApp(self._initTrader.ident)
+        self.debug('doAppInit() taking trader-template[%s]' % (self._initTrader.ident))
+        self._program.removeApp(self._initTrader)
         self._program.addApp(self)
         if not self._initTrader.doAppInit() :
             self.info('doAppInit() failed to initialize trader-template[%s]' % (self._initTrader.ident))
             return False
+            
+        self._program.removeApp(self._initTrader) # in the case self._initTrader register itself again
+        self.info('doAppInit() wrapped[%s]' % (self._initTrader.ident))
 
         self._initMarketState = self._initTrader._marketState
         self._originAcc = self._initTrader.account
@@ -189,6 +194,15 @@ class BackTestApp(MetaTrader):
         #         obj["dsTick"] += MarketData.TAG_BACKTEST
         #     if len(obj["ds1min"]) >0 :
         #         obj["ds1min"] += MarketData.TAG_BACKTEST
+
+        # step 3.1 subscribe the TradeAdvices
+        self.subscribeEvent(EVENT_ADVICE)
+
+        # step 3.2 subscribe the market events
+        self.subscribeEvent(EVENT_TICK)
+        self.subscribeEvent(EVENT_KLINE_1MIN)
+        self.subscribeEvent(EVENT_KLINE_5MIN)
+        self.subscribeEvent(EVENT_KLINE_1DAY)
 
         self.resetEpisode()
         _quitEpisode = False
@@ -208,7 +222,7 @@ class BackTestApp(MetaTrader):
                     self._marketState.updateByEvent(ev)
                     s = ev.data.symbol
                     self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type[len(MARKETDATE_EVENT_PREFIX):], self._marketState.getAsOf(s).strftime('%Y%m%dT%H%M'), self._marketState.latestPrice(s), self._marketState.dailyOHLC_sofar(s)))
-                    self.OnEvent(ev) # call Trader
+                    self.postEvent(ev) # self.OnEvent(ev) # call Trader
                     self._stepNoInEpisode += 1
                     return # successfully performed a step by pushing an Event
 
@@ -238,7 +252,7 @@ class BackTestApp(MetaTrader):
             self.info(line)
 
         strReport += '\n'
-        with codecs.open('%s/%s_summary.txt' %(self._initTrader._outDir, self.episodeId), "w","utf-8") as rptfile:
+        with codecs.open('%s/%s_summary.txt' %(self._initTrader.outdir, self.episodeId), "w","utf-8") as rptfile:
             rptfile.write(strReport)
             self.debug('doAppStep() episode[%s] summary report generated' %(self.episodeId))
 
@@ -295,8 +309,8 @@ class BackTestApp(MetaTrader):
     def eventHdl_Trade(self, ev):
         return self.__wkTrader.eventHdl_Trade(ev)
 
-    def onDayOpen(self, symbol, date):
-        return self.__wkTrader.onDayOpen(symbol, date)
+    def eventHdl_DayOpen(self, symbol, date):
+        return self.__wkTrader.eventHdl_DayOpen(symbol, date)
 
     #------------------------------------------------
     # 数据回放结果计算相关
@@ -327,7 +341,7 @@ class BackTestApp(MetaTrader):
 
         if not tradeDays is None:
             # has been covered by tcsv recorder
-            # csvfile = '%s/%s_DR.csv' %(self._initTrader._outDir, self.episodeId)
+            # csvfile = '%s/%s_DR.csv' %(self._initTrader.outdir, self.episodeId)
             # self.debug('OnEpisodeDone() episode[%s], saving trade-days into %s' % (self.episodeId, csvfile))
             # try :
             #     os.makedirs(os.path.dirname(csvfile))
@@ -349,7 +363,7 @@ class BackTestApp(MetaTrader):
         # NOTE: Any applications must be created prior to program.start()
         # if self._recorder:
         #     self._program.removeApp(self._recorder)
-        # self._recorder = self._program.createApp(hist.TaggedCsvRecorder, filepath ='%s/BT_%s.tcsv' % (self._initTrader._outDir, self.episodeId))
+        # self._recorder = self._program.createApp(hist.TaggedCsvRecorder, filepath ='%s/BT_%s.tcsv' % (self._initTrader.outdir, self.episodeId))
 
         # step 1. start over the market state
         if self._marketState:
@@ -363,7 +377,7 @@ class BackTestApp(MetaTrader):
         if self.__wkTrader:
             self._program.removeObj(self.__wkTrader)
         self.__wkTrader = copy.deepcopy(self._initTrader)
-        self._program.addApp(self.__wkTrader)
+        # self._program.addApp(self.__wkTrader)
         self.__wkTrader._marketState = self._marketState
         # self.__wkTrader._recorder = self._recorder
 
@@ -489,11 +503,13 @@ class BackTestApp(MetaTrader):
         
         return strReport
 
+''' 
+    TODO: move the plotting stuf into a separate python program
     #----------------------------------------------------------------------
     def plotResult(self, tradeDays):
         # 绘图
         
-        filename = '%s%s_DR.png' %(self._initTrader._outDir, self.episodeId)
+        filename = '%s%s_DR.png' %(self._initTrader.outdir, self.episodeId)
         self.debug('plotResult() episode[%s] plotting result to %s' % (self.episodeId, filename))
 
         plt.rcParams['agg.path.chunksize'] =10000
@@ -520,7 +536,6 @@ class BackTestApp(MetaTrader):
         plt.show()
         plt.close()
        
-''' 
     #----------------------------------------------------------------------
     def runOptimization(self, strategyClass, optimizationSetting):
         """优化参数"""
@@ -750,10 +765,6 @@ class OnlineSimulator(MetaTrader):
         self._account = None # the working account inherit from MetaTrader
         self._marketState = None
 
-        # self._dataBegin_date = None
-        # self._dataBegin_openprice = 0.0
-        # self._dataEnd_date = None
-        # self._dataEnd_closeprice = 0.0
         self.__stampLastSaveState = None
 
         self.setRecorder(self.__wkTrader.recorder)
@@ -761,35 +772,30 @@ class OnlineSimulator(MetaTrader):
         # attributes of virtual account
         # -----------------------------------------
         self._startBalance = 100000      # 10w
-        self._startBalance = self.getConfig('startBalance', 100000)
+        self._startBalance = self.getConfig('backTest/startBalance', 100000)
 
         self.__execStamp_appStart = datetime.now()
         self.__dtLastData = None
         self._maxBalance = self._startBalance
 
-        # backtest will always clear the datapath
-        self.__wkTrader._outDir = '%s%s.P%s' % (self.dataRoot, self.ident, self.program.pid)
         self.program.setShelveFilename('%s%s.sobj' % (self.dataRoot, self.ident))
 
-        try :
-            shutil.rmtree(self.__wkTrader._outDir)
-        except:
-            pass
+        # backtest will always clear the datapath
+        # try :
+        #     shutil.rmtree(self.__wkTrader.outdir)
+        # except:
+        #     pass
 
-        try :
-            os.makedirs(self.__wkTrader._outDir)
-        except:
-            pass
+        # try :
+        #     os.makedirs(self.__wkTrader.outdir)
+        # except:
+        #     pass
 
         self._openDays = 0
 
     @property
     def wkTrader(self) :
         return self.__wkTrader
-
-    @property
-    def outdir(self) :
-        return self.__wkTrader._outDir
 
     def setRecorder(self, recorder) :
         self._recorder = recorder
@@ -799,10 +805,10 @@ class OnlineSimulator(MetaTrader):
             self._recorder.registerCategory(Account.RECCATE_DAILYPOS,    params= {'columns' : DailyPosition.COLUMNS})
             self._recorder.registerCategory(Account.RECCATE_DAILYRESULT, params= {'columns' : DailyResult.COLUMNS})
 
-            self._recorder.registerCategory(EVENT_TICK,       params={'columns': TickData.COLUMNS})
-            self._recorder.registerCategory(EVENT_KLINE_1MIN, params={'columns': KLineData.COLUMNS})
-            self._recorder.registerCategory(EVENT_KLINE_5MIN, params={'columns': KLineData.COLUMNS})
-            self._recorder.registerCategory(EVENT_KLINE_1DAY, params={'columns': KLineData.COLUMNS})
+            self._recorder.registerCategory(EVENT_TICK,           params={'columns': TickData.COLUMNS})
+            self._recorder.registerCategory(EVENT_KLINE_1MIN,     params={'columns': KLineData.COLUMNS})
+            self._recorder.registerCategory(EVENT_KLINE_5MIN,     params={'columns': KLineData.COLUMNS})
+            self._recorder.registerCategory(EVENT_KLINE_1DAY,     params={'columns': KLineData.COLUMNS})
             self._recorder.registerCategory(EVENT_MONEYFLOW_1MIN, params={'columns': MoneyflowData.COLUMNS})
             self._recorder.registerCategory(EVENT_MONEYFLOW_1DAY, params={'columns': MoneyflowData.COLUMNS})
 
@@ -883,13 +889,6 @@ class OnlineSimulator(MetaTrader):
         originAcc = self.__wkTrader.account
         bAccRestored = originAcc.restore()
 
-        # # ADJ_1. adjust the Trader._dictObjectives to append suffix MarketData.TAG_BACKTEST
-        # for obj in self._dictObjectives.values() :
-        #     if len(obj["dsTick"]) >0 :
-        #         obj["dsTick"] += MarketData.TAG_BACKTEST
-        #     if len(obj["ds1min"]) >0 :
-        #         obj["ds1min"] += MarketData.TAG_BACKTEST
-
         # step 2. connects the trader and account 
         if self._account :
             self._program.removeApp(self._account)
@@ -924,7 +923,10 @@ class OnlineSimulator(MetaTrader):
             for symbol in sl:
                 self.__wkTrader.openObjective(symbol)
 
-        # step 4. subscribe events
+        # step 4.1 subscribe the TradeAdvices
+        self.subscribeEvent(EVENT_ADVICE)
+
+        # step 4.2 subscribe the account and market events
         self.subscribeEvent(Account.EVENT_ORDER)
         self.subscribeEvent(Account.EVENT_TRADE)
 
@@ -961,10 +963,11 @@ class OnlineSimulator(MetaTrader):
         # step 2. 收到行情后，在启动策略前的处理
         evd = ev.data
         matchNeeded = False
-        if not self.__dtLastData or self.__dtLastData < evd.asof :
-            self.__dtLastData = evd.asof
-            if EVENT_TICK == ev.type or EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
-                matchNeeded = True
+        if EVENT_TICK == ev.type or EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
+            if not self.__dtLastData or self.__dtLastData < evd.asof :
+                self.__dtLastData = evd.asof
+                if EVENT_TICK == ev.type or EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
+                    matchNeeded = True
 
         if matchNeeded :
             self._account.matchTrades(ev)
@@ -984,9 +987,9 @@ class OnlineSimulator(MetaTrader):
         self._account.account.save()
         return self.__wkTrader.eventHdl_Trade(ev)
 
-    def onDayOpen(self, symbol, date):
+    def eventHdl_DayOpen(self, symbol, date):
         self._account.account.save()
-        return self.__wkTrader.onDayOpen(symbol, date)
+        return self.__wkTrader.eventHdl_DayOpen(symbol, date)
 
 ########################################################################
 class OptimizationSetting(object):
@@ -1318,11 +1321,11 @@ class AccountWrapper(MetaAccount):
     def cashChange(self, dAvail=0, dTotal=0): return self._nest.cashChange(dAvail, dTotal)
     def record(self, category, data): return self._nest.record(category, data)
     def postEvent_Order(self, orderData): return self._nest.postEvent_Order(orderData)
-    # def sendOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendOrder(vtSymbol, orderType, price, volume, strategy)
+    # def sendOrder(self, vtSymbol, orderType, price, volume, reason): return self._nest.sendOrder(vtSymbol, orderType, price, volume, reason)
     def cancelOrder(self, brokerOrderId): return self._nest.cancelOrder(brokerOrderId)
     def batchCancel(self, brokerOrderIds): return self._nest.batchCancel(brokerOrderIds)
     def cancelAllOrders(self): return self._nest.cancelAllOrders()
-    def sendStopOrder(self, vtSymbol, orderType, price, volume, strategy): return self._nest.sendStopOrder(vtSymbol, orderType, price, volume, strategy)
+    def sendStopOrder(self, vtSymbol, orderType, price, volume, reason): return self._nest.sendStopOrder(vtSymbol, orderType, price, volume, reason)
     def findOrdersOfStrategy(self, strategyId, symbol=None): return self._nest.findOrdersOfStrategy(strategyId, symbol)
     
     def datetimeAsOfMarket(self): return self._btTrader.wkTrader._dtData
@@ -1362,10 +1365,7 @@ class AccountWrapper(MetaAccount):
     #------------------------------------------------
     # overwrite of Account
     #------------------------------------------------    
-    def sendOrder(self, symbol, orderType, price, volume, strategy):
-        source = 'ACCOUNT'
-        if strategy:
-            source = strategy.id
+    def sendOrder(self, symbol, orderType, price, volume, reason):
 
         orderData = OrderData(self)
         # 代码编号相关
@@ -1373,8 +1373,8 @@ class AccountWrapper(MetaAccount):
         orderData.exchange    = self._exchange
         orderData.price       = self.roundToPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
-        orderData.source      = source
         orderData.datetime    = self.datetimeAsOfMarket()
+        orderData.reason      = reason if reason else ''
 
         # 报单方向
         if orderType == OrderData.ORDER_BUY:
@@ -1468,13 +1468,13 @@ class AccountWrapper(MetaAccount):
             kldata = ev.data
             symbol = kldata.symbol
             dtEvent = kldata.datetime
-            bestPrice          = round(((kldata.open + kldata.close) *4 + kldata.high + kldata.low) /10, 2)
+            # bestPrice          = round(((kldata.open + kldata.close) *4 + kldata.high + kldata.low) /10, 3)
 
             buyCrossPrice      = kldata.low        # 若买入方向限价单价格高于该价格，则会成交
             sellCrossPrice     = kldata.high      # 若卖出方向限价单价格低于该价格，则会成交
             maxCrossVolume     = kldata.volume
-            buyBestCrossPrice  = bestPrice       # 在当前时间点前发出的买入委托可能的最优成交价
-            sellBestCrossPrice = bestPrice       # 在当前时间点前发出的卖出委托可能的最优成交价
+            buyBestCrossPrice  = ((kldata.open + kldata.close + kldata.high) *3 + kldata.low)  /10  # 在当前时间点前发出的买入委托可能的最优成交价
+            sellBestCrossPrice = ((kldata.open + kldata.close + kldata.low)  *3 + kldata.high) /10  # 在当前时间点前发出的卖出委托可能的最优成交价
             
             # 张跌停封板
             if buyCrossPrice <= kldata.open*0.9 :
@@ -1485,10 +1485,13 @@ class AccountWrapper(MetaAccount):
         if not symbol :
             return # ignore those non-tick/kline events
 
+        buyBestCrossPrice  = self.roundToPriceTick(buyBestCrossPrice)
+        sellBestCrossPrice = self.roundToPriceTick(sellBestCrossPrice)
+
         # 先撮合限价单
-        self.__crossLimitOrder(symbol, dtEvent, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
+        self.__crossLimitOrder(symbol, dtEvent, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)
         # 再撮合停止单
-        self.__crossStopOrder(symbol, dtEvent, buyCrossPrice, sellCrossPrice, round(buyBestCrossPrice,3), round(sellBestCrossPrice,3), maxCrossVolume)
+        self.__crossStopOrder(symbol, dtEvent, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)
 
     def __crossLimitOrder(self, symbol, dtAsOf, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume=-1):
         """基于最新数据撮合限价单
@@ -1528,12 +1531,11 @@ class AccountWrapper(MetaAccount):
                             order.price<=sellCrossPrice and
                             sellCrossPrice > 0)    # 国内的tick行情在跌停时bidP1为0，此时卖无法成交
                 
-                # 如果发生了成交
                 if not buyCross and not sellCross:
                     pendingOrders.append(order)
                     continue
 
-                # 推送成交数据
+                # 如果发生了成交， 推送成交数据
                 self._tradeCount += 1            # 成交编号自增1
                 tradeID = str(self._tradeCount)
                 trade = TradeData(self._nest)
@@ -1693,7 +1695,534 @@ class AccountWrapper(MetaAccount):
             self._broker_onTrade(trade)
             self.info('OnPlaybackEnd() faked a trade: %s' % trade.desc)
 
+########################################################################
+class OfflineSimulator(BackTestApp):
+    '''
+    OfflineSimulator extends BackTestApp by reading history and perform training
+    '''
+    def __init__(self, program, trader, histdata, **kwargs):
+        '''Constructor
+        '''
+        super(OfflineSimulator, self).__init__(program, trader, histdata, **kwargs)
 
+        self._masterExportHomeDir = self.getConfig('master/homeDir', None) # this agent work as the master when configured, usually point to a dir under webroot
+        if self._masterExportHomeDir and '/' != self._masterExportHomeDir[-1]: self._masterExportHomeDir +='/'
+        
+        # the base URL of local web for the slaves to GET/POST the tasks
+        # current OfflineSimulator works as slave if this masterExportURL presents but masterExportHomeDir abendons
+        self._masterExportURL = self.getConfig('master/exportURL', self._masterExportHomeDir)
+
+        self.__savedEpisode_Id = -1
+        self.__savedEpisode_opendays = 0
+        self.__maxKnownOpenDays =0
+        self.__prevMaxBalance =0
+
+    #----------------------------------------------------------------------
+    # impl/overwrite of BaseApplication
+    def doAppInit(self): # return True if succ
+        # make sure OfflineSimulator is ONLY wrappering GymTrader
+        if not self._initTrader or not isinstance(self._initTrader, BaseTrader) :
+            self.error('doAppInit() invalid initTrader')
+            return False
+
+        if not super(OfflineSimulator, self).doAppInit() :
+            return False
+
+        self._account.account._skipSavingByEvent = True
+        return True
+
+    def OnEvent(self, ev): # this overwrite BackTest's because there are some different needs
+        symbol  = None
+        if EVENT_TICK == ev.type or EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
+            try :
+                symbol = ev.data.symbol
+            except:
+                pass
+            self._account.matchTrades(ev)
+
+        self.wkTrader.OnEvent(ev) # to perform the real handling
+
+        asOf = self.wkTrader.marketState.getAsOf(symbol)
+
+        # get some additional reward when survived for one more day
+        self._dataEnd_date = asOf
+        self._dataEnd_closeprice = self.wkTrader.marketState.latestPrice(symbol)
+
+        if not self._dataBegin_date:
+            self._dataBegin_date = self._dataEnd_date
+            self._dataBegin_openprice = self._dataEnd_closeprice
+            self.debug('OnEvent() taking dataBegin(%s @%s)' % (self._dataBegin_openprice, self._dataBegin_date))
+
+        if (self.wkTrader._latestCash  + self.wkTrader._latestPosValue) < (self.wkTrader._maxBalance*(100.0 -self._pctMaxDrawDown)/100):
+            self._bGameOver = True
+            self._episodeSummary['reason'] = '%s cash +%s pv drewdown %s%% of maxBalance[%s]' % (self.wkTrader._latestCash, self.wkTrader._latestPosValue, self._pctMaxDrawDown, self.wkTrader._maxBalance)
+            self.error('episode[%s] has been KO-ed: %s' % (self.episodeId, self._episodeSummary['reason']))
+        
+    # end of BaseApplication routine
+    #----------------------------------------------------------------------
+
+    #------------------------------------------------
+    # BackTest related entries
+    def OnEpisodeDone(self, reachedEnd=True):
+        super(OfflineSimulator, self).OnEpisodeDone(reachedEnd)
+
+        # determin whether it is a best episode
+        lstImproved=[]
+
+        opendays = self._episodeSummary['openDays']
+        if opendays > self.__maxKnownOpenDays:
+            self.__maxKnownOpenDays = opendays
+            lstImproved.append('openDays')
+
+        if self.wkTrader._maxBalance > self.__prevMaxBalance :
+            lstImproved.append('maxBalance')
+            self.debug('OnEpisodeDone() maxBalance improved from %s to %s' % (self.__prevMaxBalance, self.wkTrader._maxBalance))
+            self.__prevMaxBalance = self.wkTrader._maxBalance
+
+        if reachedEnd or (opendays>2 and opendays > (self.__maxKnownOpenDays *3/4)): # at least stepped most of known days
+            # determin if best episode
+            pass
+
+        # save brain and decrease epsilon if improved
+        if len(lstImproved) >0 :
+            self.__savedEpisode_opendays = opendays
+            self.__savedEpisode_Id = self.episodeId
+
+        mySummary = {
+            'savedEId'    : self.__savedEpisode_Id,
+            'savedODays'  : self.__savedEpisode_opendays,
+        }
+
+        self._episodeSummary = {**self._episodeSummary, **mySummary}
+
+########################################################################
+H5DSET_ARGS={ 'compression':'gzip' }
+
+class IdealTrader_Tplus1(OfflineSimulator):
+    '''
+    IdealTrader extends OfflineSimulator by scanning the MarketEvents occurs in a day, determining
+    the ideal actions then pass the events down to the models
+    '''
+    def __init__(self, program, trader, histdata, **kwargs):
+        '''Constructor
+        '''
+        super(IdealTrader_Tplus1, self).__init__(program, trader, histdata, **kwargs)
+
+        self._dayPercentToCatch                = self.getConfig('constraints/dayPercentToCatch',          1.0) # pecentage of daychange to catch, otherwise will keep position empty
+        self._constraintBuy_closeOverOpen      = self.getConfig('constraints/buy_closeOverOpen',          0.5) #pecentage price-close more than price-open - indicate buy
+        self._constraintBuy_closeOverRecovery  = self.getConfig('constraint/buy_closeOverRecovery',   2.0) #pecentage price-close more than price-low at the recovery edge - indicate buy
+        self._constraintSell_lossBelowHigh     = self.getConfig('constraint/sell_lossBelowHigh',         2.0) #pecentage price-close less than price-high at the loss edge - indicate sell
+        self._constraintSell_downHillOverClose = self.getConfig('constraint/sell_downHillOverClose', 0.5) #pecentage price more than price-close triggers sell during a downhill-day to reduce loss
+        self._generateReplayFrames             = self.getConfig('generateReplayFrames', 'directionOnly').lower()
+
+        self._pctMaxDrawDown =99.0 # IdealTrader will not be constrainted by max drawndown, so overwrite it with 99%
+        self._warmupDays =0 # IdealTrader will not be constrainted by warmupDays
+
+        self.__cOpenDays =0
+
+        self.__adviceSeq = [] # list of faked OrderData, the OrderData only tells the direction withno amount
+
+        self.__dtToday = None
+        self.__mdEventsToday = [] # list of the datetime of open, high, low, close price occured today
+
+        self.__dtTomrrow = None
+        self.__mdEventsTomrrow = [] # list of the datetime of open, high, low, close price occured 'tomorrow'
+
+        self.__sampleFrmSize  = 1024*8
+        self.__sampleFrm = [None]  * self.__sampleFrmSize
+        self.__sampleIdx, self.__frameNo = 0, 0
+
+    def doAppInit(self): # return True if succ
+        if not super(IdealTrader_Tplus1, self).doAppInit() :
+            return False
+
+        self._tradeSymbol = self.wkTrader.objectives[0] # idealTrader only cover a single symbol from the objectives
+        self._episodes =1 # idealTrader only run one loop
+        return True
+    
+    # to replace OfflineSimulator's OnEvent with some TradeAdvisor logic and execute the advice as order directly
+    def OnEvent(self, ev):
+        '''processing an incoming MarketEvent'''
+
+        super(IdealTrader_Tplus1, self).OnEvent(ev) # self.wkTrader._dtData = d.asof # self.wkTrader.OnEvent(ev)
+        
+        d = ev.data
+        tokens = (d.vtSymbol.split('.'))
+        symbol = tokens[0]
+        self.wkTrader._dtData = d.asof
+        
+        # see if need to perform the next order pre-determined
+        dirToExec = OrderData.DIRECTION_NONE
+        action = [0] * len(ADVICE_DIRECTIONS)
+
+        if len(self.__adviceSeq) >0 :
+            nextAdvice = self.__adviceSeq[0]
+            if nextAdvice.datetime <= ev.data.datetime :
+                dirToExec = nextAdvice.dirString()
+                del self.__adviceSeq[0]
+
+                # fake a TradeAdvice here to forward to wkTrader
+                self.debug('OnEvent(%s) excuted a faked advice[%s] upon mstate: %s' % (d.desc, dirToExec, self._marketState.descOf(nextAdvice.symbol)))
+                # action[ADVICE_DIRECTIONS.index(dirToExec)] =1.0
+                # advice = AdviceData(self.ident, symbol, self._marketState.exchange)
+                # advice.dirNONE, advice.dirLONG, advice.dirSHORT = action[0], action[1], action[2]
+                # advice.price = nextOrder.price if EVENT_TICK == ev.type else d.close
+                # advice.datetime  = nextOrder.asof
+                # advice.advisorId = '%s' % self.ident
+            
+                # advice.Rdaily = 0.0
+                # advice.Rdstd  = 0.0
+                # advice.pdirNONE, advice.pdirLONG, advice.pdirSHORT = 0.0, 0.0, 0.0
+                # advice.pdirPrice = 0.0
+                # advice.pdirAsOf  = nextOrder.datetime
+                # advice.dirString() # generate the dirString to ease reading
+
+                evAdv = Event(EVENT_ADVICE)
+                evAdv.setData(nextAdvice)
+                super(IdealTrader_Tplus1, self).OnEvent(evAdv) # to perform the real handling
+
+        action[ADVICE_DIRECTIONS.index(dirToExec)] =1
+        self._mstate = self._marketState.exportKLFloats(self._tradeSymbol)
+        # if bFullState:
+        self.__pushStateAction(self._mstate, action)
+        self.debug('OnEvent(%s) performed %s upon mstate: %s' % (ev.desc, dirToExec, self._marketState.descOf(self._tradeSymbol)))
+
+    def resetEpisode(self) :
+        ret = super(IdealTrader_Tplus1, self).resetEpisode()
+        self.__adviceSeq = []
+
+        return ret
+
+    def OnEpisodeDone(self, reachedEnd=True):
+        super(IdealTrader_Tplus1, self).OnEpisodeDone(reachedEnd)
+        if self.__sampleIdx >0 and not None in self.__sampleFrm :
+            self.__saveFrame(self.__sampleFrm[:self.__sampleIdx])
+
+    # to replace BackTest's doAppStep
+    def doAppStep(self):
+
+        self._bGameOver = False # always False in IdealTrader
+        reachedEnd = False
+        if self._wkHistData :
+            try :
+                ev = next(self._wkHistData)
+                if not ev or ev.data.datetime < self._btStartDate: return
+                if ev.data.datetime <= self._btEndDate:
+                    if self.__dtToday and self.__dtToday == ev.data.datetime.replace(hour=0, minute=0, second=0, microsecond=0):
+                        self.__mdEventsToday.append(ev)
+                        return
+
+                    if self.__dtTomrrow and self.__dtTomrrow == ev.data.datetime.replace(hour=0, minute=0, second=0, microsecond=0):
+                        self.__mdEventsTomrrow.append(ev)
+                        return
+
+                    # day-close here
+                    self.scanEventsForAdvices()
+                    for cachedEv in self.__mdEventsToday:
+                        # !!NEVER!!! self._marketState.updateByEvent(cachedEv), let Trade.OnEvent() do so, otherwise will mess up the output RFrames
+                        super(BackTestApp, self).doAppStep() # yes, this is to the super of BackTestApp
+                        self._account.doAppStep()
+
+                        self.postEvent(cachedEv) # call Trader
+                        self._stepNoInEpisode += 1
+
+                    self.__dtToday = self.__dtTomrrow
+                    self.__mdEventsToday = self.__mdEventsTomrrow
+
+                    self.__mdEventsTomrrow = []
+                    self.__dtTomrrow = ev.data.datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+                    self.__cOpenDays += 1
+
+                    return # successfully performed a step by pushing an Event
+
+                reachedEnd = True
+            except StopIteration:
+                reachedEnd = True
+                self.info('hist-read: end of playback')
+            except Exception as ex:
+                self.logexception(ex)
+
+        # this test should be done if reached here
+        self.debug('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self._stepNoInEpisode, self._bGameOver, reachedEnd))
+        
+        try:
+            self.OnEpisodeDone(reachedEnd)
+        except Exception as ex:
+            self.logexception(ex)
+
+        # print the summary report
+        if self._recorder and isinstance(self._episodeSummary, dict):
+            self._recorder.pushRow(RECCATE_ESPSUMMARY, self._episodeSummary)
+
+        strReport = self.formatSummary()
+        self.info('%s_%s summary:' %(self.ident, self.episodeId))
+        for line in strReport.splitlines():
+            if len(line) <2: continue
+            self.info(line)
+
+        strReport += '\n'
+        with codecs.open(os.path.join(self.wkTrader.outdir, 'summary_%s.txt' % self._tradeSymbol), "w","utf-8") as rptfile:
+            rptfile.write(strReport)
+            self.debug('doAppStep() episode[%s] summary report generated' %(self.episodeId))
+
+        # prepare for the next episode
+        self._episodeNo +=1
+        if (self._episodeNo > self._episodes) :
+            # all tests have been done
+            self.stop()
+            self.info('all %d episodes have been done, app stopped. obj-in-program: %s' % (self._episodes, self._program.listByType(MetaObj)))
+
+        self._program.stop()
+        
+        exit(0) # IdealTrader_Tplus1 is not supposed to run forever, just exit instead of return
+
+    def __pushStateAction(self, mstate, action):
+
+        if (self.__sampleIdx + self.__frameNo) <=0 and all(v == 0.0 for v in mstate): return # skip the leading all[0.0]
+
+        self.__sampleIdx = self.__sampleIdx % self.__sampleFrmSize
+        if 0 == self.__sampleIdx and not None in self.__sampleFrm :
+            # frame full, output it into a HDF5 file
+            self.__saveFrame(self.__sampleFrm)
+
+        self.__sampleFrm[self.__sampleIdx] = (mstate, action)
+        self.__sampleIdx +=1
+
+    def __saveFrame(self, rangedFrame):
+        metrix     = np.array(rangedFrame)
+        col_state  = np.concatenate(metrix[:, 0]).reshape(len(rangedFrame), len(rangedFrame[0][0]))
+        col_action = np.concatenate(metrix[:, 1]).reshape(len(rangedFrame), len(rangedFrame[0][1]))
+
+        fn_frame = os.path.join(self.wkTrader.outdir, 'RFrm%s_%s.h5' % (NORMALIZE_ID, self._tradeSymbol) )
+        with h5py.File(fn_frame, 'a') as h5file:
+            frameId = 'RF%s' % str(self.__frameNo).zfill(3)
+            self.__frameNo += 1
+
+            g = h5file.create_group(frameId)
+            g.attrs['state'] = 'state'
+            g.attrs['action'] = 'action'
+            g.attrs[u'default'] = 'state'
+            g.attrs['size'] = col_state.shape[0]
+            g.attrs['signature'] = EXPORT_SIGNATURE
+
+            g.create_dataset(u'title',      data= '%s replay %s of %s by %s' % (self._generateReplayFrames, frameId, self._tradeSymbol, self.ident))
+            st = g.create_dataset('state',  data= col_state, **H5DSET_ARGS)
+            st.attrs['dim'] = col_state.shape[1]
+            ac = g.create_dataset('action', data= col_action, **H5DSET_ARGS)
+            ac.attrs['dim'] = col_action.shape[1]
+            
+        self.info('saved %s len[%s] into file %s with sig[%s]' % (frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
+
+    def __scanEventsSequence(self, evseq) :
+
+        price_open, price_high, price_low, price_close = 0.0, 0.0, DUMMY_BIG_VAL, 0.0
+        T_high, T_low  = None, None
+        if evseq and len(evseq) >0:
+            for ev in evseq:
+                evd = ev.data
+                if EVENT_TICK == ev.type :
+                    price_close = evd.price
+                    if price_open <= 0.01 :
+                        price_open = price_close
+                    if price_high < price_close :
+                        price_high = price_close
+                        T_high = evd.datetime
+                    if price_low > price_close :
+                        price_low = price_close
+                        T_low = evd.datetime
+                    continue
+
+                if EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
+                    price_close = evd.close
+                    if price_high < evd.high :
+                        price_high = evd.high
+                        T_high = evd.datetime
+                    if price_low > evd.low :
+                        price_low = evd.low
+                        T_low = evd.datetime
+                    if price_open <= 0.01 :
+                        price_open = evd.open
+                    continue
+
+        return price_open, price_high, price_low, price_close, T_high, T_low
+
+    def scanEventsForAdvices(self) :
+        '''
+        this will generate 3 actions
+        '''
+        # step 1. scan self.__mdEventsToday and determine TH TL
+        price_open, price_high, price_low, price_close, T_high, T_low = self.__scanEventsSequence(self.__mdEventsToday)
+        tomorrow_open, tomorrow_high, tomorrow_low, tomorrow_close, tT_high, tT_low = self.__scanEventsSequence(self.__mdEventsTomrrow)
+
+        if not T_high:
+            return
+
+        latestDir = OrderData.DIRECTION_NONE
+        T_win = timedelta(minutes=2)
+        slip = 0.02
+
+        # if T_high.month==6 and T_high.day in [25,26]:
+        #      print('here')
+
+        # step 2. determine the stop prices
+        sell_stop = price_high -slip
+        buy_stop  = min(price_low +slip, price_close*(100.0-self._dayPercentToCatch)/100)
+
+        if (T_high < T_low) and price_close < (sell_stop *0.97): # this is a critical downhill, then enlarger the window to sell
+            sell_stop= sell_stop *0.99 -slip
+
+        catchback =0.0 # assume catch-back unnecessaray by default
+        cleanup   =price_high*2 # assume no cleanup
+        if tomorrow_high :
+            tsell_stop = tomorrow_high -slip
+            tbuy_stop  = min(tomorrow_low +slip, tomorrow_close*0.99)
+            cleanup = max(tsell_stop, price_close -slip)
+
+            if buy_stop > tsell_stop:
+                buy_stop =0.0 # no buy today
+
+            if tT_low < tT_high : # tomorrow is an up-hill
+                catchback = tbuy_stop
+            elif tsell_stop > price_close +slip:
+                #catchback = min(tomorrow_high*(100.0- 2*self._dayPercentToCatch)/100, price_close +slip)
+                catchback =price_low +slip
+        elif (price_close < price_open*(100.0 +self._constraintBuy_closeOverOpen)/100):
+            buy_stop =0.0 # forbid to buy
+            catchback =0.0
+
+        if cleanup < price_high: # if cleanup is valid, then no more buy/catchback
+            catchback =0.0
+
+        if sell_stop <= max(catchback, buy_stop)+slip:
+            sell_stop = cleanup # no need to sell
+
+        # step 2. faking the ideal orders
+        for ev in self.__mdEventsToday:
+            if EVENT_TICK != ev.type and EVENT_KLINE_PREFIX != ev.type[:len(EVENT_KLINE_PREFIX)] :
+                continue
+
+            evd = ev.data
+            T = evd.datetime
+
+            price = evd.price if EVENT_TICK == ev.type else evd.close
+            # order = OrderData(self._account)
+            # order.datetime = T
+
+            tokens = (evd.vtSymbol.split('.'))
+            symbol = tokens[0]
+            advice = AdviceData(self.ident, symbol, self._marketState.exchange)
+            advice.price = price
+            advice.datetime = T
+            advice.advisorId = '%s' % self.ident
+            advice.Rdaily = 0.0
+            advice.Rdstd  = 0.0
+            advice.pdirNONE, advice.pdirLONG, advice.pdirSHORT = 0.0, 0.0, 0.0
+            advice.pdirPrice = 0.0
+            advice.pdirAsOf  = T
+            advice.dirNONE, advice.dirLONG, advice.dirSHORT = 0.0, 0.0, 0.0
+
+            if price <= buy_stop :
+                advice.dirLONG = 1
+                latestDir = advice.dirString()
+                self.__adviceSeq.append(copy.copy(advice))
+                continue
+
+            if price >= sell_stop :
+                advice.dirSHORT = 1
+                latestDir = advice.dirString()
+                self.__adviceSeq.append(copy.copy(advice))
+                continue
+
+            if T > max(T_high, T_low) :
+                if price < catchback: # whether to catch back after sold
+                    advice.dirLONG = 1
+                    latestDir = advice.dirString()
+                    self.__adviceSeq.append(copy.copy(advice))
+
+    def scanEventsForAdvices000(self) :
+        # step 1. scan self.__mdEventsToday and determine TH TL
+        price_open, price_high, price_low, price_close, T_high, T_low = self.__scanEventsSequence(self.__mdEventsToday)
+        tomorrow_open, tomorrow_high, tomorrow_low, tomorrow_close, tT_high, tT_low = self.__scanEventsSequence(self.__mdEventsTomrrow)
+
+        if not T_high:
+            return
+
+        # if T_high.day==27 and T_high.month==2 :
+        #     print('here')
+
+        # step 2. faking the ideal orders
+        bMayBuy = price_close >= price_open*(100.0 +self._constraintBuy_closeOverOpen)/100 # may BUY today, >=price_open*1.005
+        T_win = timedelta(minutes=2)
+        slip = 0.02
+
+        sell_stop = max(price_high -slip, price_close*(100.0 +self._constraintSell_lossBelowHigh)/100)
+        buy_stop  = min(price_close*(100.0 -self._constraintBuy_closeOverRecovery)/100, price_low +slip)
+        uphill_catchback = price_close + slip
+
+        if tomorrow_high :
+            if tomorrow_high > price_close*(100.0 +self._constraintBuy_closeOverRecovery)/100 :
+               bMayBuy = True
+
+            if ((tT_low <tT_high and tomorrow_low < price_close) or tomorrow_high < (uphill_catchback * 1.003)) :
+                uphill_catchback =0 # so that catch back never happen
+
+        if price_close > price_low*(100.0 +self._constraintBuy_closeOverRecovery)/100 : # if close is at a well recovery edge
+            bMayBuy = True
+
+        for ev in self.__mdEventsToday:
+            if EVENT_TICK != ev.type and EVENT_KLINE_PREFIX != ev.type[:len(EVENT_KLINE_PREFIX)] :
+                continue
+
+            evd = ev.data
+            T = evd.datetime
+
+            price = evd.price if EVENT_TICK == ev.type else evd.close
+            tokens = (evd.vtSymbol.split('.'))
+            symbol = tokens[0]
+            advice = AdviceData(self.ident, symbol, self._marketState.exchange)
+            advice.price = price
+            advice.datetime = T
+            advice.advisorId = '%s' % self.ident
+            advice.Rdaily = 0.0
+            advice.Rdstd  = 0.0
+            advice.pdirNONE, advice.pdirLONG, advice.pdirSHORT = 0.0, 0.0, 0.0
+            advice.pdirPrice = 0.0
+            advice.pdirAsOf  = T
+            advice.dirNONE, advice.dirLONG, advice.dirSHORT = 0.0, 0.0, 0.0
+
+            if T_low < T_high : # up-hill
+                if bMayBuy and (T <= T_low + T_win and price <= buy_stop) :
+                    advice.dirLONG = 1
+                    latestDir = advice.dirString()
+                    self.__adviceSeq.append(copy.copy(advice))
+                if T <= (T_high + T_win) and price >= (price_high -slip):
+                    advice.dirSHORT = 1
+                    latestDir = advice.dirString()
+                    self.__adviceSeq.append(copy.copy(advice))
+                elif T > T_high :
+                    # if sell_stop < (uphill_catchback *1.002) and tomorrow_high > pSHORTrice_close:
+                    #     continue # too narrow to perform any actions
+
+                    if price > sell_stop:
+                        advice.dirSHORT = 1
+                        latestDir = advice.dirString()
+                        self.__adviceSeq.append(copy.copy(advice))
+                    elif price < uphill_catchback :
+                        advice.dirLONG = 1
+                        latestDir = advice.dirString()
+                        self.__adviceSeq.append(copy.copy(advice))
+
+            if T_low > T_high : # down-hill
+                if price >= (price_high -slip) or (T < T_low and price >= (price_close*(100.0 +self._constraintSell_downHillOverClose)/100)):
+                    advice.dirSHORT = 1
+                    latestDir = advice.dirString()
+                    self.__adviceSeq.append(copy.copy(advice))
+                elif bMayBuy and (T > (T_low - T_win) and T <= (T_low + T_win) and price < round (price_close +price_low*3) /4, 3) :
+                    advice.dirLONG = 1
+                    latestDir = advice.dirString()
+                    self.__adviceSeq.append(copy.copy(advice))
+
+########################################################################
 if __name__ == '__main__':
     print('-'*20)
 

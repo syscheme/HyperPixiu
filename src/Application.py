@@ -32,6 +32,7 @@ LOGLEVEL_CRITICAL = logging.CRITICAL
 LOGFMT_GENERAL    = '%(asctime)s %(levelname)s\t%(message)s'
 
 BOOL_STRVAL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh', True, 1]
+DUMMY_BIG_VAL    = 999999.9
 
 ########################################################################
 class MetaObj(ABC):
@@ -100,24 +101,17 @@ class BaseApplication(MetaApp):
         self._threadWished = False
         self._id =""
         self.__jsettings = None
-        self.__dataDir = './out'
 
         self._kwargs = kwargs
         if 'jsettings' in self._kwargs.keys():
             self.__jsettings = self._kwargs.pop('jsettings', None)
             self._id        = self.__jsettings.id(self._id)
-            self.__dataDir  = self.__jsettings.dataDir(self.__dataDir)
             self._threadWished = self.__jsettings.threaded('False').lower() in BOOL_STRVAL_TRUE
 
         self._id = self._kwargs.pop('id', self._id)
-        self.__dataDir  = self._kwargs.pop('dataDir', self.__dataDir)
         self._threadWished = self._kwargs.pop('threaded', str(self._threadWished)).lower() in BOOL_STRVAL_TRUE
 
-        if '/' != self.__dataDir[-1]:
-            self.__dataDir +='/'
-
         self.__gen = self._generator()
-
         self.__fstampInnerStart, self.__fstampInnerEnd, self.__fdurInner, self.__fdurOuter = 0.0, 0.0, 0.0, 0.0
 
     def __deepcopy__(self, other):
@@ -131,8 +125,11 @@ class BaseApplication(MetaApp):
         return self
 
     @property
-    def dataRoot(self) :
-        return self.__dataDir
+    def dataRoot(self) : return self.program.dataRoot
+
+    @property
+    def outdir(self) :
+        return self.program.outdir
 
     @property
     def program(self) :
@@ -157,6 +154,14 @@ class BaseApplication(MetaApp):
     @abstractmethod
     def doAppInit(self): # return True if succ
         self.__active = True
+        try :
+            statinfo = os.stat(self.outdir)
+        except :
+            try :
+                os.makedirs(self.outdir)
+            except:
+                pass
+
         next(self.__gen)
         return self.__active
 
@@ -195,14 +200,14 @@ class BaseApplication(MetaApp):
                     jn = jn[i]
 
                 if defaultVal :
-                    if isinstance(defaultVal, list):
-                        return jsoncfg.expect_array(jn(defaultVal))
+                    if isinstance(defaultVal, list) :
+                        return jsoncfg.expect_array(jn) # jsoncfg.expect_array(jn(defaultVal))
                     if isinstance(defaultVal, dict):
-                        return jsoncfg.expect_object(jn(defaultVal))
+                        return jsoncfg.expect_object(jn) # jsoncfg.expect_object(jn(defaultVal))
 
                 return jn(defaultVal)
-        except:
-            pass
+        except Exception as ex:
+            self.logexception(ex)
 
         return defaultVal
 
@@ -522,7 +527,8 @@ class Program(object):
         self.__hostname = socket.gethostname()
         self.__pid = os.getpid() # process id
         self.__progName = os.path.basename(argvs[0])[0:-3] # cut off the .py extname
-        self._outdir = './out' #TODO
+        self.__dataRoot = './out/' # should be './data'
+        self.__outdir = os.path.join(self.__dataRoot, self.__progName)
         self._heartbeatInterval = BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # heartbeat间隔（默认1秒）
         self.__daemonize =False
         # dirname(dirname(abspath(file)))
@@ -544,8 +550,8 @@ class Program(object):
                 sys.exit()
             elif opt in ("-f", "--ifile"):
                 config_filename = arg
-            elif opt in ("-o", "--ofile"):
-                self._outdir = arg
+            elif opt in ("-o", "--odir"):
+                self.__outdir = arg
 
         if config_filename :
             try :
@@ -558,7 +564,7 @@ class Program(object):
                 print('failed to load configure[%s]: %s' % (config_filename, e))
                 sys.exit(3)
 
-        self.__shelvefn = '%s/%s.sobj' % (self._outdir, self.__progName)
+        self.__shelvefn = '%s/%s.sobj' % (self.__outdir, self.__progName)
         # 记录今日日期
         self._runStartDate = datetime.now().strftime('%Y-%m-%d')
 
@@ -591,6 +597,16 @@ class Program(object):
             n = None
         return n
 
+    # def getConfig(self, configName, defaultVal) :
+    #     try :
+    #         jn = self.jsettings(configName)
+    #         if not jn is None:
+    #             return jn(defaultVal)
+    #     except:
+    #         pass
+
+    #     return defaultVal
+
     @property
     def logger(self) : return self.__logger
 
@@ -602,6 +618,12 @@ class Program(object):
 
     @property
     def logdir(self) :  return self.__logdir
+
+    @property
+    def outdir(self) :  return self.__outdir
+
+    @property
+    def dataRoot(self) : return self.__dataRoot # return os.path.join(self.__dataRoot, self.__progName)
 
     @property
     def ostype(self) :   return self.__ostype
@@ -959,7 +981,7 @@ class Program(object):
             self.__subscribers[type_] = []
 
         # 若要注册的处理器不在该事件的处理器列表中，则注册该事件
-        if app.ident not in self.__subscribers[type_]:
+        if not app.ident in self.__subscribers[type_]:
             self.__subscribers[type_].append(app.ident)
             
     def unsubscribe(self, type_, app):
@@ -974,7 +996,7 @@ class Program(object):
             self.__subscribers[type_].remove(appId)
 
         # 如果函数列表为空，则从引擎中移除该事件类型
-        if not len(self.__subscribers[type_]) <=0:
+        if len(self.__subscribers[type_]) <=0:
             del self.__subscribers[type_]  
 
     def publish(self, event):
@@ -987,9 +1009,6 @@ class Program(object):
 
     def getConfig(self, configName, defaultVal, pop=False) :
         try :
-            if configName in self._kwargs.keys() :
-                return self._kwargs.pop(configName, defaultVal) if pop else self._kwargs[configName]
-
             if self.__jsettings:
                 jn = self.__jsettings
                 for i in configName.split('/') :

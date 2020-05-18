@@ -7,7 +7,9 @@ from __future__ import division
 from EventData    import EventData, datetime2float
 from MarketData   import *
 from Application  import BaseApplication
-from Account      import Account, Account_AShare, PositionData, TradeData, OrderData
+from Account      import *
+from TradeAdvisor import *
+
 '''
 from .MarketData   import MarketData
 from .strategies   import STRATEGY_CLASS
@@ -32,16 +34,18 @@ class MetaTrader(BaseApplication):
     FINISHED_STATUS = [OrderData.STATUS_ALLTRADED, OrderData.STATUS_REJECTED, OrderData.STATUS_CANCELLED]
     RUNTIME_TAG_TODAY = '$today'
 
-    def __init__(self, program, recorder =None, **kwargs) :
+    def __init__(self, program, account=None, recorder =None, **kwargs) :
         super(MetaTrader, self).__init__(program, **kwargs)
-        self._account = None
-        self._accountId = None
+        self._account   = account
+        self._accountId = account._id if account else None
         self._dtData = None # datetime of data
         self._dictObjectives = {}
         self._marketState = None
         self._recorder =recorder
         self._latestCash, self._latestPosValue =0.0, 0.0
         self._maxBalance =0.0
+        self.__outDir  = self.getConfig('outDir', os.path.join(super(MetaTrader, self).outdir, 'Tdr.P%s/' % self.program.pid) )
+        if self.__outDir and '/' != self.__outDir[-1]: self.__outDir +='/'
 
     def __deepcopy__(self, other):
         result = object.__new__(type(self))
@@ -50,18 +54,27 @@ class MetaTrader(BaseApplication):
         return result
 
     @property
+    def outdir(self) : return self.__outDir # replace that of BaseApplication 
+
+    @property
     def account(self): return self._account # the default account
     @property
     def marketState(self): return self._marketState # the default account
     @property
     def recorder(self): return self._recorder
+    @property
+    def objectives(self): return list(self._dictObjectives.keys())
 
     @abstractmethod
     def eventHdl_Order(self, event): raise NotImplementedError
     @abstractmethod
     def eventHdl_Trade(self, event): raise NotImplementedError
     @abstractmethod
-    def onDayOpen(self, symbol, date): raise NotImplementedError
+    def eventHdl_DayOpen(self, symbol, date): raise NotImplementedError
+
+    # start from BaseTrader, trader becomes advice-driven
+    # # @abstractmethod
+    # def OnAdvice(self, evAdvice): raise NotImplementedError
 
     def openObjective(self, symbol):
         if not symbol in self._dictObjectives.keys() :
@@ -76,22 +89,26 @@ class BaseTrader(MetaTrader):
     '''BaseTrader Application'''
 
      #----------------------------------------------------------------------
-    def __init__(self, program, **kwargs):
+    def __init__(self, program, objectives=[], account=None, recorder =None, **kwargs):
         """Constructor"""
 
-        super(BaseTrader, self).__init__(program, **kwargs)
+        super(BaseTrader, self).__init__(program, account, recorder, **kwargs)
 
         # 引擎类型为实盘
         # self._tradeType = TRADER_TYPE_TRADING
-
-        self._accountId      = self.getConfig('accountId', self._accountId)
-        self._outDir         = self.getConfig('outDir', self.dataRoot)
+        if not self._accountId:
+            self._accountId      = self.getConfig('accountId', self._accountId)
         self._annualCostRatePcnt = self.getConfig('annualCostRatePcnt', 10) # the annual cost rate of capital time, 10% by default
-        self._maxValuePerOrder = self.getConfig('maxValuePerOrder', 0) # the max value limitation of a single order
-        self._minBuyPerOrder   = self.getConfig('minBuyPerOrder', 1000.0) # the min value limitation of a single buy
+        self._maxValuePerOrder   = self.getConfig('maxValuePerOrder', 0) # the max value limitation of a single order
+        self._minBuyPerOrder     = self.getConfig('minBuyPerOrder', 1000.0) # the min value limitation of a single buy
+        if not objectives or len(objectives) <=0 :
+            objectives  = self.getConfig('objectives', [])
 
-        if self._outDir and '/' != self._outDir[-1]: self._outDir +='/'
+        self._minBuyPerOrder   = self.getConfig('minBuyPerOrder', 1000.0) # the min value limitation of a single buy
         
+        for symbol in objectives:
+            self.openObjective(symbol)
+
         # 持仓细节相关
         # self._lstTdPenalty = settings.tdPenalty       # 平今手续费惩罚的产品代码列表
 
@@ -106,24 +123,13 @@ class BaseTrader(MetaTrader):
         #------from old ctaEngine--------------
         self._pathContracts = self.dataRoot + 'contracts'
 
-        # # 本地停止单字典
-        # # key为stopOrderID，value为stopOrder对象
-        # self.stopOrderDict = {}             # 停止单撤销后不会从本字典中删除
-        # self.workingStopOrderDict = {}      # 停止单撤销后会从本字典中删除
-        
-        # 成交号集合，用来过滤已经收到过的成交推送
-        # inside of Account self.tradeSet = set()
-
-        # 本地停止单编号计数
-        self.stopOrderCount = 0
-        # stopOrderID = STOPORDERPREFIX + str(stopOrderCount)
-
-        self._lstMarketEventProc = []
-
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
     def doAppInit(self): # return True if succ
         if not super(BaseTrader, self).doAppInit() :
+            return False
+
+        if len(self.objectives) <=0:
             return False
 
         # step 1. find and adopt the account
@@ -162,24 +168,30 @@ class BaseTrader(MetaTrader):
             self._marketState._exchange = self._account.exchange
                 
         if not self._marketState :
-            self.error('no MarketState found')
-            return False
+            self.warn('no existing MarketState found, creating a new PerspectiveState instead')
+            self._marketState = PerspectiveState(self._account.exchange)
 
-        self.info('taking MarketState[%s]' % self._marketState.ident)
+        self._account._marketState = self._marketState
+        self.info('taking MarketState[%s], registering objectives' % self._marketState.ident)
+        for symbol in self._dictObjectives.keys():
+            self._marketState.addMonitor(symbol)
 
-        # step 3. subscribe the market events
-        self.subscribeEvent(EVENT_TICK)
-        self.subscribeEvent(EVENT_KLINE_1MIN)
-        self.subscribeEvent(EVENT_KLINE_5MIN)
-        self.subscribeEvent(EVENT_KLINE_1DAY)
+        # step 3.1 subscribe the TradeAdvices
+        self.subscribeEvent(EVENT_ADVICE)
 
-        if self._marketState :
-            for symbol in self._dictObjectives.keys():
-                self._marketState.addMonitor(symbol)
-
-        # step 4. subscribe account events
+        # step 3.2 subscribe the account and market events
         self.subscribeEvent(Account.EVENT_ORDER)
         self.subscribeEvent(Account.EVENT_TRADE)
+        self.subscribeEvent(EVENT_TICK)
+        self.subscribeEvent(EVENT_KLINE_1MIN)
+        # self.subscribeEvent(EVENT_KLINE_5MIN)
+        # self.subscribeEvent(EVENT_KLINE_1DAY)
+
+        if self._recorder :
+            self._recorder.registerCategory(Account.RECCATE_ORDER,       params= {'columns' : OrderData.COLUMNS})
+            self._recorder.registerCategory(Account.RECCATE_TRADE,       params= {'columns' : TradeData.COLUMNS})
+            self._recorder.registerCategory(Account.RECCATE_DAILYPOS,    params= {'columns' : DailyPosition.COLUMNS})
+            self._recorder.registerCategory(Account.RECCATE_DAILYRESULT, params= {'columns' : DailyResult.COLUMNS})
 
         return True
 
@@ -215,29 +227,32 @@ class BaseTrader(MetaTrader):
             #  objective['ohlc'] = self.updateOHLC(objective['ohlc'] if 'ohlc' in objective.keys() else None, kline.open, kline.high, kline.low, kline.close)
 
             if not objective['date'] or d.date > objective['date'] :
-                self.onDayOpen(symbol, d.date)
+                try :
+                    self.eventHdl_DayOpen(symbol, d.date)
+                except Exception as ex:
+                    self.logexception(ex)
                 objective['date'] = d.date
                 # objective['ohlc'] = self.updateOHLC(None, d.open, d.high, d.low, d.close)
 
             # step 1. cache into the latest, lnf DataEngine
             if not self._dtData or d.asof > self._dtData:
                 self._dtData = d.asof # datetime of data
+            
+            return
 
+        if EVENT_ADVICE == ev.type :
             # step 2. # call each registed procedure to handle the incoming MarketEvent
-            for proc in self._lstMarketEventProc :
-                if not proc : ConnectionRefusedError
-
-                try:
-                    proc(ev)
-                except Exception as ex:
-                    self.error('call MarketEventProc %s caught %s: %s' % (ev.desc, ex, traceback.format_exc()))
+            try:
+                self.OnAdvice(ev)
+            except Exception as ex:
+                self.error('call OnAdvice %s caught %s: %s' % (ev.desc, ex, traceback.format_exc()))
 
             return
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
 
-   #----------------------------------------------------------------------
+    #----------------------------------------------------------------------
     # about the event handling
     # --- eventOrder from Account ------------
     def eventHdl_Order(self, ev):
@@ -250,106 +265,95 @@ class BaseTrader(MetaTrader):
 
     #----------------------------------------------------------------------
     # usually back test will overwrite this
-    def onDayOpen(self, symbol, date):
+    def eventHdl_DayOpen(self, symbol, date):
         # step1. notify accounts
-        self.debug('onDayOpen(%s:%s) dispatching to account' % (symbol, date))
+        self.debug('eventHdl_DayOpen(%s:%s) dispatching to account' % (symbol, date))
         if self._account :
-            try :
-                self._account.onDayOpen(date)
-            except Exception as ex:
-                self.logexception(ex)
+            self._account.onDayOpen(date)
+
+    def OnAdvice(self, evAdvice):
+        '''
+        processing an TradeAdvice, this basic DnnTrader takes whatever the advice told
+
+        Take an action (buy/sell/hold) and computes the immediate reward.
+        @param action (numpy.array): Action to be taken, one-hot encoded.
+        @returns:
+            tuple:
+                - observation (numpy.array): Agent's observation of the current environment.
+                - reward (float) : Amount of reward returned after previous action.
+                - done (bool): Whether the episode has ended, in which case further step() calls will return undefined results.
+                - info (dict): Contains auxiliary diagnostic information (helpful for debugging, and sometimes learning).
+        '''
+        if not evAdvice or EVENT_ADVICE != evAdvice.type :
+            return
+
+        adv = evAdvice.data
+        symbol = adv.symbol
+        if not self.marketState.exchange in adv.exchange or not symbol in self.objectives:
+            self.debug('OnAdvice() ignored advice per objectives of exchange[%s]: %s' % (adv.exchange, adv.desc))
+            return
+
+        if not self._account.executable:
+            self.debug('OnAdvice() ignored advice per account not executable: %s' % (adv.desc))
+            return
+
+        # TODO: validate the advice's datetime
+        # TODO: perform the risk management of advice
+
+        dirToExec = ADVICE_DIRECTIONS[np.argmax([adv.dirNONE, adv.dirLONG, adv.dirSHORT])]
+        strExec =''
+
+        self.debug('OnAdvice() processing advDir[%s] %s' % (dirToExec, adv.desc))
+        prevCap = self._latestCash + self._latestPosValue
+
+        # step 1. collected information from the account
+        cashAvail, cashTotal, positions = self._account.positionState()
+        _, posvalue = self._account.summrizeBalance(positions, cashTotal)
+        capitalBeforeStep = cashTotal + posvalue
+
+        # TODO: the first version only support one symbol to play, so simply take the first symbol in the positions        
+        latestPrice = self._marketState.latestPrice(symbol)
+
+        maxBuy, maxSell = self._account.maxOrderVolume(symbol, latestPrice)
+        if self._maxValuePerOrder >0:
+            if self._maxValuePerOrder < (maxBuy * latestPrice*100):
+                maxBuy = int(maxBuy * self._maxValuePerOrder / (maxBuy* latestPrice*100))
+            if self._maxValuePerOrder < (maxSell*1.5 * latestPrice*100):
+                maxSell = int(maxSell * self._maxValuePerOrder / (maxSell * latestPrice*100))
+        if self._minBuyPerOrder >0 and (maxBuy * latestPrice*100) < self._minBuyPerOrder :
+            maxBuy =0
+
+        # TODO: the first version only support FULL-BUY and FULL-SELL
+        if OrderData.DIRECTION_LONG == dirToExec :
+            if maxBuy <=0 :
+                dirExeced = OrderData.DIRECTION_NONE
+            else:
+                strExec = '%s:%sx%s' %(dirToExec, latestPrice, maxBuy)
+                self.debug('OnAdvice() issuing max%s' % strExec)
+                self._account.cancelAllOrders()
+                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, reason=adv.desc)
+                dirExeced = OrderData.DIRECTION_LONG
+
+        elif OrderData.DIRECTION_SHORT == dirToExec :
+            if maxSell <=0:
+                dirExeced = OrderData.DIRECTION_NONE
+            else:
+                strExec = '%s:%sx%s' %(dirToExec, latestPrice, maxSell)
+                self.debug('OnAdvice() issuing max%s' % strExec)
+                self._account.cancelAllOrders()
+                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, reason=adv.desc)
+                dirExeced = OrderData.DIRECTION_SHORT
+
+        # step 3. calculate the rewards
+        self._latestCash, self._latestPosValue = self._account.summrizeBalance() # most likely the cashAmount changed due to comission
+        capitalAfterStep = self._latestCash + self._latestPosValue
+
+        # instant_pnl = capitalAfterStep - capitalBeforeStep
+        # self._total_pnl += instant_pnl
 
     # end of event handling
     #----------------------------------------------------------------------
 
-    #----------------------------------------------------------------------
-    # local the recent data by symbol
-    #----------------------------------------------------------------------
-    # def getTick(self, vtSymbol):
-    #     """查询行情对象"""
-    #     try:
-    #         return self._dictLatestTick[vtSymbol]
-    #     except KeyError:
-    #         return None        
-    
-    # def getContract(self, vtSymbol):
-    #     """查询合约对象"""
-    #     try:
-    #         return self._dictLatestContract[vtSymbol]
-    #     except KeyError:
-    #         return None
-        
-    # def getAllContracts(self):
-    #     """查询所有合约对象（返回列表）"""
-    #     return self._dictLatestContract.values()
-    
-    # def saveContracts(self):
-    #     """保存所有合约对象到硬盘"""
-    #     f = shelve.open(self._pathContracts)
-    #     f['data'] = self._dictLatestContract
-    #     f.close()
-    
-    # def loadContracts(self):
-    #     """从硬盘读取合约对象"""
-    #     f = shelve.open(self._pathContracts)
-    #     if 'data' in f:
-    #         d = f['data']
-    #         for key, value in d.items():
-    #             self._dictLatestContract[key] = value
-    #     f.close()
-        
-    #----------------------------------------------------------------------
-    # about the orders
-    #----------------------------------------------------------------------
-    # def getOrder(self, vtOrderID):
-    #     """查询委托"""
-    #     try:
-    #         return self._dictLatestOrder[vtOrderID]
-    #     except KeyError:
-    #         return None
-    
-    # def getAllWorkingOrders(self):
-    #     """查询所有活动委托（返回列表）"""
-    #     return self._account.getAllWorkingOrders()
-
-    # def getAllOrders(self):
-    #     """获取所有委托"""
-    #     orders = []
-    #     for acc in self._dictAccounts.values():
-    #         orders.append(acc.getAllOrders())
-    #     return orders
-    
-    # def getAllTrades(self):
-    #     """获取所有成交"""
-    #     traders = []
-    #     for acc in self._dictAccounts.values():
-    #         traders.append(acc.getAllTrades())
-    #     return traders
-    
-    #----------------------------------------------------------------------
-    # about the positions
-    #----------------------------------------------------------------------
-    # def getPositionDetail(self, symbol):
-    #     """查询持仓细节"""
-    #     poslist = []
-    #     for acc in self._dictAccounts.values():
-    #         poslist.append(acc.getPositionDetail(symbol))
-    #     return poslist
-
-    # def getAllPositionDetails(self):
-    #     """查询所有本地持仓缓存细节"""
-    #     poslist = []
-    #     for acc in self._dictAccounts.values():
-    #         poslist.append(acc.getAllPositionDetails())
-    #     return poslist
-    
-    # def getOHLC(self, symbol):
-    #     """查询所有本地持仓缓存细节"""
-    #     if symbol in self._dictObjectives.keys():
-    #         return self._dictObjectives[symbol]['ohlc']
-        
-    #     return None
-    #----------------------------------------------------------------------
     # --- eventTick from MarketData ----------------
     def updateOHLC(self, OHLC, open, high, low, close):
         if not OHLC:
@@ -372,4 +376,5 @@ class BaseTrader(MetaTrader):
     #     elif tick:
     #         return tick.price
     #     return 0
+
 

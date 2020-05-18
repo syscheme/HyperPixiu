@@ -5,7 +5,17 @@ WGET="wget --user=trainer --password=r654321"
 mkdir -p ~/.ssh
 ${WGET} -O- ${TRANINER_URL}/authorized_keys >> ~/.ssh/authorized_keys
 
-pip3 install json-cfg websocket websocket-client pathlib matplotlib filelock &
+mkdir ~/.pip/
+cat > ~/.pip/pip.conf
+[global]
+  trusted-host =  mirrors.aliyun.com
+  index-url = https://mirrors.aliyun.com/pypi/simple
+
+apt install -y cron htop tree lsof git nano
+
+pip3 install json-cfg websocket websocket-client pathlib matplotlib requests demjson filelock &
+pip3 list|grep tensorflow
+pip3 install tensorflow-gpu==1.12
 
 WKSPACE=$(realpath ~/wkspaces)
 mkdir ${WKSPACE}
@@ -15,8 +25,6 @@ cd ${WKSPACE}/HyperPixiu/
 git pull
 git checkout -f gym
 git pull
-
-apt install -y cron htop tree lsof
 
 mkdir -p ${WKSPACE}/HyperPixiu/ETF
 cd ${WKSPACE}//HyperPixiu/ETF

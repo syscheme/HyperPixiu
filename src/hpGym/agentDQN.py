@@ -262,16 +262,19 @@ class agentDQN(MetaAgent):
 
         brainDir = '%s%s.S%dI%dA%d/' % (self._gymTrader.dataRoot, brainId, self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
         brain = None
+        strLoadedParts =''
         try : 
             # step 1. read the model file in json
             self._gymTrader.debug('loading saved brain from %s' %brainDir)
             with open('%smodel.json' % brainDir, 'r') as mjson:
                 model_json = mjson.read()
             brain = model_from_json(model_json)
+            strLoadedParts +='definition'
 
             # step 2. read the weights of the model
             self._gymTrader.debug('loading saved brain weights from %s' %brainDir)
             brain.load_weights('%sweights.h5' % brainDir)
+            strLoadedParts +=',weights'
         except Exception as ex:
             self._gymTrader.logexception(ex)
 
@@ -280,6 +283,7 @@ class agentDQN(MetaAgent):
         try :
             with open('%sstatus.json' % brainDir, 'r') as f:
                 self._statusAttrs = json.loads(f.read())
+                strLoadedParts +=',status'
 
             continued = self._statusAttrs['continued'] if 'continued' in self._statusAttrs.keys() else []
             continued.append(datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'))
@@ -295,7 +299,7 @@ class agentDQN(MetaAgent):
             self._gymTrader.warn('no status.json under %s' % (brainDir))
 
         if brain:
-            self._gymTrader.info('loaded brain from %s by taking initial epsilon[%s] learningRate[%s]' % (brainDir, self._epsilon, self._learningRate))
+            self._gymTrader.info('loaded brain %s from %s by taking initial epsilon[%s] learningRate[%s]' % (brainDir, strLoadedParts, self._epsilon, self._learningRate))
         return brain
 
     def gymAct(self, state, bObserveOnly=False):

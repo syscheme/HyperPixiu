@@ -8,10 +8,11 @@ from EventData    import EventData, datetime2float, EVENT_NAME_PREFIX
 from MarketData   import *
 from Perspective  import PerspectiveState
 from Application  import BaseApplication, BOOL_STRVAL_TRUE
+from Account      import OrderData
 
 # event type
-EVENT_ADVICE  = EVENT_NAME_PREFIX + 'TAdv'  # 交易建议事件
-NN_FLOAT      = 'float32'
+EVENT_ADVICE      = EVENT_NAME_PREFIX + 'TAdv'  # 交易建议事件
+ADVICE_DIRECTIONS = [OrderData.DIRECTION_NONE, OrderData.DIRECTION_LONG, OrderData.DIRECTION_SHORT]
 
 import os
 import logging
@@ -41,6 +42,8 @@ class TradeAdvisor(BaseApplication):
         self._minimalAdvIntv = self.getConfig('minimalInterval', 5) # minimal interval in seconds between two advice s
         self._exchange = self.getConfig('exchange', 'AShare')
         self.__recMarketEvent = self.getConfig('recMarketEvent', 'False').lower() in BOOL_STRVAL_TRUE
+        self._enableMStateSS  = self.getConfig('enableMarketStateSafeStore', 'False').lower() in BOOL_STRVAL_TRUE # False to skip saving/restore the safestore of marketState, which is expected by BackTest/OfflineSimulator
+
         if not objectives or not isinstance(objectives, list) or len(objectives) <=0:
             objectives = self.getConfig('objectives', [])
 
@@ -50,15 +53,15 @@ class TradeAdvisor(BaseApplication):
 
         self._marketState = PerspectiveState(self._exchange) # take PerspectiveState by default
         self.__stampMStateRestored, self.__stampMStateSaved = None, None
-        try :
-            shutil.rmtree(self.__wkTrader._outDir)
-        except:
-            pass
+        # try :
+        #     shutil.rmtree(self.__wkTrader.outdir)
+        # except:
+        #     pass
 
-        try :
-            os.makedirs(self.__wkTrader._outDir)
-        except:
-            pass
+        # try :
+        #     os.makedirs(self.__wkTrader.outdir)
+        # except:
+        #     pass
         self.program.setShelveFilename('%s%s.sobj' % (self.dataRoot, self.ident))
 
     @property
@@ -71,17 +74,19 @@ class TradeAdvisor(BaseApplication):
     def recorder(self): return self._recorder
 
     def __saveMarketState(self) :
+        if not self._enableMStateSS : return
         try :
             self.program.saveObject(self.marketState, '%s/marketState' % 'OnlineSimulator')
         except Exception as ex:
             self.logexception(ex)
 
     def __restoreMarketState(self) :
+        if not self._enableMStateSS : return None
         try :
             return self.program.loadObject('%s/marketState' % 'OnlineSimulator') # '%s/marketState' % self.__class__)
         except Exception as ex:
             self.logexception(ex)
-        return False
+        return None
 
     # @abstractmethod
     # def onDayOpen(self, symbol, date): raise NotImplementedError
@@ -206,9 +211,9 @@ class TradeAdvisor(BaseApplication):
             
             newAdvice.advisorId = '%s@%s' %(self.ident, self.program.hostname)
             newAdvice.datetime  = d.asof
-            if not newAdvice.exchange or len(newAdvice.exchange)<=0:
+            if not newAdvice.exchange or len(newAdvice.exchange)<=0 or '_k2x' == newAdvice.exchange:
                 newAdvice.exchange = self._marketState.exchange
-
+            
             if symbol in self.__dictPerf.keys():
                 perf = self.__dictPerf[symbol]
                 newAdvice.Rdaily = perf['Rdaily']
@@ -265,8 +270,10 @@ class AdviceData(EventData):
         self.pdirAsOf     = None                    # 前次Advice datetime
 
     def dirString(self) :
-        dirIdx = np.argmax([self.dirNONE,self.dirLONG,self.dirSHORT])
-        self.strDir = AdviceData.DIRSTR[dirIdx]
+        if not self.strDir or len(self.strDir) <=0 :
+            self.dirNONE, self.dirLONG, self.dirSHORT = round(self.dirNONE,4), round(self.dirLONG,4), round(self.dirSHORT,4)
+            dirIdx = np.argmax([self.dirNONE,self.dirLONG,self.dirSHORT])
+            self.strDir = AdviceData.DIRSTR[dirIdx]
         return self.strDir
 
     @property
@@ -274,79 +281,3 @@ class AdviceData(EventData):
         dirIdx = np.argmax([self.dirNONE,self.dirLONG,self.dirSHORT])
         return 'tadv.%s@%s>%s@%s' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S'), self.strDir, round(self.price,2))
 
-########################################################################
-from tensorflow.keras.models import model_from_json
-
-class NeuralNetAdvisor(TradeAdvisor):
-    '''
-    NeuralNetAdvisor impls TradeAdvisor by ev
-    '''
-    def __init__(self, program, **kwargs) :
-        self._brainId = None
-        super(NeuralNetAdvisor, self).__init__(program, **kwargs)
-
-        self._brainId = self.getConfig('brainId', "default")
-        self._brainDir = '%s%s/' % (self.dataRoot, self._brainId)
-        self.__stateSize, self.__actionSize = 1548, 3 #TODO
-
-    @property
-    def ident(self) :
-        return 'NNAdv.%s.%s' % (self._brainId, self._id) if self._brainId else super(NeuralNetAdvisor,self).ident
-
-    def __loadBrain(self, brainDir) :
-        ''' load the previous saved brain
-        @param brainDir must be given, in which there are model.json definition and weights.h5 parameters
-        '''
-        brainDir = '%s%s.S%dI%dA%d/' % (self.dataRoot, self._brainId, self.__stateSize, EXPORT_FLOATS_DIMS, self.__actionSize)
-        try : 
-            # step 1. read the model file in json
-            self.debug('loading saved brain from %s' % brainDir)
-            with open('%smodel.json' % brainDir, 'r') as mjson:
-                model_json = mjson.read()
-            brain = model_from_json(model_json)
-
-            # step 2. read the weights of the model
-            self.debug('loading saved brain weights from %s' %brainDir)
-            brain.load_weights('%sweights.h5' % brainDir)
-
-            self.info('loaded brain from %s' % (brainDir))
-            return brain
-
-        except Exception as ex:
-            self.logexception(ex)
-
-        return None
-
-    def generateAdviceOnMarketEvent(self, ev):
-        '''processing an incoming MarketEvent and generate an advice'''
-
-        if MARKETDATE_EVENT_PREFIX != ev.type[:len(MARKETDATE_EVENT_PREFIX)] :
-            return None
-
-        d = ev.data
-        tokens = (d.vtSymbol.split('.'))
-        symbol = tokens[0]
-
-        market_state = self._marketState.exportKLFloats(symbol)
-        market_state = np.array(market_state).astype(NN_FLOAT).reshape(1, self.__stateSize)
-
-        act_values = self._brain.predict(market_state)
-        action = np.zeros(self.__actionSize)
-        action[np.argmax(act_values[0])] = 1
-        advice = AdviceData(self.ident, symbol, d.exchange)
-        advice.dirNONE, advice.dirLONG, advice.dirSHORT = act_values[0][0], act_values[0][1], act_values[0][2]
-        advice.price = d.price if EVENT_TICK == ev.type else d.close
-
-        return advice
-
-    #----------------------------------------------------------------------
-    # impl/overwrite of BaseApplication
-    def doAppInit(self): # return True if succ
-        self._brain = self.__loadBrain(self._brainId)
-        if not self._brain:
-            return False
-
-        return super(NeuralNetAdvisor, self).doAppInit()
-
-    # end of BaseApplication routine
-    #----------------------------------------------------------------------

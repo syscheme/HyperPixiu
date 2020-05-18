@@ -7,18 +7,24 @@
 
     "advisor": {
         "id" : "blah",
-        "type": "NeuralNetAdvisor",
+        "type": "dnn.S1548I4A3",
         "brainId" : "Cnn1Dx4R2",
-        "exchange" : "AShare",
-        // "eventSource": "sina", 
-        "eventSource": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
-        "objectives": ["SH510050","SH510500","SZ159949"],
+        "objectives": ["SH510050","SH510300","SH510500","SZ159949"],
     },
 
     "remoteEvents": {
-        "type": "ZeroMQ",
-        "endpoint" : "localhost",
-        "outgoing": ["evTAdv"],
-        "incoming": [],
+        "zmq": {
+            "endpoint" : "localhost", 
+            //"endpoint" : "tc.syscheme.com",
+            "outgoing": ["evTAdv"],
+            "incoming": [],
+        },
     },
+
+    "marketEvents": { // the source of market events
+        // "source": "sina", 
+        "source": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
+        "exchange" : "AShare",
+    },
+
 }

@@ -3,17 +3,17 @@
 SECU_LIST="SZ159949 SH510050 SH510300 SH510500 SH510310 SH512000 SZ159919 SZ159952 SH512760 SH512930" # the default list
 TOPDIR_HP=$(realpath ~/wkspaces/HyperPixiu)
 STAMP=$(date +%Y%m%dT%H%M%S)
-DATAHOME=$(realpath ~/deploy-data/hpdata)
+DATAHOME="$(realpath ~/out)"
 OUTDIR="${DATAHOME}/sim_online"
 
 mkdir -p ${OUTDIR}
-if [ -e  ~/deploy-data/hpdata/objectives ]; then
-    SECU_LIST=$(cat ~/deploy-data/hpdata/objectives)
+if [ -e  "${DATAHOME}/objectives" ]; then
+    SECU_LIST=$(cat "${DATAHOME}/objectives")
 fi
 
 cd ${DATAHOME}
 
-FOLDERS=$(ls ${OUTDIR}/ | grep  '\.P.*')
+FOLDERS=$(ls ${OUTDIR}/ | grep '\.P.*')
 for i in ${FOLDERS}; do
     PID=$(echo $i |sed -e 's/^.*\.P//g');
     mv -vf /tmp/sim_online_${PID}_*.log ${OUTDIR}/${i}/

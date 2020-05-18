@@ -235,7 +235,7 @@ class BackTestApp(MetaTrader):
                 self.logexception(ex)
 
         # this test should be done if reached here
-        self.debug('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self._stepNoInEpisode, self._bGameOver, reachedEnd))
+        self.info('doAppStep() episode[%s/%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self._episodes, self._stepNoInEpisode, self._bGameOver, reachedEnd))
         try:
             self.OnEpisodeDone(reachedEnd)
         except Exception as ex:
@@ -254,7 +254,7 @@ class BackTestApp(MetaTrader):
         strReport += '\n'
         with codecs.open('%s/%s_summary.txt' %(self._initTrader.outdir, self.episodeId), "w","utf-8") as rptfile:
             rptfile.write(strReport)
-            self.debug('doAppStep() episode[%s] summary report generated' %(self.episodeId))
+            self.info('doAppStep() episode[%s/%s] summary report generated' %(self.episodeId, self._episodes))
 
         # prepare for the next episode
         self._episodeNo +=1

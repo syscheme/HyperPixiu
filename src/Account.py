@@ -179,11 +179,11 @@ class Account(MetaAccount):
         """
         super(Account, self).__init__(program, **kwargs)
 
-        self._slippage      = self.getConfig('slippage', 0.0)
-        self._ratePer10K    = self.getConfig('ratePer10K', 30)
+        self._slippage      = self.getConfig('slippage',     0.0)
+        self._ratePer10K    = self.getConfig('ratePer10K',    30)
         self._contractSize  = self.getConfig('contractSize', 0.0)
-        self._priceTick     = self.getConfig('priceTick', 0.0)
-        self._dbName        = self.getConfig('dbName', self._id) 
+        self._priceTick     = self.getConfig('priceTick',   0.01)
+        self._dbName        = self.getConfig('dbName',  self._id) 
 
         self._pctReservedCash = self.getConfig('pctReservedCash', 1.0) # cash at percent of total cap, in order not to buy securities at full
         if self._pctReservedCash < 0.5: self._pctReservedCash =0.5
@@ -937,7 +937,7 @@ class Account(MetaAccount):
                     posChange = -trade.volume
                     self._todayResult.tcSell += 1
                     
-                self._todayResult.txnHist += "%+dx%s@%s" % (posChange, trade.symbol, formatNumber(trade.price,3))
+                self._todayResult.txnHist += "%+dx%s@%sP%s" % (posChange, trade.symbol, trade.asof.strftime('%H%M'), formatNumber(trade.price, 3))
 
                 self._todayResult.tradingPnl += round(posChange * (self._marketState.latestPrice(trade.symbol) - trade.price) * self._contractSize, 2)
                 turnover, commission, slippagefee = self.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
@@ -1101,10 +1101,13 @@ class Account_AShare(Account):
             kwargs['exchange'] ='AShare'
         if not 'contractSize' in kwargs.keys() :
             kwargs['contractSize'] =100
-        if not 'priceTick' in kwargs.keys() :
-            kwargs['priceTick'] = 0.01
+        # if not 'priceTick' in kwargs.keys() :
+        #     kwargs['priceTick'] = 0.01
 
         super(Account_AShare, self).__init__(program, **kwargs) # accountId, exchange ='AShare', ratePer10K =ratePer10K, contractSize=100, slippage =0.0, priceTick=0.01, jsettings =jsettings)
+
+        if self._priceTick < 0.0005:
+            self._priceTick = 0.01 # the default priceTick of AShare
 
     def tradeBeginOfDay(dt = None):
         return (dt if dt else datetime.now()).replace(hour=9, minute=30, second=0, microsecond=0)

@@ -1,16 +1,17 @@
 #!/bin/bash
-# WEIGHT_SRC="/Trainers/111.44.254.183_48642/*.S1548I4A3_*.bz2"
-# WEIGHT_SRC="/Trainers/111.44.254.183_48642/Cnn*.S1548I4A3_*.bz2"
-# WEIGHT_SRC="/Trainers/111.44.254.183_48642/ResNet2Xd1.*.bz2"
-WEIGHT_SRC="/Trainers/111.44.254.183_48642/Cnn*.S1548I4A3_*.bz2"
+# MODEL0="Cnn1Dx4R2"
+MODEL0="ResNet21"
+TRAINER="111.44.254.173_51933"
 
-# SECU_LIST="SZ159949 $(grep '^SH' /mnt/e/AShareSample/ETF/list.txt |awk '{print $1;}')"
+WEIGHT_SRC="/Trainers/${TRAINER}/${MODEL0}.S1548I4A3_*.bz2"
+# WEIGHT_SRC="/Trainers/${MODEL0}.S1548I4A3_best.*.tar.bz2"
+
 # SECU_LIST="SZ159949 SH510050 SH510300 SH510500 SH510310 SH512000 SZ159919 SZ159952 SH512760 SH512930"
-SECU_LIST="SZ159949 SH510050 SH510300 SH510500 SZ159919"
-# SECU_LIST="SH510050"
+# SECU_LIST="SZ159949 SH510050 SH510300 SH510500 SZ159919"
+SECU_LIST="SH510050"
 
 STAMP=$(date +%m%dT%H%M%S)
-PROJPATH=/root/wkspaces/HP_advisor
+PROJPATH=/root/wkspaces/HP_devel
 
 rm -rf /tmp/weightToApp
 mkdir -p /tmp/weightToApp
@@ -29,9 +30,9 @@ cat ${PROJPATH}/conf/Trader.json
 
 cd ${PROJPATH}
 
-FOLDERS=$(ls ./out/OfflineSimulator|grep 'sim_offline_')
+FOLDERS=$(ls ./out/sim_offline|grep 'sim_offline_')
 for i in ${FOLDERS}; do
-    mv -vf /tmp/${i}_*.log ./out/OfflineSimulator/${i}/; 
+    mv -vf /tmp/${i}_*.log ./out/sim_offline/${i}/; 
 done
 
 nice tar cfvj out/sim_offline_BAK$(date +%m%d%H%M).tar.bz2 out/sim_offline

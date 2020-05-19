@@ -1836,6 +1836,9 @@ class IdealTrader_Tplus1(OfflineSimulator):
         if not super(IdealTrader_Tplus1, self).doAppInit() :
             return False
 
+        if self._recorder:
+            self._recorder.registerCategory(EVENT_ADVICE, params= {'columns' : AdviceData.COLUMNS})
+
         self._tradeSymbol = self.wkTrader.objectives[0] # idealTrader only cover a single symbol from the objectives
         self._episodes =1 # idealTrader only run one loop
         return True

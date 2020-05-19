@@ -1877,6 +1877,9 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 # advice.pdirAsOf  = nextOrder.datetime
                 # advice.dirString() # generate the dirString to ease reading
 
+                if self._recorder:
+                    self._recorder.pushRow(EVENT_ADVICE, nextAdvice)
+
                 evAdv = Event(EVENT_ADVICE)
                 evAdv.setData(nextAdvice)
                 super(IdealTrader_Tplus1, self).OnEvent(evAdv) # to perform the real handling

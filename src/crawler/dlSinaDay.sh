@@ -1,7 +1,9 @@
 #!/bin/bash
 
-SYMBOLLIST=$(bzcat ./symbols.txt.bz2)
-SYMBOLLIST="SZ002881 SH600996 SZ002230"
+SRC_DIR=$(realpath `dirname $0`)
+
+SYMBOLLIST=$(bzcat ${SRC_DIR}/symbols.txt.bz2)
+# SYMBOLLIST="SZ002881 SH600996 SZ002230"
 DATE=$(date +%Y%m%d)
 TARGETDIR="$(realpath ~/out)"
 
@@ -81,7 +83,7 @@ downloadList()
                 let "SZ_RETRY+=1"
             fi
 
-            sleep 0.3
+            sleep 0.5
         done
 
         if ! [ "0" == "$SKIP_AT_456" ]; then
@@ -103,6 +105,8 @@ downloadList()
             ls -d Sina${CATEGORY}_*| grep -v 'tar.bz2' |sort | head -n -5 | xargs rm -rf 
     fi
 }
+
+cd /tmp
 
 downloadList downloadMF1m
 downloadList downloadKL5m

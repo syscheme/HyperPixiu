@@ -1,6 +1,7 @@
 #!/bin/bash
 
 SYMBOLLIST=$(bzcat ./symbols.txt.bz2)
+# SYMBOLLIST="SZ002881 SH600996 SZ002230"
 DATE=$(date +%Y%m%d)
 TARGETDIR="$(realpath ~/out)"
 
@@ -55,8 +56,10 @@ downloadList()
     
     mkdir -p ${FOLDER}
 
-    list=${SYMBOLLIST}
-    while ! [ -z "${list}" ] ; do
+    NEXT_LIST=${SYMBOLLIST}
+    SKIP_AT_456=0
+    while ! [ -z "${NEXT_LIST}" ] ; do
+        list="${NEXT_LIST}"
         NEXT_LIST=""
         SKIP_AT_456=0
         SZ_TOTAL=0
@@ -76,13 +79,15 @@ downloadList()
                 NEXT_LIST="${NEXT_LIST} ${i}"
                 let "SZ_RETRY+=1"
             fi
+
+            sleep 0.3
         done
 
-        if [ $SKIP_AT_456 ]; then
+        if ! [ "0" == "$SKIP_AT_456" ]; then
             echo "will retry ${SZ_RETRY} of ${SZ_TOTAL} in 10-min"
-            list=${NEXT_LIST}
             sleep 600
         fi
+
     done
 
     echo "${CATEGORY} done, zipping to ${FOLDER}.tar.bz2"

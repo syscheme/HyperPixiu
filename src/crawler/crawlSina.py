@@ -36,9 +36,13 @@ class SinaCrawler(MarketCrawler):
     '''
     # 常量定义
     #----------------------------------------------------------------------
-    DEFAULT_GET_HEADERS = {
+    DEFAULT_GET_HEADERS = { # in order to protent like a real browser
         "Content-type": "application/x-www-form-urlencoded",
-        'User-Agent':'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:53.0) Gecko/20100101 Firefox/53.0'
+        'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.100 Safari/537.36',
+        'Cache-Control': 'max-age=2',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3',
+        # 'Accept-Encoding': 'gzip, deflate',
+        'Accept-Language': 'zh-CN,zh;q=0.9',
     }
 
     TIMEOUT = 5

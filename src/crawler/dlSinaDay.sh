@@ -1,12 +1,13 @@
 #!/bin/bash
 
 SYMBOLLIST=$(bzcat ./symbols.txt.bz2)
-# SYMBOLLIST="SZ002881 SH600996 SZ002230"
+SYMBOLLIST="SZ002881 SH600996 SZ002230"
 DATE=$(date +%Y%m%d)
 TARGETDIR="$(realpath ~/out)"
 
 #-------------------------------------
 RET=200
+UA='Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)'
 
 downloadMF1m()
 {
@@ -18,7 +19,7 @@ downloadMF1m()
     fi
 
     echo "fetching MF1m of ${SYMBOL} to ${FN}"
-    RET=$(wget "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?sort=time&num=260&page=1&daima=${SYMBOL}" -O ${FN} 2>&1|grep -o 'awaiting response.*'| grep -o '[0-9]*')
+    RET=$(wget --user-agent="${UA}" "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?sort=time&num=260&page=1&daima=${SYMBOL}" -O ${FN} 2>&1|grep -o 'awaiting response.*'| grep -o '[0-9]*')
     if [ "200" == "${RET}" ]; then
         echo "downloaded MF1m of ${SYMBOL} as ${FN}, resp ${RET}"
         return
@@ -38,7 +39,7 @@ downloadKL5m()
     fi
 
     echo "fetching KL5m of ${SYMBOL} to ${FN}"
-    RET=$(wget "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${SYMBOL}&scale=5&datalen=100" -O ${FN} 2>&1|grep -o 'awaiting response.*'| grep -o '[0-9]*')
+    RET=$(wget --user-agent="${UA}" "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${SYMBOL}&scale=5&datalen=100" -O ${FN} 2>&1|grep -o 'awaiting response.*'| grep -o '[0-9]*')
     if [ "200" == "${RET}" ]; then
         echo "downloaded KL5m of ${SYMBOL} as ${FN}, resp ${RET}"
         return

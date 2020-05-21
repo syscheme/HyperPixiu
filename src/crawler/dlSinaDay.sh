@@ -98,5 +98,5 @@ downloadList()
     fi
 }
 
-downloadList downloadKL5m
 downloadList downloadMF1m
+downloadList downloadKL5m

@@ -19,8 +19,16 @@
             "portPUB": 8877,
             "portSUB": 7788,
             //"endpoint" : "tc.syscheme.com",
-            "outgoing": ["evTAdv"], // ["evTAdv","evmdKL5m"],
-            "incoming": [],
+            "outgoing": ["evTAdv", "evmdKL1m"], // ["evTAdv","evmdKL5m"],
+            "incoming": ["*"], // ""
+        },
+
+        "redis": { // we take tcp here by default
+            // "endpoint" : "localhost", 
+            "host" : "172.16.20.170", 
+            //"endpoint" : "tc.syscheme.com",
+            "outgoing": ["evTAdv", "evmdKL1m"], // ["evTAdv","evmdKL5m"],
+            "incoming": ["*"], // ""
         },
     },
 

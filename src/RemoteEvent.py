@@ -32,7 +32,7 @@ class EventEnd(BaseApplication):
         self.__selfstamp = '%s@%s' % (self.program.progId, self.program.hostname)
 
         self._topicsOutgoing   = self.getConfig('outgoing', [])
-        self._topicsIncomming  = self.getConfig('incoming', ['*'])
+        self._topicsIncomming  = self.getConfig('incoming', [])
 
     @abstractmethod
     def send(self, event):
@@ -65,7 +65,7 @@ class EventEnd(BaseApplication):
     # impl/overwrite of BaseApplication
     def OnEvent(self, ev):
         '''
-        dispatch the event
+        forward the local events to the remote eventChannel
         '''
         if ev.publisher or not ev.type in self._topicsOutgoing: # ignore those undeclared type and were captured from remote
             return
@@ -97,10 +97,11 @@ class EventEnd(BaseApplication):
             
         # step 2. receive the incomming events
         ev = self.recv(0.1)
-        if ev and self.topicOfEvent(ev) in self._topicsIncomming:
-            if ev.publisher and not self.__selfstamp in ev.publisher:
-                self.postEvent(ev)
-            cRecv +=1
+        if ev :
+            if self.topicOfEvent(ev) in self._topicsIncomming:
+                if ev.publisher and not self.__selfstamp in ev.publisher:
+                    self.postEvent(ev)
+                cRecv +=1
 
         return cRecv + cSent;
 
@@ -111,6 +112,7 @@ class EventEnd(BaseApplication):
         if len(self._topicsOutgoing) + len(self._topicsIncomming) <=0 :
             return False
 
+        # subscribe from local events about to forward
         for et in self._topicsOutgoing:
             self.subscribeEvent(et)
         
@@ -160,8 +162,11 @@ class ZmqEE(EventEnd):
             self.info('connected pub to evch[%s]'% (self.__epPUB))
 
         pklstr = pickle.dumps(ev) # this is bytes
+        #NO such API: self.__soPub.connect()
         msg = self.topicOfEvent(ev).encode() + ZMQ_DELIMITOR_TOPIC.encode() + pklstr # this is bytes
         self.__soPub.send(msg) # send must take bytes
+        #NO such API: self.__soPub.close()
+
         self.debug('sent to evch[%s]: %s'% (self.__epPUB, ev.desc))
 
     def recv(self, secTimeout=0.1):
@@ -178,12 +183,16 @@ class ZmqEE(EventEnd):
                 subscribedTopics.append(topicfilter)
 
             self.__poller.register(self.__soSub, zmq.POLLIN)
-            self.info('subscribed from evch[%s] for %d-topic %s' % (self.__epSUB, len(subscribedTopics), ','.join(subscribedTopics)))
+            self.info('subscribed from evch[%s] for %d-topic: %s' % (self.__epSUB, len(subscribedTopics), ','.join(subscribedTopics)))
 
-        if not self.__poller.poll(int(100)): # 100msec timeout
+        # if not self.__poller.poll(int(100)): # 100msec timeout
+        #     return None
+        socks = dict(self.__poller.poll(int(secTimeout*1000)))
+        if not self.__soSub in socks or socks[self.__soSub] != zmq.POLLIN:
             return None
-
+        
         msg = self.__soSub.recv()
+
         pos = msg.find(ZMQ_DELIMITOR_TOPIC.encode())
         if pos <=0: return None
 
@@ -339,3 +348,130 @@ class ZmqEventChannel(BaseApplication):
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
+
+
+import redis
+########################################################################
+class RedisEE(EventEnd):
+
+    class RedisSub(BaseApplication):
+        def __init__(self, program, masterEE) :
+            super(RedisSub, self).__init__(program)
+            self.__master = masterEE
+            self._threadWished = True # always threaded because redis subscribe.listen() is a blocking call
+
+        def doAppStep(self):
+            
+            ps = None
+            if not self.__master.conn or len(self.__master._topicsIncomming) <=0 :
+                return 0
+
+            ps = self.__master.conn.pubsub()
+            for s in self.__master._topicsIncomming:
+                topicfilter = '%s' % s
+                if len(topicfilter) <=0: continue
+                ps.subscribe(topicfilter)
+
+            for msg in ps.listen(): # BLOCKING here
+                if msg['type'] != 'message':
+                    continue
+
+                evType = msg['channel']
+                pklstr = msg['data'] 
+                ev = pickle.loads(pklstr)
+                if not ev or self.topicOfEvent(ev) in self.__master._topicsIncomming:
+                    continue
+
+                if ev.publisher and not self.__master.__selfstamp in ev.publisher:
+                    self.__master.postEvent(ev)
+                    self.__master.debug('remoteEvent from evch[%s]: %s' % (self._redisHost, self._redisPort))
+
+    def __init__(self, program, **kwargs) :
+        super(RedisEE, self).__init__(program, **kwargs)
+
+        self._redisHost    = self.getConfig('host', "localhost")
+        self._redisPort    = self.getConfig('port', 6379)
+        self._redisPasswd  = self.getConfig('password', None)
+        self.__redisConn   = None
+        self.__appSub      = None
+
+        if len(self._topicsIncomming) >0 : # start a background threaded Sub because redis subscribe.listen() is a blocking call
+            self.__appSub = RedisSub(self.program, self)
+
+    @property
+    def myStamp(self):
+        return self._redisHost
+
+    def send(self, ev):
+        if not ev: return
+        if not self.__redisConn:
+            self.__connect()
+        
+        if not self.__redisConn: return
+
+        pklstr = pickle.dumps(ev) # this is bytes
+        self.__redisConn.publish(ev.type, pklstr)
+
+        self.debug('sent to evch[%s]: %s'% (self.__epPUB, ev.desc))
+
+    def recv(self, secTimeout=0.1):
+        ev = None
+        if not self.__redisConn:
+            self.__connect()
+
+        # if not self.__poller.poll(int(100)): # 100msec timeout
+        #     return None
+        socks = dict(self.__poller.poll(int(secTimeout*1000)))
+        if not self.__soSub in socks or socks[self.__soSub] != zmq.POLLIN:
+            return None
+        
+        msg = self.__soSub.recv()
+
+        pos = msg.find(ZMQ_DELIMITOR_TOPIC.encode())
+        if pos <=0: return None
+
+        topic, pklstr = msg[:pos].decode(), msg[pos+1:]
+
+        # necessary to filter arrivals as topicfilter covered it: 
+        # if topic in self._topicsIncomming:
+        ev = pickle.loads(pklstr)
+        self.debug('recv from evch[%s]: %s'% (self.__epSUB, ev.desc))
+        return ev
+
+    def __connect(self) :
+        self.__redisConn = redis.StrictRedis(host=self._redisHost, port=self._redisPort, db=3, password=self._redisPasswd)
+
+        self.info('connected to evch[%s]'% (self._redisHost, self._redisPort))
+
+    #----------------------------------------------------------------------
+    # impl/overwrite of BaseApplication
+    def doAppInit(self): # return True if succ
+        if not super(ZmqEE, self).doAppInit() :
+            return False
+
+        self.__connect()
+        return not self.__redisConn is None
+
+    # overwrite of EventEnd due to blocking
+    def doAppStep(self):
+
+        if not self.__ps or len(self._topicsIncomming) <=0 :
+            return 0
+
+        for msg in self.__ps.listen(): # BLOCKING here
+            if msg['type'] != 'message':
+                continue
+
+            evType = msg['channel']
+            pklstr = msg['data'] 
+            ev = pickle.loads(pklstr)
+            if ev:
+                if self.topicOfEvent(ev) in self._topicsIncomming:
+                    if ev.publisher and not self.__selfstamp in ev.publisher:
+                        self.postEvent(ev)
+                    cRecv +=1
+       
+
+    # end of BaseApplication routine
+    #----------------------------------------------------------------------
+

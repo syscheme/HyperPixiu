@@ -31,7 +31,7 @@ class EventEnd(BaseApplication):
         self.__queOutgoing = Queue(maxsize=100)
         self.__selfstamp = '%s@%s' % (self.program.progId, self.program.hostname)
 
-        self._topicsOutgoing  = self.getConfig('outgoing', [])
+        self._topicsOutgoing   = self.getConfig('outgoing', [])
         self._topicsIncomming  = self.getConfig('incoming', ['*'])
 
     @abstractmethod
@@ -157,12 +157,12 @@ class ZmqEE(EventEnd):
         if not self.__soPub:
             self.__soPub = self.__ctxZMQ.socket(zmq.PUB)
             self.__soPub.connect(self.__epPUB)
-            self.info('connected pub to ech[%s]'% (self.__epPUB))
+            self.info('connected pub to evch[%s]'% (self.__epPUB))
 
         pklstr = pickle.dumps(ev) # this is bytes
         msg = self.topicOfEvent(ev).encode() + ZMQ_DELIMITOR_TOPIC.encode() + pklstr # this is bytes
         self.__soPub.send(msg) # send must take bytes
-        self.debug('sent to ech[%s]: %s'% (self.__epPUB, ev.desc))
+        self.debug('sent to evch[%s]: %s'% (self.__epPUB, ev.desc))
 
     def recv(self, secTimeout=0.1):
         ev = None
@@ -178,7 +178,7 @@ class ZmqEE(EventEnd):
                 subscribedTopics.append(topicfilter)
 
             self.__poller.register(self.__soSub, zmq.POLLIN)
-            self.info('subscribed from ech[%s] for %d-topic %s' % (self.__epSUB, len(subscribedTopics), ','.join(subscribedTopics)))
+            self.info('subscribed from evch[%s] for %d-topic %s' % (self.__epSUB, len(subscribedTopics), ','.join(subscribedTopics)))
 
         if not self.__poller.poll(int(100)): # 100msec timeout
             return None
@@ -192,7 +192,7 @@ class ZmqEE(EventEnd):
         # necessary to filter arrivals as topicfilter covered it: 
         # if topic in self._topicsIncomming:
         ev = pickle.loads(pklstr)
-        self.debug('recv from ech[%s]: %s'% (self.__epSUB, ev.desc))
+        self.debug('recv from evch[%s]: %s'% (self.__epSUB, ev.desc))
         return ev
 
     #----------------------------------------------------------------------

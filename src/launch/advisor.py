@@ -45,7 +45,7 @@ if __name__ == '__main__':
 
     rec    = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.outdir, '%s.tcsv' % p.progId))
     revents = p.createApp(ZmqEE, configNode ='remoteEvents/zmq')
-    revents.registerOutgoing([EVENT_ADVICE, EVENT_KLINE_1MIN]) # should be revents.registerOutgoing(EVENT_ADVICE)
+    # now read config: revents.registerOutgoing([EVENT_ADVICE])
 
     p.info('all objects registered piror to Advisor: %s' % p.listByType())
     advisor = p.createApp(DnnAdvisor_S1548I4A3, configNode ='advisor', objectives=objectives, recorder=rec)

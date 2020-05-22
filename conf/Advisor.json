@@ -13,10 +13,13 @@
     },
 
     "remoteEvents": {
-        "zmq": {
-            "endpoint" : "localhost", 
+        "zmq": { // we take tcp here by default
+            // "endpoint" : "localhost", 
+            "endpoint" : "172.16.20.170", 
+            "portPUB": 8877,
+            "portSUB": 7788,
             //"endpoint" : "tc.syscheme.com",
-            "outgoing": ["evTAdv"],
+            "outgoing": ["evTAdv"], // ["evTAdv","evmdKL5m"],
             "incoming": [],
         },
     },

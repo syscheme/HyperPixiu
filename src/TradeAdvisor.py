@@ -170,72 +170,79 @@ class TradeAdvisor(BaseApplication):
         '''
         dispatch the event
         '''
-        if MARKETDATE_EVENT_PREFIX == ev.type[:len(MARKETDATE_EVENT_PREFIX)] :
-            if self._marketState:
-                self._marketState.updateByEvent(ev)
+        if EVENT_ADVICE == ev.type : return # no nested dead loop
 
-            d = ev.data
-            tokens = (d.vtSymbol.split('.'))
-            symbol = tokens[0]
-            ds = tokens[1] if len(tokens) >1 else d.exchange
-            if not symbol in self.objectives :
-                return # ignore those not interested
+        if MARKETDATE_EVENT_PREFIX != ev.type[:len(MARKETDATE_EVENT_PREFIX)] : return # advisor is supposed to only take care of market events
 
-            if d.asof > (datetime.now() + timedelta(days=7)):
-                self.warn('Trade-End signal received: %s' % d.desc)
-                self.eventHdl_TradeEnd(ev)
-                return
+        if self._marketState:
+            self._marketState.updateByEvent(ev)
 
-            latestAdvc = self.__dictAdvices[symbol] if symbol in self.objectives else None
-            if latestAdvc :
-                elapsed = datetime2float(d.datetime) - datetime2float(latestAdvc.asof)
-                if (elapsed < self._minimalAdvIntv) :
-                    return # too frequently
+        d = ev.data
+        tokens = (d.vtSymbol.split('.'))
+        symbol = tokens[0]
+        ds = tokens[1] if len(tokens) >1 else d.exchange
+        if not symbol in self.objectives :
+            return # ignore those not interested
 
-            # if not latestAdvc.asof['date'] or d.date > objective['date'] :
-            #     self.onDayOpen(symbol, d.date)
-            #     objective['date'] = d.date
-            #     # objective['ohlc'] = self.updateOHLC(None, d.open, d.high, d.low, d.close)
-
-            # step 2. # call each registed procedure to handle the incoming MarketEvent
-            newAdvice = None
-            try:
-                newAdvice = self.generateAdviceOnMarketEvent(ev)
-            except Exception as ex:
-                self.error('call generateAdviceOnMarketEvent %s caught %s: %s' % (ev.desc, ex, traceback.format_exc()))
-
-            if not newAdvice:
-                return
-
-            newAdvice.dirString() # generate the dirString to ease reading
-            
-            newAdvice.advisorId = '%s@%s' %(self.ident, self.program.hostname)
-            newAdvice.datetime  = d.asof
-            if not newAdvice.exchange or len(newAdvice.exchange)<=0 or '_k2x' == newAdvice.exchange:
-                newAdvice.exchange = self._marketState.exchange
-            
-            if symbol in self.__dictPerf.keys():
-                perf = self.__dictPerf[symbol]
-                newAdvice.Rdaily = perf['Rdaily']
-                newAdvice.Rdstd  = perf['Rdstd']
-            
-            if latestAdvc:
-                newAdvice.pdirLONG  = latestAdvc.dirLONG
-                newAdvice.pdirSHORT = latestAdvc.dirSHORT
-                newAdvice.pdirNONE  = latestAdvc.dirNONE
-                newAdvice.pdirPrice = latestAdvc.price
-                newAdvice.pdirAsOf  = latestAdvc.datetime
-            
-            evAdv = Event(EVENT_ADVICE)
-            evAdv.setData(newAdvice)
-            self.postEvent(evAdv)
-            self.__dictAdvices[symbol] = newAdvice
-
-            if self.__recMarketEvent :
-                self._recorder.pushRow(ev.type, d)
-            self._recorder.pushRow(EVENT_ADVICE, newAdvice)
-
+        if d.asof > (datetime.now() + timedelta(days=7)):
+            self.warn('Trade-End signal received: %s' % d.desc)
+            self.eventHdl_TradeEnd(ev)
             return
+
+        latestAdvc = self.__dictAdvices[symbol] if symbol in self.objectives else None
+        if latestAdvc and self._minimalAdvIntv >0:
+            elapsed = datetime2float(d.datetime) - datetime2float(latestAdvc.asof)
+            if (elapsed < self._minimalAdvIntv) :
+                self.debug('event[%s] ignored per elapsed[%s] vs %ssec-advIntv, latest: %s' % (ev.desc, elapsed, self._minimalAdvIntv, latestAdvc.desc))
+                return # avoid advising too frequently
+
+        # if not latestAdvc.asof['date'] or d.date > objective['date'] :
+        #     self.onDayOpen(symbol, d.date)
+        #     objective['date'] = d.date
+        #     # objective['ohlc'] = self.updateOHLC(None, d.open, d.high, d.low, d.close)
+
+        # step 2. # call each registed procedure to handle the incoming MarketEvent
+        newAdvice = None
+        try:
+            newAdvice = self.generateAdviceOnMarketEvent(ev)
+        except Exception as ex:
+            self.error('call generateAdviceOnMarketEvent %s caught %s: %s' % (ev.desc, ex, traceback.format_exc()))
+
+        if not newAdvice:
+            self.debug('ignored NULL advice on event[%s]' % (ev.desc))
+            return
+
+        newAdvice.dirString() # generate the dirString to ease reading
+        
+        newAdvice.advisorId = '%s@%s' %(self.ident, self.program.hostname)
+        newAdvice.datetime  = d.asof
+        if not newAdvice.exchange or len(newAdvice.exchange)<=0 or '_k2x' == newAdvice.exchange:
+            newAdvice.exchange = self._marketState.exchange
+        
+        if symbol in self.__dictPerf.keys():
+            perf = self.__dictPerf[symbol]
+            newAdvice.Rdaily = perf['Rdaily']
+            newAdvice.Rdstd  = perf['Rdstd']
+        
+        if latestAdvc:
+            newAdvice.pdirLONG  = latestAdvc.dirLONG
+            newAdvice.pdirSHORT = latestAdvc.dirSHORT
+            newAdvice.pdirNONE  = latestAdvc.dirNONE
+            newAdvice.pdirPrice = latestAdvc.price
+            newAdvice.pdirAsOf  = latestAdvc.datetime
+        
+        evAdv = Event(EVENT_ADVICE)
+        evAdv.setData(newAdvice)
+        self.info('advice generated upon event[%s]: %s' % (ev.desc, evAdv.desc))
+
+        self.postEvent(evAdv)
+        self.__dictAdvices[symbol] = newAdvice
+
+        if self.__recMarketEvent :
+            self._recorder.pushRow(ev.type, d)
+        self._recorder.pushRow(EVENT_ADVICE, newAdvice)
+
+        return
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------

@@ -244,7 +244,7 @@ class BaseApplication(MetaApp):
             return
 
         self._program.publish(ev)
-        self.debug('posted event[%s] %s' % (ev.type, ev.data.desc))
+        self.debug('posted event[%s] %s, %d on-going' % (ev.type, ev.data.desc, self._program.pendingSize))
 
     #---logging -----------------------
     def log(self, level, msg):

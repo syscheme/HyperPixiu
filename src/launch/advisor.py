@@ -9,7 +9,7 @@ from   TradeAdvisor import EVENT_ADVICE
 from   advisors.dnn  import DnnAdvisor_S1548I4A3
 from   Application   import *
 import HistoryData as hist
-from   RemoteEvent import ZmqEE
+from   RemoteEvent import ZmqEE, RedisEE
 from   crawler.crawlSina import *
 
 import sys, os, platform
@@ -44,7 +44,8 @@ if __name__ == '__main__':
     SYMBOL = objectives[0]
 
     rec    = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.outdir, '%s.tcsv' % p.progId))
-    revents = p.createApp(ZmqEE, configNode ='remoteEvents/zmq')
+    # revents = p.createApp(ZmqEE, configNode ='remoteEvents/zmq')
+    revents = p.createApp(RedisEE, configNode ='remoteEvents/redis')
     # now read config: revents.registerOutgoing([EVENT_ADVICE])
 
     p.info('all objects registered piror to Advisor: %s' % p.listByType())

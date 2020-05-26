@@ -594,8 +594,12 @@ class Program(object):
         return self.__pid
 
     @property
+    def baseName(self) : 
+        return self.__progName
+
+    @property
     def progId(self) : 
-        return '%s_%s' % (self.__progName, self.pid)
+        return '%s_%s' % (self.baseName, self.pid)
 
     @property
     def ostype(self) :

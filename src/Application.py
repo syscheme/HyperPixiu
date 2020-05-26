@@ -243,8 +243,8 @@ class BaseApplication(MetaApp):
         if not ev or not self._program:
             return
 
-        self._program.publish(ev)
-        self.debug('posted event[%s] %s, %d on-going' % (ev.type, ev.data.desc, self._program.pendingSize))
+        psize, msize = self._program.publish(ev)
+        self.debug('posted event[%s] %s, %d/%d on-going' % (ev.type, ev.data.desc, psize, msize))
 
     #---logging -----------------------
     def log(self, level, msg):
@@ -842,8 +842,8 @@ class Program(object):
             enabledHB = self.hasHeartbeat
             # enabledHB = False
             if enabledHB: # heartbeat enabled
-                dt = datetime.now()
-                stampNow = datetime2float(datetime.now())
+                dtNow = datetime.now()
+                stampNow = datetime2float(dtNow)
             
                 if not self.__stampLastHB :
                     self.__stampLastHB = stampNow
@@ -855,18 +855,20 @@ class Program(object):
 
                     # inject then event of heartbeat
                     ed = EventData()
-                    ed.datetime = dt
+                    ed.datetime = dtNow
                     event = Event(type_= EVENT_SYS_CLOCK)
                     event.setData(ed)
                     self.publish(event)
 
             # pop the event to dispatch
             bEmpty = False
+            qsize, maxsize =0, 0
             while self._bRun and not bEmpty:
                 event = None
                 try :
                     event = self.__queue.get(block = enabledHB, timeout = timeout)  # 获取事件的阻塞时间设为0.1秒
                     bEmpty = False
+                    qsize, maxsize = self.__queue.qsize(), self.__queue.maxsize
                 except Empty:
                     bEmpty = True
                 except KeyboardInterrupt:
@@ -909,6 +911,9 @@ class Program(object):
                         break
                             
                     continue
+
+                if qsize > max(100, maxsize/2):
+                    self.warn("too many pending events: %d/%d" % (qsize,maxsize) )
 
                 # 检查是否存在对该事件进行监听的处理函数
                 if not event.type in self.__subscribers.keys():
@@ -1007,10 +1012,7 @@ class Program(object):
     def publish(self, event):
         '''向事件队列中存入事件'''
         self.__queue.put(event)
-
-    @property
-    def pendingSize(self):
-        return self.__queue.qsize()
+        return self.__queue.qsize(), self.__queue.maxsize
 
     def getConfig(self, configName, defaultVal, pop=False) :
         try :

@@ -75,6 +75,8 @@ class SinaCrawler(MarketCrawler):
         # duration to complete, so this crawler should be threaded
         # self._threadless = False
 
+        self._eventsToPost = [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_MONEYFLOW_1MIN]
+
         self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline, self.__step_pollMoneyflow]
         self._proxies = {}
 

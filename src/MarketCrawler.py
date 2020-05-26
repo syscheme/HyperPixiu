@@ -26,7 +26,13 @@ class MarketCrawler(BaseApplication):
 
         self._recorder = recorder
         self._symbolsToPoll = []
-        self._postCaptured = False
+
+        # MarketCrawler is supposed to focus on the most recent event to process, but it MAY also grab
+        # some historical data in order to complete the perspective
+        # The following config help to ONLY deliver the recent events to the EventChannel
+        self._timeoutToPostEvent = self.getConfig('timeoutToPostEvent', 120.0) # 2min to stop barking those old data crawled
+        self._eventsToPost       = self.getConfig('eventsToPost', [])
+
         self.__marketStateToUpdate = marketState
 
         # the MarketData instance Id
@@ -173,8 +179,17 @@ class MarketCrawler(BaseApplication):
         if self._recorder:
             self._recorder.pushRow(ev.type, ev.data)
 
-        if self._postCaptured:
-            self.postEvent(ev)
+        # eliminate some events with no interests
+        if len(self._eventsToPost) >0 and not ev.type in self._eventsToPost:
+            return
+
+        # eliminate some old events crawled to messup eventchannel
+        if self._timeoutToPostEvent and self._timeoutToPostEvent >0:
+            ftimeExp = datetime2float(datetime.now()) - self._timeoutToPostEvent
+            if datetime2float(ev.data.asof) < ftimeExp:
+                return
+        
+        self.postEvent(ev)
 
     #----------------------------------------------------------------------
     def onError(self, msg):

@@ -614,7 +614,12 @@ class Program(object):
     def pid(self) :    return self.__pid
 
     @property
-    def progId(self) : return '%s_%s' % (self.__progName, self.pid)
+    def baseName(self) : 
+        return self.__progName
+
+    @property
+    def progId(self) : 
+        return '%s_%s' % (self.baseName, self.pid)
 
     @property
     def logdir(self) :  return self.__logdir

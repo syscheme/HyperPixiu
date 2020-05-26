@@ -23,18 +23,17 @@
             "batchSize": 128,
             "batchesPerTrain": 128, // 512x64 for GTX1050/2G, 512x128 for GTX1060/4G
             "recycles": 2,
-            "initEpochs": 4,
+            "initEpochs": 4, // 8 when the model is not well trained, 4 when trained and try to cover larger dataset
             "startLR": 0.002,
             // "lossPctStop": 50,
             "lossStop": 0.15,
-        },
 
-        "RTX2080": {
-            "batchSize": 512,
-            "tensorBoard": "yes",
-            "batchesPerTrain": 192,
-            "recycles": 2,
-            "initEpochs": 8, // 8 when the model is not well trained, 4 when trained and try to cover larger dataset
+            "models": [
+                { "model":"GTX 1650",
+                    "batchSize": 512,
+                    "batchesPerTrain": 192,
+                },
+            ]
         },
 
         "gamma": 0.01,

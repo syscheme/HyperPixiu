@@ -40,7 +40,7 @@ import numpy as np
 def get_available_gpus():
     from tensorflow.python.client import device_lib
     local_device_protos = device_lib.list_local_devices()
-    return [x.name for x in local_device_protos if x.device_type == 'GPU']
+    return [{'name':x.name, 'detail':x.physical_device_desc } for x in local_device_protos if x.device_type == 'GPU']
 
 GPUs = get_available_gpus()
 
@@ -182,6 +182,13 @@ class ReplayTrainer(BaseApplication):
             self._initEpochs      = self.getConfig('GPU/initEpochs', self._initEpochs)
             self._recycleSize     = self.getConfig('GPU/recycles',   self._recycleSize)
             self._startLR         = self.getConfig('GPU/startLR',      self._startLR)
+
+            self._models          = self.getConfig('GPU/models',   [])
+            gpuType = GPUs[0]['detail'] # TODO: only take the first at the moment
+            for m in self._models:
+                if not m or not 'model' in m.keys() or not m['model'] in gpuType: continue
+                if 'batchSize' in m.keys(): self._batchSize = m['batchSize']
+                if 'batchesPerTrain' in m.keys(): self._batchesPerTrain = m['batchesPerTrain']
 
         if not self._replayFrameFiles or len(self._replayFrameFiles) <=0: 
             self._replayFrameFiles =[]

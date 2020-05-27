@@ -25,7 +25,7 @@
 
         "redis": { // we take tcp here by default
             // "endpoint" : "localhost", 
-            "host" : "172.16.20.170", 
+            "host" : "tc.syscheme.com", // "172.16.20.170", 
             //"endpoint" : "tc.syscheme.com",
             "outgoing": ["evTAdv", "evmdKL1m"], // ["evTAdv","evmdKL5m"],
             "incoming": ["*"], // ""
@@ -33,8 +33,8 @@
     },
 
     "marketEvents": { // the source of market events
-        // "source": "sina", 
-        "source": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
+        "source": "sina", 
+        //"source": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
         "exchange" : "AShare",
     },
 

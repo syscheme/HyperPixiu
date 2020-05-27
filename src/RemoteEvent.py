@@ -455,11 +455,17 @@ class RedisEE(EventEnd):
         ''' call to stop this
         '''
         self._subQuit = True
-        if not self.__threadSub :
-            return
+        if self.__redisConn:
+            self.__redisConn.close()
 
-        self.__threadSub.stop()
-        self.__threadSub.join()
+        if self.__threadSub :
+            try:
+                self.__threadSub.stop()
+            except:
+                pass
+
+            self.__threadSub.join()
+            
         self.debug('RedisEE stopping')
 
         return super(RedisEE, self).stop()

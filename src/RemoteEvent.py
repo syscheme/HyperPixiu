@@ -387,21 +387,24 @@ class RedisEE(EventEnd):
 
     def send(self, ev):
         if not ev: return
-        if not self.__redisConn:
+        if self.__redisConn is None:
             self.__connect()
         
         if not self.__redisConn: return
 
         pklstr = pickle.dumps(ev) # this is bytes
-        self.__redisConn.publish(ev.type, pklstr)
-
-        self.debug('sent to evch[%s:%s]: %s'% (self._redisHost, self._redisPort, ev.desc))
+        try :
+            self.__redisConn.publish(ev.type, pklstr)
+            self.debug('sent to evch[%s:%s]: %s'% (self._redisHost, self._redisPort, ev.desc))
+        except Exception as ex:
+            self.logexception(ex)
+            self.__redisConn.close()
+            self.__redisConn =None
 
     def recv(self, secTimeout=0.1): return None
 
     def __connect(self) :
         self.__redisConn = redis.StrictRedis(host=self._redisHost, port=self._redisPort, db=3, password=self._redisPasswd)
-
         self.info('connected to evch[%s:%s]'% (self._redisHost, self._redisPort))
 
     #----------------------------------------------------------------------
@@ -466,12 +469,16 @@ class RedisEE(EventEnd):
         while not self._subQuit:
             try:
                 if ps is None:
-                    ps = self.__redisConn.pubsub()
-                    for s in self._topicsIncomming:
-                        topicfilter = '%s' % s
-                        if len(topicfilter) <=0: continue
-                        ps.subscribe(topicfilter)
-                        
+                    if self.__redisConn is None:
+                        self.__connect()
+
+                    if self.__redisConn:
+                        ps = self.__redisConn.pubsub()
+                        for s in self._topicsIncomming:
+                            topicfilter = '%s' % s
+                            if len(topicfilter) <=0: continue
+                            ps.subscribe(topicfilter)
+
                     sleep(0.5)
                     continue # to test _subQuit
 
@@ -493,3 +500,5 @@ class RedisEE(EventEnd):
             except Exception as ex:
                 self.logexception(ex)
                 ps = None
+                self.__redisConn.close()
+                self.__redisConn = None

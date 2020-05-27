@@ -17,6 +17,14 @@ import re
 '''
 分类-中国银行: http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssi_gupiao_fenlei?daima=SH601988
 [{cate_type:"2",cate_name:"银行业",category:"hangye_ZI01"}]
+
+http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page=1&num=40&sort=mkcap&asc=0&node=sw2_420100
+
+sw2_[0-9]{4}00 - 申万二级行业
+http://www.daquant.com/help/2-html/html4/2.1.3.html
+
+https://baike.baidu.com/item/%E9%BE%99%E5%A4%B4%E8%82%A1/2268306
+
 '''
 
 CLOCK_ERROR_SEC   = 2*60.0  # 2min
@@ -66,6 +74,8 @@ class SinaCrawler(MarketCrawler):
         # SinaCrawler take multiple HTTP requests to collect data, each of them may take different
         # duration to complete, so this crawler should be threaded
         # self._threadless = False
+
+        self._eventsToPost = [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_MONEYFLOW_1MIN]
 
         self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline, self.__step_pollMoneyflow]
         self._proxies = {}

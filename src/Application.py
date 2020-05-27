@@ -97,7 +97,7 @@ class BaseApplication(MetaApp):
         super(BaseApplication, self).__init__()
         
         self._program = program
-        self.__active = False    # 工作状态
+        self.__eventTrigger = False
         self._threadWished = False
         self._id =""
         self.__jsettings = None
@@ -141,19 +141,19 @@ class BaseApplication(MetaApp):
 
     @property
     def isActive(self) :
-        return self.__active
+        return self.__eventTrigger and self.program.isAppActive(self.ident)
 
     #------Impl of MetaApp --------------------------------------------------
     def theApp(self): return self
 
     def stop(self):
         # TODO:
-        self.__active = False
+        self.__eventTrigger = False
 
     #--- pollable step routine for ThreadedAppWrapper -----------------------
     @abstractmethod
     def doAppInit(self): # return True if succ
-        self.__active = True
+        self.__eventTrigger = True
         try :
             statinfo = os.stat(self.outdir)
         except :
@@ -163,7 +163,7 @@ class BaseApplication(MetaApp):
                 pass
 
         next(self.__gen)
-        return self.__active
+        return True
 
     @abstractmethod
     def doAppStep(self):
@@ -173,7 +173,7 @@ class BaseApplication(MetaApp):
         return False
 
     def _generator(self) :
-        while self.isActive :
+        while self.__eventTrigger :
             try:
                 event = yield self.ident
                 if isinstance(event, Event):
@@ -243,8 +243,8 @@ class BaseApplication(MetaApp):
         if not ev or not self._program:
             return
 
-        self._program.publish(ev)
-        self.debug('posted event[%s] %s' % (ev.type, ev.data.desc))
+        psize, msize = self._program.publish(ev)
+        self.debug('posted event[%s] %s, %d/%d on-going' % (ev.type, ev.data.desc, psize, msize))
 
     #---logging -----------------------
     def log(self, level, msg):
@@ -614,7 +614,12 @@ class Program(object):
     def pid(self) :    return self.__pid
 
     @property
-    def progId(self) : return '%s_%s' % (self.__progName, self.pid)
+    def baseName(self) : 
+        return self.__progName
+
+    @property
+    def progId(self) : 
+        return '%s_%s' % (self.baseName, self.pid)
 
     @property
     def logdir(self) :  return self.__logdir
@@ -769,6 +774,12 @@ class Program(object):
         
         return ret
 
+    def isAppActive(self, appId):
+        if not appId or not self.__activeApps or len(self.__activeApps)<=0:
+            return False
+
+        return appId in self.__activeApps
+
     #----------------------------------------------------------------------
     def start(self, daemonize=False):
         if self.__activeApps and len(self.__activeApps) >0 :
@@ -789,12 +800,12 @@ class Program(object):
             if app == None:
                 continue
             
-            self.debug('staring app[%s]' % appId)
+            self.debug('starting app[%s]' % appId)
             if not app.doAppInit() :
                 self.error('failed to initialize app[%s]' % appId)
             else :
-                self.__activeApps.append(appId)
-                self.info('initialized app[%s]' % appId)
+                self.__activeApps.append(app.ident)
+                self.info('initialized app[%s] as %s' % (appId, app.ident))
 
         if len(self.__activeApps) <=0 : 
             self._bRun =False
@@ -837,8 +848,8 @@ class Program(object):
             enabledHB = self.hasHeartbeat
             # enabledHB = False
             if enabledHB: # heartbeat enabled
-                dt = datetime.now()
-                stampNow = datetime2float(datetime.now())
+                dtNow = datetime.now()
+                stampNow = datetime2float(dtNow)
             
                 if not self.__stampLastHB :
                     self.__stampLastHB = stampNow
@@ -850,18 +861,20 @@ class Program(object):
 
                     # inject then event of heartbeat
                     ed = EventData()
-                    ed.datetime = dt
+                    ed.datetime = dtNow
                     event = Event(type_= EVENT_SYS_CLOCK)
                     event.setData(ed)
                     self.publish(event)
 
             # pop the event to dispatch
             bEmpty = False
+            qsize, maxsize =0, 0
             while self._bRun and not bEmpty:
                 event = None
                 try :
                     event = self.__queue.get(block = enabledHB, timeout = timeout)  # 获取事件的阻塞时间设为0.1秒
                     bEmpty = False
+                    qsize, maxsize = self.__queue.qsize(), self.__queue.maxsize
                 except Empty:
                     bEmpty = True
                 except KeyboardInterrupt:
@@ -904,6 +917,9 @@ class Program(object):
                         break
                             
                     continue
+
+                if qsize > max(100, maxsize/2):
+                    self.warn("too many pending events: %d/%d" % (qsize,maxsize) )
 
                 # 检查是否存在对该事件进行监听的处理函数
                 if not event.type in self.__subscribers.keys():
@@ -1002,10 +1018,7 @@ class Program(object):
     def publish(self, event):
         '''向事件队列中存入事件'''
         self.__queue.put(event)
-
-    @property
-    def pendingSize(self):
-        return self.__queue.qsize()
+        return self.__queue.qsize(), self.__queue.maxsize
 
     def getConfig(self, configName, defaultVal, pop=False) :
         try :

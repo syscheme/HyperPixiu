@@ -28,11 +28,13 @@ class EventEnd(BaseApplication):
         super(EventEnd, self).__init__(program, **kwargs)
 
         # 事件队列
-        self.__queOutgoing = Queue(maxsize=100)
+        self._queOutgoing = Queue(maxsize=100)
+        self._queIncoming = Queue(maxsize=100)
         self.__selfstamp = '%s@%s' % (self.program.progId, self.program.hostname)
 
-        self._topicsOutgoing  = self.getConfig('outgoing', [])
-        self._topicsIncomming  = self.getConfig('incoming', ['*'])
+        self._topicsOutgoing   = self.getConfig('outgoing', [])
+        self._topicsIncomming  = self.getConfig('incoming', [])
+        self._subQuit   = False
 
     @abstractmethod
     def send(self, event):
@@ -65,25 +67,25 @@ class EventEnd(BaseApplication):
     # impl/overwrite of BaseApplication
     def OnEvent(self, ev):
         '''
-        dispatch the event
+        forward the local events to the remote eventChannel
         '''
         if ev.publisher or not ev.type in self._topicsOutgoing: # ignore those undeclared type and were captured from remote
             return
         
         ev = copy(ev)
         ev.sign(self.__selfstamp)
-        self.__queOutgoing.put(ev)
+        self._queOutgoing.put(ev)
 
     def doAppStep(self):
         super(EventEnd, self).doAppStep()
         
         # step 1. forward the outgoing events
-        ev = True # dummy
         cSent, cRecv =0, 0
+        ev = True # dummy
         while ev and cSent <10:
             ev = None
             try :
-                ev = self.__queOutgoing.get(block =False, timeout = 0.1)  # 获取事件的阻塞时间设为0.1秒
+                ev = self._queOutgoing.get(block =False, timeout =0.1)  # 获取事件的阻塞时间设为0.1秒
                 if ev :
                     self.send(ev)
             except Empty:
@@ -96,11 +98,26 @@ class EventEnd(BaseApplication):
                 self.logexception(ex)
             
         # step 2. receive the incomming events
-        ev = self.recv(0.1)
-        if ev and self.topicOfEvent(ev) in self._topicsIncomming:
-            if ev.publisher and not self.__selfstamp in ev.publisher:
-                self.postEvent(ev)
-            cRecv +=1
+        ev = True # dummy
+        while ev and cRecv <10:
+            ev = None
+            try :
+                ev = self._queIncoming.get(block =False, timeout = 0.1)  # 获取事件的阻塞时间设为0.1秒
+                if self.topicOfEvent(ev) in self._topicsIncomming:
+                    cRecv +=1
+                    if not ev.publisher or self.__selfstamp in ev.publisher:
+                        self.debug("self-echo[%s] ignored: %s"%(ev.publisher, ev.desc))
+                        continue
+
+                    self.postEvent(ev)
+            except Empty:
+                break
+            except KeyboardInterrupt:
+                self._bRun = False
+                self.error("quit per KeyboardInterrupt")
+                break
+            except Exception as ex:
+                self.logexception(ex)
 
         return cRecv + cSent;
 
@@ -111,6 +128,7 @@ class EventEnd(BaseApplication):
         if len(self._topicsOutgoing) + len(self._topicsIncomming) <=0 :
             return False
 
+        # subscribe from local events about to forward
         for et in self._topicsOutgoing:
             self.subscribeEvent(et)
         
@@ -157,12 +175,15 @@ class ZmqEE(EventEnd):
         if not self.__soPub:
             self.__soPub = self.__ctxZMQ.socket(zmq.PUB)
             self.__soPub.connect(self.__epPUB)
-            self.info('connected pub to ech[%s]'% (self.__epPUB))
+            self.info('connected pub to evch[%s]'% (self.__epPUB))
 
         pklstr = pickle.dumps(ev) # this is bytes
+        #NO such API: self.__soPub.connect()
         msg = self.topicOfEvent(ev).encode() + ZMQ_DELIMITOR_TOPIC.encode() + pklstr # this is bytes
         self.__soPub.send(msg) # send must take bytes
-        self.debug('sent to ech[%s]: %s'% (self.__epPUB, ev.desc))
+        #NO such API: self.__soPub.close()
+
+        self.debug('sent to evch[%s]: %s'% (self.__epPUB, ev.desc))
 
     def recv(self, secTimeout=0.1):
         ev = None
@@ -178,12 +199,16 @@ class ZmqEE(EventEnd):
                 subscribedTopics.append(topicfilter)
 
             self.__poller.register(self.__soSub, zmq.POLLIN)
-            self.info('subscribed from ech[%s] for %d-topic %s' % (self.__epSUB, len(subscribedTopics), ','.join(subscribedTopics)))
+            self.info('subscribed from evch[%s] for %d-topic: %s' % (self.__epSUB, len(subscribedTopics), ','.join(subscribedTopics)))
 
-        if not self.__poller.poll(int(100)): # 100msec timeout
+        # if not self.__poller.poll(int(100)): # 100msec timeout
+        #     return None
+        socks = dict(self.__poller.poll(int(secTimeout*1000)))
+        if not self.__soSub in socks or socks[self.__soSub] != zmq.POLLIN:
             return None
-
+        
         msg = self.__soSub.recv()
+
         pos = msg.find(ZMQ_DELIMITOR_TOPIC.encode())
         if pos <=0: return None
 
@@ -192,7 +217,7 @@ class ZmqEE(EventEnd):
         # necessary to filter arrivals as topicfilter covered it: 
         # if topic in self._topicsIncomming:
         ev = pickle.loads(pklstr)
-        self.debug('recv from ech[%s]: %s'% (self.__epSUB, ev.desc))
+        self.debug('recv from evch[%s]: %s'% (self.__epSUB, ev.desc))
         return ev
 
     #----------------------------------------------------------------------
@@ -339,3 +364,154 @@ class ZmqEventChannel(BaseApplication):
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
+
+
+import redis
+########################################################################
+class RedisEE(EventEnd):
+
+    def __init__(self, program, **kwargs) :
+        super(RedisEE, self).__init__(program, **kwargs)
+
+        self._redisHost    = self.getConfig('host', "localhost")
+        self._redisPort    = self.getConfig('port', 6379)
+        self._redisPasswd  = self.getConfig('password', None)
+        self.__redisConn   = None
+        self.__connPool    = redis.ConnectionPool(host=self._redisHost, port=self._redisPort, password=self._redisPasswd, db=0, socket_connect_timeout=1.0)
+
+        # start a background threaded Sub because redis subscribe.listen() is a blocking call
+        self.__threadSub   = None
+
+    @property
+    def myStamp(self):
+        return self._redisHost
+
+    def send(self, ev):
+        if not ev: return
+        if self.__redisConn is None:
+            self.__connect()
+        
+        if not self.__redisConn:
+            return
+
+        pklstr = pickle.dumps(ev) # this is bytes
+        try :
+            self.__redisConn.publish(ev.type, pklstr)
+            self.debug('sent to evch[%s:%s]: %s'% (self._redisHost, self._redisPort, ev.desc))
+        except Exception as ex:
+            self.logexception(ex)
+            self.__redisConn.close()
+            self.__redisConn =None
+
+    def recv(self, secTimeout=0.1): return None
+
+    def __connect(self) :
+        try :
+            if self.__redisConn: self.__redisConn.close()
+            self.__redisConn = None
+            self.debug('connecting to evch[%s:%s]'% (self._redisHost, self._redisPort))
+            self.__redisConn = redis.StrictRedis(connection_pool=self.__connPool)
+        except Exception as ex:
+            self.debug('failed to connect to evch[%s:%s]'% (self._redisHost, self._redisPort))
+
+    #----------------------------------------------------------------------
+    # impl/overwrite of BaseApplication
+    def doAppInit(self): # return True if succ
+        if not super(RedisEE, self).doAppInit() :
+            return False
+
+        self.__connect()
+        if not self.__redisConn : return False
+
+        if len(self._topicsIncomming) >0 :
+            self.__threadSub = threading.Thread(target=self.__execSub)
+
+        if self.__threadSub:
+            self.__threadSub.start()
+        
+        return True
+
+    # overwrite of EventEnd due to blocking
+    # def doAppStep(self):
+    #     cActivitis = super(RedisEE, self).doAppStep()
+
+    #     if not self.__ps or len(self._topicsIncomming) <=0 :
+    #         return 0
+
+    #     for msg in self.__ps.listen(): # BLOCKING here
+    #         if msg['type'] != 'message':
+    #             continue
+
+    #         evType = msg['channel']
+    #         pklstr = msg['data'] 
+    #         ev = pickle.loads(pklstr)
+    #         if ev:
+    #             if self.topicOfEvent(ev) in self._topicsIncomming:
+    #                 if ev.publisher and not self.__selfstamp in ev.publisher:
+    #                     self.postEvent(ev)
+    #                 cRecv +=1
+
+    def stop(self):
+        ''' call to stop this
+        '''
+        self._subQuit = True
+        if self.__redisConn:
+            self.__redisConn.close()
+
+        if self.__threadSub :
+            try:
+                self.__threadSub.stop()
+            except:
+                pass
+
+            self.__threadSub.join()
+            
+        self.debug('RedisEE stopping')
+
+        return super(RedisEE, self).stop()
+
+    # end of BaseApplication routine
+    #----------------------------------------------------------------------
+
+    def __execSub(self):
+        ps = None
+        if not self.__redisConn or len(self._topicsIncomming) <=0 :
+            return 0
+
+        # self._topicsIncomming = ['evTAdv', 'evmdKL1m'] # TEST ONLY
+        while not self._subQuit:
+            try:
+                if ps is None:
+                    if self.__redisConn is None:
+                        self.__connect()
+
+                    if self.__redisConn:
+                        ps = self.__redisConn.pubsub()
+                        for s in self._topicsIncomming:
+                            topicfilter = '%s' % s
+                            if len(topicfilter) <=0: continue
+                            ps.subscribe(topicfilter)
+
+                    sleep(0.5)
+                    continue # to test _subQuit
+
+                for msg in ps.listen(): # BLOCKING here
+                    if self._subQuit: break
+                    if msg['type'] != 'message':
+                        continue
+
+                    evType = msg['channel'].decode()
+                    if not evType or len(evType)<=0 or not evType in self._topicsIncomming:
+                        continue
+
+                    pklstr = msg['data'] 
+                    ev = pickle.loads(pklstr)
+                    if not ev : continue
+
+                    self._queIncoming.put(ev)
+                    self.debug('remoteEvent from evch[%s:%s]: %s' % (self._redisHost, self._redisPort, ev.desc))
+            except Exception as ex:
+                self.logexception(ex)
+                ps = None
+                if self.__redisConn:  self.__redisConn.close()
+                self.__redisConn = None

@@ -34,6 +34,7 @@ class EventEnd(BaseApplication):
 
         self._topicsOutgoing   = self.getConfig('outgoing', [])
         self._topicsIncomming  = self.getConfig('incoming', [])
+        self._subQuit   = False
 
     @abstractmethod
     def send(self, event):
@@ -103,9 +104,12 @@ class EventEnd(BaseApplication):
             try :
                 ev = self._queIncoming.get(block =False, timeout = 0.1)  # 获取事件的阻塞时间设为0.1秒
                 if self.topicOfEvent(ev) in self._topicsIncomming:
-                    if ev.publisher and not self.__selfstamp in ev.publisher:
-                        self.postEvent(ev)
                     cRecv +=1
+                    if not ev.publisher or self.__selfstamp in ev.publisher:
+                        self.debug("self-echo[%s] ignored: %s"%(ev.publisher, ev.desc))
+                        continue
+
+                    self.postEvent(ev)
             except Empty:
                 break
             except KeyboardInterrupt:
@@ -373,10 +377,9 @@ class RedisEE(EventEnd):
         self._redisPort    = self.getConfig('port', 6379)
         self._redisPasswd  = self.getConfig('password', None)
         self.__redisConn   = None
-        self.__appSub      = None
 
-        if len(self._topicsIncomming) >0 : # start a background threaded Sub because redis subscribe.listen() is a blocking call
-            self.__threadSub = threading.Thread(target=self.__execSub)
+        # start a background threaded Sub because redis subscribe.listen() is a blocking call
+        self.__threadSub   = None
 
     @property
     def myStamp(self):
@@ -410,6 +413,9 @@ class RedisEE(EventEnd):
         self.__connect()
         if not self.__redisConn : return False
 
+        if len(self._topicsIncomming) >0 :
+            self.__threadSub = threading.Thread(target=self.__execSub)
+
         if self.__threadSub:
             self.__threadSub.start()
         
@@ -438,6 +444,7 @@ class RedisEE(EventEnd):
     def stop(self):
         ''' call to stop this
         '''
+        self._subQuit = True
         if not self.__threadSub :
             return
 
@@ -455,24 +462,34 @@ class RedisEE(EventEnd):
         if not self.__redisConn or len(self._topicsIncomming) <=0 :
             return 0
 
-        ps = self.__redisConn.pubsub()
-        # self._topicsIncomming = ['evTAdv', 'evmdKL1m']
-        for s in self._topicsIncomming:
-            topicfilter = '%s' % s
-            if len(topicfilter) <=0: continue
-            ps.subscribe(topicfilter)
+        self._topicsIncomming = ['evTAdv', 'evmdKL1m']
+        while not self._subQuit:
+            try:
+                if ps is None:
+                    ps = self.__redisConn.pubsub()
+                    for s in self._topicsIncomming:
+                        topicfilter = '%s' % s
+                        if len(topicfilter) <=0: continue
+                        ps.subscribe(topicfilter)
+                        
+                    sleep(0.5)
+                    continue # to test _subQuit
 
-        for msg in ps.listen(): # BLOCKING here
-            if msg['type'] != 'message':
-                continue
+                for msg in ps.listen(): # BLOCKING here
+                    if self._subQuit: break
+                    if msg['type'] != 'message':
+                        continue
 
-            evType = msg['channel'].decode()
-            if not evType or len(evType)<=0 or not evType in self._topicsIncomming:
-                continue
+                    evType = msg['channel'].decode()
+                    if not evType or len(evType)<=0 or not evType in self._topicsIncomming:
+                        continue
 
-            pklstr = msg['data'] 
-            ev = pickle.loads(pklstr)
-            if not ev : continue
+                    pklstr = msg['data'] 
+                    ev = pickle.loads(pklstr)
+                    if not ev : continue
 
-            self._queIncoming.put(ev)
-            self.debug('remoteEvent from evch[%s:%s]: %s' % (self._redisHost, self._redisPort, ev.desc))
+                    self._queIncoming.put(ev)
+                    self.debug('remoteEvent from evch[%s:%s]: %s' % (self._redisHost, self._redisPort, ev.desc))
+            except Exception as ex:
+                self.logexception(ex)
+                ps = None

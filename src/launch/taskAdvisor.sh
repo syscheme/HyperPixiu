@@ -6,7 +6,7 @@ BAKSTAMP=$(date +%Y%m%dT%H%M%S)
 
 cd ${TOPDIR_HP}
 OUTDIR=./out/advisor
-CONF=./conf/Advisor.json
+CONF=$(realpath ~/deploy-data/hpdata/Advisor.json)
 
 PID=$(ps aux|grep 'advisor.py'|grep ${CONF}|awk '{print $2;}')
 if ! [ -z ${PID} ]; then
@@ -31,6 +31,11 @@ for s in ${SECU_LIST}; do
 done
 OBJ_LIST="${OBJ_LIST}]"
 echo ${OBJ_LIST}
+
+if ! [ -e ${CONF} ]; then
+    echo "no ${CONF} exists, duplicated from ${TOPDIR_HP}/conf/Advisor.json"
+    cp -vf ${TOPDIR_HP}/conf/Advisor.json ${CONF}
+fi
 
 SED_STATEMENT="s/^[ \t]*\\\"objectives\\\".*:.*/   \\\"objectives\\\": ${OBJ_LIST}, \/\/ updated at ${BAKSTAMP}/g"
 sed -i "${SED_STATEMENT}" ${CONF}

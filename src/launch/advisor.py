@@ -23,7 +23,7 @@ if __name__ == '__main__':
         sys.argv += ['-f', os.path.realpath(os.path.dirname(os.path.abspath(__file__))+ '/../../conf') + '/Advisor.json']
 
     p = Program()
-    p._heartbeatInterval =-1
+    p._heartbeatInterval =0.2
 
     advType     = p.getConfig('advisor/type', "dnn.S1548I4A3")
     evMdSource  = p.getConfig('marketEvents/source', 'sina') # market data event source
@@ -60,6 +60,8 @@ if __name__ == '__main__':
             # instance a HistData but no remote EventEnd needed
             csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
             pbApp = p.createApp(hist.PlaybackApp, playback= csvreader)
+
+            p._heartbeatInterval =-1
             break
 
         # remote EventEnd should be wished when market source is a crawler

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SECU_LIST="SZ159949 SH510050 SH510300 SH510500 SH510310 SH512000 SZ159919 SZ159952 SH512760 SH512930"
+SECU_LIST=$(grep -o '^S[HZ][0-9]*' ~/deploy-data/hpdata/advisor_objs.txt)
 TOPDIR_HP=~/wkspaces/HyperPixiu
 BAKSTAMP=$(date +%Y%m%dT%H%M%S)
 

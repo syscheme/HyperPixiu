@@ -120,7 +120,7 @@ class TradeAdvisor(BaseApplication):
                 self.error('no MarketState found')
                 return False
 
-            self.info('taking MarketState[%s]' % self._marketState.ident)
+            self.debug('taking MarketState[%s]' % self._marketState.ident)
 
         if len(self.__dictAdvices) <=0:
             sl = self._marketState.listOberserves()
@@ -130,6 +130,8 @@ class TradeAdvisor(BaseApplication):
         if self._marketState :
             for symbol in self.objectives:
                 self._marketState.addMonitor(symbol)
+
+            self.info('taking MarketState[%s] on %d objectives: %s' % (self._marketState.ident, len(self.objectives), ','.join(self.objectives)))
 
         self.subscribeEvent(EVENT_TICK)
         self.subscribeEvent(EVENT_KLINE_1MIN)

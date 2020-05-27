@@ -97,7 +97,7 @@ class BaseApplication(MetaApp):
         super(BaseApplication, self).__init__()
         
         self._program = program
-        self.__active = False    # 工作状态
+        self.__eventTrigger = False
         self._threadWished = False
         self._id =""
         self.__jsettings = None
@@ -141,19 +141,19 @@ class BaseApplication(MetaApp):
 
     @property
     def isActive(self) :
-        return self.__active
+        return self.__eventTrigger and self.program.isAppActive(self.ident)
 
     #------Impl of MetaApp --------------------------------------------------
     def theApp(self): return self
 
     def stop(self):
         # TODO:
-        self.__active = False
+        self.__eventTrigger = False
 
     #--- pollable step routine for ThreadedAppWrapper -----------------------
     @abstractmethod
     def doAppInit(self): # return True if succ
-        self.__active = True
+        self.__eventTrigger = True
         try :
             statinfo = os.stat(self.outdir)
         except :
@@ -163,7 +163,7 @@ class BaseApplication(MetaApp):
                 pass
 
         next(self.__gen)
-        return self.__active
+        return True
 
     @abstractmethod
     def doAppStep(self):
@@ -173,7 +173,7 @@ class BaseApplication(MetaApp):
         return False
 
     def _generator(self) :
-        while self.isActive :
+        while self.__eventTrigger :
             try:
                 event = yield self.ident
                 if isinstance(event, Event):
@@ -774,6 +774,12 @@ class Program(object):
         
         return ret
 
+    def isAppActive(self, appId):
+        if not appId or not self.__activeApps or len(self.__activeApps)<=0:
+            return False
+
+        return appId in self.__activeApps
+
     #----------------------------------------------------------------------
     def start(self, daemonize=False):
         if self.__activeApps and len(self.__activeApps) >0 :
@@ -794,12 +800,12 @@ class Program(object):
             if app == None:
                 continue
             
-            self.debug('staring app[%s]' % appId)
+            self.debug('starting app[%s]' % appId)
             if not app.doAppInit() :
                 self.error('failed to initialize app[%s]' % appId)
             else :
-                self.__activeApps.append(appId)
-                self.info('initialized app[%s]' % appId)
+                self.__activeApps.append(app.ident)
+                self.info('initialized app[%s] as %s' % (appId, app.ident))
 
         if len(self.__activeApps) <=0 : 
             self._bRun =False

@@ -73,6 +73,8 @@ if __name__ == '__main__':
             break
 
     p.start()
-    p.loop()
+
+    if advisor.isActive:
+        p.loop()
     
     p.stop()

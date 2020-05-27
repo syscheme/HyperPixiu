@@ -44,25 +44,33 @@ if __name__ == '__main__':
     SYMBOL = objectives[0]
 
     rec    = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.outdir, '%s.tcsv' % p.progId))
-    # revents = p.createApp(ZmqEE, configNode ='remoteEvents/zmq')
-    revents = p.createApp(RedisEE, configNode ='remoteEvents/redis')
-    # now read config: revents.registerOutgoing([EVENT_ADVICE])
 
+    # now read config: revents.registerOutgoing([EVENT_ADVICE])
     p.info('all objects registered piror to Advisor: %s' % p.listByType())
     advisor = p.createApp(DnnAdvisor_S1548I4A3, configNode ='advisor', objectives=objectives, recorder=rec)
     advisor._exchange = exchange
     objectives = advisor.objectives
 
-    if 'sina' == evMdSource:
-        mc = p.createApp(SinaCrawler, configNode ='sina', marketState = advisor.marketState, recorder=rec)
-        mc._postCaptured = True
-        mc.subscribe(objectives)
-    elif '/' in evMdSource and len(objectives)>0: # evMdSource looks like a file or directory
-        SYMBOL = objectives[0] # csvPlayback can only cover one symbol
-        evMdSource = Program.fixupPath(evMdSource)
-        p.info('taking input dir %s for symbol[%s]' % (evMdSource, SYMBOL))
-        csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
-        pbApp = p.createApp(hist.PlaybackApp, playback= csvreader)
+    for dummy in range(1): # dummy one-round loop
+        if '/' in evMdSource and len(objectives)>0: # evMdSource looks like a local file or directory
+            SYMBOL = objectives[0] # csvPlayback can only cover one symbol
+            evMdSource = Program.fixupPath(evMdSource)
+            p.info('taking input dir %s for symbol[%s]' % (evMdSource, SYMBOL))
+
+            # instance a HistData but no remote EventEnd needed
+            csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
+            pbApp = p.createApp(hist.PlaybackApp, playback= csvreader)
+            break
+
+        # remote EventEnd should be wished when market source is a crawler
+        # revents = p.createApp(ZmqEE, configNode ='remoteEvents/zmq')
+        revents = p.createApp(RedisEE, configNode ='remoteEvents/redis')
+
+        if 'sina' == evMdSource:
+            mc = p.createApp(SinaCrawler, configNode ='sina', marketState = advisor.marketState, recorder=rec)
+            mc._postCaptured = True
+            mc.subscribe(objectives)
+            break
 
     p.start()
     p.loop()

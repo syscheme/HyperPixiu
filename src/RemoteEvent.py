@@ -377,6 +377,7 @@ class RedisEE(EventEnd):
         self._redisPort    = self.getConfig('port', 6379)
         self._redisPasswd  = self.getConfig('password', None)
         self.__redisConn   = None
+        self.__connPool    = redis.ConnectionPool(host=self._redisHost, port=self._redisPort, password=self._redisPasswd, db=0, socket_connect_timeout=1.0)
 
         # start a background threaded Sub because redis subscribe.listen() is a blocking call
         self.__threadSub   = None
@@ -390,7 +391,8 @@ class RedisEE(EventEnd):
         if self.__redisConn is None:
             self.__connect()
         
-        if not self.__redisConn: return
+        if not self.__redisConn:
+            return
 
         pklstr = pickle.dumps(ev) # this is bytes
         try :
@@ -404,8 +406,13 @@ class RedisEE(EventEnd):
     def recv(self, secTimeout=0.1): return None
 
     def __connect(self) :
-        self.__redisConn = redis.StrictRedis(host=self._redisHost, port=self._redisPort, db=3, password=self._redisPasswd)
-        self.info('connected to evch[%s:%s]'% (self._redisHost, self._redisPort))
+        try :
+            if self.__redisConn: self.__redisConn.close()
+            self.__redisConn = None
+            self.debug('connecting to evch[%s:%s]'% (self._redisHost, self._redisPort))
+            self.__redisConn = redis.StrictRedis(connection_pool=self.__connPool)
+        except Exception as ex:
+            self.debug('failed to connect to evch[%s:%s]'% (self._redisHost, self._redisPort))
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -465,7 +472,7 @@ class RedisEE(EventEnd):
         if not self.__redisConn or len(self._topicsIncomming) <=0 :
             return 0
 
-        self._topicsIncomming = ['evTAdv', 'evmdKL1m']
+        # self._topicsIncomming = ['evTAdv', 'evmdKL1m'] # TEST ONLY
         while not self._subQuit:
             try:
                 if ps is None:
@@ -500,5 +507,5 @@ class RedisEE(EventEnd):
             except Exception as ex:
                 self.logexception(ex)
                 ps = None
-                self.__redisConn.close()
+                if self.__redisConn:  self.__redisConn.close()
                 self.__redisConn = None

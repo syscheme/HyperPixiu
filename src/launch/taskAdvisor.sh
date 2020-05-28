@@ -2,7 +2,7 @@
 
 SECU_LIST=$(grep -o '^S[HZ][0-9]*' ~/deploy-data/hpdata/advisor_objs.txt)
 TOPDIR_HP=~/wkspaces/HyperPixiu
-BAKSTAMP=$(date +%Y%m%dT%H%M%S)
+STAMP=$(date +%Y%m%dT%H%M%S)
 
 cd ${TOPDIR_HP}
 OUTDIR=./out/advisor
@@ -20,10 +20,11 @@ for i in ${PID_LIST}; do
 done
 cp -vf ${CONF} ${OUTDIR}/
 
-mv ${OUTDIR} ${OUTDIR}.BAK${BAKSTAMP}
+mv -vf ${OUTDIR} ${OUTDIR}.BAK${STAMP}
 mkdir -p ${OUTDIR}
-#?????TODO  cp -vf ${OUTDIR}.BAK${BAKSTAMP}/*.ss ${OUTDIR}/
-nice -n 15 bash -c "tar cfvj ${OUTDIR}.BAK${BAKSTAMP}.tar.bz2 ${OUTDIR}.BAK${BAKSTAMP} ; rm -rf ${OUTDIR}.BAK${BAKSTAMP}" &
+cp -vf ${OUTDIR}.BAK${STAMP}/*.ss ${OUTDIR}  # take the existing safestore
+rm -rf ${OUTDIR}.BAK${STAMP}/*.lock
+nice -n 15 bash -c "tar cfvj ${OUTDIR}.BAK${STAMP}.tar.bz2 ${OUTDIR}.BAK${STAMP} ; rm -rf ${OUTDIR}.BAK${STAMP}" &
 
 OBJ_LIST="["
 for s in ${SECU_LIST}; do
@@ -37,10 +38,10 @@ if ! [ -e ${CONF} ]; then
     cp -vf ${TOPDIR_HP}/conf/Advisor.json ${CONF}
 fi
 
-SED_STATEMENT="s/^[ \t]*\\\"objectives\\\".*:.*/   \\\"objectives\\\": ${OBJ_LIST}, \/\/ updated at ${BAKSTAMP}/g"
+SED_STATEMENT="s/^[ \t]*\\\"objectives\\\".*:.*/   \\\"objectives\\\": ${OBJ_LIST}, \/\/ updated at ${STAMP}/g"
 sed -i "${SED_STATEMENT}" ${CONF}
 
-SED_STATEMENT="s/^.*\\\"console\\\".*:.*/   \\\"console\\\": \\\"False\\\", \/\/ updated at ${BAKSTAMP}/g"
+SED_STATEMENT="s/^.*\\\"console\\\".*:.*/   \\\"console\\\": \\\"False\\\", \/\/ updated at ${STAMP}/g"
 sed -i "${SED_STATEMENT}" ${CONF}
 
 ./run.sh ./src/launch/advisor.py -f ${CONF} 2>&1 >/dev/null &

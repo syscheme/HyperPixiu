@@ -777,11 +777,14 @@ class OnlineSimulator(MetaTrader):
         self.__execStamp_appStart = datetime.now()
         self.__dtLastData = None
         self._maxBalance = self._startBalance
+        self._openDays = 0
 
-        if self.__wkTrader._tradeSymbol:
-            self.program.setShelveFilename('%s%s/%s.ss' % (self.dataRoot, self.program.baseName, self.__wkTrader._tradeSymbol))
-        else:
+        try :
+            if self.__wkTrader._tradeSymbol:
+                self.program.setShelveFilename('%s%s/%s.ss' % (self.dataRoot, self.program.baseName, self.__wkTrader._tradeSymbol))
+        except:
             self.program.setShelveFilename('%s%s/dummy.ss' % (self.dataRoot, self.program.baseName))
+            
         # backtest will always clear the datapath
         # try :
         #     shutil.rmtree(self.__wkTrader.outdir)
@@ -792,8 +795,6 @@ class OnlineSimulator(MetaTrader):
         #     os.makedirs(self.__wkTrader.outdir)
         # except:
         #     pass
-
-        self._openDays = 0
 
     @property
     def wkTrader(self) :
@@ -937,8 +938,21 @@ class OnlineSimulator(MetaTrader):
         self.subscribeEvent(EVENT_KLINE_5MIN)
         self.subscribeEvent(EVENT_KLINE_1DAY)
 
-        if self.__wkTrader._tradeSymbol:
-            self.program.setShelveFilename('%s%s/%s.ss' % (self.dataRoot, self.program.baseName, self.__wkTrader._tradeSymbol))
+        symbolBy = None
+        try :
+            if self.__wkTrader._tradeSymbol:
+                symbolBy = self.__wkTrader._tradeSymbol
+        except:
+            pass
+
+        if not symbolBy and len(self.__wkTrader._dictObjectives) >0:
+            symbolBy = list(self.__wkTrader._dictObjectives.keys())[0]
+
+        if symbolBy:
+            svfn = '%s%s/%s.ss' % (self.dataRoot, self.program.baseName, symbolBy)
+            self.program.setShelveFilename(svfn)
+            self.debug('doAppInit() updated SS filename to %s' % svfn)
+
         self.info('doAppInit() done, obj-in-program: %s' % (self._program.listByType(MetaObj)))
         return True
 

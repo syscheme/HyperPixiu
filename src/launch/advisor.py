@@ -46,7 +46,6 @@ if __name__ == '__main__':
 
     rec    = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.outdir, '%s.tcsv' % p.progId))
 
-    # now read config: revents.registerOutgoing([EVENT_ADVICE])
     p.info('all objects registered piror to Advisor: %s' % p.listByType())
     advisor = p.createApp(DnnAdvisor_S1548I4A3, configNode ='advisor', objectives=objectives, recorder=rec)
     advisor._exchange = exchange
@@ -68,6 +67,8 @@ if __name__ == '__main__':
         # remote EventEnd should be wished when market source is a crawler
         # revents = p.createApp(ZmqEE, configNode ='remoteEvents/zmq')
         revents = p.createApp(RedisEE, configNode ='remoteEvents/redis')
+        # advisor minimally delivers [EVENT_ADVICE, EVENT_TICK_OF_ADVICE]
+        revents.registerOutgoing([EVENT_ADVICE, EVENT_TICK_OF_ADVICE])
 
         if 'sina' == evMdSource:
             mc = p.createApp(SinaCrawler, configNode ='sina', marketState = advisor.marketState, recorder=rec)

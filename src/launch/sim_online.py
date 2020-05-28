@@ -5,11 +5,11 @@ from Trader import BaseTrader
 from Simulator import OnlineSimulator
 import HistoryData as hist
 
-from TradeAdvisor import EVENT_ADVICE
+from TradeAdvisor import EVENT_ADVICE, EVENT_TICK_OF_ADVICE
 from advisors.dnn import DnnAdvisor_S1548I4A3
 
 from crawler.crawlSina import *
-from RemoteEvent import ZmqEE
+from RemoteEvent import RedisEE
 
 import sys, os, platform
 
@@ -50,20 +50,29 @@ if __name__ == '__main__':
     rec     = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(simulator.outdir, 'online_%s.tcsv' % SYMBOL))
     simulator.setRecorder(rec)
 
-    if 'remote' == advisorType :
-        revents = p.createApp(ZmqEE, configNode ='remoteEvents/zmq')
-        revents.subscribeIncoming([EVENT_ADVICE])
-    else :
-        p.info('all objects registered piror to local Advisor: %s' % p.listByType())
-        advisor = p.createApp(DnnAdvisor_S1548I4A3, configNode ='advisor', objectives=objectives, recorder=rec)
-        advisor._exchange = tdrCore.account.exchange
+    revents = p.createApp(RedisEE, configNode ='remoteEvents/redis')
 
-    if False: # 'sina' != evMdSource
-        pass
-    else:
-        mc = p.createApp(SinaCrawler, configNode ='crawler', marketState = tdrCore._marketState, recorder=rec) # md = SinaCrawler(p, None);
-        mc._postCaptured = True
-        mc.subscribe([SYMBOL])
+    # about instant the TradeAdvisor
+    for dummy in range(1): # dummy one-round loop
+        if 'dnn.S1548I4A3' == advisorType :
+            p.info('all objects registered piror to local Advisor: %s' % p.listByType())
+            advisor = p.createApp(DnnAdvisor_S1548I4A3, configNode ='advisor', objectives=objectives, recorder=rec)
+            advisor._exchange = tdrCore.account.exchange
+            break
+
+        # take remote advisor by default, always subscribe [EVENT_ADVICE, EVENT_TICK_OF_ADVICE]
+        revents.subscribeIncoming([EVENT_ADVICE, EVENT_TICK_OF_ADVICE])
+
+    # about instant the crawler to fill marketState
+    for dummy in range(1): # dummy one-round loop
+        if 'sina' == evMdSource :
+            mc = p.createApp(SinaCrawler, configNode ='crawler', marketState = tdrCore._marketState, recorder=rec) # md = SinaCrawler(p, None);
+            mc._postCaptured = True
+            mc.subscribe([SYMBOL])
+            break
+
+        # assume the realtime market events are from remote event channel by default
+        revents.subscribeIncoming([EVENT_TICK, EVENT_KLINE_1MIN])
 
     p.start()
     if simulator.isActive : # and ...

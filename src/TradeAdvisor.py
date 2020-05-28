@@ -11,7 +11,8 @@ from Application  import BaseApplication, BOOL_STRVAL_TRUE
 from Account      import OrderData
 
 # event type
-EVENT_ADVICE      = EVENT_NAME_PREFIX + 'TAdv'  # 交易建议事件
+EVENT_ADVICE          = EVENT_NAME_PREFIX + 'TAdv'  # 交易建议事件
+EVENT_TICK_OF_ADVICE  = EVENT_TICK + 'Adv'  # the repeated tick that raised LONG/SHORT advice
 ADVICE_DIRECTIONS = [OrderData.DIRECTION_NONE, OrderData.DIRECTION_LONG, OrderData.DIRECTION_SHORT]
 
 import os
@@ -216,7 +217,7 @@ class TradeAdvisor(BaseApplication):
             self.debug('ignored NULL advice on event[%s]' % (ev.desc))
             return
 
-        newAdvice.dirString() # generate the dirString to ease reading
+        dir = newAdvice.dirString() # generate the dirString to ease reading
         
         newAdvice.advisorId = '%s@%s' %(self.ident, self.program.hostname)
         newAdvice.datetime  = d.asof
@@ -238,9 +239,16 @@ class TradeAdvisor(BaseApplication):
         evAdv = Event(EVENT_ADVICE)
         evAdv.setData(newAdvice)
         self.info('advice generated upon event[%s]: %s' % (ev.desc, evAdv.desc))
-
-        self.postEvent(evAdv)
         self.__dictAdvices[symbol] = newAdvice
+
+        if 'NONE' != dir:
+            # repeat the tick to remote eventChannel if this advice is based on a tick
+            if EVENT_TICK == ev.type:
+                nev = copy.copy(ev)
+                nev.type = EVENT_TICK_OF_ADVICE
+                self.postEvent(nev)
+
+            self.postEvent(evAdv)
 
         if self.__recMarketEvent :
             self._recorder.pushRow(ev.type, d)

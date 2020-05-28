@@ -16,7 +16,7 @@
     "remoteEvents": {
         "redis": {
             "host" : "tc.syscheme.com", // "172.16.20.170", 
-            "outgoing": ["evTAdv", "evmdKL1m"], // ["evTAdv","evmdKL5m"],
+            "outgoing": [], // advisor minimally delivers ["evTAdv", "evmdTickAdv"], list here if you have more
             "incoming": [], // ""
         },
 

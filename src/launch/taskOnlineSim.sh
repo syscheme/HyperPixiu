@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SECU_LIST=$(grep -o '^S[HZ][0-9]*' ~/deploy-data/hpdata/trade_objs.txt)
+SECU_LIST=$(grep -o '^S[HZ][0-9]*' ~/deploy-data/hpdata/sim_objs.txt)
 TOPDIR_HP=$(realpath ~/wkspaces/HyperPixiu)
 STAMP=$(date +%Y%m%dT%H%M%S)
 

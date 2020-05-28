@@ -54,6 +54,7 @@ class TradeAdvisor(BaseApplication):
 
         self._marketState = PerspectiveState(self._exchange) # take PerspectiveState by default
         self.__stampMStateRestored, self.__stampMStateSaved = None, None
+        self.__stampLastPost = None
         # try :
         #     shutil.rmtree(self.__wkTrader.outdir)
         # except:
@@ -241,17 +242,23 @@ class TradeAdvisor(BaseApplication):
         self.info('advice generated upon event[%s]: %s' % (ev.desc, evAdv.desc))
         self.__dictAdvices[symbol] = newAdvice
 
-        if 'NONE' != dir:
-            # repeat the tick to remote eventChannel if this advice is based on a tick
+        if 'NONE' != dir or not self.__stampLastPost or datetime2float(self.__stampLastPost) < datetime2float(newAdvice.datetime) -5*60: # reduce some NONE to remote eventCh
+            self.__stampLastPost = newAdvice.datetime
+
+            # repeat the tick to remote eventChannel if this advice is based on a tick, so that the Traders
+            # who subscribe EVENT_ADVICEs do NOT have to instantiate crawler or others only in order to get the recent price
             if EVENT_TICK == ev.type:
                 nev = copy.copy(ev)
                 nev.type = EVENT_TICK_OF_ADVICE
                 self.postEvent(nev)
 
+            # then post the advice
             self.postEvent(evAdv)
 
         if self.__recMarketEvent :
             self._recorder.pushRow(ev.type, d)
+
+        # MUST record the advice anyway
         self._recorder.pushRow(EVENT_ADVICE, newAdvice)
 
         return

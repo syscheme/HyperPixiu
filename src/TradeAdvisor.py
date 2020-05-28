@@ -39,10 +39,10 @@ class TradeAdvisor(BaseApplication):
         self.__dictAdvices = {} # dict of symbol to recent AdviceData
         self.__dictPerf = {} # dict of symbol to performance {'Rdaily':,'Rdstd':}
 
-        self._minimalAdvIntv = self.getConfig('minimalInterval', 5) # minimal interval in seconds between two advice s
-        self._exchange = self.getConfig('exchange', 'AShare')
-        self.__recMarketEvent = self.getConfig('recMarketEvent', 'False').lower() in BOOL_STRVAL_TRUE
-        self._enableMStateSS  = self.getConfig('enableMarketStateSafeStore', 'False').lower() in BOOL_STRVAL_TRUE # False to skip saving/restore the safestore of marketState, which is expected by BackTest/OfflineSimulator
+        self._minimalAdvIntv   = self.getConfig('minimalInterval', 5) # minimal interval in seconds between two advice s
+        self._exchange         = self.getConfig('exchange', 'AShare')
+        self.__recMarketEvent  = self.getConfig('recMarketEvent', 'False').lower() in BOOL_STRVAL_TRUE
+        self.__safeStoreIntval = self.getConfig('safeStoreInterval', 10) # <=0 to disable safestore
 
         if not objectives or not isinstance(objectives, list) or len(objectives) <=0:
             objectives = self.getConfig('objectives', [])
@@ -62,7 +62,7 @@ class TradeAdvisor(BaseApplication):
         #     os.makedirs(self.__wkTrader.outdir)
         # except:
         #     pass
-        self.program.setShelveFilename('%s%s.sobj' % (self.dataRoot, self.ident))
+        self.program.setShelveFilename('%s/%s/%s.sobj' % (self.dataRoot, self.program.baseName, self.ident))
 
     @property
     def marketState(self): return self._marketState # the default account
@@ -74,16 +74,16 @@ class TradeAdvisor(BaseApplication):
     def recorder(self): return self._recorder
 
     def __saveMarketState(self) :
-        if not self._enableMStateSS : return
+        if self.__safeStoreIntval <=0 : return
         try :
-            self.program.saveObject(self.marketState, '%s/marketState' % 'OnlineSimulator')
+            self.program.saveObject(self.marketState, 'marketState')
         except Exception as ex:
             self.logexception(ex)
 
     def __restoreMarketState(self) :
-        if not self._enableMStateSS : return None
+        if self.__safeStoreIntval <=0 : return
         try :
-            return self.program.loadObject('%s/marketState' % 'OnlineSimulator') # '%s/marketState' % self.__class__)
+            return self.program.loadObject('marketState') # '%s/marketState' % self.__class__)
         except Exception as ex:
             self.logexception(ex)
         return None
@@ -153,20 +153,22 @@ class TradeAdvisor(BaseApplication):
         return True
 
     def doAppStep(self):
-        if not super(TradeAdvisor, self).doAppInit() :
-            return False
-
-        saveInterval = timedelta(minutes=10)
-        #TODO: increase the saveInterval if it is off-hours
-        stampNow = datetime.now()
-        today = stampNow.strftime('%Y-%m-%d')
+        c = super(TradeAdvisor, self).doAppStep()
             
-        if not self.__stampMStateSaved:
-            self.__stampMStateSaved = stampNow
-            
-        if stampNow - self.__stampMStateSaved > saveInterval:
-            self.__stampMStateSaved = stampNow
-            self.__saveMarketState()
+        if self.__safeStoreIntval >0:
+            saveInterval = timedelta(minutes=self.__safeStoreIntval)
+            #TODO: increase the saveInterval if it is off-hours
+            stampNow = datetime.now()
+            today = stampNow.strftime('%Y-%m-%d')
+                
+            if not self.__stampMStateSaved:
+                self.__stampMStateSaved = stampNow
+                
+            if stampNow - self.__stampMStateSaved > saveInterval:
+                self.__stampMStateSaved = stampNow
+                self.__saveMarketState()
+        
+        return c+1
 
     def OnEvent(self, ev):
         '''

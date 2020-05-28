@@ -778,7 +778,7 @@ class OnlineSimulator(MetaTrader):
         self.__dtLastData = None
         self._maxBalance = self._startBalance
 
-        self.program.setShelveFilename('%s%s.sobj' % (self.dataRoot, self.ident))
+        self.program.setShelveFilename('%s/%s/%s.sobj' % (self.dataRoot, self.program.baseName, self.ident))
 
         # backtest will always clear the datapath
         # try :
@@ -819,16 +819,16 @@ class OnlineSimulator(MetaTrader):
 
     def __saveMarketState(self) :
         try :
-            self.program.saveObject(self.marketState, '%s/marketState' % 'OnlineSimulator')
+            self.program.saveObject(self.marketState, 'marketState')
         except Exception as ex:
             self.logexception(ex)
 
     def __restoreMarketState(self) :
         try :
-            return self.program.loadObject('%s/marketState' % 'OnlineSimulator') # '%s/marketState' % self.__class__)
+            return self.program.loadObject('marketState') # '%s/marketState' % self.__class__)
         except Exception as ex:
             self.logexception(ex)
-        return False
+        return None
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication

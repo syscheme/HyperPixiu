@@ -170,7 +170,7 @@ class BaseApplication(MetaApp):
         '''
         @return True if busy at this step
         '''
-        return False
+        return 0
 
     def _generator(self) :
         while self.__eventTrigger :

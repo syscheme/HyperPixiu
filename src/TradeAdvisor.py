@@ -62,7 +62,7 @@ class TradeAdvisor(BaseApplication):
         #     os.makedirs(self.__wkTrader.outdir)
         # except:
         #     pass
-        self.program.setShelveFilename('%s/%s/%s.sobj' % (self.dataRoot, self.program.baseName, self.ident))
+        self.program.setShelveFilename('%s/%s/%s.ss' % (self.dataRoot, self.program.baseName, self.ident))
 
     @property
     def marketState(self): return self._marketState # the default account

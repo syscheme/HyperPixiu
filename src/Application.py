@@ -564,7 +564,7 @@ class Program(object):
                 print('failed to load configure[%s]: %s' % (config_filename, e))
                 sys.exit(3)
 
-        self.__shelvefn = '%s/%s.sobj' % (self.__outdir, self.__progName)
+        self.__shelvefn = '%s/%s.ss' % (self.__outdir, self.__progName)
         # 记录今日日期
         self._runStartDate = datetime.now().strftime('%Y-%m-%d')
 

@@ -46,6 +46,6 @@ cp -vf ${FROM} out/sim_offline/
 echo "verifying model on symbol list: ${SECU_LIST}"
 
 for s in ${SECU_LIST} ; do
-        rm -rf ./out/sim_offline.sobj*
+        rm -rf ./out/sim_offline.ss*
         SYMBOL=$s nice ./run.sh ./src/launch/sim_offline.py;
 done &

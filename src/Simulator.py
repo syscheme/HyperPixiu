@@ -778,8 +778,10 @@ class OnlineSimulator(MetaTrader):
         self.__dtLastData = None
         self._maxBalance = self._startBalance
 
-        self.program.setShelveFilename('%s/%s/%s.sobj' % (self.dataRoot, self.program.baseName, self.ident))
-
+        if self.__wkTrader._tradeSymbol:
+            self.program.setShelveFilename('%s%s/%s.ss' % (self.dataRoot, self.program.baseName, self.__wkTrader._tradeSymbol))
+        else:
+            self.program.setShelveFilename('%s%s/dummy.ss' % (self.dataRoot, self.program.baseName))
         # backtest will always clear the datapath
         # try :
         #     shutil.rmtree(self.__wkTrader.outdir)
@@ -935,6 +937,8 @@ class OnlineSimulator(MetaTrader):
         self.subscribeEvent(EVENT_KLINE_5MIN)
         self.subscribeEvent(EVENT_KLINE_1DAY)
 
+        if self.__wkTrader._tradeSymbol:
+            self.program.setShelveFilename('%s%s/%s.ss' % (self.dataRoot, self.program.baseName, self.__wkTrader._tradeSymbol))
         self.info('doAppInit() done, obj-in-program: %s' % (self._program.listByType(MetaObj)))
         return True
 

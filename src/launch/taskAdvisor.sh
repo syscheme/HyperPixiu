@@ -22,7 +22,7 @@ cp -vf ${CONF} ${OUTDIR}/
 
 mv ${OUTDIR} ${OUTDIR}.BAK${BAKSTAMP}
 mkdir -p ${OUTDIR}
-#?????TODO  cp -vf ${OUTDIR}.BAK${BAKSTAMP}/*.sobj ${OUTDIR}/
+#?????TODO  cp -vf ${OUTDIR}.BAK${BAKSTAMP}/*.ss ${OUTDIR}/
 nice -n 15 bash -c "tar cfvj ${OUTDIR}.BAK${BAKSTAMP}.tar.bz2 ${OUTDIR}.BAK${BAKSTAMP} ; rm -rf ${OUTDIR}.BAK${BAKSTAMP}" &
 
 OBJ_LIST="["

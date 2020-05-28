@@ -22,7 +22,7 @@ done
 mv ${OUTDIR} ${OUTDIR}.BAK${STAMP}
 mkdir -p ${OUTDIR}
 # inherit the saved object from last-run
-cp -vf ${OUTDIR}.BAK${STAMP}/*.sobj ${OUTDIR}/
+cp -vf ${OUTDIR}.BAK${STAMP}/*.ss ${OUTDIR}/
 nice -n 15 bash -c "tar cfvj ${OUTDIR}.BAK${STAMP}.tar.bz2 ${OUTDIR}.BAK${STAMP} ; rm -rf ${OUTDIR}.BAK${STAMP}" &
 
 cd ${TOPDIR_HP}

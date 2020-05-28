@@ -31,6 +31,7 @@ if __name__ == '__main__':
     objectives  = p.getConfig('advisor/objectives', [])
 
     # In the case that this utility is started from a shell script, this reads env variables for the symbols
+    # the focus single SYMBOL is most likely used in History-Playback, while realtime crawler would take multiple objectives
     if 'SYMBOL' in os.environ.keys():
         SYMBOL = os.environ['SYMBOL']
         if len(SYMBOL) >0:

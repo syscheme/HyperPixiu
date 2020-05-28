@@ -5,7 +5,7 @@ SRC_DIR=$(realpath `dirname $0`)
 SYMBOLLIST=$(bzcat ${SRC_DIR}/symbols.txt.bz2)
 # SYMBOLLIST="SZ002881 SH600996 SZ002230"
 DATE=$(date +%Y%m%d)
-TARGETDIR="$(realpath ~/out)"
+TARGETDIR="$(realpath ~/hpdata)"
 
 #-------------------------------------
 RET=200

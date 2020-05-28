@@ -31,11 +31,11 @@ if ! [ -e ${CONF} ]; then
 fi
 
 for s in ${SECU_LIST}; do
-        export SYMBOL="$s"
-        RUN_ID="sim_online.${SYMBOL}"
-        cp -vf ${CONF} ${OUTDIR}/${RUN_ID}_${STAMP}.json
-        SED_STATEMENT="s/^[ \t]*\\\"id\\\".*:.*/      \\\"id\\\":\\\"${RUN_ID}\\\", \/\/ updated at ${STAMP}/g"
-        sed -i "${SED_STATEMENT}" ${OUTDIR}/${RUN_ID}_${STAMP}.json
-        ./run.sh ./src/launch/sim_online.py -f ${OUTDIR}/${RUN_ID}_${STAMP}.json &
+    export SYMBOL="$s"
+    RUN_ID="sim_online.${SYMBOL}"
+    cp -vf ${CONF} ${OUTDIR}/${RUN_ID}_${STAMP}.json
+    SED_STATEMENT="s/^[ \t]*\\\"id\\\".*:.*/      \\\"id\\\":\\\"${RUN_ID}\\\", \/\/ updated at ${STAMP}/g"
+    sed -i "${SED_STATEMENT}" ${OUTDIR}/${RUN_ID}_${STAMP}.json
+    ./run.sh ./src/launch/sim_online.py -f ${OUTDIR}/${RUN_ID}_${STAMP}.json &
 done
 

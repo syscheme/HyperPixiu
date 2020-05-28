@@ -60,10 +60,10 @@ class SinaCrawler(MarketCrawler):
     IDX_KLINE_5MIN = 'idx.'+EVENT_KLINE_5MIN
     IDX_KLINE_1DAY = 'idx.'+EVENT_KLINE_1DAY
     
-    MINs_OF_EVENT = {
+    INTV_MINs_OF_EVENTS = {
             EVENT_KLINE_5MIN: 5,
             EVENT_KLINE_1DAY: 240,
-            EVENT_MONEYFLOW_1MIN : 5,  # avoid 456 if query too frequently although the event is 1min-based
+            EVENT_MONEYFLOW_1MIN : 10,  # avoid 456 if query too frequently although the events are 1min-based
             EVENT_MONEYFLOW_1DAY : 240,
         }
 
@@ -237,7 +237,7 @@ class SinaCrawler(MarketCrawler):
                 continue
 
             stampStart = stampNow
-            minutes = SinaCrawler.MINs_OF_EVENT[evType]
+            minutes = SinaCrawler.INTV_MINs_OF_EVENTS[evType]
             self.__scheduleNext(s, evType, min(30, minutes)*60*0.7)
 
             # if minutes < 240:
@@ -325,7 +325,7 @@ class SinaCrawler(MarketCrawler):
                 continue
 
             stampStart = stampNow
-            minutes = SinaCrawler.MINs_OF_EVENT[evType]
+            minutes = SinaCrawler.INTV_MINs_OF_EVENTS[evType]
             self.__scheduleNext(s, evType, min(30, minutes)*60*0.7)
 
             httperr, result = self.GET_MoneyFlow(s, EVENT_MONEYFLOW_1MIN== evType)

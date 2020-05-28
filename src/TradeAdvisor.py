@@ -42,7 +42,7 @@ class TradeAdvisor(BaseApplication):
         self._minimalAdvIntv   = self.getConfig('minimalInterval', 5) # minimal interval in seconds between two advice s
         self._exchange         = self.getConfig('exchange', 'AShare')
         self.__recMarketEvent  = self.getConfig('recMarketEvent', 'False').lower() in BOOL_STRVAL_TRUE
-        self.__safeStoreIntval = self.getConfig('safeStoreInterval', 10) # <=0 to disable safestore
+        self.__intvSS_min      = self.getConfig('intvSafeStore', 10) # in minutes, <=0 to disable safestore
 
         if not objectives or not isinstance(objectives, list) or len(objectives) <=0:
             objectives = self.getConfig('objectives', [])
@@ -74,14 +74,14 @@ class TradeAdvisor(BaseApplication):
     def recorder(self): return self._recorder
 
     def __saveMarketState(self) :
-        if self.__safeStoreIntval <=0 : return
+        if self.__intvSS_min <=0 : return
         try :
             self.program.saveObject(self.marketState, 'marketState')
         except Exception as ex:
             self.logexception(ex)
 
     def __restoreMarketState(self) :
-        if self.__safeStoreIntval <=0 : return
+        if self.__intvSS_min <=0 : return
         try :
             return self.program.loadObject('marketState') # '%s/marketState' % self.__class__)
         except Exception as ex:
@@ -155,8 +155,8 @@ class TradeAdvisor(BaseApplication):
     def doAppStep(self):
         c = super(TradeAdvisor, self).doAppStep()
             
-        if self.__safeStoreIntval >0:
-            saveInterval = timedelta(minutes=self.__safeStoreIntval)
+        if self.__intvSS_min >0:
+            saveInterval = timedelta(minutes=self.__intvSS_min)
             #TODO: increase the saveInterval if it is off-hours
             stampNow = datetime.now()
             today = stampNow.strftime('%Y-%m-%d')

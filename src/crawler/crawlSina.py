@@ -63,7 +63,7 @@ class SinaCrawler(MarketCrawler):
     MINs_OF_EVENT = {
             EVENT_KLINE_5MIN: 5,
             EVENT_KLINE_1DAY: 240,
-            EVENT_MONEYFLOW_1MIN : 1,
+            EVENT_MONEYFLOW_1MIN : 5,  # avoid 456 if query too frequently although the event is 1min-based
             EVENT_MONEYFLOW_1DAY : 240,
         }
 

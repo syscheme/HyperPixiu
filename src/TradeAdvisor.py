@@ -20,7 +20,7 @@ import logging
 import json   # to save params
 from collections import OrderedDict
 from datetime import datetime, timedelta
-from copy import copy, deepcopy
+from copy import copy
 from abc import ABCMeta, abstractmethod
 import traceback
 import numpy as np
@@ -178,22 +178,22 @@ class TradeAdvisor(BaseApplication):
         '''
         if EVENT_ADVICE == ev.type : return # no nested dead loop
 
+        d = ev.data
+        if d.asof > (datetime.now() + timedelta(days=7)):
+            self.warn('Trade-End signal received: %s' % d.desc)
+            self.eventHdl_TradeEnd(ev)
+            return
+
         if MARKETDATE_EVENT_PREFIX != ev.type[:len(MARKETDATE_EVENT_PREFIX)] : return # advisor is supposed to only take care of market events
 
         if self._marketState:
             self._marketState.updateByEvent(ev)
 
-        d = ev.data
         tokens = (d.vtSymbol.split('.'))
         symbol = tokens[0]
         ds = tokens[1] if len(tokens) >1 else d.exchange
         if not symbol in self.objectives :
             return # ignore those not interested
-
-        if d.asof > (datetime.now() + timedelta(days=7)):
-            self.warn('Trade-End signal received: %s' % d.desc)
-            self.eventHdl_TradeEnd(ev)
-            return
 
         fstamp = datetime2float(d.asof)
         # repeat the tick to remote eventChannel if this advice is based on a tick, so that the Trader
@@ -201,7 +201,7 @@ class TradeAdvisor(BaseApplication):
         bTickDuplicated = False
         if EVENT_TICK == ev.type and symbol in self.__dictFstampLastPost.keys() and fstamp < self.__dictFstampLastPost[symbol] +20.0: # duplicate the tick for max 20sec
             bTickDuplicated = True
-            nev = copy.copy(ev)
+            nev = copy(ev)
             nev.type = EVENT_TICK_OF_ADVICE
             self.postEvent(nev)
 
@@ -257,7 +257,7 @@ class TradeAdvisor(BaseApplication):
 
             # repeat the most recent tick to remote eventChannel, see above bTickDuplicated
             if not bTickDuplicated and EVENT_TICK == ev.type:
-                nev = copy.copy(ev)
+                nev = copy(ev)
                 nev.type = EVENT_TICK_OF_ADVICE
                 self.postEvent(nev)
 

@@ -208,7 +208,9 @@ class BaseTrader(MetaTrader):
             return self.eventHdl_Trade(ev)
 
         if EVENT_TICK_OF_ADVICE == ev.type :
-            ev.type = EVENT_TICK
+            d = copy(ev.data)
+            ev = Event(EVENT_TICK)
+            ev.setData(d)
             self.debug('OnEvent(%s) treating as: %s' % (EVENT_TICK_OF_ADVICE, ev.desc))
 
         if MARKETDATE_EVENT_PREFIX == ev.type[:len(MARKETDATE_EVENT_PREFIX)] :

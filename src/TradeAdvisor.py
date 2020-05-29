@@ -199,7 +199,7 @@ class TradeAdvisor(BaseApplication):
         # repeat the tick to remote eventChannel if this advice is based on a tick, so that the Trader
         # who subscribe EVENT_ADVICEs does NOT have to instantiate a seperated crawler or others only in order to get the recent price
         bTickDuplicated = False
-        if EVENT_TICK == ev.type and symbol in self.__dictFstampLastPost.keys() and fstamp < self.__dictFstampLastPost[symbol] +20.0: # duplicate the tick for max 20sec
+        if EVENT_TICK == ev.type and symbol in self.__dictFstampLastPost.keys() and fstamp < self.__dictFstampLastPost[symbol] +10.0: # duplicate the tick for max 10sec
             bTickDuplicated = True
             nev = Event(EVENT_TICK_OF_ADVICE)
             nev.setData(copy(d))

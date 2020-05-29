@@ -201,8 +201,8 @@ class TradeAdvisor(BaseApplication):
         bTickDuplicated = False
         if EVENT_TICK == ev.type and symbol in self.__dictFstampLastPost.keys() and fstamp < self.__dictFstampLastPost[symbol] +20.0: # duplicate the tick for max 20sec
             bTickDuplicated = True
-            nev = copy(ev)
-            nev.type = EVENT_TICK_OF_ADVICE
+            nev = Event(EVENT_TICK_OF_ADVICE)
+            nev.setData(copy(d))
             self.postEvent(nev)
 
         latestAdvc = self.__dictAdvices[symbol] if symbol in self.objectives else None
@@ -257,8 +257,8 @@ class TradeAdvisor(BaseApplication):
 
             # repeat the most recent tick to remote eventChannel, see above bTickDuplicated
             if not bTickDuplicated and EVENT_TICK == ev.type:
-                nev = copy(ev)
-                nev.type = EVENT_TICK_OF_ADVICE
+                nev = Event(EVENT_TICK_OF_ADVICE)
+                nev.setData(copy(d))
                 self.postEvent(nev)
 
             # then post the advice

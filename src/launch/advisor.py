@@ -2,9 +2,6 @@
 '''
 This utility reads csv history data and generate ReplayFrame for offline DQN training
 '''
-
-from hpGym.GymTrader import *
-
 from   TradeAdvisor import EVENT_ADVICE, EVENT_TICK_OF_ADVICE
 from   advisors.dnn  import DnnAdvisor_S1548I4A3
 from   Application   import *

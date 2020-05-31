@@ -15,17 +15,19 @@ if ! [ -e ~/.config/onedrive/config ]; then
     echo "log_dir = \"/var/log/onedrive/\"" >> ~/.config/onedrive/config
 fi
 
-mkdir -p ~/OneDrive/deployments/${HOSTID}
-ln -s ~/OneDrive/deployments/${HOSTID} ~/deploy-data
-mkdir -p ~/deploy-data/tasks
-ln -s ~/deploy-data/tasks ~/tasks
+mkdir -p ~/OneDrive/deployments/${HOSTID}/{hpdata,tasks}
+ln -sf ~/OneDrive/deployments/${HOSTID} ~/deploy-data
+ln -sf ~/deploy-data/tasks ~/tasks
+ln -sf ~/deploy-data/hpdata ~/hpdata
+rm -rf ~/wkspaces/HyperPixiu/out ; ln -sf ~/hpdata ~/wkspaces/HyperPixiu/out
+
 mkdir -p /var/log/onedrive/
 
 if ! [ -e ~/.config/onedrive/sync_list ]; then
     echo "deployments/${HOSTID}"  > ~/.config/onedrive/sync_list
 fi
 
-onedrive --synchronize 2>&1 > /tmp/oncedrive.txt &
+onedrive --synchronize --resync --no-remote-delete 2>&1 > /tmp/oncedrive.txt &
 
 
 

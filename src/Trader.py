@@ -207,6 +207,10 @@ class BaseTrader(MetaTrader):
         if Account.EVENT_TRADE == ev.type:
             return self.eventHdl_Trade(ev)
 
+        if EVENT_TICK_OF_ADVICE == ev.type :
+            ev.type = EVENT_TICK
+            self.debug('OnEvent(%s) treating as: %s' % (EVENT_TICK_OF_ADVICE, ev.desc))
+
         if MARKETDATE_EVENT_PREFIX == ev.type[:len(MARKETDATE_EVENT_PREFIX)] :
             if self._marketState:
                 self._marketState.updateByEvent(ev)
@@ -290,7 +294,7 @@ class BaseTrader(MetaTrader):
         adv = evAdvice.data
         symbol = adv.symbol
         if not self.marketState.exchange in adv.exchange or not symbol in self.objectives:
-            self.debug('OnAdvice() ignored advice per objectives of exchange[%s]: %s' % (adv.exchange, adv.desc))
+            self.debug('OnAdvice() ignored advice that not in objectives of exchange[%s]: %s' % (adv.exchange, adv.desc))
             return
 
         if not self._account.executable:
@@ -329,7 +333,7 @@ class BaseTrader(MetaTrader):
                 dirExeced = OrderData.DIRECTION_NONE
             else:
                 strExec = '%s:%sx%s' %(dirToExec, latestPrice, maxBuy)
-                self.debug('OnAdvice() issuing max%s' % strExec)
+                self.info('OnAdvice() issuing max%s' % strExec)
                 self._account.cancelAllOrders()
                 vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, reason=adv.desc)
                 dirExeced = OrderData.DIRECTION_LONG
@@ -339,7 +343,7 @@ class BaseTrader(MetaTrader):
                 dirExeced = OrderData.DIRECTION_NONE
             else:
                 strExec = '%s:%sx%s' %(dirToExec, latestPrice, maxSell)
-                self.debug('OnAdvice() issuing max%s' % strExec)
+                self.info('OnAdvice() issuing max%s' % strExec)
                 self._account.cancelAllOrders()
                 vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, reason=adv.desc)
                 dirExeced = OrderData.DIRECTION_SHORT

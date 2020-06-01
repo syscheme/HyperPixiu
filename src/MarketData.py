@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 EXPORT_FLOATS_DIMS = 4 # take the minimal dim=4
+PRICE_DISPLAY_ROUND_DECIMALS = 3 
 
 def floatNormalize_M1X5(var, base=1.0):
     return (float(var/base) -1) *5.0 + 0.5
@@ -134,7 +135,7 @@ class TickData(MarketData):
 
     @property
     def desc(self) :
-        return 'tick.%s@%s_%dx%s' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S'), self.volume,round(self.price,2))
+        return 'tick.%s@%s_%dx%s' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S'), self.volume,round(self.price, PRICE_DISPLAY_ROUND_DECIMALS))
 
     def __calculateLean(self, X, Y):
         lenX = len(X)        
@@ -202,7 +203,7 @@ class KLineData(MarketData):
 
     @property
     def desc(self) :
-        return 'kline.%s@%s>%sx%s' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.volume, round(self.close,2))
+        return 'kline.%s@%s>%sx%s' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.volume, round(self.close, PRICE_DISPLAY_ROUND_DECIMALS))
 
     '''
     @property

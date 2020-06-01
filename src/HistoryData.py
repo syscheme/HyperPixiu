@@ -791,7 +791,7 @@ class PlaybackDay(MarketState):
         if not symbol in self.__dictPlayback.keys() :
             return 0.0
         
-        return round(self.__dictPlayback[symbol].close, 3)
+        return round(self.__dictPlayback[symbol].close, PRICE_DISPLAY_ROUND_DECIMALS)
 
     def getAsOf(self, symbol=None) :
         ''' 

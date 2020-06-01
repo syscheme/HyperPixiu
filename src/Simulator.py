@@ -1268,14 +1268,14 @@ class AccountWrapper(MetaAccount):
             # find out those expired orders, append them into _lstOrdersToCancel
             if fstampNow >0.0 :
                 for odid,odata in self._nest._dictLimitOrders.items():
-                    if odata.msecTTL <=0 or self.fstampSubmitted + odata.msecTTL > fstampNow: continue
+                    if odata.msecTTL <=0 or odata.fstampSubmitted + odata.msecTTL > fstampNow: continue
                     if odid in self._lstOrdersToCancel : continue
                     self._lstOrdersToCancel.append(odid)
                     strExpired += 'O[%s],' % odata.desc
                     cExpired +=1
 
                 for odid,odata in self._nest._dictStopOrders.items():
-                    if odata.msecTTL <=0 or self.fstampSubmitted + odata.msecTTL > fstampNow: continue
+                    if odata.msecTTL <=0 or odata.fstampSubmitted + odata.msecTTL > fstampNow: continue
                     if odid in self._lstOrdersToCancel : continue
                     self._lstOrdersToCancel.append(odid)
                     strExpired += 'O[%s],' % odata.desc
@@ -1382,7 +1382,7 @@ class AccountWrapper(MetaAccount):
 
     def calcAmountOfTrade(self, symbol, price, volume): return self._nest.calcAmountOfTrade(symbol, price, volume)
     def maxOrderVolume(self, symbol, price): return self._nest.maxOrderVolume(symbol, price)
-    def roundToPriceTick(self, price): return self._nest.roundToPriceTick(price)
+    def roundByPriceTick(self, price, dir=OrderData.DIRECTION_NONE): return self._nest.roundByPriceTick(price, dir)
     def onStart(self): return self._nest.onStart()
     # must be duplicated other than forwarding to _nest def doAppStep(self) : return self._nest.doAppStep()
     def onDayClose(self):
@@ -1411,7 +1411,7 @@ class AccountWrapper(MetaAccount):
         # 代码编号相关
         orderData.symbol      = symbol
         orderData.exchange    = self._exchange
-        orderData.price       = self.roundToPriceTick(price) # 报单价格
+        orderData.price       = self.roundByPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
         orderData.datetime    = self.datetimeAsOfMarket()
         orderData.reason      = reason if reason else ''
@@ -1526,8 +1526,8 @@ class AccountWrapper(MetaAccount):
         if not symbol :
             return # ignore those non-tick/kline events
 
-        buyBestCrossPrice  = self.roundToPriceTick(buyBestCrossPrice)
-        sellBestCrossPrice = self.roundToPriceTick(sellBestCrossPrice)
+        buyBestCrossPrice  = self.roundByPriceTick(buyBestCrossPrice)
+        sellBestCrossPrice = self.roundByPriceTick(sellBestCrossPrice)
 
         # 先撮合限价单
         self.__crossLimitOrder(symbol, dtEvent, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)

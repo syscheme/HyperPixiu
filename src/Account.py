@@ -209,7 +209,7 @@ class MetaAccount(BaseApplication):
     @abstractmethod 
     def maxOrderVolume(self, symbol, price): raise NotImplementedError
     @abstractmethod 
-    def roundToPriceTick(self, price, dir=OrderData.DIRECTION_SHORT): raise NotImplementedError
+    def roundByPriceTick(self, price, dir=OrderData.DIRECTION_NONE): raise NotImplementedError
     # @abstractmethod 
     # def onStart(self): raise NotImplementedError
     # must be duplicated other than forwarding to _nest def doAppStep(self) : return self._nest.doAppStep()
@@ -485,7 +485,7 @@ class Account(MetaAccount):
         # 代码编号相关
         orderData.symbol      = symbol
         orderData.exchange    = self._exchange
-        orderData.price       = self.roundToPriceTick(price) # 报单价格
+        orderData.price       = self.roundByPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
         orderData.reason      = reason if reason else ''
         orderData.msecTTL     = self._msecOrderTTL if self._msecOrderTTL >0 else 0.0
@@ -540,7 +540,7 @@ class Account(MetaAccount):
         # 代码编号相关
         orderData.symbol      = symbol
         orderData.exchange    = self._exchange
-        orderData.price       = self.roundToPriceTick(price) # 报单价格
+        orderData.price       = self.roundByPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
         orderData.reason      = reason if reason else ''
         # ???? orderData.msecTTL     = self._msecOrderTTL if self._msecOrderTTL >0 else 0.0
@@ -883,14 +883,14 @@ class Account(MetaAccount):
             # find out those expired orders, append them into _lstOrdersToCancel
             if fstampNow >0.0 :
                 for odid,odata in self._dictLimitOrders.items():
-                    if odata.msecTTL <=0 or self.fstampSubmitted + odata.msecTTL > fstampNow: continue
+                    if odata.msecTTL <=0 or odata.fstampSubmitted + odata.msecTTL > fstampNow: continue
                     if odid in self._lstOrdersToCancel : continue
                     self._lstOrdersToCancel.append(odid)
                     strExpired += 'O[%s],' % odata.desc
                     cExpired +=1
 
                 for odid,odata in self._dictStopOrders.items():
-                    if odata.msecTTL <=0 or self.fstampSubmitted + odata.msecTTL > fstampNow: continue
+                    if odata.msecTTL <=0 or odata.fstampSubmitted + odata.msecTTL > fstampNow: continue
                     if odid in self._lstOrdersToCancel : continue
                     self._lstOrdersToCancel.append(odid)
                     strExpired += 'O[%s],' % odata.desc
@@ -999,14 +999,17 @@ class Account(MetaAccount):
 
         return volume, 0
 
-    def roundToPriceTick(self, price, dir=OrderData.DIRECTION_SHORT):
+    def roundByPriceTick(self, price, dir=OrderData.DIRECTION_NONE):
         """取整价格到合约最小价格变动"""
         if not self._priceTick:
             return price
 
-        newPrice = round(price/self._priceTick, 0) * self._priceTick
-        if OrderData.DIRECTION_LONG == dir and newPrice < price:
-            newPrice += newPrice
+        newPrice = int(price/self._priceTick) * self._priceTick
+        if OrderData.DIRECTION_LONG == dir and newPrice <= price:
+            newPrice += self._priceTick
+        elif OrderData.DIRECTION_SHORT == dir and newPrice >= price:
+            newPrice -= self._priceTick
+        else: newPrice = round(price/self._priceTick, 0) * self._priceTick
 
         return round(newPrice, PRICE_DISPLAY_ROUND_DECIMALS)
 

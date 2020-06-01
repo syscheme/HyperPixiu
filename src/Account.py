@@ -184,6 +184,7 @@ class Account(MetaAccount):
         self._contractSize  = self.getConfig('contractSize', 0.0)
         self._priceTick     = self.getConfig('priceTick',   0.01)
         self._dbName        = self.getConfig('dbName',  self._id) 
+        self._msecOrderTTL  = self.getConfig('ttlOrder',   300.0) *1000.0 # 5min by default
 
         self._pctReservedCash = self.getConfig('pctReservedCash', 1.0) # cash at percent of total cap, in order not to buy securities at full
         if self._pctReservedCash < 0.5: self._pctReservedCash =0.5
@@ -402,6 +403,7 @@ class Account(MetaAccount):
         orderData.price       = self.roundToPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
         orderData.reason      = reason if reason else ''
+        orderData.msecTTL     = self._msecOrderTTL if self._msecOrderTTL >0 else 0.0
 
         # 报单方向
         if orderType == OrderData.ORDER_BUY:
@@ -456,6 +458,7 @@ class Account(MetaAccount):
         orderData.price       = self.roundToPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
         orderData.reason      = reason if reason else ''
+        # ???? orderData.msecTTL     = self._msecOrderTTL if self._msecOrderTTL >0 else 0.0
         
         # 报单方向
         if orderType == OrderData.ORDER_BUY:
@@ -498,8 +501,8 @@ class Account(MetaAccount):
     def _broker_onOrderPlaced(self, orderData):
         """委托回调"""
 
-        if len(orderData.stampSubmitted) <=0:
-            orderData.stampSubmitted = self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
+        if orderData.fstampSubmitted <= 0.1:
+            orderData.fstampSubmitted = datetime2float(self.datetimeAsOfMarket()) # self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
 
         # order placed, move it from _dictOutgoingOrders to _dictLimitOrders
         with self._lock :
@@ -533,8 +536,8 @@ class Account(MetaAccount):
     def _broker_onCancelled(self, orderData):
         """撤单回调"""
         orderData.status = OrderData.STATUS_CANCELLED
-        if len(orderData.stampCanceled) <=0:
-            orderData.stampCanceled = self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
+        if orderData.fstampCanceled <= 0.1:
+            orderData.fstampCanceled = datetime2float(self.datetimeAsOfMarket()) #  self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
 
         with self._lock :
             try :
@@ -579,8 +582,8 @@ class Account(MetaAccount):
 
     def _broker_onOrderDone(self, orderData):
         """委托被执行"""
-        if len(orderData.stampFinished) <=0:
-            orderData.stampFinished = self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
+        if orderData.fstampFinished <= 0.1:
+            orderData.fstampFinished = datetime2float(self.datetimeAsOfMarket()) #  
 
         with self._lock :
             try :
@@ -785,11 +788,30 @@ class Account(MetaAccount):
         ordersToCancel = []
 
         cStep =0
+        fstampNow = datetime2float(self.datetimeAsOfMarket())
+        strExpired = ''
+        cExpired=0
 
         with self._lock:
             outgoingOrders = copy.deepcopy(self._dictOutgoingOrders.values()) if len(self._dictOutgoingOrders) >0 else []
 
-            # find out he orderData by brokerOrderId
+            # find out those expired orders, append them into _lstOrdersToCancel
+            if fstampNow >0.0 :
+                for odid,odata in self._dictLimitOrders.items():
+                    if odata.msecTTL <=0 or self.fstampSubmitted + odata.msecTTL > fstampNow: continue
+                    if odid in self._lstOrdersToCancel : continue
+                    self._lstOrdersToCancel.append(odid)
+                    strExpired += 'O[%s],' % odata.desc
+                    cExpired +=1
+
+                for odid,odata in self._dictStopOrders.items():
+                    if odata.msecTTL <=0 or self.fstampSubmitted + odata.msecTTL > fstampNow: continue
+                    if odid in self._lstOrdersToCancel : continue
+                    self._lstOrdersToCancel.append(odid)
+                    strExpired += 'O[%s],' % odata.desc
+                    cExpired +=1
+
+            # find out orderData of canceled orders by brokerOrderId
             for odid in self._lstOrdersToCancel :
                 orderData = None
                 cStep +=1
@@ -814,14 +836,15 @@ class Account(MetaAccount):
             self._broker_placeOrder(no)
             cStep +=1
 
-        if (len(ordersToCancel) + len(outgoingOrders)) >0:
-            self.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
+        if (cExpired>0):
+            self.warn('step() placed %d orders, cancelled %d orders including %d expired: %s'% (len(outgoingOrders), len(ordersToCancel), cExpired, strExpired))
+        elif (len(ordersToCancel) + len(outgoingOrders)) >0:
+            self.info('step() placed %d orders, cancelled %d orders'% (len(outgoingOrders), len(ordersToCancel)))
 
         # step 2. sync positions and order with the broker
         self._brocker_procSyncData()
-        stampNow = datetime2float(datetime.now())
-        if self._stampLastSync + self._syncInterval < stampNow :
-            self._stampLastSync = stampNow
+        if self._stampLastSync + self._syncInterval < fstampNow :
+            self._stampLastSync = fstampNow
             self._brocker_triggerSync()
             cStep +=1
 
@@ -1253,10 +1276,11 @@ class OrderData(EventData):
         self.tradedVolume = EventData.EMPTY_INT   # 报单成交数量
         self.status       = OrderData.STATUS_CREATED     # 报单状态
         self.reason       = EventData.EMPTY_STRING  # trigger reason
+        self.msecTTL      = EventData.EMPTY_INT     # time-to-live
         
-        self.stampSubmitted  = EventData.EMPTY_STRING # 发单时间
-        self.stampCanceled   = EventData.EMPTY_STRING  # 撤单时间
-        self.stampFinished   = EventData.EMPTY_STRING  # 撤单时间
+        self.fstampSubmitted  = EventData.EMPTY_FLOAT  # 发单时间
+        self.fstampCanceled   = EventData.EMPTY_FLOAT  # 撤单时间
+        self.fstampFinished   = EventData.EMPTY_FLOAT  # 撤单时间
 
     @property
     def desc(self) :

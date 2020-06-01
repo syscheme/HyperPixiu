@@ -892,7 +892,7 @@ class Program(object):
                         # if threaded, it has its own trigger to step()
                         # if isinstance(app, ThreadedAppWrapper)
                         #   continue
-                        if not isinstance(app, MetaApp):
+                        if not app or not isinstance(app, MetaApp):
                             continue
 
                         if not app.isActive :

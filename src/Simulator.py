@@ -128,7 +128,8 @@ class BackTestApp(MetaTrader):
     # impl/overwrite of BaseApplication
     @property
     def ident(self) :
-        return '%s/%s' % (self.__class__.__name__, (self.__wkTrader.ident if self.__wkTrader else self._id))
+        tdrCore = self.__wkTrader if self.__wkTrader else self._initTrader
+        return '%s/%s' % (self.__class__.__name__, (tdrCore.ident if tdrCore else self._id))
 
     def stop(self):
         """退出程序前调用，保证正常退出"""
@@ -1257,9 +1258,28 @@ class AccountWrapper(MetaAccount):
         outgoingOrders = []
         ordersToCancel = []
         cStep =0
+        fstampNow = datetime2float(self.datetimeAsOfMarket())
+        strExpired = ''
+        cExpired=0
 
         with self._nest._lock:
             outgoingOrders = copy.deepcopy(list(self._nest._dictOutgoingOrders.values()))
+
+            # find out those expired orders, append them into _lstOrdersToCancel
+            if fstampNow >0.0 :
+                for odid,odata in self._nest._dictLimitOrders.items():
+                    if odata.msecTTL <=0 or self.fstampSubmitted + odata.msecTTL > fstampNow: continue
+                    if odid in self._lstOrdersToCancel : continue
+                    self._lstOrdersToCancel.append(odid)
+                    strExpired += 'O[%s],' % odata.desc
+                    cExpired +=1
+
+                for odid,odata in self._nest._dictStopOrders.items():
+                    if odata.msecTTL <=0 or self.fstampSubmitted + odata.msecTTL > fstampNow: continue
+                    if odid in self._lstOrdersToCancel : continue
+                    self._lstOrdersToCancel.append(odid)
+                    strExpired += 'O[%s],' % odata.desc
+                    cExpired +=1
 
             # find out he orderData by brokerOrderId
             for odid in self._nest._lstOrdersToCancel :
@@ -1287,8 +1307,10 @@ class AccountWrapper(MetaAccount):
             self._broker_placeOrder(no)
             cStep +=1
 
-        if (len(ordersToCancel) + len(outgoingOrders)) >0:
-            self.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
+        if (cExpired>0):
+            self.warn('step() placed %d orders, cancelled %d orders including %d expired: %s'% (len(outgoingOrders), len(ordersToCancel), cExpired, strExpired))
+        elif (len(ordersToCancel) + len(outgoingOrders)) >0:
+            self.info('step() placed %d orders, cancelled %d orders'% (len(outgoingOrders), len(ordersToCancel)))
 
         return cStep
 
@@ -1393,6 +1415,7 @@ class AccountWrapper(MetaAccount):
         orderData.totalVolume = volume    # 报单总数量
         orderData.datetime    = self.datetimeAsOfMarket()
         orderData.reason      = reason if reason else ''
+        orderData.msecTTL     = self._nest._msecOrderTTL if self._nest._msecOrderTTL >0 else 0.0
 
         # 报单方向
         if orderType == OrderData.ORDER_BUY:
@@ -1584,11 +1607,14 @@ class AccountWrapper(MetaAccount):
                 finishedOrders.append(order)
                 strCrossed += 'O[%s]->T[%s],' % (order.desc, trade.desc)
 
-        if len(finishedOrders)>0:
+        if len(finishedOrders) + len(pendingOrders) >0:
             strPendings = ''
             for o in pendingOrders:
                 strPendings += 'O[%s],' % o.desc
-            self.info('crossLimitOrder() crossed %d orders:%s; %d pendings:%s'% (len(finishedOrders), strCrossed, len(pendingOrders), strPendings))
+            if len(finishedOrders) >0:
+                self.info('crossLimitOrder() crossed %d orders:%s; %d pendings: %s'% (len(finishedOrders), strCrossed, len(pendingOrders), strPendings))
+            else:
+                self.debug('crossLimitOrder() %d pending orders: %s'% (len(pendingOrders), strPendings))
 
         for o in finishedOrders:
             self._broker_onOrderDone(o)

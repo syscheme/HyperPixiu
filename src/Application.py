@@ -842,6 +842,7 @@ class Program(object):
 
         self.info(u'Program start looping')
         busy = True
+        cContinuousEvent =0
 
         while self._bRun:
             timeout =0
@@ -868,7 +869,7 @@ class Program(object):
 
             # pop the event to dispatch
             bEmpty = False
-            qsize, maxsize, cContinuousEvent =0, 0, 0
+            qsize, maxsize, =0, 0
             while self._bRun and not bEmpty:
                 event = None
                 try :
@@ -886,11 +887,11 @@ class Program(object):
                     break
 
                 # do the step only when there is no event
-                if not event or cContinuousEvent >10:
+                cApps =0
+                if not event or cContinuousEvent >max(10, qsize*0.6):
                     cContinuousEvent =0
                     # if blocking: # ????
                     #     continue
-                    cApps =0
                     for appId in self.__activeApps :
                         app = self.getObj(appId)
                         # if threaded, it has its own trigger to step()
@@ -921,6 +922,8 @@ class Program(object):
                         break
                             
                 if not event :
+                    if cApps <=0:
+                        self.warn("something wrong in program loop: %s %s"%(cApps, cContinuousEvent))
                     continue
 
                 cContinuousEvent +=1

@@ -198,7 +198,8 @@ class BackTestApp(MetaTrader):
 
         # step 3.1 subscribe the TradeAdvices
         self.subscribeEvent(EVENT_ADVICE)
-
+        self.subscribeEvent(EVENT_TICK_OF_ADVICE)
+        
         # step 3.2 subscribe the market events
         self.subscribeEvent(EVENT_TICK)
         self.subscribeEvent(EVENT_KLINE_1MIN)

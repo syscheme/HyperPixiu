@@ -178,7 +178,8 @@ class BaseTrader(MetaTrader):
 
         # step 3.1 subscribe the TradeAdvices
         self.subscribeEvent(EVENT_ADVICE)
-
+        self.subscribeEvent(EVENT_TICK_OF_ADVICE)
+        
         # step 3.2 subscribe the account and market events
         self.subscribeEvent(Account.EVENT_ORDER)
         self.subscribeEvent(Account.EVENT_TRADE)

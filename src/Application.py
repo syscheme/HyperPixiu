@@ -868,13 +868,16 @@ class Program(object):
 
             # pop the event to dispatch
             bEmpty = False
-            qsize, maxsize =0, 0
+            qsize, maxsize, cContinuousEvent =0, 0, 0
             while self._bRun and not bEmpty:
                 event = None
                 try :
                     event = self.__queue.get(block = enabledHB, timeout = timeout)  # 获取事件的阻塞时间设为0.1秒
                     bEmpty = False
                     qsize, maxsize = self.__queue.qsize(), self.__queue.maxsize
+                    
+                    if qsize > max(100, maxsize/2):
+                        self.warn("too many pending events: %d/%d" % (qsize,maxsize) )
                 except Empty:
                     bEmpty = True
                 except KeyboardInterrupt:
@@ -883,7 +886,8 @@ class Program(object):
                     break
 
                 # do the step only when there is no event
-                if not event :
+                if not event or cContinuousEvent >10:
+                    cContinuousEvent =0
                     # if blocking: # ????
                     #     continue
                     cApps =0
@@ -916,10 +920,10 @@ class Program(object):
                         self._bRun = False
                         break
                             
+                if not event :
                     continue
 
-                if qsize > max(100, maxsize/2):
-                    self.warn("too many pending events: %d/%d" % (qsize,maxsize) )
+                cContinuousEvent +=1
 
                 # 检查是否存在对该事件进行监听的处理函数
                 if not event.type in self.__subscribers.keys():

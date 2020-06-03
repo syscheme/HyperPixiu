@@ -6,6 +6,7 @@ from MarketCrawler import *
 from EventData import Event, datetime2float, DT_EPOCH
 from MarketData import KLineData, TickData, MoneyflowData, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
 from Account import Account_AShare
+import crawler.disguise as dsg
 
 import requests # pip3 install requests
 from copy import copy
@@ -400,7 +401,9 @@ class SinaCrawler(MarketCrawler):
         httperr = 400
         try:
             self.debug("%s() GET %s" %(apiName, url))
-            response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
+            headers = copy(self.DEFAULT_GET_HEADERS)
+            headers['User-Agent'] = dsg.nextUserAgent()
+            response = requests.get(url, headers=headers, proxies=self._proxies, timeout=self.TIMEOUT)
             httperr = response.status_code
             if httperr == 200:
                 return httperr, response.text

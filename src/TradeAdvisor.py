@@ -135,12 +135,8 @@ class TradeAdvisor(BaseApplication):
 
             self.info('taking MarketState[%s] on %d objectives: %s' % (self._marketState.ident, len(self.objectives), ','.join(self.objectives)))
 
-        self.subscribeEvent(EVENT_TICK)
-        self.subscribeEvent(EVENT_KLINE_1MIN)
-        self.subscribeEvent(EVENT_KLINE_5MIN)
-        self.subscribeEvent(EVENT_KLINE_1DAY)
-        self.subscribeEvent(EVENT_MONEYFLOW_1MIN)
-        self.subscribeEvent(EVENT_MONEYFLOW_1DAY)
+        self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
+        self.subscribeEvents([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY])
 
         if self._recorder :
             self._recorder.registerCategory(EVENT_ADVICE,         params= {'columns' : AdviceData.COLUMNS})

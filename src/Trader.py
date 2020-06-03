@@ -177,16 +177,11 @@ class BaseTrader(MetaTrader):
             self._marketState.addMonitor(symbol)
 
         # step 3.1 subscribe the TradeAdvices
-        self.subscribeEvent(EVENT_ADVICE)
-        self.subscribeEvent(EVENT_TICK_OF_ADVICE)
+        self.subscribeEvents([EVENT_ADVICE, EVENT_TICK_OF_ADVICE])
         
         # step 3.2 subscribe the account and market events
-        self.subscribeEvent(Account.EVENT_ORDER)
-        self.subscribeEvent(Account.EVENT_TRADE)
-        self.subscribeEvent(EVENT_TICK)
-        self.subscribeEvent(EVENT_KLINE_1MIN)
-        # self.subscribeEvent(EVENT_KLINE_5MIN)
-        # self.subscribeEvent(EVENT_KLINE_1DAY)
+        self.subscribeEvents([Account.EVENT_ORDER,Account.EVENT_TRADE])
+        self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN]) # ,EVENT_KLINE_5MIN,EVENT_KLINE_1DAY]
 
         if self._recorder :
             self._recorder.registerCategory(Account.RECCATE_ORDER,       params= {'columns' : OrderData.COLUMNS})

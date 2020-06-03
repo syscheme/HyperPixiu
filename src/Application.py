@@ -223,11 +223,16 @@ class BaseApplication(MetaApp):
         return jn
 
     #---- event operations ---------------------------
-    def subscribeEvent(self, eventType) :
-        if not self._program:
+    def subscribeEvents(self, eventTypes) :
+        if not self._program or not eventTypes:
             pass
         
-        self._program.subscribe(eventType, self)
+        if not isinstance(eventTypes, list):
+            self._program.subscribe(eventType, self)
+            return
+
+        for et in eventTypes:
+            self._program.subscribe(et, self)
 
     def postEventData(self, eventType, edata):
         '''发出事件'''

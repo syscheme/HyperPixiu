@@ -130,8 +130,7 @@ class EventEnd(BaseApplication):
             return False
 
         # subscribe from local events about to forward
-        for et in self._topicsOutgoing:
-            self.subscribeEvent(et)
+        self.subscribeEvents(self._topicsOutgoing)
         
         return True
 

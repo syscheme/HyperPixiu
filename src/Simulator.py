@@ -971,6 +971,13 @@ class OnlineSimulator(MetaTrader):
             self.__saveMarketState()
 
     def OnEvent(self, ev): 
+
+        if EVENT_TICK_OF_ADVICE == ev.type :
+            d = copy(ev.data)
+            ev = Event(EVENT_TICK)
+            ev.setData(d)
+            self.debug('OnEvent(%s) treating as: %s' % (EVENT_TICK_OF_ADVICE, ev.desc))
+
         # step 2. 收到行情后，在启动策略前的处理
         evd = ev.data
         matchNeeded = False
@@ -1769,6 +1776,13 @@ class OfflineSimulator(BackTestApp):
 
     def OnEvent(self, ev): # this overwrite BackTest's because there are some different needs
         symbol  = None
+
+        if EVENT_TICK_OF_ADVICE == ev.type :
+            d = copy(ev.data)
+            ev = Event(EVENT_TICK)
+            ev.setData(d)
+            self.debug('OnEvent(%s) treating as: %s' % (EVENT_TICK_OF_ADVICE, ev.desc))
+
         if EVENT_TICK == ev.type or EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
             try :
                 symbol = ev.data.symbol

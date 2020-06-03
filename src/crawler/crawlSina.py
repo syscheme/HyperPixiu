@@ -76,18 +76,18 @@ class SinaCrawler(MarketCrawler):
         # self._threadless = False
 
         self._eventsToPost = [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_MONEYFLOW_1MIN]
-
+        self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline, self.__step_pollMoneyflow]
         self._proxies = {}
 
         symbols              = self.getConfig('symbolsToCrawl', [])
 
         self._secYield456    = self.getConfig('yield456',    230)
         self.__excludeAt404  = self.getConfig('excludeAt404',True)
-        self.__skipMoneyFlow = self.getConfig('excludeMoneyFlow', False)
 
-        self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline]
-        if not self._skipMoneyFlow:
-            self._steps.append(self.__step_pollMoneyflow)
+        # COVERED inside of __step_pollMoneyflow()
+        # self._excludeMoneyFlow = self.getConfig('excludeMoneyFlow', False)
+        # if not self._excludeMoneyFlow:
+        #     self._steps.append(self.__step_pollMoneyflow)
 
         self.__idxTickBatch, self.__idxKL, self.__idxMF = 0,0,0
         self.__tickBatches = None
@@ -319,6 +319,10 @@ class SinaCrawler(MarketCrawler):
             s = self._symbolsToPoll[self.__idxMF]
 
         self.__idxMF += 1
+        
+        # SAD: sina doesn't support moneyflow on ETFs, so skip it to avoid 456s
+        if 'SH51' in s or 'SZ15' in s:
+            return cBusy
 
         if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC):
             return cBusy # well off-trade hours

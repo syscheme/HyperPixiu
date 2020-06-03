@@ -1128,6 +1128,8 @@ class Program(object):
             self.__hdlrFile.setLevel(self.__loglevel)
             self.__hdlrFile.setFormatter(LOGFMT)
             self.__logger.addHandler(self.__hdlrFile)
+
+        logging.getLogger("filelock").setLevel(logging.WARNING)
             
         # 注册事件监听
         self._loggingEvent = True
@@ -1247,6 +1249,10 @@ class Program(object):
         ret = None
         try :
             with FileLock(self.shelveFilename + ".lock"):
+                try :
+                    os.fstat(self.shelveFilename)
+                except:
+                    return ret
                 with shelve.open(self.shelveFilename, flag='r') as sh:
                     if objId in sh :
                         ret = sh[objId]

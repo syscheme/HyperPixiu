@@ -177,15 +177,11 @@ class BaseTrader(MetaTrader):
             self._marketState.addMonitor(symbol)
 
         # step 3.1 subscribe the TradeAdvices
-        self.subscribeEvent(EVENT_ADVICE)
-
+        self.subscribeEvents([EVENT_ADVICE, EVENT_TICK_OF_ADVICE])
+        
         # step 3.2 subscribe the account and market events
-        self.subscribeEvent(Account.EVENT_ORDER)
-        self.subscribeEvent(Account.EVENT_TRADE)
-        self.subscribeEvent(EVENT_TICK)
-        self.subscribeEvent(EVENT_KLINE_1MIN)
-        # self.subscribeEvent(EVENT_KLINE_5MIN)
-        # self.subscribeEvent(EVENT_KLINE_1DAY)
+        self.subscribeEvents([Account.EVENT_ORDER,Account.EVENT_TRADE])
+        self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN]) # ,EVENT_KLINE_5MIN,EVENT_KLINE_1DAY]
 
         if self._recorder :
             self._recorder.registerCategory(Account.RECCATE_ORDER,       params= {'columns' : OrderData.COLUMNS})
@@ -307,9 +303,12 @@ class BaseTrader(MetaTrader):
         # TODO: perform the risk management of advice
 
         dirToExec = ADVICE_DIRECTIONS[np.argmax([adv.dirNONE, adv.dirLONG, adv.dirSHORT])]
-        strExec =''
 
+        strExec =''
         self.debug('OnAdvice() processing advDir[%s] %s' % (dirToExec, adv.desc))
+        if OrderData.DIRECTION_NONE == dirToExec:
+            return
+
         prevCap = self._latestCash + self._latestPosValue
 
         # step 1. collected information from the account
@@ -319,35 +318,39 @@ class BaseTrader(MetaTrader):
 
         # TODO: the first version only support one symbol to play, so simply take the first symbol in the positions        
         latestPrice = self._marketState.latestPrice(symbol)
+        buyPrice = self._account.roundByPriceTick(latestPrice, OrderData.DIRECTION_LONG)
+        sellPrice = self._account.roundByPriceTick(latestPrice, OrderData.DIRECTION_SHORT)
 
-        maxBuy, maxSell = self._account.maxOrderVolume(symbol, latestPrice)
+        maxBuy, maxSell = self._account.maxOrderVolume(symbol, buyPrice)
         if self._maxValuePerOrder >0:
-            if self._maxValuePerOrder < (maxBuy * latestPrice*100):
-                maxBuy = int(maxBuy * self._maxValuePerOrder / (maxBuy* latestPrice*100))
-            if self._maxValuePerOrder < (maxSell*1.5 * latestPrice*100):
-                maxSell = int(maxSell * self._maxValuePerOrder / (maxSell * latestPrice*100))
-        if self._minBuyPerOrder >0 and (maxBuy * latestPrice*100) < self._minBuyPerOrder :
+            if self._maxValuePerOrder < (maxBuy * buyPrice*100):
+                maxBuy = int(maxBuy * self._maxValuePerOrder / (maxBuy* buyPrice*100))
+            if self._maxValuePerOrder < (maxSell*1.5 * buyPrice*100):
+                maxSell = int(maxSell * self._maxValuePerOrder / (maxSell * buyPrice*100))
+        if self._minBuyPerOrder >0 and (maxBuy * buyPrice*100) < self._minBuyPerOrder :
             maxBuy =0
 
         # TODO: the first version only support FULL-BUY and FULL-SELL
         if OrderData.DIRECTION_LONG == dirToExec :
+            strExec = '%s:%sx%so%s' %(dirToExec, maxBuy, buyPrice, latestPrice)
             if maxBuy <=0 :
                 dirExeced = OrderData.DIRECTION_NONE
+                self.debug('OnAdvice() advice[%s] dropped with no buy power: %s' % (adv.desc, strExec))
             else:
-                strExec = '%s:%sx%s' %(dirToExec, latestPrice, maxBuy)
-                self.info('OnAdvice() issuing max%s' % strExec)
+                self.info('OnAdvice() issuing max%s on advice[%s]' % (strExec, adv.desc))
                 self._account.cancelAllOrders()
-                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, latestPrice, maxBuy, reason=adv.desc)
+                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_BUY, buyPrice, maxBuy, reason=adv.desc)
                 dirExeced = OrderData.DIRECTION_LONG
 
         elif OrderData.DIRECTION_SHORT == dirToExec :
+            strExec = '%s:%sx%so%s' %(dirToExec, maxSell, sellPrice, latestPrice)
             if maxSell <=0:
                 dirExeced = OrderData.DIRECTION_NONE
+                self.debug('OnAdvice() advice[%s] dropped with no sell power: %s' % (adv.desc, strExec))
             else:
-                strExec = '%s:%sx%s' %(dirToExec, latestPrice, maxSell)
-                self.info('OnAdvice() issuing max%s' % strExec)
+                self.info('OnAdvice() issuing max%s on advice[%s]' % (strExec, adv.desc))
                 self._account.cancelAllOrders()
-                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, latestPrice, maxSell, reason=adv.desc)
+                vtOrderIDList = self._account.sendOrder(symbol, OrderData.ORDER_SELL, sellPrice, maxSell, reason=adv.desc)
                 dirExeced = OrderData.DIRECTION_SHORT
 
         # step 3. calculate the rewards

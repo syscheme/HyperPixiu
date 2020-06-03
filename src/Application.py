@@ -223,11 +223,16 @@ class BaseApplication(MetaApp):
         return jn
 
     #---- event operations ---------------------------
-    def subscribeEvent(self, eventType) :
-        if not self._program:
+    def subscribeEvents(self, eventTypes) :
+        if not self._program or not eventTypes:
             pass
         
-        self._program.subscribe(eventType, self)
+        if not isinstance(eventTypes, list):
+            self._program.subscribe(eventType, self)
+            return
+
+        for et in eventTypes:
+            self._program.subscribe(et, self)
 
     def postEventData(self, eventType, edata):
         '''发出事件'''
@@ -842,6 +847,7 @@ class Program(object):
 
         self.info(u'Program start looping')
         busy = True
+        cContinuousEvent =0
 
         while self._bRun:
             timeout =0
@@ -868,31 +874,40 @@ class Program(object):
 
             # pop the event to dispatch
             bEmpty = False
-            qsize, maxsize =0, 0
+            qsize, maxsize, =0, 0
             while self._bRun and not bEmpty:
                 event = None
                 try :
+                    if cContinuousEvent >0: timeout = 0.1
                     event = self.__queue.get(block = enabledHB, timeout = timeout)  # 获取事件的阻塞时间设为0.1秒
                     bEmpty = False
                     qsize, maxsize = self.__queue.qsize(), self.__queue.maxsize
+                    
+                    if qsize > max(100, maxsize/2):
+                        self.warn("too many pending events: %d/%d" % (qsize,maxsize) )
                 except Empty:
                     bEmpty = True
                 except KeyboardInterrupt:
                     self.error("quit per KeyboardInterrupt")
                     self._bRun = False
                     break
+                except Except as ex:
+                    self.logexception(ex)
+                    cContinuousEvent = 0
+                    timeout = max(1.0, self._heartbeatInterval)
 
                 # do the step only when there is no event
-                if not event :
+                cApps =0
+                if not event or cContinuousEvent >max(10, qsize*0.6):
+                    cContinuousEvent =0
                     # if blocking: # ????
                     #     continue
-                    cApps =0
                     for appId in self.__activeApps :
                         app = self.getObj(appId)
                         # if threaded, it has its own trigger to step()
                         # if isinstance(app, ThreadedAppWrapper)
                         #   continue
-                        if not isinstance(app, MetaApp):
+                        if not app or not isinstance(app, MetaApp):
                             continue
 
                         if not app.isActive :
@@ -916,10 +931,12 @@ class Program(object):
                         self._bRun = False
                         break
                             
+                if not event :
+                    if cApps <=0:
+                        self.warn("something wrong in program loop: %s %s"%(cApps, cContinuousEvent))
                     continue
 
-                if qsize > max(100, maxsize/2):
-                    self.warn("too many pending events: %d/%d" % (qsize,maxsize) )
+                cContinuousEvent +=1
 
                 # 检查是否存在对该事件进行监听的处理函数
                 if not event.type in self.__subscribers.keys():
@@ -1111,6 +1128,8 @@ class Program(object):
             self.__hdlrFile.setLevel(self.__loglevel)
             self.__hdlrFile.setFormatter(LOGFMT)
             self.__logger.addHandler(self.__hdlrFile)
+
+        logging.getLogger("filelock").setLevel(logging.WARNING)
             
         # 注册事件监听
         self._loggingEvent = True
@@ -1230,6 +1249,10 @@ class Program(object):
         ret = None
         try :
             with FileLock(self.shelveFilename + ".lock"):
+                try :
+                    os.fstat(self.shelveFilename)
+                except:
+                    return ret
                 with shelve.open(self.shelveFilename, flag='r') as sh:
                     if objId in sh :
                         ret = sh[objId]

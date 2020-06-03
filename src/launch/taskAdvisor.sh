@@ -20,10 +20,11 @@ for i in ${PID_LIST}; do
 done
 cp -vf ${CONF} ${OUTDIR}/
 
-mv -vf ${OUTDIR} ${OUTDIR}.BAK${STAMP}
-mkdir -p ${OUTDIR}
-cp -vf ${OUTDIR}.BAK${STAMP}/*.ss ${OUTDIR}  # take the existing safestore
+# make a copy here instead of moving because the files might be locked in the srcdir
+cp -rvf ${OUTDIR} ${OUTDIR}.BAK${STAMP}
 rm -rf ${OUTDIR}.BAK${STAMP}/*.lock
+mkdir -p ${OUTDIR}
+
 nice -n 15 bash -c "tar cfvj ${OUTDIR}.BAK${STAMP}.tar.bz2 ${OUTDIR}.BAK${STAMP} ; rm -rf ${OUTDIR}.BAK${STAMP}" &
 
 OBJ_LIST="["

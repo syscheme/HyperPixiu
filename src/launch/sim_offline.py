@@ -202,5 +202,6 @@ if __name__ == '__main__':
     tdrWraper.setRecorder(rec)
 
     p.start()
-    p.loop()
+    if tdrWraper.isActive :
+        p.loop()
     p.stop()

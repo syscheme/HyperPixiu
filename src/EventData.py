@@ -23,7 +23,7 @@ DT_EPOCH = datetime.utcfromtimestamp(0)
 ########################################################################
 # utilities
 def datetime2float(dt):
-    total_seconds =  (dt - DT_EPOCH).total_seconds()
+    total_seconds =  (dt - DT_EPOCH).total_seconds() if dt else 0.0
     # total_seconds will be in decimals (millisecond precision)
     return total_seconds
 

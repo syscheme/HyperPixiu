@@ -128,7 +128,8 @@ class BackTestApp(MetaTrader):
     # impl/overwrite of BaseApplication
     @property
     def ident(self) :
-        return '%s/%s' % (self.__class__.__name__, (self.__wkTrader.ident if self.__wkTrader else self._id))
+        tdrCore = self.__wkTrader if self.__wkTrader else self._initTrader
+        return '%s/%s' % (self.__class__.__name__, (tdrCore.ident if tdrCore else self._id))
 
     def stop(self):
         """退出程序前调用，保证正常退出"""
@@ -196,13 +197,10 @@ class BackTestApp(MetaTrader):
         #         obj["ds1min"] += MarketData.TAG_BACKTEST
 
         # step 3.1 subscribe the TradeAdvices
-        self.subscribeEvent(EVENT_ADVICE)
-
+        self.subscribeEvents([EVENT_ADVICE, EVENT_TICK_OF_ADVICE])
+        
         # step 3.2 subscribe the market events
-        self.subscribeEvent(EVENT_TICK)
-        self.subscribeEvent(EVENT_KLINE_1MIN)
-        self.subscribeEvent(EVENT_KLINE_5MIN)
-        self.subscribeEvent(EVENT_KLINE_1DAY)
+        self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
 
         self.resetEpisode()
         _quitEpisode = False
@@ -421,8 +419,7 @@ class BackTestApp(MetaTrader):
                     self.__wkTrader.openObjective(symbol)
 
         # step 4. subscribe account events
-        self.subscribeEvent(Account.EVENT_ORDER)
-        self.subscribeEvent(Account.EVENT_TRADE)
+        self.subscribeEvents([Account.EVENT_ORDER, Account.EVENT_TRADE])
 
         self.info('resetEpisode() done for episode[%d/%d], obj-in-program: %s' % (self._episodeNo, self._episodes, self._program.listByType(MetaObj)))
         return True
@@ -927,16 +924,12 @@ class OnlineSimulator(MetaTrader):
                 self.__wkTrader.openObjective(symbol)
 
         # step 4.1 subscribe the TradeAdvices
-        self.subscribeEvent(EVENT_ADVICE)
+        self.subscribeEvents([EVENT_ADVICE, EVENT_TICK_OF_ADVICE])
 
         # step 4.2 subscribe the account and market events
-        self.subscribeEvent(Account.EVENT_ORDER)
-        self.subscribeEvent(Account.EVENT_TRADE)
+        self.subscribeEvents([Account.EVENT_ORDER, Account.EVENT_TRADE])
 
-        self.subscribeEvent(EVENT_TICK)
-        self.subscribeEvent(EVENT_KLINE_1MIN)
-        self.subscribeEvent(EVENT_KLINE_5MIN)
-        self.subscribeEvent(EVENT_KLINE_1DAY)
+        self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
 
         symbolBy = None
         try :
@@ -978,6 +971,13 @@ class OnlineSimulator(MetaTrader):
             self.__saveMarketState()
 
     def OnEvent(self, ev): 
+
+        if EVENT_TICK_OF_ADVICE == ev.type :
+            d = copy.copy(ev.data)
+            ev = Event(EVENT_TICK)
+            ev.setData(d)
+            self.debug('OnEvent(%s) treating as: %s' % (EVENT_TICK_OF_ADVICE, ev.desc))
+
         # step 2. 收到行情后，在启动策略前的处理
         evd = ev.data
         matchNeeded = False
@@ -1257,9 +1257,28 @@ class AccountWrapper(MetaAccount):
         outgoingOrders = []
         ordersToCancel = []
         cStep =0
+        fstampNow = datetime2float(self.datetimeAsOfMarket())
+        strExpired = ''
+        cExpired=0
 
         with self._nest._lock:
             outgoingOrders = copy.deepcopy(list(self._nest._dictOutgoingOrders.values()))
+
+            # find out those expired orders, append them into _lstOrdersToCancel
+            if fstampNow >0.0 :
+                for odid,odata in self._nest._dictLimitOrders.items():
+                    if odata.msecTTL <=0 or odata.fstampSubmitted + odata.msecTTL > fstampNow: continue
+                    if odid in self._lstOrdersToCancel : continue
+                    self._lstOrdersToCancel.append(odid)
+                    strExpired += 'O[%s],' % odata.desc
+                    cExpired +=1
+
+                for odid,odata in self._nest._dictStopOrders.items():
+                    if odata.msecTTL <=0 or odata.fstampSubmitted + odata.msecTTL > fstampNow: continue
+                    if odid in self._lstOrdersToCancel : continue
+                    self._lstOrdersToCancel.append(odid)
+                    strExpired += 'O[%s],' % odata.desc
+                    cExpired +=1
 
             # find out he orderData by brokerOrderId
             for odid in self._nest._lstOrdersToCancel :
@@ -1287,8 +1306,10 @@ class AccountWrapper(MetaAccount):
             self._broker_placeOrder(no)
             cStep +=1
 
-        if (len(ordersToCancel) + len(outgoingOrders)) >0:
-            self.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
+        if (cExpired>0):
+            self.warn('step() placed %d orders, cancelled %d orders including %d expired: %s'% (len(outgoingOrders), len(ordersToCancel), cExpired, strExpired))
+        elif (len(ordersToCancel) + len(outgoingOrders)) >0:
+            self.info('step() placed %d orders, cancelled %d orders'% (len(outgoingOrders), len(ordersToCancel)))
 
         return cStep
 
@@ -1360,7 +1381,7 @@ class AccountWrapper(MetaAccount):
 
     def calcAmountOfTrade(self, symbol, price, volume): return self._nest.calcAmountOfTrade(symbol, price, volume)
     def maxOrderVolume(self, symbol, price): return self._nest.maxOrderVolume(symbol, price)
-    def roundToPriceTick(self, price): return self._nest.roundToPriceTick(price)
+    def roundByPriceTick(self, price, dir=OrderData.DIRECTION_NONE): return self._nest.roundByPriceTick(price, dir)
     def onStart(self): return self._nest.onStart()
     # must be duplicated other than forwarding to _nest def doAppStep(self) : return self._nest.doAppStep()
     def onDayClose(self):
@@ -1389,10 +1410,11 @@ class AccountWrapper(MetaAccount):
         # 代码编号相关
         orderData.symbol      = symbol
         orderData.exchange    = self._exchange
-        orderData.price       = self.roundToPriceTick(price) # 报单价格
+        orderData.price       = self.roundByPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
         orderData.datetime    = self.datetimeAsOfMarket()
         orderData.reason      = reason if reason else ''
+        orderData.msecTTL     = self._nest._msecOrderTTL if self._nest._msecOrderTTL >0 else 0.0
 
         # 报单方向
         if orderType == OrderData.ORDER_BUY:
@@ -1503,8 +1525,8 @@ class AccountWrapper(MetaAccount):
         if not symbol :
             return # ignore those non-tick/kline events
 
-        buyBestCrossPrice  = self.roundToPriceTick(buyBestCrossPrice)
-        sellBestCrossPrice = self.roundToPriceTick(sellBestCrossPrice)
+        buyBestCrossPrice  = self.roundByPriceTick(buyBestCrossPrice)
+        sellBestCrossPrice = self.roundByPriceTick(sellBestCrossPrice)
 
         # 先撮合限价单
         self.__crossLimitOrder(symbol, dtEvent, buyCrossPrice, sellCrossPrice, buyBestCrossPrice, sellBestCrossPrice, maxCrossVolume)
@@ -1584,11 +1606,14 @@ class AccountWrapper(MetaAccount):
                 finishedOrders.append(order)
                 strCrossed += 'O[%s]->T[%s],' % (order.desc, trade.desc)
 
-        if len(finishedOrders)>0:
+        if len(finishedOrders) + len(pendingOrders) >0:
             strPendings = ''
             for o in pendingOrders:
                 strPendings += 'O[%s],' % o.desc
-            self.info('crossLimitOrder() crossed %d orders:%s; %d pendings:%s'% (len(finishedOrders), strCrossed, len(pendingOrders), strPendings))
+            if len(finishedOrders) >0:
+                self.info('crossLimitOrder() crossed %d orders:%s; %d pendings: %s'% (len(finishedOrders), strCrossed, len(pendingOrders), strPendings))
+            else:
+                self.debug('crossLimitOrder() %d pending orders: %s'% (len(pendingOrders), strPendings))
 
         for o in finishedOrders:
             self._broker_onOrderDone(o)
@@ -1751,6 +1776,13 @@ class OfflineSimulator(BackTestApp):
 
     def OnEvent(self, ev): # this overwrite BackTest's because there are some different needs
         symbol  = None
+
+        if EVENT_TICK_OF_ADVICE == ev.type :
+            d = copy.copy(ev.data)
+            ev = Event(EVENT_TICK)
+            ev.setData(d)
+            self.debug('OnEvent(%s) treating as: %s' % (EVENT_TICK_OF_ADVICE, ev.desc))
+
         if EVENT_TICK == ev.type or EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
             try :
                 symbol = ev.data.symbol

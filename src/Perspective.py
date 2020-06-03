@@ -195,7 +195,7 @@ class Perspective(MarketData):
                 continue
             ret = stk.top.price if EVENT_TICK == et else stk.top.close
         
-        return round(ret, 3)
+        return round(ret, PRICE_DISPLAY_ROUND_DECIMALS)
 
     @property
     def dailyOHLC_sofar(self) :

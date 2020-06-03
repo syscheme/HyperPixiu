@@ -135,12 +135,8 @@ class TradeAdvisor(BaseApplication):
 
             self.info('taking MarketState[%s] on %d objectives: %s' % (self._marketState.ident, len(self.objectives), ','.join(self.objectives)))
 
-        self.subscribeEvent(EVENT_TICK)
-        self.subscribeEvent(EVENT_KLINE_1MIN)
-        self.subscribeEvent(EVENT_KLINE_5MIN)
-        self.subscribeEvent(EVENT_KLINE_1DAY)
-        self.subscribeEvent(EVENT_MONEYFLOW_1MIN)
-        self.subscribeEvent(EVENT_MONEYFLOW_1DAY)
+        self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
+        self.subscribeEvents([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY])
 
         if self._recorder :
             self._recorder.registerCategory(EVENT_ADVICE,         params= {'columns' : AdviceData.COLUMNS})
@@ -308,7 +304,7 @@ class AdviceData(EventData):
 
     def dirString(self) :
         if not self.strDir or len(self.strDir) <=0 :
-            self.dirNONE, self.dirLONG, self.dirSHORT = round(self.dirNONE,4), round(self.dirLONG,4), round(self.dirSHORT,4)
+            self.dirNONE, self.dirLONG, self.dirSHORT = round(self.dirNONE,4), round(self.dirLONG,4), round(self.dirSHORT, PRICE_DISPLAY_ROUND_DECIMALS)
             dirIdx = np.argmax([self.dirNONE,self.dirLONG,self.dirSHORT])
             self.strDir = AdviceData.DIRSTR[dirIdx]
         return self.strDir
@@ -316,5 +312,5 @@ class AdviceData(EventData):
     @property
     def desc(self) :
         dirIdx = np.argmax([self.dirNONE,self.dirLONG,self.dirSHORT])
-        return 'tadv.%s@%s>%s@%s' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S'), self.strDir, round(self.price,2))
+        return 'tadv.%s@%s>%s@%s' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S'), self.strDir, round(self.price, PRICE_DISPLAY_ROUND_DECIMALS))
 

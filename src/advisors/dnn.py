@@ -108,6 +108,10 @@ class DnnAdvisor_S1548I4A3(TradeAdvisor):
             self.debug('generateAdviceOnMarketEvent() ignored event %s' % ev.type)
             return None
 
+        if not EVENT_KLINE_PREFIX in ev.type and not EVENT_TICK in ev.type :
+            self.debug('generateAdviceOnMarketEvent() not yet support event %s' % ev.type)
+            return None
+
         d = ev.data
         tokens = (d.vtSymbol.split('.'))
         symbol = tokens[0]
@@ -124,7 +128,7 @@ class DnnAdvisor_S1548I4A3(TradeAdvisor):
         # action[idxAct] = 1.0
         advice = AdviceData(self.ident, symbol, d.exchange)
         advice.dirNONE, advice.dirLONG, advice.dirSHORT = act_values[0][0], act_values[0][1], act_values[0][2]
-        advice.price = d.price if EVENT_TICK == ev.type else d.close
+        advice.price = d.close if EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] else d.price
 
         return advice
 

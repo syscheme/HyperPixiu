@@ -973,7 +973,7 @@ class OnlineSimulator(MetaTrader):
     def OnEvent(self, ev): 
 
         if EVENT_TICK_OF_ADVICE == ev.type :
-            d = copy(ev.data)
+            d = copy.copy(ev.data)
             ev = Event(EVENT_TICK)
             ev.setData(d)
             self.debug('OnEvent(%s) treating as: %s' % (EVENT_TICK_OF_ADVICE, ev.desc))
@@ -1778,7 +1778,7 @@ class OfflineSimulator(BackTestApp):
         symbol  = None
 
         if EVENT_TICK_OF_ADVICE == ev.type :
-            d = copy(ev.data)
+            d = copy.copy(ev.data)
             ev = Event(EVENT_TICK)
             ev.setData(d)
             self.debug('OnEvent(%s) treating as: %s' % (EVENT_TICK_OF_ADVICE, ev.desc))

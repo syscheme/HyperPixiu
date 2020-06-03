@@ -77,12 +77,17 @@ class SinaCrawler(MarketCrawler):
 
         self._eventsToPost = [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_MONEYFLOW_1MIN]
 
-        self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline, self.__step_pollMoneyflow]
         self._proxies = {}
 
-        self._secYield456  = self.getConfig('yield456',    230)
-        self.__excludeAt404= self.getConfig('excludeAt404',True)
-        symbols            = self.getConfig('symbolsToCrawl', [])
+        symbols              = self.getConfig('symbolsToCrawl', [])
+
+        self._secYield456    = self.getConfig('yield456',    230)
+        self.__excludeAt404  = self.getConfig('excludeAt404',True)
+        self.__skipMoneyFlow = self.getConfig('excludeMoneyFlow', False)
+
+        self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline]
+        if not self._skipMoneyFlow:
+            self._steps.append(self.__step_pollMoneyflow)
 
         self.__idxTickBatch, self.__idxKL, self.__idxMF = 0,0,0
         self.__tickBatches = None

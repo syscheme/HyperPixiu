@@ -878,6 +878,7 @@ class Program(object):
             while self._bRun and not bEmpty:
                 event = None
                 try :
+                    if cContinuousEvent >0: timeout = 0.1
                     event = self.__queue.get(block = enabledHB, timeout = timeout)  # 获取事件的阻塞时间设为0.1秒
                     bEmpty = False
                     qsize, maxsize = self.__queue.qsize(), self.__queue.maxsize
@@ -890,6 +891,10 @@ class Program(object):
                     self.error("quit per KeyboardInterrupt")
                     self._bRun = False
                     break
+                except Except as ex:
+                    self.logexception(ex)
+                    cContinuousEvent = 0
+                    timeout = max(1.0, self._heartbeatInterval)
 
                 # do the step only when there is no event
                 cApps =0

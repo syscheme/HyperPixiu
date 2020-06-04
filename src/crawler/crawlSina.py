@@ -412,7 +412,7 @@ class SinaCrawler(MarketCrawler):
 
             errmsg += 'err(%s)%s' % (httperr, response.reason)
         except Exception as e:
-            errmsg += 'exception：%s' % e
+            errmsg += 'exception: %s' % e
         
         self.info('%s <-%s'% (errmsg, url)) # lower this loglevel
         return httperr, errmsg

@@ -20,7 +20,7 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 from abc import ABC, abstractmethod
 
-import sys
+import sys, re
 if sys.version_info <(3,):
     from Queue import Queue, Empty
 else:
@@ -308,6 +308,117 @@ class TaggedCsvRecorder(Recorder):
         collection['o'] = dtNow
         self.debug('file[%s] opened: size=%s' % (fname, size))
         return collection
+
+########################################################################
+class TcsvFilter(MetaObj):
+    def __init__(self, tcsvFilePath, categroy, symbol=None):
+        super(MetaObj, self).__init__()
+        self.__gen=None
+        self._tcsvFilePath = tcsvFilePath
+        self.__category = categroy.strip()
+        self.__symbol = symbol.strip() if symbol else None
+
+    def __iter__(self):
+        fnlist = TcsvFilter.buildUpFileList(self._tcsvFilePath)
+        self.__gen = TcsvFilter.funcGen(fnlist, self.__category, self.__symbol)
+        return self
+
+    def __next__(self):
+        if not self.__gen:
+            self.__iter__()
+            # raise StopIteration
+        return next(self.__gen)
+
+    def read(self, n=0):
+        try:
+            return next(self)
+        except StopIteration:
+            pass
+        
+        return ''
+
+    def buildUpFileList(tcsvFilePath):
+        fnlist = []
+        bz2dict = {}
+
+        dirname = os.path.realpath(os.path.dirname(tcsvFilePath))
+        basename = os.path.basename(tcsvFilePath)
+        if basename[-5:] != '.tcsv':
+            basename += '.tcsv'
+        lenBN = len(basename)
+        for _, _, files in os.walk(dirname, topdown=False):
+            for name in files:
+                if basename != name[:lenBN]:
+                    continue
+                suffix = name[lenBN:]
+                if len(suffix) <=0:
+                    fnlist.append(name)
+                    continue
+                m = re.match(r'\.([0-9]*)\.bz2', suffix)
+                if m :
+                    bz2dict[int(m.group(1))] = name
+
+        items = list(bz2dict.items())
+        items.sort() 
+
+        # insert into fnlist reversly
+        for k,v in items:
+            fnlist.insert(0, v)
+
+        fnlist = [os.path.join(dirname, x) for x in fnlist]
+        return fnlist
+
+    def funcGen(fnlist, tag, symbol=None):
+        headers = None
+        if ',' != tag[-1]: tag +=','
+        taglen = len(tag)
+        idxSymbol =-1
+        if symbol and len(symbol) <=0:
+            self.__symbol =None
+
+        for fn in fnlist:
+            if fn[-4:] == '.bz2':
+                stream = bz2.open(fn, mode='rt')
+            elif fn[-5:] == '.tcsv':
+                stream = open(fn, mode='rt')
+
+            row= True # dummy non-None
+            while row:
+                try :
+                    row = next(stream, None).strip()
+                except Exception as ex:
+                    row = None
+                
+                if not row:
+                    stream.close()
+                    continue
+
+                if len(row) <=0:
+                    continue
+
+                if '!' ==row[0] :
+                    if headers or tag != row[1:taglen+1]:
+                        continue
+
+                    headers = row.split(',')
+                    del(headers[0])
+                    yield row[taglen+1:]+'\n'
+
+                    if idxSymbol<0 and symbol and 'symbol' in headers:
+                        idxSymbol = headers.index('symbol')
+
+                    continue
+                
+                if not headers or tag != row[:taglen]:
+                    continue
+
+                if idxSymbol>=0 and row.split(',')[1+idxSymbol] !=symbol:
+                    continue
+
+                row = row[taglen:] +'\n'
+                yield row
+
+        raise StopIteration
 
 ########################################################################
 class Playback(Iterable):

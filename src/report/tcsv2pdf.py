@@ -5,6 +5,8 @@ BackTest reports
 '''
 from __future__ import division
 
+from HistoryData import TcsvFilter
+
 import pandas as pd
 import numpy as np
 import shutil
@@ -13,6 +15,8 @@ import math
 
 import matplotlib as mpl # pip install matplotlib
 import matplotlib.pyplot as plt
+from matplotlib import ticker
+import warnings; warnings.simplefilter('ignore')
 mpl.use('Agg')
 
 import os, re
@@ -25,109 +29,21 @@ try:
 except ImportError:
     pass
 
-class TcsvFilter(object):
-    def __init__(self):
-        self.g=None
-
-    def read(self, n=0):
-        if self.g:
-            try:
-                return next(self.g)
-            except StopIteration:
-                pass
-        
-        return ''
-
-    def buildUpFileList(tcsvFilePath):
-        fnlist = []
-        bz2dict = {}
-
-        dirname = os.path.realpath(os.path.dirname(tcsvFilePath))
-        basename = os.path.basename(tcsvFilePath)
-        if basename[-5:] != '.tcsv':
-            basename += '.tcsv'
-        lenBN = len(basename)
-        for _, _, files in os.walk(dirname, topdown=False):
-            for name in files:
-                if basename != name[:lenBN]:
-                    continue
-                suffix = name[lenBN:]
-                if len(suffix) <=0:
-                    fnlist.append(name)
-                    continue
-                m = re.match(r'\.([0-9]*)\.bz2', suffix)
-                if m :
-                    bz2dict[int(m.group(1))] = name
-
-        items = list(bz2dict.items())
-        items.sort() 
-        for k,v in items:
-            fnlist.insert(0, v)
-
-        fnlist = [os.path.join(dirname, x) for x in fnlist]
-        return fnlist
-
-    def gen(fnlist, tag):
-        headers = None
-        taglen = len(tag)
-
-        for fn in fnlist:
-            if fn[-4:] == '.bz2':
-                stream = bz2.open(fn, mode='rt')
-            elif fn[-5:] == '.tcsv':
-                stream = open(fn, mode='rt')
-
-            row= True # dummy non-None
-            while row:
-                try :
-                    row = next(stream, None)
-                except Exception as ex:
-                    row = None
-                
-                if not row:
-                    stream.close()
-                    
-                    continue
-
-                if '!' ==row[0] :
-                    if headers or '%s,' % tag != row[1:taglen+2]:
-                        continue
-
-                    headers = row.split(',')
-                    del(headers[0])
-                    yield row[taglen+2:]
-
-                    continue
-                
-                if not headers or '%s,' % tag != row[:taglen+1]:
-                    continue
-
-                row = row[taglen+1:]
-                yield row
-
-        raise StopIteration
 
 if __name__ == '__main__':
 
-    fnlist = TcsvFilter.buildUpFileList('/mnt/e/AShareSample/sina/test_Crawler_848_0320')
-    print(fnlist)
-    filter = TcsvFilter()
-    filter.g = TcsvFilter.gen(fnlist, 'evmdKL5m')
-    for l in filter.g:
-        print('%s' %l)
-    # pd.read_csv(filter, chunksize=10000)
+    srcdatahome = '/mnt/e/temp/sim_offline_BAK05101013'
+    # filter = TcsvFilter('/mnt/e/AShareSample/sina/test_Crawler_848_0320', 'evmdKL5m', 'SH601390')
+    filter = TcsvFilter('%s/SH510050_P9334.tcsv' % srcdatahome, 'DRes', 'SH510050')
+    
+    # for l in filter:
+    #     print('%s' %l)
+    dfSample = pd.read_csv(filter, error_bad_lines=False)
+    # dfSample.set_index('datetime', inplace = True)
+    # del dfSample['exchange']
+    # dfSample['prdDIR']= dfSample[['dirNONE', 'dirLONG','dirSHORT']].apply(lambda x: (x[1]-x[2])*0.5 +0.5, axis=1)
+    print(dfSample)
 
-
-'''
-#grep TAdv SH510050_P7956.tcsv |sed 's/^.*TAdv,//g' > TAdv.csv
-# srcdatahome = 'd:/workspace.t3600/HyperPixiu/out/sim_offline'
-srcdatahome = 'd:/wkspaces/HyperPixiu/tmp'
-# dfSample = pd.read_csv(srcdatahome + '/SH510050.csv.bz2', names=['date','time','open','high','low','close','volume','amount'], compression='bz2', error_bad_lines=False)
-dfSample = pd.read_csv(srcdatahome + '/TAdv_Cnn1D2015.csv', error_bad_lines=False)
-dfSample.set_index('datetime', inplace = True)
-del dfSample['exchange']
-dfSample['prdDIR']= dfSample[['dirNONE', 'dirLONG','dirSHORT']].apply(lambda x: (x[1]-x[2])*0.5 +0.5, axis=1)
-'''
 
 
 '''

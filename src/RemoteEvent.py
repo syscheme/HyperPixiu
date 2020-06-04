@@ -28,8 +28,8 @@ class EventEnd(BaseApplication):
         super(EventEnd, self).__init__(program, **kwargs)
 
         # 事件队列
-        self._queOutgoing = Queue(maxsize=100)
-        self._queIncoming = Queue(maxsize=100)
+        self._queOutgoing = Queue() # Queue(maxsize=100)
+        self._queIncoming = Queue() #  Queue(maxsize=100)
         self.__selfstamp = '%s@%s' % (self.program.progId, self.program.hostname)
 
         self._topicsOutgoing   = self.getConfig('outgoing', [])
@@ -82,7 +82,7 @@ class EventEnd(BaseApplication):
         # step 1. forward the outgoing events
         cSent, cRecv =0, 0
         ev = True # dummy
-        while ev and cSent <10:
+        while ev and cSent < max(10, self._queOutgoing.qsize()/2):
             ev = None
             try :
                 ev = self._queOutgoing.get(block =False, timeout =0.1)  # 获取事件的阻塞时间设为0.1秒

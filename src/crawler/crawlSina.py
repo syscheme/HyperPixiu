@@ -29,7 +29,7 @@ https://baike.baidu.com/item/%E9%BE%99%E5%A4%B4%E8%82%A1/2268306
 '''
 
 CLOCK_ERROR_SEC   = 2*60.0  # 2min
-OFFHOUR_ERROR_SEC = 60*60.0 # 1hr
+OFFHOUR_ERROR_SEC = 60*60.0               *6 # 1hr
 
 def toFloatVal(val, defaultval=0.0) :
     try :
@@ -68,7 +68,7 @@ class SinaCrawler(MarketCrawler):
             EVENT_MONEYFLOW_1DAY : 240,
         }
 
-    def __init__(self, program, marketState=None, recorder=None, **kwargs):
+    def __init__(self, program, marketState=None, recorder=None, objectives=[], **kwargs):
         """Constructor"""
         super(SinaCrawler, self).__init__(program, marketState, recorder, **kwargs)
         
@@ -80,7 +80,9 @@ class SinaCrawler(MarketCrawler):
         self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline, self.__step_pollMoneyflow]
         self._proxies = {}
 
-        symbols              = self.getConfig('symbolsToCrawl', [])
+        symbols              = self.getConfig('objectives', objectives)
+        if len(symbols) >0 and not isinstance(symbols[0], str):
+            symbols = [s('') for s in symbols]
 
         self._secYield456    = self.getConfig('yield456',    230)
         self.__excludeAt404  = self.getConfig('excludeAt404',True)

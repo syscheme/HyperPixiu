@@ -198,14 +198,18 @@ class BaseApplication(MetaApp):
                 jn = self.__jsettings
                 for i in configName.split('/') :
                     jn = jn[i]
+                    # if not jn or isinstance(jn, jsoncfg.config_classes.ValueNotFoundNode):
+                    #     return defaultVal
 
-                if defaultVal :
+                if defaultVal:
                     if isinstance(defaultVal, list) :
                         return jsoncfg.expect_array(jn) # jsoncfg.expect_array(jn(defaultVal))
                     if isinstance(defaultVal, dict):
                         return jsoncfg.expect_object(jn) # jsoncfg.expect_object(jn(defaultVal))
 
                 return jn(defaultVal)
+        except jsoncfg.config_classes.JSONConfigValueNotFoundError:
+            pass
         except Exception as ex:
             self.logexception(ex)
 
@@ -1046,13 +1050,15 @@ class Program(object):
 
                 if defaultVal :
                     if isinstance(defaultVal, list):
-                        return jsoncfg.expect_array(jn(defaultVal))
+                        return jsoncfg.expect_array(jn)
                     if isinstance(defaultVal, dict):
-                        return jsoncfg.expect_object(jn(defaultVal))
+                        return jsoncfg.expect_object(jn)
 
                 return jn(defaultVal)
-        except:
+        except jsoncfg.config_classes.JSONConfigValueNotFoundError:
             pass
+        except Exception as ex:
+            self.logexception(ex)
 
         return defaultVal
 

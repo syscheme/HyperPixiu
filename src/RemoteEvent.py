@@ -95,7 +95,7 @@ class EventEnd(BaseApplication):
         # step 1. forward the outgoing events
         cSent, cRecv =0, 0
         ev = True # dummy
-        while ev and cSent < max(10, self._queOutgoing.qsize()/3):
+        while ev and cSent < max(10, self._queOutgoing.qsize()/2):
             ev = None
             try :
                 ev = self._queOutgoing.get(block =False, timeout =0.1)  # 获取事件的阻塞时间设为0.1秒

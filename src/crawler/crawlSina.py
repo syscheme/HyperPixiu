@@ -29,7 +29,7 @@ https://baike.baidu.com/item/%E9%BE%99%E5%A4%B4%E8%82%A1/2268306
 '''
 
 CLOCK_ERROR_SEC   = 2*60.0  # 2min
-OFFHOUR_ERROR_SEC = 60*60.0 # 1hr
+OFFHOUR_ERROR_SEC = 60*60.0               *6 # 1hr
 
 def toFloatVal(val, defaultval=0.0) :
     try :
@@ -68,7 +68,7 @@ class SinaCrawler(MarketCrawler):
             EVENT_MONEYFLOW_1DAY : 240,
         }
 
-    def __init__(self, program, marketState=None, recorder=None, **kwargs):
+    def __init__(self, program, marketState=None, recorder=None, objectives=[], **kwargs):
         """Constructor"""
         super(SinaCrawler, self).__init__(program, marketState, recorder, **kwargs)
         
@@ -80,7 +80,9 @@ class SinaCrawler(MarketCrawler):
         self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline, self.__step_pollMoneyflow]
         self._proxies = {}
 
-        symbols              = self.getConfig('symbolsToCrawl', [])
+        symbols              = self.getConfig('objectives', objectives)
+        if len(symbols) >0 and not isinstance(symbols[0], str):
+            symbols = [s('') for s in symbols]
 
         self._secYield456    = self.getConfig('yield456',    230)
         self.__excludeAt404  = self.getConfig('excludeAt404',True)
@@ -397,7 +399,7 @@ class SinaCrawler(MarketCrawler):
     #------------------------------------------------
     # private methods
     def __sinaGET(self, url, apiName):
-        errmsg = '%s() GET ' % apiName
+        errmsg = '%s() GET ' % (apiName)
         httperr = 400
         try:
             self.debug("%s() GET %s" %(apiName, url))
@@ -408,11 +410,11 @@ class SinaCrawler(MarketCrawler):
             if httperr == 200:
                 return httperr, response.text
 
-            errmsg += 'err(%s)' % httperr
+            errmsg += 'err(%s)%s' % (httperr, response.reason)
         except Exception as e:
             errmsg += 'exception：%s' % e
         
-        self.error(errmsg)
+        self.info('%s <-%s'% (errmsg, url)) # lower this loglevel
         return httperr, errmsg
 
     def GET_RecentKLines(self, symbol, minutes=1200, lines=10): # deltaDays=2)
@@ -434,6 +436,7 @@ class SinaCrawler(MarketCrawler):
         # [{day:"2019-09-23 14:15:00",open:"15.280",high:"15.290",low:"15.260",close:"15.270",volume:"892600",ma_price5:15.274,ma_volume5:1645033,ma_price10:15.272,ma_volume10:1524623,ma_price30:15.296,ma_volume30:2081080},
         # {day:"2019-09-23 14:20:00",open:"15.270",high:"15.280",low:"15.240",close:"15.240",volume:"1591705",ma_price5:15.266,ma_volume5:1676498,ma_price10:15.27,ma_volume10:1593887,ma_price30:15.292,ma_volume30:1955370},
         # ...]
+        # maximal return: scale=5->around 1mon, scale=15->around 1.5mon, scale=30->2mon, scale=60->3mon, scale=240->a bit longer than 1yr
         # js = response.json()
         # result = demjson.decode(response.text)
         # result.decode('utf-8')

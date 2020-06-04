@@ -28,13 +28,16 @@ class EventEnd(BaseApplication):
         super(EventEnd, self).__init__(program, **kwargs)
 
         # 事件队列
-        self._queOutgoing = Queue(maxsize=100)
-        self._queIncoming = Queue(maxsize=100)
         self.__selfstamp = '%s@%s' % (self.program.progId, self.program.hostname)
 
+        maxQue                 = self.getConfig('maxQueued', -1)
         self._topicsOutgoing   = self.getConfig('outgoing', [])
         self._topicsIncomming  = self.getConfig('incoming', [])
         self._subQuit   = False
+
+        if maxQue >0 and maxQue <300: maxQue =300
+        self._queOutgoing = Queue(maxsize=maxQue) if maxQue>0 else Queue()
+        self._queIncoming = Queue(maxsize=maxQue) if maxQue>0 else Queue()
 
     @abstractmethod
     def send(self, event):
@@ -71,6 +74,16 @@ class EventEnd(BaseApplication):
         '''
         if ev.publisher or not ev.type in self._topicsOutgoing: # ignore those undeclared type and were captured from remote
             return
+
+        qsize =self._queOutgoing.qsize()
+        while self._queOutgoing.maxsize >0 and qsize >= self._queOutgoing.maxsize:
+            try :
+                ev = self._queOutgoing.get(block =True)  # 获取事件的阻塞时间设为0.1秒
+                if ev :
+                    self.warn('OnEvent() overflow %d/%d, event-dropped: %s' %(qsize, self._queOutgoing.maxsize, ev.desc))
+            except Empty:
+                break
+            qsize = self._queOutgoing.qsize()
         
         ev = copy(ev)
         ev.sign(self.__selfstamp)
@@ -82,7 +95,7 @@ class EventEnd(BaseApplication):
         # step 1. forward the outgoing events
         cSent, cRecv =0, 0
         ev = True # dummy
-        while ev and cSent <10:
+        while ev and cSent < max(10, self._queOutgoing.qsize()/3):
             ev = None
             try :
                 ev = self._queOutgoing.get(block =False, timeout =0.1)  # 获取事件的阻塞时间设为0.1秒

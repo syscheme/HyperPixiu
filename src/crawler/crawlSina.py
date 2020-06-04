@@ -6,6 +6,7 @@ from MarketCrawler import *
 from EventData import Event, datetime2float, DT_EPOCH
 from MarketData import KLineData, TickData, MoneyflowData, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
 from Account import Account_AShare
+import crawler.disguise as dsg
 
 import requests # pip3 install requests
 from copy import copy
@@ -76,13 +77,18 @@ class SinaCrawler(MarketCrawler):
         # self._threadless = False
 
         self._eventsToPost = [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_MONEYFLOW_1MIN]
-
         self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline, self.__step_pollMoneyflow]
         self._proxies = {}
 
-        self._secYield456  = self.getConfig('yield456',    230)
-        self.__excludeAt404= self.getConfig('excludeAt404',True)
-        symbols            = self.getConfig('symbolsToCrawl', [])
+        symbols              = self.getConfig('symbolsToCrawl', [])
+
+        self._secYield456    = self.getConfig('yield456',    230)
+        self.__excludeAt404  = self.getConfig('excludeAt404',True)
+
+        # COVERED inside of __step_pollMoneyflow()
+        # self._excludeMoneyFlow = self.getConfig('excludeMoneyFlow', False)
+        # if not self._excludeMoneyFlow:
+        #     self._steps.append(self.__step_pollMoneyflow)
 
         self.__idxTickBatch, self.__idxKL, self.__idxMF = 0,0,0
         self.__tickBatches = None
@@ -314,6 +320,10 @@ class SinaCrawler(MarketCrawler):
             s = self._symbolsToPoll[self.__idxMF]
 
         self.__idxMF += 1
+        
+        # SAD: sina doesn't support moneyflow on ETFs, so skip it to avoid 456s
+        if 'SH51' in s or 'SZ15' in s:
+            return cBusy
 
         if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC):
             return cBusy # well off-trade hours
@@ -387,20 +397,22 @@ class SinaCrawler(MarketCrawler):
     #------------------------------------------------
     # private methods
     def __sinaGET(self, url, apiName):
-        errmsg = '%s() GET ' % apiName
+        errmsg = '%s() GET ' % (apiName)
         httperr = 400
         try:
             self.debug("%s() GET %s" %(apiName, url))
-            response = requests.get(url, headers=copy(self.DEFAULT_GET_HEADERS), proxies=self._proxies, timeout=self.TIMEOUT)
+            headers = copy(self.DEFAULT_GET_HEADERS)
+            headers['User-Agent'] = dsg.nextUserAgent()
+            response = requests.get(url, headers=headers, proxies=self._proxies, timeout=self.TIMEOUT)
             httperr = response.status_code
             if httperr == 200:
                 return httperr, response.text
 
-            errmsg += 'err(%s)' % httperr
+            errmsg += 'err(%s)%s' % (httperr, response.reason)
         except Exception as e:
             errmsg += 'exception：%s' % e
         
-        self.error(errmsg)
+        self.info('%s <-%s'% (errmsg, url)) # lower this loglevel
         return httperr, errmsg
 
     def GET_RecentKLines(self, symbol, minutes=1200, lines=10): # deltaDays=2)
@@ -422,6 +434,7 @@ class SinaCrawler(MarketCrawler):
         # [{day:"2019-09-23 14:15:00",open:"15.280",high:"15.290",low:"15.260",close:"15.270",volume:"892600",ma_price5:15.274,ma_volume5:1645033,ma_price10:15.272,ma_volume10:1524623,ma_price30:15.296,ma_volume30:2081080},
         # {day:"2019-09-23 14:20:00",open:"15.270",high:"15.280",low:"15.240",close:"15.240",volume:"1591705",ma_price5:15.266,ma_volume5:1676498,ma_price10:15.27,ma_volume10:1593887,ma_price30:15.292,ma_volume30:1955370},
         # ...]
+        # maximal return: scale=5->around 1mon, scale=15->around 1.5mon, scale=30->2mon, scale=60->3mon, scale=240->a bit longer than 1yr
         # js = response.json()
         # result = demjson.decode(response.text)
         # result.decode('utf-8')

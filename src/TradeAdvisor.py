@@ -20,7 +20,7 @@ import logging
 import json   # to save params
 from collections import OrderedDict
 from datetime import datetime, timedelta
-from copy import copy, deepcopy
+from copy import copy
 from abc import ABCMeta, abstractmethod
 import traceback
 import numpy as np
@@ -38,6 +38,7 @@ class TradeAdvisor(BaseApplication):
 
         self._recorder = recorder
         self.__dictAdvices = {} # dict of symbol to recent AdviceData
+        self.__dictFstampLastPost = {} # dict of symbol to float stamp of last advice-post
         self.__dictPerf = {} # dict of symbol to performance {'Rdaily':,'Rdstd':}
 
         self._minimalAdvIntv   = self.getConfig('minimalInterval', 5) # minimal interval in seconds between two advice s
@@ -54,7 +55,6 @@ class TradeAdvisor(BaseApplication):
 
         self._marketState = PerspectiveState(self._exchange) # take PerspectiveState by default
         self.__stampMStateRestored, self.__stampMStateSaved = None, None
-        self.__stampLastPost = None
         # try :
         #     shutil.rmtree(self.__wkTrader.outdir)
         # except:
@@ -135,12 +135,8 @@ class TradeAdvisor(BaseApplication):
 
             self.info('taking MarketState[%s] on %d objectives: %s' % (self._marketState.ident, len(self.objectives), ','.join(self.objectives)))
 
-        self.subscribeEvent(EVENT_TICK)
-        self.subscribeEvent(EVENT_KLINE_1MIN)
-        self.subscribeEvent(EVENT_KLINE_5MIN)
-        self.subscribeEvent(EVENT_KLINE_1DAY)
-        self.subscribeEvent(EVENT_MONEYFLOW_1MIN)
-        self.subscribeEvent(EVENT_MONEYFLOW_1DAY)
+        self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
+        self.subscribeEvents([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY])
 
         if self._recorder :
             self._recorder.registerCategory(EVENT_ADVICE,         params= {'columns' : AdviceData.COLUMNS})
@@ -178,22 +174,32 @@ class TradeAdvisor(BaseApplication):
         '''
         if EVENT_ADVICE == ev.type : return # no nested dead loop
 
+        d = ev.data
+        if d.asof > (datetime.now() + timedelta(days=7)):
+            self.warn('Trade-End signal received: %s' % d.desc)
+            self.eventHdl_TradeEnd(ev)
+            return
+
         if MARKETDATE_EVENT_PREFIX != ev.type[:len(MARKETDATE_EVENT_PREFIX)] : return # advisor is supposed to only take care of market events
 
         if self._marketState:
             self._marketState.updateByEvent(ev)
 
-        d = ev.data
         tokens = (d.vtSymbol.split('.'))
         symbol = tokens[0]
         ds = tokens[1] if len(tokens) >1 else d.exchange
         if not symbol in self.objectives :
             return # ignore those not interested
 
-        if d.asof > (datetime.now() + timedelta(days=7)):
-            self.warn('Trade-End signal received: %s' % d.desc)
-            self.eventHdl_TradeEnd(ev)
-            return
+        fstamp = datetime2float(d.asof)
+        # repeat the tick to remote eventChannel if this advice is based on a tick, so that the Trader
+        # who subscribe EVENT_ADVICEs does NOT have to instantiate a seperated crawler or others only in order to get the recent price
+        bTickDuplicated = False
+        if EVENT_TICK == ev.type and symbol in self.__dictFstampLastPost.keys() and fstamp < self.__dictFstampLastPost[symbol] +10.0: # duplicate the tick for max 10sec
+            bTickDuplicated = True
+            nev = Event(EVENT_TICK_OF_ADVICE)
+            nev.setData(copy(d))
+            self.postEvent(nev)
 
         latestAdvc = self.__dictAdvices[symbol] if symbol in self.objectives else None
         if latestAdvc and self._minimalAdvIntv >0:
@@ -242,18 +248,19 @@ class TradeAdvisor(BaseApplication):
         self.info('advice generated upon event[%s]: %s' % (ev.desc, evAdv.desc))
         self.__dictAdvices[symbol] = newAdvice
 
-        if 'NONE' != dir or not self.__stampLastPost or datetime2float(self.__stampLastPost) < datetime2float(newAdvice.datetime) -5*60: # reduce some NONE to remote eventCh
-            self.__stampLastPost = newAdvice.datetime
+        if 'NONE' != dir or not symbol in self.__dictFstampLastPost.keys() or self.__dictFstampLastPost[symbol] < fstamp -5*60: # reduce some NONE to remote eventCh
+            self.__dictFstampLastPost[symbol] = fstamp
 
-            # repeat the tick to remote eventChannel if this advice is based on a tick, so that the Traders
-            # who subscribe EVENT_ADVICEs do NOT have to instantiate crawler or others only in order to get the recent price
-            if EVENT_TICK == ev.type:
-                nev = copy.copy(ev)
-                nev.type = EVENT_TICK_OF_ADVICE
+            # repeat the most recent tick to remote eventChannel, see above bTickDuplicated
+            if not bTickDuplicated and EVENT_TICK == ev.type:
+                nev = Event(EVENT_TICK_OF_ADVICE)
+                nev.setData(copy(d))
                 self.postEvent(nev)
 
             # then post the advice
             self.postEvent(evAdv)
+        else:
+            self.debug('NONE-advice on event[%s] muted: %s' % (ev.desc, evAdv.desc))
 
         if self.__recMarketEvent :
             self._recorder.pushRow(ev.type, d)
@@ -297,7 +304,7 @@ class AdviceData(EventData):
 
     def dirString(self) :
         if not self.strDir or len(self.strDir) <=0 :
-            self.dirNONE, self.dirLONG, self.dirSHORT = round(self.dirNONE,4), round(self.dirLONG,4), round(self.dirSHORT,4)
+            self.dirNONE, self.dirLONG, self.dirSHORT = round(self.dirNONE,4), round(self.dirLONG,4), round(self.dirSHORT, PRICE_DISPLAY_ROUND_DECIMALS)
             dirIdx = np.argmax([self.dirNONE,self.dirLONG,self.dirSHORT])
             self.strDir = AdviceData.DIRSTR[dirIdx]
         return self.strDir
@@ -305,5 +312,5 @@ class AdviceData(EventData):
     @property
     def desc(self) :
         dirIdx = np.argmax([self.dirNONE,self.dirLONG,self.dirSHORT])
-        return 'tadv.%s@%s>%s@%s' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S'), self.strDir, round(self.price,2))
+        return 'tadv.%s@%s>%s@%s' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S'), self.strDir, round(self.price, PRICE_DISPLAY_ROUND_DECIMALS))
 

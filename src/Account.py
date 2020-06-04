@@ -7,7 +7,7 @@ from __future__ import division
 
 from EventData    import EventData, EVENT_NAME_PREFIX, datetime2float
 from Application  import BaseApplication
-from MarketData  import MarketState
+from MarketData  import MarketState, PRICE_DISPLAY_ROUND_DECIMALS
 import HistoryData  as hist
 
 from abc import ABCMeta, abstractmethod
@@ -26,6 +26,91 @@ def formatNumber(n, dec=2):
     """格式化数字到字符串"""
     rn = round(n, dec)      # 保留两位小数
     return format(rn, ',')  # 加上千分符
+
+########################################################################
+class OrderData(EventData):
+    """订单数据类"""
+    # 本地停止单前缀
+    STOPORDERPREFIX = 'SO#'
+
+    # 涉及到的交易方向类型
+    ORDER_BUY   = 'BUY'   # u'买开' 是指投资者对未来价格趋势看涨而采取的交易手段，买进持有看涨合约，意味着帐户资金买进合约而冻结
+    ORDER_SELL  = 'SELL'  # u'卖平' 是指投资者对未来价格趋势不看好而采取的交易手段，而将原来买进的看涨合约卖出，投资者资金帐户解冻
+    ORDER_SHORT = 'SHORT' # u'卖开' 是指投资者对未来价格趋势看跌而采取的交易手段，卖出看跌合约。卖出开仓，帐户资金冻结
+    ORDER_COVER = 'COVER' # u'买平' 是指投资者将持有的卖出合约对未来行情不再看跌而补回以前卖出合约，与原来的卖出合约对冲抵消退出市场，帐户资金解冻
+
+    # 本地停止单状态
+    STOPORDER_WAITING   = 'WAITING'   #u'等待中'
+    STOPORDER_CANCELLED = 'CANCELLED' #u'已撤销'
+    STOPORDER_TRIGGERED = 'TRIGGERED' #u'已触发'
+
+    # 方向常量
+    DIRECTION_NONE = 'NONE'
+    DIRECTION_LONG = 'LONG'
+    DIRECTION_SHORT = 'SHORT'
+    DIRECTION_UNKNOWN = 'UNKNOWN'
+    DIRECTION_NET =  'NET'
+    DIRECTION_SELL = 'SELL'  # IB接口
+    DIRECTION_COVEREDSHORT = 'COVERED_SHORT'    # 证券期权
+
+    # 开平常量
+    OFFSET_NONE = 'none'
+    OFFSET_OPEN = 'open'
+    OFFSET_CLOSE = 'close'
+    OFFSET_CLOSETODAY = 'close today'
+    OFFSET_CLOSEYESTERDAY = 'close yesterday'
+    OFFSET_UNKNOWN = 'unknown'
+
+    # 状态常量
+    STATUS_CREATED    = 'created'
+    STATUS_SUBMITTED  = 'submitted'
+    STATUS_PARTTRADED = 'partial-filled'
+    STATUS_ALLTRADED  = 'filled'
+    STATUS_PARTCANCEL = 'partial-canceled'
+    STATUS_CANCELLED  = 'canceled'
+    STATUS_REJECTED   = 'rejected'
+    STATUS_UNKNOWN    = 'unknown'
+
+    STATUS_OPENNING   = [STATUS_SUBMITTED, STATUS_PARTTRADED]
+    STATUS_FINISHED   = [STATUS_ALLTRADED, STATUS_PARTCANCEL]
+    STATUS_CLOSED     = STATUS_FINISHED + [STATUS_CANCELLED]
+
+    #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
+    COLUMNS = 'datetime,symbol,reqId,brokerOrderId,direction,price,totalVolume,tradedVolume,offset,status,reason' # ,stampSubmitted,stampCanceled,stampFinished'
+
+    #----------------------------------------------------------------------
+    def __init__(self, account, stopOrder=False, reqId = None):
+        """Constructor"""
+        super(OrderData, self).__init__()
+        
+        # 代码编号相关
+        self.reqId   = reqId if reqId else account.nextOrderReqId # 订单编号
+        if stopOrder:
+            self.reqId  = OrderData.STOPORDERPREFIX +self.reqId
+
+        self.brokerOrderId = EventData.EMPTY_STRING   # 订单在vt系统中的唯一编号，通常是 Gateway名.订单编号
+        self.accountId = account.ident          # 成交归属的帐号
+        self.exchange = account._exchange    # 交易所代码
+
+        self.symbol   = EventData.EMPTY_STRING         # 合约代码
+        
+        # 报单相关
+        self.direction    = EventData.EMPTY_UNICODE  # 报单方向
+        self.offset       = EventData.EMPTY_UNICODE     # 报单开平仓
+        self.price        = EventData.EMPTY_FLOAT        # 报单价格
+        self.totalVolume  = EventData.EMPTY_INT    # 报单总数量
+        self.tradedVolume = EventData.EMPTY_INT   # 报单成交数量
+        self.status       = OrderData.STATUS_CREATED     # 报单状态
+        self.reason       = EventData.EMPTY_STRING  # trigger reason
+        self.msecTTL      = EventData.EMPTY_INT     # time-to-live
+        
+        self.fstampSubmitted  = EventData.EMPTY_FLOAT  # 发单时间
+        self.fstampCanceled   = EventData.EMPTY_FLOAT  # 撤单时间
+        self.fstampFinished   = EventData.EMPTY_FLOAT  # 撤单时间
+
+    @property
+    def desc(self) :
+        return 'O%s:%s(%s) %dx%s' % (self.reqId, self.direction, self.symbol, self.totalVolume, round(self.price, PRICE_DISPLAY_ROUND_DECIMALS))
 
 ########################################################################
 class MetaAccount(BaseApplication):
@@ -124,7 +209,7 @@ class MetaAccount(BaseApplication):
     @abstractmethod 
     def maxOrderVolume(self, symbol, price): raise NotImplementedError
     @abstractmethod 
-    def roundToPriceTick(self, price): raise NotImplementedError
+    def roundByPriceTick(self, price, dir=OrderData.DIRECTION_NONE): raise NotImplementedError
     # @abstractmethod 
     # def onStart(self): raise NotImplementedError
     # must be duplicated other than forwarding to _nest def doAppStep(self) : return self._nest.doAppStep()
@@ -184,6 +269,7 @@ class Account(MetaAccount):
         self._contractSize  = self.getConfig('contractSize', 0.0)
         self._priceTick     = self.getConfig('priceTick',   0.01)
         self._dbName        = self.getConfig('dbName',  self._id) 
+        self._msecOrderTTL  = self.getConfig('ttlOrder',   300.0) *1000.0 # 5min by default
 
         self._pctReservedCash = self.getConfig('pctReservedCash', 1.0) # cash at percent of total cap, in order not to buy securities at full
         if self._pctReservedCash < 0.5: self._pctReservedCash =0.5
@@ -347,7 +433,7 @@ class Account(MetaAccount):
         for s, pos in positions.items():
             posValueSubtotal += pos.position * pos.price * self.contractSize
 
-        return round(cashTotal,2), round(posValueSubtotal,2)
+        return round(cashTotal,2), round(posValueSubtotal, 2)
 
     def tradeBeginOfDay(dt = None):
         return (dt if dt else datetime.now()).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -399,9 +485,10 @@ class Account(MetaAccount):
         # 代码编号相关
         orderData.symbol      = symbol
         orderData.exchange    = self._exchange
-        orderData.price       = self.roundToPriceTick(price) # 报单价格
+        orderData.price       = self.roundByPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
         orderData.reason      = reason if reason else ''
+        orderData.msecTTL     = self._msecOrderTTL if self._msecOrderTTL >0 else 0.0
 
         # 报单方向
         if orderType == OrderData.ORDER_BUY:
@@ -453,9 +540,10 @@ class Account(MetaAccount):
         # 代码编号相关
         orderData.symbol      = symbol
         orderData.exchange    = self._exchange
-        orderData.price       = self.roundToPriceTick(price) # 报单价格
+        orderData.price       = self.roundByPriceTick(price) # 报单价格
         orderData.totalVolume = volume    # 报单总数量
         orderData.reason      = reason if reason else ''
+        # ???? orderData.msecTTL     = self._msecOrderTTL if self._msecOrderTTL >0 else 0.0
         
         # 报单方向
         if orderType == OrderData.ORDER_BUY:
@@ -498,8 +586,8 @@ class Account(MetaAccount):
     def _broker_onOrderPlaced(self, orderData):
         """委托回调"""
 
-        if len(orderData.stampSubmitted) <=0:
-            orderData.stampSubmitted = self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
+        if orderData.fstampSubmitted <= 0.1:
+            orderData.fstampSubmitted = datetime2float(self.datetimeAsOfMarket()) # self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
 
         # order placed, move it from _dictOutgoingOrders to _dictLimitOrders
         with self._lock :
@@ -533,8 +621,8 @@ class Account(MetaAccount):
     def _broker_onCancelled(self, orderData):
         """撤单回调"""
         orderData.status = OrderData.STATUS_CANCELLED
-        if len(orderData.stampCanceled) <=0:
-            orderData.stampCanceled = self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
+        if orderData.fstampCanceled <= 0.1:
+            orderData.fstampCanceled = datetime2float(self.datetimeAsOfMarket()) #  self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
 
         with self._lock :
             try :
@@ -579,8 +667,8 @@ class Account(MetaAccount):
 
     def _broker_onOrderDone(self, orderData):
         """委托被执行"""
-        if len(orderData.stampFinished) <=0:
-            orderData.stampFinished = self.datetimeAsOfMarket().strftime('%H:%M:%S.%f')[:3]
+        if orderData.fstampFinished <= 0.1:
+            orderData.fstampFinished = datetime2float(self.datetimeAsOfMarket()) #  
 
         with self._lock :
             try :
@@ -785,11 +873,30 @@ class Account(MetaAccount):
         ordersToCancel = []
 
         cStep =0
+        fstampNow = datetime2float(self.datetimeAsOfMarket())
+        strExpired = ''
+        cExpired=0
 
         with self._lock:
             outgoingOrders = copy.deepcopy(self._dictOutgoingOrders.values()) if len(self._dictOutgoingOrders) >0 else []
 
-            # find out he orderData by brokerOrderId
+            # find out those expired orders, append them into _lstOrdersToCancel
+            if fstampNow >0.0 :
+                for odid,odata in self._dictLimitOrders.items():
+                    if odata.msecTTL <=0 or odata.fstampSubmitted + odata.msecTTL > fstampNow: continue
+                    if odid in self._lstOrdersToCancel : continue
+                    self._lstOrdersToCancel.append(odid)
+                    strExpired += 'O[%s],' % odata.desc
+                    cExpired +=1
+
+                for odid,odata in self._dictStopOrders.items():
+                    if odata.msecTTL <=0 or odata.fstampSubmitted + odata.msecTTL > fstampNow: continue
+                    if odid in self._lstOrdersToCancel : continue
+                    self._lstOrdersToCancel.append(odid)
+                    strExpired += 'O[%s],' % odata.desc
+                    cExpired +=1
+
+            # find out orderData of canceled orders by brokerOrderId
             for odid in self._lstOrdersToCancel :
                 orderData = None
                 cStep +=1
@@ -814,14 +921,15 @@ class Account(MetaAccount):
             self._broker_placeOrder(no)
             cStep +=1
 
-        if (len(ordersToCancel) + len(outgoingOrders)) >0:
-            self.debug('step() cancelled %d orders, placed %d orders'% (len(ordersToCancel), len(outgoingOrders)))
+        if (cExpired>0):
+            self.warn('step() placed %d orders, cancelled %d orders including %d expired: %s'% (len(outgoingOrders), len(ordersToCancel), cExpired, strExpired))
+        elif (len(ordersToCancel) + len(outgoingOrders)) >0:
+            self.info('step() placed %d orders, cancelled %d orders'% (len(outgoingOrders), len(ordersToCancel)))
 
         # step 2. sync positions and order with the broker
         self._brocker_procSyncData()
-        stampNow = datetime2float(datetime.now())
-        if self._stampLastSync + self._syncInterval < stampNow :
-            self._stampLastSync = stampNow
+        if self._stampLastSync + self._syncInterval < fstampNow :
+            self._stampLastSync = fstampNow
             self._brocker_triggerSync()
             cStep +=1
 
@@ -891,13 +999,19 @@ class Account(MetaAccount):
 
         return volume, 0
 
-    def roundToPriceTick(self, price):
+    def roundByPriceTick(self, price, dir=OrderData.DIRECTION_NONE):
         """取整价格到合约最小价格变动"""
         if not self._priceTick:
             return price
-        
-        newPrice = round(round(price/self._priceTick, 0) * self._priceTick, 4)
-        return newPrice
+
+        newPrice = int(price/self._priceTick) * self._priceTick
+        if OrderData.DIRECTION_LONG == dir and newPrice <= price:
+            newPrice += self._priceTick
+        elif OrderData.DIRECTION_SHORT == dir and newPrice >= price:
+            newPrice -= self._priceTick
+        else: newPrice = round(price/self._priceTick, 0) * self._priceTick
+
+        return round(newPrice, PRICE_DISPLAY_ROUND_DECIMALS)
 
     #----------------------------------------------------------------------
     # callbacks about timing
@@ -1178,90 +1292,6 @@ class Account_AShare(Account):
 
         #TODO: sync with broker
 
-########################################################################
-class OrderData(EventData):
-    """订单数据类"""
-    # 本地停止单前缀
-    STOPORDERPREFIX = 'SO#'
-
-    # 涉及到的交易方向类型
-    ORDER_BUY   = 'BUY'   # u'买开' 是指投资者对未来价格趋势看涨而采取的交易手段，买进持有看涨合约，意味着帐户资金买进合约而冻结
-    ORDER_SELL  = 'SELL'  # u'卖平' 是指投资者对未来价格趋势不看好而采取的交易手段，而将原来买进的看涨合约卖出，投资者资金帐户解冻
-    ORDER_SHORT = 'SHORT' # u'卖开' 是指投资者对未来价格趋势看跌而采取的交易手段，卖出看跌合约。卖出开仓，帐户资金冻结
-    ORDER_COVER = 'COVER' # u'买平' 是指投资者将持有的卖出合约对未来行情不再看跌而补回以前卖出合约，与原来的卖出合约对冲抵消退出市场，帐户资金解冻
-
-    # 本地停止单状态
-    STOPORDER_WAITING   = 'WAITING'   #u'等待中'
-    STOPORDER_CANCELLED = 'CANCELLED' #u'已撤销'
-    STOPORDER_TRIGGERED = 'TRIGGERED' #u'已触发'
-
-    # 方向常量
-    DIRECTION_NONE = 'NONE'
-    DIRECTION_LONG = 'LONG'
-    DIRECTION_SHORT = 'SHORT'
-    DIRECTION_UNKNOWN = 'UNKNOWN'
-    DIRECTION_NET =  'NET'
-    DIRECTION_SELL = 'SELL'  # IB接口
-    DIRECTION_COVEREDSHORT = 'COVERED_SHORT'    # 证券期权
-
-    # 开平常量
-    OFFSET_NONE = 'none'
-    OFFSET_OPEN = 'open'
-    OFFSET_CLOSE = 'close'
-    OFFSET_CLOSETODAY = 'close today'
-    OFFSET_CLOSEYESTERDAY = 'close yesterday'
-    OFFSET_UNKNOWN = 'unknown'
-
-    # 状态常量
-    STATUS_CREATED    = 'created'
-    STATUS_SUBMITTED  = 'submitted'
-    STATUS_PARTTRADED = 'partial-filled'
-    STATUS_ALLTRADED  = 'filled'
-    STATUS_PARTCANCEL = 'partial-canceled'
-    STATUS_CANCELLED  = 'canceled'
-    STATUS_REJECTED   = 'rejected'
-    STATUS_UNKNOWN    = 'unknown'
-
-    STATUS_OPENNING   = [STATUS_SUBMITTED, STATUS_PARTTRADED]
-    STATUS_FINISHED   = [STATUS_ALLTRADED, STATUS_PARTCANCEL]
-    STATUS_CLOSED     = STATUS_FINISHED + [STATUS_CANCELLED]
-
-    #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
-    COLUMNS = 'datetime,symbol,reqId,brokerOrderId,direction,price,totalVolume,tradedVolume,offset,status,reason' # ,stampSubmitted,stampCanceled,stampFinished'
-
-    #----------------------------------------------------------------------
-    def __init__(self, account, stopOrder=False, reqId = None):
-        """Constructor"""
-        super(OrderData, self).__init__()
-        
-        # 代码编号相关
-        self.reqId   = reqId if reqId else account.nextOrderReqId # 订单编号
-        if stopOrder:
-            self.reqId  = OrderData.STOPORDERPREFIX +self.reqId
-
-        self.brokerOrderId = EventData.EMPTY_STRING   # 订单在vt系统中的唯一编号，通常是 Gateway名.订单编号
-        self.accountId = account.ident          # 成交归属的帐号
-        self.exchange = account._exchange    # 交易所代码
-
-        self.symbol   = EventData.EMPTY_STRING         # 合约代码
-        
-        # 报单相关
-        self.direction    = EventData.EMPTY_UNICODE  # 报单方向
-        self.offset       = EventData.EMPTY_UNICODE     # 报单开平仓
-        self.price        = EventData.EMPTY_FLOAT        # 报单价格
-        self.totalVolume  = EventData.EMPTY_INT    # 报单总数量
-        self.tradedVolume = EventData.EMPTY_INT   # 报单成交数量
-        self.status       = OrderData.STATUS_CREATED     # 报单状态
-        self.reason       = EventData.EMPTY_STRING  # trigger reason
-        
-        self.stampSubmitted  = EventData.EMPTY_STRING # 发单时间
-        self.stampCanceled   = EventData.EMPTY_STRING  # 撤单时间
-        self.stampFinished   = EventData.EMPTY_STRING  # 撤单时间
-
-    @property
-    def desc(self) :
-        return 'O%s:%s(%s) %dx%s' % (self.reqId, self.direction, self.symbol, self.totalVolume, self.price)
-
 # ########################################################################
 # take the same as OrderData
 # class StopOrder(object):
@@ -1319,7 +1349,7 @@ class TradeData(EventData):
    
     @property
     def desc(self) :
-        return 'T%s:%s(%s) %dx%s' % (self.brokerTradeId, self.direction, self.symbol, self.volume, round(self.price, 3))
+        return 'T%s:%s(%s) %dx%s' % (self.brokerTradeId, self.direction, self.symbol, self.volume, round(self.price, PRICE_DISPLAY_ROUND_DECIMALS))
 
 ########################################################################
 class PositionData(EventData):
@@ -1393,12 +1423,12 @@ class DailyPosition(EventData):
 
         self.symbol      = symbol
         self.date        = account._dateToday             # 日期
-        self.recentPrice = round(currentPos.price, 3)     # 当日收盘
-        self.avgPrice    = round(currentPos.avgPrice, 3)  # 持仓均价
+        self.recentPrice = round(currentPos.price, PRICE_DISPLAY_ROUND_DECIMALS)     # 当日收盘
+        self.avgPrice    = round(currentPos.avgPrice, PRICE_DISPLAY_ROUND_DECIMALS)  # 持仓均价
         self.recentPos   = round(currentPos.position, 3)  # 当日收盘
         self.posAvail    = round(currentPos.posAvail, 3)  # the rest avail pos
         self.calcPos     = round(prevPos.position, 3)     # 
-        self.prevClose   = round(prevPos.price, 3)     # 昨日收盘
+        self.prevClose   = round(prevPos.price, PRICE_DISPLAY_ROUND_DECIMALS)     # 昨日收盘
         self.prevPos     = round(prevPos.position, 3)     # 昨日收盘
         self._asofList   =[ currentPos.stampByTrader, currentPos.stampByBroker ]
         # 持仓部分
@@ -1407,7 +1437,7 @@ class DailyPosition(EventData):
         # TODO if ohlc:
         #     _, self.execOpen, self.execHigh, self.execLow, _ = ohlc
 
-        # self.calcMValue  = round(calcPosition*currentPos.price*self._contractSize , 2),     # 昨日收盘
+        # self.calcMValue  = round(calcPosition*currentPos.price*self._contractSize , PRICE_DISPLAY_ROUND_DECIMALS),     # 昨日收盘
     def pushTrade(self, account, trade) :
         '''
         DayX bought some:
@@ -1471,7 +1501,7 @@ class DailyResult(object):
         """Constructor"""
 
         self.date = date                # 日期
-        self.startBalance = round(startBalance,2)  # 开始资产
+        self.startBalance = round(startBalance, 2)  # 开始资产
         self.tcBuy = 0                  # 成交数量
         self.tcSell = 0                 # 成交数量
         self.tradeList = []             # 成交列表

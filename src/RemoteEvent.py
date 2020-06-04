@@ -77,7 +77,7 @@ class EventEnd(BaseApplication):
         self._queOutgoing.put(ev)
 
     def doAppStep(self):
-        super(EventEnd, self).doAppStep()
+        cPrnt = super(EventEnd, self).doAppStep()
         
         # step 1. forward the outgoing events
         cSent, cRecv =0, 0
@@ -88,6 +88,7 @@ class EventEnd(BaseApplication):
                 ev = self._queOutgoing.get(block =False, timeout =0.1)  # 获取事件的阻塞时间设为0.1秒
                 if ev :
                     self.send(ev)
+                    cSent+=1                    
             except Empty:
                 break
             except KeyboardInterrupt:
@@ -129,8 +130,7 @@ class EventEnd(BaseApplication):
             return False
 
         # subscribe from local events about to forward
-        for et in self._topicsOutgoing:
-            self.subscribeEvent(et)
+        self.subscribeEvents(self._topicsOutgoing)
         
         return True
 

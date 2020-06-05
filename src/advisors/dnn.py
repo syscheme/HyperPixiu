@@ -101,8 +101,10 @@ class DnnAdvisor_S1548I4A3(TradeAdvisor):
     def ident(self) :
         return 'S1548I4A3.%s.%s' % (self._brainId, self._id) if self._brainId else super(DnnAdvisor_S1548I4A3,self).ident
 
-    def generateAdviceOnMarketEvent(self, ev):
-        '''processing an incoming MarketEvent and generate an advice'''
+    def generateAdviceOnMarketEvent(self, ev, lastAdv=None):
+        '''processing an incoming MarketEvent and generate an advice
+            @param lastAdv is a reference in the case the advisor wish to refer to 
+        '''
 
         if MARKETDATE_EVENT_PREFIX != ev.type[:len(MARKETDATE_EVENT_PREFIX)] :
             self.debug('generateAdviceOnMarketEvent() ignored event %s' % ev.type)
@@ -115,6 +117,12 @@ class DnnAdvisor_S1548I4A3(TradeAdvisor):
         d = ev.data
         tokens = (d.vtSymbol.split('.'))
         symbol = tokens[0]
+
+        # because the grain-size of S1548I4A3 is KL1m, it is unnecessary to perform perdiction more freq-ly than once-per-minute
+        if lastAdv:
+            if datetime2float(d.asof) < datetime2float(lastAdv.asof) + 40.0 and d.asof.minute != lastAdv.asof.minute:
+                self.debug('generateAdviceOnMarketEvent() recently adviced at %s, skipping event: %s' % (lastAdv.asof, ev.desc))
+                return None
 
         floatstate = self._marketState.exportKLFloats(symbol)
         if all(v == 0.0 for v in floatstate):

@@ -94,8 +94,10 @@ class TradeAdvisor(BaseApplication):
     # def onDayOpen(self, symbol, date): raise NotImplementedError
 
     @abstractmethod
-    def generateAdviceOnMarketEvent(self, mdEvent):
-        '''processing an incoming MarketEvent and generate an advice'''
+    def generateAdviceOnMarketEvent(self, mdEvent, lastAdv=None):
+        '''processing an incoming MarketEvent and generate an advice
+            @param lastAdv is a reference in the case the advisor wish to refer to 
+        '''
         return None
 
     #----------------------------------------------------------------------
@@ -216,7 +218,7 @@ class TradeAdvisor(BaseApplication):
         # step 2. # call each registed procedure to handle the incoming MarketEvent
         newAdvice = None
         try:
-            newAdvice = self.generateAdviceOnMarketEvent(ev)
+            newAdvice = self.generateAdviceOnMarketEvent(ev, latestAdvc)
         except Exception as ex:
             self.error('call generateAdviceOnMarketEvent %s caught %s: %s' % (ev.desc, ex, traceback.format_exc()))
 

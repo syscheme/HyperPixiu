@@ -292,7 +292,7 @@ class BaseTrader(MetaTrader):
         adv = evAdvice.data
         symbol = adv.symbol
         if not self.marketState.exchange in adv.exchange or not symbol in self.objectives:
-            self.debug('OnAdvice() ignored advice that not in objectives of exchange[%s]: %s' % (adv.exchange, adv.desc))
+            self.debug('OnAdvice() ignored that unattended of exchange[%s]: %s' % (adv.exchange, adv.desc))
             return
 
         if not self._account.executable:

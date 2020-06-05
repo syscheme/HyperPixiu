@@ -120,7 +120,7 @@ class DnnAdvisor_S1548I4A3(TradeAdvisor):
 
         # because the grain-size of S1548I4A3 is KL1m, it is unnecessary to perform perdiction more freq-ly than once-per-minute
         if lastAdv:
-            if datetime2float(d.asof) < datetime2float(lastAdv.asof) + 40.0 and d.asof.minute != lastAdv.asof.minute:
+            if datetime2float(d.asof) < datetime2float(lastAdv.asof) + 40.0 and d.asof.minute == lastAdv.asof.minute:
                 self.debug('generateAdviceOnMarketEvent() recently adviced at %s, skipping event: %s' % (lastAdv.asof, ev.desc))
                 return None
 

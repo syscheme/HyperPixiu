@@ -15,7 +15,7 @@ if __name__ == '__main__':
     p._heartbeatInterval =0.2 # yield at idle for 200msec
 
     objectives  = p.getConfig('objectives', ['510050'])
-    objectives = [s('') for s in objectives] # convert to string list
+    objectives = [SinaCrawler.fixupSymbolPrefix(s('')) for s in objectives] # convert to string list
     if len(objectives) <=0:
         p.error('no objectives specified')
         quit()
@@ -39,6 +39,9 @@ if __name__ == '__main__':
 
     revents.registerOutgoing([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
     revents.registerOutgoing([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY])
+
+    revents.subscribeIncoming([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
+    revents.subscribeSymbols(objectives[:5])
 
     p.start()
     # if sina.isActive:

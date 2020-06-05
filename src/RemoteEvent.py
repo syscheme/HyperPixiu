@@ -5,6 +5,8 @@ EventEnd to remote ZeroMQ
 from __future__ import division
 
 from EventData    import *
+from MarketData   import *
+from TradeAdvisor  import EVENT_ADVICE, EVENT_TICK_OF_ADVICE
 from Application  import BaseApplication, BOOL_STRVAL_TRUE
 
 import os
@@ -24,6 +26,11 @@ else:
 class EventEnd(BaseApplication):
     '''
     '''
+    ALL_SYMBOL_ORIENT_EVENTS =[
+        EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY,
+        EVENT_ADVICE, EVENT_TICK_OF_ADVICE
+        ]
+
     def __init__(self, program, **kwargs) :
         super(EventEnd, self).__init__(program, **kwargs)
 
@@ -33,7 +40,9 @@ class EventEnd(BaseApplication):
         maxQue                 = self.getConfig('maxQueued', -1)
         self._topicsOutgoing   = self.getConfig('outgoing', [])
         self._topicsIncomming  = self.getConfig('incoming', [])
+        self._topicsBySymbol   = self.getConfig('bySymbols', EventEnd.ALL_SYMBOL_ORIENT_EVENTS)
         self._subQuit   = False
+        self._symbolsOfSub    = []
 
         if maxQue >0 and maxQue <300: maxQue =300
         self._queOutgoing = Queue(maxsize=maxQue) if maxQue>0 else Queue()
@@ -56,7 +65,7 @@ class EventEnd(BaseApplication):
                 if not et in self._topicsOutgoing:
                     self._topicsOutgoing.append(et)
         elif not evTypes in self._topicsOutgoing:
-            self._topicsOutgoing.append(et)
+            self._topicsOutgoing.append(evTypes)
 
     def subscribeIncoming(self, evTypes):
         if isinstance(evTypes, list) :
@@ -64,8 +73,16 @@ class EventEnd(BaseApplication):
                 if not et in self._topicsIncomming:
                     self._topicsIncomming.append(et)
         elif not evTypes in self._topicsIncomming:
-            self._topicsIncomming.append(et)
+            self._topicsIncomming.append(evTypes)
 
+    def subscribeSymbols(self, symbols):
+        if isinstance(symbols, list) :
+            for s in symbols:
+                if not s in self._symbolsOfSub:
+                    self._symbolsOfSub.append(s)
+        elif not symbols in self._symbolsOfSub:
+            self._symbolsOfSub.append(symbols)
+            
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
     def OnEvent(self, ev):
@@ -409,8 +426,12 @@ class RedisEE(EventEnd):
 
         pklstr = pickle.dumps(ev) # this is bytes
         try :
-            self.__redisConn.publish(ev.type, pklstr)
-            self.debug('sent to evch[%s:%s]: %s'% (self._redisHost, self._redisPort, ev.desc))
+            topic = ev.type
+            if ev.type in self._topicsBySymbol:
+                topic = ev.data.symbol
+
+            self.__redisConn.publish(topic, pklstr)
+            self.debug('sent to evch[%s@%s:%s]: %s'% (topic, self._redisHost, self._redisPort, ev.desc))
         except Exception as ex:
             self.logexception(ex)
             self.__redisConn.close()
@@ -502,19 +523,28 @@ class RedisEE(EventEnd):
                         ps = self.__redisConn.pubsub()
                         for s in self._topicsIncomming:
                             topicfilter = '%s' % s
+                            if s in self._topicsBySymbol:
+                                continue
+
                             if len(topicfilter) <=0: continue
                             ps.subscribe(topicfilter)
 
+                        for s in self._symbolsOfSub:
+                            topicfilter = '%s' % s
+                            if len(topicfilter) <=0: continue
+                            ps.subscribe(topicfilter)
+                        
                     sleep(0.5)
                     continue # to test _subQuit
 
-                for msg in ps.listen(): # BLOCKING here
+                chList = self._topicsIncomming + self._symbolsOfSub
+                for msg in ps.listen(): # BLOCKING call here
                     if self._subQuit: break
-                    if msg['type'] != 'message':
+                    if not msg['type'] in ['message', 'pmessage'] :
                         continue
 
-                    evType = msg['channel'].decode()
-                    if not evType or len(evType)<=0 or not evType in self._topicsIncomming:
+                    ch = msg['channel'].decode()
+                    if not ch or len(ch)<=0 or not ch in chList:
                         continue
 
                     pklstr = msg['data'] 
@@ -522,7 +552,7 @@ class RedisEE(EventEnd):
                     if not ev : continue
 
                     self._queIncoming.put(ev)
-                    self.debug('remoteEvent from evch[%s:%s]: %s' % (self._redisHost, self._redisPort, ev.desc))
+                    self.debug('remoteEvent from evch[%s@%s:%s]: %s' % (ch, self._redisHost, self._redisPort, ev.desc))
             except Exception as ex:
                 self.logexception(ex)
                 ps = None

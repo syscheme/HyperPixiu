@@ -157,7 +157,7 @@ class TaggedCsvRecorder(Recorder):
         filename          = self.getConfig('filename', '%s_%s.tcsv' % (self._program.progId, datetime.now().strftime('%m%d')))
         self._filepath    = self.getConfig('filepath', '%s%s' % (self.dataRoot, filename))
         self._fileMB      = self.getConfig('fileMB', 50) # 50MB before rolling
-        self._fileCount   = self.getConfig('fileCount', 50) # maximal 50 rolling files before overwrite
+        self._fileCount   = self.getConfig('fileCount', 50) # maximal 50 rolling files before evicting
         tmp = min(self._daysToRoll *2, self._daysToRoll +2)
         if self._daysToZip < tmp:
             self._daysToZip = tmp

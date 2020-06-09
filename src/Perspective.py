@@ -324,6 +324,46 @@ class Perspective(MarketData):
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
         return self._KLFloats(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume)
     
+    def floatsD4(self, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+        '''@return an array_like data as toNNFloats, maybe [] or numpy.array
+        '''
+        if self._stacks[EVENT_KLINE_1DAY].size <=0:
+            return None # toNNFloats not available
+        
+        klbaseline = self._stacks[EVENT_KLINE_1DAY].top
+        baseline_Price, baseline_Volume =klbaseline.close, klbaseline.volume
+
+        if baseline_Price <0.01: baseline_Price=1.0
+        if baseline_Volume <0.001: baseline_Volume=1.0
+
+        result = []
+        for k, v in d4wished.items():
+            if 'asof' ==k and int(v) >0:
+                fAsOf = [0.0] * EXPORT_FLOATS_DIMS
+                try :
+                    stampAsof = self.asof
+                    fAsOf[0] = stampAsof.month
+                    fAsOf[1] = stampAsof.day
+                    fAsOf[2] = stampAsof.weekday()
+                    fAsOf[3] = stampAsof.hour *60 +stampAsof.minute
+                except: pass
+                result += fAsOf # datetime as the first item
+                continue
+
+            if not k in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]:
+                raise ValueError('Perspective.floatsD4() unknown etype[%s]' %k )
+
+            stk = self._stacks[k]
+            bV= (baseline_Volume / self._evsPerDay[k])
+            for i in range(int(v)):
+                if i >= stk.size:
+                    result += [0.0] * EXPORT_FLOATS_DIMS
+                else:
+                    fval = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= bV)
+                    result += fval
+
+        return result
+
     # def engorged(self, symbol=None) :
     #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data
     #     '''
@@ -679,6 +719,16 @@ class PerspectiveState(MarketState):
             PerspectiveState.__dummy = Perspective(self.exchange, 'Dummy')
 
         return [0.0] * PerspectiveState.__dummy.NNFloatsSize
+
+    def exportFloatsD4(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+        '''
+        @param d4wished to specify number of most recent 4-float of the event category to export
+        @return an array_like data as toNNFloats
+        '''
+        if symbol and symbol in self.__dictPerspective.keys():
+            return self.__dictPerspective[symbol].floatsD4(d4wished)
+
+        raise ValueError('Perspective.floatsD4() unknown symbol[%s]' %symbol )
 
     # def engorged(self, symbol=None) :
     #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data

@@ -577,6 +577,14 @@ class MarketState(MetaObj):
         '''
         raise NotImplementedError
 
+    @abstractmethod
+    def exportFloatsD4(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+        '''
+        @param d4wished to specify number of most recent 4-float of the event category to export
+        @return an array_like data as toNNFloats
+        '''
+        raise NotImplementedError
+
     # @abstractmethod
     # def engorged(self, symbol=None) :
     #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data

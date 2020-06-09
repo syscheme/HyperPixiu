@@ -1846,7 +1846,7 @@ class OfflineSimulator(BackTestApp):
         self._episodeSummary = {**self._episodeSummary, **mySummary}
 
 ########################################################################
-H5DSET_ARGS={ 'compression':'gzip' }
+H5DSET_ARGS={ 'compression': 'lzf' }
 
 class IdealTrader_Tplus1(OfflineSimulator):
     '''
@@ -1939,6 +1939,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         action[ADVICE_DIRECTIONS.index(dirToExec)] =1
         self._mstate = self._marketState.exportKLFloats(self._tradeSymbol)
+        AAAA = self._marketState.exportFloatsD4(self._tradeSymbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:5 })
         # if bFullState:
         self.__pushStateAction(self._mstate, action)
         self.debug('OnEvent(%s) performed %s upon mstate: %s' % (ev.desc, dirToExec, self._marketState.descOf(self._tradeSymbol)))
@@ -2277,47 +2278,4 @@ class IdealTrader_Tplus1(OfflineSimulator):
                     advice.dirLONG = 1
                     latestDir = advice.dirString()
                     self.__adviceSeq.append(copy.copy(advice))
-
-########################################################################
-if __name__ == '__main__':
-    print('-'*20)
-
-    # oldprogram()
-
-    # new program:
-    sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/conf/BT_AShare.json']
-    p = Program()
-    p._heartbeatInterval =-1
-    SYMBOL = '000001' # '000001' # '000540' '000001'
-
-    acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder')
-    csvdir = '/mnt/e/AShareSample' # '/mnt/m/AShareSample'
-    ps = Perspective('AShare', SYMBOL)
-    csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder='%s/%s' % (csvdir, SYMBOL), fields='date,time,open,high,low,close,volume,ammount')
-    histdata = PerspectiveGenerator(ps)
-    histdata.adaptReader(csvreader, EVENT_KLINE_1MIN)
-    
-    marketstate = hist.PlaybackDay('AShare') # = PerspectiveState('AShare')
-    p.addObj(marketstate)
-
-    # btdr = p.createApp(BaseTrader, configNode ='backtest', account=acc)
-    vntdr = p.createApp(vn.VnTrader, configNode ='backtest', account=acc)
-    
-    p.info('all objects registered piror to BackTestApp: %s' % p.listByType(MetaObj))
-    
-    p.createApp(BackTestApp, configNode ='backtest', trader=vntdr, histdata=csvreader) #histdata = histdata)
-
-    # # cta.loadSetting()
-    # # logger.info(u'CTA策略载入成功')
-    
-    # # cta.initAll()
-    # # logger.info(u'CTA策略初始化成功')
-    
-    # # cta.startAll()
-    # # logger.info(u'CTA策略启动成功')
-
-    p.start()
-    p.loop()
-    p.stop()
 

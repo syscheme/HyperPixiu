@@ -887,7 +887,7 @@ class Program(object):
                     bEmpty = False
                     qsize, maxsize = self.__queue.qsize(), self.__queue.maxsize
                     
-                    if qsize > max(100, maxsize/2):
+                    if qsize > max(300, maxsize/2):
                         self.warn("too many pending events: %d/%d" % (qsize,maxsize) )
                 except Empty:
                     bEmpty = True

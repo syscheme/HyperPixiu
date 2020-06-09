@@ -200,6 +200,7 @@ class SinaCrawler(MarketCrawler):
             self.error("step_pollTicks() GET_RecentTicks failed, err(%s) bth:%s" %(httperr, bth))
             return cBusy
             
+        stampResp = datetime2float(datetime.now())
         # succ at previous batch here
         if len(result) <=0 : 
             self.__scheduleNext('all', 'tick', 60*10) # likely after a trade-day closed 10min
@@ -235,7 +236,7 @@ class SinaCrawler(MarketCrawler):
             
         stampNow = datetime2float(datetime.now())
         if cMerged >0:
-            self.info("step_pollTicks() btch[%d/%d] cached %d new-tick of %d/%d symbols, took %.3fs: %s" %(idxBtch +1, batches, cMerged, len(result), len(self.__tickBatches[idxBtch]), (stampNow-stampStart), ','.join(updated)))
+            self.info("step_pollTicks() btch[%d/%d] cached %d new-tick of %d/%d symbols, took %.3f/%.3fs: %s" %(idxBtch +1, batches, cMerged, len(result), len(self.__tickBatches[idxBtch]), (stampResp-stampStart), (stampNow-stampStart), ','.join(updated)))
         else :
             if not Account_AShare.duringTradeHours():
                 self.__scheduleNext('all', 'tick', (61 - int(stampNow) %60))

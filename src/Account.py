@@ -16,7 +16,6 @@ from collections import OrderedDict
 import threading
 
 # from itertools import product
-import threading # for locker
 import copy
 import traceback
 # from pymongo import ASCENDING

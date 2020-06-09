@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 import demjson # pip3 install demjson
 
 import re
+import threading # for __step_pollTicks
+from time import sleep
 
 '''
 分类-中国银行: http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssi_gupiao_fenlei?daima=SH601988
@@ -29,7 +31,8 @@ https://baike.baidu.com/item/%E9%BE%99%E5%A4%B4%E8%82%A1/2268306
 '''
 
 CLOCK_ERROR_SEC   = 2*60.0  # 2min
-OFFHOUR_ERROR_SEC = 60*60.0               *6 # 1hr
+OFFHOUR_ERROR_SEC = 60*60.0 # 1hr
+TICK_INTERVAL_DEFAULT_SEC = 0.7 # 0.7sec
 
 def toFloatVal(val, defaultval=0.0) :
     try :
@@ -72,12 +75,13 @@ class SinaCrawler(MarketCrawler):
         """Constructor"""
         super(SinaCrawler, self).__init__(program, marketState, recorder, **kwargs)
         
-        # SinaCrawler take multiple HTTP requests to collect data, each of them may take different
-        # duration to complete, so this crawler should be threaded
-        # self._threadless = False
+        # SinaCrawler take multiple HTTP requests to collect data, each of them may take different duration to complete.
+        # Among them the Ticks are expected more timely, so run the collection of Ticks in a seperate thread
+        self.__trdTick = threading.Thread(target=self.__loopTick)
+        self.__trdQuit = False
 
         self._eventsToPost = [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_MONEYFLOW_1MIN]
-        self._steps = [self.__step_poll1st, self.__step_pollTicks, self.__step_pollKline, self.__step_pollMoneyflow]
+        self._steps = [self.__step_poll1st, self.__step_pollKline, self.__step_pollMoneyflow] # __step_pollTicks() will be executed in a separated thread __trdTick
         self._proxies = {}
 
         symbols              = self.getConfig('objectives', objectives)
@@ -114,6 +118,32 @@ class SinaCrawler(MarketCrawler):
         ftime = datetime2float(datetime.now()) + seconds
         self.__stampNextPolls[key]= ftime
         return ftime
+
+    def __loopTick(self):
+        '''a separated thread to capture EVENT_TICK'''
+        nextSleep = TICK_INTERVAL_DEFAULT_SEC
+        while not self.__trdQuit:
+            if nextSleep>0: sleep(nextSleep)
+            if self.__trdQuit: break
+            try :
+                nextSleep = TICK_INTERVAL_DEFAULT_SEC
+                if self.__step_pollTicks() >0:
+                    nextSleep =0
+            except Exception as ex:
+                self.error('__step_pollTicks() excepton: %s' % ex)
+
+    def connect(self):
+        if self.__trdTick:
+            self.__trdTick.start()
+        return True
+
+    def stop(self):
+        self.__trdQuit = True
+        if self.__trdTick:
+            self.__trdTick.join()
+            self.__trdTick =None
+
+        super(MarketCrawler, self).stop()
 
     #------------------------------------------------
     # sub-steps
@@ -156,7 +186,7 @@ class SinaCrawler(MarketCrawler):
             if self._stepAsOf < nextStamp  or nextStamp > self.__END_OF_TODAY :
                 return cBusy
 
-            self.__scheduleNext('all', 'tick', 0.7)
+            self.__scheduleNext('all', 'tick', TICK_INTERVAL_DEFAULT_SEC)
 
         idxBtch = self.__idxTickBatch
         self.__idxTickBatch +=1

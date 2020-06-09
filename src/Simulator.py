@@ -34,12 +34,12 @@ import math
 # import matplotlib.pyplot as plt
 # mpl.use('Agg')
 
-# 如果安装了seaborn则设置为白色风格
-try:
-    import seaborn as sns       
-    sns.set_style('whitegrid')  
-except ImportError:
-    pass
+# # 如果安装了seaborn则设置为白色风格
+# try:
+#     import seaborn as sns       
+#     sns.set_style('whitegrid')  
+# except ImportError:
+#     pass
 
 RFGROUP_PREFIX = 'ReplayFrame:'
 RECCATE_ESPSUMMARY = 'EspSum'
@@ -2283,8 +2283,8 @@ class IdealTrader_Tplus1(OfflineSimulator):
 ########################################################################
 class ShortSwingScanner(OfflineSimulator):
     '''
-    IdealTrader extends OfflineSimulator by scanning the MarketEvents occurs in a day, determining
-    the ideal actions then pass the events down to the models
+    ShortSwingScanner extends OfflineSimulator by scanning the MarketEvents occurs up to several days, determining
+    the short trend
     '''
     DAILIZED_GAIN_PCTS      = [-5.0, -1.0, 1.0, 3.0, 6.0]
 
@@ -2295,8 +2295,6 @@ class ShortSwingScanner(OfflineSimulator):
 
         self._daysLong                = self.getConfig('constraints/daysLong',  5) # long-term prospect, default 1week(5days)
         self._daysShort               = self.getConfig('constraints/daysShort', 2) # short-term prospect, default 2days
-
-        self._pctsDalized             = [-5.0, -1.0, 1.0, 3.0, 6.0]
 
         self._warmupDays =0 # IdealTrader will not be constrainted by warmupDays
         self.__cOpenDays =0
@@ -2343,34 +2341,37 @@ class ShortSwingScanner(OfflineSimulator):
                 if ev.data.datetime <= self._btEndDate:
                     self.__stateReadAhead.push(ev)
                     dayOfEvent = ev.data.datetime.replace(hour=0, minute=0, second=0, microsecond=0)
-                    if self.__dtToday and self.__dtToday == dayOfEvent:
-                        # in a same day
-                        stateOfEvent = {
-                            'price' : self.__stateReadAhead.latestPrice,
-                            'stateD4f': self.__stateReadAhead.exportFloatsD4(),
-                            'priceLong': 0.0,
-                            'priceShort': 0.0,
-                            }
+                    if not self.__dtToday or self.__dtToday < dayOfEvent:
+                        ohlc = self.__stateReadAhead.dailyOHLC_sofar
 
-                        self.__eventsOfDays[0].append(stateOfEvent)
-                        return
+                        eventsLongAgo  =  self.__eventsOfDays[self._daysLong -1] if self.__eventsOfDays.size >=self._daysLong else []
+                        eventsShortAgo =  self.__eventsOfDays[self._daysShort -1] if self.__eventsOfDays.size >=self._daysShort else []
+                        
+                        for i in range(len(eventsLongAgo)):
+                            eventsLongAgo[i]['futurePriceL'] = ohlc.close
 
-                    ohlc = self.__stateReadAhead.dailyOHLC_sofar
+                        for i in range(len(eventsShortAgo)):
+                            eventsShortAgo[i]['futurePriceS'] = ohlc.close
 
-                    eventsLongAgo  =  self.__eventsOfDays[self._daysLong -1]
-                    for i in range(len(eventsLongAgo)):
-                        eventsLongAgo[i]['priceLong'] = ohlc.close
+                        # save the day 'long' ago and evict that day
+                        self.__saveEventsOfDay(eventsLongAgo)
+                        self.__eventsOfDays.push([])
 
-                    eventsShortAgo =  self.__eventsOfDays[self._daysShort -1]
-                    for i in range(len(eventsShortAgo)):
-                        eventsShortAgo[i]['priceShort'] = ohlc.close
+                        if self.__dtToday:
+                            self.debug('doAppStep() day-%d:[%s] applied onto %d of short[%dd]-ago, %d of long[%dd]-ago' % (self.__cOpenDays, self.__dtToday.strftime('%Y-%m-%d'), len(eventsShortAgo), self._daysShort, len(eventsLongAgo), self._daysLong))
 
-                    # save the day 'long' ago and evict that day
-                    self.__saveEventsOfDay(eventsLongAgo)
-                    self.__eventsOfDays.push([])
-                    self.__dtToday = dayOfEvent
+                        self.__cOpenDays += 1
+                        self.__dtToday = dayOfEvent
 
-                    self.__cOpenDays += 1
+                    # in a same day
+                    stateOfEvent = {
+                        'price' : self.__stateReadAhead.latestPrice,
+                        'stateD4f': self.__stateReadAhead.floatsD4(),
+                        'futurePriceL': 0.0,
+                        'futurePriceS': 0.0,
+                        }
+
+                    self.__eventsOfDays[0].append(stateOfEvent)
                     return # successfully performed a step by pushing an Event
 
                 reachedEnd = True
@@ -2381,7 +2382,7 @@ class ShortSwingScanner(OfflineSimulator):
                 self.logexception(ex)
 
         # this test should be done if reached here
-        self.debug('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self._stepNoInEpisode, self._bGameOver, reachedEnd))
+        self.info('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self._stepNoInEpisode, self._bGameOver, reachedEnd))
         
         try:
             self.OnEpisodeDone(reachedEnd)
@@ -2392,249 +2393,64 @@ class ShortSwingScanner(OfflineSimulator):
         
         exit(0) # IdealTrader_Tplus1 is not supposed to run forever, just exit instead of return
 
-    def __pushStateAction(self, mstate, action):
+    def __saveEventsOfDay(self, eventsOfDay):
 
-        if (self.__sampleIdx + self.__frameNo) <=0 and all(v == 0.0 for v in mstate): return # skip the leading all[0.0]
+        for ev in eventsOfDay:
+            stateD4f = ev['stateD4f']
+            if not stateD4f or len(stateD4f) <=0:
+                continue
 
-        self.__sampleIdx = self.__sampleIdx % self.__sampleFrmSize
-        if 0 == self.__sampleIdx and not None in self.__sampleFrm :
-            # frame full, output it into a HDF5 file
-            self.__saveFrame(self.__sampleFrm)
+            price = ev['price']
+            if price <=0.01:
+                continue
 
-        self.__sampleFrm[self.__sampleIdx] = (mstate, action)
-        self.__sampleIdx +=1
+            gainRateL = (ev['futurePriceL'] - price) / price / self._daysLong
+            gainRateS = (ev['futurePriceS'] - price) / price / self._daysShort
+
+            gainClassL, gainClassS= 0, 0
+            for redge in ShortSwingScanner.DAILIZED_GAIN_PCTS:
+                if gainRateL >= redge:
+                    gainClassL += 1
+                if gainRateS >= redge:
+                    gainClassS += 1
+            
+            gainClass = [0] * (len(ShortSwingScanner.DAILIZED_GAIN_PCTS)*2)
+            gainClass[gainClassL] =1
+            gainClass[len(ShortSwingScanner.DAILIZED_GAIN_PCTS) + gainClassS] =1
+
+            # if (self.__sampleIdx + self.__frameNo) <=0 and all(v == 0.0 for v in mstate): return # skip the leading all[0.0]
+            self.__sampleIdx = self.__sampleIdx % self.__sampleFrmSize
+            if 0 == self.__sampleIdx and not None in self.__sampleFrm :
+                # frame full, output it into a HDF5 file
+                self.__saveFrame(self.__sampleFrm)
+
+            self.__sampleFrm[self.__sampleIdx] = (stateD4f, gainClass)
+            self.__sampleIdx +=1
 
     def __saveFrame(self, rangedFrame):
         metrix     = np.array(rangedFrame)
         col_state  = np.concatenate(metrix[:, 0]).reshape(len(rangedFrame), len(rangedFrame[0][0]))
-        col_action = np.concatenate(metrix[:, 1]).reshape(len(rangedFrame), len(rangedFrame[0][1]))
+        col_future = np.concatenate(metrix[:, 1]).reshape(len(rangedFrame), len(rangedFrame[0][1]))
 
-        fn_frame = os.path.join(self.wkTrader.outdir, 'RFrm%s_%s.h5' % (NORMALIZE_ID, self._tradeSymbol) )
+        normalizedId = 'FclzD4X%dR%d' %(col_state.shape[1], col_future.shape[1])
+
+        fn_frame = os.path.join(self.wkTrader.outdir, '%s_%s.h5' % (normalizedId, self._tradeSymbol) )
         with h5py.File(fn_frame, 'a') as h5file:
-            frameId = 'RF%s' % str(self.__frameNo).zfill(3)
+            frameId = 'frm%s' % str(self.__frameNo).zfill(3)
             self.__frameNo += 1
 
             g = h5file.create_group(frameId)
             g.attrs['state'] = 'state'
-            g.attrs['action'] = 'action'
+            g.attrs['futurePriceCls'] = 'futurePriceCls'
             g.attrs[u'default'] = 'state'
             g.attrs['size'] = col_state.shape[0]
-            g.attrs['signature'] = EXPORT_SIGNATURE
+            g.attrs['signature'] = self.ident
 
-            g.create_dataset(u'title',      data= '%s replay %s of %s by %s' % (self._generateReplayFrames, frameId, self._tradeSymbol, self.ident))
+            g.create_dataset(u'title',      data= 'future price classification %s frame %s of %s by %s' % (normalizedId, frameId, self._tradeSymbol, self.ident))
             st = g.create_dataset('state',  data= col_state, **H5DSET_ARGS)
             st.attrs['dim'] = col_state.shape[1]
-            ac = g.create_dataset('action', data= col_action, **H5DSET_ARGS)
-            ac.attrs['dim'] = col_action.shape[1]
+            ac = g.create_dataset('futurePriceCls', data= col_future, **H5DSET_ARGS)
+            ac.attrs['dim'] = col_future.shape[1]
             
-        self.info('saved %s len[%s] into file %s with sig[%s]' % (frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
-
-    def __scanEventsSequence(self, evseq) :
-
-        price_open, price_high, price_low, price_close = 0.0, 0.0, DUMMY_BIG_VAL, 0.0
-        T_high, T_low  = None, None
-        if evseq and len(evseq) >0:
-            for ev in evseq:
-                evd = ev.data
-                if EVENT_TICK == ev.type :
-                    price_close = evd.price
-                    if price_open <= 0.01 :
-                        price_open = price_close
-                    if price_high < price_close :
-                        price_high = price_close
-                        T_high = evd.datetime
-                    if price_low > price_close :
-                        price_low = price_close
-                        T_low = evd.datetime
-                    continue
-
-                if EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] :
-                    price_close = evd.close
-                    if price_high < evd.high :
-                        price_high = evd.high
-                        T_high = evd.datetime
-                    if price_low > evd.low :
-                        price_low = evd.low
-                        T_low = evd.datetime
-                    if price_open <= 0.01 :
-                        price_open = evd.open
-                    continue
-
-        return price_open, price_high, price_low, price_close, T_high, T_low
-
-    def scanEventsForAdvices(self) :
-        '''
-        this will generate 3 actions
-        '''
-        # step 1. scan self.__mdEventsToday and determine TH TL
-        price_open, price_high, price_low, price_close, T_high, T_low = self.__scanEventsSequence(self.__mdEventsToday)
-        tomorrow_open, tomorrow_high, tomorrow_low, tomorrow_close, tT_high, tT_low = self.__scanEventsSequence(self.__mdEventsTomrrow)
-
-        if not T_high:
-            return
-
-        latestDir = OrderData.DIRECTION_NONE
-        T_win = timedelta(minutes=2)
-        slip = 0.02
-
-        # if T_high.month==6 and T_high.day in [25,26]:
-        #      print('here')
-
-        # step 2. determine the stop prices
-        sell_stop = price_high -slip
-        buy_stop  = min(price_low +slip, price_close*(100.0-self._dayPercentToCatch)/100)
-
-        if (T_high < T_low) and price_close < (sell_stop *0.97): # this is a critical downhill, then enlarger the window to sell
-            sell_stop= sell_stop *0.99 -slip
-
-        catchback =0.0 # assume catch-back unnecessaray by default
-        cleanup   =price_high*2 # assume no cleanup
-        if tomorrow_high :
-            tsell_stop = tomorrow_high -slip
-            tbuy_stop  = min(tomorrow_low +slip, tomorrow_close*0.99)
-            cleanup = max(tsell_stop, price_close -slip)
-
-            if buy_stop > tsell_stop:
-                buy_stop =0.0 # no buy today
-
-            if tT_low < tT_high : # tomorrow is an up-hill
-                catchback = tbuy_stop
-            elif tsell_stop > price_close +slip:
-                #catchback = min(tomorrow_high*(100.0- 2*self._dayPercentToCatch)/100, price_close +slip)
-                catchback =price_low +slip
-        elif (price_close < price_open*(100.0 +self._constraintBuy_closeOverOpen)/100):
-            buy_stop =0.0 # forbid to buy
-            catchback =0.0
-
-        if cleanup < price_high: # if cleanup is valid, then no more buy/catchback
-            catchback =0.0
-
-        if sell_stop <= max(catchback, buy_stop)+slip:
-            sell_stop = cleanup # no need to sell
-
-        # step 2. faking the ideal orders
-        for ev in self.__mdEventsToday:
-            if EVENT_TICK != ev.type and EVENT_KLINE_PREFIX != ev.type[:len(EVENT_KLINE_PREFIX)] :
-                continue
-
-            evd = ev.data
-            T = evd.datetime
-
-            price = evd.price if EVENT_TICK == ev.type else evd.close
-            # order = OrderData(self._account)
-            # order.datetime = T
-
-            tokens = (evd.vtSymbol.split('.'))
-            symbol = tokens[0]
-            advice = AdviceData(self.ident, symbol, self._marketState.exchange)
-            advice.price = price
-            advice.datetime = T
-            advice.advisorId = '%s' % self.ident
-            advice.Rdaily = 0.0
-            advice.Rdstd  = 0.0
-            advice.pdirNONE, advice.pdirLONG, advice.pdirSHORT = 0.0, 0.0, 0.0
-            advice.pdirPrice = 0.0
-            advice.pdirAsOf  = T
-            advice.dirNONE, advice.dirLONG, advice.dirSHORT = 0.0, 0.0, 0.0
-
-            if price <= buy_stop :
-                advice.dirLONG = 1
-                latestDir = advice.dirString()
-                self.__adviceSeq.append(copy.copy(advice))
-                continue
-
-            if price >= sell_stop :
-                advice.dirSHORT = 1
-                latestDir = advice.dirString()
-                self.__adviceSeq.append(copy.copy(advice))
-                continue
-
-            if T > max(T_high, T_low) :
-                if price < catchback: # whether to catch back after sold
-                    advice.dirLONG = 1
-                    latestDir = advice.dirString()
-                    self.__adviceSeq.append(copy.copy(advice))
-
-    def scanEventsForAdvices000(self) :
-        # step 1. scan self.__mdEventsToday and determine TH TL
-        price_open, price_high, price_low, price_close, T_high, T_low = self.__scanEventsSequence(self.__mdEventsToday)
-        tomorrow_open, tomorrow_high, tomorrow_low, tomorrow_close, tT_high, tT_low = self.__scanEventsSequence(self.__mdEventsTomrrow)
-
-        if not T_high:
-            return
-
-        # if T_high.day==27 and T_high.month==2 :
-        #     print('here')
-
-        # step 2. faking the ideal orders
-        bMayBuy = price_close >= price_open*(100.0 +self._constraintBuy_closeOverOpen)/100 # may BUY today, >=price_open*1.005
-        T_win = timedelta(minutes=2)
-        slip = 0.02
-
-        sell_stop = max(price_high -slip, price_close*(100.0 +self._constraintSell_lossBelowHigh)/100)
-        buy_stop  = min(price_close*(100.0 -self._constraintBuy_closeOverRecovery)/100, price_low +slip)
-        uphill_catchback = price_close + slip
-
-        if tomorrow_high :
-            if tomorrow_high > price_close*(100.0 +self._constraintBuy_closeOverRecovery)/100 :
-               bMayBuy = True
-
-            if ((tT_low <tT_high and tomorrow_low < price_close) or tomorrow_high < (uphill_catchback * 1.003)) :
-                uphill_catchback =0 # so that catch back never happen
-
-        if price_close > price_low*(100.0 +self._constraintBuy_closeOverRecovery)/100 : # if close is at a well recovery edge
-            bMayBuy = True
-
-        for ev in self.__mdEventsToday:
-            if EVENT_TICK != ev.type and EVENT_KLINE_PREFIX != ev.type[:len(EVENT_KLINE_PREFIX)] :
-                continue
-
-            evd = ev.data
-            T = evd.datetime
-
-            price = evd.price if EVENT_TICK == ev.type else evd.close
-            tokens = (evd.vtSymbol.split('.'))
-            symbol = tokens[0]
-            advice = AdviceData(self.ident, symbol, self._marketState.exchange)
-            advice.price = price
-            advice.datetime = T
-            advice.advisorId = '%s' % self.ident
-            advice.Rdaily = 0.0
-            advice.Rdstd  = 0.0
-            advice.pdirNONE, advice.pdirLONG, advice.pdirSHORT = 0.0, 0.0, 0.0
-            advice.pdirPrice = 0.0
-            advice.pdirAsOf  = T
-            advice.dirNONE, advice.dirLONG, advice.dirSHORT = 0.0, 0.0, 0.0
-
-            if T_low < T_high : # up-hill
-                if bMayBuy and (T <= T_low + T_win and price <= buy_stop) :
-                    advice.dirLONG = 1
-                    latestDir = advice.dirString()
-                    self.__adviceSeq.append(copy.copy(advice))
-                if T <= (T_high + T_win) and price >= (price_high -slip):
-                    advice.dirSHORT = 1
-                    latestDir = advice.dirString()
-                    self.__adviceSeq.append(copy.copy(advice))
-                elif T > T_high :
-                    # if sell_stop < (uphill_catchback *1.002) and tomorrow_high > pSHORTrice_close:
-                    #     continue # too narrow to perform any actions
-
-                    if price > sell_stop:
-                        advice.dirSHORT = 1
-                        latestDir = advice.dirString()
-                        self.__adviceSeq.append(copy.copy(advice))
-                    elif price < uphill_catchback :
-                        advice.dirLONG = 1
-                        latestDir = advice.dirString()
-                        self.__adviceSeq.append(copy.copy(advice))
-
-            if T_low > T_high : # down-hill
-                if price >= (price_high -slip) or (T < T_low and price >= (price_close*(100.0 +self._constraintSell_downHillOverClose)/100)):
-                    advice.dirSHORT = 1
-                    latestDir = advice.dirString()
-                    self.__adviceSeq.append(copy.copy(advice))
-                elif bMayBuy and (T > (T_low - T_win) and T <= (T_low + T_win) and price < round (price_close +price_low*3) /4, 3) :
-                    advice.dirLONG = 1
-                    latestDir = advice.dirString()
-                    self.__adviceSeq.append(copy.copy(advice))
+        self.info('saved %s with %s samples into file %s with sig[%s]' % (frameId, len(col_state), fn_frame, self.ident))
 

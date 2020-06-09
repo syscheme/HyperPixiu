@@ -190,6 +190,8 @@ if __name__ == '__main__':
 
     if 'T+1' == ideal :
         tdrWraper = p.createApp(IdealTrader_Tplus1, configNode ='trader', trader=tdrCore, histdata=csvreader) # ideal trader to generator ReplayFrames
+    elif 'FuturePrice' == ideal :
+        tdrWraper = p.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=csvreader) # ShortSwingScanner to classify future price
     else :
         p.info('all objects registered piror to local Advisor: %s' % p.listByType())
         advisor = p.createApp(DnnAdvisor_S1548I4A3, configNode ='advisor', objectives=objectives, recorder=rec)

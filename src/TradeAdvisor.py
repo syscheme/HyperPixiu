@@ -14,6 +14,7 @@ from Account      import OrderData
 EVENT_ADVICE          = EVENT_NAME_PREFIX + 'TAdv'  # 交易建议事件
 EVENT_TICK_OF_ADVICE  = EVENT_TICK + 'Adv'  # the repeated tick that raised LONG/SHORT advice
 ADVICE_DIRECTIONS = [OrderData.DIRECTION_NONE, OrderData.DIRECTION_LONG, OrderData.DIRECTION_SHORT]
+TIMEWIN_DUP_TICK_OF_ADVICE = 10.0 # 10sec
 
 import os
 import logging
@@ -197,7 +198,7 @@ class TradeAdvisor(BaseApplication):
         # repeat the tick to remote eventChannel if this advice is based on a tick, so that the Trader
         # who subscribe EVENT_ADVICEs does NOT have to instantiate a seperated crawler or others only in order to get the recent price
         bTickDuplicated = False
-        if EVENT_TICK == ev.type and symbol in self.__dictFstampLastPost.keys() and fstamp < self.__dictFstampLastPost[symbol] +10.0: # duplicate the tick for max 10sec
+        if EVENT_TICK == ev.type and symbol in self.__dictFstampLastPost.keys() and fstamp < self.__dictFstampLastPost[symbol] +TIMEWIN_DUP_TICK_OF_ADVICE: # duplicate the tick for max 10sec
             bTickDuplicated = True
             nev = Event(EVENT_TICK_OF_ADVICE)
             nev.setData(copy(d))

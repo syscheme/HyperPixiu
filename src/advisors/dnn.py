@@ -119,9 +119,10 @@ class DnnAdvisor_S1548I4A3(TradeAdvisor):
         symbol = tokens[0]
 
         # because the grain-size of S1548I4A3 is KL1m, it is unnecessary to perform perdiction more freq-ly than once-per-minute
-        if lastAdv:
-            if d.asof.minute == lastAdv.asof.minute and datetime2float(d.asof) < datetime2float(lastAdv.asof) + 40.0:
-                self.debug('generateAdviceOnMarketEvent() recently adviced at %s, skipping event: %s' % (lastAdv.asof, ev.desc))
+        if lastAdv and d.asof.minute == lastAdv.asof.minute:
+            secAgo = datetime2float(d.asof) - datetime2float(lastAdv.asof)
+            if secAgo < 10.0 +TIMEWIN_DUP_TICK_OF_ADVICE :
+                self.debug('generateAdviceOnMarketEvent() recently adviced %ss ago, skip predicting on event: %s' % (secAgo, ev.desc))
                 return None
 
         floatstate = self._marketState.exportKLFloats(symbol)

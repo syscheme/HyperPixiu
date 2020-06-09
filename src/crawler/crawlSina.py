@@ -191,6 +191,8 @@ class SinaCrawler(MarketCrawler):
         idxBtch = self.__idxTickBatch
         self.__idxTickBatch +=1
         
+        stampStart = datetime2float(datetime.now())
+
         updated=[]
         bth = self.__tickBatches[idxBtch]
         httperr, result = self.GET_RecentTicks(bth)
@@ -231,12 +233,12 @@ class SinaCrawler(MarketCrawler):
                 self.OnEventCaptured(ev)
                 updated.append(s)
             
-        stampNow = datetime.now()
+        stampNow = datetime2float(datetime.now())
         if cMerged >0:
-            self.info("step_pollTicks() btch[%d/%d] cached %d new-tick of %d/%d symbols into psp: %s" %(idxBtch +1, batches, cMerged, len(result), len(self.__tickBatches[idxBtch]), ','.join(updated)))
+            self.info("step_pollTicks() btch[%d/%d] cached %d new-tick of %d/%d symbols, took %.3fs: %s" %(idxBtch +1, batches, cMerged, len(result), len(self.__tickBatches[idxBtch]), (stampNow-stampStart), ','.join(updated)))
         else :
             if not Account_AShare.duringTradeHours():
-                self.__scheduleNext('all', 'tick', (61 - stampNow.second))
+                self.__scheduleNext('all', 'tick', (61 - int(stampNow) %60))
                 self.info("step_pollTicks() btch[%d/%d] no new ticks during off-market time, extended sleep time" %(idxBtch +1, batches))
             else :
                 self.debug("step_pollTicks() btch[%d/%d] no new ticks updated" %(idxBtch +1, batches))
@@ -324,7 +326,7 @@ class SinaCrawler(MarketCrawler):
 
             stampNow = datetime2float(datetime.now())
             if cMerged >0:
-                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %.2fs, psp: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
+                self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %.3fs, psp: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
             elif not Account_AShare.duringTradeHours():
                 self.__scheduleNext('all', 'KL', 60*60)
                 self.info("step_pollKline(%s:%s) [%d/%d]sym no new KLs during off-hours" %(s, evType, self.__idxKL, cSyms))

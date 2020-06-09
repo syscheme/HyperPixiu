@@ -6,7 +6,7 @@ from __future__ import division
 
 from EventData    import EventData, datetime2float
 from MarketData   import *
-from Application  import BaseApplication
+from Application  import BaseApplication, configToStrList
 from Account      import *
 from TradeAdvisor import *
 
@@ -103,6 +103,8 @@ class BaseTrader(MetaTrader):
         self._minBuyPerOrder     = self.getConfig('minBuyPerOrder', 1000.0) # the min value limitation of a single buy
         if not objectives or len(objectives) <=0 :
             objectives  = self.getConfig('objectives', [])
+        
+        objectives = configToStrList(objectives)
 
         self._minBuyPerOrder   = self.getConfig('minBuyPerOrder', 1000.0) # the min value limitation of a single buy
         

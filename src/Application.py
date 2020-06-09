@@ -1269,6 +1269,23 @@ class Program(object):
             self.debug('loadObject() object[%s] loaded' %(objId))
         return ret
 
+#----------------------------------------------------------------------
+def configToStrList(confList) :
+    '''
+        utility to ensure the result is a list of string that may from json-conf nodes
+    '''
+    ret = []
+    if len(confList)<=0: # not isinstance(confList, list) or len(confList)<=0:
+        return ret
+
+    ret = confList
+    if not isinstance(ret[0], str):
+        ret = [s('!!UNKNOWN!!!') for s in ret]
+        ret = [i for i in ret if '!!UNKNOWN!!!' != i]
+    return ret
+
+
+
 '''
     #----------------------------------------------------------------------
     def addMarketData(self, dsModule, settings):

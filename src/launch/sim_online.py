@@ -1,4 +1,4 @@
-from Application import Program
+from Application import Program, configToStrList
 
 from Account import Account_AShare
 from Trader import BaseTrader
@@ -24,6 +24,7 @@ if __name__ == '__main__':
     evMdSource  = p.getConfig('marketEvents/source', None) # market data event source
     advisorType = p.getConfig('advisor/type', "dnn.S1548I4A3")
     objectives  = p.getConfig('trader/objectives', ['SH510050'])
+    objectives  = configToStrList(objectives)
 
     # In the case that this utility is started from a shell script, this reads env variables for the symbols
     if 'SYMBOL' in os.environ.keys():

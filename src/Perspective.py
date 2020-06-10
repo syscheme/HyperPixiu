@@ -144,11 +144,24 @@ class Perspective(MarketData):
     def asof(self) : return self.getAsOf(None)
 
     def getAsOf(self, evType=None) :
-        if not evType or not evType in self._stacks.keys():
-            return self.__stampLast if self.__stampLast else DT_EPOCH
-        
-        stack = self._stacks[evType]
-        return DT_EPOCH if stack.size <=0 else stack.top.asof
+        if evType and evType in self._stacks.keys() :
+            stack = self._stacks[evType]
+            if stack.size>0:
+                return stack.top.asof
+    
+        return self.__stampLast if self.__stampLast else DT_EPOCH
+    # def getAsOf(self, evType=None) :
+    #     ret = DT_EPOCH
+    #     if evType and evType in self._stacks.keys() :
+    #         stack = self._stacks[evType]
+    #         if stack.size>0:
+    #             return stack.top.asof
+
+    #     for s,stack in self._stacks.items() :
+    #         if stack.size>0 and stack.top.asof > ret:
+    #             ret = stack.top.asof
+
+    #     return ret
 
     def stampUpdatedOf(self, evType=None) :
         if not evType or not evType in self._stacks.keys():
@@ -274,13 +287,14 @@ class Perspective(MarketData):
         if not ev or not ev.type in self._stacks.keys():
             return None
 
+        if not self.__stampLast or self.__stampLast < ev.data.datetime :
+            self.__stampLast = ev.data.datetime
+
         latestevd = self._stacks[ev.type].top
         if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
             self._stacks[ev.type].push(ev.data)
             if self._stacks[ev.type].size >0:
                 self.__focusLast = ev.type
-                if not self.__stampLast or self.__stampLast < ev.data.datetime :
-                    self.__stampLast = ev.data.datetime
             return ev
         
         if not ev.data.exchange or (latestevd.exchange and not ('_k2x' in latestevd.exchange or '_t2k' in latestevd.exchange)) :
@@ -465,11 +479,12 @@ class MoneyflowPerspective(MarketData):
     @property
     def asof(self) : return self.getAsOf(None)
     def getAsOf(self, evType=None) :
-        if not evType or not evType in self._stacks.keys():
-            return self.__stampLast if self.__stampLast else DT_EPOCH
-        
-        stack = self._stacks[evType]
-        return DT_EPOCH if stack.size <=0 else stack.top.asof
+        if evType and evType in self._stacks.keys() :
+            stack = self._stacks[evType]
+            if stack.size>0:
+                return stack.top.asof
+    
+        return self.__stampLast if self.__stampLast else DT_EPOCH
 
     def sizesOf(self, evType=None) :
         if not evType or len(evType) <=0:
@@ -500,13 +515,14 @@ class MoneyflowPerspective(MarketData):
         if not ev or not ev.type in self._stacks.keys():
             return None
 
+        if not self.__stampLast or self.__stampLast < ev.data.datetime :
+            self.__stampLast = ev.data.datetime
+
         latestevd = self._stacks[ev.type].top
         if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
             self._stacks[ev.type].push(ev.data)
             if self._stacks[ev.type].size >0:
                 self.__focusLast = ev.type
-                if not self.__stampLast or self.__stampLast < ev.data.datetime :
-                    self.__stampLast = ev.data.datetime
             return ev
         
         for i in range(self._stacks[ev.type].size) :

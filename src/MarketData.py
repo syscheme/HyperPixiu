@@ -554,7 +554,7 @@ class MarketState(MetaObj):
         ''' 
         @return the desc of specified symbol
         '''
-        return '%s unknown' % symbol
+        return '%s' % symbol
 
     @abstractmethod
     def dailyOHLC_sofar(self, symbol) :

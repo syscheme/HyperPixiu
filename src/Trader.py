@@ -211,14 +211,17 @@ class BaseTrader(MetaTrader):
             ev.setData(d)
             self.debug('OnEvent(%s) treating as: %s' % (EVENT_TICK_OF_ADVICE, ev.desc))
 
-        if MARKETDATE_EVENT_PREFIX == ev.type[:len(MARKETDATE_EVENT_PREFIX)] :
-            if self._marketState:
-                self._marketState.updateByEvent(ev)
+        d = ev.data
 
-            d = ev.data
+        if MARKETDATE_EVENT_PREFIX == ev.type[:len(MARKETDATE_EVENT_PREFIX)] :
             tokens = (d.vtSymbol.split('.'))
             symbol = tokens[0]
             ds = tokens[1] if len(tokens) >1 else d.exchange
+
+            if self._marketState:
+                self._marketState.updateByEvent(ev)
+                self.debug('updated marketState by ev[%s]-> %s' % (ev.desc, self._marketState.descOf(symbol)))
+
             if not symbol in self._dictObjectives.keys() : # or ds != self._dictObjectives[symbol]['ds1min']:
                 return # ignore those not interested
 

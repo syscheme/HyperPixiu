@@ -904,6 +904,8 @@ class OnlineSimulator(MetaTrader):
                 self._account.setCapital(self._startBalance, True)
                 self.__wkTrader._dailyCapCost = 0
 
+            self._account._warmupDays =0 # OnlineSimulator will not be constrainted by warmupDays
+            
             self._program.addApp(self._account)
             self._account._marketState = self._marketState
             self.__wkTrader._account = self._account

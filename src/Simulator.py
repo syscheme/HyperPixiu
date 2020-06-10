@@ -905,7 +905,7 @@ class OnlineSimulator(MetaTrader):
                 self.__wkTrader._dailyCapCost = 0
 
             self._account._warmupDays =0 # OnlineSimulator will not be constrainted by warmupDays
-            
+
             self._program.addApp(self._account)
             self._account._marketState = self._marketState
             self.__wkTrader._account = self._account
@@ -2295,16 +2295,23 @@ class ShortSwingScanner(OfflineSimulator):
         '''
         super(ShortSwingScanner, self).__init__(program, trader, histdata, **kwargs)
 
-        self._daysLong                = self.getConfig('constraints/daysLong',  5) # long-term prospect, default 1week(5days)
-        self._daysShort               = self.getConfig('constraints/daysShort', 2) # short-term prospect, default 2days
+        self._daysLong     = self.getConfig('constraints/daysLong',  5) # long-term prospect, default 1week(5days)
+        self._daysShort    = self.getConfig('constraints/daysShort', 2) # short-term prospect, default 2days
+        self._byEvent      = self.getConfig('constraints/byEvent',   EVENT_KLINE_1DAY)
+
+        self._d4schema = {
+            'asof':1, 
+            EVENT_KLINE_1DAY : 150,
+        }
 
         self._warmupDays =0 # IdealTrader will not be constrainted by warmupDays
         self.__cOpenDays =0
+        self.__stampByEvent = None
 
         self.__dtToday = None
 
         self.__eventsOfDays = EvictableStack(evictSize=self._daysLong, nildata=[]) # list of days, each item contains events of days that up to self._daysLong
-        self.__stateReadAhead = Perspective('Dummy')
+        self.__psptReadAhead = Perspective('Dummy')
 
         self.__sampleFrmSize  = 1024*8
         self.__sampleFrm = [None]  * self.__sampleFrmSize
@@ -2340,11 +2347,17 @@ class ShortSwingScanner(OfflineSimulator):
             try :
                 ev = next(self._wkHistData)
                 if not ev or ev.data.datetime < self._btStartDate: return
+                symbol = ev.data.symbol
                 if ev.data.datetime <= self._btEndDate:
-                    self.__stateReadAhead.push(ev)
+                    self.__psptReadAhead.push(ev)
+                    stamp = self.__psptReadAhead.getAsOf(self._byEvent)
+                    if self.__stampByEvent and self.__stampByEvent == stamp:
+                        return
+                    self.__stampByEvent = stamp
+
                     dayOfEvent = ev.data.datetime.replace(hour=0, minute=0, second=0, microsecond=0)
                     if not self.__dtToday or self.__dtToday < dayOfEvent:
-                        ohlc = self.__stateReadAhead.dailyOHLC_sofar
+                        ohlc = self.__psptReadAhead.dailyOHLC_sofar
 
                         eventsLongAgo  =  self.__eventsOfDays[self._daysLong -1] if self.__eventsOfDays.size >=self._daysLong else []
                         eventsShortAgo =  self.__eventsOfDays[self._daysShort -1] if self.__eventsOfDays.size >=self._daysShort else []
@@ -2360,15 +2373,15 @@ class ShortSwingScanner(OfflineSimulator):
                         self.__eventsOfDays.push([])
 
                         if self.__dtToday:
-                            self.debug('doAppStep() day-%d:[%s] applied onto %d of short[%dd]-ago, %d of long[%dd]-ago' % (self.__cOpenDays, self.__dtToday.strftime('%Y-%m-%d'), len(eventsShortAgo), self._daysShort, len(eventsLongAgo), self._daysLong))
+                            self.debug('doAppStep() %s day-%d:%s applied onto %d of short[%dd]-ago, %d of long[%dd]-ago by %s' % (symbol, self.__cOpenDays, self.__dtToday.strftime('%Y-%m-%d'), len(eventsShortAgo), self._daysShort, len(eventsLongAgo), self._daysLong, self._byEvent))
 
                         self.__cOpenDays += 1
                         self.__dtToday = dayOfEvent
 
                     # in a same day
                     stateOfEvent = {
-                        'price' : self.__stateReadAhead.latestPrice,
-                        'stateD4f': self.__stateReadAhead.floatsD4(),
+                        'price' : self.__psptReadAhead.latestPrice,
+                        'stateD4f': self.__psptReadAhead.floatsD4(d4wished = self._d4schema),
                         'futurePriceL': 0.0,
                         'futurePriceS': 0.0,
                         }
@@ -2383,17 +2396,14 @@ class ShortSwingScanner(OfflineSimulator):
             except Exception as ex:
                 self.logexception(ex)
 
+        if self.__sampleIdx >0 :
+            self.__saveFrame(self.__sampleFrm[:self.__sampleIdx])
+
         # this test should be done if reached here
         self.info('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self._stepNoInEpisode, self._bGameOver, reachedEnd))
+        self.stop()
         
-        try:
-            self.OnEpisodeDone(reachedEnd)
-        except Exception as ex:
-            self.logexception(ex)
-
-        self._program.stop()
-        
-        exit(0) # IdealTrader_Tplus1 is not supposed to run forever, just exit instead of return
+        # exit(0) # ShortSwingScanner is not supposed to run forever, just exit instead of return
 
     def __saveEventsOfDay(self, eventsOfDay):
 
@@ -2406,8 +2416,11 @@ class ShortSwingScanner(OfflineSimulator):
             if price <=0.01:
                 continue
 
-            gainRateL = (ev['futurePriceL'] - price) / price / self._daysLong
-            gainRateS = (ev['futurePriceS'] - price) / price / self._daysShort
+            futurePriceL = ev['futurePriceL']
+            futurePriceS = ev['futurePriceS']
+            prices = [price, futurePriceS, futurePriceL]
+            gainRateL = (futurePriceL - price) / price / self._daysLong
+            gainRateS = (futurePriceS - price) / price / self._daysShort
 
             gainClassL, gainClassS= 0, 0
             for redge in ShortSwingScanner.DAILIZED_GAIN_PCTS:
@@ -2426,15 +2439,17 @@ class ShortSwingScanner(OfflineSimulator):
                 # frame full, output it into a HDF5 file
                 self.__saveFrame(self.__sampleFrm)
 
-            self.__sampleFrm[self.__sampleIdx] = (stateD4f, gainClass)
+            self.__sampleFrm[self.__sampleIdx] = (stateD4f, gainClass, prices)
             self.__sampleIdx +=1
 
     def __saveFrame(self, rangedFrame):
         metrix     = np.array(rangedFrame)
-        col_state  = np.concatenate(metrix[:, 0]).reshape(len(rangedFrame), len(rangedFrame[0][0]))
-        col_future = np.concatenate(metrix[:, 1]).reshape(len(rangedFrame), len(rangedFrame[0][1]))
+        lenF = len(rangedFrame)
+        col_state        = np.concatenate(metrix[:, 0]).reshape(lenF, len(rangedFrame[0][0]))
+        col_gainCls      = np.concatenate(metrix[:, 1]).reshape(lenF, len(rangedFrame[0][1]))
+        col_prices       = np.concatenate(metrix[:, 2]).reshape(lenF, len(rangedFrame[0][2]))
 
-        normalizedId = 'FclzD4X%dR%d' %(col_state.shape[1], col_future.shape[1])
+        normalizedId = 'FclzD4X%dR%dBy%s' %(col_state.shape[1], col_gainCls.shape[1], self._byEvent)
 
         fn_frame = os.path.join(self.wkTrader.outdir, '%s_%s.h5' % (normalizedId, self._tradeSymbol) )
         with h5py.File(fn_frame, 'a') as h5file:
@@ -2446,13 +2461,18 @@ class ShortSwingScanner(OfflineSimulator):
             g.attrs['futurePriceCls'] = 'futurePriceCls'
             g.attrs[u'default'] = 'state'
             g.attrs['size'] = col_state.shape[0]
+            g.attrs['daysLong'] = self._daysLong
+            g.attrs['daysShort'] = self._daysShort
+            g.attrs['grainClsAt'] = ','.join(['%.2f'%f for f in ShortSwingScanner.DAILIZED_GAIN_PCTS])
             g.attrs['signature'] = self.ident
 
             g.create_dataset(u'title',      data= 'future price classification %s frame %s of %s by %s' % (normalizedId, frameId, self._tradeSymbol, self.ident))
             st = g.create_dataset('state',  data= col_state, **H5DSET_ARGS)
             st.attrs['dim'] = col_state.shape[1]
-            ac = g.create_dataset('futurePriceCls', data= col_future, **H5DSET_ARGS)
-            ac.attrs['dim'] = col_future.shape[1]
+            ac = g.create_dataset('futurePriceCls', data= col_gainCls, **H5DSET_ARGS)
+            ac.attrs['dim'] = col_gainCls.shape[1]
+
+            g.create_dataset('prices',        data= col_prices, **H5DSET_ARGS)
             
         self.info('saved %s with %s samples into file %s with sig[%s]' % (frameId, len(col_state), fn_frame, self.ident))
 

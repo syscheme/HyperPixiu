@@ -39,6 +39,7 @@ if __name__ == '__main__':
         p.error('no objectives specified')
         quit()
 
+    objectives = [ SinaCrawler.fixupSymbolPrefix(s) for s in objectives ] # ensure those SH/SZ prefix
     SYMBOL = objectives[0]
 
     # evMdSource = Program.fixupPath(evMdSource)
@@ -52,6 +53,7 @@ if __name__ == '__main__':
     simulator.setRecorder(rec)
 
     revents = p.createApp(RedisEE, configNode ='remoteEvents/redis')
+    revents.subscribeSymbols(objectives)
 
     # about instant the TradeAdvisor
     for dummy in range(1): # dummy one-round loop

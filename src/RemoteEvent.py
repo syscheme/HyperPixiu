@@ -516,6 +516,7 @@ class RedisEE(EventEnd):
         while not self._subQuit:
             try:
                 if ps is None:
+                    topicSubed = []
                     if self.__redisConn is None:
                         self.__connect()
 
@@ -528,12 +529,15 @@ class RedisEE(EventEnd):
 
                             if len(topicfilter) <=0: continue
                             ps.subscribe(topicfilter)
+                            topicSubed.append(topicfilter)
 
                         for s in self._symbolsOfSub:
                             topicfilter = '%s' % s
                             if len(topicfilter) <=0: continue
                             ps.subscribe(topicfilter)
+                            topicSubed.append(topicfilter)
                         
+                    self.info('connected to evch[%s:%s], subscribed: %s' % (self._redisHost, self._redisPort, ','.join(topicSubed)))
                     sleep(0.5)
                     continue # to test _subQuit
 

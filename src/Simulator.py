@@ -2322,7 +2322,7 @@ class ShortSwingScanner(OfflineSimulator):
     # to replace OfflineSimulator's OnEvent with some TradeAdvisor logic and execute the advice as order directly
     def OnEvent(self, ev):
         '''processing an incoming MarketEvent'''
-        pass
+        pass # do nothing here
 
     def OnEpisodeDone(self, reachedEnd=True):
         super(ShortSwingScanner, self).OnEpisodeDone(reachedEnd)

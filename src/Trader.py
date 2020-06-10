@@ -180,6 +180,16 @@ class BaseTrader(MetaTrader):
 
         # step 3.1 subscribe the TradeAdvices
         self.subscribeEvents([EVENT_ADVICE, EVENT_TICK_OF_ADVICE])
+        # in order to receive EVENT_TICK_OF_ADVICE, the placehold of EVENT_TICK is MUST in self._marketState
+        enlarged = []
+        for s in self._marketState.listOberserves():
+            _, maxTicks = self._marketState.sizesOf(s, EVENT_TICK)
+            if maxTicks <=0:
+                self._marketState.resize(s, EVENT_TICK, 60)
+                enlarged.append(s)
+
+        if len(enlarged) >0:
+            self.warn('reserved EVENT_TICK(60) in MarketState[%s]: %s' % (self._marketState.ident, ','.join(enlarged)))
         
         # step 3.2 subscribe the account and market events
         self.subscribeEvents([Account.EVENT_ORDER,Account.EVENT_TRADE])

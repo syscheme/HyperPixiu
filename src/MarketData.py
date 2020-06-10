@@ -550,6 +550,10 @@ class MarketState(MetaObj):
         return 0, 0
 
     @abstractmethod
+    def resize(self, symbol, evType, evictSize) :
+        raise NotImplementedError
+
+    @abstractmethod
     def descOf(self, symbol) :
         ''' 
         @return the desc of specified symbol

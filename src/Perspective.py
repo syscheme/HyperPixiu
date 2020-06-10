@@ -60,6 +60,14 @@ class EvictableStack(object):
     def size(self):
         return len(self.__data) if self.__data else 0
 
+    def resize(self, evictSize):
+        self.__evictSize = int(evictSize)
+
+        while self.evictSize >=0 and self.size > self.evictSize:
+            del(self.__data[-1])
+
+        return self.evictSize
+
     @property
     def exportList(self):
         return _exportList(self, nilFilled=True)
@@ -182,6 +190,11 @@ class Perspective(MarketData):
             return self._stacks[evType].size, self._stacks[evType].evictSize
 
         return 0, 0
+
+    def resize(self, evType, evictSize):
+        if evType and evType in self._stacks.keys():
+            return self._stacks[evType].resize(evictSize)
+        return 0
 
     @property
     def focus(self) :
@@ -329,14 +342,14 @@ class Perspective(MarketData):
         return (itemsize +1) * EXPORT_FLOATS_DIMS
 
     @property
-    def KLFloats(self):
+    def _S1548I4(self):
         '''@return an array_like data as toNNFloats, maybe [] or numpy.array
         '''
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
             return [0.0] * self.NNFloatsSize # toNNFloats not available
         
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
-        return self._KLFloats(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume)
+        return self.__exportS1548I4(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume)
     
     def floatsD4(self, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
         '''@return an array_like data as toNNFloats, maybe [] or numpy.array
@@ -402,8 +415,7 @@ class Perspective(MarketData):
                 result += v
         return result
     
-    @abstractmethod
-    def _KLFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def __exportS1548I4(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''@return an array_like data as toNNFloats, maybe [] or numpy.array
         '''
         if baseline_Price <0.01: baseline_Price=1.0
@@ -677,6 +689,10 @@ class PerspectiveState(MarketState):
             return self.__dictPerspective[symbol].sizesOf(evType)
         return 0, 0
 
+    def resize(self, symbol, evType, evictSize) :
+        if symbol and symbol in self.__dictPerspective.keys():
+            return self.__dictPerspective[symbol].resize(evType, evictSize)
+
     def descOf(self, symbol) :
         ''' 
         @return the desc of specified symbol
@@ -729,7 +745,7 @@ class PerspectiveState(MarketState):
         '''@return an array_like data as toNNFloats, maybe [] or numpy.array
         '''
         if symbol and symbol in self.__dictPerspective.keys():
-            return self.__dictPerspective[symbol].KLFloats
+            return self.__dictPerspective[symbol]._S1548I4
 
         if not PerspectiveState.__dummy:
             PerspectiveState.__dummy = Perspective(self.exchange, 'Dummy')

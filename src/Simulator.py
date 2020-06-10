@@ -2297,12 +2297,16 @@ class ShortSwingScanner(OfflineSimulator):
 
         self._daysLong     = self.getConfig('constraints/daysLong',  5) # long-term prospect, default 1week(5days)
         self._daysShort    = self.getConfig('constraints/daysShort', 2) # short-term prospect, default 2days
-        self._byEvent      = self.getConfig('constraints/byEvent',   EVENT_KLINE_1DAY)
+        self._byEvent      = self.getConfig('constraints/byEvent',   EVENT_KLINE_5MIN)
 
         self._d4schema = {
             'asof':1, 
+            EVENT_KLINE_5MIN : 50,
             EVENT_KLINE_1DAY : 150,
         }
+
+        if not self._byEvent or MARKETDATE_EVENT_PREFIX != self._byEvent[:len(MARKETDATE_EVENT_PREFIX)] :
+            self._byEvent = EVENT_KLINE_1DAY
 
         self._warmupDays =0 # IdealTrader will not be constrainted by warmupDays
         self.__cOpenDays =0
@@ -2310,7 +2314,7 @@ class ShortSwingScanner(OfflineSimulator):
 
         self.__dtToday = None
 
-        self.__eventsOfDays = EvictableStack(evictSize=self._daysLong, nildata=[]) # list of days, each item contains events of days that up to self._daysLong
+        self.__eventsOfDays = EvictableStack(evictSize=self._daysLong+1, nildata=[]) # list of days, each item contains events of days that up to self._daysLong
         self.__psptReadAhead = Perspective('Dummy')
 
         self.__sampleFrmSize  = 1024*8
@@ -2359,21 +2363,31 @@ class ShortSwingScanner(OfflineSimulator):
                     if not self.__dtToday or self.__dtToday < dayOfEvent:
                         ohlc = self.__psptReadAhead.dailyOHLC_sofar
 
-                        eventsLongAgo  =  self.__eventsOfDays[self._daysLong -1] if self.__eventsOfDays.size >=self._daysLong else []
-                        eventsShortAgo =  self.__eventsOfDays[self._daysShort -1] if self.__eventsOfDays.size >=self._daysShort else []
+                        for i in range(1, self.__eventsOfDays.size):
+                            label = 'priceIn%02ddays' % i
+                            eventsDaysAgo = self.__eventsOfDays[i]
+                            for e in range(len(eventsDaysAgo)):
+                                eventsDaysAgo[e][label] = ohlc.close
                         
-                        for i in range(len(eventsLongAgo)):
-                            eventsLongAgo[i]['futurePriceL'] = ohlc.close
+                        if self.__eventsOfDays.size >= self.__eventsOfDays.evictSize:
+                            eventsDaysAgo = self.__eventsOfDays[self.__eventsOfDays.size -1]
+                            self.__saveEventsOfDay(eventsDaysAgo)
 
-                        for i in range(len(eventsShortAgo)):
-                            eventsShortAgo[i]['futurePriceS'] = ohlc.close
+                        # eventsLongAgo  =  self.__eventsOfDays[self._daysLong -1] if self.__eventsOfDays.size >=self._daysLong else []
+                        # eventsShortAgo =  self.__eventsOfDays[self._daysShort -1] if self.__eventsOfDays.size >=self._daysShort else []
+                        
+                        # for i in range(len(eventsLongAgo)):
+                        #     eventsLongAgo[i]['futurePriceL'] = ohlc.close
+
+                        # for i in range(len(eventsShortAgo)):
+                        #     eventsShortAgo[i]['futurePriceS'] = ohlc.close
 
                         # save the day 'long' ago and evict that day
-                        self.__saveEventsOfDay(eventsLongAgo)
+                        # self.__saveEventsOfDay(eventsLongAgo)
                         self.__eventsOfDays.push([])
 
                         if self.__dtToday:
-                            self.debug('doAppStep() %s day-%d:%s applied onto %d of short[%dd]-ago, %d of long[%dd]-ago by %s' % (symbol, self.__cOpenDays, self.__dtToday.strftime('%Y-%m-%d'), len(eventsShortAgo), self._daysShort, len(eventsLongAgo), self._daysLong, self._byEvent))
+                            self.debug('doAppStep() %s day-%d:%s applied onto short[%dd]-ago, long[%dd]-ago by %s' % (symbol, self.__cOpenDays, self.__dtToday.strftime('%Y-%m-%d'), self._daysShort, self._daysLong, self._byEvent))
 
                         self.__cOpenDays += 1
                         self.__dtToday = dayOfEvent
@@ -2382,8 +2396,8 @@ class ShortSwingScanner(OfflineSimulator):
                     stateOfEvent = {
                         'price' : self.__psptReadAhead.latestPrice,
                         'stateD4f': self.__psptReadAhead.floatsD4(d4wished = self._d4schema),
-                        'futurePriceL': 0.0,
-                        'futurePriceS': 0.0,
+                        # 'futurePriceL': 0.0,
+                        # 'futurePriceS': 0.0,
                         }
 
                     self.__eventsOfDays[0].append(stateOfEvent)
@@ -2403,7 +2417,7 @@ class ShortSwingScanner(OfflineSimulator):
         self.info('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self._stepNoInEpisode, self._bGameOver, reachedEnd))
         self.stop()
         
-        # exit(0) # ShortSwingScanner is not supposed to run forever, just exit instead of return
+        exit(0) # ShortSwingScanner is not supposed to run forever, just exit instead of return
 
     def __saveEventsOfDay(self, eventsOfDay):
 
@@ -2416,9 +2430,14 @@ class ShortSwingScanner(OfflineSimulator):
             if price <=0.01:
                 continue
 
-            futurePriceL = ev['futurePriceL']
-            futurePriceS = ev['futurePriceS']
-            prices = [price, futurePriceS, futurePriceL]
+            prices = [price]
+            for i in range(1, self._daysLong+1):
+                label = 'priceIn%02ddays' % i
+                prices.append(ev[label])
+
+
+            futurePriceL = prices[self._daysLong]
+            futurePriceS = prices[self._daysShort]
             gainRateL = (futurePriceL - price) / price / self._daysLong
             gainRateS = (futurePriceS - price) / price / self._daysShort
 
@@ -2429,9 +2448,9 @@ class ShortSwingScanner(OfflineSimulator):
                 if gainRateS >= redge:
                     gainClassS += 1
             
-            gainClass = [0] * (len(ShortSwingScanner.DAILIZED_GAIN_PCTS)*2)
+            gainClass = [0] * (len(ShortSwingScanner.DAILIZED_GAIN_PCTS)*2+2)
             gainClass[gainClassL] =1
-            gainClass[len(ShortSwingScanner.DAILIZED_GAIN_PCTS) + gainClassS] =1
+            gainClass[len(ShortSwingScanner.DAILIZED_GAIN_PCTS) +1 + gainClassS] =1
 
             # if (self.__sampleIdx + self.__frameNo) <=0 and all(v == 0.0 for v in mstate): return # skip the leading all[0.0]
             self.__sampleIdx = self.__sampleIdx % self.__sampleFrmSize
@@ -2449,7 +2468,7 @@ class ShortSwingScanner(OfflineSimulator):
         col_gainCls      = np.concatenate(metrix[:, 1]).reshape(lenF, len(rangedFrame[0][1]))
         col_prices       = np.concatenate(metrix[:, 2]).reshape(lenF, len(rangedFrame[0][2]))
 
-        normalizedId = 'FclzD4X%dR%dBy%s' %(col_state.shape[1], col_gainCls.shape[1], self._byEvent)
+        normalizedId = 'FclzD4X%dR%dBy%s' %(col_state.shape[1], col_gainCls.shape[1], self._byEvent[len(MARKETDATE_EVENT_PREFIX):])
 
         fn_frame = os.path.join(self.wkTrader.outdir, '%s_%s.h5' % (normalizedId, self._tradeSymbol) )
         with h5py.File(fn_frame, 'a') as h5file:
@@ -2472,7 +2491,7 @@ class ShortSwingScanner(OfflineSimulator):
             ac = g.create_dataset('futurePriceCls', data= col_gainCls, **H5DSET_ARGS)
             ac.attrs['dim'] = col_gainCls.shape[1]
 
-            g.create_dataset('prices',        data= col_prices, **H5DSET_ARGS)
+            g.create_dataset('priceAndFuture',        data= col_prices, **H5DSET_ARGS)
             
         self.info('saved %s with %s samples into file %s with sig[%s]' % (frameId, len(col_state), fn_frame, self.ident))
 

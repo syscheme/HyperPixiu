@@ -1779,6 +1779,10 @@ class OfflineSimulator(BackTestApp):
     def OnEvent(self, ev): # this overwrite BackTest's because there are some different needs
         symbol  = None
 
+        # OfflineSimulator MUST get rid of SysClock
+        if EVENT_SYS_CLOCK == ev.type :
+            return
+
         if EVENT_TICK_OF_ADVICE == ev.type :
             d = copy.copy(ev.data)
             ev = Event(EVENT_TICK)

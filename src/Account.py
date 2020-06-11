@@ -5,7 +5,7 @@ This module defines a basic account
 '''
 from __future__ import division
 
-from EventData    import EventData, EVENT_NAME_PREFIX, datetime2float
+from EventData    import EventData, EVENT_SYS_CLOCK, EVENT_NAME_PREFIX, datetime2float
 from Application  import BaseApplication
 from MarketData  import MarketState, PRICE_DISPLAY_ROUND_DECIMALS
 import HistoryData  as hist
@@ -1019,7 +1019,14 @@ class Account(MetaAccount):
         '''
         process the event
         '''
-        pass
+        if EVENT_SYS_CLOCK == ev.type :
+            dt = ev.data.asof
+            if Account.STATE_OPEN == self._state and not self.__class__.duringTradeHours(dt):
+                EOD = self.__class__.tradeEndOfDay(dt)
+                if dt > EOD + timedelta(minutes=15) :
+                    self.info('OnEvent() clock[%s] passed end-of-day[%s], calling onDayClose()' % (ev.desc, EOD) )
+                    self.onDayClose()
+            return
 
     def onDayClose(self):
 

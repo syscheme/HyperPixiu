@@ -5,7 +5,7 @@ from __future__ import division
 from MarketCrawler import *
 from EventData import Event, datetime2float, DT_EPOCH
 from MarketData import KLineData, TickData, MoneyflowData, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
-from Account import Account_AShare
+from Account import Account_AShare, DAYCLOSE_TIME_ERR
 import crawler.disguise as dsg
 
 import requests # pip3 install requests
@@ -31,7 +31,7 @@ https://baike.baidu.com/item/%E9%BE%99%E5%A4%B4%E8%82%A1/2268306
 '''
 
 CLOCK_ERROR_SEC   = 2*60.0  # 2min
-OFFHOUR_ERROR_SEC = 60*60.0 # 1hr
+OFFHOUR_ERROR_SEC = DAYCLOSE_TIME_ERR.seconds
 TICK_INTERVAL_DEFAULT_SEC = 0.7 # 0.7sec
 
 def toFloatVal(val, defaultval=0.0) :

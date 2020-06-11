@@ -20,6 +20,8 @@ import copy
 import traceback
 # from pymongo import ASCENDING
 
+DAYCLOSE_TIME_ERR = timedelta(minutes=15)
+
 #----------------------------------------------------------------------
 def formatNumber(n, dec=2):
     """格式化数字到字符串"""
@@ -1023,7 +1025,7 @@ class Account(MetaAccount):
             dt = ev.data.asof
             if Account.STATE_OPEN == self._state and not self.__class__.duringTradeHours(dt):
                 EOD = self.__class__.tradeEndOfDay(dt)
-                if dt > EOD + timedelta(minutes=15) :
+                if dt > EOD + DAYCLOSE_TIME_ERR :
                     self.info('OnEvent() clock[%s] passed end-of-day[%s], calling onDayClose()' % (ev.desc, EOD) )
                     self.onDayClose()
             return

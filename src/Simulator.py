@@ -960,7 +960,7 @@ class OnlineSimulator(MetaTrader):
         if Account.STATE_OPEN == self._account.account._state:
             saveInterval = timedelta(minutes=3)
             today = stampNow.strftime('%Y-%m-%d')
-            if self._account.account._dateToday == today and stampNow > self._account.account.__class__.tradeEndOfDay() + timedelta(hours=1) and self._marketState.getAsOf().strftime('%Y-%m-%d') == today:
+            if self._account.account._dateToday == today and stampNow > (self._account.account.__class__.tradeEndOfDay(stampNow) + DAYCLOSE_TIME_ERR) and self._marketState.getAsOf().strftime('%Y-%m-%d') == today:
                 self._account.onDayClose()
                 self._account.account.save()
                 self.__saveMarketState()

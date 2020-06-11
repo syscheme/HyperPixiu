@@ -29,9 +29,7 @@ try:
 except ImportError:
     pass
 
-
-if __name__ == '__main__':
-
+def tcsvToPandas():
     srcdatahome = '/mnt/e/temp/sim_offline_BAK05101013'
     # filter = TcsvFilter('/mnt/e/AShareSample/sina/test_Crawler_848_0320', 'evmdKL5m', 'SH601390')
     filter = TcsvFilter('%s/SH510050_P9334.tcsv' % srcdatahome, 'DRes', 'SH510050')
@@ -43,6 +41,10 @@ if __name__ == '__main__':
     # del dfSample['exchange']
     # dfSample['prdDIR']= dfSample[['dirNONE', 'dirLONG','dirSHORT']].apply(lambda x: (x[1]-x[2])*0.5 +0.5, axis=1)
     print(dfSample)
+
+if __name__ == '__main__':
+
+    # tcsvToPandas（）
 
 
 

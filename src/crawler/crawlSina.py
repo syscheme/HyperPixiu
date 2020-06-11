@@ -121,12 +121,12 @@ class SinaCrawler(MarketCrawler):
 
     def __loopTick(self):
         '''a separated thread to capture EVENT_TICK'''
-        nextSleep = TICK_INTERVAL_DEFAULT_SEC
+        nextSleep = TICK_INTERVAL_DEFAULT_SEC /3
         while not self.__trdQuit:
             if nextSleep>0: sleep(nextSleep)
             if self.__trdQuit: break
             try :
-                nextSleep = TICK_INTERVAL_DEFAULT_SEC
+                nextSleep = TICK_INTERVAL_DEFAULT_SEC /3
                 if self.__step_pollTicks() >0:
                     nextSleep =0
             except Exception as ex:

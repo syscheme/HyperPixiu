@@ -479,6 +479,7 @@ class Playback(Iterable):
         self.enquePending(evMH)
         return evdMH
 
+
 ########################################################################
 class PlaybackApp(BaseApplication):
     
@@ -686,6 +687,123 @@ class CsvPlayback(Playback):
 
         except Exception as ex:
             self.logexception(ex)
+
+        return ev
+
+########################################################################
+class TaggedCsvPlayback(Playback):
+    
+    def __init__(self, tcsvFilePath, startDate =Playback.DUMMY_DATE_START, endDate=Playback.DUMMY_DATE_END, symbol=None):
+
+        super(TaggedCsvPlayback, self).__init__(symbol, startDate, endDate, None, **kwargs)
+
+        self._tcsvFilePath = tcsvFilePath
+
+        self.__dictCategory = {} # eventName/category to { columeNames: [], coverter: func() }
+        self.__fnlist =[]
+
+    def registerConverter(self, categroy, converter, columns=[]):
+        self.__dictCategory[categroy] = {
+            'columns': columns,
+            'converter': converter
+        }
+
+    # -- Impl of Playback --------------------------------------------------------------
+    def resetRead(self):
+        super(TaggedCsvPlayback, self).resetRead()
+
+        self.__fnlist = TcsvFilter.buildUpFileList(self._tcsvFilePath)
+        self.info('associated file list by key %s: %s' % (self._tcsvFilePath, ','.join(self.__fnlist)))
+        return len(self.__fnlist) >0
+
+    def readNext(self):
+        '''
+        @return True if busy at this step
+        '''
+        try :
+            ev = self.popPending(block = False, timeout = 0.1)
+            if ev: return ev
+        except Exception:
+            pass
+        
+        row = None
+        while not row:
+            #ensure self._importStream is opened
+            while not self._importStream:
+                if not self.__fnlist or len(self.__fnlist) <=0:
+                    self._iterableEnd = True
+                    return None
+
+                fn = self.__fnlist[0]
+                del(self.__fnlist[0])
+
+                self.info('openning input file %s' % (fn))
+                extname = fn.split('.')[-1]
+                if extname == 'bz2':
+                    self._importStream = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
+                else:
+                    self._importStream = open(fn, 'rt')
+
+                if not self._importStream:
+                    self.warn('failed to open input file %s' % (fn))
+
+            if not self._importStream:
+                self._iterableEnd = True
+                return None
+
+            try :
+                row = next(self._importStream, None).strip()
+            except Exception as ex:
+                row = None
+
+            if not row:
+                self._importStream.close()
+                self._importStream = None
+
+            if len(row) <=0:
+                continue
+
+            if '!' == row[0] : # this is a header line
+                tokens = row.split(',')
+                if len(tokens) <=1: continue
+
+                categroy = tokens[0][1:]
+                del(tokens[0])
+                if not categroy in self.__dictCategory.keys():
+                    self.__dictCategory[categroy] = {
+                        'columns': [],
+                        'converter': None
+                    }
+
+                self.__dictCategory[categroy]['columns'] = tokens
+
+                # if idxSymbol<0 and symbol and 'symbol' in tokens:
+                #     idxSymbol = tokens.index('symbol')
+                continue
+
+            # now deal with the value lines
+            tokens = row.split(',')
+            if len(tokens) <=1: continue
+            categroy = tokens[0]
+
+            if not categroy in self.__dictCategory.keys(): continue
+            node = self.__dictCategory[categroy]
+            converter = node['converter']
+            if not converter: continue
+            
+            # TODO: ????
+            ev = None
+            try :
+                ev = converter(tokens, node['columns'])
+
+                # because the generated is always as of the previous event, so always deliver those pendings in queue first
+                if self.pendingSize >0 :
+                    evout = self.popPending()
+                    self.enquePending(ev)
+                    return evout
+
+            except Exception as ex:
+                self.logexception(ex)
 
         return ev
 

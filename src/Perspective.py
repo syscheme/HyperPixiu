@@ -650,7 +650,7 @@ class PerspectiveState(MarketState):
 
         ret = None
         for s, p in self.__dictPerspective.items() :
-            if not ret or ret > p.asof:
+            if not ret or ret < p.asof:
                 ret = p.asof
         return ret if ret else DT_EPOCH
 

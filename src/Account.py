@@ -5,7 +5,7 @@ This module defines a basic account
 '''
 from __future__ import division
 
-from EventData    import EventData, EVENT_NAME_PREFIX, datetime2float
+from EventData    import EventData, EVENT_SYS_CLOCK, EVENT_NAME_PREFIX, datetime2float
 from Application  import BaseApplication
 from MarketData  import MarketState, PRICE_DISPLAY_ROUND_DECIMALS
 import HistoryData  as hist
@@ -19,6 +19,8 @@ import threading
 import copy
 import traceback
 # from pymongo import ASCENDING
+
+DAYCLOSE_TIME_ERR = timedelta(minutes=15)
 
 #----------------------------------------------------------------------
 def formatNumber(n, dec=2):
@@ -365,7 +367,8 @@ class Account(MetaAccount):
     #----------------------------------------------------------------------
     @property
     def executable(self): 
-        return self.__class__.duringTradeHours(self.datetimeAsOfMarket())
+        dt = self.datetimeAsOfMarket()
+        return self.__class__.duringTradeHours(dt)
 
     @property
     def recorder(self):
@@ -1018,7 +1021,14 @@ class Account(MetaAccount):
         '''
         process the event
         '''
-        pass
+        if EVENT_SYS_CLOCK == ev.type :
+            dt = ev.data.asof
+            if Account.STATE_OPEN == self._state and not self.__class__.duringTradeHours(dt):
+                EOD = self.__class__.tradeEndOfDay(dt)
+                if dt > EOD + DAYCLOSE_TIME_ERR :
+                    self.info('OnEvent() clock[%s] passed end-of-day[%s], calling onDayClose()' % (ev.desc, EOD) )
+                    self.onDayClose()
+            return
 
     def onDayClose(self):
 

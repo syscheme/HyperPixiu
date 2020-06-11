@@ -215,6 +215,11 @@ class BaseTrader(MetaTrader):
         if Account.EVENT_TRADE == ev.type:
             return self.eventHdl_Trade(ev)
 
+        if EVENT_SYS_CLOCK == ev.type :
+            if self._account:
+                self._account.OnEvent(ev)
+            return
+
         if EVENT_TICK_OF_ADVICE == ev.type :
             d = copy(ev.data)
             ev = Event(EVENT_TICK)
@@ -311,7 +316,7 @@ class BaseTrader(MetaTrader):
             return
 
         if not self._account.executable:
-            self.debug('OnAdvice() ignored advice per account not executable: %s' % (adv.desc))
+            self.debug('OnAdvice() ignored[%s] per account not executable with state[%s]: %s' % (adv.desc, symbol, self.marketState.descOf(symbol)))
             return
 
         # TODO: validate the advice's datetime

@@ -17,6 +17,7 @@ import matplotlib as mpl # pip install matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import ticker
 import warnings; warnings.simplefilter('ignore')
+# import pypdfplot as pdfplt # pip install pypdfplot
 mpl.use('Agg')
 
 import os, re
@@ -29,9 +30,7 @@ try:
 except ImportError:
     pass
 
-
-if __name__ == '__main__':
-
+def test1():
     srcdatahome = '/mnt/e/temp/sim_offline_BAK05101013'
     # filter = TcsvFilter('/mnt/e/AShareSample/sina/test_Crawler_848_0320', 'evmdKL5m', 'SH601390')
     filter = TcsvFilter('%s/SH510050_P9334.tcsv' % srcdatahome, 'DRes', 'SH510050')
@@ -44,7 +43,27 @@ if __name__ == '__main__':
     # dfSample['prdDIR']= dfSample[['dirNONE', 'dirLONG','dirSHORT']].apply(lambda x: (x[1]-x[2])*0.5 +0.5, axis=1)
     print(dfSample)
 
+from fpdf import FPDF # pip install fpdf
 
+if __name__ == '__main__':
+    pdf = FPDF(orientation='P', unit='mm', format='A4') #orientation='{P|L}'
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt="Welcome to Python!", ln=1, align="C")
+    pdf.set_font("Arial", size=8)
+    pdf.cell(200, 30, txt="The first item that we need to talk about is the import. Here we import the FPDF class from the fpdf package. The defaults for this class are to create the PDF in Portrait mode, use millimeters for its measurement unit and to use the A4 page size. If you wanted to be explicit, you could write the instantiation line like this:", align="L")
+    pdf.add_page(orientation='L')
+    pdf.cell(200, 30, txt="blahblah", align="L")
+    pdf.add_page() # back to P
+    pdf.cell(200, 30, txt="blahblah2", align="L")
+    
+    x = np.arange(-10,20,0.1)
+    y = x**2
+
+    plt.plot(x,y,'r')
+    plt.show()
+
+    pdf.output("/mnt/e/temp/simple_demo.pdf")
 
 '''
         additionAttrs = {

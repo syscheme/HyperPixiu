@@ -185,14 +185,14 @@ class TradeAdvisor(BaseApplication):
 
         if MARKETDATE_EVENT_PREFIX != ev.type[:len(MARKETDATE_EVENT_PREFIX)] : return # advisor is supposed to only take care of market events
 
-        if self._marketState:
-            self._marketState.updateByEvent(ev)
-
         tokens = (d.vtSymbol.split('.'))
         symbol = tokens[0]
         ds = tokens[1] if len(tokens) >1 else d.exchange
         if not symbol in self.objectives :
             return # ignore those not interested
+
+        if self._marketState:
+            self._marketState.updateByEvent(ev)
 
         fstamp = datetime2float(d.asof)
         # repeat the tick to remote eventChannel if this advice is based on a tick, so that the Trader

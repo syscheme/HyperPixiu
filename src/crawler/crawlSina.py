@@ -160,7 +160,7 @@ class SinaCrawler(MarketCrawler):
         '''
         @return cMerged how many new tickets merged as the hits to indicate if the poll is busy
         '''
-        if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC/2) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC/2):
+        if not self._stepAsOf or self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC/2) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC/2):
             return 0 # well off-trade hours
 
         #step 1. build up self.__tickBatches if necessary

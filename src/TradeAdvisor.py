@@ -14,7 +14,6 @@ from Account      import OrderData
 EVENT_ADVICE          = EVENT_NAME_PREFIX + 'TAdv'  # 交易建议事件
 EVENT_TICK_OF_ADVICE  = EVENT_TICK + 'Adv'  # the repeated tick that raised LONG/SHORT advice
 ADVICE_DIRECTIONS = [OrderData.DIRECTION_NONE, OrderData.DIRECTION_LONG, OrderData.DIRECTION_SHORT]
-TIMEWIN_DUP_TICK_OF_ADVICE = 10.0 # 10sec
 
 import os
 import logging
@@ -40,6 +39,7 @@ class TradeAdvisor(BaseApplication):
         self._recorder = recorder
         self.__dictAdvices = {} # dict of symbol to recent AdviceData
         self.__dictFstampLastPost = {} # dict of symbol to float stamp of last advice-post
+        self.__dictRepeatCount = {} # dict of symbol to number to repeat market-events
         self.__dictPerf = {} # dict of symbol to performance {'Rdaily':,'Rdstd':}
 
         self._minimalAdvIntv   = self.getConfig('minimalInterval', 5) # minimal interval in seconds between two advice s
@@ -195,10 +195,12 @@ class TradeAdvisor(BaseApplication):
             self._marketState.updateByEvent(ev)
 
         fstamp = datetime2float(d.asof)
+        
         # repeat the tick to remote eventChannel if this advice is based on a tick, so that the Trader
         # who subscribe EVENT_ADVICEs does NOT have to instantiate a seperated crawler or others only in order to get the recent price
         bTickDuplicated = False
-        if EVENT_TICK == ev.type and symbol in self.__dictFstampLastPost.keys() and fstamp < self.__dictFstampLastPost[symbol] +TIMEWIN_DUP_TICK_OF_ADVICE: # duplicate the tick for max 10sec
+        if EVENT_TICK == ev.type and symbol in self.__dictRepeatCount.keys() and self.__dictRepeatCount[symbol] >0 : # duplicate the tick for max 10sec
+            self.__dictRepeatCount[symbol] -= 1
             bTickDuplicated = True
             nev = Event(EVENT_TICK_OF_ADVICE)
             nev.setData(copy(d))
@@ -251,8 +253,9 @@ class TradeAdvisor(BaseApplication):
         self.info('advice generated upon event[%s]: %s' % (ev.desc, evAdv.desc))
         self.__dictAdvices[symbol] = newAdvice
 
-        if 'NONE' != dir or not symbol in self.__dictFstampLastPost.keys() or self.__dictFstampLastPost[symbol] < fstamp -5*60: # reduce some NONE to remote eventCh
+        if 'NONE' != dir or not symbol in self.__dictFstampLastPost.keys() or self.__dictFstampLastPost[symbol] < fstamp -5*60: # reduce some NONEs to remote eventCh
             self.__dictFstampLastPost[symbol] = fstamp
+            self.__dictRepeatCount[symbol] = 3
 
             # repeat the most recent tick to remote eventChannel, see above bTickDuplicated
             if not bTickDuplicated and EVENT_TICK == ev.type:

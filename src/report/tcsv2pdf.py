@@ -30,7 +30,7 @@ try:
 except ImportError:
     pass
 
-def test1():
+def testTcsvToPandas():
     srcdatahome = '/mnt/e/temp/sim_offline_BAK05101013'
     # filter = TcsvFilter('/mnt/e/AShareSample/sina/test_Crawler_848_0320', 'evmdKL5m', 'SH601390')
     filter = TcsvFilter('%s/SH510050_P9334.tcsv' % srcdatahome, 'DRes', 'SH510050')
@@ -45,17 +45,22 @@ def test1():
 
 from fpdf import FPDF # pip install fpdf
 
-if __name__ == '__main__':
+def testPDF():
     pdf = FPDF(orientation='P', unit='mm', format='A4') #orientation='{P|L}'
     pdf.add_page()
     pdf.set_font("Arial", size=12)
     pdf.cell(200, 10, txt="Welcome to Python!", ln=1, align="C")
     pdf.set_font("Arial", size=8)
-    pdf.cell(200, 30, txt="The first item that we need to talk about is the import. Here we import the FPDF class from the fpdf package. The defaults for this class are to create the PDF in Portrait mode, use millimeters for its measurement unit and to use the A4 page size. If you wanted to be explicit, you could write the instantiation line like this:", align="L")
+    pdf.cell(200, 30, align="L", txt="Why no automatic new line: The first item that we need to talk about is the import. Here we import the FPDF class from the fpdf package. The defaults for this class are to create the PDF in Portrait mode, use millimeters for its measurement unit and to use the A4 page size. If you wanted to be explicit, you could write the instantiation line like this:")
     pdf.add_page(orientation='L')
-    pdf.cell(200, 30, txt="blahblah", align="L")
+    for x in range(10):
+        y=2
+        # for y in range(10):
+        pdf.cell(1*x, 10*y, align="L", txt="X:%d0,Y:%d0" % (x,y))
     pdf.add_page() # back to P
-    pdf.cell(200, 30, txt="blahblah2", align="L")
+    for x in range(10):
+        for y in range(10):
+            pdf.cell(10*x, 10*y, align="L", txt="X:%d0,Y:%d0" % (x,y))
     
     x = np.arange(-10,20,0.1)
     y = x**2
@@ -64,6 +69,10 @@ if __name__ == '__main__':
     plt.show()
 
     pdf.output("/mnt/e/temp/simple_demo.pdf")
+
+if __name__ == '__main__':
+    # testTcsvToPandas()
+    testPDF()
 
 '''
         additionAttrs = {

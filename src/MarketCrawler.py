@@ -46,6 +46,7 @@ class MarketCrawler(BaseApplication):
         # self._exchange = settings.exchange(self._id)
 
         self._steps = []
+        self._stepAsOf =0
         self.__genSteps={}
     
     #----------------------------------------------------------------------

@@ -31,7 +31,7 @@ https://baike.baidu.com/item/%E9%BE%99%E5%A4%B4%E8%82%A1/2268306
 '''
 
 CLOCK_ERROR_SEC   = 2*60.0  # 2min
-OFFHOUR_ERROR_SEC = DAYCLOSE_TIME_ERR.seconds
+OFFHOUR_ERROR_SEC = 45*60.0 # 45min is necessary to warm up every morning, X DAYCLOSE_TIME_ERR.seconds
 TICK_INTERVAL_DEFAULT_SEC = 0.7 # 0.7sec
 
 def toFloatVal(val, defaultval=0.0) :

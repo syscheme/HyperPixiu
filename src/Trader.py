@@ -338,24 +338,24 @@ class BaseTrader(MetaTrader):
 
         # TODO: the first version only support one symbol to play, so simply take the first symbol in the positions        
         latestPrice = self._marketState.latestPrice(symbol)
-        buyPrice = self._account.roundByPriceTick(latestPrice, OrderData.DIRECTION_LONG)
+        buyPrice  = self._account.roundByPriceTick(latestPrice, OrderData.DIRECTION_LONG)
         sellPrice = self._account.roundByPriceTick(latestPrice, OrderData.DIRECTION_SHORT)
 
         maxBuy, maxSell = self._account.maxOrderVolume(symbol, buyPrice)
         if self._maxValuePerOrder >0:
             if self._maxValuePerOrder < (maxBuy * buyPrice*100):
                 maxBuy = int(maxBuy * self._maxValuePerOrder / (maxBuy* buyPrice*100))
-            if self._maxValuePerOrder < (maxSell*1.5 * buyPrice*100):
-                maxSell = int(maxSell * self._maxValuePerOrder / (maxSell * buyPrice*100))
+            if self._maxValuePerOrder < (maxSell*1.5 * sellPrice*100):
+                maxSell = int(maxSell * self._maxValuePerOrder / (maxSell * sellPrice*100))
         if self._minBuyPerOrder >0 and (maxBuy * buyPrice*100) < self._minBuyPerOrder :
             maxBuy =0
 
         # TODO: the first version only support FULL-BUY and FULL-SELL
         if OrderData.DIRECTION_LONG == dirToExec :
-            strExec = '%s:%sx%so%s' %(dirToExec, maxBuy, buyPrice, latestPrice)
+            strExec = '%s:%dx%so%s' %(dirToExec, maxBuy, buyPrice, latestPrice)
             if maxBuy <=0 :
                 dirExeced = OrderData.DIRECTION_NONE
-                self.debug('OnAdvice() advice[%s] dropped with no buy power: %s' % (adv.desc, strExec))
+                self.debug('OnAdvice() advice[%s] dropped per no buy-power: %s' % (adv.desc, strExec))
             else:
                 self.info('OnAdvice() issuing max%s on advice[%s]' % (strExec, adv.desc))
                 self._account.cancelAllOrders()
@@ -363,10 +363,10 @@ class BaseTrader(MetaTrader):
                 dirExeced = OrderData.DIRECTION_LONG
 
         elif OrderData.DIRECTION_SHORT == dirToExec :
-            strExec = '%s:%sx%so%s' %(dirToExec, maxSell, sellPrice, latestPrice)
+            strExec = '%s:%dx%so%s' %(dirToExec, maxSell, sellPrice, latestPrice)
             if maxSell <=0:
                 dirExeced = OrderData.DIRECTION_NONE
-                self.debug('OnAdvice() advice[%s] dropped with no sell power: %s' % (adv.desc, strExec))
+                self.debug('OnAdvice() advice[%s] dropped per no sell-power: %s' % (adv.desc, strExec))
             else:
                 self.info('OnAdvice() issuing max%s on advice[%s]' % (strExec, adv.desc))
                 self._account.cancelAllOrders()

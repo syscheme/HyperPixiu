@@ -120,17 +120,21 @@ class SinaCrawler(MarketCrawler):
         return ftime
 
     def __loopTick(self):
-        '''a separated thread to capture EVENT_TICK'''
-        nextSleep = TICK_INTERVAL_DEFAULT_SEC /3
+        '''a separated thread to capture EVENT_TICK more timely'''
+        nextSleep = 0.2 # 200msec
         while not self.__trdQuit:
-            if nextSleep>0: sleep(nextSleep)
+
+            if nextSleep >0.01 :
+                sleep(nextSleep)
+
             if self.__trdQuit: break
+
             try :
-                nextSleep = TICK_INTERVAL_DEFAULT_SEC /3
+                nextSleep = 0.2 # 200msec
                 if self.__step_pollTicks() >0:
                     nextSleep =0
             except Exception as ex:
-                self.error('__step_pollTicks() excepton: %s' % ex)
+                self.error('__step_pollTicks() exception: %s' % ex)
 
     def connect(self):
         if self.__trdTick:
@@ -153,10 +157,11 @@ class SinaCrawler(MarketCrawler):
         return 0
 
     def __step_pollTicks(self):
-        
-        cBusy =0 
+        '''
+        @return cMerged how many new tickets merged as the hits to indicate if the poll is busy
+        '''
         if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC/2) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC/2):
-            return cBusy # well off-trade hours
+            return 0 # well off-trade hours
 
         #step 1. build up self.__tickBatches if necessary
         if (not self.__tickBatches or len(self.__tickBatches)<=0) and len(self._symbolsToPoll) >0:
@@ -172,7 +177,7 @@ class SinaCrawler(MarketCrawler):
 
         batches = len(self.__tickBatches)
         if batches <=0:
-            return cBusy
+            return 0
 
         if self._stepAsOf > self.__END_OF_TODAY :
             for k, v in self.__tickToKL1m.items():
@@ -184,7 +189,7 @@ class SinaCrawler(MarketCrawler):
             # yield some time in order not to poll SiNA too frequently
             nextStamp = self.__stampOfNext('all', 'tick')
             if self._stepAsOf < nextStamp  or nextStamp > self.__END_OF_TODAY :
-                return cBusy
+                return 0
 
             self.__scheduleNext('all', 'tick', TICK_INTERVAL_DEFAULT_SEC)
 
@@ -198,16 +203,16 @@ class SinaCrawler(MarketCrawler):
         httperr, result = self.GET_RecentTicks(bth)
         if httperr !=200:
             self.error("step_pollTicks() GET_RecentTicks failed, err(%s) bth:%s" %(httperr, bth))
-            return cBusy
+            return 0
             
         stampResp = datetime2float(datetime.now())
         # succ at previous batch here
-        if len(result) <=0 : 
-            self.__scheduleNext('all', 'tick', 60*10) # likely after a trade-day closed 10min
+
+        if len(result) <=0 : # market idle??
+            self.__scheduleNext('all', 'tick', 1.0 + max(1, 10 - len(bth)/10)) # likely after a trade-day closed, yield 10sec
 
         cMerged =0
         for tk in result:
-            cBusy +=1
             s = tk.symbol
 
             if not s in self.__tickToKL1m.keys():
@@ -244,7 +249,7 @@ class SinaCrawler(MarketCrawler):
             else :
                 self.debug("step_pollTicks() btch[%d/%d] no new ticks updated" %(idxBtch +1, batches))
 
-        return cBusy
+        return cMerged
 
     def __step_pollKline(self):
         cBusy =0       

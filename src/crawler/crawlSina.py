@@ -84,7 +84,7 @@ class SinaCrawler(MarketCrawler):
         self._steps = [self.__step_poll1st, self.__step_pollKline, self.__step_pollMoneyflow] # __step_pollTicks() will be executed in a separated thread __trdTick
         self._proxies = {}
 
-        symbols              = self.getConfig('objectives', objectives)
+        symbols              = self.getConfig('securities', objectives) # just to be different with config "objectives" of Trader/TraderAdvisors
         if len(symbols) >0 and not isinstance(symbols[0], str):
             symbols = [s('') for s in symbols]
 

@@ -354,8 +354,9 @@ class Account(MetaAccount):
             self._dictStopOrders,self._dictLimitOrders = self.program.loadObject(objId +'/orders')
             cashAvail, cashTotal, positions = self.positionState()
             _, posvalue = self.summrizeBalance(positions, cashTotal)
+            poslist = [i.desc for i in list(self._dictPositions.values())]
 
-            self.info('restored with bal:%.2f+%.2f, %d postions, %d outgoing-orders, %d order-to-cancel, %d trades' % (cashTotal, posvalue, len(self._dictPositions), len(self._dictOutgoingOrders), len(self._lstOrdersToCancel), len(self._dictTrades)))
+            self.info('restored with bal:%.2f+%.2f, %d outgoing-orders, %d order-to-cancel, %d trades, %d postions: %s' % (cashTotal, posvalue, len(self._dictOutgoingOrders), len(self._lstOrdersToCancel), len(self._dictTrades), len(self._dictPositions), ' + '.join(poslist)))
             return True
         except Exception as ex:
             self.logexception(ex)
@@ -1385,10 +1386,14 @@ class PositionData(EventData):
         self.price          = EventData.EMPTY_FLOAT       # 持仓最新交易价
         self.avgPrice       = EventData.EMPTY_FLOAT       # 持仓均价
         # self.vtPositionName = EventData.EMPTY_STRING      # 持仓在vt系统中的唯一代码，通常是vtSymbol.方向
-        # self.ydPosition     = EventData.EMPTY_INT         # 昨持仓
+        # self.ydPosition     = EventData.EMPTY_INT    s     # 昨持仓
         # self.positionProfit = EventData.EMPTY_FLOAT       # 持仓盈亏
-        self.stampByTrader   = EventData.EMPTY_INT         # 该持仓数是基于Trader的计算
+        self.stampByTrader   = EventData.EMPTY_INT         # 该持仓数是基于Traders的计算
         self.stampByBroker   = EventData.EMPTY_INT        # 该持仓数是基于与broker的数据同步
+
+    @property
+    def desc(self) :
+        return 'Pos>%s(%d/%d)@%.3f' % (self.symbol, self.posAvail, self.position, self.price)
 
 ########################################################################
 class DailyPosition(EventData):
@@ -1447,6 +1452,7 @@ class DailyPosition(EventData):
         #     _, self.execOpen, self.execHigh, self.execLow, _ = ohlc
 
         # self.calcMValue  = round(calcPosition*currentPos.price*self._contractSize , PRICE_DISPLAY_ROUND_DECIMALS),     # 昨日收盘
+
     def pushTrade(self, account, trade) :
         '''
         DayX bought some:

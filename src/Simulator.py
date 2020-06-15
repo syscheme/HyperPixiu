@@ -776,12 +776,6 @@ class OnlineSimulator(MetaTrader):
         self._maxBalance = self._startBalance
         self._openDays = 0
 
-        try :
-            if self.__wkTrader._tradeSymbol:
-                self.program.setShelveFilename('%s%s/%s.ss' % (self.dataRoot, self.program.baseName, self.__wkTrader._tradeSymbol))
-        except:
-            self.program.setShelveFilename('%s%s/dummy.ss' % (self.dataRoot, self.program.baseName))
-            
         # backtest will always clear the datapath
         # try :
         #     shutil.rmtree(self.__wkTrader.outdir)

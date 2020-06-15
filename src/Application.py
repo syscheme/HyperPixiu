@@ -1256,7 +1256,7 @@ class Program(object):
         try :
             with FileLock(self.shelveFilename + ".lock"):
                 try :
-                    os.fstat(self.shelveFilename)
+                    os.stat(self.shelveFilename)
                 except:
                     return ret
                 with shelve.open(self.shelveFilename, flag='r') as sh:

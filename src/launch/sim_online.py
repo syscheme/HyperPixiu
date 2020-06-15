@@ -51,6 +51,7 @@ if __name__ == '__main__':
     simulator = p.createApp(OnlineSimulator, configNode ='trader', trader=tdrCore) # the simulator with brain loaded to verify training result
     rec     = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(simulator.outdir, 'online_%s.tcsv' % SYMBOL))
     simulator.setRecorder(rec)
+    p.setShelveFilename('%s%s/%s.ss' % (simulator.dataRoot, p.baseName, SYMBOL))
 
     revents = p.createApp(RedisEE, configNode ='remoteEvents/redis')
     revents.subscribeSymbols(objectives)
@@ -77,6 +78,7 @@ if __name__ == '__main__':
         # assume the realtime market events are from remote event channel by default
         revents.subscribeIncoming([EVENT_TICK, EVENT_KLINE_1MIN])
 
+    p.info('all objects registered piror start: %s' % p.listByType())
     p.start()
     if simulator.isActive : # and ...
         p.loop()

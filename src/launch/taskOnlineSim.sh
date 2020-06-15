@@ -21,7 +21,7 @@ done
 
 mv -vf ${OUTDIR} ${OUTDIR}.BAK${STAMP}
 mkdir -p ${OUTDIR}
-cp -vf ${OUTDIR}.BAK${STAMP}/*.ss ${OUTDIR}  # take the existing safestore
+cp -vf ${OUTDIR}.BAK${STAMP}/*.ss* ${OUTDIR}  # take the existing safestore, NOTE: the old shelve may generate multiple files: ss.dat, ss.dir, ss.bak 
 rm -rf ${OUTDIR}.BAK${STAMP}/*.lock
 nice -n 15 bash -c "tar cfvj ${OUTDIR}.BAK${STAMP}.tar.bz2 ${OUTDIR}.BAK${STAMP} ; rm -rf ${OUTDIR}.BAK${STAMP}" &
 

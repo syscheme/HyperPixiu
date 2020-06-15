@@ -776,12 +776,6 @@ class OnlineSimulator(MetaTrader):
         self._maxBalance = self._startBalance
         self._openDays = 0
 
-        try :
-            if self.__wkTrader._tradeSymbol:
-                self.program.setShelveFilename('%s%s/%s.ss' % (self.dataRoot, self.program.baseName, self.__wkTrader._tradeSymbol))
-        except:
-            self.program.setShelveFilename('%s%s/dummy.ss' % (self.dataRoot, self.program.baseName))
-            
         # backtest will always clear the datapath
         # try :
         #     shutil.rmtree(self.__wkTrader.outdir)
@@ -879,22 +873,39 @@ class OnlineSimulator(MetaTrader):
             self.info('doAppInit() failed to initialize trader[%s]' % (self.__wkTrader.ident))
             return False
 
+        symbolBy = None
+        try :
+            if self.__wkTrader._tradeSymbol:
+                symbolBy = self.__wkTrader._tradeSymbol
+        except:
+            pass
+
+        if not symbolBy and len(self.__wkTrader._dictObjectives) >0:
+            symbolBy = list(self.__wkTrader._dictObjectives.keys())[0]
+
+        if symbolBy:
+            svfn = '%s%s/%s.ss' % (self.dataRoot, self.program.baseName, symbolBy)
+            if self.program.shelveFilename != svfn:
+                self.debug('doAppInit() taking safestore[%s] instead of [%s]' % (svfn, self.program.shelveFilename))
+                self.program.setShelveFilename(svfn)
+
+        # step 2. init the marketState
         prevState = self.__restoreMarketState()
         if prevState:
             self.__wkTrader._marketState = prevState
             self.info('doAppInit() previous market state restored: %s' % self.__wkTrader._marketState.descOf(None))
         self._marketState = self.__wkTrader._marketState
 
+        # step 3. connects the trader and account 
         # prevAccount = self.program.loadObject('%s/account' % 'OnlineSimulator') # '%s/marketState' % self.__class__)
         originAcc = self.__wkTrader.account
         bAccRestored = originAcc.restore()
 
-        # step 2. connects the trader and account 
         if self._account :
             self._program.removeApp(self._account)
             self._account =None
         
-        # step 3. wrapper the broker drivers of the accounts
+        # step 4. wrapper the broker drivers of the accounts
         self._maxBalance = self._startBalance
         if originAcc and not isinstance(originAcc, AccountWrapper):
             self._program.removeApp(originAcc)
@@ -925,28 +936,13 @@ class OnlineSimulator(MetaTrader):
             for symbol in sl:
                 self.__wkTrader.openObjective(symbol)
 
-        # step 4.1 subscribe the TradeAdvices
+        # step 5.1 subscribe the TradeAdvices
         self.subscribeEvents([EVENT_ADVICE, EVENT_TICK_OF_ADVICE])
 
-        # step 4.2 subscribe the account and market events
+        # step 5.2 subscribe the account and market events
         self.subscribeEvents([Account.EVENT_ORDER, Account.EVENT_TRADE])
 
         self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
-
-        symbolBy = None
-        try :
-            if self.__wkTrader._tradeSymbol:
-                symbolBy = self.__wkTrader._tradeSymbol
-        except:
-            pass
-
-        if not symbolBy and len(self.__wkTrader._dictObjectives) >0:
-            symbolBy = list(self.__wkTrader._dictObjectives.keys())[0]
-
-        if symbolBy:
-            svfn = '%s%s/%s.ss' % (self.dataRoot, self.program.baseName, symbolBy)
-            self.program.setShelveFilename(svfn)
-            self.debug('doAppInit() updated SS filename to %s' % svfn)
 
         self.info('doAppInit() done, obj-in-program: %s' % (self._program.listByType(MetaObj)))
         return True

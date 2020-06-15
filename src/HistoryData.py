@@ -295,7 +295,7 @@ class TaggedCsvRecorder(Recorder):
         fname = '%s/%s.%s.csv' % (collection['dir'], collection['fn'], stampThis)
         size =0
         try :
-            size = os.fstat(fname).st_size
+            size = os.stat(fname).st_size
         except:
             pass
         
@@ -991,7 +991,7 @@ class Zipper(BaseApplication):
                 f = file(fn, 'rb')
                 ofn = fn + '.bz2'
                 try :
-                    os.fstat(ofn)
+                    os.stat(ofn)
                     continue # output file exists, skip
                 except:
                     pass

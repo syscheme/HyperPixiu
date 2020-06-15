@@ -1247,27 +1247,33 @@ class Program(object):
         with FileLock(self.shelveFilename + ".lock"):
             with shelve.open(self.shelveFilename) as sh:
                 sh[objId] = sobj
-                self.debug('saveObject() object[%s] saved' %(objId))
+                self.debug('saveObject() object[%s] saved into %s' %(objId, self.shelveFilename))
 
     @abstractmethod
     def loadObject(self, objId):
         '''读取对象'''
-        ret = None
         try :
             with FileLock(self.shelveFilename + ".lock"):
-                try :
-                    os.fstat(self.shelveFilename)
-                except:
-                    return ret
+                # try :
+                #     os.stat(self.shelveFilename)
+                # except:
+                #     try :
+                #         os.stat(self.shelveFilename + ".dat")
+                #     except:
+                #         return ret
+
                 with shelve.open(self.shelveFilename, flag='r') as sh:
                     if objId in sh :
                         ret = sh[objId]
+                        if not ret is None:
+                            self.debug('loadObject() object[%s] loaded' %(objId))
+                            return ret
+
         except Exception as ex:
             self.logexception(ex)
-
-        if ret:
-            self.debug('loadObject() object[%s] loaded' %(objId))
-        return ret
+        
+        self.error('loadObject() failed to load[%s] from file[%s]' % (objId, self.shelveFilename))
+        return None
 
 #----------------------------------------------------------------------
 def configToStrList(confList) :

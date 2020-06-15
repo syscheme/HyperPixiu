@@ -320,3 +320,33 @@ class AdviceData(EventData):
         dirIdx = np.argmax([self.dirNONE,self.dirLONG,self.dirSHORT])
         return 'tadv.%s@%s>%s@%s' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S'), self.strDir, round(self.price, PRICE_DISPLAY_ROUND_DECIMALS))
 
+########################################################################
+class DictToAdvice(object):
+
+    def __init__(self):
+        """Constructor"""
+        super(DictToAdvice, self).__init__()
+
+    @property
+    def fields(self) :
+        return AdviceData.COLUMNS
+
+    @abstractmethod
+    def convert(self, row, columns=AdviceData.COLUMNS) :
+        symbol = row['symbol']
+        exchange = row['exchange']
+        advisorId = row['advisorId']
+
+        adv = AdviceData(advisorId, symbol, exchange)
+        adv.price       = float(row['price'])
+        adv.dirNONE     = float(row['dirNONE'])
+        adv.dirLONG     = float(row['dirLONG'])
+        adv.dirSHORT    = float(row['dirSHORT'])
+        adv.Rdaily      = float(row['Rdaily'])
+        adv.Rdstd       = float(row['Rdstd'])
+        adv.datetime    = datetime.strptime(row['datetime'], '%Y-%m-%d %H:%M:%S')
+        adv.dirString()
+
+        ev = Event(type_=EVENT_ADVICE)
+        ev.setData(adv)
+        return ev

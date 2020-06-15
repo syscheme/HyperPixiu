@@ -4,6 +4,7 @@ import Perspective as psp
 import MarketData as md
 from EventData import datetime2float
 from Application import *
+from TradeAdvisor import EVENT_ADVICE, DictToAdvice
 import h5py
 
 class Foo(BaseApplication) :
@@ -88,10 +89,31 @@ class TestHistoryData(unittest.TestCase):
         p.loop()
         p.stop()
 
-    def _test_playback(self):
+    def _test_CsvPlayback(self):
         reader = hist.CsvPlayback(symbol=SYMBOL, folder='/mnt/e/AShareSample/%s' % SYMBOL, fields='date,time,open,high,low,close,volume,ammount')
         for i in reader :
             print('Row: %s\n' % i.desc)
+
+    def _test_TaggedCsvPlayback(self):
+        p = Program(PROGNAME)
+        reader = hist.TaggedCsvPlayback(tcsvFilePath='/mnt/e/AShareSample/advisor/advisor_15737.tcsv', program=p)
+        csv2adv = DictToAdvice()
+        reader.registerConverter(EVENT_ADVICE, csv2adv)
+        for i in reader :
+            print('Row: %s' % i.desc)
+
+    def test_PlaybackMux(self):
+        p = Program(PROGNAME)
+        r1 = hist.CsvPlayback(symbol=SYMBOL, folder='/mnt/e/AShareSample/%s' % SYMBOL, fields='date,time,open,high,low,close,volume,ammount', program=p)
+        r2 = hist.TaggedCsvPlayback(tcsvFilePath='/mnt/e/AShareSample/advisor/advisor_15737.tcsv', program=p)
+        csv2adv = DictToAdvice()
+        r2.registerConverter(EVENT_ADVICE, csv2adv)
+
+        mux = hist.PlaybackMux(program=p)
+        mux.addStream(r1)
+        mux.addStream(r2)
+        for i in mux :
+            print('Row: %s' % i.desc)
 
     def _test_Perspective(self):
         p = Program()
@@ -117,7 +139,7 @@ class TestHistoryData(unittest.TestCase):
             s = i.data.symbol
             p.debug('-> state: asof[%s] symbol[%s] lastPrice[%s] OHLC%s\n' % (marketstate.getAsOf(s).strftime('%Y%m%dT%H:%M:%S'), s, marketstate.latestPrice(s), marketstate.dailyOHLC_sofar(s)))
 
-    def test_PerspToHDF5(self):
+    def _test_PerspToHDF5(self):
         p = Program()
         p._heartbeatInterval =-1
         ps = psp.Perspective('AShare', SYMBOL)

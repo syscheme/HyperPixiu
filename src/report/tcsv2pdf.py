@@ -72,7 +72,7 @@ def testPDF():
 
 if __name__ == '__main__':
     # testTcsvToPandas()
-    testPDF()
+    # testPDF()
 
 '''
         additionAttrs = {

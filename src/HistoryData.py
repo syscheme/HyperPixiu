@@ -346,13 +346,13 @@ class TcsvFilter(MetaObj):
         if basename[-5:] != '.tcsv':
             basename += '.tcsv'
         lenBN = len(basename)
-        for _, _, files in os.walk(dirname, topdown=False):
+        for root, _, files in os.walk(dirname, topdown=False):
             for name in files:
                 if basename != name[:lenBN]:
                     continue
                 suffix = name[lenBN:]
                 if len(suffix) <=0:
-                    fnlist.append(name)
+                    fnlist.append(os.path.join(root,name))
                     continue
                 m = re.match(r'\.([0-9]*)\.bz2', suffix)
                 if m :
@@ -693,7 +693,7 @@ class CsvPlayback(Playback):
 ########################################################################
 class TaggedCsvPlayback(Playback):
     
-    def __init__(self, tcsvFilePath, startDate =Playback.DUMMY_DATE_START, endDate=Playback.DUMMY_DATE_END, symbol=None):
+    def __init__(self, tcsvFilePath, startDate =Playback.DUMMY_DATE_START, endDate=Playback.DUMMY_DATE_END, symbol=None, **kwargs):
 
         super(TaggedCsvPlayback, self).__init__(symbol, startDate, endDate, None, **kwargs)
 
@@ -701,12 +701,19 @@ class TaggedCsvPlayback(Playback):
 
         self.__dictCategory = {} # eventName/category to { columeNames: [], coverter: func() }
         self.__fnlist =[]
+        self._importStream = None
 
-    def registerConverter(self, categroy, converter, columns=[]):
-        self.__dictCategory[categroy] = {
-            'columns': columns,
-            'converter': converter
-        }
+    def registerConverter(self, categroy, converter, columns=None):
+        if not columns: columns=[]
+        if not categroy in self.__dictCategory:
+            self.__dictCategory[categroy] = {
+                'columns': columns,
+                'converter': converter
+            }
+        else:
+            self.__dictCategory[categroy]['converter'] = converter
+            if len(columns) >0:
+                self.__dictCategory[categroy]['columns'] = columns
 
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):
@@ -726,7 +733,7 @@ class TaggedCsvPlayback(Playback):
         except Exception:
             pass
         
-        row = None
+        row, ev = None, None
         while not row:
             #ensure self._importStream is opened
             while not self._importStream:
@@ -789,12 +796,18 @@ class TaggedCsvPlayback(Playback):
             if not categroy in self.__dictCategory.keys(): continue
             node = self.__dictCategory[categroy]
             converter = node['converter']
-            if not converter: continue
+            if not converter:
+                continue
             
             # TODO: ????
             ev = None
             try :
-                ev = converter(tokens, node['columns'])
+                dict={}
+                cols = node['columns']
+                for i in range(len(cols)) :
+                    dict[cols[i]] = tokens[1+i]
+
+                ev = converter.convert(dict)
 
                 # because the generated is always as of the previous event, so always deliver those pendings in queue first
                 if self.pendingSize >0 :
@@ -805,6 +818,51 @@ class TaggedCsvPlayback(Playback):
             except Exception as ex:
                 self.logexception(ex)
 
+        return ev
+
+########################################################################
+class PlaybackMux(Playback):
+    
+    def __init__(self, program=None):
+
+        super(PlaybackMux, self).__init__(symbol=None, program=program)
+        self.__dictStrmPB = {} # dict of Playback to recentEvent
+
+    def addStream(self, playback):
+        if playback and not playback in self.__dictStrmPB.keys():
+            self.__dictStrmPB[playback] = None
+
+    # -- Impl of Playback --------------------------------------------------------------
+    def resetRead(self):
+        super(PlaybackMux, self).resetRead()
+        return len(self.__dictStrmPB) >0
+
+    def readNext(self):
+        '''
+        @return True if busy at this step
+        '''
+        strmsToEvict = []
+        strmEariest = None
+        for strm, ev in self.__dictStrmPB.items():
+            if not ev:
+                try :
+                    ev = next(strm)
+                    self.__dictStrmPB[strm] = ev
+                except StopIteration:
+                    strmsToEvict.append(strm)
+                    continue
+
+            if not strmEariest or (strmEariest != strm and ev.data.asof < self.__dictStrmPB[strmEariest].data.asof):
+                strmEariest = strm
+
+        if not strmEariest:
+            return None
+            
+        for sd in strmsToEvict:
+            del self.__dictStrmPB[sd]
+        
+        ev = self.__dictStrmPB[strmEariest]
+        self.__dictStrmPB[strmEariest] = None
         return ev
 
 ########################################################################

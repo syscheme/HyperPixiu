@@ -1270,7 +1270,7 @@ class Program(object):
                             return ret
 
         except Exception as ex:
-            pass
+            self.logexception(ex)
         
         self.error('loadObject() failed to load[%s] from file[%s]' % (objId, self.shelveFilename))
         return None

@@ -78,6 +78,7 @@ if __name__ == '__main__':
         # assume the realtime market events are from remote event channel by default
         revents.subscribeIncoming([EVENT_TICK, EVENT_KLINE_1MIN])
 
+    p.info('all objects registered piror start: %s' % p.listByType())
     p.start()
     if simulator.isActive : # and ...
         p.loop()

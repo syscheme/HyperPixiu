@@ -347,11 +347,22 @@ class Account(MetaAccount):
             self._todayResult \
             = s1
 
-            self._dictPositions = self.program.loadObject(objId +'/positions')
-            self._dictOutgoingOrders = self.program.loadObject(objId +'/outOrders')
-            self._lstOrdersToCancel = self.program.loadObject(objId +'/ordersToCancel')
-            self._dictTrades = self.program.loadObject(objId +'/trades')
-            self._dictStopOrders,self._dictLimitOrders = self.program.loadObject(objId +'/orders')
+            data = self.program.loadObject(objId +'/positions')
+            self._dictPositions= data if data else {}
+            
+            data = self.program.loadObject(objId +'/outOrders')
+            self._dictOutgoingOrders= data if data else {}
+
+            data = self.program.loadObject(objId +'/ordersToCancel')
+            self._lstOrdersToCancel= data if data else []
+
+            data = self.program.loadObject(objId +'/trades')
+            self._dictTrades= data if data else {}
+
+            data, d2 = self.program.loadObject(objId +'/orders')
+            self._dictStopOrders= data if data else {}
+            self._dictLimitOrders= d2 if d2 else {}
+
             cashAvail, cashTotal, positions = self.positionState()
             _, posvalue = self.summrizeBalance(positions, cashTotal)
             poslist = [i.desc for i in list(self._dictPositions.values())]
@@ -360,7 +371,7 @@ class Account(MetaAccount):
             return True
         except Exception as ex:
             self.logexception(ex)
-
+        
         return False
 
     #----------------------------------------------------------------------

@@ -444,25 +444,25 @@ class Playback(Iterable):
         self._endDate   = endDate if endDate else Playback.DUMMY_DATE_END
 
     # -- impl of Iterable --------------------------------------------------------------
-    @abstractmethod
     def resetRead(self):
         """For this generator, we want to rewind only when the end of the data is reached.
         """
         self.__lastMarketClk = None
+        return True
 
-    @abstractmethod
     def readNext(self):
         '''
         @return next item, mostlikely expect one of Event()
         '''
-        if not self.isActive or not self.pendingSize <=0: 
+        if self.pendingSize <=0: 
             raise StopIteration
 
         event = None
         try :
             event = self.popPending(block = False, timeout = 0.1)
         except Exception:
-            pass
+            event = None
+
         return event
 
     def _testAndGenerateMarketHourEvent(self, ev):
@@ -903,6 +903,9 @@ class PlaybackMux(Playback):
     def addStream(self, playback):
         if playback and not playback in self.__dictStrmPB.keys():
             self.__dictStrmPB[playback] = None
+    
+    @property
+    def size(self): return len(self.__dictStrmPB)
 
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):
@@ -928,10 +931,13 @@ class PlaybackMux(Playback):
                 strmEariest = strm
 
         if not strmEariest:
+            self._iterableEnd = True
+            self.info('all streams reached end')
             return None
             
         for sd in strmsToEvict:
             del self.__dictStrmPB[sd]
+            self.info('stream[%s] reached end, evicted' % sd)
         
         ev = self.__dictStrmPB[strmEariest]
         self.__dictStrmPB[strmEariest] = None

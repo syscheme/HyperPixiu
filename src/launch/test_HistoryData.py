@@ -5,6 +5,8 @@ import MarketData as md
 from EventData import datetime2float
 from Application import *
 from TradeAdvisor import EVENT_ADVICE, DictToAdvice
+from crawler import crawlSina as sina
+
 import h5py
 
 class Foo(BaseApplication) :
@@ -101,7 +103,7 @@ class TestHistoryData(unittest.TestCase):
         for i in reader :
             print('Row: %s' % i.desc)
 
-    def test_PlaybackMux(self):
+    def _test_PlaybackMux(self):
         r1 = hist.TaggedCsvPlayback(tcsvFilePath='/mnt/e/AShareSample/advisor/advisor_15737.tcsv', program=thePROG)
         r1.registerConverter(EVENT_ADVICE, DictToAdvice())
 
@@ -122,6 +124,51 @@ class TestHistoryData(unittest.TestCase):
 
         for i in mux :
             print('Row: %s' % i.desc)
+
+    def test_SavedSinaData(self):
+        mux = hist.PlaybackMux(program=thePROG)
+
+        fn = '/mnt/e/AShareSample/SinaKL5m_20200609.tar.bz2'
+        fn = '/mnt/e/AShareSample/SinaMF1m_20200609.tar.bz2'
+        evtype = md.EVENT_KLINE_5MIN
+        if fn.index('MF1m') >0:
+            evtype = md.EVENT_MONEYFLOW_1MIN
+
+        tar = tarfile.open(fn)
+        for member in tar.getmembers():
+            basename = os.path.basename(member.name)
+            if not basename.split('.')[-1] in ['txt', 'json', 'csv', 'tcsv']: 
+                continue
+
+            symbol = basename[:basename.index('_')]
+            if symbol in ["SH600005"]: continue
+            edseq =[]
+            with tar.extractfile(member) as f:
+                content =f.read().decode()
+
+                # dispatch the convert func up to evtype from tar filename
+                if md.EVENT_KLINE_5MIN == evtype:
+                    edseq = sina.SinaCrawler.convertToKLineDatas(symbol, content)
+                elif md.EVENT_MONEYFLOW_1MIN == evtype:
+                    edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, True)
+
+            pb = hist.Playback(symbol, program=thePROG)
+            for ed in edseq:
+                ev = Event(evtype)
+                ev.setData(ed)
+                pb.enquePending(ev)
+            
+            mux.addStream(pb)
+            if mux.size > 5:
+                break
+
+        for i in mux :
+            print('Row: %s' % i.desc)
+
+#                print("file[%s] has %d bytes, %d lines" % (member.name, len(content), 1+content.count(b'\n')))
+        # for ev in evSeq:
+        #     if isinstance(ev, Event)
+        #         self.enquePending(self, ev)
 
     def _test_Tarball(self):
         fn = '/mnt/e/AShareSample/advisor/advisor.BAK20200615T084501.tar.bz2'

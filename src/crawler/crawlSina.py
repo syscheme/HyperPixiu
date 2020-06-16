@@ -455,7 +455,7 @@ class SinaCrawler(MarketCrawler):
         self.info('%s <-%s'% (errmsg, url)) # lower this loglevel
         return httperr, errmsg
 
-    def msgToKLineDatas(symbol, text) :
+    def convertToKLineDatas(symbol, text) :
         klineseq =[]
         jsonData = demjson.decode(text)
         if not jsonData:
@@ -510,7 +510,7 @@ class SinaCrawler(MarketCrawler):
         if not jsonData:
             return httperr, klineseq
 
-        klineseq = self.__class__.msgToKLineDatas(symbol, text)
+        klineseq = self.__class__.convertToKLineDatas(symbol, text)
         return httperr, klineseq
 
     def sortKeyOfMD(md) : # for sort
@@ -527,7 +527,7 @@ class SinaCrawler(MarketCrawler):
         return symbol.upper()
 
     #------------------------------------------------    
-    def msgToTickDatas(text) :
+    def convertToTickDatas(text) :
         tickseq = []
 
         HEADERSEQ="name,open,prevClose,price,high,low,bid,ask,volume,total,bid1v,bid1,bid2v,bid2,bid3v,bid3,bid4v,bid4,bid5v,bid5,ask1v,ask1,ask2v,ask2,ask3v,ask3,ask4v,ask4,ask5v,ask5,date,time"
@@ -605,13 +605,13 @@ class SinaCrawler(MarketCrawler):
         if httperr != 200:
             return httperr, text
 
-        tickseq = self.__class__.msgToTickDatas(text)
+        tickseq = self.__class__.convertToTickDatas(text)
         
         self.debug("GET_RecentTicks() resp(%d) got %d ticks" %(httperr, len(tickseq)))
         return httperr, tickseq
 
     #------------------------------------------------    
-    def msgToMoneyFlow(symbol, text, byMinutes=False):
+    def convertToMoneyFlow(symbol, text, byMinutes=False):
         mfseq =[]
         if byMinutes:
             pbeg, pend = text.find('[{'), text.rfind('}]')
@@ -672,7 +672,7 @@ class SinaCrawler(MarketCrawler):
         if httperr != 200:
             return httperr, text
 
-        mfseq = self.__class__.msgToMoneyFlow(symbol, text, byMinutes)
+        mfseq = self.__class__.convertToMoneyFlow(symbol, text, byMinutes)
         return httperr, mfseq
 
     #------------------------------------------------    

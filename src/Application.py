@@ -412,7 +412,7 @@ class Iterable(MetaObj):
         self._iterableEnd = False
 
         # 事件队列
-        self.__quePending = Queue(maxsize=100)
+        self.__quePending = Queue() # (maxsize=999)
 
     def __iter__(self):
         if self.resetRead() : # alway perform reset here

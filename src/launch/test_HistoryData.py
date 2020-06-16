@@ -24,6 +24,8 @@ class Foo(BaseApplication) :
         self.__step +=1
         self.info("Foo.step %d" % self.__step)
 
+import tarfile
+
 PROGNAME = os.path.basename(__file__)[0:-3]
 SYMBOL ='000001'
 thePROG = Program(PROGNAME)
@@ -100,23 +102,36 @@ class TestHistoryData(unittest.TestCase):
             print('Row: %s' % i.desc)
 
     def test_PlaybackMux(self):
-        r1 = hist.CsvPlayback(symbol=SYMBOL, folder='/mnt/e/AShareSample/%s' % SYMBOL, fields='date,time,open,high,low,close,volume,ammount', program=thePROG)
-        r2 = hist.TaggedCsvPlayback(tcsvFilePath='/mnt/e/AShareSample/advisor/advisor_15737.tcsv', program=thePROG)
-        r3 = hist.CsvPlayback(symbol='SH510050', folder='/mnt/e/AShareSample/ETF', fields='date,time,open,high,low,close,volume,ammount', program=thePROG)
-        r4 = hist.CsvPlayback(symbol='SH510300', folder='/mnt/e/AShareSample/ETF', fields='date,time,open,high,low,close,volume,ammount', program=thePROG)
-        r5 = hist.CsvPlayback(symbol='SH510500', folder='/mnt/e/AShareSample/ETF', fields='date,time,open,high,low,close,volume,ammount', program=thePROG)
-        csv2adv = DictToAdvice()
-        r2.registerConverter(EVENT_ADVICE, csv2adv)
+        r1 = hist.TaggedCsvPlayback(tcsvFilePath='/mnt/e/AShareSample/advisor/advisor_15737.tcsv', program=thePROG)
+        r1.registerConverter(EVENT_ADVICE, DictToAdvice())
+
+        r2 = hist.CsvPlayback(symbol='SH510050', folder='/mnt/e/AShareSample/ETF', fields='date,time,open,high,low,close,volume,ammount', program=thePROG)
+        r3 = hist.CsvPlayback(symbol='SH510300', folder='/mnt/e/AShareSample/ETF', fields='date,time,open,high,low,close,volume,ammount', program=thePROG)
+        r4 = hist.CsvPlayback(symbol='SH510500', folder='/mnt/e/AShareSample/ETF', fields='date,time,open,high,low,close,volume,ammount', program=thePROG)
+
+        r5 = hist.TaggedCsvInTarball(fnTarball='/mnt/e/AShareSample/advisor/advisor.BAK20200615T084501.tar.bz2', program=thePROG)
+        r5.registerConverter(EVENT_ADVICE, DictToAdvice())
+        r5.registerConverter(md.EVENT_KLINE_1MIN, hist.DictToKLine(md.EVENT_KLINE_1MIN, SYMBOL))
 
         mux = hist.PlaybackMux(program=thePROG)
         # mux.addStream(r1)
         # mux.addStream(r2)
-        mux.addStream(r3)
-        mux.addStream(r4)
+        # mux.addStream(r3)
+        # mux.addStream(r4)
         mux.addStream(r5)
 
         for i in mux :
             print('Row: %s' % i.desc)
+
+    def _test_Tarball(self):
+        fn = '/mnt/e/AShareSample/advisor/advisor.BAK20200615T084501.tar.bz2'
+        tar = tarfile.open(fn)
+        for member in tar.getmembers():
+            if not member.name.split('.')[-1] in ['txt', 'json', 'csv', 'log', 'tcsv']: 
+                continue
+            with tar.extractfile(member) as f:
+                content=f.read()
+                print("file[%s] has %d bytes, %d lines" % (member.name, len(content), content.count(b'\n')))
 
     def _test_Perspective(self):
         thePROG._heartbeatInterval =-1

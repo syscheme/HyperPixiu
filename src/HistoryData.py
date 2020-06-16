@@ -34,11 +34,11 @@ def listAllFiles(folder, depth=5):
     if depth <=0:
         return ret
 
-    for _, subdirs, files in os.walk(folder, topdown=False):
+    for root, subdirs, files in os.walk(folder, topdown=False):
         for name in files:
-            ret.append(os.path.join(folder, name))
+            ret.append(os.path.join(root, name))
         for name in subdirs:
-            ret += listAllFiles(os.path.join(folder, name), depth -1)
+            ret += listAllFiles(os.path.join(root, name), depth -1)
     return ret
 
 ########################################################################
@@ -535,7 +535,7 @@ class CsvPlayback(Playback):
         self._folder = folder
         self._fields = fields
 
-        self._csvfiles =[]
+        self.__csvfiles =[]
         self._cvsToEvent = DictToKLine(self._category, symbol)
 
         self._merger1minTo5min = None
@@ -566,8 +566,8 @@ class CsvPlayback(Playback):
     def resetRead(self):
         super(CsvPlayback, self).resetRead()
 
-        self._csvfiles =[]
-        self._reader =None
+        self.__csvfiles =[]
+        self.__reader =None
         self._merger1minTo5min = KlineToXminMerger(self._cbMergedKLine5min, xmin=5)
         self._merger5minTo1Day = KlineToXminMerger(self._cbMergedKLine1Day, xmin=60*24-10)
         self._dtEndOfDay = None
@@ -594,7 +594,7 @@ class CsvPlayback(Playback):
             stampstr = stk[0][len(self._symbol):]
             pos = next((i for i, ch  in enumerate(stampstr) if ch in CsvPlayback.DIGITS), None)
             if not pos :
-                self._csvfiles.append(fn)
+                self.__csvfiles.append(fn)
                 continue
 
             if 'Y' == stampstr[pos] : pos +=1
@@ -602,13 +602,35 @@ class CsvPlayback(Playback):
             if stampstr < self._startDate :
                 prev = fn
             elif stampstr <= self._endDate:
-                self._csvfiles.append(fn)
+                self.__csvfiles.append(fn)
 
         if len(prev) >0:
-            self._csvfiles = [prev] + self._csvfiles
+            self.__csvfiles = [prev] + self.__csvfiles
         
-        self.info('associated file list: %s' % self._csvfiles)
-        return len(self._csvfiles) >0
+        self.info('associated file list: %s' % self.__csvfiles)
+        return len(self.__csvfiles) >0
+
+    def openReader(self):
+        while not self.__reader:
+            if not self.__csvfiles or len(self.__csvfiles) <=0:
+                self._iterableEnd = True
+                return None
+
+            fn = self.__csvfiles[0]
+            del(self.__csvfiles[0])
+
+            self.info('openning input file %s' % (fn))
+            extname = fn.split('.')[-1]
+            if extname == 'bz2':
+                self._streamIn = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
+            else:
+                self._streamIn = open(fn, 'rt')
+
+            self.__reader = csv.DictReader(self._streamIn, self._fieldnames, lineterminator='\n') if 'csv' in fn else self._streamIn
+            if not self.__reader:
+                self.warn('failed to open input file %s' % (fn))
+        
+        return self.__reader
 
     def readNext(self):
         '''
@@ -622,41 +644,24 @@ class CsvPlayback(Playback):
 
         row = None
         while not row:
-            while not self._reader:
-                if not self._csvfiles or len(self._csvfiles) <=0:
-                    self._iterableEnd = True
-                    return None
+            self.openReader()
 
-                fn = self._csvfiles[0]
-                del(self._csvfiles[0])
-
-                self.info('openning input file %s' % (fn))
-                extname = fn.split('.')[-1]
-                if extname == 'bz2':
-                    self._importStream = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
-                else:
-                    self._importStream = open(fn, 'rt')
-
-                self._reader = csv.DictReader(self._importStream, self._fieldnames, lineterminator='\n') if 'csv' in fn else self._importStream
-                if not self._reader:
-                    self.warn('failed to open input file %s' % (fn))
-
-            if not self._reader:
+            if not self.__reader:
                 self._iterableEnd = True
                 return None
 
             # if not self._fieldnames or len(self._fieldnames) <=0:
-            #     self._fieldnames = self._reader.headers()
+            #     self._fieldnames = self.__reader.headers()
 
             try :
-                row = next(self._reader, None)
+                row = next(self.__reader, None)
             except Exception as ex:
                 row = None
 
             if not row:
                 # self.error(traceback.format_exc())
-                self._reader = None
-                self._importStream.close()
+                self.__reader = None
+                self._streamIn.close()
 
         ev = None
         try :
@@ -701,7 +706,7 @@ class TaggedCsvPlayback(Playback):
 
         self.__dictCategory = {} # eventName/category to { columeNames: [], coverter: func() }
         self.__fnlist =[]
-        self._importStream = None
+        self._streamIn = None
 
     def registerConverter(self, categroy, converter, columns=None):
         if not columns: columns=[]
@@ -714,6 +719,27 @@ class TaggedCsvPlayback(Playback):
             self.__dictCategory[categroy]['converter'] = converter
             if len(columns) >0:
                 self.__dictCategory[categroy]['columns'] = columns
+
+    def openStreamIn(self):
+        while not self._streamIn:
+            if not self.__fnlist or len(self.__fnlist) <=0:
+                self._iterableEnd = True
+                return None
+
+            fn = self.__fnlist[0]
+            del(self.__fnlist[0])
+
+            self.info('openning input file %s' % (fn))
+            extname = fn.split('.')[-1]
+            if extname == 'bz2':
+                self._streamIn = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
+            else:
+                self._streamIn = open(fn, 'rt')
+
+            if not self._streamIn:
+                self.warn('failed to open input file %s' % (fn))
+                
+        return self._streamIn
 
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):
@@ -735,38 +761,24 @@ class TaggedCsvPlayback(Playback):
         
         row, ev = None, None
         while not row:
-            #ensure self._importStream is opened
-            while not self._importStream:
-                if not self.__fnlist or len(self.__fnlist) <=0:
-                    self._iterableEnd = True
-                    return None
+            self.openStreamIn()
 
-                fn = self.__fnlist[0]
-                del(self.__fnlist[0])
-
-                self.info('openning input file %s' % (fn))
-                extname = fn.split('.')[-1]
-                if extname == 'bz2':
-                    self._importStream = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
-                else:
-                    self._importStream = open(fn, 'rt')
-
-                if not self._importStream:
-                    self.warn('failed to open input file %s' % (fn))
-
-            if not self._importStream:
+            if not self._streamIn:
                 self._iterableEnd = True
                 return None
 
             try :
-                row = next(self._importStream, None).strip()
+                row = next(self._streamIn, None)
             except Exception as ex:
                 row = None
 
             if not row:
-                self._importStream.close()
-                self._importStream = None
+                self._streamIn.close()
+                self._streamIn = None
+                continue
 
+            if not isinstance(row, str): row = row.decode()
+            row = row.strip()
             if len(row) <=0:
                 continue
 
@@ -819,6 +831,66 @@ class TaggedCsvPlayback(Playback):
                 self.logexception(ex)
 
         return ev
+
+import tarfile, fnmatch
+
+########################################################################
+class TaggedCsvInTarball(TaggedCsvPlayback):
+    def __init__(self, fnTarball, memberPattern=None, startDate =Playback.DUMMY_DATE_START, endDate=Playback.DUMMY_DATE_END, symbol=None, **kwargs):
+        super(TaggedCsvInTarball, self).__init__(symbol, startDate, endDate, None, **kwargs)
+        self.__fnTarball  = fnTarball
+        self.__memPattern = memberPattern if memberPattern else '*.tcsv'
+        self.__fnlist = []
+
+        self._streamIn = None
+        self.__tar = None
+
+    # -- overwrite of TaggedCsvInTarball --------------------------------------------------------------
+    def resetRead(self):
+        super(TaggedCsvPlayback, self).resetRead()
+
+        self.__fnlist = []
+        bz2dict = {}
+
+        self.__tar = tarfile.open(self.__fnTarball)
+        if self.__tar:
+            for member in self.__tar.getmembers():
+                if fnmatch.fnmatch(member.name, self.__memPattern):
+                    self.__fnlist.append(member.name)
+                    continue
+                if fnmatch.fnmatch(member.name, self.__memPattern + '.[0-9]*.bz2'):
+                    bz2dict[int(member.name.split('.')[-2])] = member.name
+                continue
+
+        items = list(bz2dict.items())
+        items.sort() 
+
+        # insert into fnlist reversly
+        for k,v in items:
+            self.__fnlist.insert(0, v)
+
+        return len(self.__fnlist) >0
+
+    def openStreamIn(self):
+        while not self._streamIn:
+            if not self.__fnlist or len(self.__fnlist) <=0:
+                self._iterableEnd = True
+                return None
+
+            fn = self.__fnlist[0]
+            del(self.__fnlist[0])
+
+            self.info('extracting file %s' % (fn))
+            extname = fn.split('.')[-1]
+            self._streamIn = self.__tar.extractfile(fn)
+            if extname == 'bz2':
+                self._streamIn = bz2.open(self._streamIn, mode='rt') # bz2.BZ2File(fn, 'rb')
+
+            if not self._streamIn:
+                self.warn('failed to open input file %s' % (fn))
+                
+        return self._streamIn
+
 
 ########################################################################
 class PlaybackMux(Playback):

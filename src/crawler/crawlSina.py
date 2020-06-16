@@ -455,6 +455,33 @@ class SinaCrawler(MarketCrawler):
         self.info('%s <-%s'% (errmsg, url)) # lower this loglevel
         return httperr, errmsg
 
+    def msgToKLineDatas(symbol, text) :
+        klineseq =[]
+        jsonData = demjson.decode(text)
+        if not jsonData:
+            return httperr, klineseq
+
+        for kl in jsonData :
+            kldata = KLineData("AShare", symbol)
+            kldata.open   = toFloatVal(kl['open'])             # OHLC
+            kldata.high   = toFloatVal(kl['high'])             # OHLC
+            kldata.low    = toFloatVal(kl['low'])             # OHLC
+            kldata.close  = toFloatVal(kl['close'])             # OHLC
+            kldata.volume = toFloatVal(kl['volume'])
+            kldata.close  = toFloatVal(kl['close'])
+            try :
+                kldata.datetime = datetime.strptime(kl['day'][:10], '%Y-%m-%d').replace(hour=15, minute=0, second=0, microsecond=0)
+                kldata.datetime = datetime.strptime(kl['day'], '%Y-%m-%d %H:%M:%S')
+            except :
+                pass
+            kldata.date = kldata.datetime.strftime('%Y-%m-%d')
+            kldata.time = kldata.datetime.strftime('%H:%M:%S')
+            klineseq.append(kldata)
+
+        klineseq.sort(key=SinaCrawler.sortKeyOfMD)
+        # klineseq.reverse() # SINA returns from oldest to newest
+        return klineseq
+
     def GET_RecentKLines(self, symbol, minutes=1200, lines=10): # deltaDays=2)
         '''"查询 KLINE
         will call cortResp.send(csvline) when the result comes
@@ -483,25 +510,7 @@ class SinaCrawler(MarketCrawler):
         if not jsonData:
             return httperr, klineseq
 
-        for kl in jsonData :
-            kldata = KLineData("AShare", symbol)
-            kldata.open   = toFloatVal(kl['open'])             # OHLC
-            kldata.high   = toFloatVal(kl['high'])             # OHLC
-            kldata.low    = toFloatVal(kl['low'])             # OHLC
-            kldata.close  = toFloatVal(kl['close'])             # OHLC
-            kldata.volume = toFloatVal(kl['volume'])
-            kldata.close  = toFloatVal(kl['close'])
-            try :
-                kldata.datetime = datetime.strptime(kl['day'][:10], '%Y-%m-%d').replace(hour=15, minute=0, second=0, microsecond=0)
-                kldata.datetime = datetime.strptime(kl['day'], '%Y-%m-%d %H:%M:%S')
-            except :
-                pass
-            kldata.date = kldata.datetime.strftime('%Y-%m-%d')
-            kldata.time = kldata.datetime.strftime('%H:%M:%S')
-            klineseq.append(kldata)
-
-        klineseq.sort(key=SinaCrawler.sortKeyOfMD)
-        # klineseq.reverse() # SINA returns from oldest to newest
+        klineseq = self.__class__.msgToKLineDatas(symbol, text)
         return httperr, klineseq
 
     def sortKeyOfMD(md) : # for sort
@@ -518,23 +527,12 @@ class SinaCrawler(MarketCrawler):
         return symbol.upper()
 
     #------------------------------------------------    
-    def GET_RecentTicks(self, symbols):
-        ''' 查询Tick
-        will call cortResp.send(csvline) when the result comes
-        '''
-        if not isinstance(symbols, list) :
-            symbols = symbols.split(',')
-        qsymbols = [SinaCrawler.fixupSymbolPrefix(s) for s in symbols]
-        url = 'http://hq.sinajs.cn/list=%s' % (','.join(qsymbols).lower())
-
-        httperr, text = self.__sinaGET(url, 'GET_RecentTicks')
-        if httperr != 200:
-            return httperr, text
+    def msgToTickDatas(text) :
+        tickseq = []
 
         HEADERSEQ="name,open,prevClose,price,high,low,bid,ask,volume,total,bid1v,bid1,bid2v,bid2,bid3v,bid3,bid4v,bid4,bid5v,bid5,ask1v,ask1,ask2v,ask2,ask3v,ask3,ask4v,ask4,ask5v,ask5,date,time"
         HEADERS=HEADERSEQ.split(',')
         SYNTAX = re.compile('^var hq_str_([^=]*)="([^"]*).*')
-        tickseq = []
 
         for line in text.split('\n') :
             m = SYNTAX.match(line)
@@ -591,40 +589,36 @@ class SinaCrawler(MarketCrawler):
             tickdata.a5V = toFloatVal(d['ask5v'])
 
             tickseq.append(tickdata)
+
+        return tickseq
+
+    def GET_RecentTicks(self, symbols):
+        ''' 查询Tick
+        will call cortResp.send(csvline) when the result comes
+        '''
+        if not isinstance(symbols, list) :
+            symbols = symbols.split(',')
+        qsymbols = [SinaCrawler.fixupSymbolPrefix(s) for s in symbols]
+        url = 'http://hq.sinajs.cn/list=%s' % (','.join(qsymbols).lower())
+
+        httperr, text = self.__sinaGET(url, 'GET_RecentTicks')
+        if httperr != 200:
+            return httperr, text
+
+        tickseq = self.__class__.msgToTickDatas(text)
         
         self.debug("GET_RecentTicks() resp(%d) got %d ticks" %(httperr, len(tickseq)))
         return httperr, tickseq
 
     #------------------------------------------------    
-    def GET_MoneyFlow(self, symbol, byMinutes=False):
-        ''' 查询现金流
-        will call cortResp.send(csvline) when the result comes
-        ({r0_in:"0.0000",r0_out:"0.0000",r0:"0.0000",r1_in:"3851639.0000",r1_out:"4794409.0000",r1:"9333936.0000",r2_in:"8667212.0000",r2_out:"10001938.0000",r2:"18924494.0000",r3_in:"7037186.0000",r3_out:"7239931.2400",r3:"15039741.2400",curr_capital:"9098",name:"朗科智能",trade:"24.4200",changeratio:"0.000819672",volume:"1783866.0000",turnover:"196.083",r0x_ratio:"0",netamount:"-2480241.2400"})
-
-        TICK:    http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_bkzj_fszs?daima=SH601988
-        1MIN!!:  http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?daima=SH601988
-                ["240",[{opendate:"2020-03-20",ticktime:"15:00:00",trade:"3.5000",changeratio:"0.0115607",inamount:"173952934.3200",outamount:"144059186.4000",netamount:"29893747.9200",ratioamount:"0.0839833",r0_ratio:"0.0767544",r3_ratio:"0.010566"},
-                ticktime时间15:00:00,trade价格3.50,涨跌幅+1.156%,inamount流入资金/万17395.29,outamount流出资金/万14405.92,净流入/万2989.37,netamount净流入率8.40%,r0_ratio主力流入率7.68%,r3_ratio散户流入率1.06%
-                {opendate:"2020-03-20",ticktime:"14:58:00",trade:"3.5200",changeratio:"0.017341",inamount:"173952934.3200",outamount:"144059186.4000",netamount:"29893747.9200",ratioamount:"0.093927",r0_ratio:"0.0858422",r3_ratio:"0.011817"},
-        DAILY: http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?daima=SH601988
-              [{opendate:"2020-03-20",trade:"3.5000",changeratio:"0.0115607",turnover:"4.84651",netamount:"29893747.9200",ratioamount:"0.0839833",r0_net:"27320619.5800",r0_ratio:"0.07675441",r0x_ratio:"81.4345",cnt_r0x_ratio:"1",cate_ra:"0.103445",cate_na:"1648659621.3400"},
-              trade收盘价3.50,changeratio涨跌幅+1.156%,turnover换手率0.0485%,netamount净流入/万2989.37,ratioamount净流入率8.40%,r0_net主力净流入/万2732.06,r0_ratio主力净流入率7.68%,r0x_ratio主力罗盘81.43°,cate_ra行业净流入率10.34%
-              {opendate:"2020-03-19",trade:"3.4600",changeratio:"-0.0114286",turnover:"5.71814",netamount:"-6206568.4600",ratioamount:"-0.0148799",r0_net:"-21194529.9100",r0_ratio:"-0.05081268",r0x_ratio:"-102.676",cnt_r0x_ratio:"-2",cate_ra:"-0.0122277",cate_na:"-253623190.4100"},
-              '''
-        url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?sort=opendate&page=1&num=300&daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol)) # page 1 of 300lines is enough to cover days of a year
-        if byMinutes:
-            url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?sort=time&num=300&page=1&daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol)) # page 1 of 300lines is enough to cover 4hr of a whole day
-
-        httperr, text = self.__sinaGET(url, 'GET_MoneyFlow')
-        if httperr != 200:
-            return httperr, text
-
+    def msgToMoneyFlow(symbol, text, byMinutes=False):
         mfseq =[]
         if byMinutes:
             pbeg, pend = text.find('[{'), text.rfind('}]')
             if pbeg<0 or pbeg>=pend:
                 return httperr, mfseq
             text = text[pbeg:pend] + '}]'
+
         if len(text)>80*1024: # maximal 80KB is enough to cover 1Yr
             # EOM = text[text.find('}'):]
             text = text[:80*1024]
@@ -653,6 +647,32 @@ class SinaCrawler(MarketCrawler):
             mfseq.append(mfdata)
 
         mfseq.sort(key=SinaCrawler.sortKeyOfMD)
+        return mfseq
+
+    def GET_MoneyFlow(self, symbol, byMinutes=False):
+        ''' 查询现金流
+        will call cortResp.send(csvline) when the result comes
+        ({r0_in:"0.0000",r0_out:"0.0000",r0:"0.0000",r1_in:"3851639.0000",r1_out:"4794409.0000",r1:"9333936.0000",r2_in:"8667212.0000",r2_out:"10001938.0000",r2:"18924494.0000",r3_in:"7037186.0000",r3_out:"7239931.2400",r3:"15039741.2400",curr_capital:"9098",name:"朗科智能",trade:"24.4200",changeratio:"0.000819672",volume:"1783866.0000",turnover:"196.083",r0x_ratio:"0",netamount:"-2480241.2400"})
+
+        TICK:    http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_bkzj_fszs?daima=SH601988
+        1MIN!!:  http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?daima=SH601988
+                ["240",[{opendate:"2020-03-20",ticktime:"15:00:00",trade:"3.5000",changeratio:"0.0115607",inamount:"173952934.3200",outamount:"144059186.4000",netamount:"29893747.9200",ratioamount:"0.0839833",r0_ratio:"0.0767544",r3_ratio:"0.010566"},
+                ticktime时间15:00:00,trade价格3.50,涨跌幅+1.156%,inamount流入资金/万17395.29,outamount流出资金/万14405.92,净流入/万2989.37,netamount净流入率8.40%,r0_ratio主力流入率7.68%,r3_ratio散户流入率1.06%
+                {opendate:"2020-03-20",ticktime:"14:58:00",trade:"3.5200",changeratio:"0.017341",inamount:"173952934.3200",outamount:"144059186.4000",netamount:"29893747.9200",ratioamount:"0.093927",r0_ratio:"0.0858422",r3_ratio:"0.011817"},
+        DAILY: http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?daima=SH601988
+              [{opendate:"2020-03-20",trade:"3.5000",changeratio:"0.0115607",turnover:"4.84651",netamount:"29893747.9200",ratioamount:"0.0839833",r0_net:"27320619.5800",r0_ratio:"0.07675441",r0x_ratio:"81.4345",cnt_r0x_ratio:"1",cate_ra:"0.103445",cate_na:"1648659621.3400"},
+              trade收盘价3.50,changeratio涨跌幅+1.156%,turnover换手率0.0485%,netamount净流入/万2989.37,ratioamount净流入率8.40%,r0_net主力净流入/万2732.06,r0_ratio主力净流入率7.68%,r0x_ratio主力罗盘81.43°,cate_ra行业净流入率10.34%
+              {opendate:"2020-03-19",trade:"3.4600",changeratio:"-0.0114286",turnover:"5.71814",netamount:"-6206568.4600",ratioamount:"-0.0148799",r0_net:"-21194529.9100",r0_ratio:"-0.05081268",r0x_ratio:"-102.676",cnt_r0x_ratio:"-2",cate_ra:"-0.0122277",cate_na:"-253623190.4100"},
+              '''
+        url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?sort=opendate&page=1&num=300&daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol)) # page 1 of 300lines is enough to cover days of a year
+        if byMinutes:
+            url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?sort=time&num=300&page=1&daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol)) # page 1 of 300lines is enough to cover 4hr of a whole day
+
+        httperr, text = self.__sinaGET(url, 'GET_MoneyFlow')
+        if httperr != 200:
+            return httperr, text
+
+        mfseq = self.__class__.msgToMoneyFlow(symbol, text, byMinutes)
         return httperr, mfseq
 
     #------------------------------------------------    

@@ -293,7 +293,7 @@ class DictToKLine(object):
         return 'date,time,open,high,low,close,volume,ammount'
 
     @abstractmethod
-    def convert(self, row, exchange, symbol =None) :
+    def convert(self, row, exchange=None, symbol =None) :
         if not 'mdKL' in self._type :
             raise NotImplementedError
 
@@ -303,14 +303,61 @@ class DictToKLine(object):
         kl.low = float(row['low'])
         kl.close = float(row['close'])
         kl.volume = float(row['volume'])
-        kl.date = datetime.strptime(row['date'], '%Y/%m/%d').strftime('%Y-%m-%d')
-        kl.time = row['time']+":00"
+        if '/' in row['date']:
+            kl.date = datetime.strptime(row['date'], '%Y/%m/%d').strftime('%Y-%m-%d')
+        else:
+            kl.date = row['date']
+
+        kl.time = row['time']
+        if kl.time.count(':') <2:
+            kl.time += ":00"
         
-        kl.datetime = datetime.strptime(kl.date + 'T' + kl.time, '%Y-%m-%dT%H:%M:%S')
-        dataOf = kl.datetime.strptime(kl.date + 'T' + kl.time, '%Y-%m-%dT%H:%M:00')
+        kl.datetime = datetime.strptime(kl.date + 'T' + kl.time[:8], '%Y-%m-%dT%H:%M:%S')
+        dataOf = kl.datetime.strptime(kl.date + 'T' + kl.time[:8], '%Y-%m-%dT%H:%M:00')
         ev = Event(type_=self._type)
         ev.setData(kl)
         return ev
+
+# TODO
+# ########################################################################
+# class DictToTick(object):
+
+#     def __init__(self, eventType, symbol, exchange=None):
+#         """Constructor"""
+#         super(DictToTick, self).__init__()
+#         self._type = eventType
+#         self._symbol = symbol
+#         self._exchange = exchange if exchange else ''
+
+#     @property
+#     def fields(self) :
+#         return 'date,time,open,high,low,close,volume,ammount'
+
+#     @abstractmethod
+#     def convert(self, row, exchange=None, symbol =None) :
+#         if not 'mdKL' in self._type :
+#             raise NotImplementedError
+
+#         kl = KLineData(self._exchange, self._symbol)
+#         kl.open = float(row['open'])
+#         kl.high = float(row['high'])
+#         kl.low = float(row['low'])
+#         kl.close = float(row['close'])
+#         kl.volume = float(row['volume'])
+#         if '/' in row['date']:
+#             kl.date = datetime.strptime(row['date'], '%Y/%m/%d').strftime('%Y-%m-%d')
+#         else:
+#             kl.date = row['date']
+
+#         kl.time = row['time']
+#         if kl.time.count(':') <2:
+#             kl.time += ":00"
+        
+#         kl.datetime = datetime.strptime(kl.date + 'T' + kl.time[:8], '%Y-%m-%dT%H:%M:%S')
+#         dataOf = kl.datetime.strptime(kl.date + 'T' + kl.time[:8], '%Y-%m-%dT%H:%M:00')
+#         ev = Event(type_=self._type)
+#         ev.setData(kl)
+#         return ev
 
 ########################################################################
 class McCvsToKLine(DictToKLine):

@@ -10,7 +10,7 @@
         "type": "dnn.S1548I4A3",
         "brainId" : "Cnn1Dx4R2",
         "intvSafeStore": 10, // # in minutes, <=0 to disable safestore
-        "objectives": ["SH510050","SH510300","SH510500","SZ159949"],
+        "objectives": ["SH510050"], // ,"SH510300","SH510500","SZ159949"],
     },
 
     "remoteEvents": {
@@ -35,6 +35,10 @@
         "source": "sina", 
         //"source": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
         "exchange" : "AShare",
+   
     },
 
+    "sina": {
+        // "securities": ["SZ159911","SZ159912","SZ159919","SZ159920","SZ159922","SZ159923","SZ159926"],
+    },
 }

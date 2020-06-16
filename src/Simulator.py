@@ -9,7 +9,7 @@ from Application import *
 from Account import *
 from Trader import *
 import HistoryData as hist
-from MarketData import TickData, KLineData, NORMALIZE_ID, EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
+from MarketData import TickData, KLineData, NORMALIZE_ID, EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY, MARKETDATE_EVENT_PREFIX
 
 from Perspective import *
 import vn.VnTrader as vn
@@ -1848,7 +1848,7 @@ class OfflineSimulator(BackTestApp):
         self._episodeSummary = {**self._episodeSummary, **mySummary}
 
 ########################################################################
-H5DSET_ARGS={ 'compression': 'gzip' }
+H5DSET_ARGS={ 'compression': 'lzf' } # note lzf is good at speed, but HDFExplorer doesn't support it. Change it to gzip if want to view
 
 class IdealTrader_Tplus1(OfflineSimulator):
     '''
@@ -2123,7 +2123,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         # if T_high.month==6 and T_high.day in [25,26]:
         #      print('here')
 
-        # step 2. determine the stop prices
+        # step 2. determine the stop dailizedGainRates
         sell_stop = price_high -slip
         buy_stop  = min(price_low +slip, price_close*(100.0-self._dayPercentToCatch)/100)
 
@@ -2288,7 +2288,7 @@ class ShortSwingScanner(OfflineSimulator):
     ShortSwingScanner extends OfflineSimulator by scanning the MarketEvents occurs up to several days, determining
     the short trend
     '''
-    DAILIZED_GAIN_PCTS      = [-5.0, -1.0, 1.0, 3.0, 6.0]
+    DAILIZED_GAIN_PCTS      = [-5.0, -3.0, -1.0, 1.0, 3.0, 5.0] # should be up to the stat data
 
     def __init__(self, program, trader, histdata, **kwargs):
         '''Constructor
@@ -2299,7 +2299,7 @@ class ShortSwingScanner(OfflineSimulator):
         self._daysShort    = self.getConfig('constraints/daysShort', 2) # short-term prospect, default 2days
         self._byEvent      = self.getConfig('constraints/byEvent',   EVENT_KLINE_5MIN)
 
-        self._d4schema = {
+        self._f4schema = {
             'asof':1, 
             EVENT_KLINE_5MIN : 50,
             EVENT_KLINE_1DAY : 150,
@@ -2359,6 +2359,9 @@ class ShortSwingScanner(OfflineSimulator):
                     stamp = self.__psptReadAhead.getAsOf(self._byEvent)
                     if self.__stampByEvent and self.__stampByEvent == stamp:
                         return
+                    
+                    if 0 != stamp.minute %3 : return # every 15min with self._byEvent=KL5m to reduce samples
+
                     self.__stampByEvent = stamp
 
                     dayOfEvent = ev.data.datetime.replace(hour=23, minute=59, second=59, microsecond=999999)
@@ -2397,9 +2400,7 @@ class ShortSwingScanner(OfflineSimulator):
                     # in a same day
                     stateOfEvent = {
                         'price' : self.__psptReadAhead.latestPrice,
-                        'stateD4f': self.__psptReadAhead.floatsD4(d4wished = self._d4schema),
-                        # 'futurePriceL': 0.0,
-                        # 'futurePriceS': 0.0,
+                        'stateD4f': self.__psptReadAhead.floatsD4(d4wished = self._f4schema),
                         }
 
                     self.__eventsOfDays[0].append(stateOfEvent)
@@ -2432,17 +2433,14 @@ class ShortSwingScanner(OfflineSimulator):
             if price <=0.01:
                 continue
 
-            prices = [price]
+            dailizedGainRates = []
             for i in range(1, self._daysLong+1):
                 label = 'priceIn%02ddays' % i
-                prices.append(ev[label])
+                dgr = (ev[label]-price) *100 / price / i
+                dailizedGainRates.append(dgr)
 
-
-            futurePriceL = prices[self._daysLong]
-            futurePriceS = prices[self._daysShort]
-            gainRateL = (futurePriceL - price) / price / self._daysLong
-            gainRateS = (futurePriceS - price) / price / self._daysShort
-
+            # sample code on how to classify the grainRates
+            gainRateL, gainRateS = dailizedGainRates[self._daysLong-1], dailizedGainRates[self._daysShort-1]
             gainClassL, gainClassS= 0, 0
             for redge in ShortSwingScanner.DAILIZED_GAIN_PCTS:
                 if gainRateL >= redge:
@@ -2454,46 +2452,46 @@ class ShortSwingScanner(OfflineSimulator):
             gainClass[gainClassL] =1
             gainClass[len(ShortSwingScanner.DAILIZED_GAIN_PCTS) +1 + gainClassS] =1
 
-            # if (self.__sampleIdx + self.__frameNo) <=0 and all(v == 0.0 for v in mstate): return # skip the leading all[0.0]
             self.__sampleIdx = self.__sampleIdx % self.__sampleFrmSize
             if 0 == self.__sampleIdx and not None in self.__sampleFrm :
                 # frame full, output it into a HDF5 file
                 self.__saveFrame(self.__sampleFrm)
 
-            self.__sampleFrm[self.__sampleIdx] = (stateD4f, gainClass, prices)
+            self.__sampleFrm[self.__sampleIdx] = (stateD4f, dailizedGainRates, price)
             self.__sampleIdx +=1
 
     def __saveFrame(self, rangedFrame):
-        metrix     = np.array(rangedFrame)
-        lenF = len(rangedFrame)
-        col_state        = np.concatenate(metrix[:, 0]).reshape(lenF, len(rangedFrame[0][0]))
-        col_gainCls      = np.concatenate(metrix[:, 1]).reshape(lenF, len(rangedFrame[0][1]))
-        col_prices       = np.concatenate(metrix[:, 2]).reshape(lenF, len(rangedFrame[0][2]))
+        metrix  = np.array(rangedFrame)
+        lenF    = len(rangedFrame)
 
-        normalizedId = 'FclzD4X%dR%dBy%s' %(col_state.shape[1], col_gainCls.shape[1], self._byEvent[len(MARKETDATE_EVENT_PREFIX):])
+        col_state        = np.concatenate(metrix[:, 0]).reshape(lenF, len(rangedFrame[0][0])).astype('float16')
+        col_gainRates    = np.concatenate(metrix[:, 1]).reshape(lenF, len(rangedFrame[0][1])).astype('float16')
+        col_price        = metrix[:, 2].astype('float16')
+
+        normalizedId = 'FclzD4X%dR%dBy%s' %(col_state.shape[1], self._daysLong, self._byEvent[len(MARKETDATE_EVENT_PREFIX):])
 
         fn_frame = os.path.join(self.wkTrader.outdir, '%s_%s.h5' % (normalizedId, self._tradeSymbol) )
         with h5py.File(fn_frame, 'a') as h5file:
             frameId = 'frm%s' % str(self.__frameNo).zfill(3)
             self.__frameNo += 1
 
+            desc = '%s.%s: dailized gain-rates of %s in future %s days by %s' % (normalizedId, frameId, self._tradeSymbol, self._daysLong, self.ident)
             g = h5file.create_group(frameId)
-            g.attrs['state'] = 'state'
-            g.attrs['futurePriceCls'] = 'futurePriceCls'
-            g.attrs[u'default'] = 'state'
-            g.attrs['size'] = col_state.shape[0]
-            g.attrs['daysLong'] = self._daysLong
-            g.attrs['daysShort'] = self._daysShort
-            g.attrs['grainClsAt'] = ','.join(['%.2f'%f for f in ShortSwingScanner.DAILIZED_GAIN_PCTS])
-            g.attrs['signature'] = self.ident
+            g.attrs['desc']     = desc
+            g.attrs['state']     = 'market state'
+            g.attrs[u'default']     = 'state'
+            g.attrs['normalizedId'] = normalizedId
+            g.attrs['size']         = col_state.shape[0]
+            g.attrs['futureDays']   = self._daysLong
+            g.attrs['signature']    = self.ident
 
-            g.create_dataset(u'title',      data= 'future price classification %s frame %s of %s by %s' % (normalizedId, frameId, self._tradeSymbol, self.ident))
+            # g.create_dataset(u'title',      data= desc)
             st = g.create_dataset('state',  data= col_state, **H5DSET_ARGS)
-            st.attrs['dim'] = col_state.shape[1]
-            ac = g.create_dataset('futurePriceCls', data= col_gainCls, **H5DSET_ARGS)
-            ac.attrs['dim'] = col_gainCls.shape[1]
-
-            g.create_dataset('priceAndFuture',        data= col_prices, **H5DSET_ARGS)
+            st.attrs['f4schema'] = str(self._f4schema)
+            ac = g.create_dataset('gainRates', data= col_gainRates, **H5DSET_ARGS)
+            ac.attrs['desc'] = 'grain-rate(%%) in up to %d days' % col_gainRates.shape[1]
+            pr = g.create_dataset('price', data= col_price, **H5DSET_ARGS)
+            pr.attrs['desc'] = 'recent price'
             
         self.info('saved %s with %s samples into file %s with sig[%s]' % (frameId, len(col_state), fn_frame, self.ident))
 

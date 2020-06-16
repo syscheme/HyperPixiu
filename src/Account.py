@@ -333,6 +333,11 @@ class Account(MetaAccount):
         self.program.saveObject(self._dictTrades, objId +'/trades')
         self.program.saveObject((self._dictStopOrders,self._dictLimitOrders), objId +'/orders')
 
+        cashAvail, cashTotal, positions = self.positionState()
+        _, posvalue = self.summrizeBalance(positions, cashTotal)
+        poslist = [i.desc for i in list(self._dictPositions.values())]
+        self.info('saved with bal:%.2f+%.2f, %d outgoing-orders, %d order-to-cancel, %d trades, %d postions: %s' % (cashTotal, posvalue, len(self._dictOutgoingOrders), len(self._lstOrdersToCancel), len(self._dictTrades), len(self._dictPositions), ' + '.join(poslist)))
+
     def restore(self):  
         objId = '%s/%s' % (self.__class__.__name__, self._id)
 

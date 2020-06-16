@@ -26,6 +26,7 @@ class Foo(BaseApplication) :
 
 PROGNAME = os.path.basename(__file__)[0:-3]
 SYMBOL ='000001'
+thePROG = Program(PROGNAME)
 
 hs300s= [
         "600000","600008","600009","600010","600011","600015","600016","600018","600019","600023",
@@ -63,31 +64,28 @@ hs300s= [
 class TestHistoryData(unittest.TestCase):
 
     def _test_baseApp(self):
-        p = Program(PROGNAME)
+        thePROG.createApp(Foo, None)
+        thePROG.createApp(Foo, None)
 
-        p.createApp(Foo, None)
-        p.createApp(Foo, None)
-
-        applst = p.listApps()
+        applst = thePROG.listApps()
         print('listed all BaseApplication: %s\n' % applst)
 
-        p.start()
-        p.loop()
-        p.stop()
+        thePROG.start()
+        thePROG.loop()
+        thePROG.stop()
 
     def _test_NonBlockingLoop(self):
-        p = Program(PROGNAME)
-        p._heartbeatInterval =-1
+        thePROG._heartbeatInterval =-1
 
-        p.createApp(Foo, None)
-        p.createApp(Foo, None)
+        thePROG.createApp(Foo, None)
+        thePROG.createApp(Foo, None)
 
-        applst = p.listApps()
+        applst = thePROG.listApps()
         print('listed all BaseApplication: %s\n' % applst)
 
-        p.start()
-        p.loop()
-        p.stop()
+        thePROG.start()
+        thePROG.loop()
+        thePROG.stop()
 
     def _test_CsvPlayback(self):
         reader = hist.CsvPlayback(symbol=SYMBOL, folder='/mnt/e/AShareSample/%s' % SYMBOL, fields='date,time,open,high,low,close,volume,ammount')
@@ -95,57 +93,60 @@ class TestHistoryData(unittest.TestCase):
             print('Row: %s\n' % i.desc)
 
     def _test_TaggedCsvPlayback(self):
-        p = Program(PROGNAME)
-        reader = hist.TaggedCsvPlayback(tcsvFilePath='/mnt/e/AShareSample/advisor/advisor_15737.tcsv', program=p)
+        reader = hist.TaggedCsvPlayback(tcsvFilePath='/mnt/e/AShareSample/advisor/advisor_15737.tcsv', program=thePROG)
         csv2adv = DictToAdvice()
         reader.registerConverter(EVENT_ADVICE, csv2adv)
         for i in reader :
             print('Row: %s' % i.desc)
 
     def test_PlaybackMux(self):
-        p = Program(PROGNAME)
-        r1 = hist.CsvPlayback(symbol=SYMBOL, folder='/mnt/e/AShareSample/%s' % SYMBOL, fields='date,time,open,high,low,close,volume,ammount', program=p)
-        r2 = hist.TaggedCsvPlayback(tcsvFilePath='/mnt/e/AShareSample/advisor/advisor_15737.tcsv', program=p)
+        r1 = hist.CsvPlayback(symbol=SYMBOL, folder='/mnt/e/AShareSample/%s' % SYMBOL, fields='date,time,open,high,low,close,volume,ammount', program=thePROG)
+        r2 = hist.TaggedCsvPlayback(tcsvFilePath='/mnt/e/AShareSample/advisor/advisor_15737.tcsv', program=thePROG)
+        r3 = hist.CsvPlayback(symbol='SH510050', folder='/mnt/e/AShareSample/ETF', fields='date,time,open,high,low,close,volume,ammount', program=thePROG)
+        r4 = hist.CsvPlayback(symbol='SH510300', folder='/mnt/e/AShareSample/ETF', fields='date,time,open,high,low,close,volume,ammount', program=thePROG)
+        r5 = hist.CsvPlayback(symbol='SH510500', folder='/mnt/e/AShareSample/ETF', fields='date,time,open,high,low,close,volume,ammount', program=thePROG)
         csv2adv = DictToAdvice()
         r2.registerConverter(EVENT_ADVICE, csv2adv)
 
-        mux = hist.PlaybackMux(program=p)
-        mux.addStream(r1)
-        mux.addStream(r2)
+        mux = hist.PlaybackMux(program=thePROG)
+        # mux.addStream(r1)
+        # mux.addStream(r2)
+        mux.addStream(r3)
+        mux.addStream(r4)
+        mux.addStream(r5)
+
         for i in mux :
             print('Row: %s' % i.desc)
 
     def _test_Perspective(self):
-        p = Program()
-        p._heartbeatInterval =-1
+        thePROG._heartbeatInterval =-1
         ps = psp.Perspective('AShare', SYMBOL)
         
         histdata = psp.PerspectiveGenerator(ps)
-        histdata.setProgram(p)
+        histdata.setProgram(thePROG)
 
         reader = hist.CsvPlayback(symbol=SYMBOL, folder='/mnt/e/AShareSample/%s' % SYMBOL, fields='date,time,open,high,low,close,volume,ammount')
-        reader.setProgram(p)
+        reader.setProgram(thePROG)
 
         histdata.adaptReader(reader, md.EVENT_KLINE_1MIN)
         marketstate = psp.PerspectiveState('AShare')
 
         for i in histdata :
             if psp.EVENT_Perspective != i.type :
-                p.info('evnt: %s' % i.desc) 
+                thePROG.info('evnt: %s' % i.desc) 
                 continue
 
-            p.info('Psp: %s' % i.desc)
+            thePROG.info('Psp: %s' % i.desc)
             marketstate.updateByEvent(i)
             s = i.data.symbol
-            p.debug('-> state: asof[%s] symbol[%s] lastPrice[%s] OHLC%s\n' % (marketstate.getAsOf(s).strftime('%Y%m%dT%H:%M:%S'), s, marketstate.latestPrice(s), marketstate.dailyOHLC_sofar(s)))
+            thePROG.debug('-> state: asof[%s] symbol[%s] lastPrice[%s] OHLC%s\n' % (marketstate.getAsOf(s).strftime('%Y%m%dT%H:%M:%S'), s, marketstate.latestPrice(s), marketstate.dailyOHLC_sofar(s)))
 
     def _test_PerspToHDF5(self):
-        p = Program()
-        p._heartbeatInterval =-1
+        thePROG._heartbeatInterval =-1
         ps = psp.Perspective('AShare', SYMBOL)
 
-        # https://www.jianshu.com/p/998c861d32e3
-        # https://www.jianshu.com/p/ae12525450e8
+        # https://www.jianshu.com/thePROG/998c861d32e3
+        # https://www.jianshu.com/thePROG/ae12525450e8
         h5file = h5py.File('/tmp/psp%s.h5pd'%SYMBOL, 'w')
 
         marketState_Len= 1552
@@ -157,10 +158,10 @@ class TestHistoryData(unittest.TestCase):
                               chunks=(chunk_size, 1, marketState_Len))
         
         histdata = psp.PerspectiveGenerator(ps)
-        histdata.setProgram(p)
+        histdata.setProgram(thePROG)
 
         reader = hist.CsvPlayback(symbol=SYMBOL, folder='/mnt/e/AShareSample/%s.REDU' % SYMBOL, fields='date,time,open,high,low,close,volume,ammount')
-        reader.setProgram(p)
+        reader.setProgram(thePROG)
 
         histdata.adaptReader(reader, md.EVENT_KLINE_1MIN)
         marketstate = psp.PerspectiveState('AShare')
@@ -168,10 +169,10 @@ class TestHistoryData(unittest.TestCase):
         c =0
         for i in histdata :
             if psp.EVENT_Perspective != i.type :
-                p.info('evnt: %s' % i.desc) 
+                thePROG.info('evnt: %s' % i.desc) 
                 continue
 
-            p.info('Psp: %s' % i.desc)
+            thePROG.info('Psp: %s' % i.desc)
             marketstate.updateByEvent(i)
             s = i.data.symbol
             nnfloats = [0.0] * md.EXPORT_FLOATS_DIMS
@@ -184,7 +185,7 @@ class TestHistoryData(unittest.TestCase):
             X[c,:,:] = nnfloats
             c+=1
 
-            p.debug('-> state: asof[%s] symbol[%s] lastPrice[%s] OHLC%s\n' % (marketstate.getAsOf(s).strftime('%Y%m%dT%H:%M:%S'), s, marketstate.latestPrice(s), marketstate.dailyOHLC_sofar(s)))
+            thePROG.debug('-> state: asof[%s] symbol[%s] lastPrice[%s] OHLC%s\n' % (marketstate.getAsOf(s).strftime('%Y%m%dT%H:%M:%S'), s, marketstate.latestPrice(s), marketstate.dailyOHLC_sofar(s)))
 
 if __name__ == '__main__':
     unittest.main()

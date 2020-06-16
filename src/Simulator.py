@@ -2350,7 +2350,9 @@ class ShortSwingScanner(OfflineSimulator):
         if self._wkHistData :
             try :
                 ev = next(self._wkHistData)
-                if not ev or ev.data.datetime < self._btStartDate: return
+                if not ev or MARKETDATE_EVENT_PREFIX != ev.type[:len(MARKETDATE_EVENT_PREFIX)] : return
+                if ev.data.datetime < self._btStartDate: return
+
                 symbol = ev.data.symbol
                 if ev.data.datetime <= self._btEndDate:
                     self.__psptReadAhead.push(ev)
@@ -2359,7 +2361,7 @@ class ShortSwingScanner(OfflineSimulator):
                         return
                     self.__stampByEvent = stamp
 
-                    dayOfEvent = ev.data.datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+                    dayOfEvent = ev.data.datetime.replace(hour=23, minute=59, second=59, microsecond=999999)
                     if not self.__dtToday or self.__dtToday < dayOfEvent:
                         ohlc = self.__psptReadAhead.dailyOHLC_sofar
 
@@ -2387,7 +2389,7 @@ class ShortSwingScanner(OfflineSimulator):
                         self.__eventsOfDays.push([])
 
                         if self.__dtToday:
-                            self.debug('doAppStep() %s day-%d:%s applied onto short[%dd]-ago, long[%dd]-ago by %s' % (symbol, self.__cOpenDays, self.__dtToday.strftime('%Y-%m-%d'), self._daysShort, self._daysLong, self._byEvent))
+                            self.debug('doAppStep() %s day-%d[%s] applied onto [%d,%d]days-ago by %s' % (symbol, self.__cOpenDays, self.__dtToday.strftime('%Y-%m-%d'), self._daysShort, self._daysLong, self._byEvent))
 
                         self.__cOpenDays += 1
                         self.__dtToday = dayOfEvent

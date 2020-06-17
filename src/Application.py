@@ -33,6 +33,13 @@ LOGFMT_GENERAL    = '%(asctime)s %(levelname)s\t%(message)s'
 
 BOOL_STRVAL_TRUE = ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh', True, 1]
 DUMMY_BIG_VAL    = 999999.9
+STR2LEVEL = {
+    'debug' : LOGLEVEL_DEBUG,
+    'info' : LOGLEVEL_INFO,
+    'warn' : LOGLEVEL_WARN,
+    'error' : LOGLEVEL_ERROR,
+    'critical' : LOGLEVEL_CRITICAL,
+}
 
 ########################################################################
 class MetaObj(ABC):
@@ -1076,13 +1083,6 @@ class Program(object):
             LOGLEVEL_CRITICAL: self.critical,
         }
 
-        STR2LEVEL = {
-            'debug' : LOGLEVEL_DEBUG,
-            'info' : LOGLEVEL_INFO,
-            'warn' : LOGLEVEL_WARN,
-            'error' : LOGLEVEL_ERROR,
-            'critical' : LOGLEVEL_CRITICAL,
-        }
         self.__loglevel = LOGLEVEL_CRITICAL
 
         level = STR2LEVEL['info']
@@ -1155,6 +1155,9 @@ class Program(object):
         '''设置日志级别'''
         if self.__logger ==None:
             return
+        
+        if isinstance(level, str):
+            level = STR2LEVEL[level.lower()]
 
         self.__logger.setLevel(level)
         self.__loglevel = level

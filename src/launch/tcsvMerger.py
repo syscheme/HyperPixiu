@@ -19,6 +19,7 @@ class SinaMerger(BaseApplication) :
         self._symbolLookFor = symbolLookFor
 
         self.__mux = hist.PlaybackMux(program=program)
+        self.__delayedQuit =100
 
     def doAppInit(self): # return True if succ
         if not super(SinaMerger, self).doAppInit() :
@@ -55,6 +56,7 @@ class SinaMerger(BaseApplication) :
                 if symbol in EXECLUDE_LIST or (self._symbolLookFor and self._symbolLookFor != symbol):
                     continue
 
+                self.debug('member[%s] matched in %s' % (member.name, tn))
                 edseq =[]
                 with tar.extractfile(member) as f:
                     content =f.read().decode()
@@ -74,6 +76,7 @@ class SinaMerger(BaseApplication) :
                 self.__mux.addStream(pb)
                 # if self.__mux.size > 5: break # TODO: DELETE THIS LINE
 
+        self.info('inited mux with %d streams' % (self.__mux.size))
         return self.__mux.size >0
 
     def OnEvent(self, event):
@@ -81,13 +84,19 @@ class SinaMerger(BaseApplication) :
     
     def doAppStep(self):
         ev = None
+
+        if self.__delayedQuit <=0:
+            self.program.stop()
+            return 0
+
         try :
             ev = next(self.__mux)
             if ev: self._recorder.pushRow(ev.type, ev.data)
+            self.debug('filtered ev: %s' % ev.desc)
         except StopIteration:
-            self.program.stop()
+            self.__delayedQuit -=1
         
-        return 0
+        return 1
 
 if __name__ == '__main__':
 
@@ -107,5 +116,6 @@ if __name__ == '__main__':
     merger = thePROG.createApp(SinaMerger, recorder =rec, fnSearch = fnSearch, symbolLookFor='SZ002008')
 
     thePROG.start()
+    thePROG.setLogLevel('debug')
     thePROG.loop()
     thePROG.stop()

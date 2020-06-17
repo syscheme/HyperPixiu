@@ -930,15 +930,15 @@ class PlaybackMux(Playback):
             if not strmEariest or (strmEariest != strm and ev.data.asof < self.__dictStrmPB[strmEariest].data.asof):
                 strmEariest = strm
 
-        if not strmEariest:
-            self._iterableEnd = True
-            self.info('all streams reached end')
-            return None
-            
         for sd in strmsToEvict:
             del self.__dictStrmPB[sd]
             self.info('stream[%s] reached end, evicted' % sd)
-        
+
+        if not strmEariest:
+            self._iterableEnd = True
+            self.info('all streams reached end')
+            raise StopIteration
+            
         ev = self.__dictStrmPB[strmEariest]
         self.__dictStrmPB[strmEariest] = None
         return ev

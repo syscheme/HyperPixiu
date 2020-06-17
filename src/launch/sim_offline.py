@@ -175,8 +175,9 @@ if __name__ == '__main__':
 
     evMdSource = Program.fixupPath(evMdSource)
     p.info('taking input dir %s for symbol[%s]' % (evMdSource, SYMBOL))
+    
     # csvPlayback can only cover one symbol
-    csvreader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
+    histReader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
     tdrWraper = None
 
     if 'remote' == advisorType :
@@ -189,9 +190,9 @@ if __name__ == '__main__':
         # revents.subscribe(revs)
 
     if 'T+1' == ideal :
-        tdrWraper = p.createApp(IdealTrader_Tplus1, configNode ='trader', trader=tdrCore, histdata=csvreader) # ideal trader to generator ReplayFrames
+        tdrWraper = p.createApp(IdealTrader_Tplus1, configNode ='trader', trader=tdrCore, histdata=histReader) # ideal trader to generator ReplayFrames
     elif 'FuturePrice' == ideal :
-        tdrWraper = p.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=csvreader) # ShortSwingScanner to classify future price
+        tdrWraper = p.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=histReader) # ShortSwingScanner to classify future price
     else :
         p.info('all objects registered piror to local Advisor: %s' % p.listByType())
         advisor = p.createApp(DnnAdvisor_S1548I4A3, configNode ='advisor', objectives=objectives, recorder=rec)
@@ -199,7 +200,7 @@ if __name__ == '__main__':
         advisor._exchange = tdrCore.account.exchange
 
         p.info('all objects registered piror to simulator: %s' % p.listByType())
-        tdrWraper = p.createApp(OfflineSimulator, configNode ='trader', trader=tdrCore, histdata=csvreader) # the simulator with brain loaded to verify training result
+        tdrWraper = p.createApp(OfflineSimulator, configNode ='trader', trader=tdrCore, histdata=histReader) # the simulator with brain loaded to verify training result
 
     tdrWraper.setRecorder(rec)
 

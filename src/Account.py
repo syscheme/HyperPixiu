@@ -335,8 +335,8 @@ class Account(MetaAccount):
 
         cashAvail, cashTotal, positions = self.positionState()
         _, posvalue = self.summrizeBalance(positions, cashTotal)
-        poslist = [i.desc for i in list(self._dictPositions.values())]
-        self.info('saved with bal:%.2f+%.2f, %d outgoing-orders, %d order-to-cancel, %d trades, %d postions: %s' % (cashTotal, posvalue, len(self._dictOutgoingOrders), len(self._lstOrdersToCancel), len(self._dictTrades), len(self._dictPositions), ' + '.join(poslist)))
+        strPos = ','.join([i.desc for i in list(self._dictPositions.values())])
+        self.info('saved with bal:%.2f+%.2f, %d outgoing-orders, %d order-to-cancel, %d trades, %d postions: %s' % (cashTotal, posvalue, len(self._dictOutgoingOrders), len(self._lstOrdersToCancel), len(self._dictTrades), len(self._dictPositions), strPos))
 
     def restore(self):  
         objId = '%s/%s' % (self.__class__.__name__, self._id)
@@ -1113,7 +1113,8 @@ class Account(MetaAccount):
         self._dateToday = None
         
         self._state = Account.STATE_CLOSE
-        self.debug('onDayClose(%s) saved positions, updated state' % self._datePrevClose)
+        strPos = ','.join([i.desc for i in list(self._dictPositions.values())])
+        self.info('onDayClose(%s) updated state, saved balance[cash=%s +pos=%s], %d-pos: %s' % (self._datePrevClose, self._todayResult.cash, self._todayResult.posValue, len(self._dictPositions), strPos))
 
     def onDayOpen(self, newDate):
         if Account.STATE_OPEN == self._state:
@@ -1139,7 +1140,9 @@ class Account(MetaAccount):
 
         self._dictTrades.clear() # clean the trade list
         self._state = Account.STATE_OPEN
-        self.debug('onDayOpen(%s) updated todayResult: %scash +%spos' % (self._dateToday, self._todayResult.cash, self._todayResult.posValue))
+
+        strPos = ','.join([i.desc for i in list(self._dictPositions.values())])
+        self.info('onDayOpen(%s) shifted balance[cash=%s +pos=%s], %d-pos: %s' % (self._dateToday, self._todayResult.cash, self._todayResult.posValue, len(self._dictPositions), strPos))
     
     def onTimer(self, dt):
         # TODO refresh from BrokerDriver

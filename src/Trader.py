@@ -316,7 +316,7 @@ class BaseTrader(MetaTrader):
             return
 
         if not self._account.executable:
-            self.debug('OnAdvice() ignored[%s] per account not executable with state[%s]: %s' % (adv.desc, symbol, self.marketState.descOf(symbol)))
+            self.debug('OnAdvice() ignored[%s] per account not yet executable on %s: %s' % (adv.desc, symbol, self.marketState.descOf(symbol)))
             return
 
         # TODO: validate the advice's datetime

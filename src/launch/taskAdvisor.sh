@@ -22,7 +22,7 @@ cp -vf ${CONF} ${OUTDIR}/
 
 # make a copy here instead of moving because the files might be locked in the srcdir
 cp -rvf ${OUTDIR} ${OUTDIR}.BAK${STAMP}
-rm -rf ${OUTDIR}.BAK${STAMP}/*.lock
+rm -rf ${OUTDIR}.BAK${STAMP}/{*.ss,*.ss.*} # unneccessary to archive Advisors/Crawlers' safestores
 
 # prepare ${OUTDIR}
 mkdir -p ${OUTDIR}

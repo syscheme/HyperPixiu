@@ -64,8 +64,6 @@ class Hd5DataGenerator(Sequence):
             yield batch['state'], batch['action']
 
 ########################################################################
-H5DSET_ARGS={ 'compression':'lzf' }
-
 def exportLayerWeights(theModel, h5fileName, layerNames=[]) :
     if not theModel or len(h5fileName) <=0 or len(layerNames) <=0:
         return
@@ -83,8 +81,8 @@ def exportLayerWeights(theModel, h5fileName, layerNames=[]) :
             layerWeights = layer.get_weights()
             w0 = np.array(layerWeights[0], dtype=float)
             w1 = np.array(layerWeights[1], dtype=float)
-            wd0 = g.create_dataset('weights.0', data= w0, **H5DSET_ARGS)
-            wd1 = g.create_dataset('weights.1', data= w1, **H5DSET_ARGS)
+            wd0 = g.create_dataset('weights.0', data= w0, **hist.H5DSET_DEFAULT_ARGS)
+            wd1 = g.create_dataset('weights.1', data= w1, **hist.H5DSET_DEFAULT_ARGS)
             layerExec.append(lyname)
     return layerExec
 

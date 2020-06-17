@@ -28,6 +28,7 @@ else:
 import bz2
 
 EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
+H5DSET_DEFAULT_ARGS={ 'compression': 'lzf' } # note lzf is good at speed, but HDFExplorer doesn't support it. Change it to gzip if want to view
 
 def listAllFiles(folder, depth=5):
     ret =[]

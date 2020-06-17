@@ -1849,8 +1849,6 @@ class OfflineSimulator(BackTestApp):
         self._episodeSummary = {**self._episodeSummary, **mySummary}
 
 ########################################################################
-H5DSET_ARGS={ 'compression': 'lzf' } # note lzf is good at speed, but HDFExplorer doesn't support it. Change it to gzip if want to view
-
 class IdealTrader_Tplus1(OfflineSimulator):
     '''
     IdealTrader extends OfflineSimulator by scanning the MarketEvents occurs in a day, determining
@@ -1867,6 +1865,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self._constraintSell_lossBelowHigh     = self.getConfig('constraint/sell_lossBelowHigh',         2.0) #pecentage price-close less than price-high at the loss edge - indicate sell
         self._constraintSell_downHillOverClose = self.getConfig('constraint/sell_downHillOverClose', 0.5) #pecentage price more than price-close triggers sell during a downhill-day to reduce loss
         self._generateReplayFrames             = self.getConfig('generateReplayFrames', 'directionOnly').lower()
+        self._h5compression                    = self.getConfig('h5compression', 'lzf').lower()
 
         self._pctMaxDrawDown =99.0 # IdealTrader will not be constrainted by max drawndown, so overwrite it with 99%
         self._warmupDays =0 # IdealTrader will not be constrainted by warmupDays
@@ -2054,6 +2053,11 @@ class IdealTrader_Tplus1(OfflineSimulator):
         col_action = np.concatenate(metrix[:, 1]).reshape(len(rangedFrame), len(rangedFrame[0][1]))
 
         fn_frame = os.path.join(self.wkTrader.outdir, 'RFrm%s_%s.h5' % (NORMALIZE_ID, self._tradeSymbol) )
+        
+        h5args =copy.copy(hist.H5DSET_DEFAULT_ARGS)
+        if self._h5compression and len(self._h5compression)>0:
+            h5args['compression'] = self._h5compression
+        
         with h5py.File(fn_frame, 'a') as h5file:
             frameId = 'RF%s' % str(self.__frameNo).zfill(3)
             self.__frameNo += 1
@@ -2066,9 +2070,9 @@ class IdealTrader_Tplus1(OfflineSimulator):
             g.attrs['signature'] = EXPORT_SIGNATURE
 
             g.create_dataset(u'title',      data= '%s replay %s of %s by %s' % (self._generateReplayFrames, frameId, self._tradeSymbol, self.ident))
-            st = g.create_dataset('state',  data= col_state, **H5DSET_ARGS)
+            st = g.create_dataset('state',  data= col_state, **h5args)
             st.attrs['dim'] = col_state.shape[1]
-            ac = g.create_dataset('action', data= col_action, **H5DSET_ARGS)
+            ac = g.create_dataset('action', data= col_action, **h5args)
             ac.attrs['dim'] = col_action.shape[1]
             
         self.info('saved %s len[%s] into file %s with sig[%s]' % (frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
@@ -2296,9 +2300,10 @@ class ShortSwingScanner(OfflineSimulator):
         '''
         super(ShortSwingScanner, self).__init__(program, trader, histdata, **kwargs)
 
-        self._daysLong     = self.getConfig('constraints/daysLong',  5) # long-term prospect, default 1week(5days)
-        self._daysShort    = self.getConfig('constraints/daysShort', 2) # short-term prospect, default 2days
-        self._byEvent      = self.getConfig('constraints/byEvent',   EVENT_KLINE_5MIN)
+        self._daysLong      = self.getConfig('constraints/futureDays',  5) # long-term prospect, default 1week(5days)
+        self._daysShort     = self.getConfig('constraints/shortFuture', 2) # short-term prospect, default 2days
+        self._byEvent       = self.getConfig('constraints/byEvent',   EVENT_KLINE_5MIN)
+        self._h5compression = self.getConfig('h5compression', 'lzf').lower()
 
         self._f4schema = {
             'asof':1, 
@@ -2359,6 +2364,8 @@ class ShortSwingScanner(OfflineSimulator):
                     self.__psptReadAhead.push(ev)
                     stamp    = self.__psptReadAhead.getAsOf(self._byEvent)
                     price, _ = self.__psptReadAhead.latestPrice
+                    ohlc     = self.__psptReadAhead.dailyOHLC_sofar
+
                     if self.__stampByEvent and self.__stampByEvent == stamp:
                         return
                     
@@ -2368,7 +2375,6 @@ class ShortSwingScanner(OfflineSimulator):
 
                     dayOfEvent = ev.data.datetime.replace(hour=23, minute=59, second=59, microsecond=999999)
                     if not self.__dtToday or self.__dtToday < dayOfEvent:
-                        ohlc = self.__psptReadAhead.dailyOHLC_sofar
 
                         for i in range(1, self.__eventsOfDays.size):
                             label = 'priceIn%02ddays' % i
@@ -2401,7 +2407,7 @@ class ShortSwingScanner(OfflineSimulator):
 
                     # in a same day
                     stateOfEvent = {
-                        'price'   : price,
+                        'ohlc'   : [ohlc.open, ohlc.high, ohlc.low, price],
                         'stateD4f': self.__psptReadAhead.floatsD4(d4wished = self._f4schema),
                         }
 
@@ -2431,7 +2437,8 @@ class ShortSwingScanner(OfflineSimulator):
             if not stateD4f or len(stateD4f) <=0:
                 continue
 
-            price = ev['price']
+            ohlc  = ev['ohlc']
+            price = ohlc[3]
             if price <=0.01:
                 continue
 
@@ -2459,18 +2466,22 @@ class ShortSwingScanner(OfflineSimulator):
                 # frame full, output it into a HDF5 file
                 self.__saveFrame(self.__sampleFrm)
 
-            self.__sampleFrm[self.__sampleIdx] = (stateD4f, dailizedGainRates, price)
+            self.__sampleFrm[self.__sampleIdx] = (stateD4f, dailizedGainRates, ohlc)
             self.__sampleIdx +=1
 
     def __saveFrame(self, rangedFrame):
         metrix  = np.array(rangedFrame)
         lenF    = len(rangedFrame)
 
-        col_state        = np.concatenate(metrix[:, 0]).reshape(lenF, len(rangedFrame[0][0])).astype('float16')
-        col_gainRates    = np.concatenate(metrix[:, 1]).reshape(lenF, len(rangedFrame[0][1])).astype('float16')
-        col_price        = metrix[:, 2].astype('float16')
+        col_state      = np.concatenate(metrix[:, 0]).reshape(lenF, len(rangedFrame[0][0])).astype('float16')
+        col_gainRates  = np.concatenate(metrix[:, 1]).reshape(lenF, len(rangedFrame[0][1])).astype('float16')
+        col_ohlc       = np.concatenate(metrix[:, 2]).reshape(lenF, len(rangedFrame[0][2])).astype('float16')  # col_price = metrix[:, 2].astype('float16')
 
         normalizedId = 'FclzD4X%dR%dBy%s' %(col_state.shape[1], self._daysLong, self._byEvent[len(MARKETDATE_EVENT_PREFIX):])
+
+        h5args =copy.copy(hist.H5DSET_DEFAULT_ARGS)
+        if self._h5compression and len(self._h5compression)>0:
+            h5args['compression'] = self._h5compression
 
         fn_frame = os.path.join(self.wkTrader.outdir, '%s_%s.h5' % (normalizedId, self._tradeSymbol) )
         with h5py.File(fn_frame, 'a') as h5file:
@@ -2488,12 +2499,12 @@ class ShortSwingScanner(OfflineSimulator):
             g.attrs['signature']    = self.ident
 
             # g.create_dataset(u'title',      data= desc)
-            st = g.create_dataset('state',  data= col_state, **H5DSET_ARGS)
+            st = g.create_dataset('state',  data= col_state, **h5args)
             st.attrs['f4schema'] = str(self._f4schema)
-            ac = g.create_dataset('gainRates', data= col_gainRates, **H5DSET_ARGS)
+            ac = g.create_dataset('gainRates', data= col_gainRates, **h5args)
             ac.attrs['desc'] = 'grain-rate(%%) in up to %d days' % col_gainRates.shape[1]
-            pr = g.create_dataset('price', data= col_price, **H5DSET_ARGS)
-            pr.attrs['desc'] = 'recent price'
+            pr = g.create_dataset('ohlc', data= col_ohlc, **h5args)
+            pr.attrs['desc'] = 'open-high-low-price so far in the day'
             
         self.info('saved %s with %s samples into file %s with sig[%s]' % (frameId, len(col_state), fn_frame, self.ident))
 

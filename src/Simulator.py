@@ -2376,8 +2376,8 @@ class ShortSwingScanner(OfflineSimulator):
                     dayOfEvent = ev.data.datetime.replace(hour=23, minute=59, second=59, microsecond=999999)
                     if not self.__dtToday or self.__dtToday < dayOfEvent:
 
-                        for i in range(1, self.__eventsOfDays.size):
-                            label = 'priceIn%02ddays' % i
+                        for i in range(0, self.__eventsOfDays.size): # 0 maps today's close price
+                            label = 'priceIn%02dd' % i
                             eventsDaysAgo = self.__eventsOfDays[i]
                             for e in range(len(eventsDaysAgo)):
                                 eventsDaysAgo[e][label] = ohlc.close
@@ -2443,9 +2443,10 @@ class ShortSwingScanner(OfflineSimulator):
                 continue
 
             dailizedGainRates = []
-            for i in range(1, self._daysLong+1):
-                label = 'priceIn%02ddays' % i
-                dgr = (ev[label]-price) *100 / price / i
+            for i in range(0, self._daysLong+1):
+                label = 'priceIn%02dd' % i
+                dgr = (ev[label]-price) *100 / price
+                if i >0: dgr /= i
                 dailizedGainRates.append(dgr)
 
             # sample code on how to classify the grainRates
@@ -2457,7 +2458,7 @@ class ShortSwingScanner(OfflineSimulator):
                 if gainRateS >= redge:
                     gainClassS += 1
             
-            gainClass = [0] * (len(ShortSwingScanner.DAILIZED_GAIN_PCTS)*2+2)
+            gainClass = [0] * (1 + len(ShortSwingScanner.DAILIZED_GAIN_PCTS))*2
             gainClass[gainClassL] =1
             gainClass[len(ShortSwingScanner.DAILIZED_GAIN_PCTS) +1 + gainClassS] =1
 
@@ -2502,7 +2503,7 @@ class ShortSwingScanner(OfflineSimulator):
             st = g.create_dataset('state',  data= col_state, **h5args)
             st.attrs['f4schema'] = str(self._f4schema)
             ac = g.create_dataset('gainRates', data= col_gainRates, **h5args)
-            ac.attrs['desc'] = 'grain-rate(%%) in up to %d days' % col_gainRates.shape[1]
+            ac.attrs['desc'] = 'grain-rate(%%) in up to %d days, 0-means close-of-today' % col_gainRates.shape[1]
             pr = g.create_dataset('ohlc', data= col_ohlc, **h5args)
             pr.attrs['desc'] = 'open-high-low-price so far in the day'
             

@@ -435,7 +435,7 @@ class Account(MetaAccount):
         with self._lock :
             for s, pos in self._dictPositions.items() :
                 if self.cashSymbol != s:
-                    price = self.trader.marketState.latestPrice(pos.symbol)
+                    price, _ = self.trader.marketState.latestPrice(pos.symbol)
                     if price >0:
                         pos.price = price
             allpos = copy.deepcopy(self._dictPositions)
@@ -1076,7 +1076,8 @@ class Account(MetaAccount):
                     
                 self._todayResult.txnHist += "%+dx%s@%sP%s" % (posChange, trade.symbol, trade.asof.strftime('%H%M'), formatNumber(trade.price, 3))
 
-                self._todayResult.tradingPnl += round(posChange * (self._marketState.latestPrice(trade.symbol) - trade.price) * self._contractSize, 2)
+                latestPrice, _ = self._marketState.latestPrice(trade.symbol)
+                self._todayResult.tradingPnl += round(posChange * (latestPrice - trade.price) * self._contractSize, 2)
                 turnover, commission, slippagefee = self.calcAmountOfTrade(trade.symbol, trade.price, trade.volume)
                 self._todayResult.turnover += turnover
                 self._todayResult.commission += commission

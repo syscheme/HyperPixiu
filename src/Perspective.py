@@ -215,13 +215,21 @@ class Perspective(MarketData):
 
         seq = [self.__focusLast]  if self.__focusLast else []
         seq += Perspective.EVENT_SEQ
+        latestAsOf = None
         for et in seq:
             stk = self._stacks[et]
             if not stk or stk.size <=0:
                 continue
+
+            if latestAsOf and latestAsOf > stk.top.asof:
+                continue
+
+            latestAsOf = stk.top.asof
             ret = stk.top.price if EVENT_TICK == et else stk.top.close
-        
-        return round(ret, PRICE_DISPLAY_ROUND_DECIMALS)
+
+        if latestAsOf is None:
+            latestAsOf = DT_EPOCH
+        return round(ret, PRICE_DISPLAY_ROUND_DECIMALS), latestAsOf
 
     @property
     def dailyOHLC_sofar(self) :
@@ -630,10 +638,10 @@ class PerspectiveState(MarketState):
 
     def latestPrice(self, symbol) :
         ''' query for latest price of the given symbol
-        @return the price
+        @return the price, datetimeAsOf
         '''
         if not symbol in self.__dictPerspective.keys() :
-            return 0.0
+            return 0.0, DT_EPOCH
         
         return self.__dictPerspective[symbol].latestPrice
 

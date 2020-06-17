@@ -201,7 +201,8 @@ class TestHistoryData(unittest.TestCase):
             thePROG.info('Psp: %s' % i.desc)
             marketstate.updateByEvent(i)
             s = i.data.symbol
-            thePROG.debug('-> state: asof[%s] symbol[%s] lastPrice[%s] OHLC%s\n' % (marketstate.getAsOf(s).strftime('%Y%m%dT%H:%M:%S'), s, marketstate.latestPrice(s), marketstate.dailyOHLC_sofar(s)))
+            price, asofP = marketstate.latestPrice(s)
+            thePROG.debug('-> state: asof[%s] symbol[%s] lastPrice[%s] OHLC%s\n' % (asofP.strftime('%Y%m%dT%H:%M:%S'), s, price, marketstate.dailyOHLC_sofar(s)))
 
     def _test_PerspToHDF5(self):
         thePROG._heartbeatInterval =-1
@@ -238,16 +239,17 @@ class TestHistoryData(unittest.TestCase):
             marketstate.updateByEvent(i)
             s = i.data.symbol
             nnfloats = [0.0] * md.EXPORT_FLOATS_DIMS
-            nnfloats[0] = datetime2float(marketstate.getAsOf(SYMBOL))
-            nnfloats[1] = marketstate.latestPrice(SYMBOL)
-            nnfloats += marketstate.exportKLFloats(SYMBOL)
+            nnfloats[0] = datetime2float(marketstate.getAsOf(s))
+            price, asofP = marketstate.latestPrice(s)
+            nnfloats[1] = price
+            nnfloats += marketstate.exportKLFloats(s)
 
             if 0 == c %chunk_size:
                 X.resize(X.shape[0]+chunk_size, axis=0)
             X[c,:,:] = nnfloats
             c+=1
 
-            thePROG.debug('-> state: asof[%s] symbol[%s] lastPrice[%s] OHLC%s\n' % (marketstate.getAsOf(s).strftime('%Y%m%dT%H:%M:%S'), s, marketstate.latestPrice(s), marketstate.dailyOHLC_sofar(s)))
+            thePROG.debug('-> state: asof[%s] symbol[%s] lastPrice[%s] OHLC%s\n' % (asofP.strftime('%Y%m%dT%H:%M:%S'), s, price, marketstate.dailyOHLC_sofar(s)))
 
 if __name__ == '__main__':
     unittest.main()

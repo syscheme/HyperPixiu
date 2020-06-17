@@ -219,7 +219,8 @@ class BackTestApp(MetaTrader):
                 if ev.data.datetime <= self._btEndDate:
                     self._marketState.updateByEvent(ev)
                     s = ev.data.symbol
-                    self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type[len(MARKETDATE_EVENT_PREFIX):], self._marketState.getAsOf(s).strftime('%Y%m%dT%H%M'), self._marketState.latestPrice(s), self._marketState.dailyOHLC_sofar(s)))
+                    price, asofP = self._marketState.latestPrice(s)
+                    self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type[len(MARKETDATE_EVENT_PREFIX):], asofP.strftime('%Y%m%dT%H%M'), price, self._marketState.dailyOHLC_sofar(s)))
                     self.postEvent(ev) # self.OnEvent(ev) # call Trader
                     self._stepNoInEpisode += 1
                     return # successfully performed a step by pushing an Event
@@ -1798,7 +1799,7 @@ class OfflineSimulator(BackTestApp):
 
         # get some additional reward when survived for one more day
         self._dataEnd_date = asOf
-        self._dataEnd_closeprice = self.wkTrader.marketState.latestPrice(symbol)
+        self._dataEnd_closeprice, _ = self.wkTrader.marketState.latestPrice(symbol)
 
         if not self._dataBegin_date:
             self._dataBegin_date = self._dataEnd_date
@@ -2356,7 +2357,8 @@ class ShortSwingScanner(OfflineSimulator):
                 symbol = ev.data.symbol
                 if ev.data.datetime <= self._btEndDate:
                     self.__psptReadAhead.push(ev)
-                    stamp = self.__psptReadAhead.getAsOf(self._byEvent)
+                    stamp    = self.__psptReadAhead.getAsOf(self._byEvent)
+                    price, _ = self.__psptReadAhead.latestPrice
                     if self.__stampByEvent and self.__stampByEvent == stamp:
                         return
                     
@@ -2399,7 +2401,7 @@ class ShortSwingScanner(OfflineSimulator):
 
                     # in a same day
                     stateOfEvent = {
-                        'price' : self.__psptReadAhead.latestPrice,
+                        'price'   : price,
                         'stateD4f': self.__psptReadAhead.floatsD4(d4wished = self._f4schema),
                         }
 

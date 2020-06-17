@@ -337,7 +337,7 @@ class BaseTrader(MetaTrader):
         capitalBeforeStep = cashTotal + posvalue
 
         # TODO: the first version only support one symbol to play, so simply take the first symbol in the positions        
-        latestPrice = self._marketState.latestPrice(symbol)
+        latestPrice, asofP = self._marketState.latestPrice(symbol)
         buyPrice  = self._account.roundByPriceTick(latestPrice, OrderData.DIRECTION_LONG)
         sellPrice = self._account.roundByPriceTick(latestPrice, OrderData.DIRECTION_SHORT)
 
@@ -391,19 +391,5 @@ class BaseTrader(MetaTrader):
         oopen, ohigh, olow, oclose = OHLC
         return (oopen, high if high>ohigh else ohigh, low if low<olow else olow, close)
 
-    # def latestPrice(self, symbol) :
-    #     kline = self._dictLatestKline1min.get(symbol, None)
-    #     tick  = self._dictLatestTick.get(symbol, None)
-
-    #     if kline and tick:
-    #         if kline.datetime > tick.datetime:
-    #             return kline.close
-    #         else:
-    #             return tick.price
-    #     elif kline:
-    #         return kline.close
-    #     elif tick:
-    #         return tick.price
-    #     return 0
 
 

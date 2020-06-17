@@ -577,7 +577,7 @@ class MarketState(MetaObj):
     @abstractmethod
     def latestPrice(self, symbol) :
         ''' query for latest price of the given symbol
-        @return the price
+        @return the price, datetimeAsOf
         '''
         raise NotImplementedError
 

@@ -337,7 +337,7 @@ class GymTrader(BaseTrader):
 
             # TODO: the first version only support one symbol to play, so simply take the first symbol in the positions        
             symbol = self._tradeSymbol # TODO: should take the __dictOberserves
-            latestPrice = self._marketState.latestPrice(symbol)
+            latestPrice, _ = self._marketState.latestPrice(symbol)
 
             maxBuy, maxSell = self._account.maxOrderVolume(symbol, latestPrice)
             if self._maxValuePerOrder >0:
@@ -583,7 +583,7 @@ class OfflineSimulator(BackTestApp):
             self.wkTrader.depositReward(self.__rewardDayStepped)
 
         self._dataEnd_date = asOf
-        self._dataEnd_closeprice = self.wkTrader.marketState.latestPrice(symbol)
+        self._dataEnd_closeprice, _ = self.wkTrader.marketState.latestPrice(symbol)
 
         if not self._dataBegin_date:
             self._dataBegin_date = self._dataEnd_date

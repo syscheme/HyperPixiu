@@ -1940,8 +1940,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 super(IdealTrader_Tplus1, self).OnEvent(evAdv) # to perform the real handling
 
         action[ADVICE_DIRECTIONS.index(dirToExec)] =1
-        self._mstate = self._marketState.exportKLFloats(self._tradeSymbol)
-        AAAA = self._marketState.exportFloatsD4(self._tradeSymbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:5 })
+        self._mstate = self._marketState.exportF1548(self._tradeSymbol)
         # if bFullState:
         self.__pushStateAction(self._mstate, action)
         self.debug('OnEvent(%s) performed %s upon mstate: %s' % (ev.desc, dirToExec, self._marketState.descOf(self._tradeSymbol)))

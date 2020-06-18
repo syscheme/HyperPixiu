@@ -448,7 +448,7 @@ class GymTrader(BaseTrader):
     #------------------------------------------------
 
     def makeupGymObservation(self):
-        market_state = self._marketState.exportKLFloats(self._tradeSymbol)
+        market_state = self._marketState.exportF1548(self._tradeSymbol)
         return np.array(market_state).astype(GymTrader.NN_FLOAT)
 
     def makeupGymObservation_0(self):
@@ -487,7 +487,7 @@ class GymTrader(BaseTrader):
         account_state = np.concatenate([stateCapital + statePOS], axis=0)
 
         # part 2. build up the market_state
-        market_state = self._marketState.exportKLFloats(self._tradeSymbol)
+        market_state = self._marketState.exportF1548(self._tradeSymbol)
 
         # TODO: more observations in the future could be:
         #  - money flow

@@ -5,6 +5,7 @@ from __future__ import division
 from EventData import *
 from Application import MetaObj
 from datetime import datetime, timedelta
+from collections import OrderedDict
 
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 EXPORT_FLOATS_DIMS = 4 # take the minimal dim=4
@@ -622,11 +623,17 @@ class MarketState(MetaObj):
         '''
         raise NotImplementedError
 
-    @abstractmethod
-    def exportKLFloats(self, symbol=None) :
-        '''@return an array_like data as toNNFloats, maybe [] or numpy.array
-        '''
-        raise NotImplementedError
+    def exportF1548(self, symbol=None) :
+
+        F4SECHMA_1548 = OrderedDict({
+            'asof':              1,
+            EVENT_KLINE_1MIN :  30,
+            EVENT_KLINE_5MIN :  96,
+            EVENT_KLINE_1DAY : 260,
+        })
+
+        ret = self.exportFloatsD4(symbol, d4wished=F4SECHMA_1548)
+        return ret if ret else [0.0] * 1548
 
     @abstractmethod
     def exportFloatsD4(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :

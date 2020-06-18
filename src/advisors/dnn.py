@@ -125,7 +125,7 @@ class DnnAdvisor_S1548I4A3(TradeAdvisor):
                 self.debug('generateAdviceOnMarketEvent() recently adviced %ss ago, skip predicting on event: %s' % (secAgo, ev.desc))
                 return None
 
-        floatstate = self._marketState.exportKLFloats(symbol)
+        floatstate = self._marketState.exportF1548(symbol)
         if all(v == 0.0 for v in floatstate):
             self.debug('generateAdviceOnMarketEvent() rack of marketState on %s' % ev.desc)
             return None # skip advising pirior to plenty state data

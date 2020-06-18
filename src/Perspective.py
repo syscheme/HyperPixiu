@@ -25,8 +25,8 @@ DEFAULT_KLDEPTH_1day = 260
 
 EXPORT_SIGNATURE= '%dT%dM%dF%dD.%s:200109T17' % (DEFAULT_KLDEPTH_TICK, DEFAULT_KLDEPTH_1min, DEFAULT_KLDEPTH_5min, DEFAULT_KLDEPTH_1day, NORMALIZE_ID)
 
-DEFAULT_MFDEPTH_1min = 240
-DEFAULT_MFDEPTH_1day = 120
+DEFAULT_MFDEPTH_1min = 240 # a 4-hr day
+DEFAULT_MFDEPTH_1day = 120 # about half a year
 
 ########################################################################
 class EvictableStack(object):
@@ -111,14 +111,16 @@ class Perspective(MarketData):
     3. 5min KLines
     4. 1day KLines
     '''
-    EVENT_SEQ =  [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]
+    EVENT_SEQ_KLTICK =  [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]
+    EVENT_SEQ_MF = [EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY]
+
     TICKPRICES_TO_EXP = 'price,open,high,low,b1P,b2P,b3P,b4P,b5P,a1P,a2P,a3P,a4P,a5P'
     TICKVOLS_TO_EXP   = 'volume,b1V,b2V,b3V,b4V,b5V,a1V,a2V,a3V,a4V,a5V'
     KLPRICES_TO_EXP = 'open,high,low,close'
     KLVOLS_TO_EXP = 'volume'
 
     #----------------------------------------------------------------------
-    def __init__(self, exchange, symbol=None, KLDepth_1min=DEFAULT_KLDEPTH_1min, KLDepth_5min=DEFAULT_KLDEPTH_5min, KLDepth_1day=DEFAULT_KLDEPTH_1day, tickDepth=DEFAULT_KLDEPTH_TICK) :
+    def __init__(self, exchange, symbol=None, KLDepth_1min=DEFAULT_KLDEPTH_1min, KLDepth_5min=DEFAULT_KLDEPTH_5min, KLDepth_1day=DEFAULT_KLDEPTH_1day, tickDepth=DEFAULT_KLDEPTH_TICK, MFDepth_1min=DEFAULT_MFDEPTH_1min, MFDepth_1day =DEFAULT_MFDEPTH_1day, **kwargs) :
         '''Constructor'''
         super(Perspective, self).__init__(exchange, symbol)
 
@@ -127,26 +129,31 @@ class Perspective(MarketData):
             EVENT_KLINE_1MIN: EvictableStack(KLDepth_1min, KLineData(self.exchange, self.symbol)),
             EVENT_KLINE_5MIN: EvictableStack(KLDepth_5min, KLineData(self.exchange, self.symbol)),
             EVENT_KLINE_1DAY: EvictableStack(KLDepth_1day, KLineData(self.exchange, self.symbol)),
+
+            EVENT_MONEYFLOW_1MIN: EvictableStack(MFDepth_1min, MoneyflowData(self.exchange, self.symbol)),
+            EVENT_MONEYFLOW_1DAY: EvictableStack(MFDepth_1day, MoneyflowData(self.exchange, self.symbol)),
         }
 
-        #TODO: evsPerDay temporarily is base on AShare's 4hr/day
-        self._evsPerDay = {
+        self._stampLast  = None # refered by children
+        self.__focusLast = None
+        self.__dayOHLC = None
+        # TODO: evsPerDay temporarily is base on AShare's 4hr/day
+        self.__evsPerDay = {
             EVENT_TICK:       3600/2 *4, # assuming every other seconds
             EVENT_KLINE_1MIN: 60*4,
             EVENT_KLINE_5MIN: 12*4,
             EVENT_KLINE_1DAY: 1,
         }
 
-        self.__stampLast = None
-        self.__focusLast = None
-        self.__dayOHLC = None
-
     @property
     def desc(self) :
         str = '%s>%s ' % (self.focus[len(MARKETDATE_EVENT_PREFIX):], self.getAsOf(self.focus).strftime('%Y-%m-%dT%H:%M:%S'))
-        for i in Perspective.EVENT_SEQ :
+        for i in self.eventTypes :
             str += '%sX%d/%d,' % (i[len(MARKETDATE_EVENT_PREFIX):], self._stacks[i].size, self._stacks[i].evictSize)
         return str
+
+    @property
+    def eventTypes(self) : return list(self._stacks.keys())
 
     @property
     def asof(self) : return self.getAsOf(None)
@@ -157,19 +164,7 @@ class Perspective(MarketData):
             if stack.size>0:
                 return stack.top.asof
     
-        return self.__stampLast if self.__stampLast else DT_EPOCH
-    # def getAsOf(self, evType=None) :
-    #     ret = DT_EPOCH
-    #     if evType and evType in self._stacks.keys() :
-    #         stack = self._stacks[evType]
-    #         if stack.size>0:
-    #             return stack.top.asof
-
-    #     for s,stack in self._stacks.items() :
-    #         if stack.size>0 and stack.top.asof > ret:
-    #             ret = stack.top.asof
-
-    #     return ret
+        return self._stampLast if self._stampLast else DT_EPOCH
 
     def stampUpdatedOf(self, evType=None) :
         if not evType or not evType in self._stacks.keys():
@@ -207,14 +202,14 @@ class Perspective(MarketData):
         # if stk and stk.size >0:
         #     ret = stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
         # else:
-        #     for et in Perspective.EVENT_SEQ:
+        #     for et in self.eventTypes:
         #         stk = self._stacks[et]
         #         if not stk or stk.size <=0:
         #             continue
         #         ret = stk.top.price if EVENT_TICK == self.__focusLast else stk.top.close
 
         seq = [self.__focusLast]  if self.__focusLast else []
-        seq += Perspective.EVENT_SEQ
+        seq += self.eventTypes
         latestAsOf = None
         for et in seq:
             stk = self._stacks[et]
@@ -276,28 +271,30 @@ class Perspective(MarketData):
         if not ev :
             return None
 
-        if self.__dayOHLC and self.__dayOHLC.asof < self.asof.replace(hour=0,minute=0,second=0,microsecond=0) :
-            self.__dayOHLC = None
+        # special dealing about TICK and KLine
+        if ev.type in Perspective.EVENT_SEQ_KLTICK:
+            if self.__dayOHLC and self.__dayOHLC.asof < self.asof.replace(hour=0,minute=0,second=0,microsecond=0) :
+                self.__dayOHLC = None
 
-        evd = ev.data
-        if not self.__dayOHLC :
-            self.__dayOHLC = evd
-            return ev
+            evd = ev.data
+            if not self.__dayOHLC :
+                self.__dayOHLC = evd
+                return ev
 
-        if evd.asof > self.__dayOHLC.asof:
-            if isinstance(evd, KLineData):
-                self.__dayOHLC.close = float(evd.close)
-                self.__dayOHLC.high = max(self.__dayOHLC.high, self.__dayOHLC.close)
-                self.__dayOHLC.low  = min(self.__dayOHLC.low, self.__dayOHLC.close)
-                # self.__dayOHLC.volume =0 # NOT GOOD when built up from 1min+5min: += int(evd.volume)                
-                self.__dayOHLC.openInterest = float(evd.openInterest)
-                self.__dayOHLC.datetime = evd.asof
-            elif isinstance(evd, TickData):
-                self.__dayOHLC.close = float(evd.price)
-                self.__dayOHLC.high = max(self.__dayOHLC.high, self.__dayOHLC.close)
-                self.__dayOHLC.low = min(self.__dayOHLC.low, self.__dayOHLC.close)
-                self.__dayOHLC.datetime = evd.datetime  
-                self.__dayOHLC.openInterest = evd.openInterest
+            if evd.asof > self.__dayOHLC.asof:
+                if isinstance(evd, KLineData):
+                    self.__dayOHLC.close = float(evd.close)
+                    self.__dayOHLC.high = max(self.__dayOHLC.high, self.__dayOHLC.close)
+                    self.__dayOHLC.low  = min(self.__dayOHLC.low, self.__dayOHLC.close)
+                    # self.__dayOHLC.volume =0 # NOT GOOD when built up from 1min+5min: += int(evd.volume)                
+                    self.__dayOHLC.openInterest = float(evd.openInterest)
+                    self.__dayOHLC.datetime = evd.asof
+                elif isinstance(evd, TickData):
+                    self.__dayOHLC.close = float(evd.price)
+                    self.__dayOHLC.high = max(self.__dayOHLC.high, self.__dayOHLC.close)
+                    self.__dayOHLC.low = min(self.__dayOHLC.low, self.__dayOHLC.close)
+                    self.__dayOHLC.datetime = evd.datetime  
+                    self.__dayOHLC.openInterest = evd.openInterest
 
         return ev
 
@@ -308,8 +305,8 @@ class Perspective(MarketData):
         if not ev or not ev.type in self._stacks.keys():
             return None
 
-        if not self.__stampLast or self.__stampLast < ev.data.datetime :
-            self.__stampLast = ev.data.datetime
+        if not self._stampLast or self._stampLast < ev.data.datetime :
+            self._stampLast = ev.data.datetime
 
         latestevd = self._stacks[ev.type].top
         if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
@@ -317,13 +314,16 @@ class Perspective(MarketData):
             if self._stacks[ev.type].size >0:
                 self.__focusLast = ev.type
             return ev
-        
-        if not ev.data.exchange or (latestevd.exchange and not ('_k2x' in latestevd.exchange or '_t2k' in latestevd.exchange)) :
+
+        overwritable = not latestevd.exchange or ('_k2x' in latestevd.exchange or '_t2k' in latestevd.exchange)
+        if not ev.data.exchange or overwritable or \
+            ('_k2x' in ev.data.exchange or '_t2k' in ev.data.exchange) :
             return None # not overwritable
 
         for i in range(self._stacks[ev.type].size) :
             if ev.data.datetime > self._stacks[ev.type][i].datetime :
                 continue
+
             if ev.data.datetime == self._stacks[ev.type][i].datetime :
                 self._stacks[ev.type][i] = ev.data
             else :
@@ -343,10 +343,10 @@ class Perspective(MarketData):
     KLINE_FLOATS=5
 
     @property
-    def NNFloatsSize(self):
+    def fullFloatSize(self):
         # klsize = sum([self._stacks[et].evictSize for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] ])
         # return Perspective.TICK_FLOATS *self._stacks[EVENT_TICK].evictSize + Perspective.KLINE_FLOATS *klsize
-        itemsize = sum([self._stacks[et].evictSize for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] ]) + self._stacks[EVENT_TICK].evictSize
+        itemsize = sum([self._stacks[et].evictSize for et in self.eventTypes])
         return (itemsize +1) * EXPORT_FLOATS_DIMS
 
     @property
@@ -354,7 +354,7 @@ class Perspective(MarketData):
         '''@return an array_like data as toNNFloats, maybe [] or numpy.array
         '''
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
-            return [0.0] * self.NNFloatsSize # toNNFloats not available
+            return [0.0] * self.fullFloatSize # toNNFloats not available
         
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
         return self.__exportS1548I4(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume)
@@ -364,7 +364,7 @@ class Perspective(MarketData):
         '''
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
             return None # toNNFloats not available
-        
+
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
         baseline_Price, baseline_Volume =klbaseline.close, klbaseline.volume
 
@@ -385,11 +385,14 @@ class Perspective(MarketData):
                 result += fAsOf # datetime as the first item
                 continue
 
-            if not k in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]:
+            if not k in self.eventTypes :
                 raise ValueError('Perspective.floatsD4() unknown etype[%s]' %k )
 
             stk = self._stacks[k]
-            bV= (baseline_Volume / self._evsPerDay[k])
+            bV = baseline_Volume
+            if k in self.__evsPerDay.keys():
+               bV /= self.__evsPerDay[k]
+
             for i in range(int(v)):
                 if i >= stk.size:
                     result += [0.0] * EXPORT_FLOATS_DIMS
@@ -408,13 +411,13 @@ class Perspective(MarketData):
     @property
     def TickFloats(self) :
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
-            return [0.0] * self.NNFloatsSize # toNNFloats not available
+            return [0.0] * self.fullFloatSize # toNNFloats not available
         
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
 
         result = []
         stk = self._stacks[EVENT_TICK]
-        bV= (klbaseline.volume / self._evsPerDay[EVENT_TICK])
+        bV= (klbaseline.volume / self.__evsPerDay[EVENT_TICK])
         for i in range(stk.evictSize):
             if i >= stk.size:
                 result += [0.0] * EXPORT_FLOATS_DIMS
@@ -441,16 +444,9 @@ class Perspective(MarketData):
         result = fAsOf # datetime as the first item
         c =1
 
-        # self._evsPerDay = {
-        #     EVENT_TICK:       3600/2 *4, # assuming every other seconds
-        #     EVENT_KLINE_1MIN: 60*4,
-        #     EVENT_KLINE_5MIN: 12*4,
-        #     EVENT_KLINE_1DAY: 1,
-        # }
-
         for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]:
             stk = self._stacks[et]
-            bV= (baseline_Volume / self._evsPerDay[et])
+            bV= (baseline_Volume / self.__evsPerDay[et])
             for i in range(stk.evictSize):
                 if i >= stk.size:
                     result += [0.0] * EXPORT_FLOATS_DIMS
@@ -466,102 +462,6 @@ class Perspective(MarketData):
         for f in fields:
             fdata.append(float(mdata.__dict__[f]))
         return fdata
-
-########################################################################
-class MoneyflowPerspective(MarketData):
-    '''
-    Data structure of Perspective:
-    1. 1min moneyflow
-    4. 1day moneyflow
-    '''
-    EVENT_SEQ = [EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY]
-
-    #----------------------------------------------------------------------
-    def __init__(self, exchange, symbol=None, MFDepth_1min=DEFAULT_MFDEPTH_1min, MFDepth_1day =DEFAULT_MFDEPTH_1day) :
-        '''Constructor'''
-        super(MoneyflowPerspective, self).__init__(exchange, symbol)
-
-        self._stacks = {
-            EVENT_MONEYFLOW_1MIN: EvictableStack(MFDepth_1min, MoneyflowData(self.exchange, self.symbol)),
-            EVENT_MONEYFLOW_1DAY: EvictableStack(MFDepth_1day, MoneyflowData(self.exchange, self.symbol)),
-        }
-
-        self.__stampLast = None
-        self.__focusLast = None
-
-    @property
-    def desc(self) :
-        str = '%s>%s ' % (self.focus[len(MARKETDATE_EVENT_PREFIX):], self.getAsOf(self.focus).strftime('%Y-%m-%dT%H:%M:%S'))
-        for i in MoneyflowPerspective.EVENT_SEQ :
-            str += '%sX%d/%d,' % (i[len(MARKETDATE_EVENT_PREFIX):], self._stacks[i].size, self._stacks[i].evictSize)
-        return str
-
-    @property
-    def asof(self) : return self.getAsOf(None)
-    def getAsOf(self, evType=None) :
-        if evType and evType in self._stacks.keys() :
-            stack = self._stacks[evType]
-            if stack.size>0:
-                return stack.top.asof
-    
-        return self.__stampLast if self.__stampLast else DT_EPOCH
-
-    def sizesOf(self, evType=None) :
-        if not evType or len(evType) <=0:
-            size =0
-            esize =0
-            for k in self._stacks.keys():
-                size += self._stacks[k].size
-                esize += self._stacks[k].evcitSize
-            return size, esize
-
-        if evType in self._stacks.keys():
-            return self._stacks[evType].size, self._stacks[evType].evictSize
-        return 0, 0
-
-    @property
-    def focus(self) :
-        return self.__focusLast if self.__focusLast else ''
-
-    @property
-    def NNFloatsSize(self):
-        itemsize = sum([self._stacks[et].evictSize for et in EVENT_SEQ])
-        return (itemsize +1) * EXPORT_FLOATS_DIMS
-
-    def push(self, ev) :
-        '''
-        @return the ev that has been successully pushed into the proper stack, otherwise None
-        '''
-        if not ev or not ev.type in self._stacks.keys():
-            return None
-
-        if not self.__stampLast or self.__stampLast < ev.data.datetime :
-            self.__stampLast = ev.data.datetime
-
-        latestevd = self._stacks[ev.type].top
-        if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
-            self._stacks[ev.type].push(ev.data)
-            if self._stacks[ev.type].size >0:
-                self.__focusLast = ev.type
-            return ev
-        
-        for i in range(self._stacks[ev.type].size) :
-            if ev.data.datetime > self._stacks[ev.type][i].datetime :
-                continue
-            if ev.data.datetime == self._stacks[ev.type][i].datetime :
-                self._stacks[ev.type][i] = ev.data
-            else :
-                self._stacks[ev.type].insert(i, ev.data)
-            return ev
-        
-        self._stacks[ev.type].insert(-1, ev.data)
-        while self._stacks[ev.type].evictSize >=0 and self._stacks[ev.type].size > self._stacks[ev.type].evictSize:
-            del(self._stacks[ev.type]._data[-1])
-
-        if self._stacks[ev.type].size >0:
-            self.__focusLast = ev.type
-
-        return ev
 
 ########################################################################
 class PerspectiveGenerator(Iterable):
@@ -587,7 +487,7 @@ class PerspectiveGenerator(Iterable):
         """For this generator, we want to rewind only when the end of the data is reached.
         """
         succ =False
-        for et in Perspective.EVENT_SEQ:
+        for et in self._perspective.eventTypes:
             if not self._readers[et] :
                 continue
             if self._readers[et].resetRead() :
@@ -599,7 +499,7 @@ class PerspectiveGenerator(Iterable):
         '''
         @return next item, mostlikely expect one of Event()
         '''
-        for et in Perspective.EVENT_SEQ:
+        for et in self._perspective.eventTypes:
             if not self._readers[et] :
                 continue
             ev = next(self._readers[et])
@@ -624,7 +524,7 @@ class PerspectiveState(MarketState):
         """Constructor"""
         super(PerspectiveState, self).__init__(exchange)
         self.__dictPerspective ={} # dict of symbol to Perspective
-        self.__dictMoneyflow ={} # dict of symbol to MoneyflowPerspective
+        # self.__dictMoneyflow ={} # dict of symbol to MoneyflowPerspective
 
     # -- impl of MarketState --------------------------------------------------------------
     def listOberserves(self) :
@@ -649,6 +549,7 @@ class PerspectiveState(MarketState):
         ''' 
         @return the datetime as of latest observing
         '''
+        if len(self.__dictPerspective) <=0: return DT_EPOCH
         if symbol and symbol in self.__dictPerspective.keys():
             psp = self.__dictPerspective[symbol]
             if psp:
@@ -656,38 +557,14 @@ class PerspectiveState(MarketState):
                     return psp.getAsOf(evType)
                 return psp.asof
 
-        ret = None
-        for s, p in self.__dictPerspective.items() :
-            if not ret or ret < p.asof:
-                ret = p.asof
-        return ret if ret else DT_EPOCH
+        return max([pofs.asof for pofs in self.__dictPerspective.values()])
 
     def stampUpdatedOf(self, symbol=None, evType=None) :
-        dict = {}
-        if evType in Perspective.EVENT_SEQ:
-            dict = self.__dictPerspective
-        elif evType in MoneyflowPerspective.EVENT_SEQ:
-            dict = self.__dictMoneyflow
-        
+        if len(self.__dictPerspective) <=0: return DT_EPOCH
         if symbol and symbol in dict:
-            return dict[symbol].stampUpdatedOf(evType)
+            return self.__dictPerspective[symbol].stampUpdatedOf(evType)
 
-        ret = None
-        for s, p in dict.items() :
-            if not ret or ret > p.asof:
-                ret = p.asof
-                
-        return ret if ret else DT_EPOCH
-
-    def moneyflowAsOf(self, symbol=None, evType =None) :
-        if symbol and symbol in self.__dictMoneyflow.keys():
-            psp = self.__dictMoneyflow[symbol]
-            if psp:
-                if evType and evType in psp._stacks.keys():
-                    return psp.getAsOf(evType)
-                return psp.asof
-
-        return DT_EPOCH
+        return max([pofs.asof for pofs in self.__dictPerspective.values()])
 
     def sizesOf(self, symbol, evType =None) :
         ''' 
@@ -706,16 +583,13 @@ class PerspectiveState(MarketState):
         @return the desc of specified symbol
         '''
         strDesc=''
-        if symbol :
-            if symbol in self.__dictPerspective.keys():
-                strDesc += self.__dictPerspective[symbol].desc
-            if symbol in self.__dictMoneyflow.keys():
-                strDesc += self.__dictMoneyflow[symbol].desc
+        if symbol and symbol in self.__dictPerspective.keys():
+            strDesc += self.__dictPerspective[symbol].desc
             return strDesc
         
-        strDesc=''
         for s, v in self.__dictPerspective.items() :
             strDesc += '%s{%s};' %(s, v.desc)
+
         return strDesc
         
     def dailyOHLC_sofar(self, symbol) :
@@ -738,27 +612,30 @@ class PerspectiveState(MarketState):
 
         ret = None
         s = ev.data.symbol
-        if ev.type in Perspective.EVENT_SEQ :
-            if not s in self.__dictPerspective.keys() :
-                self.__dictPerspective[s] = Perspective(self.exchange, s)
-            self.__dictPerspective[s].push(ev)
+        # if ev.type in Perspective.EVENT_SEQ_KLTICK :
+        #     if not s in self.__dictPerspective.keys() :
+        #         self.__dictPerspective[s] = Perspective(self.exchange, s)
+        #     self.__dictPerspective[s].push(ev)
 
-        if ev.type in MoneyflowPerspective.EVENT_SEQ :
-            if not s in self.__dictMoneyflow.keys() :
-                self.__dictMoneyflow[s] = MoneyflowPerspective(self.exchange, s)
-            self.__dictMoneyflow[s].push(ev)
+        # if ev.type in MoneyflowPerspective.EVENT_SEQ_KLTICK :
+        #     if not s in self.__dictMoneyflow.keys() :
+        #         self.__dictMoneyflow[s] = MoneyflowPerspective(self.exchange, s)
+        #     self.__dictMoneyflow[s].push(ev)
+        if not s in self.__dictPerspective.keys() :
+            self.__dictPerspective[s] = Perspective(self.exchange, s)
+        self.__dictPerspective[s].push(ev)
 
-    __dummy = None
-    def exportKLFloats(self, symbol=None) :
-        '''@return an array_like data as toNNFloats, maybe [] or numpy.array
-        '''
-        if symbol and symbol in self.__dictPerspective.keys():
-            return self.__dictPerspective[symbol]._S1548I4
+    # __dummy = None
+    # def exportF1548(self, symbol=None) :
+    #     '''@return an array_like data as toNNFloats, maybe [] or numpy.array
+    #     '''
+    #     if symbol and symbol in self.__dictPerspective.keys():
+    #         return self.__dictPerspective[symbol]._S1548I4
 
-        if not PerspectiveState.__dummy:
-            PerspectiveState.__dummy = Perspective(self.exchange, 'Dummy')
+    #     if not PerspectiveState.__dummy:
+    #         PerspectiveState.__dummy = Perspective(self.exchange, 'Dummy')
 
-        return [0.0] * PerspectiveState.__dummy.NNFloatsSize
+    #     return [0.0] * PerspectiveState.__dummy.fullFloatSize
 
     def exportFloatsD4(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
         '''

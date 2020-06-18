@@ -242,7 +242,7 @@ class TestHistoryData(unittest.TestCase):
             nnfloats[0] = datetime2float(marketstate.getAsOf(s))
             price, asofP = marketstate.latestPrice(s)
             nnfloats[1] = price
-            nnfloats += marketstate.exportKLFloats(s)
+            nnfloats += marketstate.exportF1548(s)
 
             if 0 == c %chunk_size:
                 X.resize(X.shape[0]+chunk_size, axis=0)

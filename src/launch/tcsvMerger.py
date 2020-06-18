@@ -1,5 +1,6 @@
 import HistoryData as hist
 from MarketData import *
+from Perspective import PerspectiveState
 from EventData   import datetime2float
 from Application import *
 from TradeAdvisor import EVENT_ADVICE, DictToAdvice
@@ -20,6 +21,7 @@ class SinaMerger(BaseApplication) :
 
         self.__mux = hist.PlaybackMux(program=program)
         self.__delayedQuit =100
+        self.__marketState = PerspectiveState(exchange="AShare")
 
     def doAppInit(self): # return True if succ
         if not super(SinaMerger, self).doAppInit() :
@@ -91,8 +93,9 @@ class SinaMerger(BaseApplication) :
 
         try :
             ev = next(self.__mux)
-            if ev: self._recorder.pushRow(ev.type, ev.data)
             self.debug('filtered ev: %s' % ev.desc)
+            self.__marketState.updateByEvent(ev)
+            if ev: self._recorder.pushRow(ev.type, ev.data)
         except StopIteration:
             self.__delayedQuit -=1
         

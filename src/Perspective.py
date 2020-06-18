@@ -610,7 +610,6 @@ class PerspectiveState(MarketState):
             self.__dictPerspective[ev.data.symbol] = ev.data
             return None
 
-        ret = None
         s = ev.data.symbol
         # if ev.type in Perspective.EVENT_SEQ_KLTICK :
         #     if not s in self.__dictPerspective.keys() :
@@ -623,7 +622,8 @@ class PerspectiveState(MarketState):
         #     self.__dictMoneyflow[s].push(ev)
         if not s in self.__dictPerspective.keys() :
             self.__dictPerspective[s] = Perspective(self.exchange, s)
-        self.__dictPerspective[s].push(ev)
+        
+        return self.__dictPerspective[s].push(ev)
 
     # __dummy = None
     # def exportF1548(self, symbol=None) :

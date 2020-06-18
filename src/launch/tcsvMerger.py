@@ -94,8 +94,9 @@ class SinaMerger(BaseApplication) :
         try :
             ev = next(self.__mux)
             self.debug('filtered ev: %s' % ev.desc)
-            self.__marketState.updateByEvent(ev)
-            if ev: self._recorder.pushRow(ev.type, ev.data)
+            ev = self.__marketState.updateByEvent(ev)
+            if ev: 
+                self._recorder.pushRow(ev.type, ev.data)
         except StopIteration:
             self.__delayedQuit -=1
         

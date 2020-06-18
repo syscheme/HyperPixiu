@@ -118,7 +118,24 @@ if __name__ == '__main__':
 
     merger = thePROG.createApp(SinaMerger, recorder =rec, fnSearch = fnSearch, symbolLookFor='SZ002008')
 
+    '''
+    acc = thePROG.createApp(Account_AShare, configNode ='account', ratePer10K =30)
+    tdrCore = thePROG.createApp(BaseTrader, configNode ='trader', objectives=objectives, account=acc)
+    objectives = tdrCore.objectives
+    SYMBOL = objectives[0]
+
+    TEST_f4schema = {
+            'asof':1, 
+            EVENT_KLINE_5MIN     : 2,
+            EVENT_MONEYFLOW_1MIN : 10,
+    }
+
+    tdrWraper = thePROG.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=histReader, f4schema=TEST_f4schema)
+    '''
+
     thePROG.start()
     thePROG.setLogLevel('debug')
     thePROG.loop()
     thePROG.stop()
+
+

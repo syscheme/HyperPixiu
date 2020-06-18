@@ -2294,7 +2294,7 @@ class ShortSwingScanner(OfflineSimulator):
     '''
     DAILIZED_GAIN_PCTS      = [-5.0, -3.0, -1.0, 1.0, 3.0, 5.0] # should be up to the stat data
 
-    def __init__(self, program, trader, histdata, **kwargs):
+    def __init__(self, program, trader, histdata, f4schema=None, **kwargs):
         '''Constructor
         '''
         super(ShortSwingScanner, self).__init__(program, trader, histdata, **kwargs)
@@ -2303,11 +2303,12 @@ class ShortSwingScanner(OfflineSimulator):
         self._daysShort     = self.getConfig('constraints/shortFuture', 2) # short-term prospect, default 2days
         self._byEvent       = self.getConfig('constraints/byEvent',   EVENT_KLINE_5MIN)
         self._h5compression = self.getConfig('h5compression', 'lzf').lower()
+        self._h5compression = self.getConfig('h5compression', 'lzf').lower()
 
-        self._f4schema = {
+        self._f4schema = f4schema if isinstance(f4schema,dict) else { # the default schema is based on KL only
             'asof':1, 
-            EVENT_KLINE_5MIN : 50,
-            EVENT_KLINE_1DAY : 150,
+            EVENT_KLINE_5MIN     : 50,
+            EVENT_KLINE_1DAY     : 150,
         }
 
         if not self._byEvent or MARKETDATE_EVENT_PREFIX != self._byEvent[:len(MARKETDATE_EVENT_PREFIX)] :

@@ -633,13 +633,18 @@ class MarketState(MetaObj):
         })
 
         ret = self.exportFloatsD4(symbol, d4wished=F4SECHMA_1548)
-        return ret if ret else [0.0] * 1548
+        if not ret: return [0.0] * 1548
+
+        if isinstance(ret, list) and 1548 ==len(ret):
+            return ret
+
+        raise ValueError('exportFloatsD4() unexpected ret')
 
     @abstractmethod
-    def exportFloatsD4(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+    def exportFloatsD4(self, symbol, d4wished= OrderedDict({ 'asof':1, EVENT_KLINE_1DAY:20 }) ) :
         '''
-        @param d4wished to specify number of most recent 4-float of the event category to export
-        @return an array_like data as toNNFloats
+        @param d4wished OrderedDict to specify number of most recent 4-float of the event category to export
+        @return an array_like floats
         '''
         raise NotImplementedError
 

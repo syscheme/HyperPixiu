@@ -134,9 +134,9 @@ class Perspective(MarketData):
             EVENT_MONEYFLOW_1DAY: EvictableStack(MFDepth_1day, MoneyflowData(self.exchange, self.symbol)),
         }
 
-        self._stampLast  = None # refered by children
+        self.__stampLast  = None
         self.__focusLast = None
-        self.__dayOHLC = None
+        self.__dayOHLC   = None
         # TODO: evsPerDay temporarily is base on AShare's 4hr/day
         self.__evsPerDay = {
             EVENT_TICK:       3600/2 *4, # assuming every other seconds
@@ -164,7 +164,7 @@ class Perspective(MarketData):
             if stack.size>0:
                 return stack.top.asof
     
-        return self._stampLast if self._stampLast else DT_EPOCH
+        return self.__stampLast if self.__stampLast else DT_EPOCH
 
     def stampUpdatedOf(self, evType=None) :
         if not evType or not evType in self._stacks.keys():
@@ -305,8 +305,8 @@ class Perspective(MarketData):
         if not ev or not ev.type in self._stacks.keys():
             return None
 
-        if not self._stampLast or self._stampLast < ev.data.datetime :
-            self._stampLast = ev.data.datetime
+        if not self.__stampLast or self.__stampLast < ev.data.datetime :
+            self.__stampLast = ev.data.datetime
 
         latestevd = self._stacks[ev.type].top
         if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
@@ -316,8 +316,17 @@ class Perspective(MarketData):
             return ev
 
         overwritable = not latestevd.exchange or ('_k2x' in latestevd.exchange or '_t2k' in latestevd.exchange)
-        if not ev.data.exchange or overwritable or \
-            ('_k2x' in ev.data.exchange or '_t2k' in ev.data.exchange) :
+        if latestevd.exchange and (not ev.data.exchange or len(ev.data.exchange) <=0) :
+            overwritable = False
+
+        if EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] and ev.data.datetime == latestevd.datetime and ev.data.volume > latestevd.data.volume :
+            # SINA KL-data was found has such a bug as below: the later polls got bigger volume, so treat the later larger volume as correct data
+            # evmdKL5m,SH510050,AShare,2020-06-19,13:30:00,2.914,2.915,2.914,2.915,570200.0
+            # evmdKL5m,SH510050,AShare,2020-06-19,13:30:00,2.914,2.918,2.914,2.918,4575100.0
+            # evmdKL5m,SH510050,AShare,2020-06-19,13:30:00,2.914,2.918,2.914,2.918,4575100.0
+            overwritable = True
+
+        if not overwritable:
             return None # not overwritable
 
         for i in range(self._stacks[ev.type].size) :

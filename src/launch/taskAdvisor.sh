@@ -22,13 +22,15 @@ cp -vf ${CONF} ${OUTDIR}/
 
 # make a copy here instead of moving because the files might be locked in the srcdir
 cp -rvf ${OUTDIR} ${OUTDIR}.BAK${STAMP}
-rm -rf ${OUTDIR}.BAK${STAMP}/{*.ss,*.ss.*} # unneccessary to archive Advisors/Crawlers' safestores
+rm -rf ${OUTDIR}.BAK${STAMP}/{*.ss,*.ss.*,*.lock} # unneccessary to archive Advisors/Crawlers' safestores
+ls -l ${OUTDIR}.BAK${STAMP}/*
 
 # prepare ${OUTDIR}
 mkdir -p ${OUTDIR}
 rm -rf ${OUTDIR}/{*.lock,*.tcsv*,*.log*}
 
-nice -n 15 bash -c "tar cfvj ${OUTDIR}.BAK${STAMP}.tar.bz2 ${OUTDIR}.BAK${STAMP} ; rm -rf ${OUTDIR}.BAK${STAMP}" &
+nice -n 15 tar cfvj ${OUTDIR}.BAK${STAMP}.tar.bz2 ${OUTDIR}.BAK${STAMP} &
+#  ; rm -rf ${OUTDIR}.BAK${STAMP}" &
 
 OBJ_LIST="["
 for s in ${SECU_LIST}; do

@@ -740,7 +740,11 @@ class OfflineSimulator(BackTestApp):
         except :
             pass
 
-        for fn in listAllFiles(self.wkTrader._outDir) :
+        files = [os.path.realpath(f) for f in listAllFiles(self.wkTrader._outDir)]
+        files = list(set(files))
+        files.sort()
+
+        for fn in files :
             if '/model.' in fn:
                 os.system('cp -f %s %s' % (fn, tmpdir))
 

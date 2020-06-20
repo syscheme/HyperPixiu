@@ -29,16 +29,21 @@ import bz2
 
 EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
 
-def listAllFiles(folder, depth=5):
+def listAllFiles(folder, depthAllowed=5):
     ret =[]
-    if depth <=0:
+    if depthAllowed <=0:
         return ret
 
-    for _, subdirs, files in os.walk(folder, topdown=False):
+    for root, subdirs, files in os.walk(folder, topdown=False):
         for name in files:
-            ret.append(os.path.join(folder, name))
+            ret.append(os.path.join(root, name))
         for name in subdirs:
-            ret += listAllFiles(os.path.join(folder, name), depth -1)
+            ret += listAllFiles(os.path.join(root, name), depthAllowed -1)
+
+    #return the unique realpaths
+    ret = [os.path.realpath(f) for f in ret]
+    ret = list(set(ret))
+    ret.sort()
     return ret
 
 ########################################################################
@@ -575,7 +580,10 @@ class CsvPlayback(Playback):
         self.debug('search dir %s for csv files' % self._folder)
         prev = ""
         files = listAllFiles(self._folder)
+        files = [os.path.realpath(fn) for fn in files]
+        files = list(set(files))
         files.sort()
+
         for fn in files:
             try :
                 os.stat(fn)

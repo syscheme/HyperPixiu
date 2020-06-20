@@ -1,8 +1,8 @@
 #!/bin/bash
-
+CMD=${0##*/}
 SRC_DIR=$(realpath `dirname $0`)
 
-SYMBOLLIST=$(bzcat ${SRC_DIR}/symbols.txt.bz2)
+SYMBOLLIST=$(bzcat ${SRC_DIR}/symbols.txt.bz2|grep -o '^[Ss].[0-9]*' | tr '[:lower:]' '[:upper:]')
 # SYMBOLLIST="SZ002881 SH600996 SZ002230"
 DATE=$(date +%Y%m%d)
 TARGETDIR="$(realpath ~/hpdata)"
@@ -28,6 +28,26 @@ downloadMF1m()
     fi
     
     echo "failed to download MF1m of ${SYMBOL}, resp ${RET}"
+    rm -f ${FN}
+}
+
+downloadMF1d()
+{
+    SYMBOL=$1
+    FN=$2
+
+    if [ -e ${FN} ]; then
+            grep -o netamount ${FN} >/dev/null && echo "MF1m of ${SYMBOL} has already been downloaded" && return
+    fi
+
+    echo "fetching MF1m of ${SYMBOL} to ${FN}"
+    RET=$(wget --user-agent="${UA}" "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?daima=${SYMBOL}" -O ${FN} 2>&1|grep -o 'awaiting response.*'| grep -o '[0-9]*')
+    if [ "200" == "${RET}" ]; then
+        echo "downloaded MF1m of ${SYMBOL} as ${FN}, resp ${RET}"
+        return
+    fi
+    
+    echo "failed to download MF1d of ${SYMBOL}, resp ${RET}"
     rm -f ${FN}
 }
 
@@ -106,7 +126,43 @@ downloadList()
     fi
 }
 
+echo "$(date) $0 starts"
 cd /tmp
 
-downloadList downloadMF1m
-downloadList downloadKL5m
+case ${CMD} in
+	MF1m)
+        if [ "*" == "$1" ]; then
+            downloadList downloadMF1m
+        else
+            downloadMF1m $1 ${1}_${CMD}${DATE}.json
+        fi
+		;;
+
+	kl5m)
+        if [ "*" == "$1" ]; then
+            downloadList downloadKL5m
+        else
+            downloadKL5m $1 ${1}_${CMD}${DATE}.json
+        fi
+		;;
+
+	MF1d)
+        if [ "*" == "$1" ]; then
+            downloadList downloadMF1d
+        else
+            downloadMF1d $1 ${1}_${CMD}${DATE}.json
+        fi
+		;;
+
+	ls*)
+		list `echo "${CMD}" |cut -c3-`
+		echo -e "\n"
+		exit 0
+		;;
+    
+    *)
+        downloadList downloadMF1m
+        downloadList downloadKL5m
+		;;
+
+esac

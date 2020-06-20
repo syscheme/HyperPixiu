@@ -360,19 +360,19 @@ class Perspective(MarketData):
 
     @property
     def _S1548I4(self):
-        '''@return an array_like data as toNNFloats, maybe [] or numpy.array
+        '''@return an array_like data as toFloatD4, maybe [] or numpy.array
         '''
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
-            return [0.0] * self.fullFloatSize # toNNFloats not available
+            return [0.0] * self.fullFloatSize # toFloatD4 not available
         
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
         return self.__exportS1548I4(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume)
     
     def floatsD4(self, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
-        '''@return an array_like data as toNNFloats, maybe [] or numpy.array
+        '''@return an array_like data as toFloatD4, maybe [] or numpy.array
         '''
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
-            return None # toNNFloats not available
+            return None # toFloatD4 not available
 
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
         baseline_Price, baseline_Volume =klbaseline.close, klbaseline.volume
@@ -406,7 +406,7 @@ class Perspective(MarketData):
                 if i >= stk.size:
                     result += [0.0] * EXPORT_FLOATS_DIMS
                 else:
-                    fval = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= bV)
+                    fval = stk[i].toFloatD4(baseline_Price=baseline_Price, baseline_Volume= bV)
                     result += fval
 
         return result
@@ -420,7 +420,7 @@ class Perspective(MarketData):
     @property
     def TickFloats(self) :
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
-            return [0.0] * self.fullFloatSize # toNNFloats not available
+            return [0.0] * self.fullFloatSize # toFloatD4 not available
         
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
 
@@ -431,12 +431,12 @@ class Perspective(MarketData):
             if i >= stk.size:
                 result += [0.0] * EXPORT_FLOATS_DIMS
             else:
-                v = stk[i].toNNFloats(baseline_Price=klbaseline.close, baseline_Volume= bV)
+                v = stk[i].toFloatD4(baseline_Price=klbaseline.close, baseline_Volume= bV)
                 result += v
         return result
     
     def __exportS1548I4(self, baseline_Price=1.0, baseline_Volume =1.0) :
-        '''@return an array_like data as toNNFloats, maybe [] or numpy.array
+        '''@return an array_like data as toFloatD4, maybe [] or numpy.array
         '''
         if baseline_Price <0.01: baseline_Price=1.0
         if baseline_Volume <0.001: baseline_Volume=1.0
@@ -460,7 +460,7 @@ class Perspective(MarketData):
                 if i >= stk.size:
                     result += [0.0] * EXPORT_FLOATS_DIMS
                 else:
-                    v = stk[i].toNNFloats(baseline_Price=baseline_Price, baseline_Volume= bV)
+                    v = stk[i].toFloatD4(baseline_Price=baseline_Price, baseline_Volume= bV)
                     # Perspective.KLINE_FLOATS = len(v)
                     result += v
 
@@ -636,7 +636,7 @@ class PerspectiveState(MarketState):
 
     # __dummy = None
     # def exportF1548(self, symbol=None) :
-    #     '''@return an array_like data as toNNFloats, maybe [] or numpy.array
+    #     '''@return an array_like data as toFloatD4, maybe [] or numpy.array
     #     '''
     #     if symbol and symbol in self.__dictPerspective.keys():
     #         return self.__dictPerspective[symbol]._S1548I4
@@ -649,7 +649,7 @@ class PerspectiveState(MarketState):
     def exportFloatsD4(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
         '''
         @param d4wished to specify number of most recent 4-float of the event category to export
-        @return an array_like data as toNNFloats
+        @return an array_like data as toFloatD4
         '''
         if symbol and symbol in self.__dictPerspective.keys():
             return self.__dictPerspective[symbol].floatsD4(d4wished)

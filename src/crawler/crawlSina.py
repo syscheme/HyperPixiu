@@ -461,6 +461,11 @@ class SinaCrawler(MarketCrawler):
         if not jsonData:
             return httperr, klineseq
 
+        ''' sample response
+        [{day:"2019-09-23 14:15:00",open:"15.280",high:"15.290",low:"15.260",close:"15.270",volume:"892600",ma_price5:15.274,ma_volume5:1645033,ma_price10:15.272,ma_volume10:1524623,ma_price30:15.296,ma_volume30:2081080},
+         {day:"2019-09-23 14:20:00",open:"15.270",high:"15.280",low:"15.240",close:"15.240",volume:"1591705",ma_price5:15.266,ma_volume5:1676498,ma_price10:15.27,ma_volume10:1593887,ma_price30:15.292,ma_volume30:1955370},
+         ...]
+        '''
         for kl in jsonData :
             kldata = KLineData("AShare", symbol)
             kldata.open   = toFloatVal(kl['open'])             # OHLC
@@ -498,9 +503,6 @@ class SinaCrawler(MarketCrawler):
         if 200 != httperr:
             return httperr, text
 
-        # [{day:"2019-09-23 14:15:00",open:"15.280",high:"15.290",low:"15.260",close:"15.270",volume:"892600",ma_price5:15.274,ma_volume5:1645033,ma_price10:15.272,ma_volume10:1524623,ma_price30:15.296,ma_volume30:2081080},
-        # {day:"2019-09-23 14:20:00",open:"15.270",high:"15.280",low:"15.240",close:"15.240",volume:"1591705",ma_price5:15.266,ma_volume5:1676498,ma_price10:15.27,ma_volume10:1593887,ma_price30:15.292,ma_volume30:1955370},
-        # ...]
         # maximal return: scale=5->around 1mon, scale=15->around 1.5mon, scale=30->2mon, scale=60->3mon, scale=240->a bit longer than 1yr
         # js = response.json()
         # result = demjson.decode(response.text)
@@ -612,6 +614,21 @@ class SinaCrawler(MarketCrawler):
 
     #------------------------------------------------    
     def convertToMoneyFlow(symbol, text, byMinutes=False):
+        '''
+        will call cortResp.send(csvline) when the result comes
+        ({r0_in:"0.0000",r0_out:"0.0000",r0:"0.0000",r1_in:"3851639.0000",r1_out:"4794409.0000",r1:"9333936.0000",r2_in:"8667212.0000",r2_out:"10001938.0000",r2:"18924494.0000",r3_in:"7037186.0000",r3_out:"7239931.2400",r3:"15039741.2400",curr_capital:"9098",name:"朗科智能",trade:"24.4200",changeratio:"0.000819672",volume:"1783866.0000",turnover:"196.083",r0x_ratio:"0",netamount:"-2480241.2400"})
+
+        TICK:    http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_bkzj_fszs?daima=SH601988
+        1MIN!!:  http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?daima=SH601988
+                ["240",[{opendate:"2020-03-20",ticktime:"15:00:00",trade:"3.5000",changeratio:"0.0115607",inamount:"173952934.3200",outamount:"144059186.4000",netamount:"29893747.9200",ratioamount:"0.0839833",r0_ratio:"0.0767544",r3_ratio:"0.010566"},
+                ticktime时间15:00:00,trade价格3.50,涨跌幅+1.156%,inamount流入资金/万17395.29,outamount流出资金/万14405.92,净流入/万2989.37,netamount净流入率8.40%,r0_ratio主力流入率7.68%,r3_ratio散户流入率1.06%
+                {opendate:"2020-03-20",ticktime:"14:58:00",trade:"3.5200",changeratio:"0.017341",inamount:"173952934.3200",outamount:"144059186.4000",netamount:"29893747.9200",ratioamount:"0.093927",r0_ratio:"0.0858422",r3_ratio:"0.011817"},
+        DAILY: http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?daima=SH601988
+              [{opendate:"2020-03-20",trade:"3.5000",changeratio:"0.0115607",turnover:"4.84651",netamount:"29893747.9200",ratioamount:"0.0839833",r0_net:"27320619.5800",r0_ratio:"0.07675441",r0x_ratio:"81.4345",cnt_r0x_ratio:"1",cate_ra:"0.103445",cate_na:"1648659621.3400"},
+              trade收盘价3.50,changeratio涨跌幅+1.156%,turnover换手率0.0485%,netamount净流入/万2989.37,ratioamount净流入率8.40%,r0_net主力净流入/万2732.06,r0_ratio主力净流入率7.68%,r0x_ratio主力罗盘81.43°,cate_ra行业净流入率10.34%
+              {opendate:"2020-03-19",trade:"3.4600",changeratio:"-0.0114286",turnover:"5.71814",netamount:"-6206568.4600",ratioamount:"-0.0148799",r0_net:"-21194529.9100",r0_ratio:"-0.05081268",r0x_ratio:"-102.676",cnt_r0x_ratio:"-2",cate_ra:"-0.0122277",cate_na:"-253623190.4100"},
+        '''
+
         mfseq =[]
         if byMinutes:
             pbeg, pend = text.find('[{'), text.rfind('}]')
@@ -635,8 +652,9 @@ class SinaCrawler(MarketCrawler):
             mfdata = MoneyflowData("AShare", symbol)
             mfdata.price        = toFloatVal(mf['trade'])
             mfdata.netamount    = toFloatVal(mf['netamount'])
-            mfdata.r0_ratio     = toFloatVal(mf['r0_ratio'])
-            mfdata.r3cate_ratio = toFloatVal(mf['r3_ratio']) if byMinutes else toFloatVal(mf['cate_ra'])
+            mfdata.ratioNet     = toFloatVal(mf['ratioamount'])
+            mfdata.ratioR0      = toFloatVal(mf['r0_ratio'])
+            mfdata.ratioR3cate  = toFloatVal(mf['r3_ratio']) if byMinutes else toFloatVal(mf['cate_ra'])
             mfdata.datetime     = datetime.strptime(mf['opendate'], '%Y-%m-%d').replace(hour=15, minute=0, second=0, microsecond=0)
             if byMinutes:
                 mfdata.datetime = datetime.strptime(mf['opendate'] + ' ' + mf['ticktime'], '%Y-%m-%d %H:%M:%S')
@@ -651,19 +669,7 @@ class SinaCrawler(MarketCrawler):
 
     def GET_MoneyFlow(self, symbol, byMinutes=False):
         ''' 查询现金流
-        will call cortResp.send(csvline) when the result comes
-        ({r0_in:"0.0000",r0_out:"0.0000",r0:"0.0000",r1_in:"3851639.0000",r1_out:"4794409.0000",r1:"9333936.0000",r2_in:"8667212.0000",r2_out:"10001938.0000",r2:"18924494.0000",r3_in:"7037186.0000",r3_out:"7239931.2400",r3:"15039741.2400",curr_capital:"9098",name:"朗科智能",trade:"24.4200",changeratio:"0.000819672",volume:"1783866.0000",turnover:"196.083",r0x_ratio:"0",netamount:"-2480241.2400"})
-
-        TICK:    http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_bkzj_fszs?daima=SH601988
-        1MIN!!:  http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?daima=SH601988
-                ["240",[{opendate:"2020-03-20",ticktime:"15:00:00",trade:"3.5000",changeratio:"0.0115607",inamount:"173952934.3200",outamount:"144059186.4000",netamount:"29893747.9200",ratioamount:"0.0839833",r0_ratio:"0.0767544",r3_ratio:"0.010566"},
-                ticktime时间15:00:00,trade价格3.50,涨跌幅+1.156%,inamount流入资金/万17395.29,outamount流出资金/万14405.92,净流入/万2989.37,netamount净流入率8.40%,r0_ratio主力流入率7.68%,r3_ratio散户流入率1.06%
-                {opendate:"2020-03-20",ticktime:"14:58:00",trade:"3.5200",changeratio:"0.017341",inamount:"173952934.3200",outamount:"144059186.4000",netamount:"29893747.9200",ratioamount:"0.093927",r0_ratio:"0.0858422",r3_ratio:"0.011817"},
-        DAILY: http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?daima=SH601988
-              [{opendate:"2020-03-20",trade:"3.5000",changeratio:"0.0115607",turnover:"4.84651",netamount:"29893747.9200",ratioamount:"0.0839833",r0_net:"27320619.5800",r0_ratio:"0.07675441",r0x_ratio:"81.4345",cnt_r0x_ratio:"1",cate_ra:"0.103445",cate_na:"1648659621.3400"},
-              trade收盘价3.50,changeratio涨跌幅+1.156%,turnover换手率0.0485%,netamount净流入/万2989.37,ratioamount净流入率8.40%,r0_net主力净流入/万2732.06,r0_ratio主力净流入率7.68%,r0x_ratio主力罗盘81.43°,cate_ra行业净流入率10.34%
-              {opendate:"2020-03-19",trade:"3.4600",changeratio:"-0.0114286",turnover:"5.71814",netamount:"-6206568.4600",ratioamount:"-0.0148799",r0_net:"-21194529.9100",r0_ratio:"-0.05081268",r0x_ratio:"-102.676",cnt_r0x_ratio:"-2",cate_ra:"-0.0122277",cate_na:"-253623190.4100"},
-              '''
+        '''
         url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?sort=opendate&page=1&num=300&daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol)) # page 1 of 300lines is enough to cover days of a year
         if byMinutes:
             url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?sort=time&num=300&page=1&daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol)) # page 1 of 300lines is enough to cover 4hr of a whole day
@@ -862,6 +868,7 @@ def activityOf(item):
     return item['nmc'] * item['turnoverratio']
 
 def listSymbols(program, mdSina):
+    # 3869 symbols as of 2020-06-20
     result ={}
     _, lstSH = md.GET_AllSymbols()
     _, lstSZ = md.GET_AllSymbols('SZ')
@@ -872,7 +879,7 @@ def listSymbols(program, mdSina):
     print('-'*10 + ' All %d symbols '%len(result) + '-'*10)
     HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio"
     print(HEADERSEQ)
-    for i in result: print(','.join(Act[str(i[k]) for k in HEADERSEQ.split(',')]))
+    for i in result: print(','.join([str(i[k]) for k in HEADERSEQ.split(',')]))
 
     # filter the top active 1000
     topXXX = list(filter(lambda x: not '*ST' in x['name'], result))

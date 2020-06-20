@@ -76,7 +76,7 @@ class MarketData(EventData):
         return self.datetime
 
     @abstractmethod
-    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def toFloatD4(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
         '''
@@ -150,7 +150,7 @@ class TickData(MarketData):
         return lean
 
     @abstractmethod
-    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def toFloatD4(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
         '''
@@ -214,7 +214,7 @@ class KLineData(MarketData):
     '''
 
     @abstractmethod
-    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def toFloatD4(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
         '''
@@ -243,41 +243,48 @@ class MoneyflowData(MarketData):
     '''资金流数据'''
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
-    COLUMNS = 'symbol,exchange,date,time,price,netamount,r0_ratio,r3cate_ratio' #,openInterest'
+    COLUMNS = 'symbol,exchange,date,time,price,netamount,ratioNet,ratioR0,ratioR3cate'
 
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol =None):
         """Constructor"""
         super(MoneyflowData, self).__init__(exchange, symbol)
         
-        self.price        = EventData.EMPTY_FLOAT      # 价格
-        self.netamount    = EventData.EMPTY_FLOAT      # 净流入金额
-        self.r0_ratio     = EventData.EMPTY_FLOAT      # 主力流入率
-        self.r3cate_ratio = EventData.EMPTY_FLOAT      # 散户流入率（分钟资金流时）或 行业净流入率（日资金流时）
+        self.price        = EventData.EMPTY_FLOAT   # 价格
+        self.netamount    = EventData.EMPTY_FLOAT   # 净流入金额
+        self.ratioNet     = EventData.EMPTY_FLOAT   # 净流入率
+        self.ratioR0     = EventData.EMPTY_FLOAT    # 主力流入率
+        self.ratioR3cate = EventData.EMPTY_FLOAT    # 散户流入率（分钟资金流时）或 行业净流入率（日资金流时）
 
     @property
     def desc(self) :
-        return 'mf.%s@%s>%s/%.2f,%.2f' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.netamount, self.r0_ratio, self.r3cate_ratio)
+        return 'mf.%s@%s>%s/%.2f,%.2f' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.netamount, self.ratioR0, self.ratioR3cate)
 
-    @abstractmethod
-    def toNNFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def toFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
-        @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
+        @return float[] for neural network computing
         '''
         if baseline_Price <=0: baseline_Price=1.0
         if baseline_Volume <=0: baseline_Volume=1.0
 
-        # the basic dims, min=4
+        # the floats, prioirty first
         ret = [
-            FUNC_floatNormalize(self.price,     baseline_Price), 
-            FUNC_floatNormalize(self.netamount, baseline_Price*baseline_Volume),
-            FUNC_floatNormalize(self.r0_ratio, 1.0), 
-            FUNC_floatNormalize(self.r3cate_ratio, 1.0), 
-        ] + [0.0] * ( EXPORT_FLOATS_DIMS -4)
+            FUNC_floatNormalize(self.netamount, baseline_Price*baseline_Volume), # priority-H1
+            FUNC_floatNormalize(self.ratioNet,    1.0),                          # priority-H2
+            FUNC_floatNormalize(self.ratioR0,     1.0),                          # priority-H3
+            FUNC_floatNormalize(self.ratioR3cate, 1.0),                          # likely r3=ratioNet-ratioR0
+            FUNC_floatNormalize(self.price,     baseline_Price), # optional because usually this has been presented via KLine/Ticks
+        ]
 
-        # the optional dims
-
+        #TODO: other optional dims
         return ret
+
+    @abstractmethod
+    def toFloatD4(self, baseline_Price=1.0, baseline_Volume =1.0) :
+        '''
+        @return float[] with dim =4 for neural network computing
+        '''
+        return self.toFloats(baseline_Price, baseline_Volume)[:4]
 
 ########################################################################
 class DictToKLine(object):

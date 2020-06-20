@@ -495,7 +495,7 @@ class SinaCrawler(MarketCrawler):
 
         url = "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=%s&scale=%s&datalen=%d" % (symbol, minutes, lines)
         httperr, text = self.__sinaGET(url, 'GET_RecentKLines')
-        if httperr != 200:
+        if 200 != httperr:
             return httperr, text
 
         # [{day:"2019-09-23 14:15:00",open:"15.280",high:"15.290",low:"15.260",close:"15.270",volume:"892600",ma_price5:15.274,ma_volume5:1645033,ma_price10:15.272,ma_volume10:1524623,ma_price30:15.296,ma_volume30:2081080},
@@ -602,7 +602,7 @@ class SinaCrawler(MarketCrawler):
         url = 'http://hq.sinajs.cn/list=%s' % (','.join(qsymbols).lower())
 
         httperr, text = self.__sinaGET(url, 'GET_RecentTicks')
-        if httperr != 200:
+        if 200 != httperr:
             return httperr, text
 
         tickseq = self.__class__.convertToTickDatas(text)
@@ -669,7 +669,7 @@ class SinaCrawler(MarketCrawler):
             url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?sort=time&num=300&page=1&daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol)) # page 1 of 300lines is enough to cover 4hr of a whole day
 
         httperr, text = self.__sinaGET(url, 'GET_MoneyFlow')
-        if httperr != 200:
+        if 200 != httperr:
             return httperr, text
 
         mfseq = self.__class__.convertToMoneyFlow(symbol, text, byMinutes)
@@ -690,7 +690,7 @@ class SinaCrawler(MarketCrawler):
         SYNTAX = re.compile('^.*trade_item_list.*Array\(([^\)]*)\).*')
         url = 'http://vip.stock.finance.sina.com.cn/quotes_service/view/CN_TransListV2.php?symbol=%s' % (SinaCrawler.fixupSymbolPrefix(symbol))
         httperr, text = self.__sinaGET(url, 'GET_Transactions')
-        if httperr != 200:
+        if 200 != httperr:
             return httperr, text
 
         txns = []
@@ -709,6 +709,50 @@ class SinaCrawler(MarketCrawler):
         return True, txns
 
     #------------------------------------------------    
+    def GET_AllSymbols(self, ex_node='SH'): # ex_node={SH|SZ}
+        '''
+        resp body would be like
+        [{"symbol":"sh600238","code":"600238","name":"ST\u6930\u5c9b","trade":"5.390","pricechange":"0.000","changepercent":"0.000","buy":"0.000","sell":"0.000","settlement":"5.390","open":"0.000","high":"0.000","low":"0.000","volume":0,"amount":0,"ticktime":"15:29:59","per":-8.983,"pb":4.784,"mktcap":241579.8,"nmc":239855.85162,"turnoverratio":0},
+         {"symbol":"sh600239","code":"600239","name":"\u4e91\u5357\u57ce\u6295","trade":"4.330","pricechange":"-0.070","changepercent":"-1.591","buy":"4.330","sell":"4.340","settlement":"4.400","open":"4.330","high":"4.490","low":"4.290","volume":41860323,"amount":182987159,"ticktime":"15:00:00","per":-2.474,"pb":3.322,"mktcap":695262.431597,"nmc":695262.431597,"turnoverratio":2.607},
+         {"symbol":"sh600241","code":"600241","name":"*ST\u65f6\u4e07","trade":"3.390","pricechange":"-0.010","changepercent":"-0.294","buy":"3.380","sell":"3.390","settlement":"3.400","open":"3.400","high":"3.400","low":"3.370","volume":1572918,"amount":5328448,"ticktime":"15:00:00","per":-3.606,"pb":1.025,"mktcap":99768.416985,"nmc":85281.237408,"turnoverratio":0.62525},
+        ]
+        '''
+        HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio"
+        HEADERS=HEADERSEQ.split(',')
+        MAX_SYM_COUNT=6000
+        ex_node = ex_node.lower()
+
+        ret =[]
+        url = "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?&sort=symbol&asc=1&node=%s_a&_s_r_a=init&num=100" % ex_node
+        for page in range(1, int(MAX_SYM_COUNT/100)) : # 100 per page
+            httperr, text = self.__sinaGET(url + '&page=%d' % page, 'GET_AllSymbols(%d)' %page)
+            if 4 == int(httperr/100) or len(text) <20 :
+                break
+
+            if 200 != httperr:
+                self.warn("GET_AllSymbols(%s) page %d got httperr(%d)" %(ex_node, page, httperr))
+                continue
+
+            jsonData = demjson.decode(text)
+            if not jsonData:
+                continue
+
+            if len(jsonData) <=0:
+                break
+
+            for i in jsonData :
+                item = {}
+                for h in HEADERS:
+                    item[h] = i[h]
+                    if isinstance(item[h], str):
+                        item[h] = item[h].upper()
+                     # utf-8 .decode()
+                ret.append(item)
+        
+        self.info("GET_AllSymbols(%s) found %d symbols" %(ex_node, len(ret)))
+        return httperr, ret
+
+    #------------------------------------------------    
     def GET_SplitRate(self, symbol):
         ''' 查询前复权因子
         will call cortResp.send(csvline) when the result comes
@@ -716,7 +760,7 @@ class SinaCrawler(MarketCrawler):
         '''
         url = 'http://finance.sina.com.cn/realstock/newcompany/%s/phfq.js' % (SinaCrawler.fixupSymbolPrefix(symbol))
         httperr, text = self.__sinaGET(url, 'GET_SplitRate')
-        if httperr != 200:
+        if 200 != httperr:
             return httperr, text
 
         spliterates = []
@@ -814,6 +858,33 @@ class SinaTickToKL1m(object):
         
         self.__kline = None # 创建新的K线对象
 
+def activityOf(item):
+    return item['nmc'] * item['turnoverratio']
+
+def listSymbols(program, mdSina):
+    result ={}
+    _, lstSH = md.GET_AllSymbols()
+    _, lstSZ = md.GET_AllSymbols('SZ')
+    for i in lstSH + lstSZ:
+        result[i['symbol']] =i
+    result = list(result.values())
+
+    print('-'*10 + ' All %d symbols '%len(result) + '-'*10)
+    HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio"
+    print(HEADERSEQ)
+    for i in result: print(','.join(Act[str(i[k]) for k in HEADERSEQ.split(',')]))
+
+    # filter the top active 1000
+    topXXX = list(filter(lambda x: not '*ST' in x['name'], result))
+    topNum = min(500, int(len(topXXX)/50) *10)
+
+    print('-'*10 + ' TopAct %s ' %topNum + '-'*10)
+    topXXX.sort(key=activityOf)
+    topXXX= topXXX[-topNum:]
+    topXXX.reverse()
+    print(HEADERSEQ)
+    for i in topXXX: print(','.join([str(i[k]) for k in HEADERSEQ.split(',')]))
+
 ########################################################################
 if __name__ == '__main__':
     from Application import Program
@@ -821,11 +892,12 @@ if __name__ == '__main__':
     p = Program()
     # mc = p.createApp(SinaCrawler, configNode ='crawler', marketState = gymtdr._marketState, recorder=rec) # md = SinaCrawler(p, None);
     md = SinaCrawler(p, None)
-    _, result = md.GET_MoneyFlow("SH601005")
+    # _, result = md.GET_MoneyFlow("SH601005")
+    listSymbols(p, md)
     # _, result = md.searchKLines("000002", EVENT_KLINE_5MIN)
     # _, result = md.GET_RecentTicks('sh601006,sh601005,sh000001,sz000001')
     # _, result = md.GET_SplitRate('sh601006')
-    print(result)
+    # print(result)
     # md.subscribe(['601006','sh601005','sh000001','000001'])
     # while True:
     #     md.doAppStep()

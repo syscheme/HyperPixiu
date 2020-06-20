@@ -319,7 +319,7 @@ class Perspective(MarketData):
         if latestevd.exchange and (not ev.data.exchange or len(ev.data.exchange) <=0) :
             overwritable = False
 
-        if EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] and ev.data.datetime == latestevd.datetime and ev.data.volume > latestevd.data.volume :
+        if EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] and ev.data.datetime == latestevd.datetime and ev.data.volume > latestevd.volume :
             # SINA KL-data was found has such a bug as below: the later polls got bigger volume, so treat the later larger volume as correct data
             # evmdKL5m,SH510050,AShare,2020-06-19,13:30:00,2.914,2.915,2.914,2.915,570200.0
             # evmdKL5m,SH510050,AShare,2020-06-19,13:30:00,2.914,2.918,2.914,2.918,4575100.0

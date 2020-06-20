@@ -250,11 +250,11 @@ class MoneyflowData(MarketData):
         """Constructor"""
         super(MoneyflowData, self).__init__(exchange, symbol)
         
-        self.price        = EventData.EMPTY_FLOAT   # 价格
-        self.netamount    = EventData.EMPTY_FLOAT   # 净流入金额
-        self.ratioNet     = EventData.EMPTY_FLOAT   # 净流入率
-        self.ratioR0     = EventData.EMPTY_FLOAT    # 主力流入率
-        self.ratioR3cate = EventData.EMPTY_FLOAT    # 散户流入率（分钟资金流时）或 行业净流入率（日资金流时）
+        self.price       = EventData.EMPTY_FLOAT   # 价格
+        self.netamount   = EventData.EMPTY_FLOAT   # 净流入金额
+        self.ratioNet    = EventData.EMPTY_FLOAT   # 净流入率
+        self.ratioR0     = EventData.EMPTY_FLOAT   # 主力流入率
+        self.ratioR3cate = EventData.EMPTY_FLOAT   # 散户流入率（分钟资金流时）或 行业净流入率（日资金流时）
 
     @property
     def desc(self) :

@@ -900,10 +900,22 @@ class TaggedCsvInTarball(TaggedCsvPlayback):
 ########################################################################
 class PlaybackMux(Playback):
     
-    def __init__(self, program=None):
+    def __init__(self, program=None, startDate =Playback.DUMMY_DATE_START, endDate=Playback.DUMMY_DATE_END):
 
-        super(PlaybackMux, self).__init__(symbol=None, program=program)
+        super(PlaybackMux, self).__init__(symbol=None, program=program, startDate =startDate, endDate=endDate)
         self.__dictStrmPB = {} # dict of Playback to recentEvent
+        self.__dtStart, self.__dtEnd = None, None
+        try :
+            self.__dtStart = datetime.strptime(self._startDate, '%Y%m%dT%H%M%S')
+            self.__dtStart = datetime.strptime(self._startDate, '%Y-%m-%dT%H:%M:%S')
+        except:
+            pass
+
+        try :
+            self.__dtEnd = datetime.strptime(self._endDate, '%Y%m%dT%H%M%S')
+            self.__dtEnd = datetime.strptime(self._endDate, '%Y-%m-%dT%H:%M:%S')
+        except:
+            pass
 
     def addStream(self, playback):
         if playback and not playback in self.__dictStrmPB.keys():
@@ -921,32 +933,39 @@ class PlaybackMux(Playback):
         '''
         @return True if busy at this step
         '''
-        strmsToEvict = []
-        strmEariest = None
-        for strm, ev in self.__dictStrmPB.items():
-            if not ev:
-                try :
-                    ev = next(strm)
-                    self.__dictStrmPB[strm] = ev
-                except StopIteration:
-                    strmsToEvict.append(strm)
-                    continue
+        while not self._iterableEnd:
+            strmsToEvict = []
+            strmEariest = None
+            for strm, ev in self.__dictStrmPB.items():
+                if not ev:
+                    try :
+                        ev = next(strm)
+                        self.__dictStrmPB[strm] = ev
+                    except StopIteration:
+                        strmsToEvict.append(strm)
+                        continue
 
-            if not strmEariest or (strmEariest != strm and ev.data.asof < self.__dictStrmPB[strmEariest].data.asof):
-                strmEariest = strm
+                if not strmEariest or (strmEariest != strm and ev.data.asof < self.__dictStrmPB[strmEariest].data.asof):
+                    strmEariest = strm
 
-        for sd in strmsToEvict:
-            del self.__dictStrmPB[sd]
-            self.info('evicted stream[%s] that reached end, %d-stream remain' % (sd, len(self.__dictStrmPB)))
+            for sd in strmsToEvict:
+                del self.__dictStrmPB[sd]
+                self.info('evicted stream[%s] that reached end, %d-stream remain' % (sd, len(self.__dictStrmPB)))
 
-        if not strmEariest:
-            self._iterableEnd = True
-            self.info('all streams reached end')
-            raise StopIteration
+            if not strmEariest:
+                self._iterableEnd = True
+                self.info('all streams reached end')
+                break
+                
+            ev = self.__dictStrmPB[strmEariest]
+            self.__dictStrmPB[strmEariest] = None
+
+            if self.__dtStart and ev.data.asof < self.__dtStart: continue
+            if self.__dtEnd and ev.data.asof > self.__dtEnd: continue
             
-        ev = self.__dictStrmPB[strmEariest]
-        self.__dictStrmPB[strmEariest] = None
-        return ev
+            return ev
+
+        raise StopIteration
 
 ########################################################################
 class MongoRecorder(Recorder):

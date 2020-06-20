@@ -51,17 +51,18 @@ downloadMF1d()
     rm -f ${FN}
 }
 
-downloadKL5m()
+downloadKLXm()
 {
     SYMBOL=$1
     FN=$2
+    SCALE=$3
 
     if [ -e ${FN} ]; then
             grep -o volume ${FN} >/dev/null && echo "KL5m of ${SYMBOL} has already been downloaded" && return
     fi
 
     echo "fetching KL5m of ${SYMBOL} to ${FN}"
-    RET=$(wget --user-agent="${UA}" "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${SYMBOL}&scale=5&datalen=100" -O ${FN} 2>&1|grep -o 'awaiting response.*'| grep -o '[0-9]*')
+    RET=$(wget --user-agent="${UA}" "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${SYMBOL}&scale=${SCALE}&datalen=100" -O ${FN} 2>&1|grep -o 'awaiting response.*'| grep -o '[0-9]*')
     if [ "200" == "${RET}" ]; then
         echo "downloaded KL5m of ${SYMBOL} as ${FN}, resp ${RET}"
         return
@@ -69,6 +70,16 @@ downloadKL5m()
     
     echo "failed to download KL5m of ${SYMBOL}, resp ${RET}"
     rm -f ${FN}
+}
+
+downloadKL5m()
+{
+    downloadKLXm "$1" "$2" 5
+}
+
+downloadKL1d()
+{
+    downloadKLXm "$1" "$2" 240
 }
 
 downloadList()
@@ -138,7 +149,15 @@ case ${CMD} in
         fi
 		;;
 
-	kl5m)
+	MF1d)
+        if [ "*" == "$1" ] || [ -z "$1" ]; then
+            downloadList downloadMF1d
+        else
+            downloadMF1d $1 ${1}_${CMD}${DATE}.json
+        fi
+		;;
+
+	KL5m)
         if [ "*" == "$1" ] || [ -z "$1" ]; then
             downloadList downloadKL5m
         else
@@ -146,11 +165,11 @@ case ${CMD} in
         fi
 		;;
 
-	MF1d)
+	KL1d)
         if [ "*" == "$1" ] || [ -z "$1" ]; then
-            downloadList downloadMF1d
+            downloadList downloadKL1d
         else
-            downloadMF1d $1 ${1}_${CMD}${DATE}.json
+            downloadKL1d $1 ${1}_${CMD}${DATE}.json
         fi
 		;;
 

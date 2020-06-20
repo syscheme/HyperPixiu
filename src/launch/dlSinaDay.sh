@@ -131,7 +131,7 @@ cd /tmp
 
 case ${CMD} in
 	MF1m)
-        if [ "*" == "$1" ]; then
+        if [ "*" == "$1" ] || [ -z "$1" ]; then
             downloadList downloadMF1m
         else
             downloadMF1m $1 ${1}_${CMD}${DATE}.json
@@ -139,7 +139,7 @@ case ${CMD} in
 		;;
 
 	kl5m)
-        if [ "*" == "$1" ]; then
+        if [ "*" == "$1" ] || [ -z "$1" ]; then
             downloadList downloadKL5m
         else
             downloadKL5m $1 ${1}_${CMD}${DATE}.json
@@ -147,19 +147,13 @@ case ${CMD} in
 		;;
 
 	MF1d)
-        if [ "*" == "$1" ]; then
+        if [ "*" == "$1" ] || [ -z "$1" ]; then
             downloadList downloadMF1d
         else
             downloadMF1d $1 ${1}_${CMD}${DATE}.json
         fi
 		;;
 
-	ls*)
-		list `echo "${CMD}" |cut -c3-`
-		echo -e "\n"
-		exit 0
-		;;
-    
     *)
         downloadList downloadMF1m
         downloadList downloadKL5m

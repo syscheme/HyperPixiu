@@ -20,13 +20,16 @@ for i in ${PID_LIST}; do
 done
 cp -vf ${CONF} ${OUTDIR}/
 
-# make a copy here instead of moving because the files might be locked in the srcdir
-cp -rvf ${OUTDIR} ${OUTDIR}.BAK${STAMP}
-rm -rf ${OUTDIR}.BAK${STAMP}/{*.ss,*.ss.*} # unneccessary to archive Advisors/Crawlers' safestores
-
-# prepare ${OUTDIR}
+# backup and prepare new ${OUTDIR}
+mv -vf ${OUTDIR} ${OUTDIR}.BAK${STAMP}
 mkdir -p ${OUTDIR}
-rm -rf ${OUTDIR}/{*.lock,*.tcsv*,*.log*}
+mv -vf ${OUTDIR}.BAK${STAMP}/*.ss* ${OUTDIR}/ # inherit from previous safestores
+rm -rf ${OUTDIR}/*.lock ${OUTDIR}/*.tcsv* ${OUTDIR}/*.log*
+
+echo "backing up to ${OUTDIR}.BAK${STAMP}"
+ls -l ${OUTDIR}.BAK${STAMP}/*
+echo "new ${OUTDIR}"
+ls -l ${OUTDIR}/*
 
 nice -n 15 bash -c "tar cfvj ${OUTDIR}.BAK${STAMP}.tar.bz2 ${OUTDIR}.BAK${STAMP} ; rm -rf ${OUTDIR}.BAK${STAMP}" &
 

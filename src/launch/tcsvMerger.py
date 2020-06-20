@@ -1,5 +1,6 @@
 import HistoryData as hist
 from MarketData import *
+from Perspective import PerspectiveState
 from EventData   import datetime2float
 from Application import *
 from TradeAdvisor import EVENT_ADVICE, DictToAdvice
@@ -20,6 +21,7 @@ class SinaMerger(BaseApplication) :
 
         self.__mux = hist.PlaybackMux(program=program)
         self.__delayedQuit =100
+        self.__marketState = PerspectiveState(exchange="AShare")
 
     def doAppInit(self): # return True if succ
         if not super(SinaMerger, self).doAppInit() :
@@ -91,8 +93,10 @@ class SinaMerger(BaseApplication) :
 
         try :
             ev = next(self.__mux)
-            if ev: self._recorder.pushRow(ev.type, ev.data)
             self.debug('filtered ev: %s' % ev.desc)
+            ev = self.__marketState.updateByEvent(ev)
+            if ev: 
+                self._recorder.pushRow(ev.type, ev.data)
         except StopIteration:
             self.__delayedQuit -=1
         
@@ -115,7 +119,24 @@ if __name__ == '__main__':
 
     merger = thePROG.createApp(SinaMerger, recorder =rec, fnSearch = fnSearch, symbolLookFor='SZ002008')
 
+    '''
+    acc = thePROG.createApp(Account_AShare, configNode ='account', ratePer10K =30)
+    tdrCore = thePROG.createApp(BaseTrader, configNode ='trader', objectives=objectives, account=acc)
+    objectives = tdrCore.objectives
+    SYMBOL = objectives[0]
+
+    TEST_f4schema = {
+            'asof':1, 
+            EVENT_KLINE_5MIN     : 2,
+            EVENT_MONEYFLOW_1MIN : 10,
+    }
+
+    tdrWraper = thePROG.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=histReader, f4schema=TEST_f4schema)
+    '''
+
     thePROG.start()
     thePROG.setLogLevel('debug')
     thePROG.loop()
     thePROG.stop()
+
+

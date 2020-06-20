@@ -230,7 +230,7 @@ class SinaCrawler(MarketCrawler):
             # if not s in self.marketState.keys():
             #     self.marketState[s] = Perspective('AShare', symbol =s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
             # psp = self.marketState[s]
-            self.marketState.updateByEvent(ev) # ev = psp.push(ev)
+            ev = self.marketState.updateByEvent(ev) # so to filter duplicated event out if updateByEvent() returns None
 
             self.debug("step_pollTicks() pushed tick %s into psp, now: %s" %(tk.desc, self.marketState.descOf(s)))
 
@@ -325,7 +325,7 @@ class SinaCrawler(MarketCrawler):
                 cBusy +=1
                 ev = Event(evType)
                 ev.setData(i)
-                self.marketState.updateByEvent(ev) # ev = psp.push(ev)
+                ev = self.marketState.updateByEvent(ev) # so to filter duplicated event out if updateByEvent() returns None
                 if ev and self._recorder:
                     cMerged +=1
                     self.OnEventCaptured(ev)
@@ -398,7 +398,7 @@ class SinaCrawler(MarketCrawler):
                 cBusy +=1
                 ev = Event(evType)
                 ev.setData(i)
-                self.marketState.updateByEvent(ev) # ev = psp.push(ev)
+                ev = self.marketState.updateByEvent(ev) # so to filter duplicated event out if updateByEvent() returns None
                 if ev and self._recorder:
                     cMerged +=1
                     self.OnEventCaptured(ev)

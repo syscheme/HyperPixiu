@@ -933,7 +933,7 @@ class PlaybackMux(Playback):
 
         for sd in strmsToEvict:
             del self.__dictStrmPB[sd]
-            self.info('stream[%s] reached end, evicted' % sd)
+            self.info('evicted stream[%s] that reached end, %d-stream remain' % (sd, len(self.__dictStrmPB)))
 
         if not strmEariest:
             self._iterableEnd = True

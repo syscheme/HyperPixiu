@@ -444,6 +444,21 @@ class Playback(Iterable):
         
         self._startDate = startDate if startDate else Playback.DUMMY_DATE_START
         self._endDate   = endDate if endDate else Playback.DUMMY_DATE_END
+        self.__dtStart, self.__dtEnd = None, None
+        try :
+            self.__dtStart = datetime.strptime(self._startDate, '%Y%m%dT%H%M%S')
+            self.__dtStart = datetime.strptime(self._startDate, '%Y-%m-%dT%H:%M:%S')
+        except:
+            pass
+
+        try :
+            self.__dtEnd = datetime.strptime(self._endDate, '%Y%m%dT%H%M%S')
+            self.__dtEnd = datetime.strptime(self._endDate, '%Y-%m-%dT%H:%M:%S')
+        except:
+            pass
+
+    @property
+    def datetimeRange(self) : return self.__dtStart, self.__dtEnd
 
     # -- impl of Iterable --------------------------------------------------------------
     def resetRead(self):
@@ -904,18 +919,6 @@ class PlaybackMux(Playback):
 
         super(PlaybackMux, self).__init__(symbol=None, program=program, startDate =startDate, endDate=endDate)
         self.__dictStrmPB = {} # dict of Playback to recentEvent
-        self.__dtStart, self.__dtEnd = None, None
-        try :
-            self.__dtStart = datetime.strptime(self._startDate, '%Y%m%dT%H%M%S')
-            self.__dtStart = datetime.strptime(self._startDate, '%Y-%m-%dT%H:%M:%S')
-        except:
-            pass
-
-        try :
-            self.__dtEnd = datetime.strptime(self._endDate, '%Y%m%dT%H%M%S')
-            self.__dtEnd = datetime.strptime(self._endDate, '%Y-%m-%dT%H:%M:%S')
-        except:
-            pass
 
     def addStream(self, playback):
         if playback and not playback in self.__dictStrmPB.keys():
@@ -960,9 +963,10 @@ class PlaybackMux(Playback):
             ev = self.__dictStrmPB[strmEariest]
             self.__dictStrmPB[strmEariest] = None
 
-            if self.__dtStart and ev.data.asof < self.__dtStart: continue
-            if self.__dtEnd and ev.data.asof > self.__dtEnd: continue
-            
+            dtStart, dtEnd = self.datetimeRange
+            if ev.data.asof < dtStart: continue
+            if ev.data.asof > dtEnd: continue
+
             return ev
 
         raise StopIteration

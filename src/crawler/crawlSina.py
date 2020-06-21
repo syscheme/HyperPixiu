@@ -201,7 +201,7 @@ class SinaCrawler(MarketCrawler):
         updated=[]
         bth = self.__tickBatches[idxBtch]
         httperr, result = self.GET_RecentTicks(bth)
-        if httperr !=200:
+        if 200 != httperr:
             self.error("step_pollTicks() GET_RecentTicks failed, err(%s) bth:%s" %(httperr, bth))
             return 0
             
@@ -305,14 +305,14 @@ class SinaCrawler(MarketCrawler):
             lines +=10
 
             httperr, result = self.GET_RecentKLines(s, minutes, lines)
-            if httperr !=200:
+            if 200 != httperr:
                 self.error("step_pollKline(%s:%s) failed, err(%s)" %(s, evType, httperr))
-                if httperr == 456:
+                if 456 == httperr:
                     self.__scheduleNext('all', 'KL', self._secYield456)
                     self.warn("step_pollKline(%s:%s) [%d/%d]sym SINA complained err(%s), yielding %ssec" %(s, evType, self.__idxKL, cSyms, httperr, self._secYield456))
                     return cBusy
            
-                if httperr == 404 and self.__excludeAt404:
+                if 404 == httperr and self.__excludeAt404:
                     del self._symbolsToPoll[s]
                     self.warn("step_pollKline(%s:%s) [%d/%d]sym excluded symbol per err(%s)" %(s, evType, self.__idxKL, cSyms, httperr))
 
@@ -378,15 +378,20 @@ class SinaCrawler(MarketCrawler):
             minutes = SinaCrawler.INTV_MINs_OF_EVENTS[evType]
             self.__scheduleNext(s, evType, min(30, minutes)*60*0.7)
 
-            httperr, result = self.GET_MoneyFlow(s, EVENT_MONEYFLOW_1MIN== evType)
-            if httperr !=200:
+            size, lines = self.marketState.sizesOf(s, evType)
+            if size >0:
+                lines = 0
+            lines +=10
+
+            httperr, result = self.GET_MoneyFlow(s, lines, EVENT_MONEYFLOW_1MIN== evType)
+            if 200 != httperr:
                 self.error("step_pollMoneyflow(%s:%s) failed, err(%s)" %(s, evType, httperr))
-                if httperr == 456:
+                if 456 == httperr:
                     self.__scheduleNext('all', 'MF', self._secYield456)
                     self.warn("step_pollMoneyflow(%s:%s) [%d/%d]sym SINA complained err(%s), yielding %ssec" %(s, evType, self.__idxKL, cSyms, httperr, self._secYield456))
                     return cBusy
            
-                if httperr == 404 and self.__excludeAt404:
+                if 404 == httperr and self.__excludeAt404:
                     self.warn("step_pollMoneyflow(%s:%s) [%d/%d]sym excluded symbol per err(%s)" %(s, evType, self.__idxKL, cSyms, httperr))
 
                 continue
@@ -667,12 +672,12 @@ class SinaCrawler(MarketCrawler):
         mfseq.sort(key=SinaCrawler.sortKeyOfMD)
         return mfseq
 
-    def GET_MoneyFlow(self, symbol, byMinutes=False):
+    def GET_MoneyFlow(self, symbol, lines=260, byMinutes=False):
         ''' 查询现金流
         '''
-        url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?sort=opendate&page=1&num=300&daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol)) # page 1 of 300lines is enough to cover days of a year
+        url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?sort=opendate&page=1&num=%d&daima=%s' % (lines, SinaCrawler.fixupSymbolPrefix(symbol)) # page 1 of 300lines is enough to cover days of a year
         if byMinutes:
-            url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?sort=time&num=300&page=1&daima=%s' % (SinaCrawler.fixupSymbolPrefix(symbol)) # page 1 of 300lines is enough to cover 4hr of a whole day
+            url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?sort=time&num=%d&page=1&daima=%s' % (lines, SinaCrawler.fixupSymbolPrefix(symbol)) # page 1 of 300lines is enough to cover 4hr of a whole day
 
         httperr, text = self.__sinaGET(url, 'GET_MoneyFlow')
         if 200 != httperr:

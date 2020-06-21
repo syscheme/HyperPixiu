@@ -90,6 +90,48 @@ class SinaMerger(BaseApplication) :
 
                     # if self.__mux.size > 5: break # TODO: DELETE THIS LINE
 
+        if self._symbolLookFor and len(self._symbolLookFor) >5 and None in [self.__tarballs[EVENT_KLINE_1DAY], self.__tarballs[EVENT_MONEYFLOW_1DAY]]:
+            crawl = sina.SinaCrawler(self.program, None)
+            dtStart, _ = self.__mux.datetimeRange
+            days = (datetime.now() - dtStart).days +2
+            if days > 500: days =500
+
+            evtype = EVENT_KLINE_1DAY
+            if not self.__tarballs[evtype] :
+                self.debug('taking online query as source of event[%s] of %ddays' % (evtype, days))
+                httperr, dataseq = crawl.GET_RecentKLines(self._symbolLookFor, 240, days)
+                if 200 != httperr:
+                    self.error("doAppInit() GET_RecentKLines(%s:%s) failed, err(%s)" %(self._symbolLookFor, evtype, httperr))
+                elif len(dataseq) >0: 
+                    # succ at query
+                    pb, c = hist.Playback(self._symbolLookFor, program=self.program), 0
+                    for i in dataseq:
+                        ev = Event(evtype)
+                        ev.setData(i)
+                        pb.enquePending(ev)
+                        c+=1
+
+                    self.__mux.addStream(pb)
+                    self.info('added online query as source of event[%s] len[%d]' % (evtype, c))
+
+            evtype = EVENT_MONEYFLOW_1DAY
+            if not self.__tarballs[evtype] :
+                self.debug('taking online query as source of event[%s] of %ddays' % (evtype, days))
+                httperr, dataseq = crawl.GET_MoneyFlow(self._symbolLookFor, days, False)
+                if 200 != httperr:
+                    self.error("doAppInit() GET_MoneyFlow(%s:%s) failed, err(%s)" %(self._symbolLookFor, evtype, httperr))
+                elif len(dataseq) >0: 
+                    # succ at query
+                    pb, c = hist.Playback(self._symbolLookFor, program=self.program), 0
+                    for i in dataseq:
+                        ev = Event(evtype)
+                        ev.setData(i)
+                        pb.enquePending(ev)
+                        c+=1
+
+                    self.__mux.addStream(pb)
+                    self.info('added online query as source of event[%s] len[%d]' % (evtype, c))
+
         self.info('inited mux with %d substreams' % (self.__mux.size))
         return self.__mux.size >0
 
@@ -123,8 +165,8 @@ if __name__ == '__main__':
     SYMBOL='SZ002008'
     
     tarNamePats={
-        'tarNamePat_KL5m' : '%s/SinaKL5m_*.tar.bz2' %srcFolder,
-        'tarNamePat_MF1m' : '%s/SinaMF1m_*.tar.bz2' %srcFolder,
+        'tarNamePat_KL5m' : None, # '%s/SinaKL5m_*.tar.bz2' %srcFolder,
+        'tarNamePat_MF1m' : None, # '%s/SinaMF1m_*.tar.bz2' %srcFolder,
         # 'tarNamePat_Tick' : '%s/advisor.BAK*.tar.bz2' %srcFolder,
         # 'tarNamePat_KL1d' : '%s/SinaKL1d*.tar.bz2' %srcFolder,
         # 'tarNamePat_MF1d' : '%s/SinaMF1d*.tar.bz2' %srcFolder,

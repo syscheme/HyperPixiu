@@ -27,13 +27,97 @@ class SinaMerger(BaseApplication) :
         self._recorder =  recorder
         self._symbolLookFor = symbol
 
+        if self._recorder:
+            rec.registerCategory(EVENT_TICK,           params={'columns': TickData.COLUMNS})
+            rec.registerCategory(EVENT_KLINE_1MIN,     params={'columns': KLineData.COLUMNS})
+            rec.registerCategory(EVENT_KLINE_5MIN,     params={'columns': KLineData.COLUMNS})
+            rec.registerCategory(EVENT_KLINE_1DAY,     params={'columns': KLineData.COLUMNS})
+            rec.registerCategory(EVENT_MONEYFLOW_1MIN, params={'columns': MoneyflowData.COLUMNS})
+            rec.registerCategory(EVENT_MONEYFLOW_1DAY, params={'columns': MoneyflowData.COLUMNS})
+
         self.__mux = hist.PlaybackMux(program=program, startDate =startDate, endDate=endDate)
         self.__delayedQuit =100
         self.__marketState = PerspectiveState(exchange="AShare")
 
+    def __extractJsonStreams(self, tarballName, evtype):
+        tar = tarfile.open(tarballName)
+
+        for member in tar.getmembers():
+            basename = os.path.basename(member.name)
+            if not basename.split('.')[-1] in ['json']: 
+                continue
+
+            symbol = basename[:basename.index('_')]
+
+            if symbol in EXECLUDE_LIST or (self._symbolLookFor and self._symbolLookFor != symbol):
+                continue
+
+            self.debug('memberFile[%s] in %s matched et[%s]' % (member.name, tarballName, evtype))
+            edseq =[]
+            with tar.extractfile(member) as f:
+                content =f.read().decode()
+
+                # dispatch the convert func up to evtype from tar filename
+                if EVENT_KLINE_PREFIX == evtype[:len(EVENT_KLINE_PREFIX)]:
+                    edseq = sina.SinaCrawler.convertToKLineDatas(symbol, content)
+                elif EVENT_MONEYFLOW_1MIN == evtype:
+                    edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, True)
+                elif EVENT_MONEYFLOW_1DAY == evtype:
+                    edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, False)
+
+            pb = hist.Playback(symbol, program=thePROG)
+            for ed in edseq:
+                ev = Event(evtype)
+                ev.setData(ed)
+                pb.enquePending(ev)
+
+            self.__mux.addStream(pb)
+            if self._symbolLookFor and self._symbolLookFor == symbol:
+                break # do not scan the tar anymore
+
+    def __extractAdvisorStreams(self, tarballName):
+        tar = tarfile.open(tarballName)
+
+        for member in tar.getmembers():
+            basename = os.path.basename(member.name)
+            if not basename.split('.')[-1] in ['json']: 
+                continue
+
+            symbol = basename[:basename.index('_')]
+
+            if symbol in EXECLUDE_LIST or (self._symbolLookFor and self._symbolLookFor != symbol):
+                continue
+
+            self.debug('memberFile[%s] in %s matched et[%s]' % (member.name, tarballName, evtype))
+            edseq =[]
+            with tar.extractfile(member) as f:
+                content =f.read().decode()
+
+                # dispatch the convert func up to evtype from tar filename
+                if EVENT_KLINE_PREFIX == evtype[:len(EVENT_KLINE_PREFIX)]:
+                    edseq = sina.SinaCrawler.convertToKLineDatas(symbol, content)
+                elif EVENT_MONEYFLOW_1MIN == evtype:
+                    edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, True)
+                elif EVENT_MONEYFLOW_1DAY == evtype:
+                    edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, False)
+
+            pb = hist.Playback(symbol, program=thePROG)
+            for ed in edseq:
+                ev = Event(evtype)
+                ev.setData(ed)
+                pb.enquePending(ev)
+
+            self.__mux.addStream(pb)
+            if self._symbolLookFor and self._symbolLookFor == symbol:
+                break # do not scan the tar anymore
+
     def doAppInit(self): # return True if succ
         if not super(SinaMerger, self).doAppInit() :
             return False
+
+        # subscribing, see OnEvent()
+        self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
+        self.subscribeEvents([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY])
 
         for evtype in self.__tnPattern.keys():
             if not self.__tnPattern[evtype]:
@@ -51,44 +135,48 @@ class SinaMerger(BaseApplication) :
 
             self.info('associated %d tarballs of event[%s]: %s' % (len(self.__tarballs[evtype]), evtype, ','.join(self.__tarballs[evtype])))
 
-            memberExts = ['json']
             for tn in self.__tarballs[evtype]:
-                tar = tarfile.open(tn)
+                bname = os.path.basename(tn)
+                if 'sina' == bname[:4].lower() :
+                    self.__extractJsonStreams(tn, evtype)
+                elif EVENT_TICK == evtype and 'advisor' == bname[:len('advisor')] :
+                    self.__extractAdvisorStreams(tn)
+                # tar = tarfile.open(tn)
 
-                for member in tar.getmembers():
-                    basename = os.path.basename(member.name)
-                    if not basename.split('.')[-1] in memberExts: 
-                        continue
+                # for member in tar.getmembers():
+                #     basename = os.path.basename(member.name)
+                #     if not basename.split('.')[-1] in memberExts: 
+                #         continue
 
-                    symbol = basename[:basename.index('_')]
+                #     symbol = basename[:basename.index('_')]
 
-                    if symbol in EXECLUDE_LIST or (self._symbolLookFor and self._symbolLookFor != symbol):
-                        continue
+                #     if symbol in EXECLUDE_LIST or (self._symbolLookFor and self._symbolLookFor != symbol):
+                #         continue
 
-                    self.debug('memberFile[%s] in %s matched et[%s]' % (member.name, tn, evtype))
-                    edseq =[]
-                    with tar.extractfile(member) as f:
-                        content =f.read().decode()
+                #     self.debug('memberFile[%s] in %s matched et[%s]' % (member.name, tn, evtype))
+                #     edseq =[]
+                #     with tar.extractfile(member) as f:
+                #         content =f.read().decode()
 
-                        # dispatch the convert func up to evtype from tar filename
-                        if EVENT_KLINE_PREFIX == evtype[:len(EVENT_KLINE_PREFIX)]:
-                            edseq = sina.SinaCrawler.convertToKLineDatas(symbol, content)
-                        elif EVENT_MONEYFLOW_1MIN == evtype:
-                            edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, True)
-                        elif EVENT_MONEYFLOW_1DAY == evtype:
-                            edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, False)
+                #         # dispatch the convert func up to evtype from tar filename
+                #         if EVENT_KLINE_PREFIX == evtype[:len(EVENT_KLINE_PREFIX)]:
+                #             edseq = sina.SinaCrawler.convertToKLineDatas(symbol, content)
+                #         elif EVENT_MONEYFLOW_1MIN == evtype:
+                #             edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, True)
+                #         elif EVENT_MONEYFLOW_1DAY == evtype:
+                #             edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, False)
 
-                    pb = hist.Playback(symbol, program=thePROG)
-                    for ed in edseq:
-                        ev = Event(evtype)
-                        ev.setData(ed)
-                        pb.enquePending(ev)
+                #     pb = hist.Playback(symbol, program=thePROG)
+                #     for ed in edseq:
+                #         ev = Event(evtype)
+                #         ev.setData(ed)
+                #         pb.enquePending(ev)
 
-                    self.__mux.addStream(pb)
-                    if self._symbolLookFor and self._symbolLookFor == symbol:
-                        break # do not scan the tar anymore
+                #     self.__mux.addStream(pb)
+                #     if self._symbolLookFor and self._symbolLookFor == symbol:
+                #         break # do not scan the tar anymore
 
-                    # if self.__mux.size > 5: break # TODO: DELETE THIS LINE
+                #     # if self.__mux.size > 5: break # TODO: DELETE THIS LINE
 
         if self._symbolLookFor and len(self._symbolLookFor) >5 and None in [self.__tarballs[EVENT_KLINE_1DAY], self.__tarballs[EVENT_MONEYFLOW_1DAY]]:
             crawl = sina.SinaCrawler(self.program, None)
@@ -136,7 +224,9 @@ class SinaMerger(BaseApplication) :
         return self.__mux.size >0
 
     def OnEvent(self, event):
-        pass
+        # see notes on postEvent() in doAppStep()
+        if self._recorder: 
+            self._recorder.pushRow(event.type, event.data)
     
     def doAppStep(self):
         ev = None
@@ -150,7 +240,10 @@ class SinaMerger(BaseApplication) :
             self.debug('filtered ev: %s' % ev.desc)
             ev = self.__marketState.updateByEvent(ev)
             if ev: 
-                self._recorder.pushRow(ev.type, ev.data)
+                # yes, for merging only, a more straignt-foward way is to directly call self._recorder.pushRow(ev.type, ev.data) here
+                # postEvent() then do recording in OnEvent() seems wordy, but allow other applications, which may join the prog, to be
+                # able to process the merged events at the same time while merging
+                self.postEvent(ev)
         except StopIteration:
             self.__delayedQuit -=1
         
@@ -165,22 +258,15 @@ if __name__ == '__main__':
     SYMBOL='SZ002008'
     
     tarNamePats={
-        'tarNamePat_KL5m' : None, # '%s/SinaKL5m_*.tar.bz2' %srcFolder,
-        'tarNamePat_MF1m' : None, # '%s/SinaMF1m_*.tar.bz2' %srcFolder,
+        'tarNamePat_KL5m' : '%s/SinaKL5m_*.tar.bz2' %srcFolder,
+        'tarNamePat_MF1m' : None, #'%s/SinaMF1m_*.tar.bz2' %srcFolder,
         # 'tarNamePat_Tick' : '%s/advisor.BAK*.tar.bz2' %srcFolder,
         # 'tarNamePat_KL1d' : '%s/SinaKL1d*.tar.bz2' %srcFolder,
         # 'tarNamePat_MF1d' : '%s/SinaMF1d*.tar.bz2' %srcFolder,
     }
 
     rec    = thePROG.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(thePROG.outdir, '%s.tcsv' % SYMBOL))
-    rec.registerCategory(EVENT_TICK,           params={'columns': TickData.COLUMNS})
-    rec.registerCategory(EVENT_KLINE_1MIN,     params={'columns': KLineData.COLUMNS})
-    rec.registerCategory(EVENT_KLINE_5MIN,     params={'columns': KLineData.COLUMNS})
-    rec.registerCategory(EVENT_KLINE_1DAY,     params={'columns': KLineData.COLUMNS})
-    rec.registerCategory(EVENT_MONEYFLOW_1MIN, params={'columns': MoneyflowData.COLUMNS})
-    rec.registerCategory(EVENT_MONEYFLOW_1DAY, params={'columns': MoneyflowData.COLUMNS})
-
-    merger = thePROG.createApp(SinaMerger, recorder =rec, symbol=SYMBOL, startDate='20200601T000000', **tarNamePats)
+    merger = thePROG.createApp(SinaMerger, recorder =rec, symbol=SYMBOL, startDate='20200601T000000', endDate='20200609T235959', **tarNamePats)
 
     '''
     acc = thePROG.createApp(Account_AShare, configNode ='account', ratePer10K =30)

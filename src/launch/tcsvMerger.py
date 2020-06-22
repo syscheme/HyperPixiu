@@ -9,6 +9,7 @@ from crawler import crawlSina as sina
 import os, fnmatch, tarfile
 
 EXECLUDE_LIST = ["SH600005"]
+SYMBOL='SZ002008'
 
 class SinaMerger(BaseApplication) :
     def __init__(self, program, recorder, symbol, tarNamePat_KL5m, tarNamePat_MF1m, startDate =None, endDate=None, tarNamePat_Tick=None, tarNamePat_KL1d=None, tarNamePat_MF1d=None, **kwargs):
@@ -65,7 +66,7 @@ class SinaMerger(BaseApplication) :
                 elif EVENT_MONEYFLOW_1DAY == evtype:
                     edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, False)
 
-            pb = hist.Playback(symbol, program=thePROG)
+            pb = hist.Playback(symbol, program=self.program)
             for ed in edseq:
                 ev = Event(evtype)
                 ev.setData(ed)
@@ -77,39 +78,43 @@ class SinaMerger(BaseApplication) :
 
     def __extractAdvisorStreams(self, tarballName):
         tar = tarfile.open(tarballName)
+        bz2dict = {}
+        memlist = []
 
         for member in tar.getmembers():
+            # ./out/advisor.BAK20200615T084501/advisor_15737.tcsv
+            # ./out/advisor.BAK20200615T084501/advisor_15737.tcsv.1.bz2
+            # ./out/advisor.BAK20200615T084501/Advisor.json
             basename = os.path.basename(member.name)
-            if not basename.split('.')[-1] in ['json']: 
+            if not fnmatch.fnmatch(basename, 'advisor_*.tcsv*'):
                 continue
+            
+            if '.tcsv' == basename[-5:]:
+               memlist.append(member) 
+               continue
 
-            symbol = basename[:basename.index('_')]
+            m = re.match(r'\.([0-9]*)\.bz2', suffix)
+            if m :
+                bz2dict[int(m.group(1))] = member
 
-            if symbol in EXECLUDE_LIST or (self._symbolLookFor and self._symbolLookFor != symbol):
-                continue
+        items = list(bz2dict.items())
+        items.sort() 
+        # insert into fnlist reversly
+        for k,v in items:
+            memlist.insert(0, v)
 
-            self.debug('memberFile[%s] in %s matched et[%s]' % (member.name, tarballName, evtype))
-            edseq =[]
-            with tar.extractfile(member) as f:
-                content =f.read().decode()
+        for member in memlist:
+            f = tar.extractfile(member)
+            if '.bz2' == member.name[-4:]:
+                f = bz2.open(f, mode='rt')
 
-                # dispatch the convert func up to evtype from tar filename
-                if EVENT_KLINE_PREFIX == evtype[:len(EVENT_KLINE_PREFIX)]:
-                    edseq = sina.SinaCrawler.convertToKLineDatas(symbol, content)
-                elif EVENT_MONEYFLOW_1MIN == evtype:
-                    edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, True)
-                elif EVENT_MONEYFLOW_1DAY == evtype:
-                    edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, False)
-
-            pb = hist.Playback(symbol, program=thePROG)
-            for ed in edseq:
-                ev = Event(evtype)
-                ev.setData(ed)
-                pb.enquePending(ev)
+            pb = hist.TaggedCsvStream(f, program=self.program)
+            pb.registerConverter(EVENT_KLINE_1MIN, hist.DictToKLine(EVENT_KLINE_1MIN, SYMBOL))
+            pb.registerConverter(EVENT_KLINE_5MIN, hist.DictToKLine(EVENT_KLINE_5MIN, SYMBOL))
+            pb.registerConverter(EVENT_KLINE_1DAY, hist.DictToKLine(EVENT_KLINE_1DAY, SYMBOL))
+            # pb.registerConverter(EVENT_TICK,       hist.DictToTick(SYMBOL))
 
             self.__mux.addStream(pb)
-            if self._symbolLookFor and self._symbolLookFor == symbol:
-                break # do not scan the tar anymore
 
     def doAppInit(self): # return True if succ
         if not super(SinaMerger, self).doAppInit() :
@@ -141,42 +146,6 @@ class SinaMerger(BaseApplication) :
                     self.__extractJsonStreams(tn, evtype)
                 elif EVENT_TICK == evtype and 'advisor' == bname[:len('advisor')] :
                     self.__extractAdvisorStreams(tn)
-                # tar = tarfile.open(tn)
-
-                # for member in tar.getmembers():
-                #     basename = os.path.basename(member.name)
-                #     if not basename.split('.')[-1] in memberExts: 
-                #         continue
-
-                #     symbol = basename[:basename.index('_')]
-
-                #     if symbol in EXECLUDE_LIST or (self._symbolLookFor and self._symbolLookFor != symbol):
-                #         continue
-
-                #     self.debug('memberFile[%s] in %s matched et[%s]' % (member.name, tn, evtype))
-                #     edseq =[]
-                #     with tar.extractfile(member) as f:
-                #         content =f.read().decode()
-
-                #         # dispatch the convert func up to evtype from tar filename
-                #         if EVENT_KLINE_PREFIX == evtype[:len(EVENT_KLINE_PREFIX)]:
-                #             edseq = sina.SinaCrawler.convertToKLineDatas(symbol, content)
-                #         elif EVENT_MONEYFLOW_1MIN == evtype:
-                #             edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, True)
-                #         elif EVENT_MONEYFLOW_1DAY == evtype:
-                #             edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, False)
-
-                #     pb = hist.Playback(symbol, program=thePROG)
-                #     for ed in edseq:
-                #         ev = Event(evtype)
-                #         ev.setData(ed)
-                #         pb.enquePending(ev)
-
-                #     self.__mux.addStream(pb)
-                #     if self._symbolLookFor and self._symbolLookFor == symbol:
-                #         break # do not scan the tar anymore
-
-                #     # if self.__mux.size > 5: break # TODO: DELETE THIS LINE
 
         if self._symbolLookFor and len(self._symbolLookFor) >5 and None in [self.__tarballs[EVENT_KLINE_1DAY], self.__tarballs[EVENT_MONEYFLOW_1DAY]]:
             crawl = sina.SinaCrawler(self.program, None)
@@ -256,11 +225,22 @@ if __name__ == '__main__':
     srcFolder = '/mnt/e/AShareSample/SinaWeek'
 
     SYMBOL='SZ002008'
+    fn = '%s/advisor.BAK20200615T084501.tar.bz2' %srcFolder
+    f = open(fn, 'rb')
+    # strm = bz2.BZ2File(f, mode='r') # equals to bz2.open(f, mode='r')
+    bzstrm = bz2.open(f, mode='rt') # bz2.BZ2File(fn, 'rb')
+    # strm = open(bzstrm, mode='rt')
+    while True:
+        l = bzstrm.readline()
+        if not l : break
+        print(l)
+        break
+
     
     tarNamePats={
-        'tarNamePat_KL5m' : '%s/SinaKL5m_*.tar.bz2' %srcFolder,
+        'tarNamePat_KL5m' : None, #'%s/SinaKL5m_*.tar.bz2' %srcFolder,
         'tarNamePat_MF1m' : None, #'%s/SinaMF1m_*.tar.bz2' %srcFolder,
-        # 'tarNamePat_Tick' : '%s/advisor.BAK*.tar.bz2' %srcFolder,
+        'tarNamePat_Tick' : '%s/advisor.BAK*.tar.bz2' %srcFolder,
         # 'tarNamePat_KL1d' : '%s/SinaKL1d*.tar.bz2' %srcFolder,
         # 'tarNamePat_MF1d' : '%s/SinaMF1d*.tar.bz2' %srcFolder,
     }

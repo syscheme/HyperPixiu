@@ -330,7 +330,7 @@ class DictToKLine(object):
 # ########################################################################
 # class DictToTick(object):
 
-#     def __init__(self, eventType, symbol, exchange=None):
+#     def __init__(self, symbol, exchange=None):
 #         """Constructor"""
 #         super(DictToTick, self).__init__()
 #         self._type = eventType

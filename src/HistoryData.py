@@ -496,7 +496,6 @@ class Playback(Iterable):
         self.enquePending(evMH)
         return evdMH
 
-
 ########################################################################
 class PlaybackApp(BaseApplication):
     
@@ -716,17 +715,15 @@ class CsvPlayback(Playback):
         return ev
 
 ########################################################################
-class TaggedCsvPlayback(Playback):
+# playback wrapper on an opened stream
+class TaggedCsvStream(Playback):
     
-    def __init__(self, tcsvFilePath, startDate =Playback.DUMMY_DATE_START, endDate=Playback.DUMMY_DATE_END, symbol=None, **kwargs):
+    def __init__(self, stream, startDate =Playback.DUMMY_DATE_START, endDate=Playback.DUMMY_DATE_END, symbol=None, **kwargs):
 
-        super(TaggedCsvPlayback, self).__init__(symbol, startDate, endDate, None, **kwargs)
-
-        self._tcsvFilePath = tcsvFilePath
+        super(TaggedCsvStream, self).__init__(symbol, startDate, endDate, None, **kwargs)
 
         self.__dictCategory = {} # eventName/category to { columeNames: [], coverter: func() }
-        self.__fnlist =[]
-        self._streamIn = None
+        self.__strmFileIn = stream
 
     def registerConverter(self, categroy, converter, columns=None):
         if not columns: columns=[]
@@ -739,35 +736,13 @@ class TaggedCsvPlayback(Playback):
             self.__dictCategory[categroy]['converter'] = converter
             if len(columns) >0:
                 self.__dictCategory[categroy]['columns'] = columns
-
-    def openStreamIn(self):
-        while not self._streamIn:
-            if not self.__fnlist or len(self.__fnlist) <=0:
-                self._iterableEnd = True
-                return None
-
-            fn = self.__fnlist[0]
-            del(self.__fnlist[0])
-
-            self.info('openning input file %s' % (fn))
-            extname = fn.split('.')[-1]
-            if extname == 'bz2':
-                self._streamIn = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
-            else:
-                self._streamIn = open(fn, 'rt')
-
-            if not self._streamIn:
-                self.warn('failed to open input file %s' % (fn))
-                
-        return self._streamIn
+    @property
+    def categories(self) : return self.__dictCategory
 
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):
-        super(TaggedCsvPlayback, self).resetRead()
-
-        self.__fnlist = TcsvFilter.buildUpFileList(self._tcsvFilePath)
-        self.info('associated file list by key %s: %s' % (self._tcsvFilePath, ','.join(self.__fnlist)))
-        return len(self.__fnlist) >0
+        super(TaggedCsvStream, self).resetRead()
+        return not self.__strmFileIn is None
 
     def readNext(self):
         '''
@@ -781,20 +756,18 @@ class TaggedCsvPlayback(Playback):
         
         row, ev = None, None
         while not row:
-            self.openStreamIn()
-
-            if not self._streamIn:
+            if not self.__strmFileIn:
                 self._iterableEnd = True
                 return None
 
             try :
-                row = next(self._streamIn, None)
+                row = self.__strmFileIn.readline()
             except Exception as ex:
                 row = None
 
             if not row:
-                self._streamIn.close()
-                self._streamIn = None
+                self.__strmFileIn.close()
+                self.__strmFileIn = None
                 continue
 
             if not isinstance(row, str): row = row.decode()
@@ -841,7 +814,8 @@ class TaggedCsvPlayback(Playback):
 
                 ev = converter.convert(dict)
 
-                # because the generated is always as of the previous event, so always deliver those pendings in queue first
+                # because the merged-event is always as of the previous event, so always deliver
+                # those pendings in queue first
                 if self.pendingSize >0 :
                     evout = self.popPending()
                     self.enquePending(ev)
@@ -852,6 +826,99 @@ class TaggedCsvPlayback(Playback):
 
         return ev
 
+########################################################################
+class TaggedCsvPlayback(Playback):
+    
+    def __init__(self, tcsvFilePath, startDate =Playback.DUMMY_DATE_START, endDate=Playback.DUMMY_DATE_END, symbol=None, **kwargs):
+
+        super(TaggedCsvPlayback, self).__init__(symbol, startDate, endDate, None, **kwargs)
+
+        self._tcsvFilePath = tcsvFilePath
+
+        self.__dictCategory = {} # eventName/category to { columeNames: [], coverter: func() }
+        self.__fnlist =[]
+        self._strmTcsv = None
+
+    def registerConverter(self, categroy, converter, columns=None):
+        if not columns: columns=[]
+        if not categroy in self.__dictCategory:
+            self.__dictCategory[categroy] = {
+                'columns': columns,
+                'converter': converter
+            }
+        else:
+            self.__dictCategory[categroy]['converter'] = converter
+            if len(columns) >0:
+                self.__dictCategory[categroy]['columns'] = columns
+
+    def openTcsvStream(self):
+
+        while not self._strmTcsv:
+            if not self.__fnlist or len(self.__fnlist) <=0:
+                self._iterableEnd = True
+                return None
+
+            fn = self.__fnlist[0]
+            del(self.__fnlist[0])
+
+            self.info('openning input file %s' % (fn))
+            extname = fn.split('.')[-1]
+            strm = None
+            if extname == 'bz2':
+                strm = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
+            else:
+                strm = open(fn, 'rt')
+
+            if not strm:
+                self.warn('failed to open input file %s' % (fn))
+                break
+
+            dtStart, dtEnd = self.datetimeRange
+            self._strmTcsv = TaggedCsvStream(strm, startDate =dtStart, endDate=dtEnd, program=self.program)
+            for cat, v in self.__dictCategory.items():
+                self.registerConverter(cat, **v)
+
+        return self._strmTcsv
+
+    # -- Impl of Playback --------------------------------------------------------------
+    def resetRead(self):
+        super(TaggedCsvPlayback, self).resetRead()
+
+        self.__fnlist = TcsvFilter.buildUpFileList(self._tcsvFilePath)
+        self.info('associated file list by key %s: %s' % (self._tcsvFilePath, ','.join(self.__fnlist)))
+        return len(self.__fnlist) >0
+
+    def readNext(self):
+        '''
+        @return True if busy at this step
+        '''
+        try :
+            ev = self.popPending(block = False, timeout = 0.1)
+            if ev: return ev
+        except Exception:
+            pass
+        
+        ev = None
+        while not ev:
+            self.openTcsvStream()
+
+            if not self._strmTcsv:
+                self._iterableEnd = True
+                return None
+
+            try :
+                ev = next(self._strmTcsv)
+            except Exception as ex:
+                ev = None
+
+            if not ev:
+                self.__dictCategory = self._strmTcsv.categories # inherit the current categories for next stream
+                self._strmTcsv.close()
+                self._strmTcsv = None
+                continue
+        
+        return ev
+
 import tarfile, fnmatch
 
 ########################################################################
@@ -860,54 +927,64 @@ class TaggedCsvInTarball(TaggedCsvPlayback):
         super(TaggedCsvInTarball, self).__init__(symbol, startDate, endDate, None, **kwargs)
         self.__fnTarball  = fnTarball
         self.__memPattern = memberPattern if memberPattern else '*.tcsv'
-        self.__fnlist = []
+        self.__memlist = [] # list of tar.member
 
-        self._streamIn = None
         self.__tar = None
 
     # -- overwrite of TaggedCsvInTarball --------------------------------------------------------------
     def resetRead(self):
         super(TaggedCsvPlayback, self).resetRead()
 
-        self.__fnlist = []
+        self.__memlist = []
         bz2dict = {}
 
         self.__tar = tarfile.open(self.__fnTarball)
         if self.__tar:
             for member in self.__tar.getmembers():
-                if fnmatch.fnmatch(member.name, self.__memPattern):
-                    self.__fnlist.append(member.name)
+                basename = os.path.basename(member.name)
+                if not fnmatch.fnmatch(basename, 'advisor_*.tcsv*'):
                     continue
-                if fnmatch.fnmatch(member.name, self.__memPattern + '.[0-9]*.bz2'):
-                    bz2dict[int(member.name.split('.')[-2])] = member.name
-                continue
+                
+                if '.tcsv' == basename[-5:]:
+                    self.__memlist.append(member) 
+                    continue
+
+                m = re.match(r'\.([0-9]*)\.bz2', suffix)
+                if m :
+                    bz2dict[int(m.group(1))] = member
 
         items = list(bz2dict.items())
         items.sort() 
 
         # insert into fnlist reversly
         for k,v in items:
-            self.__fnlist.insert(0, v)
+            self.__memlist.insert(0, v)
 
-        return len(self.__fnlist) >0
+        return len(self.__memlist) >0
 
-    def openStreamIn(self):
+    def openTcsvStream(self):
         while not self._streamIn:
-            if not self.__fnlist or len(self.__fnlist) <=0:
+            if not self.__memlist or len(self.__memlist) <=0:
                 self._iterableEnd = True
                 return None
 
-            fn = self.__fnlist[0]
-            del(self.__fnlist[0])
+            fn = self.__memlist[0]
+            del(self.__memlist[0])
 
             self.info('extracting file %s' % (fn))
             extname = fn.split('.')[-1]
-            self._streamIn = self.__tar.extractfile(fn)
+            self._strmTcsv = self.__tar.extractfile(fn)
             if extname == 'bz2':
-                self._streamIn = bz2.open(self._streamIn, mode='rt') # bz2.BZ2File(fn, 'rb')
+                self._strmTcsv = bz2.open(self._streamIn, mode='rt')
 
-            if not self._streamIn:
-                self.warn('failed to open input file %s' % (fn))
+            if not strm:
+                self.warn('failed to open member file %s' % (fn))
+                break
+
+            dtStart, dtEnd = self.datetimeRange
+            self._strmTcsv = TaggedCsvStream(strm, startDate =dtStart, endDate=dtEnd, program=self.program)
+            for cat, v in self.__dictCategory.items():
+                self.registerConverter(cat, **v)
                 
         return self._streamIn
 

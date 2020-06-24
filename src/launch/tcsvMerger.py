@@ -6,7 +6,7 @@ from Application import *
 from TradeAdvisor import EVENT_ADVICE, DictToAdvice
 from crawler import crawlSina as sina
 
-import os, fnmatch, tarfile
+import os, fnmatch, tarfile, re
 
 EXECLUDE_LIST = ["SH600005"]
 SYMBOL='SZ002008'
@@ -93,7 +93,7 @@ class SinaMerger(BaseApplication) :
                memlist.append(member) 
                continue
 
-            m = re.match(r'\.([0-9]*)\.bz2', suffix)
+            m = re.match(r'advisor_.*\.([0-9]*)\.bz2', basename)
             if m :
                 bz2dict[int(m.group(1))] = member
 
@@ -225,18 +225,7 @@ if __name__ == '__main__':
     srcFolder = '/mnt/e/AShareSample/SinaWeek'
 
     SYMBOL='SZ002008'
-    fn = '%s/advisor.BAK20200615T084501.tar.bz2' %srcFolder
-    f = open(fn, 'rb')
-    # strm = bz2.BZ2File(f, mode='r') # equals to bz2.open(f, mode='r')
-    bzstrm = bz2.open(f, mode='rt') # bz2.BZ2File(fn, 'rb')
-    # strm = open(bzstrm, mode='rt')
-    while True:
-        l = bzstrm.readline()
-        if not l : break
-        print(l)
-        break
 
-    
     tarNamePats={
         'tarNamePat_KL5m' : None, #'%s/SinaKL5m_*.tar.bz2' %srcFolder,
         'tarNamePat_MF1m' : None, #'%s/SinaMF1m_*.tar.bz2' %srcFolder,

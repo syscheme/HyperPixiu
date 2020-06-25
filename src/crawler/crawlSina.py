@@ -245,9 +245,9 @@ class SinaCrawler(MarketCrawler):
         else :
             if not Account_AShare.duringTradeHours():
                 self.__scheduleNext('all', 'tick', (61 - int(stampNow) %60))
-                self.info("step_pollTicks() btch[%d/%d] no new ticks during off-market time, extended sleep time" %(idxBtch +1, batches))
+                self.info("step_pollTicks() btch[%d/%d] no new ticks during off-market time, took %.3f/%.3fs, extended sleep time" %(idxBtch +1, batches, (stampResp-stampStart), (stampNow-stampStart)))
             else :
-                self.debug("step_pollTicks() btch[%d/%d] no new ticks updated" %(idxBtch +1, batches))
+                self.debug("step_pollTicks() btch[%d/%d] no new ticks updated, took %.3f/%.3fs" %(idxBtch +1, batches, (stampResp-stampStart), (stampNow-stampStart)))
 
         return cMerged
 

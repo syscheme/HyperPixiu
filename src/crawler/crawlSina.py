@@ -147,7 +147,7 @@ class SinaCrawler(MarketCrawler):
             self.__trdTick.join()
             self.__trdTick =None
 
-        super(MarketCrawler, self).stop()
+        super(SinaCrawler, self).stop()
 
     #------------------------------------------------
     # sub-steps

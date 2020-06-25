@@ -37,4 +37,8 @@
         "exchange" : "AShare",
     },
 
+    "sina": {
+        "securities": ["SH600001"],
+    },
+
 }

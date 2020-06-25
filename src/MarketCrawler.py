@@ -130,6 +130,7 @@ class MarketCrawler(BaseApplication):
         if not self.__marketStateToUpdate :
             self.__marketStateToUpdate = PerspectiveState(exchange="na") # dummy state if not specified
 
+        self.info("doAppInit() %d symbols subcribed: %s" %(len(self._symbolsToPoll), ','.join(self._symbolsToPoll)))
         return self.connect()
 
     def OnEvent(self, event):

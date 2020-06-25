@@ -242,7 +242,7 @@ class MoneyflowData(MarketData):
     '''资金流数据'''
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
-    COLUMNS = 'symbol,exchange,date,time,price,netamount,r0_ratio,r3cate_ratio' #,openInterest'
+    COLUMNS = 'symbol,exchange,date,time,price,netamount,ratioNet,r0_ratio,r3cate_ratio' #,openInterest'
 
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol =None):
@@ -251,6 +251,7 @@ class MoneyflowData(MarketData):
         
         self.price        = EventData.EMPTY_FLOAT      # 价格
         self.netamount    = EventData.EMPTY_FLOAT      # 净流入金额
+        self.ratioNet     = EventData.EMPTY_FLOAT      # 净流入率
         self.r0_ratio     = EventData.EMPTY_FLOAT      # 主力流入率
         self.r3cate_ratio = EventData.EMPTY_FLOAT      # 散户流入率（分钟资金流时）或 行业净流入率（日资金流时）
 

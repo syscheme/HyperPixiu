@@ -641,6 +641,7 @@ class SinaCrawler(MarketCrawler):
             mfdata = MoneyflowData("AShare", symbol)
             mfdata.price        = toFloatVal(mf['trade'])
             mfdata.netamount    = toFloatVal(mf['netamount'])
+            mfdata.ratioNet     = toFloatVal(mf['ratioamount'])
             mfdata.r0_ratio     = toFloatVal(mf['r0_ratio'])
             mfdata.r3cate_ratio = toFloatVal(mf['r3_ratio']) if byMinutes else toFloatVal(mf['cate_ra'])
             mfdata.datetime     = datetime.strptime(mf['opendate'], '%Y-%m-%d').replace(hour=15, minute=0, second=0, microsecond=0)

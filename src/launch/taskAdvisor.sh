@@ -4,6 +4,9 @@ SECU_LIST=$(grep -o '^S[HZ][0-9]*' ~/deploy-data/hpdata/advisor_objs.txt |sort|u
 TOPDIR_HP=~/wkspaces/HyperPixiu
 STAMP=$(date +%Y%m%dT%H%M%S)
 
+# sample of crontab
+# 50  6-15/2   * *  1-5   ~/tasks/taskAdvisor.sh 2>&1 > /tmp/taskAdvisor.log &
+# 0   16       * *  1-5   ps aux|grep 'advisor.py'| awk '{print $2;}' |xargs kill
 cd ${TOPDIR_HP}
 OUTDIR=./out/advisor
 CONF=$(realpath ~/deploy-data/hpdata/Advisor.json)
@@ -17,6 +20,11 @@ if ! [ -z ${PID} ]; then
         if ! [ -e $i ]; then continue; fi
         BZASOF=$(bzcat $i |head -1|grep -o '^.\{19\}'|sed 's/[- :]*//g')
         mv -vf $i  ${OUTDIR}/advisor_${PID}.${BZASOF}.log.bz2
+    done
+    for i in ${OUTDIR}/advisor_${PID}*.tcsv.[0-9]*.bz2 ; do
+        if ! [ -e $i ]; then continue; fi
+        BZASOF=$(stat -c %y $i | sed 's/[- :]*//g' |cut -d '.' -f1)
+        mv -vf $i  ${OUTDIR}/advisor_${PID}.${BZASOF}.tcsv.bz2
     done
     exit 0
 fi

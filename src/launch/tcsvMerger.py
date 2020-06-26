@@ -1,12 +1,12 @@
 import HistoryData as hist
-from MarketData import *
+from MarketData  import *
 from Perspective import PerspectiveState
 from EventData   import datetime2float
 from Application import *
 from TradeAdvisor import EVENT_ADVICE, DictToAdvice
 from crawler import crawlSina as sina
 
-import os, fnmatch, tarfile, re
+import os, sys, fnmatch, tarfile, re
 
 EXECLUDE_LIST = ["SH600005"]
 SYMBOL='SZ002008'
@@ -109,10 +109,13 @@ class SinaMerger(BaseApplication) :
                 f = bz2.open(f, mode='rt')
 
             pb = hist.TaggedCsvStream(f, program=self.program)
-            pb.registerConverter(EVENT_KLINE_1MIN, hist.DictToKLine(EVENT_KLINE_1MIN, SYMBOL))
-            pb.registerConverter(EVENT_KLINE_5MIN, hist.DictToKLine(EVENT_KLINE_5MIN, SYMBOL))
-            pb.registerConverter(EVENT_KLINE_1DAY, hist.DictToKLine(EVENT_KLINE_1DAY, SYMBOL))
-            # pb.registerConverter(EVENT_TICK,       hist.DictToTick(SYMBOL))
+            pb.registerConverter(EVENT_KLINE_1MIN, DictToKLine(EVENT_KLINE_1MIN, SYMBOL))
+            pb.registerConverter(EVENT_KLINE_5MIN, DictToKLine(EVENT_KLINE_5MIN, SYMBOL))
+            pb.registerConverter(EVENT_KLINE_1DAY, DictToKLine(EVENT_KLINE_1DAY, SYMBOL))
+            pb.registerConverter(EVENT_TICK,       DictToTick(SYMBOL))
+
+            pb.registerConverter(EVENT_MONEYFLOW_1MIN, DictToMoneyflow(EVENT_MONEYFLOW_1MIN, SYMBOL))
+            pb.registerConverter(EVENT_MONEYFLOW_1DAY, DictToMoneyflow(EVENT_MONEYFLOW_1DAY, SYMBOL))
 
             self.__mux.addStream(pb)
 
@@ -206,7 +209,7 @@ class SinaMerger(BaseApplication) :
 
         try :
             ev = next(self.__mux)
-            self.debug('filtered ev: %s' % ev.desc)
+            # self.debug('filtered ev: %s' % ev.desc)
             ev = self.__marketState.updateByEvent(ev)
             if ev: 
                 # yes, for merging only, a more straignt-foward way is to directly call self._recorder.pushRow(ev.type, ev.data) here
@@ -220,6 +223,7 @@ class SinaMerger(BaseApplication) :
 
 if __name__ == '__main__':
 
+    sys.argv += ['-f', os.path.realpath(os.path.dirname(os.path.abspath(__file__))+ '/../../conf') + '/Advisor.json']
     thePROG = Program()
     thePROG._heartbeatInterval =-1
     srcFolder = '/mnt/e/AShareSample/SinaWeek'

@@ -457,8 +457,13 @@ class Playback(Iterable):
         except:
             pass
 
+        self._dictCategory = {} # eventName/category to { columeNames: [], coverter: func() }
+
     @property
     def datetimeRange(self) : return self.__dtStart, self.__dtEnd
+
+    @property
+    def categories(self) : return self._dictCategory
 
     # -- impl of Iterable --------------------------------------------------------------
     def resetRead(self):
@@ -495,6 +500,26 @@ class Playback(Iterable):
         evMH.setData(evdMH)
         self.enquePending(evMH)
         return evdMH
+
+    def registerConverter(self, categroy, converter, columns=None):
+        if not converter or not categroy or len(categroy) <=0:
+            return
+
+        if not columns:
+            columns=[]
+            try :
+                columns=converter.fields.split(',')
+            except: pass
+
+        if not categroy in self._dictCategory:
+            self._dictCategory[categroy] = {
+                'columns': columns,
+                'converter': converter
+            }
+        else:
+            self._dictCategory[categroy]['converter'] = converter
+            if len(columns) >0:
+                self._dictCategory[categroy]['columns'] = columns
 
 ########################################################################
 class PlaybackApp(BaseApplication):
@@ -722,22 +747,7 @@ class TaggedCsvStream(Playback):
 
         super(TaggedCsvStream, self).__init__(symbol, startDate, endDate, None, **kwargs)
 
-        self.__dictCategory = {} # eventName/category to { columeNames: [], coverter: func() }
         self.__strmFileIn = stream
-
-    def registerConverter(self, categroy, converter, columns=None):
-        if not columns: columns=[]
-        if not categroy in self.__dictCategory:
-            self.__dictCategory[categroy] = {
-                'columns': columns,
-                'converter': converter
-            }
-        else:
-            self.__dictCategory[categroy]['converter'] = converter
-            if len(columns) >0:
-                self.__dictCategory[categroy]['columns'] = columns
-    @property
-    def categories(self) : return self.__dictCategory
 
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):
@@ -781,13 +791,13 @@ class TaggedCsvStream(Playback):
 
                 categroy = tokens[0][1:]
                 del(tokens[0])
-                if not categroy in self.__dictCategory.keys():
-                    self.__dictCategory[categroy] = {
+                if not categroy in self._dictCategory.keys():
+                    self._dictCategory[categroy] = {
                         'columns': [],
                         'converter': None
                     }
 
-                self.__dictCategory[categroy]['columns'] = tokens
+                self._dictCategory[categroy]['columns'] = tokens
 
                 # if idxSymbol<0 and symbol and 'symbol' in tokens:
                 #     idxSymbol = tokens.index('symbol')
@@ -798,8 +808,8 @@ class TaggedCsvStream(Playback):
             if len(tokens) <=1: continue
             categroy = tokens[0]
 
-            if not categroy in self.__dictCategory.keys(): continue
-            node = self.__dictCategory[categroy]
+            if not categroy in self._dictCategory.keys(): continue
+            node = self._dictCategory[categroy]
             converter = node['converter']
             if not converter:
                 continue
@@ -811,6 +821,10 @@ class TaggedCsvStream(Playback):
                 cols = node['columns']
                 for i in range(len(cols)) :
                     dict[cols[i]] = tokens[1+i]
+                
+                if len(dict) <=0: 
+                    self.warn('columns unknown, ignored: %s' % (row))
+                    continue
 
                 ev = converter.convert(dict)
 
@@ -822,7 +836,7 @@ class TaggedCsvStream(Playback):
                     return evout
 
             except Exception as ex:
-                self.logexception(ex)
+                self.error('convert row[%s] err: %s' % (row, ex))
 
         return ev
 
@@ -835,21 +849,9 @@ class TaggedCsvPlayback(Playback):
 
         self._tcsvFilePath = tcsvFilePath
 
-        self.__dictCategory = {} # eventName/category to { columeNames: [], coverter: func() }
+        self._dictCategory = {} # eventName/category to { columeNames: [], coverter: func() }
         self.__fnlist =[]
         self._strmTcsv = None
-
-    def registerConverter(self, categroy, converter, columns=None):
-        if not columns: columns=[]
-        if not categroy in self.__dictCategory:
-            self.__dictCategory[categroy] = {
-                'columns': columns,
-                'converter': converter
-            }
-        else:
-            self.__dictCategory[categroy]['converter'] = converter
-            if len(columns) >0:
-                self.__dictCategory[categroy]['columns'] = columns
 
     def openTcsvStream(self):
 
@@ -875,7 +877,7 @@ class TaggedCsvPlayback(Playback):
 
             dtStart, dtEnd = self.datetimeRange
             self._strmTcsv = TaggedCsvStream(strm, startDate =dtStart, endDate=dtEnd, program=self.program)
-            for cat, v in self.__dictCategory.items():
+            for cat, v in self._dictCategory.items():
                 self.registerConverter(cat, **v)
 
         return self._strmTcsv
@@ -912,7 +914,7 @@ class TaggedCsvPlayback(Playback):
                 ev = None
 
             if not ev:
-                self.__dictCategory = self._strmTcsv.categories # inherit the current categories for next stream
+                self._dictCategory = self._strmTcsv.categories # inherit the current categories for next stream
                 self._strmTcsv.close()
                 self._strmTcsv = None
                 continue
@@ -983,7 +985,7 @@ class TaggedCsvInTarball(TaggedCsvPlayback):
 
             dtStart, dtEnd = self.datetimeRange
             self._strmTcsv = TaggedCsvStream(strm, startDate =dtStart, endDate=dtEnd, program=self.program)
-            for cat, v in self.__dictCategory.items():
+            for cat, v in self._dictCategory.items():
                 self.registerConverter(cat, **v)
                 
         return self._streamIn

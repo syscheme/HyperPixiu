@@ -421,6 +421,9 @@ class Iterable(MetaObj):
         # 事件队列
         self.__quePending = Queue() # (maxsize=999)
 
+    @property
+    def program(self) : return self.__program
+
     def __iter__(self):
         if self.resetRead() : # alway perform reset here
             self.__gen = self.__generate()

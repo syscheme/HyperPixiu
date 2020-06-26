@@ -749,6 +749,9 @@ class TaggedCsvStream(Playback):
 
         self.__strmFileIn = stream
 
+    def close(self): # to be stream-like
+        self.__strmFileIn= None
+
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):
         super(TaggedCsvStream, self).resetRead()
@@ -763,7 +766,7 @@ class TaggedCsvStream(Playback):
             if ev: return ev
         except Exception:
             pass
-        
+        None
         row, ev = None, None
         while not row:
             if not self.__strmFileIn:
@@ -928,7 +931,7 @@ class TaggedCsvInTarball(TaggedCsvPlayback):
     def __init__(self, fnTarball, memberPattern=None, startDate =Playback.DUMMY_DATE_START, endDate=Playback.DUMMY_DATE_END, symbol=None, **kwargs):
         super(TaggedCsvInTarball, self).__init__(symbol, startDate, endDate, None, **kwargs)
         self.__fnTarball  = fnTarball
-        self.__memPattern = memberPattern if memberPattern else '*.tcsv'
+        self.__memPattern = memberPattern if memberPattern else '*.tcsv*'
         self.__memlist = [] # list of tar.member
 
         self.__tar = None
@@ -938,57 +941,83 @@ class TaggedCsvInTarball(TaggedCsvPlayback):
         super(TaggedCsvPlayback, self).resetRead()
 
         self.__memlist = []
-        bz2dict = {}
+        bz2dict1 = {}
+        bz2dict2 = {}
 
         self.__tar = tarfile.open(self.__fnTarball)
         if self.__tar:
             for member in self.__tar.getmembers():
                 basename = os.path.basename(member.name)
-                if not fnmatch.fnmatch(basename, 'advisor_*.tcsv*'):
+                if not fnmatch.fnmatch(basename, self.__memPattern):
                     continue
                 
                 if '.tcsv' == basename[-5:]:
                     self.__memlist.append(member) 
                     continue
 
-                m = re.match(r'\.([0-9]*)\.bz2', suffix)
+                # old fn format: xxxx.tcsv.1.bz2
+                m = re.match(r'.*\.([0-9]*)\.bz2', basename)
                 if m :
-                    bz2dict[int(m.group(1))] = member
+                    bz2dict1[int(m.group(1))] = member
+                    continue
 
-        items = list(bz2dict.items())
+                # new fn format: xxxx.YYYYmmddHHMMSS.tcsv.bz2
+                m = re.match(r'.*\.([0-9]*)\.tcsv.bz2', basename)
+                if m :
+                    bz2dict2[int(m.group(1))] = member
+                    continue
+
+        items = list(bz2dict1.items())
         items.sort() 
 
         # insert into fnlist reversly
         for k,v in items:
             self.__memlist.insert(0, v)
 
-        return len(self.__memlist) >0
+        items = list(bz2dict2.items())
+        items.sort()
+        items.reverse()
+
+        # insert into fnlist reversly
+        for k,v in items:
+            self.__memlist.insert(-1, v)
+
+        if len(self.__memlist) >0:
+            self.debug('resetRead() associated [%s] in tarball[%s]: %s' % (self.__memPattern, self.__fnTarball, ','.join([m.name for m in self.__memlist])))
+            return True
+        
+        self.warn('resetRead() failed to associated [%s] in tarball[%s]' % (self.__memPattern, self.__fnTarball))
+        return False
 
     def openTcsvStream(self):
-        while not self._streamIn:
+        while not self._strmTcsv:
             if not self.__memlist or len(self.__memlist) <=0:
                 self._iterableEnd = True
                 return None
 
-            fn = self.__memlist[0]
+            mem = self.__memlist[0]
             del(self.__memlist[0])
 
-            self.info('extracting file %s' % (fn))
-            extname = fn.split('.')[-1]
-            self._strmTcsv = self.__tar.extractfile(fn)
+            self.debug('extracting file %s of tarball[%s]' % (mem.name, self.__fnTarball))
+            extname = mem.name.split('.')[-1]
+            self._strmTcsv = self.__tar.extractfile(mem)
             if extname == 'bz2':
-                self._strmTcsv = bz2.open(self._streamIn, mode='rt')
+                self._strmTcsv = bz2.open(self._strmTcsv, mode='rt')
 
-            if not strm:
-                self.warn('failed to open member file %s' % (fn))
+            if not self._strmTcsv:
+                self.warn('failed to open %s of tarball[%s]' % (mem.name, self.__fnTarball))
                 break
 
             dtStart, dtEnd = self.datetimeRange
-            self._strmTcsv = TaggedCsvStream(strm, startDate =dtStart, endDate=dtEnd, program=self.program)
+            self._strmTcsv = TaggedCsvStream(self._strmTcsv, startDate =dtStart, endDate=dtEnd, program=self.program)
+            if not self._strmTcsv: continue
+
             for cat, v in self._dictCategory.items():
-                self.registerConverter(cat, **v)
+                self._strmTcsv.registerConverter(cat, **v)
+
+            self.info('opened member[%s] of tarball[%s]' % (mem.name, self.__fnTarball))
                 
-        return self._streamIn
+        return self._strmTcsv
 
 
 ########################################################################

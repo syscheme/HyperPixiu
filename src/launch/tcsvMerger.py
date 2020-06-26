@@ -119,6 +119,19 @@ class SinaMerger(BaseApplication) :
 
             self.__mux.addStream(pb)
 
+    def __extractAdvisorTarball(self, tarballName):
+        pb = hist.TaggedCsvInTarball(tarballName, memberPattern='advisor_*.tcsv*', program=self.program)
+
+        pb.registerConverter(EVENT_KLINE_1MIN, DictToKLine(EVENT_KLINE_1MIN, SYMBOL))
+        pb.registerConverter(EVENT_KLINE_5MIN, DictToKLine(EVENT_KLINE_5MIN, SYMBOL))
+        pb.registerConverter(EVENT_KLINE_1DAY, DictToKLine(EVENT_KLINE_1DAY, SYMBOL))
+        pb.registerConverter(EVENT_TICK,       DictToTick(SYMBOL))
+
+        pb.registerConverter(EVENT_MONEYFLOW_1MIN, DictToMoneyflow(EVENT_MONEYFLOW_1MIN, SYMBOL))
+        pb.registerConverter(EVENT_MONEYFLOW_1DAY, DictToMoneyflow(EVENT_MONEYFLOW_1DAY, SYMBOL))
+
+        self.__mux.addStream(pb)
+
     def doAppInit(self): # return True if succ
         if not super(SinaMerger, self).doAppInit() :
             return False
@@ -148,7 +161,7 @@ class SinaMerger(BaseApplication) :
                 if 'sina' == bname[:4].lower() :
                     self.__extractJsonStreams(tn, evtype)
                 elif EVENT_TICK == evtype and 'advisor' == bname[:len('advisor')] :
-                    self.__extractAdvisorStreams(tn)
+                    self.__extractAdvisorTarball(tn) # self.__extractAdvisorStreams(tn)
 
         if self._symbolLookFor and len(self._symbolLookFor) >5 and None in [self.__tarballs[EVENT_KLINE_1DAY], self.__tarballs[EVENT_MONEYFLOW_1DAY]]:
             crawl = sina.SinaCrawler(self.program, None)

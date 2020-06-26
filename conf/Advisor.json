@@ -38,7 +38,7 @@
     },
 
     "sina": {
-        "securities": ["SH600001"],
+        "securities": ["SH000001", "SZ399001", "SZ399006", "SH000300"], // common index
     },
 
 }

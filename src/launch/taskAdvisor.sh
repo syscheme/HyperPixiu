@@ -8,9 +8,16 @@ cd ${TOPDIR_HP}
 OUTDIR=./out/advisor
 CONF=$(realpath ~/deploy-data/hpdata/Advisor.json)
 
-PID=$(ps aux|grep 'advisor.py'|grep ${CONF}|awk '{print $2;}')
+PID=$(ps aux|grep 'advisor.py'|grep ${CONF} | grep -v 'run.sh' |awk '{print $2;}' )
 if ! [ -z ${PID} ]; then
-    echo "an existing advisor is running with PID=${PID}"
+    echo "an existing advisor is running with PID=${PID}, backup its logfiles"
+    cp -vf /tmp/advisor_${PID}_*.log ${OUTDIR}/advisor_${PID}.log
+    mv -vf /tmp/advisor_${PID}_*.log.*.bz2  ${OUTDIR}/
+    for i in ${OUTDIR}/advisor_${PID}_*.log.*.bz2 ; do
+        if ! [ -e $i ]; then continue; fi
+        BZASOF=$(bzcat $i |head -1|grep -o '^.\{19\}'|sed 's/[- :]*//g')
+        mv -vf $i  ${OUTDIR}/advisor_${PID}.${BZASOF}.log.bz2
+    done
     exit 0
 fi
 

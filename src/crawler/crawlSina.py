@@ -101,6 +101,7 @@ class SinaCrawler(MarketCrawler):
         self.__tickBatches = None
 
         self.__tickToKL1m = {} # dict of symbol to SinaTickToKL1m
+        self.__mfMerger   = {} # dict of symbol to SinaMF1mToXm
         self.__stampNextPolls = {} # dict of symbol_event to float stamp
 
         if len(symbols) >0:
@@ -218,6 +219,7 @@ class SinaCrawler(MarketCrawler):
 
             if not s in self.__tickToKL1m.keys():
                 self.__tickToKL1m[s] = SinaTickToKL1m(self.__onKL1mMerged)
+                self.__tickToKL1m[s] = SinaMF1mToXm(self.__onMF5mMerged)
             
             tkstate=self.__tickToKL1m[s]
             if tk.datetime <= tkstate.lastTickAsOf :
@@ -343,11 +345,18 @@ class SinaCrawler(MarketCrawler):
     def __onKL1mMerged(self, kl1m):
         ev = Event(EVENT_KLINE_1MIN)
         ev.setData(kl1m)
-        self.OnEventCaptured(ev)
+        ev = self.marketState.updateByEvent(ev)
+        if ev: 
+            self.OnEventCaptured(ev)
+            self.debug("onKL1mMerged() merged from ticks: %s ->psp: %s" % (kl1m.desc, self.marketState.descOf(kl1m.symbol)))
 
-        self.marketState.updateByEvent(ev)
-
-        self.debug("onKL1mMerged() merged from ticks: %s ->psp: %s" % (kl1m.desc, self.marketState.descOf(kl1m.symbol)))
+    def __onMF5mMerged(self, mf5m):
+        ev = Event(EVENT_MONEYFLOW_5MIN)
+        ev.setData(mf5m)
+        ev = self.marketState.updateByEvent(ev)
+        if ev: 
+            self.OnEventCaptured(ev)
+            self.debug("onMF5mMerged() merged: %s ->psp: %s" % (mf5m.desc, self.marketState.descOf(mf5m.symbol)))
 
     def __step_pollMoneyflow(self):
         cBusy =0       
@@ -408,6 +417,12 @@ class SinaCrawler(MarketCrawler):
                 if ev and self._recorder:
                     cMerged +=1
                     self.OnEventCaptured(ev)
+
+                if EVENT_MONEYFLOW_1MIN == evType:
+                    if not s in self.__mfMerger.keys():
+                        self.__mfMerger[s] = SinaMF1mToXm(self.__onMF5mMerged, 5)
+            
+                    self.__mfMerger[s].pushMF1m(i)
 
             stampNow = datetime2float(datetime.now())
             if cMerged >0:
@@ -870,6 +885,33 @@ class SinaTickToKL1m(object):
         
         self.__kline = None # 创建新的K线对象
 
+########################################################################
+class SinaMF1mToXm(object):
+    """
+    SINA Tick合成X分钟MF    """
+
+    #----------------------------------------------------------------------
+    def __init__(self, onMFlowXm, X=5):
+        """Constructor"""
+        self.__mf1m = None
+        self.__onMFlowXm = onMFlowXm      # callback
+        self.__X = int(X)
+        if self.__X <1: self.__X =1
+
+    @property
+    def lastAsOf(self):
+        return self.__mf1m.asof if self.__mf1m else DT_EPOCH
+        
+    #----------------------------------------------------------------------
+    def pushMF1m(self, mf1m):
+        if not mf1m or self.lastAsOf >= mf1m.asof:
+            return
+
+        self.__mf1m = mf1m
+        if self.__onMFlowXm and 0 == (self.__mf1m.asof.hour *60 + self.__mf1m.asof.minute) % self.__X:
+            self.__onMFlowXm(copy(self.__mf1m))
+
+########################################################################
 def activityOf(item):
     return item['nmc'] * item['turnoverratio']
 
@@ -898,6 +940,7 @@ def listSymbols(program, mdSina):
     print(HEADERSEQ)
     for i in topXXX: print(','.join([str(i[k]) for k in HEADERSEQ.split(',')]))
 
+########################################################################
 class TcsvMerger(BaseApplication) :
     def __init__(self, program, tarNamePat_KL5m, tarNamePat_MF1m, startDate =None, endDate=None, tarNamePat_Tick=None, tarNamePat_KL1d=None, tarNamePat_MF1d=None, **kwargs):
         '''Constructor

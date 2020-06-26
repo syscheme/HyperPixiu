@@ -25,7 +25,8 @@ DEFAULT_KLDEPTH_1day = 260
 
 EXPORT_SIGNATURE= '%dT%dM%dF%dD.%s:200109T17' % (DEFAULT_KLDEPTH_TICK, DEFAULT_KLDEPTH_1min, DEFAULT_KLDEPTH_5min, DEFAULT_KLDEPTH_1day, NORMALIZE_ID)
 
-DEFAULT_MFDEPTH_1min = 240 # a 4-hr day
+DEFAULT_MFDEPTH_1min = 60  # 1-hr
+DEFAULT_MFDEPTH_5min = 48  # a 4-hr day
 DEFAULT_MFDEPTH_1day = 120 # about half a year
 
 ########################################################################
@@ -112,7 +113,7 @@ class Perspective(MarketData):
     4. 1day KLines
     '''
     EVENT_SEQ_KLTICK =  [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]
-    EVENT_SEQ_MF = [EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY]
+    EVENT_SEQ_MF = [EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_5MIN, EVENT_MONEYFLOW_1DAY]
 
     TICKPRICES_TO_EXP = 'price,open,high,low,b1P,b2P,b3P,b4P,b5P,a1P,a2P,a3P,a4P,a5P'
     TICKVOLS_TO_EXP   = 'volume,b1V,b2V,b3V,b4V,b5V,a1V,a2V,a3V,a4V,a5V'
@@ -120,7 +121,7 @@ class Perspective(MarketData):
     KLVOLS_TO_EXP = 'volume'
 
     #----------------------------------------------------------------------
-    def __init__(self, exchange, symbol=None, KLDepth_1min=DEFAULT_KLDEPTH_1min, KLDepth_5min=DEFAULT_KLDEPTH_5min, KLDepth_1day=DEFAULT_KLDEPTH_1day, tickDepth=DEFAULT_KLDEPTH_TICK, MFDepth_1min=DEFAULT_MFDEPTH_1min, MFDepth_1day =DEFAULT_MFDEPTH_1day, **kwargs) :
+    def __init__(self, exchange, symbol=None, KLDepth_1min=DEFAULT_KLDEPTH_1min, KLDepth_5min=DEFAULT_KLDEPTH_5min, KLDepth_1day=DEFAULT_KLDEPTH_1day, tickDepth=DEFAULT_KLDEPTH_TICK, MFDepth_1min=DEFAULT_MFDEPTH_1min, MFDepth_5min=DEFAULT_MFDEPTH_5min, MFDepth_1day =DEFAULT_MFDEPTH_1day, **kwargs) :
         '''Constructor'''
         super(Perspective, self).__init__(exchange, symbol)
 
@@ -131,6 +132,7 @@ class Perspective(MarketData):
             EVENT_KLINE_1DAY: EvictableStack(KLDepth_1day, KLineData(self.exchange, self.symbol)),
 
             EVENT_MONEYFLOW_1MIN: EvictableStack(MFDepth_1min, MoneyflowData(self.exchange, self.symbol)),
+            EVENT_MONEYFLOW_5MIN: EvictableStack(MFDepth_5min, MoneyflowData(self.exchange, self.symbol)),
             EVENT_MONEYFLOW_1DAY: EvictableStack(MFDepth_1day, MoneyflowData(self.exchange, self.symbol)),
         }
 

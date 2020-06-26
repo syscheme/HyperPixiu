@@ -909,6 +909,10 @@ class SinaMF1mToXm(object):
 
         self.__mf1m = mf1m
         if self.__onMFlowXm and 0 == (self.__mf1m.asof.hour *60 + self.__mf1m.asof.minute) % self.__X:
+            d = copy(self.__mf1m)
+            if not '_m2x' in d.exchange :
+                d.exchange = '%s_m2x' % d.exchange
+                
             self.__onMFlowXm(copy(self.__mf1m))
 
 ########################################################################

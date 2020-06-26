@@ -49,13 +49,14 @@ class SinaMerger(sina.TcsvMerger) :
                 f = bz2.open(f, mode='rt')
 
             pb = hist.TaggedCsvStream(f, program=self.program)
-            pb.registerConverter(EVENT_KLINE_1MIN, DictToKLine(EVENT_KLINE_1MIN, SYMBOL))
-            pb.registerConverter(EVENT_KLINE_5MIN, DictToKLine(EVENT_KLINE_5MIN, SYMBOL))
-            pb.registerConverter(EVENT_KLINE_1DAY, DictToKLine(EVENT_KLINE_1DAY, SYMBOL))
-            pb.registerConverter(EVENT_TICK,       DictToTick(SYMBOL))
+            pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
+            pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
+            pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
+            pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
 
-            pb.registerConverter(EVENT_MONEYFLOW_1MIN, DictToMoneyflow(EVENT_MONEYFLOW_1MIN, SYMBOL))
-            pb.registerConverter(EVENT_MONEYFLOW_1DAY, DictToMoneyflow(EVENT_MONEYFLOW_1DAY, SYMBOL))
+            pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+            pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+            pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
 
             self.__mux.addStream(pb)
 
@@ -75,6 +76,7 @@ class SinaMerger(sina.TcsvMerger) :
             rec.registerCategory(EVENT_KLINE_5MIN,     params={'columns': KLineData.COLUMNS})
             rec.registerCategory(EVENT_KLINE_1DAY,     params={'columns': KLineData.COLUMNS})
             rec.registerCategory(EVENT_MONEYFLOW_1MIN, params={'columns': MoneyflowData.COLUMNS})
+            rec.registerCategory(EVENT_MONEYFLOW_5MIN, params={'columns': MoneyflowData.COLUMNS})
             rec.registerCategory(EVENT_MONEYFLOW_1DAY, params={'columns': MoneyflowData.COLUMNS})
             rec.registerCategory(EVENT_TICK,           params={'columns': TickData.COLUMNS})
 

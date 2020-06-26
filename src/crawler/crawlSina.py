@@ -912,7 +912,7 @@ class SinaMF1mToXm(object):
             d = copy(self.__mf1m)
             if not '_m2x' in d.exchange :
                 d.exchange = '%s_m2x' % d.exchange
-                
+
             self.__onMFlowXm(copy(self.__mf1m))
 
 ########################################################################
@@ -1029,6 +1029,7 @@ class TcsvMerger(BaseApplication) :
         pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
 
         pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+        pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
         pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
 
         self.__mux.addStream(pb)
@@ -1039,7 +1040,7 @@ class TcsvMerger(BaseApplication) :
 
         # subscribing, see OnEvent()
         self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
-        self.subscribeEvents([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY])
+        self.subscribeEvents([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_5MIN, EVENT_MONEYFLOW_1DAY])
 
         for evtype in self.__tnPattern.keys():
             if not self.__tnPattern[evtype]:

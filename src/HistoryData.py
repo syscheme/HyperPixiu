@@ -91,7 +91,7 @@ class Recorder(BaseApplication):
                 self.logexception(ex)
                 break
 
-        return cStep >0
+        return cStep
 
     def OnEvent(self, event):
         pass # do nothing for Recorder unless it is an auto-recorder
@@ -112,7 +112,7 @@ class Recorder(BaseApplication):
         # coll = self.findCollection(self, category)
         raise NotImplementedError
 
-    def registerCategory(self, category, params= {}):
+    def registerCategory(self, category, params={}):
         '''
            for example Account will call recorder.registerCategory('DailyPosition', params= {'index': [('date', INDEX_ASCENDING), ('time', INDEX_ASCENDING)], 'columns' : ['date','symbol']})
         '''

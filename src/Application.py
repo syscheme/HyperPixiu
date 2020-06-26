@@ -799,6 +799,16 @@ class Program(object):
 
         return appId in self.__activeApps
 
+    def initApp(self, app, appId=None) :
+        if not app: return
+        if not appId: appId =app.ident
+        self.debug('initializing app[%s]' % appId)
+        if not app.doAppInit() :
+            self.error('failed to initialize app[%s]' % appId)
+        else :
+            self.__activeApps.append(app.ident)
+            self.info('initialized app[%s] as %s' % (appId, app.ident))
+
     #----------------------------------------------------------------------
     def start(self, daemonize=False):
         if self.__activeApps and len(self.__activeApps) >0 :
@@ -818,13 +828,8 @@ class Program(object):
             app = self.getObj(appId)
             if app == None:
                 continue
-            
-            self.debug('starting app[%s]' % appId)
-            if not app.doAppInit() :
-                self.error('failed to initialize app[%s]' % appId)
-            else :
-                self.__activeApps.append(app.ident)
-                self.info('initialized app[%s] as %s' % (appId, app.ident))
+
+            self.initApp(app, appId)
 
         if len(self.__activeApps) <=0 : 
             self._bRun =False

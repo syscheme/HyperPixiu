@@ -14,15 +14,7 @@ SYMBOL='SZ002008'
 class SinaMerger(sina.TcsvMerger) :
     def __init__(self, program, recorder, tarNamePat_KL5m, tarNamePat_MF1m, startDate =None, endDate=None, tarNamePat_Tick=None, tarNamePat_KL1d=None, tarNamePat_MF1d=None, **kwargs):
         super(SinaMerger, self).__init__(program, tarNamePat_KL5m, tarNamePat_MF1m, startDate, endDate, tarNamePat_Tick, tarNamePat_KL1d, tarNamePat_MF1d, **kwargs)
-        self._recorder =  recorder
-
-        if self._recorder:
-            rec.registerCategory(EVENT_TICK,           params={'columns': TickData.COLUMNS})
-            rec.registerCategory(EVENT_KLINE_1MIN,     params={'columns': KLineData.COLUMNS})
-            rec.registerCategory(EVENT_KLINE_5MIN,     params={'columns': KLineData.COLUMNS})
-            rec.registerCategory(EVENT_KLINE_1DAY,     params={'columns': KLineData.COLUMNS})
-            rec.registerCategory(EVENT_MONEYFLOW_1MIN, params={'columns': MoneyflowData.COLUMNS})
-            rec.registerCategory(EVENT_MONEYFLOW_1DAY, params={'columns': MoneyflowData.COLUMNS})
+        self.__dictRec =  {}
 
     def __extractAdvisorStreams(self, tarballName):
         tar = tarfile.open(tarballName)
@@ -69,8 +61,35 @@ class SinaMerger(sina.TcsvMerger) :
 
     def OnEvent(self, event):
         # see notes on postEvent() in doAppStep()
-        if self._recorder: 
-            self._recorder.pushRow(event.type, event.data)
+        if not MARKETDATE_EVENT_PREFIX in event.type :
+            return
+
+        symbol = event.data.symbol
+        if len(self.symbols) >0 and not symbol in self.symbols:
+            return
+
+        if not symbol in self.__dictRec.keys():
+            rec = self.program.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(thePROG.outdir, '%s_sinaMerged.tcsv' % symbol))
+            rec.registerCategory(EVENT_TICK,           params={'columns': TickData.COLUMNS})
+            rec.registerCategory(EVENT_KLINE_1MIN,     params={'columns': KLineData.COLUMNS})
+            rec.registerCategory(EVENT_KLINE_5MIN,     params={'columns': KLineData.COLUMNS})
+            rec.registerCategory(EVENT_KLINE_1DAY,     params={'columns': KLineData.COLUMNS})
+            rec.registerCategory(EVENT_MONEYFLOW_1MIN, params={'columns': MoneyflowData.COLUMNS})
+            rec.registerCategory(EVENT_MONEYFLOW_1DAY, params={'columns': MoneyflowData.COLUMNS})
+            rec.registerCategory(EVENT_TICK,           params={'columns': TickData.COLUMNS})
+
+            self.program.initApp(rec)
+            self.__dictRec[symbol]=rec
+
+        rec = self.__dictRec[symbol]
+        if rec: 
+            rec.pushRow(event.type, event.data)
+
+    # def doAppStep(self):
+    #     c = super(self.__class__, self).doAppStep()
+    #     for rec in self.__dictRec.values():
+    #         c += rec.doAppStep()
+    #     return c
     
 if __name__ == '__main__':
 
@@ -89,8 +108,9 @@ if __name__ == '__main__':
         # 'tarNamePat_MF1d' : '%s/SinaMF1d*.tar.bz2' %srcFolder,
     }
 
-    rec    = thePROG.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(thePROG.outdir, '%s.tcsv' % SYMBOL))
-    merger = thePROG.createApp(SinaMerger, recorder =rec, symbol=SYMBOL, startDate='20200601T000000', endDate='20200630T235959', **tarNamePats)
+    # rec    = thePROG.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(thePROG.outdir, '%s.tcsv' % SYMBOL))
+    merger = thePROG.createApp(SinaMerger, recorder =None, symbol=SYMBOL, startDate='20200601T000000', endDate='20200630T235959', **tarNamePats)
+    merger.setSymbols('SZ002008,SZ002080,SZ002007,SZ002106')
 
     '''
     acc = thePROG.createApp(Account_AShare, configNode ='account', ratePer10K =30)

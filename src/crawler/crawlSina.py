@@ -912,15 +912,26 @@ class TcsvMerger(BaseApplication) :
         }
 
         self.__tarballs = {}
-        self._symbolLookFor = None
+        self.__symbols = []
 
         self.__mux = hist.PlaybackMux(program=self.program, startDate =startDate, endDate=endDate)
         self.__delayedQuit =100
         self.__marketState = PerspectiveState(exchange="AShare")
 
+    @property
+    def symbols(self) : return self.__symbols
+
+    def setSymbols(self, symbols) :
+        if isinstance(symbols, str):
+            symbols = symbols.split(',')
+            
+        self.__symbols = [SinaCrawler.fixupSymbolPrefix(s) for s in symbols]
+        return self.symbols
+
     def __extractJsonStreams(self, tarballName, evtype):
         tar = tarfile.open(tarballName)
 
+        foundlist = []
         for member in tar.getmembers():
             basename = os.path.basename(member.name)
             if not basename.split('.')[-1] in ['json']: 
@@ -928,10 +939,11 @@ class TcsvMerger(BaseApplication) :
 
             symbol = basename[:basename.index('_')]
 
-            if symbol in EXECLUDE_LIST or (self._symbolLookFor and self._symbolLookFor != symbol):
+            if (len(self.symbols)>0 and not symbol in self.symbols) or symbol in EXECLUDE_LIST:
                 continue
 
             self.debug('memberFile[%s] in %s matched et[%s]' % (member.name, tarballName, evtype))
+            foundlist.append(member.name)
             edseq =[]
             with tar.extractfile(member) as f:
                 content =f.read().decode()
@@ -951,7 +963,7 @@ class TcsvMerger(BaseApplication) :
                 pb.enquePending(ev)
 
             self.__mux.addStream(pb)
-            if self._symbolLookFor and self._symbolLookFor == symbol:
+            if len(foundlist) >= len(self.symbols) : # if self.symbols and self.symbols == symbol:
                 break # do not scan the tar anymore
 
     def __extractAdvisorTarball(self, tarballName):
@@ -1005,8 +1017,8 @@ class TcsvMerger(BaseApplication) :
                 elif EVENT_TICK == evtype and 'advisor' == bname[:len('advisor')] :
                     self.__extractAdvisorTarball(tn) # self.__extractAdvisorStreams(tn)
 
-        if self._symbolLookFor and len(self._symbolLookFor) >5 and None in [self.__tarballs[EVENT_KLINE_1DAY], self.__tarballs[EVENT_MONEYFLOW_1DAY]]:
-            crawl = sina.SinaCrawler(self.program, None)
+        if len(self.symbols) >0 and None in [self.__tarballs[EVENT_KLINE_1DAY], self.__tarballs[EVENT_MONEYFLOW_1DAY]]:
+            crawl = SinaCrawler(self.program, None)
             dtStart, _ = self.__mux.datetimeRange
             days = (datetime.now() - dtStart).days +2
             if days > 500: days =500
@@ -1014,12 +1026,14 @@ class TcsvMerger(BaseApplication) :
             evtype = EVENT_KLINE_1DAY
             if not self.__tarballs[evtype] :
                 self.debug('taking online query as source of event[%s] of %ddays' % (evtype, days))
-                httperr, dataseq = crawl.GET_RecentKLines(self._symbolLookFor, 240, days)
-                if 200 != httperr:
-                    self.error("doAppInit() GET_RecentKLines(%s:%s) failed, err(%s)" %(self._symbolLookFor, evtype, httperr))
-                elif len(dataseq) >0: 
+                for s in self.symbols:
+                    httperr, dataseq = crawl.GET_RecentKLines(s, 240, days)
+                    if 200 != httperr or len(dataseq) <=0:
+                        self.error("doAppInit() GET_RecentKLines(%s:%s) failed, err(%s) len(%d)" %(s, evtype, httperr, len(dataseq)))
+                        continue
+
                     # succ at query
-                    pb, c = hist.Playback(self._symbolLookFor, program=self.program), 0
+                    pb, c = hist.Playback(s, program=self.program), 0
                     for i in dataseq:
                         ev = Event(evtype)
                         ev.setData(i)
@@ -1032,12 +1046,14 @@ class TcsvMerger(BaseApplication) :
             evtype = EVENT_MONEYFLOW_1DAY
             if not self.__tarballs[evtype] :
                 self.debug('taking online query as source of event[%s] of %ddays' % (evtype, days))
-                httperr, dataseq = crawl.GET_MoneyFlow(self._symbolLookFor, days, False)
-                if 200 != httperr:
-                    self.error("doAppInit() GET_MoneyFlow(%s:%s) failed, err(%s)" %(self._symbolLookFor, evtype, httperr))
-                elif len(dataseq) >0: 
+                for s in self.symbols:
+                    httperr, dataseq = crawl.GET_MoneyFlow(s, days, False)
+                    if 200 != httperr or len(dataseq) <=0:
+                        self.error("doAppInit() GET_MoneyFlow(%s:%s) failed, err(%s) len(%d)" %(s, evtype, httperr, len(dataseq)))
+                        continue
+
                     # succ at query
-                    pb, c = hist.Playback(self._symbolLookFor, program=self.program), 0
+                    pb, c = hist.Playback(s, program=self.program), 0
                     for i in dataseq:
                         ev = Event(evtype)
                         ev.setData(i)

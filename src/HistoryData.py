@@ -457,7 +457,7 @@ class Playback(Iterable):
         except:
             pass
 
-        self._dictCategory = {} # eventName/category to { columeNames: [], coverter: func() }
+        self._dictCategory = {} # eventType/category to { columeNames: [], coverter: func() }
 
     @property
     def datetimeRange(self) : return self.__dtStart, self.__dtEnd
@@ -507,9 +507,9 @@ class Playback(Iterable):
 
         if not columns:
             columns=[]
-            try :
-                columns=converter.fields.split(',')
-            except: pass
+            # try :
+            #     columns=converter.fields.split(',')
+            # except: pass
 
         if not categroy in self._dictCategory:
             self._dictCategory[categroy] = {
@@ -829,7 +829,8 @@ class TaggedCsvStream(Playback):
                     self.warn('columns unknown, ignored: %s' % (row))
                     continue
 
-                ev = converter.convert(dict)
+                dict['evType'] = categroy
+                ev = converter(**dict) # converter.convert(dict)
 
                 # because the merged-event is always as of the previous event, so always deliver
                 # those pendings in queue first

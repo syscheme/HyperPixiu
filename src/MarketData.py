@@ -40,14 +40,14 @@ EVENT_MONEYFLOW_1DAY    = EVENT_MONEYFLOW_PREFIX + '1d'
 
 ########################################################################
 class MarketData(EventData):
-    """Tick行情数据类"""
+    '''Tick行情数据类'''
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
     COLUMNS = 'symbol,exchange,date,time'
 
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol =None):
-        """Constructor"""
+        '''Constructor'''
         super(MarketData, self).__init__()
         
         # 代码相关
@@ -84,14 +84,14 @@ class MarketData(EventData):
 
 ########################################################################
 class TickData(MarketData):
-    """Tick行情数据类"""
+    '''Tick行情数据类'''
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
     COLUMNS = 'symbol,exchange,date,time,price,volume,open,high,low,prevClose,total,b1P,b2P,b3P,b4P,b5P,b1V,b2V,b3V,b4V,b5V,a1P,a2P,a3P,a4P,a5P,a1V,a2V,a3V,a4V,a5V' # ',upperLimit,lowerLimit'
 
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol =None):
-        """Constructor"""
+        '''Constructor'''
         super(TickData, self).__init__(exchange, symbol)
         
         # 成交数据
@@ -137,6 +137,43 @@ class TickData(MarketData):
         return lean
 
     @abstractmethod
+    def hatch(symbol, exchange=None, **kwargs) :
+        tk = TickData(exchange, symbol)
+        # 成交数据
+        tk.price, tk.volume = float(kwargs['price']), float(kwargs['volume'])
+        
+        # 常规行情
+        tk.open, tk.high, tk.low, tk.prevClose = float(kwargs['open']), float(kwargs['high']), float(kwargs['low']), float(kwargs['prevClose'])
+        
+        # 五档行情
+        # bid to buy: price and volume
+        tk.b1P, tk.b1V = float(kwargs['b1P']), float(kwargs['b1V'])
+        tk.b2P, tk.b2V = float(kwargs['b2P']), float(kwargs['b2V'])
+        tk.b3P, tk.b3V = float(kwargs['b3P']), float(kwargs['b3V'])
+        tk.b4P, tk.b4V = float(kwargs['b4P']), float(kwargs['b4V'])
+        tk.b5P, tk.b5V = float(kwargs['b5P']), float(kwargs['b5V'])
+        # ask to sell: price and volume
+        tk.a1P, tk.a1V = float(kwargs['a1P']), float(kwargs['a1V'])
+        tk.a2P, tk.a2V = float(kwargs['a2P']), float(kwargs['a2V'])
+        tk.a3P, tk.a3V = float(kwargs['a3P']), float(kwargs['a3V'])
+        tk.a4P, tk.a4V = float(kwargs['a4P']), float(kwargs['a4V'])
+        tk.a5P, tk.a5V = float(kwargs['a5P']), float(kwargs['a5V'])
+
+        if '/' in kwargs['date']:
+            tk.date = datetime.strptime(kwargs['date'], '%Y/%m/%d').strftime('%Y-%m-%d')
+        else:
+            tk.date = kwargs['date']
+
+        tk.time = kwargs['time']
+        if tk.time.count(':') <2:
+            tk.time += ":00"
+        
+        tk.datetime = datetime.strptime(tk.date + 'T' + tk.time[:8], '%Y-%m-%dT%H:%M:%S')
+        ev = Event(EVENT_TICK)
+        ev.setData(tk)
+        return ev
+
+    @abstractmethod
     def toFloatD4(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
@@ -172,14 +209,13 @@ class TickData(MarketData):
 
 ########################################################################
 class KLineData(MarketData):
-    """K线数据"""
+    '''K线数据'''
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
     COLUMNS = 'symbol,exchange,date,time,open,high,low,close,volume' #,openInterest'
 
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol =None):
-        """Constructor"""
         super(KLineData, self).__init__(exchange, symbol)
         
         self.open  = EventData.EMPTY_FLOAT             # OHLC
@@ -199,6 +235,50 @@ class KLineData(MarketData):
     def OHLCV(self) :
         return self.open, self.high, self.low, self.close, self.volume
     '''
+
+    @abstractmethod
+    def hatch(symbol, evType, exchange=None, **kwargs) :
+        if not EVENT_KLINE_PREFIX in evType :
+            raise NotImplementedError
+
+        kl = KLineData(exchange, symbol)
+        kl.open = float(kwargs['open'])
+        kl.high = float(kwargs['high'])
+        kl.low = float(kwargs['low'])
+        kl.close = float(kwargs['close'])
+        kl.volume = float(kwargs['volume'])
+        if '/' in kwargs['date']:
+            kl.date = datetime.strptime(kwargs['date'], '%Y/%m/%d').strftime('%Y-%m-%d')
+        else:
+            kl.date = kwargs['date']
+
+        kl.time = kwargs['time']
+        if kl.time.count(':') <2:
+            kl.time += ":00"
+        
+        kl.datetime = datetime.strptime(kl.date + 'T' + kl.time[:8], '%Y-%m-%dT%H:%M:%S')
+        ev = Event(evType)
+        ev.setData(kl)
+        return ev
+
+    def hatchByMc(self, symbol, evType, exchange=None, **kwargs) :
+        if not EVENT_KLINE_PREFIX in evType :
+            raise NotImplementedError
+
+        kl = KLineData(exchange, symbol)
+        kl.open = float(kwargs['Open'])
+        kl.high = float(kwargs['High'])
+        kl.low = float(kwargs['Low'])
+        kl.close = float(kwargs['Close'])
+        kl.volume = float(kwargs['TotalVolume'])
+        kl.date = datetime.strptime(kwargs['Date'], '%Y-%m-%d').strftime('%Y-%m-%d')
+        kl.time = kwargs['Time']+":00"
+        
+        kl.datetime = datetime.strptime(kl.date + 'T' + kl.time, '%Y-%m-%dT%H:%M:%S')
+        dataOf = kl.datetime.replace(second=0)
+        ev = Event(evType)
+        ev.setData(kl)
+        return ev
 
     @abstractmethod
     def toFloatD4(self, baseline_Price=1.0, baseline_Volume =1.0) :
@@ -234,7 +314,7 @@ class MoneyflowData(MarketData):
 
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol =None):
-        """Constructor"""
+        '''Constructor'''
         super(MoneyflowData, self).__init__(exchange, symbol)
         
         self.price       = EventData.EMPTY_FLOAT   # 价格
@@ -246,6 +326,32 @@ class MoneyflowData(MarketData):
     @property
     def desc(self) :
         return 'mf.%s@%s>%s/%.2f,%.2f' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.netamount, self.ratioR0, self.ratioR3cate)
+
+    @abstractmethod
+    def hatch(symbol, evType, exchange=None, **kwargs) :
+        if not MARKETDATE_EVENT_PREFIX in evType :
+            raise NotImplementedError
+        
+        md = MoneyflowData(exchange, symbol)
+        md.price = float(kwargs['price'])
+        md.netamount = float(kwargs['netamount'])
+        md.ratioR0 = float(kwargs['ratioR0'] if 'ratioR0' in kwargs.keys() else kwargs['r0_ratio'])
+        md.ratioR3cate = float(kwargs['ratioR3cate'] if 'ratioR3cate' in kwargs.keys() else kwargs['r3cate_ratio'])
+        md.ratioNet = float(kwargs['ratioNet'])  if 'ratioNet' in kwargs.keys() else (md.ratioR0 +md.ratioR3cate)
+
+        if '/' in kwargs['date']:
+            md.date = datetime.strptime(kwargs['date'], '%Y/%m/%d').strftime('%Y-%m-%d')
+        else:
+            md.date = kwargs['date']
+
+        md.time = kwargs['time']
+        if md.time.count(':') <2:
+            md.time += ":00"
+        
+        md.datetime = datetime.strptime(md.date + 'T' + md.time[:8], '%Y-%m-%dT%H:%M:%S')
+        ev = Event(evType)
+        ev.setData(md)
+        return ev
 
     def toFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
@@ -273,179 +379,179 @@ class MoneyflowData(MarketData):
         '''
         return self.toFloats(baseline_Price, baseline_Volume)[:4]
 
-########################################################################
-class DictToTick(object):
+# ########################################################################
+# class DictToTick(object):
 
-    def __init__(self, symbol, exchange=None):
-        """Constructor"""
-        super(DictToTick, self).__init__()
-        self._type     = EVENT_TICK
-        self._symbol   = symbol
-        self._exchange = exchange if exchange else ''
+#     def __init__(self, symbol, exchange=None):
+#         '''Constructor'''
+#         super(DictToTick, self).__init__()
+#         self._type     = EVENT_TICK
+#         self._symbol   = symbol
+#         self._exchange = exchange if exchange else ''
 
-    @property
-    def fields(self) : return TickData.COLUMNS
+#     @property
+#     def fields(self) : return TickData.COLUMNS
 
-    @abstractmethod
-    def convert(self, row, exchange=None, symbol =None) :
-        tk = TickData(self._exchange, self._symbol)
-        # 成交数据
-        tk.price, tk.volume = float(row['price']), float(row['volume'])
+#     @abstractmethod
+#     def convert(self, row, exchange=None, symbol =None) :
+#         tk = TickData(self._exchange, self._symbol)
+#         # 成交数据
+#         tk.price, tk.volume = float(row['price']), float(row['volume'])
         
-        # 常规行情
-        tk.open, tk.high, tk.low, tk.prevClose = float(row['open']), float(row['high']), float(row['low']), float(row['prevClose'])
+#         # 常规行情
+#         tk.open, tk.high, tk.low, tk.prevClose = float(row['open']), float(row['high']), float(row['low']), float(row['prevClose'])
         
-        # 五档行情
-        # bid to buy: price and volume
-        tk.b1P, tk.b1V = float(row['b1P']), float(row['b1V'])
-        tk.b2P, tk.b2V = float(row['b2P']), float(row['b2V'])
-        tk.b3P, tk.b3V = float(row['b3P']), float(row['b3V'])
-        tk.b4P, tk.b4V = float(row['b4P']), float(row['b4V'])
-        tk.b5P, tk.b5V = float(row['b5P']), float(row['b5V'])
-        # ask to sell: price and volume
-        tk.a1P, tk.a1V = float(row['a1P']), float(row['a1V'])
-        tk.a2P, tk.a2V = float(row['a2P']), float(row['a2V'])
-        tk.a3P, tk.a3V = float(row['a3P']), float(row['a3V'])
-        tk.a4P, tk.a4V = float(row['a4P']), float(row['a4V'])
-        tk.a5P, tk.a5V = float(row['a5P']), float(row['a5V'])
+#         # 五档行情
+#         # bid to buy: price and volume
+#         tk.b1P, tk.b1V = float(row['b1P']), float(row['b1V'])
+#         tk.b2P, tk.b2V = float(row['b2P']), float(row['b2V'])
+#         tk.b3P, tk.b3V = float(row['b3P']), float(row['b3V'])
+#         tk.b4P, tk.b4V = float(row['b4P']), float(row['b4V'])
+#         tk.b5P, tk.b5V = float(row['b5P']), float(row['b5V'])
+#         # ask to sell: price and volume
+#         tk.a1P, tk.a1V = float(row['a1P']), float(row['a1V'])
+#         tk.a2P, tk.a2V = float(row['a2P']), float(row['a2V'])
+#         tk.a3P, tk.a3V = float(row['a3P']), float(row['a3V'])
+#         tk.a4P, tk.a4V = float(row['a4P']), float(row['a4V'])
+#         tk.a5P, tk.a5V = float(row['a5P']), float(row['a5V'])
 
-        if '/' in row['date']:
-            tk.date = datetime.strptime(row['date'], '%Y/%m/%d').strftime('%Y-%m-%d')
-        else:
-            tk.date = row['date']
+#         if '/' in row['date']:
+#             tk.date = datetime.strptime(row['date'], '%Y/%m/%d').strftime('%Y-%m-%d')
+#         else:
+#             tk.date = row['date']
 
-        tk.time = row['time']
-        if tk.time.count(':') <2:
-            tk.time += ":00"
+#         tk.time = row['time']
+#         if tk.time.count(':') <2:
+#             tk.time += ":00"
         
-        tk.datetime = datetime.strptime(tk.date + 'T' + tk.time[:8], '%Y-%m-%dT%H:%M:%S')
-        ev = Event(type_=self._type)
-        ev.setData(tk)
-        return ev
+#         tk.datetime = datetime.strptime(tk.date + 'T' + tk.time[:8], '%Y-%m-%dT%H:%M:%S')
+#         ev = Event(type_=self._type)
+#         ev.setData(tk)
+#         return ev
 
-########################################################################
-class DictToKLine(object):
+# ########################################################################
+# class DictToKLine(object):
 
-    def __init__(self, eventType, symbol, exchange=None):
-        """Constructor"""
-        super(DictToKLine, self).__init__()
-        self._type = eventType
-        self._symbol = symbol
-        self._exchange = exchange if exchange else ''
+#     def __init__(self, eventType, symbol, exchange=None):
+#         '''Constructor'''
+#         super(DictToKLine, self).__init__()
+#         self._type = eventType
+#         self._symbol = symbol
+#         self._exchange = exchange if exchange else ''
 
-    @property
-    def fields(self) : return KLineData.COLUMNS
+#     @property
+#     def fields(self) : return KLineData.COLUMNS
 
-    @abstractmethod
-    def convert(self, row, exchange=None, symbol =None) :
-        if not EVENT_KLINE_PREFIX in self._type :
-            raise NotImplementedError
+#     @abstractmethod
+#     def convert(self, row, exchange=None, symbol =None) :
+#         if not EVENT_KLINE_PREFIX in self._type :
+#             raise NotImplementedError
 
-        kl = KLineData(self._exchange, self._symbol)
-        kl.open = float(row['open'])
-        kl.high = float(row['high'])
-        kl.low = float(row['low'])
-        kl.close = float(row['close'])
-        kl.volume = float(row['volume'])
-        if '/' in row['date']:
-            kl.date = datetime.strptime(row['date'], '%Y/%m/%d').strftime('%Y-%m-%d')
-        else:
-            kl.date = row['date']
+#         kl = KLineData(self._exchange, self._symbol)
+#         kl.open = float(row['open'])
+#         kl.high = float(row['high'])
+#         kl.low = float(row['low'])
+#         kl.close = float(row['close'])
+#         kl.volume = float(row['volume'])
+#         if '/' in row['date']:
+#             kl.date = datetime.strptime(row['date'], '%Y/%m/%d').strftime('%Y-%m-%d')
+#         else:
+#             kl.date = row['date']
 
-        kl.time = row['time']
-        if kl.time.count(':') <2:
-            kl.time += ":00"
+#         kl.time = row['time']
+#         if kl.time.count(':') <2:
+#             kl.time += ":00"
         
-        kl.datetime = datetime.strptime(kl.date + 'T' + kl.time[:8], '%Y-%m-%dT%H:%M:%S')
-        ev = Event(type_=self._type)
-        ev.setData(kl)
-        return ev
+#         kl.datetime = datetime.strptime(kl.date + 'T' + kl.time[:8], '%Y-%m-%dT%H:%M:%S')
+#         ev = Event(type_=self._type)
+#         ev.setData(kl)
+#         return ev
 
-########################################################################
-class McCvsToKLine(DictToKLine):
+# ########################################################################
+# class McCvsToKLine(DictToKLine):
 
-    def __init__(self, eventType, symbol, exchange=None):
-        """Constructor"""
-        super(McCvsToKLine, self).__init__(eventType, symbol, exchange)
+#     def __init__(self, eventType, symbol, exchange=None):
+#         '''Constructor'''
+#         super(McCvsToKLine, self).__init__(eventType, symbol, exchange)
 
-    @abstractmethod
-    def convert(self, csvrow, eventType =None, symbol =None) :
-        if not EVENT_KLINE_PREFIX in self._type :
-            raise NotImplementedError
+#     @abstractmethod
+#     def convert(self, csvrow, eventType =None, symbol =None) :
+#         if not EVENT_KLINE_PREFIX in self._type :
+#             raise NotImplementedError
 
-        kl = KLineData('', symbol)
-        kl.open = float(csvrow['Open'])
-        kl.high = float(csvrow['High'])
-        kl.low = float(csvrow['Low'])
-        kl.close = float(csvrow['Close'])
-        kl.volume = float(csvrow['TotalVolume'])
-        kl.date = datetime.strptime(csvrow['Date'], '%Y-%m-%d').strftime('%Y-%m-%d')
-        kl.time = csvrow['Time']+":00"
+#         kl = KLineData('', symbol)
+#         kl.open = float(csvrow['Open'])
+#         kl.high = float(csvrow['High'])
+#         kl.low = float(csvrow['Low'])
+#         kl.close = float(csvrow['Close'])
+#         kl.volume = float(csvrow['TotalVolume'])
+#         kl.date = datetime.strptime(csvrow['Date'], '%Y-%m-%d').strftime('%Y-%m-%d')
+#         kl.time = csvrow['Time']+":00"
         
-        kl.datetime = datetime.strptime(kl.date + 'T' + kl.time, '%Y-%m-%dT%H:%M:%S')
-        dataOf = kl.datetime.replace(second=0)
-        ev = Event(type_=self._type)
-        ev.setData(kl)
-        return ev
+#         kl.datetime = datetime.strptime(kl.date + 'T' + kl.time, '%Y-%m-%dT%H:%M:%S')
+#         dataOf = kl.datetime.replace(second=0)
+#         ev = Event(type_=self._type)
+#         ev.setData(kl)
+#         return ev
 
-########################################################################
-class DictToMoneyflow(object):
+# ########################################################################
+# class DictToMoneyflow(object):
 
-    def __init__(self, eventType, symbol, exchange=None):
-        """Constructor"""
-        super(DictToMoneyflow, self).__init__()
-        self._type = eventType
-        self._symbol = symbol
-        self._exchange = exchange if exchange else ''
+#     def __init__(self, eventType, symbol, exchange=None):
+#         '''Constructor'''
+#         super(DictToMoneyflow, self).__init__()
+#         self._type = eventType
+#         self._symbol = symbol
+#         self._exchange = exchange if exchange else ''
 
-    @property
-    def fields(self) : return MoneyflowData.COLUMNS
+#     @property
+#     def fields(self) : return MoneyflowData.COLUMNS
 
-    #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
-    COLUMNS = 'symbol,exchange,date,time,price,netamount,ratioNet,ratioR0,ratioR3cate'
+#     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
+#     COLUMNS = 'symbol,exchange,date,time,price,netamount,ratioNet,ratioR0,ratioR3cate'
 
-    def convert(self, row, exchange=None, symbol =None) :
-        if not MARKETDATE_EVENT_PREFIX in self._type :
-            raise NotImplementedError
+#     def convert(self, row, exchange=None, symbol =None) :
+#         if not MARKETDATE_EVENT_PREFIX in self._type :
+#             raise NotImplementedError
         
-        md = MoneyflowData(self._exchange, self._symbol if not symbol else symbol)
-        md.price = float(row['price'])
-        md.netamount = float(row['netamount'])
-        md.ratioR0 = float(row['ratioR0'] if 'ratioR0' in row.keys() else row['r0_ratio'])
-        md.ratioR3cate = float(row['ratioR3cate'] if 'ratioR3cate' in row.keys() else row['r3cate_ratio'])
-        md.ratioNet = float(row['ratioNet'])  if 'ratioNet' in row.keys() else (md.ratioR0 +md.ratioR3cate)
+#         md = MoneyflowData(self._exchange, self._symbol if not symbol else symbol)
+#         md.price = float(row['price'])
+#         md.netamount = float(row['netamount'])
+#         md.ratioR0 = float(row['ratioR0'] if 'ratioR0' in row.keys() else row['r0_ratio'])
+#         md.ratioR3cate = float(row['ratioR3cate'] if 'ratioR3cate' in row.keys() else row['r3cate_ratio'])
+#         md.ratioNet = float(row['ratioNet'])  if 'ratioNet' in row.keys() else (md.ratioR0 +md.ratioR3cate)
 
-        if '/' in row['date']:
-            md.date = datetime.strptime(row['date'], '%Y/%m/%d').strftime('%Y-%m-%d')
-        else:
-            md.date = row['date']
+#         if '/' in row['date']:
+#             md.date = datetime.strptime(row['date'], '%Y/%m/%d').strftime('%Y-%m-%d')
+#         else:
+#             md.date = row['date']
 
-        md.time = row['time']
-        if md.time.count(':') <2:
-            md.time += ":00"
+#         md.time = row['time']
+#         if md.time.count(':') <2:
+#             md.time += ":00"
         
-        md.datetime = datetime.strptime(md.date + 'T' + md.time[:8], '%Y-%m-%dT%H:%M:%S')
-        ev = Event(type_=self._type)
-        ev.setData(md)
-        return ev
+#         md.datetime = datetime.strptime(md.date + 'T' + md.time[:8], '%Y-%m-%dT%H:%M:%S')
+#         ev = Event(type_=self._type)
+#         ev.setData(md)
+#         return ev
 
 ########################################################################
 class TickToKLineMerger(object):
-    """
+    '''
     K线合成器，支持：
     1. 基于Tick合成1分钟K线
-    """
+    '''
 
     #----------------------------------------------------------------------
     def __init__(self, onKLine1min):
-        """Constructor"""
+        '''Constructor'''
         self._dictKline = {}             # 1分钟K线对象
         self._dickLastTick = {}          # 上一TICK缓存对象
         self.onKline1min = onKLine1min      # 1分钟K线回调函数
         
     #----------------------------------------------------------------------
     def pushTick(self, tick):
-        """TICK更新"""
+        '''TICK更新'''
 
         kline = None # 尚未创建对象
         
@@ -490,14 +596,14 @@ class TickToKLineMerger(object):
 
 ########################################################################
 class KlineToXminMerger(object):
-    """
+    '''
     K线合成器，支持：
     2. 基于1分钟K线合成X分钟K线（X可以是2、3、5、10、15、30	）
-    """
+    '''
 
     #----------------------------------------------------------------------
     def __init__(self, onKLineXmin, xmin=15) :
-        """Constructor"""
+        '''Constructor'''
         self._klineWk = None
         self._klineIn = None        # 上一Input缓存对象
         self._xmin = xmin             # X的值
@@ -505,7 +611,7 @@ class KlineToXminMerger(object):
 
     #----------------------------------------------------------------------
     def pushKLineEvent(self, klineEv, dtAsOf=None):
-        """1分钟K线更新"""
+        '''1分钟K线更新'''
         d = klineEv.data
         self.pushKLineData(d, dtAsOf)
 
@@ -520,7 +626,7 @@ class KlineToXminMerger(object):
         return klineOut
 
     def pushKLineData(self, kline, dtAsOf=None):
-        """1分钟K线更新"""
+        '''1分钟K线更新'''
 
         # 尚未创建对象
         if self._klineWk:
@@ -564,7 +670,7 @@ class KlineToXminMerger(object):
 class DataToEvent(object):
 
     def __init__(self, sink):
-        """Constructor"""
+        '''Constructor'''
         super(DataToEvent, self).__init__()
         self._sink = sink
         self._dict = {}
@@ -597,7 +703,7 @@ class MarketState(MetaObj):
     '''
     '''
     def __init__(self, exchange):
-        """Constructor"""
+        '''Constructor'''
         super(MarketState, self).__init__()
         self._exchange = exchange
     

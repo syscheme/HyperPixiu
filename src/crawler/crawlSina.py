@@ -1016,13 +1016,6 @@ class TcsvMerger(BaseApplication) :
     def __extractAdvisorTarball(self, tarballName):
         pb = hist.TaggedCsvInTarball(tarballName, memberPattern='advisor_*.tcsv*', program=self.program)
 
-        # pb.registerConverter(EVENT_KLINE_1MIN, DictToKLine(EVENT_KLINE_1MIN, SYMBOL))
-        # pb.registerConverter(EVENT_KLINE_5MIN, DictToKLine(EVENT_KLINE_5MIN, SYMBOL))
-        # pb.registerConverter(EVENT_KLINE_1DAY, DictToKLine(EVENT_KLINE_1DAY, SYMBOL))
-        # pb.registerConverter(EVENT_TICK,       DictToTick(SYMBOL))
-
-        # pb.registerConverter(EVENT_MONEYFLOW_1MIN, DictToMoneyflow(EVENT_MONEYFLOW_1MIN, SYMBOL))
-        # pb.registerConverter(EVENT_MONEYFLOW_1DAY, DictToMoneyflow(EVENT_MONEYFLOW_1DAY, SYMBOL))
         pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
         pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
         pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)

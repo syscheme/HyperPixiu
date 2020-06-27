@@ -577,7 +577,7 @@ class CsvPlayback(Playback):
         self._fields = fields
 
         self.__csvfiles =[]
-        self._cvsToEvent = DictToKLine(self._category, symbol)
+        self.__csvToKL1m = KLineData.hatch # DictToKLine(self._category, symbol)
 
         self._merger1minTo5min = None
         self._merger5minTo1Day = None
@@ -709,9 +709,12 @@ class CsvPlayback(Playback):
 
         ev = None
         try :
-            if row and self._cvsToEvent:
+            if row and self.__csvToKL1m:
                 # print('line: %s' % (line))
-                ev = self._cvsToEvent.convert(row, self._exchange, self._symbol)
+                row = {'evType': EVENT_KLINE_1MIN,
+                        'exchange': self._exchange, 'symbol':self._symbol,
+                       **row }
+                ev = self.__csvToKL1m(**row) # self.__csvToKL1m.convert(row, self._exchange, self._symbol)
                 if ev:
                     evdMH = self._testAndGenerateMarketHourEvent(ev)
                     if  self._merger1minTo5min :
@@ -890,8 +893,15 @@ class TaggedCsvPlayback(Playback):
     def resetRead(self):
         super(TaggedCsvPlayback, self).resetRead()
 
-        self.__fnlist = TcsvFilter.buildUpFileList(self._tcsvFilePath)
-        self.info('associated file list by key %s: %s' % (self._tcsvFilePath, ','.join(self.__fnlist)))
+        fnpatt = os.path.basename(self._tcsvFilePath)
+        allFiles = listAllFiles(os.path.dirname(self._tcsvFilePath))
+        allFiles.sort()
+        self.__fnlist =[]
+        for fn in allFiles:
+            if fnmatch.fnmatch(os.path.basename(fn), fnpatt):
+                self.__fnlist.append(fn)
+
+        self.info('associated file list by %s: %s' % (self._tcsvFilePath, ','.join(self.__fnlist)))
         return len(self.__fnlist) >0
 
     def readNext(self):

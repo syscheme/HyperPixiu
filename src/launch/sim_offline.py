@@ -173,13 +173,17 @@ if __name__ == '__main__':
     rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.outdir, '%s_P%s.tcsv' % (SYMBOL, p.pid)))
     revents = None
 
+    # determine the Playback instance
     evMdSource = Program.fixupPath(evMdSource)
-    p.info('taking input dir %s for symbol[%s]' % (evMdSource, SYMBOL))
-    
-    # csvPlayback can only cover one symbol
-    histReader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
-    tdrWraper = None
+    if 'tcsv' in os.path.basename(evMdSource):
+        p.info('taking TaggedCsvPlayback on %s for symbol[%s]' % (evMdSource, SYMBOL))
+        histReader = hist.TaggedCsvPlayback(program=p, symbol=SYMBOL, tcsvFilePath=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
+    else:
+        # csvPlayback can only cover one symbol
+        p.info('taking CsvPlayback on dir %s for symbol[%s]' % (evMdSource, SYMBOL))
+        histReader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
 
+    tdrWraper = None
     if 'remote' == advisorType :
         p.error('sim_offline only takes local advisor')
         quit()

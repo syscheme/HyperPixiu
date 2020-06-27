@@ -363,7 +363,7 @@ class MoneyflowData(MarketData):
 
         # the floats, prioirty first
         ret = [
-            FUNC_floatNormalize(self.netamount, baseline_Price*baseline_Volume), # priority-H1
+            FUNC_floatNormalize(self.netamount, baseline_Price*baseline_Volume), # priority-H1, TODO: indeed the ratio of turnover would be more worthy here. It supposed can be calculated from netamount, ratioNet and netMarketCap
             FUNC_floatNormalize(self.ratioNet,    1.0),                          # priority-H2
             FUNC_floatNormalize(self.ratioR0,     1.0),                          # priority-H3
             FUNC_floatNormalize(self.ratioR3cate, 1.0),                          # likely r3=ratioNet-ratioR0

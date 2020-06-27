@@ -147,6 +147,13 @@ class Perspective(MarketData):
             EVENT_KLINE_1DAY: 1,
         }
 
+        self.__overview = {
+            'asOf': None, # datetime when this overview is as of
+            'netMarketCap': 0.0, # net market cap in volumes, may be taken to calculate the turnover ratio
+            'marketCap': 0.0, # market cap in volumes
+            'ratioPE': 0.0, # PE
+        }
+
     @property
     def desc(self) :
         str = '%s>%s ' % (self.focus[len(MARKETDATE_EVENT_PREFIX):], self.getAsOf(self.focus).strftime('%Y-%m-%dT%H:%M:%S'))
@@ -156,6 +163,13 @@ class Perspective(MarketData):
 
     @property
     def eventTypes(self) : return list(self._stacks.keys())
+
+    @property
+    def overview(self) : return copy.copy(self.__overview)
+
+    def updateOverview(self, **kwargs) : 
+        self.__overview = {**self.__overview, **kwargs} # kwargs at right will overwrite __overview at left
+        return self.overview
 
     @property
     def asof(self) : return self.getAsOf(None)

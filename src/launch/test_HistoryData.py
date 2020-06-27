@@ -4,7 +4,7 @@ import Perspective as psp
 import MarketData as md
 from EventData import datetime2float
 from Application import *
-from TradeAdvisor import EVENT_ADVICE, DictToAdvice
+from TradeAdvisor import EVENT_ADVICE, AdviceData
 from crawler import crawlSina as sina
 
 import h5py
@@ -98,22 +98,21 @@ class TestHistoryData(unittest.TestCase):
 
     def _test_TaggedCsvPlayback(self):
         reader = hist.TaggedCsvPlayback(tcsvFilePath='/mnt/e/AShareSample/advisor/advisor_15737.tcsv', program=thePROG)
-        csv2adv = DictToAdvice()
-        reader.registerConverter(EVENT_ADVICE, csv2adv)
+        reader.registerConverter(EVENT_ADVICE, AdviceData.hatch, AdviceData.COLUMNS)
         for i in reader :
             print('Row: %s' % i.desc)
 
     def _test_PlaybackMux(self):
         r1 = hist.TaggedCsvPlayback(tcsvFilePath='/mnt/e/AShareSample/advisor/advisor_15737.tcsv', program=thePROG)
-        r1.registerConverter(EVENT_ADVICE, DictToAdvice())
+        r1.registerConverter(EVENT_ADVICE, AdviceData.hatch, AdviceData.COLUMNS)
 
         r2 = hist.CsvPlayback(symbol='SH510050', folder='/mnt/e/AShareSample/ETF', fields='date,time,open,high,low,close,volume,ammount', program=thePROG)
         r3 = hist.CsvPlayback(symbol='SH510300', folder='/mnt/e/AShareSample/ETF', fields='date,time,open,high,low,close,volume,ammount', program=thePROG)
         r4 = hist.CsvPlayback(symbol='SH510500', folder='/mnt/e/AShareSample/ETF', fields='date,time,open,high,low,close,volume,ammount', program=thePROG)
 
         r5 = hist.TaggedCsvInTarball(fnTarball='/mnt/e/AShareSample/advisor/advisor.BAK20200615T084501.tar.bz2', program=thePROG)
-        r5.registerConverter(EVENT_ADVICE, DictToAdvice())
-        r5.registerConverter(md.EVENT_KLINE_1MIN, hist.DictToKLine(md.EVENT_KLINE_1MIN, SYMBOL))
+        r5.registerConverter(EVENT_ADVICE, AdviceData.hatch, AdviceData.COLUMNS)
+        r5.registerConverter(md.EVENT_KLINE_1MIN, hist.KLineData.hatch, hist.KLineData.COLUMNS) # r5.registerConverter(md.EVENT_KLINE_1MIN, hist.DictToKLine(md.EVENT_KLINE_1MIN, SYMBOL))
 
         mux = hist.PlaybackMux(program=thePROG)
         # mux.addStream(r1)

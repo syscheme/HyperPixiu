@@ -2,7 +2,9 @@
 
 from __future__ import division
 
-import random
+import random, copy
+import requests # pip3 install requests
+import re
 
 __FakedUserAgents=[
     "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/43.0.2357.81 Safari/537.36",
@@ -38,3 +40,52 @@ __FakedUserAgents=[
 
 def nextUserAgent() :
     return random.choice(__FakedUserAgents)
+
+__proxyList=[]
+__everGoods=[]
+
+def stampGoodProxy():
+    global __proxyList, __everGoods
+    if len(__proxyList) <=0 or __everGoods[-1] == __proxyList[0]:
+        return
+
+    __everGoods.append(__proxyList[0])
+
+def nextProxy():
+    global __proxyList, __everGoods
+
+    ret = None
+    if len(__proxyList) <= 0:
+        __proxyList = copy.copy(__everGoods)
+        __everGoods = []
+
+    if len(__proxyList) <=0:
+        # download the proxy list from https://skyrivermecatronic.com, but many of them may not work
+        # wget -O- --no-check-certificate https://skyrivermecatronic.com/proxychains/ | grep -o '<br>http.*' |sed 's/<br>\([a-z0-9]*\)[&nbsp;]*\([0-9\.]*\)[&nbsp;]*\([0-9\.]*\)/\n\1:\/\/\2:\3/g'
+        # potential version issue: https://blog.csdn.net/fangbinwei93/article/details/59526937?utm_medium=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.nonecase&depth_1-utm_source=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.nonecase
+        response = requests.get('https://skyrivermecatronic.com/proxychains/')
+        httperr = response.status_code
+        if 200 != httperr:
+            return ret
+
+        lines =  response.text.split('<br>')
+        SYNTAX = re.compile('^([a-z0-9]*)[&nbsp;]*([0-9\.]*)[&nbsp;]*([0-9\.]*).*')
+        for l in lines:
+            m = SYNTAX.match(l)
+            if not m : continue
+            prx = '%s://%s:%s' % (m.group(1).lower(), m.group(2).lower(), m.group(3))
+            if len(prx) <7: continue
+            __proxyList.append(prx)
+            
+        # TODO may make __proxyList.unique
+            
+    if len(__proxyList) >0:
+        ret = __proxyList[0]
+        del(__proxyList[0])
+    
+    return ret
+
+if __name__ == '__main__':
+
+    for i in range(9999):
+        print('prx[%s]' % nextProxy())

@@ -477,13 +477,14 @@ class SinaCrawler(MarketCrawler):
             self.debug("%s GET %s" %(apiName, url))
             headers = copy(self.DEFAULT_GET_HEADERS)
             headers['User-Agent'] = dsg.nextUserAgent()
-            proxies = {}
+            proxies, connectTimeout = {}, self.TIMEOUT
             if urlProxy and len(urlProxy) >3:
                 proxies['http']  = urlProxy
                 proxies['https'] = urlProxy
                 strThru = ' thru[%s]' % urlProxy
+                connectTimeout = max(3, self.TIMEOUT/2)
 
-            response = requests.get(url, headers=headers, proxies=proxies, timeout=self.TIMEOUT)
+            response = requests.get(url, headers=headers, proxies=proxies, timeout=connectTimeout)
             httperr = response.status_code
             if httperr == 200:
                 return httperr, response.text

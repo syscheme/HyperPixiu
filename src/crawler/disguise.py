@@ -44,19 +44,26 @@ def nextUserAgent() :
 __proxyList=[]
 __everGoods=[]
 
-def stampGoodProxy():
+def stampGoodProxy(priority = 10.0):
     global __proxyList, __everGoods
-    if len(__proxyList) <=0 or __everGoods[-1] == __proxyList[0]:
-        return
+    if len(__proxyList) <=0: return
+    stmt = '%05d>%s' %(int(priority * 1000) % 100000, __proxyList[0])
+    if len(__everGoods) >0:
+        oldstmt = __everGoods[-1] 
+        tokens = oldstmt.split('>')
+        if len(tokens) >1 and tokens[1] == __proxyList[0]:
+            if stmt >= oldstmt: return
+            else: del(__everGoods[-1])
 
-    __everGoods.append(__proxyList[0])
+    __everGoods.append(stmt)
 
 def nextProxy():
     global __proxyList, __everGoods
 
     ret = None
     if len(__proxyList) <= 0:
-        __proxyList = copy.copy(__everGoods)
+        __everGoods.sort()
+        __proxyList = [i.split('>')[1] for i in __everGoods]
         __everGoods = []
 
     if len(__proxyList) <=0:
@@ -73,10 +80,10 @@ def nextProxy():
         for l in lines:
             m = SYNTAX.match(l)
             if not m : continue
-            prx = '%s://%s:%s' % (m.group(1).lower(), m.group(2).lower(), m.group(3))
-            if len(prx) <7: continue
-            __proxyList.append(prx)
-            
+            prot, ip, port = m.group(1).lower(), m.group(2).lower(), m.group(3)
+            if len(prot) + len(ip) + len(port) <8 : continue # or 'http' in prot
+            __proxyList.append('%s://%s:%s' % (prot, ip, port))
+
         # TODO may make __proxyList.unique
             
     if len(__proxyList) >0:

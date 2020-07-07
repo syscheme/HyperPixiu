@@ -14,9 +14,12 @@ from copy import copy
 from datetime import datetime, timedelta
 import demjson # pip3 install demjson
 
-import os, fnmatch, re
+import os, sys, fnmatch, tarfile, re
 import threading # for __step_pollTicks
 from time import sleep
+
+EXECLUDE_LIST = ["SH600005"]
+
 
 '''
 分类-中国银行: http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssi_gupiao_fenlei?daima=SH601988
@@ -83,7 +86,7 @@ class SinaCrawler(MarketCrawler):
 
         self._eventsToPost = [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_MONEYFLOW_1MIN]
         self._steps = [self.__step_poll1st, self.__step_pollKline, self.__step_pollMoneyflow] # __step_pollTicks() will be executed in a separated thread __trdTick
-        self._proxies = {}
+        self.__urlProxy = None
 
         symbols              = self.getConfig('securities', objectives) # just to be different with config "objectives" of Trader/TraderAdvisors
         if len(symbols) >0 and not isinstance(symbols[0], str):
@@ -219,7 +222,7 @@ class SinaCrawler(MarketCrawler):
 
             if not s in self.__tickToKL1m.keys():
                 self.__tickToKL1m[s] = SinaTickToKL1m(self.__onKL1mMerged)
-                self.__tickToKL1m[s] = SinaMF1mToXm(self.__onMF5mMerged)
+                self.__mfMerger[s]   = SinaMF1mToXm(self.__onMF5mMerged)
             
             tkstate=self.__tickToKL1m[s]
             if tk.datetime <= tkstate.lastTickAsOf :
@@ -274,6 +277,8 @@ class SinaCrawler(MarketCrawler):
         if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC):
             return cBusy # well off-trade hours
 
+        urlProxy = self.__urlProxy if self._stepAsOf < self.__stampOfNext('all', 'KL_yield456') else None
+
         # if not s in self.marketState.keys():
         #     self.marketState[s] = Perspective('AShare', symbol=s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
         # psp = self.marketState[s]
@@ -307,12 +312,13 @@ class SinaCrawler(MarketCrawler):
                 lines = 0
             lines +=10
 
-            httperr, result = self.GET_RecentKLines(s, minutes, lines)
+            httperr, result = self.GET_RecentKLines(s, minutes, lines, urlProxy)
             if 200 != httperr:
                 self.error("step_pollKline(%s:%s) failed, err(%s)" %(s, evType, httperr))
                 if 456 == httperr:
-                    self.__scheduleNext('all', 'KL', self._secYield456)
-                    self.warn("step_pollKline(%s:%s) [%d/%d]sym SINA complained err(%s), yielding %ssec" %(s, evType, self.__idxKL, cSyms, httperr, self._secYield456))
+                    self.__urlProxy = dsg.nextProxy()
+                    self.__scheduleNext('all', 'KL_yield456', self._secYield456) # self.__scheduleNext('all', 'KL', self._secYield456)
+                    self.warn("step_pollKline(%s:%s) [%d/%d]sym SINA complained err(%s), yielding %ssec, nextProxy[%s]" %(s, evType, self.__idxKL, cSyms, httperr, self._secYield456, self.__urlProxy))
                     return cBusy
            
                 if 404 == httperr and self.__excludeAt404:
@@ -323,6 +329,7 @@ class SinaCrawler(MarketCrawler):
 
             # succ at query
             self.__scheduleNext(s, evType, min(60, minutes)*60*0.7)
+
             cMerged =0
             for i in result:
                 cBusy +=1
@@ -334,6 +341,8 @@ class SinaCrawler(MarketCrawler):
                     self.OnEventCaptured(ev)
 
             stampNow = datetime2float(datetime.now())
+            if not urlProxy: dsg.stampGoodProxy(stampNow-stampStart) # taking the duration as the priority of good proxy
+
             if cMerged >0:
                 self.info("step_pollKline(%s:%s) [%d/%d]sym merged %d/%d KLs into stack, took %.3fs, psp: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
             elif not Account_AShare.duringTradeHours():
@@ -378,6 +387,8 @@ class SinaCrawler(MarketCrawler):
         if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC):
             return cBusy # well off-trade hours
 
+        urlProxy = self.__urlProxy if self._stepAsOf < self.__stampOfNext('all', 'MF_yield456') else None
+
         stampNow = datetime2float(datetime.now())
         for evType in [EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY] :
 
@@ -397,8 +408,9 @@ class SinaCrawler(MarketCrawler):
             if 200 != httperr:
                 self.error("step_pollMoneyflow(%s:%s) failed, err(%s)" %(s, evType, httperr))
                 if 456 == httperr:
-                    self.__scheduleNext('all', 'MF', self._secYield456)
-                    self.warn("step_pollMoneyflow(%s:%s) [%d/%d]sym SINA complained err(%s), yielding %ssec" %(s, evType, self.__idxKL, cSyms, httperr, self._secYield456))
+                    self.__urlProxy = dsg.nextProxy()
+                    self.__scheduleNext('all', 'MF_yield456', self._secYield456) # self.__scheduleNext('all', 'MF', self._secYield456)
+                    self.warn("step_pollMoneyflow(%s:%s) [%d/%d]sym SINA complained err(%s), yielding %ssec, nextProxy[%s]" %(s, evType, self.__idxKL, cSyms, httperr, self._secYield456, self.__urlProxy))
                     return cBusy
            
                 if 404 == httperr and self.__excludeAt404:
@@ -408,6 +420,7 @@ class SinaCrawler(MarketCrawler):
 
             # succ at query
             self.__scheduleNext(s, evType, min(60, minutes)*60*0.7)
+
             cMerged =0
             for i in result:
                 cBusy +=1
@@ -425,6 +438,8 @@ class SinaCrawler(MarketCrawler):
                     self.__mfMerger[s].pushMF1m(i)
 
             stampNow = datetime2float(datetime.now())
+            if not urlProxy: dsg.stampGoodProxy(stampNow-stampStart) # taking the duration as the priority of good proxy
+
             if cMerged >0:
                 self.info("step_pollMoneyflow(%s:%s) [%d/%d]sym merged %d/%d MFs into stack, took %.3fs, psp: %s" % (s, evType, self.__idxKL, cSyms, cMerged, len(result), (stampNow-stampStart), self.marketState.descOf(s)))
             elif not Account_AShare.duringTradeHours():
@@ -457,14 +472,22 @@ class SinaCrawler(MarketCrawler):
 
     #------------------------------------------------
     # private methods
-    def __sinaGET(self, url, apiName):
-        errmsg = '%s() GET ' % (apiName)
+    def __sinaGET(self, url, apiName, urlProxy=None):
+        errmsg = '%s GET ' % (apiName)
         httperr = 400
+        strThru =''
         try:
-            self.debug("%s() GET %s" %(apiName, url))
+            self.debug("%s GET %s" %(apiName, url))
             headers = copy(self.DEFAULT_GET_HEADERS)
             headers['User-Agent'] = dsg.nextUserAgent()
-            response = requests.get(url, headers=headers, proxies=self._proxies, timeout=self.TIMEOUT)
+            proxies, connectTimeout = {}, self.TIMEOUT
+            if urlProxy and len(urlProxy) >3:
+                proxies['http']  = urlProxy
+                proxies['https'] = urlProxy
+                strThru = ' thru[%s]' % urlProxy
+                connectTimeout = max(3, self.TIMEOUT/2)
+
+            response = requests.get(url, headers=headers, proxies=proxies, timeout=connectTimeout)
             httperr = response.status_code
             if httperr == 200:
                 return httperr, response.text
@@ -473,7 +496,7 @@ class SinaCrawler(MarketCrawler):
         except Exception as e:
             errmsg += 'exception: %s' % e
         
-        self.info('%s <-%s'% (errmsg, url)) # lower this loglevel
+        self.info('%s <-%s%s'% (errmsg, url, strThru)) # lower this loglevel
         return httperr, errmsg
 
     def convertToKLineDatas(symbol, text) :
@@ -508,7 +531,7 @@ class SinaCrawler(MarketCrawler):
         # klineseq.reverse() # SINA returns from oldest to newest
         return klineseq
 
-    def GET_RecentKLines(self, symbol, minutes=1200, lines=10): # deltaDays=2)
+    def GET_RecentKLines(self, symbol, minutes=1200, lines=10, urlProxy=None): # deltaDays=2)
         '''"查询 KLINE
         will call cortResp.send(csvline) when the result comes
         '''
@@ -520,7 +543,7 @@ class SinaCrawler(MarketCrawler):
         # lines = deltaDays * 4 * 60 / minutes
 
         url = "http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=%s&scale=%s&datalen=%d" % (symbol, minutes, lines)
-        httperr, text = self.__sinaGET(url, 'GET_RecentKLines')
+        httperr, text = self.__sinaGET(url, 'GET_RecentKLines()', urlProxy)
         if 200 != httperr:
             return httperr, text
 
@@ -624,7 +647,7 @@ class SinaCrawler(MarketCrawler):
         qsymbols = [SinaCrawler.fixupSymbolPrefix(s) for s in symbols]
         url = 'http://hq.sinajs.cn/list=%s' % (','.join(qsymbols).lower())
 
-        httperr, text = self.__sinaGET(url, 'GET_RecentTicks')
+        httperr, text = self.__sinaGET(url, 'GET_RecentTicks()')
         if 200 != httperr:
             return httperr, text
 
@@ -654,7 +677,7 @@ class SinaCrawler(MarketCrawler):
         if byMinutes:
             pbeg, pend = text.find('[{'), text.rfind('}]')
             if pbeg<0 or pbeg>=pend:
-                return httperr, mfseq
+                return mfseq
             text = text[pbeg:pend] + '}]'
 
         if len(text)>80*1024: # maximal 80KB is enough to cover 1Yr
@@ -662,12 +685,12 @@ class SinaCrawler(MarketCrawler):
             text = text[:80*1024]
             pend = text.rfind('},{')
             if pend<=0:
-                return httperr, mfseq
+                return mfseq
             text = text[:pend] + "}]"
 
         jsonData = demjson.decode(text)
         if not jsonData:
-            return httperr, mfseq
+            return mfseq
 
         for mf in jsonData :
             mfdata = MoneyflowData("AShare", symbol)
@@ -688,14 +711,14 @@ class SinaCrawler(MarketCrawler):
         mfseq.sort(key=SinaCrawler.sortKeyOfMD)
         return mfseq
 
-    def GET_MoneyFlow(self, symbol, lines=260, byMinutes=False):
+    def GET_MoneyFlow(self, symbol, lines=260, byMinutes=False, urlProxy=None):
         ''' 查询现金流
         '''
         url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?sort=opendate&page=1&num=%d&daima=%s' % (lines, SinaCrawler.fixupSymbolPrefix(symbol)) # page 1 of 300lines is enough to cover days of a year
         if byMinutes:
             url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?sort=time&num=%d&page=1&daima=%s' % (lines, SinaCrawler.fixupSymbolPrefix(symbol)) # page 1 of 300lines is enough to cover 4hr of a whole day
 
-        httperr, text = self.__sinaGET(url, 'GET_MoneyFlow')
+        httperr, text = self.__sinaGET(url, 'GET_MoneyFlow()', urlProxy)
         if 200 != httperr:
             return httperr, text
 
@@ -716,7 +739,7 @@ class SinaCrawler(MarketCrawler):
         HEADERS=HEADERSEQ.split(',')
         SYNTAX = re.compile('^.*trade_item_list.*Array\(([^\)]*)\).*')
         url = 'http://vip.stock.finance.sina.com.cn/quotes_service/view/CN_TransListV2.php?symbol=%s' % (SinaCrawler.fixupSymbolPrefix(symbol))
-        httperr, text = self.__sinaGET(url, 'GET_Transactions')
+        httperr, text = self.__sinaGET(url, 'GET_Transactions()')
         if 200 != httperr:
             return httperr, text
 
@@ -736,7 +759,7 @@ class SinaCrawler(MarketCrawler):
         return True, txns
 
     #------------------------------------------------    
-    def GET_AllSymbols(self, ex_node='SH'): # ex_node={SH|SZ}
+    def GET_AllSymbols(self, ex_node='SH', urlProxy=None): # ex_node={SH|SZ}
         '''
         resp body would be like
         [{"symbol":"sh600238","code":"600238","name":"ST\u6930\u5c9b","trade":"5.390","pricechange":"0.000","changepercent":"0.000","buy":"0.000","sell":"0.000","settlement":"5.390","open":"0.000","high":"0.000","low":"0.000","volume":0,"amount":0,"ticktime":"15:29:59","per":-8.983,"pb":4.784,"mktcap":241579.8,"nmc":239855.85162,"turnoverratio":0},
@@ -752,7 +775,7 @@ class SinaCrawler(MarketCrawler):
         ret =[]
         url = "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?&sort=symbol&asc=1&node=%s_a&_s_r_a=init&num=100" % ex_node
         for page in range(1, int(MAX_SYM_COUNT/100)) : # 100 per page
-            httperr, text = self.__sinaGET(url + '&page=%d' % page, 'GET_AllSymbols(%d)' %page)
+            httperr, text = self.__sinaGET(url + '&page=%d' % page, 'GET_AllSymbols(%d)' %page, urlProxy)
             if 4 == int(httperr/100) or len(text) <20 :
                 break
 
@@ -922,8 +945,21 @@ def activityOf(item):
 def listSymbols(program, mdSina):
     # 3869 symbols as of 2020-06-20
     result ={}
-    _, lstSH = md.GET_AllSymbols()
-    _, lstSZ = md.GET_AllSymbols('SZ')
+
+    httperr =100
+    while 2 != int(httperr/100):
+        urlProxy= dsg.nextProxy()
+        httperr, lstSH = md.GET_AllSymbols('SH', urlProxy)
+        print('SH-resp(%d) thru[%s]' %(httperr, urlProxy))
+
+    if 2 == int(httperr/100): dsg.stampGoodProxy()
+
+    httperr =100
+    while 2 != int(httperr/100):
+        urlProxy= dsg.nextProxy()
+        httperr, lstSZ = md.GET_AllSymbols('SZ', urlProxy)
+        print('SZ-resp(%d) thru[%s]' %(httperr, urlProxy))
+    
     for i in lstSH + lstSZ:
         result[i['symbol']] =i
     result = list(result.values())
@@ -946,7 +982,7 @@ def listSymbols(program, mdSina):
 
 ########################################################################
 class TcsvMerger(BaseApplication) :
-    def __init__(self, program, tarNamePat_KL5m, tarNamePat_MF1m, startDate =None, endDate=None, tarNamePat_Tick=None, tarNamePat_KL1d=None, tarNamePat_MF1d=None, **kwargs):
+    def __init__(self, program, tarNamePat_KL5m, tarNamePat_MF1m, startDate =None, endDate=None, tarNamePat_RT=None, tarNamePat_KL1d=None, tarNamePat_MF1d=None, **kwargs):
         '''Constructor
         '''
         super(TcsvMerger, self).__init__(program, **kwargs)
@@ -955,7 +991,7 @@ class TcsvMerger(BaseApplication) :
             EVENT_KLINE_1DAY:     tarNamePat_KL1d,
             EVENT_MONEYFLOW_1MIN: tarNamePat_MF1m,
             EVENT_MONEYFLOW_1DAY: tarNamePat_MF1d,
-            EVENT_TICK:           tarNamePat_Tick,
+            'realtime':           tarNamePat_RT,
         }
 
         self.__tarballs = {}
@@ -997,11 +1033,11 @@ class TcsvMerger(BaseApplication) :
 
                 # dispatch the convert func up to evtype from tar filename
                 if EVENT_KLINE_PREFIX == evtype[:len(EVENT_KLINE_PREFIX)]:
-                    edseq = sina.SinaCrawler.convertToKLineDatas(symbol, content)
+                    edseq = SinaCrawler.convertToKLineDatas(symbol, content)
                 elif EVENT_MONEYFLOW_1MIN == evtype:
-                    edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, True)
+                    edseq = SinaCrawler.convertToMoneyFlow(symbol, content, True)
                 elif EVENT_MONEYFLOW_1DAY == evtype:
-                    edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, False)
+                    edseq = SinaCrawler.convertToMoneyFlow(symbol, content, False)
 
             pb = hist.Playback(symbol, program=self.program)
             for ed in edseq:
@@ -1055,7 +1091,7 @@ class TcsvMerger(BaseApplication) :
                 bname = os.path.basename(tn)
                 if 'sina' == bname[:4].lower() :
                     self.__extractJsonStreams(tn, evtype)
-                elif EVENT_TICK == evtype and 'advisor' == bname[:len('advisor')] :
+                elif 'realtime' == evtype and 'advisor' == bname[:len('advisor')] :
                     self.__extractAdvisorTarball(tn) # self.__extractAdvisorStreams(tn)
 
         if len(self.symbols) >0 and None in [self.__tarballs[EVENT_KLINE_1DAY], self.__tarballs[EVENT_MONEYFLOW_1DAY]]:

@@ -36,12 +36,20 @@ done
 cp -vf ${CONF} ${OUTDIR}/
 
 # backup and prepare new ${OUTDIR}
+echo "backing up to ${OUTDIR}.BAK${STAMP}"
+
 mv -vf ${OUTDIR} ${OUTDIR}.BAK${STAMP}
 mkdir -p ${OUTDIR}
 mv -vf ${OUTDIR}.BAK${STAMP}/*.ss* ${OUTDIR}/ # inherit from previous safestores
 rm -rf ${OUTDIR}/*.lock ${OUTDIR}/*.tcsv* ${OUTDIR}/*.log*
 
-echo "backing up to ${OUTDIR}.BAK${STAMP}"
+for i in ${OUTDIR}.BAK${STAMP}/advisor_*.tcsv.[0-9]*.bz2 ; do
+    if ! [ -e $i ]; then continue; fi
+    BZASOF=$(stat -c %y $i | sed 's/[- :]*//g' |cut -d '.' -f1)
+    BASENAME=$(basename $i |cut -d '.' -f1)
+    mv -vf $i  ${OUTDIR}.BAK${STAMP}/${BASENAME}.${BZASOF}.tcsv.bz2
+done
+
 ls -l ${OUTDIR}.BAK${STAMP}/*
 echo "new ${OUTDIR}"
 ls -l ${OUTDIR}/*

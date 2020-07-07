@@ -987,7 +987,6 @@ class TaggedCsvInTarball(TaggedCsvPlayback):
 
         items = list(bz2dict2.items())
         items.sort()
-        items.reverse()
 
         # insert into fnlist reversly
         for k,v in items:

@@ -21,6 +21,12 @@ downloadMF1m()
             grep -o netamount ${FN} >/dev/null && echo "MF1m of ${SYMBOL} has already been downloaded" && return
     fi
 
+    PREFIX=$(echo $SYMBOL | cut -c 1-4)
+    if [ "SH51" == "${PREFIX}" ] || [ "SZ15" == "${PREFIX}" ]; then
+        RET=200
+        return
+    fi
+
     echo "fetching MF1m of ${SYMBOL} to ${FN}"
     RET=$(wget --user-agent="${UA}" "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssx_ggzj_fszs?sort=time&num=${DATALEN}&page=1&daima=${SYMBOL}" -O ${FN} 2>&1|grep -o 'awaiting response.*'| grep -o '[0-9]*')
     if [ "200" == "${RET}" ]; then
@@ -36,12 +42,19 @@ downloadMF1d()
 {
     SYMBOL=$1
     FN=$2
+    SCALE=$3
 
     if [ -e ${FN} ]; then
             grep -o netamount ${FN} >/dev/null && echo "MF1m of ${SYMBOL} has already been downloaded" && return
     fi
 
-    echo "fetching MF1m of ${SYMBOL} to ${FN}"
+    PREFIX=$(echo $SYMBOL | cut -c 1-4)
+    if [ "SH51" == "${PREFIX}" ] || [ "SZ15" == "${PREFIX}" ]; then
+        RET=200
+        return
+    fi
+
+    echo "fetching MF1d of ${SYMBOL} to ${FN}"
     RET=$(wget --user-agent="${UA}" "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?daima=${SYMBOL}" -O ${FN} 2>&1|grep -o 'awaiting response.*'| grep -o '[0-9]*')
     if [ "200" == "${RET}" ]; then
         echo "downloaded MF1m of ${SYMBOL} as ${FN}, resp ${RET}"

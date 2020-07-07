@@ -14,9 +14,12 @@ from copy import copy
 from datetime import datetime, timedelta
 import demjson # pip3 install demjson
 
-import os, fnmatch, re
+import os, sys, fnmatch, tarfile, re
 import threading # for __step_pollTicks
 from time import sleep
+
+EXECLUDE_LIST = ["SH600005"]
+
 
 '''
 分类-中国银行: http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssi_gupiao_fenlei?daima=SH601988
@@ -979,7 +982,7 @@ def listSymbols(program, mdSina):
 
 ########################################################################
 class TcsvMerger(BaseApplication) :
-    def __init__(self, program, tarNamePat_KL5m, tarNamePat_MF1m, startDate =None, endDate=None, tarNamePat_Tick=None, tarNamePat_KL1d=None, tarNamePat_MF1d=None, **kwargs):
+    def __init__(self, program, tarNamePat_KL5m, tarNamePat_MF1m, startDate =None, endDate=None, tarNamePat_RT=None, tarNamePat_KL1d=None, tarNamePat_MF1d=None, **kwargs):
         '''Constructor
         '''
         super(TcsvMerger, self).__init__(program, **kwargs)
@@ -988,7 +991,7 @@ class TcsvMerger(BaseApplication) :
             EVENT_KLINE_1DAY:     tarNamePat_KL1d,
             EVENT_MONEYFLOW_1MIN: tarNamePat_MF1m,
             EVENT_MONEYFLOW_1DAY: tarNamePat_MF1d,
-            EVENT_TICK:           tarNamePat_Tick,
+            'realtime':           tarNamePat_RT,
         }
 
         self.__tarballs = {}
@@ -1030,11 +1033,11 @@ class TcsvMerger(BaseApplication) :
 
                 # dispatch the convert func up to evtype from tar filename
                 if EVENT_KLINE_PREFIX == evtype[:len(EVENT_KLINE_PREFIX)]:
-                    edseq = sina.SinaCrawler.convertToKLineDatas(symbol, content)
+                    edseq = SinaCrawler.convertToKLineDatas(symbol, content)
                 elif EVENT_MONEYFLOW_1MIN == evtype:
-                    edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, True)
+                    edseq = SinaCrawler.convertToMoneyFlow(symbol, content, True)
                 elif EVENT_MONEYFLOW_1DAY == evtype:
-                    edseq = sina.SinaCrawler.convertToMoneyFlow(symbol, content, False)
+                    edseq = SinaCrawler.convertToMoneyFlow(symbol, content, False)
 
             pb = hist.Playback(symbol, program=self.program)
             for ed in edseq:
@@ -1088,7 +1091,7 @@ class TcsvMerger(BaseApplication) :
                 bname = os.path.basename(tn)
                 if 'sina' == bname[:4].lower() :
                     self.__extractJsonStreams(tn, evtype)
-                elif EVENT_TICK == evtype and 'advisor' == bname[:len('advisor')] :
+                elif 'realtime' == evtype and 'advisor' == bname[:len('advisor')] :
                     self.__extractAdvisorTarball(tn) # self.__extractAdvisorStreams(tn)
 
         if len(self.symbols) >0 and None in [self.__tarballs[EVENT_KLINE_1DAY], self.__tarballs[EVENT_MONEYFLOW_1DAY]]:

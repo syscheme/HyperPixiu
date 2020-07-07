@@ -3,17 +3,38 @@ from MarketData  import *
 from Perspective import PerspectiveState
 from EventData   import datetime2float
 from Application import *
-from TradeAdvisor import EVENT_ADVICE, DictToAdvice
+from TradeAdvisor import EVENT_ADVICE
 from crawler import crawlSina as sina
 
-import os, sys, fnmatch, tarfile, re
+from datetime import datetime, timedelta
 
-EXECLUDE_LIST = ["SH600005"]
-SYMBOL='SZ002008'
+########################################################################
+class SinaWeek(sina.TcsvMerger) :
+    '''
+    to merge the market events collected in the recent week
+    '''
+    def __init__(self, program, tarNamePat_KL5m, tarNamePat_MF1m, dayInWeek =None, tarNamePat_RT=None, tarNamePat_KL1d=None, tarNamePat_MF1d=None, **kwargs):
 
-class SinaMerger(sina.TcsvMerger) :
-    def __init__(self, program, recorder, tarNamePat_KL5m, tarNamePat_MF1m, startDate =None, endDate=None, tarNamePat_Tick=None, tarNamePat_KL1d=None, tarNamePat_MF1d=None, **kwargs):
-        super(SinaMerger, self).__init__(program, tarNamePat_KL5m, tarNamePat_MF1m, startDate, endDate, tarNamePat_Tick, tarNamePat_KL1d, tarNamePat_MF1d, **kwargs)
+        self._dtStart = None
+        if dayInWeek and len(dayInWeek) >=8:
+            for i in range(1):
+                try: 
+                    self._dtStart = datetime.strptime(dayInWeek, '%Y%m%d') 
+                    break
+                except: pass
+                try: 
+                    self._dtStart = datetime.strptime(dayInWeek, '%Y-%m-%d') 
+                    break
+                except: pass
+
+        if not self._dtStart:
+            self._dtStart = datetime.now()
+        
+        self._dtStart = self._dtStart.replace(hour=0, minute=0, second=0, microsecond=0)
+        self._dtStart -= timedelta(days=self._dtStart.weekday()) # adjust to Monday
+        dtEnd   = self._dtStart + timedelta(days=7) - timedelta(microseconds=1)
+
+        super(SinaWeek, self).__init__(program, tarNamePat_KL5m, tarNamePat_MF1m, self._dtStart.strftime('%Y%m%dT000000'), dtEnd.strftime('%Y%m%dT235959'), tarNamePat_RT, tarNamePat_KL1d, tarNamePat_MF1d, **kwargs)
         self.__dictRec =  {}
 
     def __extractAdvisorStreams(self, tarballName):
@@ -70,7 +91,7 @@ class SinaMerger(sina.TcsvMerger) :
             return
 
         if not symbol in self.__dictRec.keys():
-            rec = self.program.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(thePROG.outdir, '%s_sinaMerged.tcsv' % symbol))
+            rec = self.program.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(thePROG.outdir, '%s_sinaWk%s.tcsv' % (symbol, self._dtStart.strftime('%Y%m%d'))))
             rec.registerCategory(EVENT_TICK,           params={'columns': TickData.COLUMNS})
             rec.registerCategory(EVENT_KLINE_1MIN,     params={'columns': KLineData.COLUMNS})
             rec.registerCategory(EVENT_KLINE_5MIN,     params={'columns': KLineData.COLUMNS})
@@ -93,41 +114,25 @@ class SinaMerger(sina.TcsvMerger) :
     #         c += rec.doAppStep()
     #     return c
     
+########################################################################
+
 if __name__ == '__main__':
 
     sys.argv += ['-f', os.path.realpath(os.path.dirname(os.path.abspath(__file__))+ '/../../conf') + '/Advisor.json']
     thePROG = Program()
     thePROG._heartbeatInterval =-1
-    srcFolder = '/mnt/e/AShareSample/SinaWeek'
-
-    SYMBOL='SZ002008'
+    srcFolder = '/mnt/e/AShareSample/SinaWeek.20200629'
 
     tarNamePats={
-        'tarNamePat_KL5m' : None, #'%s/SinaKL5m_*.tar.bz2' %srcFolder,
-        'tarNamePat_MF1m' : None, #'%s/SinaMF1m_*.tar.bz2' %srcFolder,
-        'tarNamePat_Tick' : '%s/advisor.BAK*.tar.bz2' %srcFolder,
+        'tarNamePat_KL5m' : '%s/SinaKL5m_*.tar.bz2' %srcFolder,
+        'tarNamePat_MF1m' : '%s/SinaMF1m_*.tar.bz2' %srcFolder,
+        'tarNamePat_RT'   : '%s/u20hp01/advisor.BAK*.tar.bz2' %srcFolder,
         # 'tarNamePat_KL1d' : '%s/SinaKL1d*.tar.bz2' %srcFolder,
         # 'tarNamePat_MF1d' : '%s/SinaMF1d*.tar.bz2' %srcFolder,
     }
 
-    # rec    = thePROG.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(thePROG.outdir, '%s.tcsv' % SYMBOL))
-    merger = thePROG.createApp(SinaMerger, recorder =None, symbol=SYMBOL, startDate='20200601T000000', endDate='20200630T235959', **tarNamePats)
-    merger.setSymbols('SZ002008,SZ002080,SZ002007,SZ002106')
-
-    '''
-    acc = thePROG.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-    tdrCore = thePROG.createApp(BaseTrader, configNode ='trader', objectives=objectives, account=acc)
-    objectives = tdrCore.objectives
-    SYMBOL = objectives[0]
-
-    TEST_f4schema = {
-            'asof':1, 
-            EVENT_KLINE_5MIN     : 2,
-            EVENT_MONEYFLOW_1MIN : 10,
-    }
-
-    tdrWraper = thePROG.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=histReader, f4schema=TEST_f4schema)
-    '''
+    merger = thePROG.createApp(SinaWeek, dayInWeek='20200630', **tarNamePats)
+    merger.setSymbols('SH601377,SZ000636,SH510050,SH510500,SH510300')
 
     thePROG.start()
     thePROG.setLogLevel('debug')

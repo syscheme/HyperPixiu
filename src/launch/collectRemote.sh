@@ -25,6 +25,7 @@ DIFF_FILE="/tmp/md5sum.txt"
 LOCAL_DIR=$2
 if [ "" == "$LOCAL_DIR" ]; then LOCAL_DIR=$(realpath .); fi
 
+if ! [ -d ${LOCAL_DIR} ]; then exit 1; fi
 cd ${LOCAL_DIR}
 
 ssh -p $REMOTE_PORT ${SRC_HOST} "cd ${SRC_DIR} ; md5sum $SRC_FILE" > ./remote_md5.txt

@@ -2,9 +2,16 @@
 #usage: $0 <remotesrc> [<local-destdir>]
 #CMD=${0##*/}
 CLEAN_REMOTE=no
+REMOTE_PORT=22
 
 if [ "-C" == "$1" ]; then 
     CLEAN_REMOTE=yes
+    shift
+fi
+
+if [ "-p" == "$1" ]; then 
+    REMOTE_PORT=$2
+    shift
     shift
 fi
 
@@ -19,7 +26,9 @@ LOCAL_DIR=$2
 if [ "" == "$LOCAL_DIR" ]; then LOCAL_DIR=$(realpath .); fi
 
 cd ${LOCAL_DIR}
-ssh ${SRC_HOST} "cd ${SRC_DIR} ; md5sum $SRC_FILE" |md5sum -c 2>/dev/null > ${DIFF_FILE}
+
+ssh -p $REMOTE_PORT ${SRC_HOST} "cd ${SRC_DIR} ; md5sum $SRC_FILE" > ./remote_md5.txt
+md5sum -c ./remote_md5.txt 2>/dev/null > ${DIFF_FILE}
 FILE_LIST_DIFF=$(grep -v OK ${DIFF_FILE} |cut -d ':' -f 1)
 FILE_LIST_MATCHED=$(grep OK ${DIFF_FILE} |cut -d ':' -f 1)
 rm -rf ${DIFF_FILE}
@@ -29,9 +38,9 @@ for f in $FILE_LIST_MATCHED; do
 done
 
 if [ "yes" == "$CLEAN_REMOTE" ] && ! [ -z $FILE_LIST_MATCHED ]; then
-    echo ssh ${SRC_HOST} "cd ${SRC_DIR} ; rm -vf $FILE_LIST_MATCHED"
+    echo -p $REMOTE_PORT ssh ${SRC_HOST} "cd ${SRC_DIR} ; rm -vf $FILE_LIST_MATCHED"
 fi
 
 for f in $FILE_LIST_DIFF; do
-    scp ${SRC_HOST}:${SRC_DIR}/$f . ;
+    scp -P $REMOTE_PORT ${SRC_HOST}:${SRC_DIR}/$f . ;
 done

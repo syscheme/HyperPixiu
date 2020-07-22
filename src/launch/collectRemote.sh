@@ -3,6 +3,7 @@
 #CMD=${0##*/}
 CLEAN_REMOTE=no
 REMOTE_PORT=22
+DATE_EXPIRE=$(date +%Y%m%d -d 'last sunday -2 weeks')
 
 if [ "-C" == "$1" ]; then 
     CLEAN_REMOTE=yes
@@ -23,25 +24,31 @@ SRC_DIR=$(dirname $SRC_DIR)
 DIFF_FILE="/tmp/md5sum.txt"
 
 LOCAL_DIR=$2
-if [ "" == "$LOCAL_DIR" ]; then LOCAL_DIR=$(realpath .); fi
-
 if ! [ -d ${LOCAL_DIR} ]; then exit 1; fi
 cd ${LOCAL_DIR}
+echo "$(date +%Y%m%dT%H%M%S)>> collecting ${SRC_HOST}:${SRC_DIR}" | tee ./collectRemote.log
 
 ssh -p $REMOTE_PORT ${SRC_HOST} "cd ${SRC_DIR} ; md5sum $SRC_FILE" > ./remote_md5.txt
 md5sum -c ./remote_md5.txt 2>/dev/null > ${DIFF_FILE}
 FILE_LIST_DIFF=$(grep -v OK ${DIFF_FILE} |cut -d ':' -f 1)
 FILE_LIST_MATCHED=$(grep OK ${DIFF_FILE} |cut -d ':' -f 1)
+FILE_LIST_EXP=""
 rm -rf ${DIFF_FILE}
 
 for f in $FILE_LIST_MATCHED; do
-    echo matched $f ;
+    echo matched $f | tee -a ./collectRemote.log
+    dateAsOf=$(echo $f | grep -o '20[0-9]\{6\}')
+    if [ "" != "$dateAsOf" ] && [ "$dateAsOf" -lt "$DATE_EXPIRE" ] ; then
+        FILE_LIST_EXP="$FILE_LIST_EXP $f"
+    fi
 done
+# echo "FILE_LIST_EXP=$FILE_LIST_EXP"
 
-if [ "yes" == "$CLEAN_REMOTE" ] && ! [ -z $FILE_LIST_MATCHED ]; then
-    echo -p $REMOTE_PORT ssh ${SRC_HOST} "cd ${SRC_DIR} ; rm -vf $FILE_LIST_MATCHED"
+if [ "yes" == "$CLEAN_REMOTE" ] && ! [ -z "$FILE_LIST_EXP" ]; then
+    ssh -p ${REMOTE_PORT} ${SRC_HOST} "cd ${SRC_DIR} ; rm -vf $FILE_LIST_EXP" | tee -a ./collectRemote.log
 fi
 
 for f in $FILE_LIST_DIFF; do
-    scp -P $REMOTE_PORT ${SRC_HOST}:${SRC_DIR}/$f . ;
+    scp -P ${REMOTE_PORT} ${SRC_HOST}:${SRC_DIR}/$f . | tee -a ./collectRemote.log
 done
+

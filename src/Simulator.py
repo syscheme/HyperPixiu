@@ -1746,12 +1746,12 @@ class OfflineSimulator(BackTestApp):
         '''
         super(OfflineSimulator, self).__init__(program, trader, histdata, **kwargs)
 
-        self._masterExportHomeDir = self.getConfig('master/homeDir', None) # this agent work as the master when configured, usually point to a dir under webroot
-        if self._masterExportHomeDir and '/' != self._masterExportHomeDir[-1]: self._masterExportHomeDir +='/'
+        self._mainExportHomeDir = self.getConfig('main/homeDir', None) # this agent work as the main when configured, usually point to a dir under webroot
+        if self._mainExportHomeDir and '/' != self._mainExportHomeDir[-1]: self._mainExportHomeDir +='/'
         
-        # the base URL of local web for the slaves to GET/POST the tasks
-        # current OfflineSimulator works as slave if this masterExportURL presents but masterExportHomeDir abendons
-        self._masterExportURL = self.getConfig('master/exportURL', self._masterExportHomeDir)
+        # the base URL of local web for the subordinates to GET/POST the tasks
+        # current OfflineSimulator works as subordinate if this mainExportURL presents but mainExportHomeDir abendons
+        self._mainExportURL = self.getConfig('main/exportURL', self._mainExportHomeDir)
 
         self.__savedEpisode_Id = -1
         self.__savedEpisode_opendays = 0

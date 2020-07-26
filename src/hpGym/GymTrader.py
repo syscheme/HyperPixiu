@@ -515,12 +515,12 @@ class OfflineSimulator(BackTestApp):
         super(OfflineSimulator, self).__init__(program, trader, histdata, **kwargs)
         self._iterationsPerEpisode = self.getConfig('iterationsPerEpisode', 1)
 
-        self._masterExportHomeDir = self.getConfig('master/homeDir', None) # this agent work as the master when configured, usually point to a dir under webroot
-        if self._masterExportHomeDir and '/' != self._masterExportHomeDir[-1]: self._masterExportHomeDir +='/'
+        self._mainExportHomeDir = self.getConfig('main/homeDir', None) # this agent work as the main when configured, usually point to a dir under webroot
+        if self._mainExportHomeDir and '/' != self._mainExportHomeDir[-1]: self._mainExportHomeDir +='/'
         
-        # the base URL of local web for the slaves to GET/POST the tasks
-        # current OfflineSimulator works as slave if this masterExportURL presents but masterExportHomeDir abendons
-        self._masterExportURL = self.getConfig('master/exportURL', self._masterExportHomeDir)
+        # the base URL of local web for the subordinates to GET/POST the tasks
+        # current OfflineSimulator works as subordinate if this mainExportURL presents but mainExportHomeDir abendons
+        self._mainExportURL = self.getConfig('main/exportURL', self._mainExportHomeDir)
 
         self.__lastEpisode_loss = DUMMY_BIG_VAL
 
@@ -560,7 +560,7 @@ class OfflineSimulator(BackTestApp):
             return False
 
         self.wkTrader.gymReset()
-        self.wkTrader._agent.enableMaster(self._masterExportHomeDir)
+        self.wkTrader._agent.enableMain(self._mainExportHomeDir)
         self._account.account._skipSavingByEvent = True
         return True
 
@@ -729,8 +729,8 @@ class OfflineSimulator(BackTestApp):
 
     def __updateSimulatorTask(self, inputFiles):
         
-        if not self._masterExportHomeDir or len(self._masterExportHomeDir) <=0:
-            return # not as the master
+        if not self._mainExportHomeDir or len(self._mainExportHomeDir) <=0:
+            return # not as the main
         
         # collect all needed files into a tmpdir
         simTaskId = '%s_%s' % (self.wkTrader._agent.brainId, datetime.now().strftime('%Y%m%dT%H%M%S%f'))
@@ -751,8 +751,8 @@ class OfflineSimulator(BackTestApp):
         if not 'model.json.h5' in os.listdir(tmpdir) :
             os.system('cp -f %s/model.* %s' % (os.path.join(self.dataRoot, self.wkTrader._agent.brainId), tmpdir))
         
-        # generate the URL list where the slave is able to download the input csv files
-        exportedCsvHome = '%s/' % os.path.join(self._masterExportHomeDir, 'csv')
+        # generate the URL list where the subordinate is able to download the input csv files
+        exportedCsvHome = '%s/' % os.path.join(self._mainExportHomeDir, 'csv')
         try :
             os.makedirs(exportedCsvHome)
         except :
@@ -774,7 +774,7 @@ class OfflineSimulator(BackTestApp):
         
         # now make a tar ball as the task file
         # this is a tar.bz2 including a) model.json, b) current weight h5 file, c) version-number, d) the frame exported as hdf5 file
-        fn_task = os.path.join(self._masterExportHomeDir, 'tasks', 'sim_%s.tak' % simTaskId)
+        fn_task = os.path.join(self._mainExportHomeDir, 'tasks', 'sim_%s.tak' % simTaskId)
         try :
             os.makedirs(os.path.dirname(fn_task))
         except :
@@ -789,7 +789,7 @@ class OfflineSimulator(BackTestApp):
         os.system('rm -rf %s' % tmpdir)
 
         # swap into the active task
-        target_task_file = os.path.join(self._masterExportHomeDir, 'tasks', 'sim.tak')
+        target_task_file = os.path.join(self._mainExportHomeDir, 'tasks', 'sim.tak')
         os.system('rm -rf $(realpath %s) %s' % (target_task_file, target_task_file))
         os.system('ln -sf %s %s' % (fn_task, target_task_file))
         self.info('__updateSimulatorTask() task updated: %s->%s' % (target_task_file, fn_task))

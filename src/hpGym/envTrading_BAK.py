@@ -300,7 +300,7 @@ class AccountGEnv(GymEnv):
     '''
     def __init__(self, envTrading, account):
         '''Constructor
-            @param envTrading (TradingEnv) the master TradingEnv
+            @param envTrading (TradingEnv) the main TradingEnv
             @param account (nvApp.Account) the account to observe and drive
         '''
         self._envTrading = envTrading
@@ -363,7 +363,7 @@ class MarketGEnv(GymEnv):
 
     def __init__(self, envTrading, perspectiveId):
         '''Constructor
-            @param envTrading (TradingEnv) the master TradingEnv
+            @param envTrading (TradingEnv) the main TradingEnv
             @param account (nvApp.Account) the account to observe and drive
         '''
         self._envTrading = envTrading

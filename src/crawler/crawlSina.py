@@ -1011,6 +1011,21 @@ class TcsvMerger(BaseApplication) :
         self.__symbols = [SinaCrawler.fixupSymbolPrefix(s) for s in symbols]
         return self.symbols
 
+    def populateSymbolList(tarballPath):
+        tar = tarfile.open(tarballPath)
+
+        symbolList = []
+        for member in tar.getmembers():
+            basename = os.path.basename(member.name)
+            if not basename.split('.')[-1] in ['json']: 
+                continue
+
+            symbol = basename[:basename.index('_')]
+            symbolList.append(symbol)
+
+        #no self: self.debug('%d symbols found in tarball[%s]: %s' % (len(symbolList), tarballPath, ','.join(symbolList)))
+        return symbolList
+
     def __extractJsonStreams(self, tarballName, evtype):
         tar = tarfile.open(tarballName)
 

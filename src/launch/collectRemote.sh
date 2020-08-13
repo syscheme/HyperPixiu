@@ -28,7 +28,7 @@ for f in $FILE_LIST_MATCHED; do
     echo matched $f ;
 done
 
-if [ "yes" == "$CLEAN_REMOTE" ] && ! [ -z $FILE_LIST_MATCHED ]; then
+if [ "yes" == "$CLEAN_REMOTE" ] && ! [ -z cd "$FILE_LIST_MATCHED" ]; then
     echo ssh ${SRC_HOST} "cd ${SRC_DIR} ; rm -vf $FILE_LIST_MATCHED"
 fi
 

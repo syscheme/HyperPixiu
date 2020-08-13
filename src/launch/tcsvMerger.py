@@ -132,7 +132,9 @@ if __name__ == '__main__':
     }
 
     merger = thePROG.createApp(SinaWeek, dayInWeek='20200630', **tarNamePats)
-    merger.setSymbols('SH601377,SZ000636,SH510050,SH510500,SH510300')
+    symbollist = merger.populateSymbolsFromJsonStreams('%s/SinaKL5m_20200703.tar.bz2' %srcFolder)
+
+    merger.setSymbols(symbollist)
 
     thePROG.start()
     thePROG.setLogLevel('debug')

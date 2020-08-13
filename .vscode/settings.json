@@ -15,5 +15,6 @@
         "**/*.pyc": true
     },
     "python.jediEnabled": false,
-    "files.autoSave": "onWindowChange"
+    "files.autoSave": "onWindowChange",
+    "python.languageServer": "Microsoft"
 }

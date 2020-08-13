@@ -57,6 +57,78 @@ def stampGoodProxy(priority = 10.0):
 
     __everGoods.append(stmt)
 
+def listFrom_skyriver():
+    prxs = []
+    # download the proxy list from https://skyrivermecatronic.com, but many of them may not work
+    # wget -O- --no-check-certificate https://skyrivermecatronic.com/proxychains/ | grep -o '<br>http.*' |sed 's/<br>\([a-z0-9]*\)[&nbsp;]*\([0-9\.]*\)[&nbsp;]*\([0-9\.]*\)/\n\1:\/\/\2:\3/g'
+    # potential version issue: https://blog.csdn.net/fangbinwei93/article/details/59526937?utm_medium=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.nonecase&depth_1-utm_source=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.nonecase
+    response = requests.get('https://skyrivermecatronic.com/proxychains/')
+    httperr = response.status_code
+    if 200 != httperr:
+        return prxs
+
+    lines =  response.text.split('<br>')
+    SYNTAX = re.compile('^([a-z0-9]*)[&nbsp;]*([0-9\.]*)[&nbsp;]*([0-9\.]*).*')
+    for l in lines:
+        m = SYNTAX.match(l)
+        if not m : continue
+        prot, ip, port = m.group(1).lower(), m.group(2).lower(), m.group(3)
+        if len(prot) + len(ip) + len(port) <8 : continue # or 'http' in prot
+        prxs.append('%s://%s:%s' % (prot, ip, port))
+    
+    return prxs
+
+def listFrom_proxyranker():
+    prxs = []
+    response = requests.get('https://www.proxyranker.com/china/list/')
+    httperr = response.status_code
+    if 200 != httperr:
+        return prxs
+
+    # <td>115.47.45.82</td><td>China</td><td>Beijing</td><td><span title="Proxy port">8080</span></td><td>0.329s</td><td>anonymous (HTTPS/SSL)</td></tr>
+    # <tr><td>117.79.73.166</td><td>China</td><td>Beijing</td><td><span title="Proxy port">8080</span></td><td>0.325s</td><td>anonymous</td></tr>
+    lines =  response.text.split('</tr>')
+    SYNTAX = re.compile('^.*<td.*>([0-9\.]+)</td>.*<span title="Proxy port">([0-9\.]*)</span>.*(anonymous[^<]*)</td>')
+    for l in lines:
+        m = SYNTAX.match(l)
+        if not m : continue
+        prot, ip, port = m.group(3).lower(), m.group(1), m.group(2)
+        if len(ip) <=0 or len(prot) + len(port) <5 : continue # or 'http' in prot
+        prot = 'https' if 'https' in prot else 'http'
+        prxs.append('%s://%s:%s' % (prot, ip, port))
+    
+    return prxs
+
+def listFrom_proxynova():
+    prxs = []
+    response = requests.get('https://www.proxynova.com/proxy-server-list/country-cn/')
+    httperr = response.status_code
+    if 200 != httperr:
+        return prxs
+
+    '''
+    <td align="left"><abbr title="47.106.220.74"><script>document.write('47.106.220.74');</script></abbr></td>
+    <td align="left"> 3380  </td>
+    <td align="left"><time class="icon icon-check timeago" datetime="2020-08-13 14:23:48Z"></time></td>
+    <td align="left"><div class="progress-bar" data-value="28.5991925" title="1343"></div><small>1343 ms</small>  </td>
+    <td class="text-center text-sm"> <span class="uptime-high">96%</span> <span> (32)</span> </td>
+    <td align="left"> <img src="/assets/images/blank.gif" class="flag flag-cn inline-block align-middle" alt="cn" />  <a href="/proxy-server-list/country-cn/" title="Proxies from China">China  <span class="proxy-city"> - Hangzhou </span></a> </td>
+    <td align="left">  <span class="proxy_transparent font-weight-bold smallish">Transparent</span>  </td>
+    </tr>
+    '''
+    txt = response.text.replace("\n", "").replace("\r", "")
+    lines =  txt.split('</tr>')
+    SYNTAX = re.compile('^.*document.write\(.([0-9\.]+).*<td.*>[ \t]*([0-9\.]*)[ \t]*</td>.*Proxies from China.*(Elite|Transparent|Anonymous).*</td>')
+    for l in lines:
+        m = SYNTAX.match(l)
+        if not m : continue
+        prot, ip, port = 'http', m.group(1), m.group(2) # m.group(3).lower(), m.group(1), m.group(2)
+        if len(ip) <=0 or len(prot) + len(port) <5 : continue # or 'http' in prot
+        prot = 'https' if 'https' in prot else 'http'
+        prxs.append('%s://%s:%s' % (prot, ip, port))
+    
+    return prxs
+
 def nextProxy():
     global __proxyList, __everGoods
 
@@ -66,25 +138,11 @@ def nextProxy():
         __proxyList = [i.split('>')[1] for i in __everGoods]
         __everGoods = []
 
-    if len(__proxyList) <=0:
-        # download the proxy list from https://skyrivermecatronic.com, but many of them may not work
-        # wget -O- --no-check-certificate https://skyrivermecatronic.com/proxychains/ | grep -o '<br>http.*' |sed 's/<br>\([a-z0-9]*\)[&nbsp;]*\([0-9\.]*\)[&nbsp;]*\([0-9\.]*\)/\n\1:\/\/\2:\3/g'
-        # potential version issue: https://blog.csdn.net/fangbinwei93/article/details/59526937?utm_medium=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.nonecase&depth_1-utm_source=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.nonecase
-        response = requests.get('https://skyrivermecatronic.com/proxychains/')
-        httperr = response.status_code
-        if 200 != httperr:
-            return ret
-
-        lines =  response.text.split('<br>')
-        SYNTAX = re.compile('^([a-z0-9]*)[&nbsp;]*([0-9\.]*)[&nbsp;]*([0-9\.]*).*')
-        for l in lines:
-            m = SYNTAX.match(l)
-            if not m : continue
-            prot, ip, port = m.group(1).lower(), m.group(2).lower(), m.group(3)
-            if len(prot) + len(ip) + len(port) <8 : continue # or 'http' in prot
-            __proxyList.append('%s://%s:%s' % (prot, ip, port))
-
-        # TODO may make __proxyList.unique
+    try :
+        if len(__proxyList) <=0:
+            __proxyList = listFrom_proxynova() # listFrom_skyriver() 
+    except:
+        pass
             
     if len(__proxyList) >0:
         ret = __proxyList[0]

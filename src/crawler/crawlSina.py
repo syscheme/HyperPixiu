@@ -945,10 +945,11 @@ def activityOf(item):
 def listSymbols(program, mdSina):
     # 3869 symbols as of 2020-06-20
     result ={}
+    thruPrxy = False
 
     httperr =100
     while 2 != int(httperr/100):
-        urlProxy= dsg.nextProxy()
+        urlProxy= dsg.nextProxy() if thruPrxy else None
         httperr, lstSH = md.GET_AllSymbols('SH', urlProxy)
         print('SH-resp(%d) thru[%s]' %(httperr, urlProxy))
 
@@ -956,7 +957,7 @@ def listSymbols(program, mdSina):
 
     httperr =100
     while 2 != int(httperr/100):
-        urlProxy= dsg.nextProxy()
+        urlProxy= dsg.nextProxy() if thruPrxy else None
         httperr, lstSZ = md.GET_AllSymbols('SZ', urlProxy)
         print('SZ-resp(%d) thru[%s]' %(httperr, urlProxy))
     

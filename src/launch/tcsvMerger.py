@@ -118,6 +118,20 @@ class SinaWeek(sina.TcsvMerger) :
 
 if __name__ == '__main__':
 
+    allSymobols='SH601377,SZ000636,SH510050,SH510500,SH510300' # sample
+    # sys.argv += ['-x', 'SH601377,SZ000636']
+    dayInWeek = datetime.now().strftime('%Y%m%d')
+
+    if '-x' in sys.argv :
+        pos = sys.argv.index('-x')
+        allSymobols = sys.argv[pos+1]
+        del sys.argv[pos:pos+2]
+
+    if '-d' in sys.argv :
+        pos = sys.argv.index('-d')
+        dayInWeek = sys.argv[pos+1]
+        del sys.argv[pos:pos+2]
+
     sys.argv += ['-f', os.path.realpath(os.path.dirname(os.path.abspath(__file__))+ '/../../conf') + '/Advisor.json']
     thePROG = Program()
     thePROG._heartbeatInterval =-1
@@ -127,13 +141,26 @@ if __name__ == '__main__':
         'tarNamePat_KL5m' : '%s/SinaKL5m_*.tar.bz2' %srcFolder,
         'tarNamePat_MF1m' : '%s/SinaMF1m_*.tar.bz2' %srcFolder,
         'tarNamePat_RT'   : '%s/u20hp01/advisor.BAK*.tar.bz2' %srcFolder,
-        # 'tarNamePat_KL1d' : '%s/SinaKL1d*.tar.bz2' %srcFolder,
-        # 'tarNamePat_MF1d' : '%s/SinaMF1d*.tar.bz2' %srcFolder,
+        'tarNamePat_KL1d' : '%s/SinaKL1d*.tar.bz2' %srcFolder,
+        'tarNamePat_MF1d' : '%s/SinaMF1d*.tar.bz2' %srcFolder,
     }
 
-    merger = thePROG.createApp(SinaWeek, dayInWeek='20200630', **tarNamePats)
-    symoblist = SinaWeek.populateSymbolList('%s/SinaKL5m_20200703.tar.bz2' %srcFolder)
-    merger.setSymbols('SH601377,SZ000636,SH510050,SH510500,SH510300') #symoblist[:20]
+    allSymobols = allSymobols.split(',')
+    if len(allSymobols) <=0:
+        symbolListBy = tarNamePats['tarNamePat_KL5m']
+        fnAll = hist.listAllFiles(os.path.dirname(symbolListBy))
+        symbolListBy = os.path.basename(symbolListBy)
+        fnMatched = []
+        for fn in fnAll:
+            if fnmatch.fnmatch(os.path.basename(fn), symbolListBy):
+                fnMatched.append(fn)
+
+        if len(fnMatched) >0:
+            fnMatched.sort()
+            allSymobols = SinaWeek.populateSymbolList(fnMatched[-1])
+
+    merger = thePROG.createApp(SinaWeek, dayInWeek=dayInWeek, **tarNamePats)
+    merger.setSymbols(allSymobols[:20]) # ('SH601377,SZ000636,SH510050,SH510500,SH510300') #symoblist[:20]   
 
     thePROG.start()
     thePROG.setLogLevel('debug')

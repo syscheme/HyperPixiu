@@ -503,7 +503,7 @@ class SinaCrawler(MarketCrawler):
         klineseq =[]
         jsonData = demjson.decode(text)
         if not jsonData:
-            return httperr, klineseq
+            return klineseq
 
         ''' sample response
         [{day:"2019-09-23 14:15:00",open:"15.280",high:"15.290",low:"15.260",close:"15.270",volume:"892600",ma_price5:15.274,ma_volume5:1645033,ma_price10:15.272,ma_volume10:1524623,ma_price30:15.296,ma_volume30:2081080},
@@ -767,7 +767,7 @@ class SinaCrawler(MarketCrawler):
          {"symbol":"sh600241","code":"600241","name":"*ST\u65f6\u4e07","trade":"3.390","pricechange":"-0.010","changepercent":"-0.294","buy":"3.380","sell":"3.390","settlement":"3.400","open":"3.400","high":"3.400","low":"3.370","volume":1572918,"amount":5328448,"ticktime":"15:00:00","per":-3.606,"pb":1.025,"mktcap":99768.416985,"nmc":85281.237408,"turnoverratio":0.62525},
         ]
         '''
-        HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio"
+        HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,trade,open,high,low,volume,amount"
         HEADERS=HEADERSEQ.split(',')
         MAX_SYM_COUNT=6000
         ex_node = ex_node.lower()
@@ -793,9 +793,12 @@ class SinaCrawler(MarketCrawler):
             for i in jsonData :
                 item = {}
                 for h in HEADERS:
-                    item[h] = i[h]
-                    if isinstance(item[h], str):
-                        item[h] = item[h].upper()
+                    v = i[h]
+                    if isinstance(v, str):
+                        v = v.upper()
+                    if 'trade' == h:
+                        h ='close'
+                    item[h] = v
                      # utf-8 .decode()
                 ret.append(item)
         
@@ -939,8 +942,9 @@ class SinaMF1mToXm(object):
             self.__onMFlowXm(copy(self.__mf1m))
 
 ########################################################################
+__totalAmt10K=0
 def activityOf(item):
-    return item['nmc'] * item['turnoverratio']
+    return sqrt(item['amount'] / __totalAmt10K) + item['turnoverratio']
 
 def listSymbols(program, mdSina):
     # 3869 symbols as of 2020-06-20
@@ -965,10 +969,13 @@ def listSymbols(program, mdSina):
         result[i['symbol']] =i
     result = list(result.values())
 
+    __totalAmt10K=0
     print('-'*10 + ' All %d symbols '%len(result) + '-'*10)
-    HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio"
+    HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,close,volume"
     print(HEADERSEQ)
-    for i in result: print(','.join([str(i[k]) for k in HEADERSEQ.split(',')]))
+    for i in result:
+        __totalAmt10K += i['amount'] /10000.0
+        print(','.join([str(i[k]) for k in HEADERSEQ.split(',')]))
 
     # filter the top active 1000
     topXXX = list(filter(lambda x: not '*ST' in x['name'], result))

@@ -6,11 +6,15 @@ SYMBOLS_BATCH_SIZE=100
 
 DATE_OF_MONDAY=$(date +%Y%m%d -d 'last friday -4 days')
 DATE_OF_SATDAY=$(date +%Y%m%d -d 'last friday +1 days') # supposed to be the today of this run
-# DATE_OF_MONDAY='20200630'
 
 TAR4SYMBOLS=$(find ${SRCDataFolder} -name SinaKL5m_*.tar.bz2 | sort | tail -1)
 ALLSYMBOLS=$(tar tvfj ${TAR4SYMBOLS}| grep -o 'S.[0-9]\{6\}'|sort|uniq)
 ALLSYMBOLS="${ALLSYMBOLS}"
+
+#------ DEBUG -------
+DATE_OF_MONDAY='20200630'
+ALLSYMBOLS="SH510050,SH510500,SH510300"
+#--------------------
 
 SYMBOLS_BATCH=""
 SYMBOLS_C=0
@@ -26,6 +30,14 @@ for S in ${ALLSYMBOLS} ; do
         ${CMD}
         SYMBOLS_C=0
         SYMBOLS_BATCH=""
-        exit 0
     fi
 done
+
+if [ ${SYMBOLS_C} -gt 0 ]; then
+    let "BATCH_ID+=1"
+    CMD="./run.sh src/launch/tcsvMerger.py -d ${DATE_OF_MONDAY} -x \"${SYMBOLS_BATCH:1}\" "
+    echo "batch_$BATCH_ID> executing: ${CMD}"
+    ${CMD}
+    SYMBOLS_C=0
+    SYMBOLS_BATCH=""
+fi

@@ -25,7 +25,7 @@ def _makeupMux(simulator, dirOffline):
         if not fnmatch.fnmatch(os.path.basename(fn), fnFilter):
             continue
 
-        simulator.error("__makeupMux() loading offline file: %s" %(fn))
+        simulator.debug("__makeupMux() loading offline file: %s" %(fn))
         f = open(fn, "rb")
         pb = hist.TaggedCsvStream(f, program=simulator.program)
         pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
@@ -116,12 +116,15 @@ class SinaSwingScanner(ShortSwingScanner):
     ShortSwingScanner extends OfflineSimulator by scanning the MarketEvents occurs up to several days, determining
     the short trend
     '''
-    def __init__(self, program, trader, histdata, f4schema=None, **kwargs):
+    def __init__(self, program, trader, symbol, dirOfflineData, f4schema=None, **kwargs):
         '''Constructor
         '''
-        mux = hist.PlaybackMux(program=self.program) # not start/end data specified, startDate =startDate, endDate=endDate)
+        mux = hist.PlaybackMux(program=program) # not start/end data specified, startDate =startDate, endDate=endDate)
 
         super(SinaSwingScanner, self).__init__(program, trader, mux, **kwargs)
+
+        self._dirOfflineData = dirOfflineData
+        self._tradeSymbol = symbol
 
     def doAppInit(self): # return True if succ
         # load the offline tcsv streams and the online daily streams int self._wkHistData as a PlaybackMux

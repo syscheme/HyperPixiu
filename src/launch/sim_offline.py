@@ -8,7 +8,7 @@ from Account import Account_AShare
 from Application import *
 import HistoryData as hist
 from advisors.dnn import DnnAdvisor_S1548I4A3
-from crawler.producesSina import Sina_Tplus1
+from crawler.producesSina import Sina_Tplus1, SinaSwingScanner
 
 import sys, os, platform
 RFGROUP_PREFIX  = 'ReplayFrame:'
@@ -200,6 +200,8 @@ if __name__ == '__main__':
         tdrWraper = p.createApp(Sina_Tplus1, configNode ='trader', trader=tdrCore, symbol='SZ000001', dirOfflineData='/mnt/e/AShareSample/SinaWeek.20200629')
     elif 'FuturePrice' == ideal :
         tdrWraper = p.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=histReader) # ShortSwingScanner to classify future price
+    elif 'SinaFP' == ideal :
+        tdrWraper = p.createApp(SinaSwingScanner, configNode ='trader', trader=tdrCore, symbol='SZ000001', dirOfflineData='/mnt/e/AShareSample/SinaWeek.20200629')
     else :
         p.info('all objects registered piror to local Advisor: %s' % p.listByType())
         advisor = p.createApp(DnnAdvisor_S1548I4A3, configNode ='advisor', objectives=objectives, recorder=rec)

@@ -228,6 +228,8 @@ class Perspective(MarketData):
         seq += self.eventTypes
         latestAsOf = None
         for et in seq:
+            if EVENT_TICK != et and not EVENT_KLINE_PREFIX in et:
+                continue
             stk = self._stacks[et]
             if not stk or stk.size <=0:
                 continue

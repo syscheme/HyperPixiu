@@ -1063,6 +1063,7 @@ class TcsvMerger(BaseApplication) :
                     edseq = SinaCrawler.convertToMoneyFlow(symbol, content, False)
 
             pb = hist.Playback(symbol, program=self.program)
+            pb.setId('%s@%s' % (basename, os.path.basename(tarballName)))
             for ed in edseq:
                 ev = Event(evtype)
                 ev.setData(ed)
@@ -1074,6 +1075,7 @@ class TcsvMerger(BaseApplication) :
 
     def __extractAdvisorTarball(self, tarballName):
         pb = hist.TaggedCsvInTarball(tarballName, memberPattern='advisor_*.tcsv*', program=self.program)
+        pb.setId('%s' % (os.path.basename(tarballName)))
 
         pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
         pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)

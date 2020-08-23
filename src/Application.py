@@ -420,9 +420,15 @@ class Iterable(MetaObj):
 
         # 事件队列
         self.__quePending = Queue() # (maxsize=999)
+        self.setId('')
 
     @property
     def program(self) : return self.__program
+
+    @property
+    def id(self) : return self.__id
+
+    def setId(self, id): self.__id = id
 
     def __iter__(self):
         if self.resetRead() : # alway perform reset here
@@ -501,22 +507,22 @@ class Iterable(MetaObj):
 
     def debug(self, msg):
         if not self.__program: return
-        self.__program.debug(self.__class__.__name__ +' ' + msg)
+        self.__program.debug('%s[%s] ' %(self.__class__.__name__, self.id) + msg)
         
     def info(self, msg):
         if not self.__program: return
-        self.__program.info(self.__class__.__name__ +' ' + msg)
+        self.__program.info('%s[%s] ' %(self.__class__.__name__, self.id) + msg)
 
     def warn(self, msg):
         if not self.__program: return
-        self.__program.warn(self.__class__.__name__ +' ' + msg)
+        self.__program.warn('%s[%s] ' %(self.__class__.__name__, self.id) + msg)
         
     def error(self, msg):
         if not self.__program: return
-        self.__program.error(self.__class__.__name__ +' ' + msg)
+        self.__program.error('%s[%s] ' %(self.__class__.__name__, self.id) + msg)
 
     def logexception(self, ex):
-        self.error('%s: %s' % (ex, traceback.format_exc()))
+        self.error('%s[%s] %s: %s' % (self.__class__.__name__, self.id, ex, traceback.format_exc()))
 
 ########################################################################
 import sys, getopt, platform

@@ -22,12 +22,14 @@ def _makeupMux(simulator, dirOffline):
     fnAll = hist.listAllFiles(dirOffline)
     fnFilter = '%s_sinaWk[0-9]*.tcsv' % symbol 
     for fn in fnAll:
-        if not fnmatch.fnmatch(os.path.basename(fn), fnFilter):
+        bfn =os.path.basename(fn)
+        if not fnmatch.fnmatch(bfn, fnFilter):
             continue
 
         simulator.debug("__makeupMux() loading offline file: %s" %(fn))
         f = open(fn, "rb")
         pb = hist.TaggedCsvStream(f, program=simulator.program)
+        pb.setId(bfn)
         pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
         pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
         pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)

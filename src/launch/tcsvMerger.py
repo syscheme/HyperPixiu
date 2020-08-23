@@ -7,6 +7,7 @@ from TradeAdvisor import EVENT_ADVICE
 from crawler import crawlSina as sina
 
 from datetime import datetime, timedelta
+import os
 
 ########################################################################
 class SinaWeek(sina.TcsvMerger) :
@@ -70,6 +71,8 @@ class SinaWeek(sina.TcsvMerger) :
                 f = bz2.open(f, mode='rt')
 
             pb = hist.TaggedCsvStream(f, program=self.program)
+            pb.setId('%s@%s' % (os.path.basename(member.name), os.path.basename(tarballName)))
+
             pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
             pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
             pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)

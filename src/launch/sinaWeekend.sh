@@ -44,8 +44,22 @@ while ! [ -e ${WORK_ROOT}/batch_999.req ]; do
         filedate=$(basename ${f}|cut -d '.' -f 2|cut -d 'T' -f 1|grep -o '[0-9]*')
         if [ ${filedate} -lt ${DATE_OF_MONDAY} -o ${filedate} -gt ${DATE_OF_SATDAY} ] ; then continue; fi
         hostby=$(basename $(dirname ${f})|cut -d '.' -f 1)
-        ln -svf ${f} ./advisor_${filedate}.${hostby}.tar.bz2
+        # ln -svf ${f} ./advisor_${filedate}.${hostby}.tar.bz2
+        extrdir=${WORK_ROOT}/adv_${filedate}.${hostby}
+        rm -rfv ${extrdir}
+        mkdir -p ${extrdir}
+        cd ${extrdir}
+        nice tar xfvj ${f} --wildcards '*.tcsv*' --strip 3
+        nice bunzip2 *.bz2
+        TCSVLIST=$(ls |sort)
+        TCSVLIST="$TCSVLIST"
+        nice tar cfvj ../advisor_${filedate}.${hostby}.tar.bz2 $TCSVLIST
+        cd ${WORK_ROOT}
+        rm -rf ${extrdir}
     done
+
+    #part 3. the latest KL1d or MF1d
+    #TODO
 
     # step 2 generate the batches according to the symbols
     TAR4SYMBOLS=$(find . -name 'SinaKL5m_*.tar.bz2' | sort | tail -1)
@@ -80,7 +94,8 @@ while ! [ -e ${WORK_ROOT}/batch_999.req ]; do
     rm -f $LOCKFILE # release the locker
     echo "batch requests prepared in ${WORK_ROOT}, released $LOCKFILE"
     break
-done
+    
+done # while
 
 # section 2 executing tcsvMerger.py for each batch req
 # -------------------------------------------------------------------
@@ -127,7 +142,8 @@ for REQ in ${BATCHREQ_LIST}; do
     # cp -vf ./conf/Advisor.json ${WORK_ROOT}/${REQID}/merge.json
 
     CMD="nice ./run.sh src/launch/tcsvMerger.py -s ${WORK_ROOT}/ -o ${WORK_ROOT}/${REQID} -d ${DATE_OF_MONDAY} -x \"${SYMBOLS_BATCH}\" "
-    echo "batch_$BATCH_ID> executing: ${CMD}"
-    ${CMD} |tee ${LOGFILE}
+    echo "${REQID}> executing: ${CMD}" |tee -a ${LOGFILE}
+    ${CMD} |tee -a ${LOGFILE}
+     echo "${REQID}> done" |tee -a ${LOGFILE}
 
 done

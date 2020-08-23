@@ -124,8 +124,8 @@ if __name__ == '__main__':
     allSymobols='SZ000001,SZ399006,SZ399102,SZ399306,SZ399380,SZ399606,SZ399635,SZ399667,SZ399668,SZ399673' #'SH601377,SZ000636,SH510050,SH510500,SH510300' # sample
     # sys.argv += ['-x', 'SH601377,SZ000636']
     dayInWeek = datetime.now().strftime('%Y%m%d')
-    dayInWeek = '20200629'
-    srcFolder = '/mnt/e/AShareSample/SinaWeek.20200629'
+    dayInWeek = '20200817'
+    srcFolder = '/mnt/e/AShareSample/SinaWeek.20200817'
 
     if '-x' in sys.argv :
         pos = sys.argv.index('-x')

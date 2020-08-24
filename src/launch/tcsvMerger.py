@@ -7,6 +7,7 @@ from TradeAdvisor import EVENT_ADVICE
 from crawler import crawlSina as sina
 
 from datetime import datetime, timedelta
+import os
 
 ########################################################################
 class SinaWeek(sina.TcsvMerger) :
@@ -70,6 +71,8 @@ class SinaWeek(sina.TcsvMerger) :
                 f = bz2.open(f, mode='rt')
 
             pb = hist.TaggedCsvStream(f, program=self.program)
+            pb.setId('%s@%s' % (os.path.basename(member.name), os.path.basename(tarballName)))
+
             pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
             pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
             pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
@@ -118,9 +121,11 @@ class SinaWeek(sina.TcsvMerger) :
 
 if __name__ == '__main__':
 
-    allSymobols='SH601377,SZ000636,SH510050,SH510500,SH510300' # sample
+    allSymobols='SZ000001,SZ399006,SZ399102,SZ399306,SZ399380,SZ399606,SZ399635,SZ399667,SZ399668,SZ399673' #'SH601377,SZ000636,SH510050,SH510500,SH510300' # sample
     # sys.argv += ['-x', 'SH601377,SZ000636']
     dayInWeek = datetime.now().strftime('%Y%m%d')
+    dayInWeek = '20200817'
+    srcFolder = '/mnt/e/AShareSample/SinaWeek.20200817'
 
     if '-x' in sys.argv :
         pos = sys.argv.index('-x')
@@ -132,17 +137,23 @@ if __name__ == '__main__':
         dayInWeek = sys.argv[pos+1]
         del sys.argv[pos:pos+2]
 
-    sys.argv += ['-f', os.path.realpath(os.path.dirname(os.path.abspath(__file__))+ '/../../conf') + '/Advisor.json']
+    if '-s' in sys.argv :
+        pos = sys.argv.index('-s')
+        srcFolder = sys.argv[pos+1]
+        del sys.argv[pos:pos+2]
+
+    if not '-f' in sys.argv :
+        sys.argv += ['-f', os.path.realpath(os.path.dirname(os.path.abspath(__file__))+ '/../../conf') + '/Advisor.json']
+
     thePROG = Program()
     thePROG._heartbeatInterval =-1
-    srcFolder = '/mnt/e/AShareSample/SinaWeek.20200629'
 
     tarNamePats={
         'tarNamePat_KL5m' : '%s/SinaKL5m_*.tar.bz2' %srcFolder,
         'tarNamePat_MF1m' : '%s/SinaMF1m_*.tar.bz2' %srcFolder,
-        'tarNamePat_RT'   : '%s/u20hp01/advisor.BAK*.tar.bz2' %srcFolder,
-        'tarNamePat_KL1d' : '%s/SinaKL1d*.tar.bz2' %srcFolder,
-        'tarNamePat_MF1d' : '%s/SinaMF1d*.tar.bz2' %srcFolder,
+        'tarNamePat_RT'   : '%s/advisor_*.tar.bz2' %srcFolder,
+        'tarNamePat_KL1d' : '%s/SinaKL1d_*.tar.bz2' %srcFolder,
+        'tarNamePat_MF1d' : '%s/SinaMF1d_*.tar.bz2' %srcFolder,
     }
 
     allSymobols = allSymobols.split(',')
@@ -160,7 +171,7 @@ if __name__ == '__main__':
             allSymobols = SinaWeek.populateSymbolList(fnMatched[-1])
 
     merger = thePROG.createApp(SinaWeek, dayInWeek=dayInWeek, **tarNamePats)
-    merger.setSymbols(allSymobols[:20]) # ('SH601377,SZ000636,SH510050,SH510500,SH510300') #symoblist[:20]   
+    merger.setSymbols(allSymobols) # ('SH601377,SZ000636,SH510050,SH510500,SH510300') #symoblist[:20]   
 
     thePROG.start()
     thePROG.setLogLevel('debug')

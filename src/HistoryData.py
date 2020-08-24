@@ -458,6 +458,7 @@ class Playback(Iterable):
             pass
 
         self._dictCategory = {} # eventType/category to { columeNames: [], coverter: func() }
+        self.setId('%s.%s.%s-%s' %(self._symbol, self._category, self._startDate, self._endDate) )
 
     @property
     def datetimeRange(self) : return self.__dtStart, self.__dtEnd
@@ -962,21 +963,30 @@ class TaggedCsvInTarball(TaggedCsvPlayback):
                 if not fnmatch.fnmatch(basename, self.__memPattern):
                     continue
                 
+                if '.bz2' == basename[-4:]:
+                    # old fn format: xxxx.tcsv.1.bz2
+                    m = re.match(r'.*\.tcsv\.([0-9]*)\.bz2', basename)
+                    if m :
+                        bz2dict1[int(m.group(1))] = member
+                        continue
+
+                    # new fn format: xxxx.YYYYmmddHHMMSS.tcsv.bz2
+                    m = re.match(r'.*\.([0-9]*)\.tcsv\.bz2', basename)
+                    if m :
+                        bz2dict2[int(m.group(1))] = member
+                        continue
+
+                # the main/last tcsv
                 if '.tcsv' == basename[-5:]:
                     self.__memlist.append(member) 
                     continue
 
-                # old fn format: xxxx.tcsv.1.bz2
-                m = re.match(r'.*\.([0-9]*)\.bz2', basename)
+                # old unzipped fn format: xxxx.tcsv.1
+                m = re.match(r'.*\.tcsv\.([0-9]*)', basename)
                 if m :
                     bz2dict1[int(m.group(1))] = member
                     continue
 
-                # new fn format: xxxx.YYYYmmddHHMMSS.tcsv.bz2
-                m = re.match(r'.*\.([0-9]*)\.tcsv.bz2', basename)
-                if m :
-                    bz2dict2[int(m.group(1))] = member
-                    continue
 
         items = list(bz2dict1.items())
         items.sort() 
@@ -988,7 +998,7 @@ class TaggedCsvInTarball(TaggedCsvPlayback):
         items = list(bz2dict2.items())
         items.sort()
 
-        # insert into fnlist reversly
+        # append into fnlist
         for k,v in items:
             self.__memlist.insert(-1, v)
 
@@ -1071,7 +1081,7 @@ class PlaybackMux(Playback):
 
             for sd in strmsToEvict:
                 del self.__dictStrmPB[sd]
-                self.info('evicted stream[%s] that reached end, %d-stream remain' % (sd, len(self.__dictStrmPB)))
+                self.info('evicted stream[%s] that reached end, %d-stream remain' % (sd.id, len(self.__dictStrmPB)))
 
             if not strmEariest:
                 self._iterableEnd = True

@@ -1183,6 +1183,9 @@ class TcsvMerger(BaseApplication) :
 
         try :
             ev = next(self.__mux)
+            if not ev or not ev.data.symbol in self.__symbols:
+                return 1
+
             # self.debug('filtered ev: %s' % ev.desc)
             ev = self.__marketState.updateByEvent(ev)
             if ev: 

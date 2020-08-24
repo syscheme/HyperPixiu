@@ -947,12 +947,18 @@ class TaggedCsvInTarball(TaggedCsvPlayback):
         self.__memlist = [] # list of tar.member
 
         self.__tar = None
+        self.__currentMem = None
+
+    @property
+    def currentMember(self): 
+        return self.__currentMem.name if self.__currentMem else ''
 
     # -- overwrite of TaggedCsvInTarball --------------------------------------------------------------
     def resetRead(self):
         super(TaggedCsvPlayback, self).resetRead()
 
         self.__memlist = []
+        self.__currentMem = None
         bz2dict1 = {}
         bz2dict2 = {}
 
@@ -1003,7 +1009,7 @@ class TaggedCsvInTarball(TaggedCsvPlayback):
             self.__memlist.insert(-1, v)
 
         if len(self.__memlist) >0:
-            self.debug('resetRead() associated [%s] in tarball[%s]: %s' % (self.__memPattern, self.__fnTarball, ','.join([m.name for m in self.__memlist])))
+            self.info('resetRead() associated [%s] in tarball[%s]: %s' % (self.__memPattern, self.__fnTarball, ','.join([m.name for m in self.__memlist])))
             return True
         
         self.warn('resetRead() failed to associated [%s] in tarball[%s]' % (self.__memPattern, self.__fnTarball))
@@ -1015,17 +1021,18 @@ class TaggedCsvInTarball(TaggedCsvPlayback):
                 self._iterableEnd = True
                 return None
 
-            mem = self.__memlist[0]
-            del(self.__memlist[0])
+            self.__currentMem = self.__memlist[0]
+            del self.__memlist[0]
 
-            self.debug('extracting file %s of tarball[%s]' % (mem.name, self.__fnTarball))
-            extname = mem.name.split('.')[-1]
-            self._strmTcsv = self.__tar.extractfile(mem)
+            self.debug('extracting memberfile[%s]' % self.__currentMem.name)
+            extname = self.__currentMem.name.split('.')[-1]
+
+            self._strmTcsv = self.__tar.extractfile(self.__currentMem)
             if extname == 'bz2':
                 self._strmTcsv = bz2.open(self._strmTcsv, mode='rt')
 
             if not self._strmTcsv:
-                self.warn('failed to open %s of tarball[%s]' % (mem.name, self.__fnTarball))
+                self.warn('failed to open memberfile[%s]' % self.__currentMem.name)
                 break
 
             dtStart, dtEnd = self.datetimeRange
@@ -1035,7 +1042,7 @@ class TaggedCsvInTarball(TaggedCsvPlayback):
             for cat, v in self._dictCategory.items():
                 self._strmTcsv.registerConverter(cat, **v)
 
-            self.info('opened member[%s] of tarball[%s]' % (mem.name, self.__fnTarball))
+            self.info('opened memberfile[%s]' % self.__currentMem.name)
                 
         return self._strmTcsv
 
@@ -1047,6 +1054,7 @@ class PlaybackMux(Playback):
 
         super(PlaybackMux, self).__init__(symbol=None, program=program, startDate =startDate, endDate=endDate)
         self.__dictStrmPB = {} # dict of Playback to recentEvent
+        self.__seqNextPB =[]
 
     def addStream(self, playback):
         if playback and not playback in self.__dictStrmPB.keys():
@@ -1058,6 +1066,7 @@ class PlaybackMux(Playback):
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):
         super(PlaybackMux, self).resetRead()
+        self.__seqNextPB =[]
         return len(self.__dictStrmPB) >0
 
     def readNext(self):
@@ -1066,28 +1075,68 @@ class PlaybackMux(Playback):
         '''
         while not self._iterableEnd:
             strmsToEvict = []
-            strmEariest = None
-            for strm, ev in self.__dictStrmPB.items():
-                if not ev:
+
+            # for strm, ev in self.__dictStrmPB.items():
+            #     if not ev:
+            #         try :
+            #             ev = next(strm)
+            #             self.__dictStrmPB[strm] = ev
+            #         except StopIteration:
+            #             strmsToEvict.append(strm)
+            #             continue
+
+            #     if not strmEariest or (strmEariest != strm and ev.data.asof < self.__dictStrmPB[strmEariest].data.asof):
+            #         strmEariest = strm
+
+            # for sd in strmsToEvict:
+            #     del self.__dictStrmPB[sd]
+            #     self.info('evicted stream[%s] that reached end, %d-stream remain' % (sd.id, len(self.__dictStrmPB)))
+
+            # if not strmEariest:
+            #     self._iterableEnd = True
+            #     self.info('all streams reached end')
+            #     break
+
+            if len(self.__seqNextPB) < len(self.__dictStrmPB):
+                for strm, ev in self.__dictStrmPB.items():
+                    if ev: continue
+                    
                     try :
                         ev = next(strm)
+                        if not ev:
+                            strmsToEvict.append(strm)
+                            continue
+
                         self.__dictStrmPB[strm] = ev
+                        
+                        # insert into self.__seqNextPB, earist ev.asof first
+                        n =0
+                        for n in range(len(self.__seqNextPB)):
+                            npb = self.__seqNextPB[n]
+                            nev =  self.__dictStrmPB[npb]
+                            if ev.data.asof < nev.data.asof:
+                                break
+                        self.__seqNextPB.insert(n, strm)
+
                     except StopIteration:
                         strmsToEvict.append(strm)
                         continue
 
-                if not strmEariest or (strmEariest != strm and ev.data.asof < self.__dictStrmPB[strmEariest].data.asof):
-                    strmEariest = strm
-
             for sd in strmsToEvict:
                 del self.__dictStrmPB[sd]
+                self.__seqNextPB.remove(sd)
                 self.info('evicted stream[%s] that reached end, %d-stream remain' % (sd.id, len(self.__dictStrmPB)))
 
-            if not strmEariest:
+            if len(self.__dictStrmPB) <=0:
                 self._iterableEnd = True
                 self.info('all streams reached end')
                 break
-                
+
+            if len(self.__seqNextPB) < len(self.__dictStrmPB):
+                continue
+
+            strmEariest = self.__seqNextPB[0]
+            del self.__seqNextPB[0]
             ev = self.__dictStrmPB[strmEariest]
             self.__dictStrmPB[strmEariest] = None
 

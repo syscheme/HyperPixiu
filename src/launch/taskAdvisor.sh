@@ -5,6 +5,11 @@ TOPDIR_HP=~/wkspaces/HyperPixiu
 STAMP=$(date +%Y%m%dT%H%M%S)
 
 # sample of crontab
+# # the following take taskAdvisor to do zipping only at Sat morning, see ["Sat" == "$DOW"]
+# 6   5        * *  6         /sbin/reboot
+# @reboot ~/tasks/taskAdvisor.sh 2>&1 >> /tmp/taskAdvisor.log & 
+#
+# # the following are regular run
 # 50  6-15/2   * *  1-5   ~/tasks/taskAdvisor.sh 2>&1 > /tmp/taskAdvisor.log &
 # 0   16       * *  1-5   ps aux|grep 'advisor.py'| awk '{print $2;}' |xargs kill
 cd ${TOPDIR_HP}
@@ -29,33 +34,42 @@ if ! [ -z ${PID} ]; then
     exit 0
 fi
 
-PID_LIST=$(ls ${OUTDIR}/*.tcsv |sed 's/^.*advisor_\([0-9]*\).*tcsv/\1/g')
-for i in ${PID_LIST}; do
-    mv -vf /tmp/advisor_${i}_*.log* ${OUTDIR}/ ; 
-done
 cp -vf ${CONF} ${OUTDIR}/
 
 # backup and prepare new ${OUTDIR}
-echo "backing up to ${OUTDIR}.BAK${STAMP}"
+PID_LIST=$(ls ${OUTDIR}/*.tcsv |sed 's/^.*advisor_\([0-9]*\).*tcsv/\1/g')
+if [ -z ${PID_LIST} ]; then
+    echo "skip backing up brand new ${OUTDIR}"
+else
+    echo "backing up to ${OUTDIR}.BAK${STAMP}"
 
-mv -vf ${OUTDIR} ${OUTDIR}.BAK${STAMP}
-mkdir -p ${OUTDIR}
-mv -vf ${OUTDIR}.BAK${STAMP}/*.ss* ${OUTDIR}/ # inherit from previous safestores
-rm -rf ${OUTDIR}/*.lock ${OUTDIR}/*.tcsv* ${OUTDIR}/*.log*
+    for i in ${PID_LIST}; do
+        mv -vf /tmp/advisor_${i}_*.log* ${OUTDIR}/ ; 
+    done
 
-for i in ${OUTDIR}.BAK${STAMP}/advisor_*.tcsv.[0-9]*.bz2 ; do
-    if ! [ -e $i ]; then continue; fi
-    BZASOF=$(stat -c %y $i | sed 's/[- :]*//g' |cut -d '.' -f1)
-    BASENAME=$(basename $i |cut -d '.' -f1)
-    mv -vf $i  ${OUTDIR}.BAK${STAMP}/${BASENAME}.${BZASOF}.tcsv.bz2
-done
+    mv -vf ${OUTDIR} ${OUTDIR}.BAK${STAMP}
+    mkdir -p ${OUTDIR}
+    mv -vf ${OUTDIR}.BAK${STAMP}/*.ss* ${OUTDIR}/ # inherit from previous safestores
+    rm -rf ${OUTDIR}/*.lock ${OUTDIR}/*.tcsv* ${OUTDIR}/*.log*
 
-ls -l ${OUTDIR}.BAK${STAMP}/*
-echo "new ${OUTDIR}"
-ls -l ${OUTDIR}/*
+    for i in ${OUTDIR}.BAK${STAMP}/advisor_*.tcsv.[0-9]*.bz2 ; do
+        if ! [ -e $i ]; then continue; fi
+        BZASOF=$(stat -c %y $i | sed 's/[- :]*//g' |cut -d '.' -f1)
+        BASENAME=$(basename $i |cut -d '.' -f1)
+        mv -vf $i  ${OUTDIR}.BAK${STAMP}/${BASENAME}.${BZASOF}.tcsv.bz2
+    done
 
-nice -n 15 bash -c "tar cfvj ${OUTDIR}.BAK${STAMP}.tar.bz2 ${OUTDIR}.BAK${STAMP} ; rm -rf ${OUTDIR}.BAK${STAMP}" &
+    ls -l ${OUTDIR}.BAK${STAMP}/*
+    echo "new ${OUTDIR}"
+    ls -l ${OUTDIR}/*
 
+    nice -n 15 bash -c "tar cfvj ${OUTDIR}.BAK${STAMP}.tar.bz2 ${OUTDIR}.BAK${STAMP} ; rm -rf ${OUTDIR}.BAK${STAMP}" &
+fi
+
+DOW=$(date +%a)
+if [ "Sat" == "$DOW" ] || [ "Sun" == "$DOW" ]; then exit 0; fi
+
+echo "starting new advisor"
 OBJ_LIST="["
 for s in ${SECU_LIST}; do
     OBJ_LIST="${OBJ_LIST}\\\"$s\\\","

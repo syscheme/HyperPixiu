@@ -248,6 +248,8 @@ class SinaCrawler(MarketCrawler):
         stampNow = datetime2float(datetime.now())
         if cMerged >0:
             self.info("step_pollTicks() btch[%d/%d] cached %d new-tick of %d/%d symbols, took %.3f/%.3fs: %s" %(idxBtch +1, batches, cMerged, len(result), len(self.__tickBatches[idxBtch]), (stampResp-stampStart), (stampNow-stampStart), ','.join(updated)))
+            if cMerged >= len(self.__tickBatches[idxBtch]):
+                self.__scheduleNext('all', 'tick', 0.01) # to speed up the next poll
         else :
             if not Account_AShare.duringTradeHours():
                 self.__scheduleNext('all', 'tick', (61 - int(stampNow) %60))

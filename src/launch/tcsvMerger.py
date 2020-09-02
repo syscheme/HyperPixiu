@@ -74,13 +74,13 @@ class SinaWeek(sina.TcsvMerger) :
             pb.setId('%s@%s' % (os.path.basename(member.name), os.path.basename(tarballName)))
 
             pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
-            pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
-            pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
             pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
-
-            pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-            pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-            pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+            
+            # pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
+            # pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
+            # pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+            # pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+            # pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
 
             self.__mux.addStream(pb)
 
@@ -121,7 +121,7 @@ class SinaWeek(sina.TcsvMerger) :
 
 if __name__ == '__main__':
 
-    allSymobols='SZ000001,SZ399006,SZ399102,SZ399306,SZ399380,SZ399606,SZ399635,SZ399667,SZ399668,SZ399673' #'SH601377,SZ000636,SH510050,SH510500,SH510300' # sample
+    allSymobols='SZ000001,SH601066,SZ000860,SZ399006,SZ399102,SZ399306' #'SH601377,SZ000636,SH510050,SH510500,SH510300' # sample
     # sys.argv += ['-x', 'SH601377,SZ000636']
     dayInWeek = datetime.now().strftime('%Y%m%d')
     dayInWeek = '20200817'

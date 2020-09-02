@@ -826,6 +826,8 @@ class TaggedCsvStream(Playback):
             try :
                 dict={}
                 cols = node['columns']
+                if isinstance(cols,str):
+                    cols = cols.split(',')
                 for i in range(len(cols)) :
                     dict[cols[i]] = tokens[1+i]
                 
@@ -1069,33 +1071,21 @@ class PlaybackMux(Playback):
         self.__seqNextPB =[]
         return len(self.__dictStrmPB) >0
 
+    DUMMY_SORT_DATE = datetime.strptime('19000101T000000', '%Y%m%dT%H%M%S')
+
+    def __strmSortKey(self, strm) :
+        if strm in self.__dictStrmPB.keys():
+            ev = self.__dictStrmPB[strm]
+            return ev.data.asof if ev else DUMMY_SORT_DATE
+
+        return DUMMY_SORT_DATE
+
     def readNext(self):
         '''
         @return True if busy at this step
         '''
         while not self._iterableEnd:
             strmsToEvict = []
-
-            # for strm, ev in self.__dictStrmPB.items():
-            #     if not ev:
-            #         try :
-            #             ev = next(strm)
-            #             self.__dictStrmPB[strm] = ev
-            #         except StopIteration:
-            #             strmsToEvict.append(strm)
-            #             continue
-
-            #     if not strmEariest or (strmEariest != strm and ev.data.asof < self.__dictStrmPB[strmEariest].data.asof):
-            #         strmEariest = strm
-
-            # for sd in strmsToEvict:
-            #     del self.__dictStrmPB[sd]
-            #     self.info('evicted stream[%s] that reached end, %d-stream remain' % (sd.id, len(self.__dictStrmPB)))
-
-            # if not strmEariest:
-            #     self._iterableEnd = True
-            #     self.info('all streams reached end')
-            #     break
 
             if len(self.__seqNextPB) < len(self.__dictStrmPB):
                 for strm, ev in self.__dictStrmPB.items():
@@ -1124,7 +1114,7 @@ class PlaybackMux(Playback):
 
             for sd in strmsToEvict:
                 del self.__dictStrmPB[sd]
-                self.__seqNextPB.remove(sd)
+                if sd in self.__seqNextPB: self.__seqNextPB.remove(sd)
                 self.info('evicted stream[%s] that reached end, %d-stream remain' % (sd.id, len(self.__dictStrmPB)))
 
             if len(self.__dictStrmPB) <=0:
@@ -1139,6 +1129,65 @@ class PlaybackMux(Playback):
             del self.__seqNextPB[0]
             ev = self.__dictStrmPB[strmEariest]
             self.__dictStrmPB[strmEariest] = None
+
+            dtStart, dtEnd = self.datetimeRange
+            if ev.data.asof < dtStart: continue
+            if ev.data.asof > dtEnd: continue
+
+            lst = ['%s[%s]' % (i.id, self.__dictStrmPB[i].data.asof.strftime('%Y%m%dT%H%M%S')) for i in self.__seqNextPB]
+            self.debug('outgoing ev[%s] nextPB: %s' % (ev.desc, ';'.join(lst)))
+            return ev
+
+        raise StopIteration
+
+    def readNext2(self):
+        '''
+        @return True if busy at this step
+        '''
+        while not self._iterableEnd:
+            strmsToEvict = []
+
+            for strm, ev in self.__dictStrmPB.items():
+                if ev: continue
+                
+                try :
+                    ev = next(strm)
+                    if not ev:
+                        strmsToEvict.append(strm)
+                        continue
+
+                    self.__dictStrmPB[strm] = ev
+                    
+                    # # insert into self.__seqNextPB, earist ev.asof first
+                    # n =0
+                    # for n in range(len(self.__seqNextPB)):
+                    #     npb = self.__seqNextPB[n]
+                    #     nev =  self.__dictStrmPB[npb]
+                    #     if ev.data.asof < nev.data.asof:
+                    #         break
+                    # self.__seqNextPB.insert(n, strm)
+
+                except StopIteration:
+                    strmsToEvict.append(strm)
+                    continue
+
+            for sd in strmsToEvict:
+                del self.__dictStrmPB[sd]
+                self.__seqNextPB.remove(sd)
+                self.info('evicted stream[%s] that reached end, %d-stream remain' % (sd.id, len(self.__dictStrmPB)))
+
+            if len(self.__dictStrmPB) <=0:
+                self._iterableEnd = True
+                self.info('all streams reached end')
+                break
+
+            self.__seqNextPB = list(self.__dictStrmPB.keys())
+            self.__seqNextPB.sort(key = self.__strmSortKey)
+
+            strmEariest = self.__seqNextPB[0]
+            ev = self.__dictStrmPB[strmEariest]
+            self.__dictStrmPB[strmEariest] = None
+            if not ev: continue
 
             dtStart, dtEnd = self.datetimeRange
             if ev.data.asof < dtStart: continue

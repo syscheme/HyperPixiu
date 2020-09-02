@@ -237,13 +237,14 @@ class SinaCrawler(MarketCrawler):
             #     self.marketState[s] = Perspective('AShare', symbol =s) # , KLDepth_1min=self._depth_1min, KLDepth_5min=self._depth_5min, KLDepth_1day=self._depth_1day, tickDepth=self._depth_ticks)
             # psp = self.marketState[s]
             ev = self.marketState.updateByEvent(ev) # so to filter duplicated event out if updateByEvent() returns None
-
             self.debug("step_pollTicks() pushed tick %s into psp, now: %s" %(tk.desc, self.marketState.descOf(s)))
 
-            if ev and self._recorder:
-                cMerged +=1
+            if not ev: continue
+            cMerged +=1
+            updated.append(s)
+
+            if self._recorder:
                 self.OnEventCaptured(ev)
-                updated.append(s)
             
         stampNow = datetime2float(datetime.now())
         if cMerged >0:
@@ -338,8 +339,10 @@ class SinaCrawler(MarketCrawler):
                 ev = Event(evType)
                 ev.setData(i)
                 ev = self.marketState.updateByEvent(ev) # so to filter duplicated event out if updateByEvent() returns None
-                if ev and self._recorder:
-                    cMerged +=1
+                if not ev: continue
+                cMerged +=1
+
+                if self._recorder:
                     self.OnEventCaptured(ev)
 
             stampNow = datetime2float(datetime.now())
@@ -386,6 +389,10 @@ class SinaCrawler(MarketCrawler):
         if 'SH51' in s or 'SZ15' in s:
             return cBusy
 
+        # SAD: exclude the index
+        if 'SH000' in s or 'SZ399' in s:
+            return cBusy
+
         if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC):
             return cBusy # well off-trade hours
 
@@ -429,8 +436,10 @@ class SinaCrawler(MarketCrawler):
                 ev = Event(evType)
                 ev.setData(i)
                 ev = self.marketState.updateByEvent(ev) # so to filter duplicated event out if updateByEvent() returns None
-                if ev and self._recorder:
-                    cMerged +=1
+                if not ev : continue
+
+                cMerged +=1
+                if self._recorder:
                     self.OnEventCaptured(ev)
 
                 if EVENT_MONEYFLOW_1MIN == evType:

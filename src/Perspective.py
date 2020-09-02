@@ -136,9 +136,10 @@ class Perspective(MarketData):
             EVENT_MONEYFLOW_1DAY: EvictableStack(MFDepth_1day, MoneyflowData(self.exchange, self.symbol)),
         }
 
-        self.__stampLast  = None
+        self.__stampLast = None
         self.__focusLast = None
         self.__dayOHLC   = None
+
         # TODO: evsPerDay temporarily is base on AShare's 4hr/day
         self.__evsPerDay = {
             EVENT_TICK:       3600/2 *4, # assuming every other seconds

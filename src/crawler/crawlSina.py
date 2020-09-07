@@ -319,7 +319,7 @@ class SinaCrawler(MarketCrawler):
             if 200 != httperr:
                 self.error("step_pollKline(%s:%s) failed, err(%s)" %(s, evType, httperr))
                 if 456 == httperr:
-                    self.__urlProxy = dsg.nextProxy()
+                    self.__urlProxy = None # self.__urlProxy = dsg.nextProxy()
                     self.__scheduleNext('all', 'KL_yield456', self._secYield456) # self.__scheduleNext('all', 'KL', self._secYield456)
                     self.warn("step_pollKline(%s:%s) [%d/%d]sym SINA complained err(%s), yielding %ssec, nextProxy[%s]" %(s, evType, self.__idxKL, cSyms, httperr, self._secYield456, self.__urlProxy))
                     return cBusy

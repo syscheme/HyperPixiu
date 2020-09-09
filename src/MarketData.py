@@ -6,10 +6,28 @@ from EventData import *
 from Application import MetaObj
 from datetime import datetime, timedelta
 from collections import OrderedDict
+import math
 
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 EXPORT_FLOATS_DIMS = 4 # take the minimal dim=4
 PRICE_DISPLAY_ROUND_DECIMALS = 3 
+
+BASE_LOG10x2 = math.log(10) *2
+
+def floatNormalize_LOG10(v, base=1.0):
+    v = float(v/base)
+    v = math.log(v) / BASE_LOG10x2 +0.5 # 0.1x lead to 0 and 10x lead to 1
+    if v <0: return 0.0
+    return v if v>1.0 else 1.0
+
+def floatNormalize_PriceChange(newPrice, basePrice=1.0):
+    v = float(newPrice/basePrice)
+    (v -1) *5.0 + 0.5 # -20% leads to 0, and +20% leads to 1
+    if v <0: return 0.0
+    return v if v>1.0 else 1.0
+
+def floatNormalize_VolumeChange(newVolume, baseVolume=1.0):
+    return floatNormalize_LOG10(newVolume, baseVolume)
 
 def floatNormalize_M1X5(var, base=1.0):
     return (float(var/base) -1) *5.0 + 0.5

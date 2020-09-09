@@ -1134,8 +1134,8 @@ class PlaybackMux(Playback):
             if ev.data.asof < dtStart: continue
             if ev.data.asof > dtEnd: continue
 
-            lst = ['%s[%s]' % (i.id, self.__dictStrmPB[i].data.asof.strftime('%Y%m%dT%H%M%S')) for i in self.__seqNextPB]
-            self.debug('outgoing ev[%s] nextPB: %s' % (ev.desc, ';'.join(lst)))
+            # lst = ['%#%s' % (i.id, self.__dictStrmPB[i].data.asof.strftime('%Y%m%dT%H%M%S')) for i in self.__seqNextPB]
+            # self.debug('outgoing ev[%s] nextPB: %s' % (ev.desc, ';'.join(lst[:5])))
             return ev
 
         raise StopIteration

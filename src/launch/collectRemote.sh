@@ -48,9 +48,10 @@ done
 echo "different files: $FILE_LIST_DIFF"
 for f in $FILE_LIST_DIFF; do
     echo "downloading $f"
-    scp -P ${REMOTE_PORT} ${SRC_HOST}:${SRC_DIR}/$f . | tee -a ./collectRemote.log
+    scp -P ${REMOTE_PORT} ${SRC_HOST}:${SRC_DIR}/$f . 2>&1 | tee -a ./collectRemote.log
 done
 
+echo "evicting files: $FILE_LIST_EXP"
 if [ "yes" == "$CLEAN_REMOTE" ] && ! [ -z "$FILE_LIST_EXP" ]; then
-    ssh -p ${REMOTE_PORT} ${SRC_HOST} "cd ${SRC_DIR} ; rm -vf $FILE_LIST_EXP" | tee -a ./collectRemote.log
+    ssh -p ${REMOTE_PORT} ${SRC_HOST} "cd ${SRC_DIR} ; rm -vf $FILE_LIST_EXP" 2>&1| tee -a ./collectRemote.log
 fi

@@ -231,9 +231,9 @@ class MarketDirClassifier(BaseApplication):
         STEPMETHODS = {
             'LocalGenerator'   : self.doAppStep_local_generator,
             'DatesetGenerator' : self.doAppStep_keras_dsGenerator,
-            'BatchGenerator'   : self.doAppStep_keras_batchGenerator,
-            'SliceToDataset'   : self.doAppStep_keras_slice2dataset,
-            'DatasetPool'      : self.doAppStep_keras_datasetPool,
+            'BatchGenerator'   : self.doAppStep_keras_batchGenerator, # too slow to read data one by one
+            'SliceToDataset'   : self.doAppStep_keras_slice2dataset, # top pick at nvidia V100, slightly better than LocalGenerator
+            'DatasetPool'      : self.doAppStep_keras_datasetPool, # preparing Dataset took too long at CPU, even longer than hdf5 reading
         }
 
         if not self._stepMethod or not self._stepMethod in STEPMETHODS.keys():

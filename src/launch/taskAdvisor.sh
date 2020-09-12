@@ -37,7 +37,7 @@ fi
 cp -vf ${CONF} ${OUTDIR}/
 
 # backup and prepare new ${OUTDIR}
-PID_LIST=$(ls ${OUTDIR}/*.tcsv |sed 's/^.*advisor_\([0-9]*\).*tcsv/\1/g')
+PID_LIST="$(ls ${OUTDIR}/*.tcsv |sed 's/^.*advisor_\([0-9]*\).*tcsv/\1/g')"
 if [ -z ${PID_LIST} ]; then
     echo "skip backing up brand new ${OUTDIR}"
 else

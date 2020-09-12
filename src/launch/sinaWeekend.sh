@@ -4,6 +4,9 @@ COLLECTION_ROOT="/mnt/t/BigData/deployments-archives/"
 DATE_OF_MONDAY=$(date +%Y%m%d -d 'last friday -4 days')
 DATE_OF_SATDAY=$(date +%Y%m%d -d 'last friday +1 days') # supposed to be the today of this run
 
+# DATE_OF_MONDAY="20200817" # for test
+# DATE_OF_SATDAY="20200822" # for test
+
 PROJPATH="/mnt/d/workspace.t3600/HyperPixiu"
 WORK_ROOT="/tmp/SinaWeek.${DATE_OF_MONDAY}"
 LOCKFILE="/tmp/$(basename $0).lockfile"
@@ -47,15 +50,40 @@ while ! [ -e ${WORK_ROOT}/batch_999.req ]; do
         # ln -svf ${f} ./advisor_${filedate}.${hostby}.tar.bz2
         extrdir=${WORK_ROOT}/adv_${filedate}.${hostby}
         rm -rfv ${extrdir}
-        mkdir -p ${extrdir}
+        mkdir -pv ${extrdir}
         cd ${extrdir}
         nice tar xfvj ${f} --wildcards '*.tcsv*' --strip 3
         nice bunzip2 *.bz2
-        TCSVLIST=$(ls |sort)
-        TCSVLIST="$TCSVLIST"
-        nice tar cfvj ../advisor_${filedate}.${hostby}.tar.bz2 $TCSVLIST
+        TCSVLIST="$(ls |sort)"
+
+        # ------------------------
+        # filter the evmd from advisor.tcsv
+        rm -rvf evmd
+        mkdir -vp evmd
+
+        file1st=$(ls -S $TCSVLIST|head -1) # take the biggest file
+        symbollist="$(grep -o "S[HZ][0-9]\{6\}" ${file1st} | sort |uniq)"
+        head -30 ${file1st} |grep '^!evmd' | sort |uniq > evmd/hdr.tcsv
+        evmdlist="$(grep -o '^!evmd[^,]*' evmd/hdr.tcsv |cut -d '!' -f2)"
+
+        for s in ${symbollist}; do
+            evmdfile="evmd/${s}_evmd${filedate}.tcsv"
+            grep -h ${s} ${TCSVLIST} | sort |uniq > ${evmdfile}
+            for et in ${evmdlist}; do
+                grep ${et} evmd/hdr.tcsv > evmd/${s}_${et:4}${filedate}.tcsv
+                grep "^${et}" ${evmdfile} >> evmd/${s}_${et:4}${filedate}.tcsv
+            done
+            # rm -fv ${evmdfile}
+        done
+        cd evmd
+        nice tar cfvj ${extrdir}/../advmd_${filedate}.${hostby}.tar.bz2 S*.tcsv
+        cd ${extrdir}
+
+        # ------------------------
+
+        nice tar cfvj ${extrdir}/../advisor_${filedate}.${hostby}.tar.bz2 $TCSVLIST
         cd ${WORK_ROOT}
-        rm -rf ${extrdir}
+        rm -vrf ${extrdir}
     done
 
     #part 3. the latest KL1d or MF1d
@@ -100,11 +128,11 @@ done # while
 # section 2 executing tcsvMerger.py for each batch req
 # -------------------------------------------------------------------
 
-BATCHREQ_LIST=$(find ${WORK_ROOT} -name 'batch_*.req'|sort)
+BATCHREQ_LIST="$(find ${WORK_ROOT} -name 'batch_*.req'|sort)"
 
 for REQ in ${BATCHREQ_LIST}; do
     nextReq="no"
-    REQID=$(echo ${REQ} | grep -o "batch_[0-9]*")
+    REQID=$(echo ${REQ} | grep -o 'batch_[0-9]*')
     LOGFILE="${WORK_ROOT}/${REQID}.log"
 
     # acquire the handler of ${FILE}
@@ -144,6 +172,6 @@ for REQ in ${BATCHREQ_LIST}; do
     CMD="nice ./run.sh src/launch/tcsvMerger.py -s ${WORK_ROOT}/ -o ${WORK_ROOT}/${REQID} -d ${DATE_OF_MONDAY} -x \"${SYMBOLS_BATCH}\" "
     echo "${REQID}> executing: ${CMD}" |tee -a ${LOGFILE}
     ${CMD} |tee -a ${LOGFILE}
-     echo "${REQID}> done" |tee -a ${LOGFILE}
+    echo "${REQID}> done" |tee -a ${LOGFILE}
 
 done

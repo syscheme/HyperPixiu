@@ -151,7 +151,7 @@ if __name__ == '__main__':
     tarNamePats={
         'tarNamePat_KL5m' : '%s/SinaKL5m_*.tar.bz2' %srcFolder,
         'tarNamePat_MF1m' : '%s/SinaMF1m_*.tar.bz2' %srcFolder,
-        'tarNamePat_RT'   : '%s/advisor_*.tar.bz2' %srcFolder,
+        'tarNamePat_RT'   : '%s/advmd_*.tar.bz2' % srcFolder, # '%s/advisor_*.tar.bz2' %srcFolder,
         'tarNamePat_KL1d' : '%s/SinaKL1d_*.tar.bz2' %srcFolder,
         'tarNamePat_MF1d' : '%s/SinaMF1d_*.tar.bz2' %srcFolder,
     }

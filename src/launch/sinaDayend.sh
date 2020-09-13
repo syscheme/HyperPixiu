@@ -101,8 +101,8 @@ for s in ${SECU_LIST}; do
     evmdfile="evmd/${s}_evmd${TODAY}.tcsv"
     grep -h ${s} ${TCSVLIST} | sort |uniq > ${evmdfile}
     for et in ${evmdlist}; do
-        grep ${et} evmd/hdr.tcsv > evmd/${s}_${et:4}${TODAY}.tcsv
-        grep "^${et}" ${evmdfile} >> evmd/${s}_${et:4}${TODAY}.tcsv
+        grep ${et} evmd/hdr.tcsv > evmd/${s}_${et:4}_${TODAY}.tcsv
+        grep "^${et}" ${evmdfile} >> evmd/${s}_${et:4}_${TODAY}.tcsv
     done
 done
 

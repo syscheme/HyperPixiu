@@ -4,7 +4,7 @@ from __future__ import division
 
 from MarketCrawler import *
 from EventData import Event, datetime2float, DT_EPOCH
-from MarketData import KLineData, TickData, MoneyflowData, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY
+from MarketData import KLineData, TickData, MoneyflowData, MARKETDATE_EVENT_PREFIX, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY, EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY
 from Account import Account_AShare, DAYCLOSE_TIME_ERR
 import crawler.disguise as dsg
 import HistoryData as hist
@@ -1045,7 +1045,31 @@ class TcsvMerger(BaseApplication) :
         #no self: self.debug('%d symbols found in tarball[%s]: %s' % (len(symbolList), tarballPath, ','.join(symbolList)))
         return symbolList
 
-    def __extractJsonStreams(self, tarballName, evtype):
+    def __jsonToPlayback(self, jsonFstream, symbol, evtype):
+
+        content = jsonFstream.read().decode()
+        edseq =[]
+
+        # dispatch the convert func up to evtype from tar filename
+        if EVENT_KLINE_PREFIX == evtype[:len(EVENT_KLINE_PREFIX)]:
+            edseq = SinaCrawler.convertToKLineDatas(symbol, content)
+        elif EVENT_MONEYFLOW_1MIN == evtype:
+            edseq = SinaCrawler.convertToMoneyFlow(symbol, content, True)
+        elif EVENT_MONEYFLOW_1DAY == evtype:
+            edseq = SinaCrawler.convertToMoneyFlow(symbol, content, False)
+
+        if len(edseq) <=0: return None
+
+        pb = hist.Playback(symbol, program=self.program)
+        pb.setId('%s_%s.json' % (symbol, evtype))
+        for ed in edseq:
+            ev = Event(evtype)
+            ev.setData(ed)
+            pb.enquePending(ev)
+        
+        return pb
+
+    def __extractJsonTarball(self, tarballName, evtype):
         tar = tarfile.open(tarballName)
 
         foundlist = []
@@ -1061,26 +1085,14 @@ class TcsvMerger(BaseApplication) :
 
             self.debug('memberFile[%s] in %s matched et[%s]' % (member.name, tarballName, evtype))
             foundlist.append(member.name)
-            edseq =[]
             with tar.extractfile(member) as f:
-                content =f.read().decode()
-
-                # dispatch the convert func up to evtype from tar filename
-                if EVENT_KLINE_PREFIX == evtype[:len(EVENT_KLINE_PREFIX)]:
-                    edseq = SinaCrawler.convertToKLineDatas(symbol, content)
-                elif EVENT_MONEYFLOW_1MIN == evtype:
-                    edseq = SinaCrawler.convertToMoneyFlow(symbol, content, True)
-                elif EVENT_MONEYFLOW_1DAY == evtype:
-                    edseq = SinaCrawler.convertToMoneyFlow(symbol, content, False)
-
-            pb = hist.Playback(symbol, program=self.program)
-            pb.setId('%s@%s' % (basename, os.path.basename(tarballName)))
-            for ed in edseq:
-                ev = Event(evtype)
-                ev.setData(ed)
-                pb.enquePending(ev)
-
-            self.__mux.addStream(pb)
+                pb = self.__jsonToPlayback(f, symbol, evtype)
+                if not pb: continue
+                pb.setId('%s@%s' % (basename, os.path.basename(tarballName)))
+                
+                self.debug('adding substrm[%s] into mux' % (pb.id))
+                self.__mux.addStream(pb)
+    
             if len(foundlist) >= len(self.symbols) : # if self.symbols and self.symbols == symbol:
                 break # do not scan the tar anymore
 
@@ -1099,7 +1111,15 @@ class TcsvMerger(BaseApplication) :
 
         self.__mux.addStream(pb)
 
-    def __extractAdvMdStreams(self, tarballName):
+    def __advmdToPlayback(self, advmdtcsvStrm, symbol, evtype) :
+        pb = hist.TaggedCsvStream(advmdtcsvStrm, program=self.program)
+        pb.setId('advmd%s_%s.tcsv' % (symbol, evtype))
+
+        pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
+        pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
+        return pb
+
+    def __extractAdvMdTarball(self, tarballName):
         tar = tarfile.open(tarballName)
         memlist = []
 
@@ -1114,35 +1134,28 @@ class TcsvMerger(BaseApplication) :
             if not fnmatch.fnmatch(basename, 'S[HZ][0-9]*_*.tcsv'):
                 continue
             
-            for excl_et in ['KL5m', 'KL1d', 'MF1d'] : # exclude some events as we collected in some other ways
-                if excl_et in basename:
-                    basename=""
-                    break
-
-            if not '_' in basename: continue
-            symbol = basename[:basename.index('_')]
+            tokens = basename.split('.')[0].split('_')
+            if len(tokens) <2: continue
+            symbol, evtype = tokens[0], tokens[1]
             if (len(self.symbols)>0 and not symbol in self.symbols) or symbol in EXECLUDE_LIST:
                 continue
+
+            if '2020' in evtype: evtype=evtype[:evtype.index('2020')] # a fixup for old data
+            if not MARKETDATE_EVENT_PREFIX in evtype: evtype = MARKETDATE_EVENT_PREFIX + evtype
+
+            if not evtype in [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_MONEYFLOW_1MIN] : 
+                continue # exclude some events as we collected in some other ways
 
             self.debug('memberFile[%s] in %s matched' % (member.name, tarballName))
             memlist.append(member) 
 
         for member in memlist:
             f = tar.extractfile(member)
-            pb = hist.TaggedCsvStream(f, program=self.program)
-            id = '%s@%s' % (os.path.basename(member.name), os.path.basename(tarballName))
-            pb.setId(id)
+            pb = self.__advmdToPlayback(f, symbol, evtype)
+            if not pb : continue
+            pb.setId('%s@%s' % (os.path.basename(member.name), os.path.basename(tarballName)))
 
-            pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
-            pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
-
-            # pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
-            # pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
-            # pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-            # pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-            # pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-
-            self.debug('adding substrm[%s] into mux' % (id))
+            self.debug('adding substrm[%s] into mux' % (pb.id))
             self.__mux.addStream(pb)
 
     def doAppInit(self): # return True if succ
@@ -1171,13 +1184,13 @@ class TcsvMerger(BaseApplication) :
 
             for tn in self.__tarballs[evtype]:
                 bname = os.path.basename(tn)
-                if 'sina' == bname[:4].lower() :
-                    self.__extractJsonStreams(tn, evtype)
+                # if 'sina' == bname[:4].lower() :
+                #     self.__extractJsonTarball(tn, evtype)
                 if 'realtime' == evtype :
                     if 'advisor' == bname[:len('advisor')] :
                         self.__extractAdvisorTarball(tn) # self.__extractAdvisorStreams(tn)
                     elif 'advmd' == bname[:len('advmd')] : # the pre-filtered tcsv from original advisor.tcsv
-                        self.__extractAdvMdStreams(tn)
+                        self.__extractAdvMdTarball(tn)
 
         if len(self.symbols) >0 and None in [self.__tarballs[EVENT_KLINE_1DAY], self.__tarballs[EVENT_MONEYFLOW_1DAY]]:
             crawl = SinaCrawler(self.program, None)

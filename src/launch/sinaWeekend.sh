@@ -70,8 +70,8 @@ while ! [ -e ${WORK_ROOT}/batch_999.req ]; do
             evmdfile="evmd/${s}_evmd${filedate}.tcsv"
             grep -h ${s} ${TCSVLIST} | sort |uniq > ${evmdfile}
             for et in ${evmdlist}; do
-                grep ${et} evmd/hdr.tcsv > evmd/${s}_${et:4}${filedate}.tcsv
-                grep "^${et}" ${evmdfile} >> evmd/${s}_${et:4}${filedate}.tcsv
+                grep ${et} evmd/hdr.tcsv > evmd/${s}_${et:4}_${filedate}.tcsv
+                grep "^${et}" ${evmdfile} >> evmd/${s}_${et:4}_${filedate}.tcsv
             done
             # rm -fv ${evmdfile}
         done

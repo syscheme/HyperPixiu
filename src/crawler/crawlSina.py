@@ -1001,6 +1001,9 @@ def listSymbols(program, mdSina):
 
 ########################################################################
 class TcsvMerger(BaseApplication) :
+
+    MDEVENTS_FROM_ADV = [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY, EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY] # [EVENT_TICK, EVENT_KLINE_1MIN]
+
     def __init__(self, program, tarNamePat_KL5m, tarNamePat_MF1m, startDate =None, endDate=None, tarNamePat_RT=None, tarNamePat_KL1d=None, tarNamePat_MF1d=None, **kwargs):
         '''Constructor
         '''
@@ -1090,8 +1093,8 @@ class TcsvMerger(BaseApplication) :
                 if not pb: continue
                 pb.setId('%s@%s' % (basename, os.path.basename(tarballName)))
                 
-                self.debug('adding substrm[%s] into mux' % (pb.id))
                 self.__mux.addStream(pb)
+                self.info('added substrm[%s] into mux' % (pb.id))
     
             if len(foundlist) >= len(self.symbols) : # if self.symbols and self.symbols == symbol:
                 break # do not scan the tar anymore
@@ -1143,7 +1146,7 @@ class TcsvMerger(BaseApplication) :
             if '2020' in evtype: evtype=evtype[:evtype.index('2020')] # a fixup for old data
             if not MARKETDATE_EVENT_PREFIX in evtype: evtype = MARKETDATE_EVENT_PREFIX + evtype
 
-            if not evtype in [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_MONEYFLOW_1MIN] : 
+            if not evtype in TcsvMerger.MDEVENTS_FROM_ADV : 
                 continue # exclude some events as we collected in some other ways
 
             self.debug('memberFile[%s] in %s matched' % (member.name, tarballName))
@@ -1155,8 +1158,79 @@ class TcsvMerger(BaseApplication) :
             if not pb : continue
             pb.setId('%s@%s' % (os.path.basename(member.name), os.path.basename(tarballName)))
 
-            self.debug('adding substrm[%s] into mux' % (pb.id))
             self.__mux.addStream(pb)
+            self.info('added substrm[%s] into mux' % (pb.id))
+
+    def __extractedFolder_advmd(self, folderName):
+        allfiles = hist.listAllFiles(folderName, depthAllowed=1)
+
+        memlist = []
+        for fn in allfiles:
+            '''
+            -rw-rw-rw- root/root     20590 2020-09-12 16:26 SH600037_KL1d20200720.tcsv
+            -rw-rw-rw- root/root     21461 2020-09-12 16:26 SH600037_KL1m20200720.tcsv
+            -rw-rw-rw- root/root      6264 2020-09-12 16:26 SH600037_KL5m20200720.tcsv
+            '''
+            basename = os.path.basename(fn)
+            if not fnmatch.fnmatch(basename, 'S[HZ][0-9]*_*.tcsv'):
+                continue
+            
+            tokens = basename.split('.')[0].split('_')
+            if len(tokens) <2: continue
+            symbol, evtype = tokens[0], tokens[1]
+            if (len(self.symbols)>0 and not symbol in self.symbols) or symbol in EXECLUDE_LIST:
+                continue
+
+            if '202' in evtype: evtype=evtype[:evtype.index('202')] # a fixup for old data starting since year 2020
+            if not MARKETDATE_EVENT_PREFIX in evtype: evtype = MARKETDATE_EVENT_PREFIX + evtype
+
+            if not evtype in TcsvMerger.MDEVENTS_FROM_ADV : 
+                continue # exclude some events as we collected in some other ways
+
+            self.debug('file[%s] matched' % (fn))
+            memlist.append(fn) 
+
+        for fn in memlist:
+            f = open(fn, "r")
+            pb = self.__advmdToPlayback(f, symbol, evtype)
+            if not pb : continue
+            pb.setId('%s' % (fn))
+
+            self.__mux.addStream(pb)
+            self.info('added substrm[%s] into mux' % (pb.id))
+
+    def __extractedFolder_sinaJson(self, folderName, evtype):
+        allfiles = hist.listAllFiles(folderName, depthAllowed=2)
+
+        memlist = []
+        for fn in allfiles:
+            '''
+            -rw-rw-rw- root/root     20590 2020-09-12 16:26 SZ002588_MF1m20200817.json
+            '''
+            basename = os.path.basename(fn)
+            if not fnmatch.fnmatch(basename, 'S[HZ][0-9]*_%s*.json' % evtype[len(MARKETDATE_EVENT_PREFIX):]):
+                continue
+            
+            tokens = basename.split('.')[0].split('_')
+            if len(tokens) <2: continue
+            symbol, _ = tokens[0], tokens[1]
+            if (len(self.symbols)>0 and not symbol in self.symbols) or symbol in EXECLUDE_LIST:
+                continue
+
+            # if '202' in evtype: evtype=evtype[:evtype.index('202')] # a fixup for old data starting since year 2020
+            # if not MARKETDATE_EVENT_PREFIX in evtype: evtype = MARKETDATE_EVENT_PREFIX + evtype
+            self.debug('file[%s] matched' % (fn))
+            memlist.append(fn) 
+
+        for fn in memlist:
+            pb = None
+            with open(fn, "rb") as f:
+                pb = self.__jsonToPlayback(f, symbol, evtype)
+
+            if not pb : continue
+            pb.setId('%s' % (fn))
+            self.__mux.addStream(pb)
+            self.info('added substrm[%s] into mux' % (pb.id))
 
     def doAppInit(self): # return True if succ
         if not super(TcsvMerger, self).doAppInit() :
@@ -1174,9 +1248,17 @@ class TcsvMerger(BaseApplication) :
             self.__tarballs[evtype] = []
             fnSearch=self.__tnPattern[evtype]
 
-            fnAll = hist.listAllFiles(os.path.dirname(fnSearch))
+            dirOnly, parentDir = False, os.path.dirname(fnSearch)
+            if '/' == fnSearch[-1]:
+                fnSearch = fnSearch[:-1]
+                dirOnly, parentDir = True, os.path.dirname(fnSearch)
+
+            fnAll = hist.listAllFiles(parentDir, fileOnly = not dirOnly)
             fnSearch = os.path.basename(fnSearch)
             for fn in fnAll:
+                if dirOnly :
+                    if '/' != fn[-1] : continue
+                    fn = fn[:-1]
                 if fnmatch.fnmatch(os.path.basename(fn), fnSearch):
                     self.__tarballs[evtype].append(fn)
 
@@ -1184,13 +1266,14 @@ class TcsvMerger(BaseApplication) :
 
             for tn in self.__tarballs[evtype]:
                 bname = os.path.basename(tn)
-                # if 'sina' == bname[:4].lower() :
-                #     self.__extractJsonTarball(tn, evtype)
+
+                if 'sina' == bname[:4].lower() :
+                    self.__extractedFolder_sinaJson(tn, evtype) if dirOnly else self.__extractJsonTarball(tn, evtype)
                 if 'realtime' == evtype :
                     if 'advisor' == bname[:len('advisor')] :
                         self.__extractAdvisorTarball(tn) # self.__extractAdvisorStreams(tn)
                     elif 'advmd' == bname[:len('advmd')] : # the pre-filtered tcsv from original advisor.tcsv
-                        self.__extractAdvMdTarball(tn)
+                        self.__extractedFolder_advmd(tn) if dirOnly else self.__extractAdvMdTarball(tn)
 
         if len(self.symbols) >0 and None in [self.__tarballs[EVENT_KLINE_1DAY], self.__tarballs[EVENT_MONEYFLOW_1DAY]]:
             crawl = SinaCrawler(self.program, None)

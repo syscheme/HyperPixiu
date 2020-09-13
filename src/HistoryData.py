@@ -26,11 +26,12 @@ if sys.version_info <(3,):
 else:
     from queue import Queue, Empty
 import bz2
+import numpy as np
 
 EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
 H5DSET_DEFAULT_ARGS={ 'compression': 'lzf' } # note lzf is good at speed, but HDFExplorer doesn't support it. Change it to gzip if want to view
 
-def listAllFiles(folder, depthAllowed=5):
+def listAllFiles(folder, depthAllowed=5, fileOnly=True):
     ret =[]
     if depthAllowed <=0:
         return ret
@@ -39,9 +40,12 @@ def listAllFiles(folder, depthAllowed=5):
         for name in files:
             ret.append(os.path.join(root, name))
         for name in subdirs:
-            ret += listAllFiles(os.path.join(root, name), depthAllowed -1)
+            dn = os.path.join(root, name)
+            if not fileOnly:
+                ret.append(dn +"/")
+            ret += listAllFiles(dn, depthAllowed -1)
 
-    return ret
+    return list(np.unique(ret))
 
 ########################################################################
 class Recorder(BaseApplication):

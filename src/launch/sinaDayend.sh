@@ -2,7 +2,7 @@
 # suggested cron line: 0  16  * *  1-5   ~/tasks/sinaDayend.sh 2>&1 > /tmp/sinaDayend.log &
 TOPDIR_HP=~/wkspaces/HyperPixiu
 
-SECU_LIST=$(grep -o '^S[HZ][0-9]*' ~/deploy-data/hpdata/advisor_objs.txt |sort|uniq)
+SECU_LIST="$(grep -o '^S[HZ][0-9]*' ~/deploy-data/hpdata/advisor_objs.txt |sort|uniq)"
 LOCKFILE="/tmp/$(basename $0).lockfile"
 
 HOUR=$(date +%H)
@@ -13,11 +13,12 @@ if [ ${HOUR} -lt ${HOUR2EXEC} ]; then
     exit 0
 fi
 
-SECU_LIST=$(grep -o '^S[HZ][0-9]*' ~/deploy-data/hpdata/advisor_objs.txt |sort|uniq)
 STAMP=$(date +%Y%m%dT%H%M%S)
 
 cd ${TOPDIR_HP}
 OUTDIR=./out/advisor
+BAKDIR=${TOPDIR_HP}/${OUTDIR}.BAK${STAMP}
+
 CONF=$(realpath ~/deploy-data/hpdata/Advisor.json)
 
 # step 1. kill the running advisor
@@ -28,6 +29,8 @@ if ! [ -z ${PID} ]; then
 
     cp -vf /tmp/advisor_${PID}_*.log ${OUTDIR}/advisor_${PID}.log
     mv -vf /tmp/advisor_${PID}_*.log.*.bz2  ${OUTDIR}/
+
+    # renaming the log and tcsv files to better format
     for i in ${OUTDIR}/advisor_${PID}_*.log.*.bz2 ; do
         if ! [ -e $i ]; then continue; fi
         BZASOF=$(bzcat $i |head -1|grep -o '^.\{19\}'|sed 's/[- :]*//g')
@@ -47,44 +50,47 @@ PID_LIST="$(ls ${OUTDIR}/*.tcsv |sed 's/^.*advisor_\([0-9]*\).*tcsv/\1/g')"
 if [ -z ${PID_LIST} ]; then
     echo "skip backing up brand new ${OUTDIR}"
 else
-    echo "backing up to ${OUTDIR}.BAK${STAMP}"
+    echo "backing up to ${BAKDIR}"
 
     for i in ${PID_LIST}; do
         mv -vf /tmp/advisor_${i}_*.log* ${OUTDIR}/ ; 
     done
 
-    mv -vf ${OUTDIR} ${OUTDIR}.BAK${STAMP}
+    mv -vf ${OUTDIR} ${BAKDIR}
     mkdir -p ${OUTDIR}
-    mv -vf ${OUTDIR}.BAK${STAMP}/*.ss* ${OUTDIR}/ # inherit from previous safestores
+    mv -vf ${BAKDIR}/*.ss* ${OUTDIR}/ # inherit from previous safestores
     rm -rf ${OUTDIR}/*.lock ${OUTDIR}/*.tcsv* ${OUTDIR}/*.log*
 
-    for i in ${OUTDIR}.BAK${STAMP}/advisor_*.tcsv.[0-9]*.bz2 ; do
+    for i in ${BAKDIR}/advisor_*.tcsv.[0-9]*.bz2 ; do
         if ! [ -e $i ]; then continue; fi
         BZASOF=$(stat -c %y $i | sed 's/[- :]*//g' |cut -d '.' -f1)
         BASENAME=$(basename $i |cut -d '.' -f1)
-        mv -vf $i  ${OUTDIR}.BAK${STAMP}/${BASENAME}.${BZASOF}.tcsv.bz2
+        mv -vf $i ${BAKDIR}/${BASENAME}.${BZASOF}.tcsv.bz2
     done
 
-    ls -l ${OUTDIR}.BAK${STAMP}/*
+    ls -l ${BAKDIR}/*
     echo "new ${OUTDIR}"
     ls -l ${OUTDIR}/*
-
-    nice -n 15 bash -c "tar cfvj ${OUTDIR}.BAK${STAMP}.tar.bz2 ${OUTDIR}.BAK${STAMP} ; rm -rf ${OUTDIR}.BAK${STAMP}"
 fi
 
 cd ${TOPDIR_HP}
 
+cd ${BAKDIR}
+BZFILES="$(ls advisor_*.${TODAY}*.tcsv.bz2)"
+TCSVFILES="$(ls advisor_*.${TODAY}*.tcsv)"
+
 # step 3. process the collected bz2 files of today
 extrdir=${TOPDIR_HP}/out/today
-rm -rf ${extrdir} ; mkdir -p ${extrdir} ; cd ${extrdir}
+cd ${TOPDIR_HP}; rm -rf ${extrdir} ; mkdir -p ${extrdir} ; cd ${extrdir}
 
-TODAY="$(date +%Y%m%dT)"
+TODAY="$(date +%Y%m%d)"
 
 # 3.1 extract the advisor.BAK${TODAY}T*.tar.ball
-FILES="$(ls ${OUTDIR}.BAK${TODAY}T*.tar.bz2)"
-for f in ${FILES}; do
-    nice tar xfvj ${f} --wildcards '*.tcsv*' --strip 3
-    nice bunzip2 *.bz2
+for f in ${BZFILES}; do
+    bzcat ${BAKDIR}/$f > ./${f::-4}
+done
+for f in ${TCSVFILES}; do
+    ln -sf ${BAKDIR}/$f .
 done
 
 TCSVLIST="$(ls *.tcsv |sort)"

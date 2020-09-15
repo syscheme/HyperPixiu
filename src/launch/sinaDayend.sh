@@ -89,7 +89,7 @@ else
     BAKLIST="$(ls advisor.BAK*.bz2 | sort -r)"
     for f in ${BAKLIST}; do
         TODAY="$(echo ${f}| sed 's/advisor.BAK\([0-9]*\).*.bz2/\1/g')Z"
-        if [ -e "advmd_${TODAY}*.tar.bz2" ] ; then continue; fi
+        if [ -e ${TOPDIR_HP}/out/advmd_${TODAY}.tar.bz2 ] ; then continue; fi
 
         BAKDIR="${WORKDIR}/advisor.BAK${TODAY}"
         mkdir -p ${BAKDIR}; cd ${BAKDIR}

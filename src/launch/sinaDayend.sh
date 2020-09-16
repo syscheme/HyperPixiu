@@ -80,8 +80,11 @@ TODAY="$(date +%Y%m%d)"
 
 if [ -d ${BAKDIR} ]; then
     cd ${BAKDIR}
-    BZFILES="$(ls advisor_*.${TODAY}*.tcsv.bz2 |sort)"
-    TCSVFILES="$(ls advisor_*.${TODAY}*.tcsv |sort)"
+    ls -l
+    # BZFILES="$(ls advisor_*.${TODAY}*.tcsv.bz2 |sort)"
+    # TCSVFILES="$(ls advisor_*.${TODAY}*.tcsv |sort) $(ls advisor_*.tcsv |grep -v '\.[0-9]*.tcsv')"
+    BZFILES="$(ls advisor_*.tcsv.bz2 |sort)"
+    TCSVFILES="$(ls advisor_*.tcsv |sort)"
 else
     echo "no new collection ${BAKDIR}, checking zipped archieves"
     cd ${TOPDIR_HP}/out
@@ -94,6 +97,7 @@ else
         BAKDIR="${WORKDIR}/advisor.BAK${TODAY}"
         mkdir -p ${BAKDIR}; cd ${BAKDIR}
         tar xfvj ${TOPDIR_HP}/out/${f} --wildcards '*.tcsv*' --strip 3
+        ls -l
         
         BZFILES="$(ls advisor_*.tcsv.bz2 |sort)"
         TCSVFILES="$(ls advisor_*.tcsv |sort)"
@@ -119,7 +123,7 @@ for f in ${TCSVFILES}; do
     ln -sf ${BAKDIR}/$f .
 done
 
-ls -l advisor*.tcsv > filelist_adv.txt
+ls -l advisor*.tcsv | tee filelist_adv.txt
 TCSVLIST="$(ls advisor*.tcsv)"
 # unify the filenames by cutting off PID, in order to sort by datetime
 for f in $TCSVLIST; do
@@ -127,8 +131,10 @@ for f in $TCSVLIST; do
     if [ "advisor." == "$expectedfn" ]; then expectedfn="advisor.tcsv";  fi
     if [ "$f" == "$expectedfn" ]; then continue; fi
     
-    mv -fv $f $expectedfn 2>&1 >> filelist_adv.txt
+    mv -fv $f $expectedfn 2>&1 | tee -a filelist_adv.txt
 done
+
+ls -l | tee -a filelist_adv.txt
 TCSVLIST="$(ls advisor*.tcsv |sort)"
 
 # 3.2 filter the evmd from advisor.tcsv
@@ -143,6 +149,7 @@ for s in ${SECU_LIST}; do
     evmdfile="evmd/${s}_evmd_${TODAY}.tcsv"
     
     # filter and sort the market event by date,time
+    echo "filtering evmd of $s into ${evmdfile}"
     cat evmd/hdr.tcsv > ${evmdfile}
     grep -h "^evmd.*${s}" ${TCSVLIST} | sort -t, -k4,5 |uniq >> ${evmdfile}
     

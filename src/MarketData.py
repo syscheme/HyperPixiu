@@ -96,14 +96,14 @@ class MarketData(EventData):
         return self.datetime
 
     @abstractmethod
-    def toFloatD4(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
         '''
         raise NotImplementedError
 
     @abstractmethod
-    def toFloatD6(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def float6C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim = 6 for neural network computing
         '''
@@ -201,7 +201,7 @@ class TickData(MarketData):
         return ev
 
     @abstractmethod
-    def toFloatD4(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
         '''
@@ -235,7 +235,7 @@ class TickData(MarketData):
         return ret
 
     @abstractmethod
-    def toFloatD6(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def float6C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim =6 for neural network computing
         '''
@@ -335,7 +335,7 @@ class KLineData(MarketData):
         return ev
 
     @abstractmethod
-    def toFloatD4(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
         '''
@@ -359,7 +359,7 @@ class KLineData(MarketData):
         return ret
 
     @abstractmethod
-    def toFloatD6(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def float6C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim =6 for neural network computing
         '''
@@ -446,7 +446,7 @@ class MoneyflowData(MarketData):
         return ret
 
     @abstractmethod
-    def toFloatD4(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim =4 for neural network computing
         '''
@@ -454,7 +454,7 @@ class MoneyflowData(MarketData):
         return ret[:4] if len(ret) >= 4 else ret +[0.0]* (4-len(ret))
 
     @abstractmethod
-    def toFloatD6(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def float6C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim =6 for neural network computing
         '''
@@ -713,9 +713,54 @@ class MarketState(MetaObj):
 
         raise ValueError('exportFloatsD4() unexpected ret')
 
-    def exportImg6D16x16x4(self, symbol=None) :
+    '''
+    import math
+    for i in range(16*16):
+        if i<=0:
+            ret=[(0,0)]
+            continue
 
-        F6SECHMA_16x16x4 = OrderedDict({
+        a = int(math.sqrt(i))
+        b = i - a*a
+        c = int(a/2)
+
+        if a == c*2:
+            x, y = -c, c
+            if b >=a:
+                y -= a
+                x += (b -a)
+            else: y -= b
+        else:
+            x, y = c+1, -c
+            if b >=a:
+                y += a
+                x -= (b -a)
+            else: y += b
+        ret.append((x+7, y+7))
+        print('%s=%d ^2 +%d@(%d, %d)' % (i, a, b, x, y))
+
+    print('COORDS_16x16=%s' % ret)
+    '''
+    COORDS_16x16=[(0, 0), (8, 7), (8, 8), (7, 8), (6, 8), (6, 7), (6, 6), (7, 6), (8, 6), (9, 6), (9, 7), (9, 8), (9, 9), (8, 9), (7, 9), (6, 9),
+                (5, 9), (5, 8), (5, 7), (5, 6), (5, 5), (6, 5), (7, 5), (8, 5), (9, 5), (10, 5), (10, 6), (10, 7), (10, 8), (10, 9), (10, 10), (9, 10),
+                (8, 10), (7, 10), (6, 10), (5, 10), (4, 10), (4, 9), (4, 8), (4, 7), (4, 6), (4, 5), (4, 4), (5, 4), (6, 4), (7, 4), (8, 4), (9, 4),
+                (10, 4), (11, 4), (11, 5), (11, 6), (11, 7), (11, 8), (11, 9), (11, 10), (11, 11), (10, 11), (9, 11), (8, 11), (7, 11), (6, 11), (5, 11), (4, 11),
+                (3, 11), (3, 10), (3, 9), (3, 8), (3, 7), (3, 6), (3, 5), (3, 4), (3, 3), (4, 3), (5, 3), (6, 3), (7, 3), (8, 3), (9, 3), (10, 3),
+                (11, 3), (12, 3), (12, 4), (12, 5), (12, 6), (12, 7), (12, 8), (12, 9), (12, 10), (12, 11), (12, 12), (11, 12), (10, 12), (9, 12), (8, 12), (7, 12),
+                (6, 12), (5, 12), (4, 12), (3, 12), (2, 12), (2, 11), (2, 10), (2, 9), (2, 8), (2, 7), (2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (3, 2),
+                (4, 2), (5, 2), (6, 2), (7, 2), (8, 2), (9, 2), (10, 2), (11, 2), (12, 2), (13, 2), (13, 3), (13, 4), (13, 5), (13, 6), (13, 7), (13, 8),
+                (13, 9), (13, 10), (13, 11), (13, 12), (13, 13), (12, 13), (11, 13), (10, 13), (9, 13), (8, 13), (7, 13), (6, 13), (5, 13), (4, 13), (3, 13), (2, 13),
+                (1, 13), (1, 12), (1, 11), (1, 10), (1, 9), (1, 8), (1, 7), (1, 6), (1, 5), (1, 4), (1, 3), (1, 2), (1, 1), (2, 1), (3, 1), (4, 1),
+                (5, 1), (6, 1), (7, 1), (8, 1), (9, 1), (10, 1), (11, 1), (12, 1), (13, 1), (14, 1), (14, 2), (14, 3), (14, 4), (14, 5), (14, 6), (14, 7),
+                (14, 8), (14, 9), (14, 10), (14, 11), (14, 12), (14, 13), (14, 14), (13, 14), (12, 14), (11, 14), (10, 14), (9, 14), (8, 14), (7, 14), (6, 14), (5, 14),
+                (4, 14), (3, 14), (2, 14), (1, 14), (0, 14), (0, 13), (0, 12), (0, 11), (0, 10), (0, 9), (0, 8), (0, 7), (0, 6), (0, 5), (0, 4), (0, 3),
+                (0, 2), (0, 1), (0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 0), (7, 0), (8, 0), (9, 0), (10, 0), (11, 0), (12, 0), (13, 0),
+                (14, 0), (15, 0), (15, 1), (15, 2), (15, 3), (15, 4), (15, 5), (15, 6), (15, 7), (15, 8), (15, 9), (15, 10), (15, 11), (15, 12), (15, 13), (15, 14),
+                (15, 15), (14, 15), (13, 15), (12, 15), (11, 15), (10, 15), (9, 15), (8, 15), (7, 15), (6, 15), (5, 15), (4, 15), (3, 15), (2, 15), (1, 15), (0, 15)]
+
+    def exportImg6C16x16x4(self, symbol=None) :
+
+        C6SECHMA_16x16x4 = OrderedDict({
             'asof'               : 1,
             EVENT_KLINE_1MIN     : 240,
             EVENT_KLINE_5MIN     : 240,
@@ -723,11 +768,29 @@ class MarketState(MetaObj):
             EVENT_MONEYFLOW_1MIN : 240,
         })
 
-        ret = self.export2F6(symbol, d4wished=F6SECHMA_16x16x4)
+        ret = self.export2D6C(symbol, d4wished=C6SECHMA_16x16x4)
+
+        DIRS=[(1, 0), ()]
 
         # TODO: draw the image
+        img = [ [[0.0]*6] *16] *16
+        for i in range(240):
+            x, y = COORDS_16x16[i]
+            img[x][y] = ret[i]
 
-        return ret
+        return img
+
+    def covertImg6CTo3C(self, img6C) :
+        lenR = len(img6C[0])
+        img3C = [ [[0.0]*6] *lenR*2] *len(img6C)
+        for i in range(len(img6C)):
+            for j in range(lenR) :
+                img3C[i][j] = img6C[i][j][:3]
+                img3C[i][lenR + j] = img6C[i][j][3:]
+                
+        return img3C
+
+
 
     @abstractmethod
     def exportFloatsD4(self, symbol, d4wished= OrderedDict({ 'asof':1, EVENT_KLINE_1DAY:20 }) ) :
@@ -738,7 +801,7 @@ class MarketState(MetaObj):
         raise NotImplementedError
 
     @abstractmethod
-    def export2F6(self, symbol=None) :
+    def export2D6C(self, symbol=None) :
         raise NotImplementedError
 
     # @abstractmethod

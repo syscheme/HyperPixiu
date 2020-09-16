@@ -106,7 +106,6 @@ else
     fi
 fi
 
-
 # step 3. process the collected bz2 files of today
 extrdir=${WORKDIR}/today
 rm -rf ${extrdir} ; mkdir -p ${extrdir} 
@@ -120,7 +119,17 @@ for f in ${TCSVFILES}; do
     ln -sf ${BAKDIR}/$f .
 done
 
-TCSVLIST="$(ls *.tcsv |sort)"
+ls -l advisor*.tcsv > filelist_adv.txt
+TCSVLIST="$(ls advisor*.tcsv)"
+# unify the filenames by cutting off PID, in order to sort by datetime
+for f in $TCSVLIST; do
+    expectedfn="advisor.$(echo $f|grep -o '2020[0-9]*.tcsv')"
+    if [ "advisor." == "$expectedfn" ]; then expectedfn="advisor.tcsv";  fi
+    if [ "$f" == "$expectedfn" ]; then continue; fi
+    
+    mv -fv $f $expectedfn 2>&1 >> filelist_adv.txt
+done
+TCSVLIST="$(ls advisor*.tcsv |sort)"
 
 # 3.2 filter the evmd from advisor.tcsv
 rm -rvf evmd ; mkdir -vp evmd
@@ -132,17 +141,21 @@ evmdlist="$(grep -o '^!evmd[^,]*' evmd/hdr.tcsv |cut -d '!' -f2)"
 
 for s in ${SECU_LIST}; do
     evmdfile="evmd/${s}_evmd_${TODAY}.tcsv"
-    grep -h ${s} ${TCSVLIST} | sort |uniq > ${evmdfile}
-    for et in ${evmdlist}; do
-        grep ${et} evmd/hdr.tcsv > evmd/${s}_${et:4}_${TODAY}.tcsv
-        grep "^${et}" ${evmdfile} >> evmd/${s}_${et:4}_${TODAY}.tcsv
-    done
+    
+    # filter and sort the market event by date,time
+    cat evmd/hdr.tcsv > ${evmdfile}
+    grep -h "^evmd.*${s}" ${TCSVLIST} | sort -t, -k4,5 |uniq >> ${evmdfile}
+    
+    # for et in ${evmdlist}; do
+    #     grep ${et} evmd/hdr.tcsv > evmd/${s}_${et:4}_${TODAY}.tcsv
+    #     grep "^${et}" ${evmdfile} >> evmd/${s}_${et:4}_${TODAY}.tcsv
+    # done
 done
 
 cd evmd
 nice tar cfvj ${TOPDIR_HP}/out/advmd_${TODAY}.tar.bz2 S*.tcsv
 cd ${extrdir}
-nice tar cfvj ${TOPDIR_HP}/out/adv_${TODAY}.tar.bz2 $TCSVLIST
+nice tar cfvj ${TOPDIR_HP}/out/adv_${TODAY}.tar.bz2 filelist_adv.txt $TCSVLIST
 
 cd ${TOPDIR_HP}
 rm -rf ${extrdir} ${BAKDIR}

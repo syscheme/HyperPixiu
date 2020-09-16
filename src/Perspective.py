@@ -430,6 +430,50 @@ class Perspective(MarketData):
 
         return result
 
+    def floats2D6(self, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+        '''@return a 2D array of floats
+        '''
+        if self._stacks[EVENT_KLINE_1DAY].size <=0:
+            return None # floats2D6 not available
+
+        klbaseline = self._stacks[EVENT_KLINE_1DAY].top
+        baseline_Price, baseline_Volume =klbaseline.close, klbaseline.volume
+
+        if baseline_Price <0.01: baseline_Price=1.0
+        if baseline_Volume <0.001: baseline_Volume=1.0
+
+        result = []
+        for k, v in d4wished.items():
+            if 'asof' ==k and int(v) >0:
+                fAsOf = [0.0] * 6
+                try :
+                    stampAsof = self.asof
+                    fAsOf[0] = (stampAsof.month-1) / 12.0 # normalize to [0.0,1.0]
+                    fAsOf[1] = stampAsof.day / 31.0 # normalize to [0.0,1.0]
+                    fAsOf[2] = stampAsof.weekday() / 7.0 # normalize to [0.0,1.0]
+                    fAsOf[3] = (stampAsof.hour *60 +stampAsof.minute) / (24 *60.0) # normalize to [0.0,1.0]
+                except: pass
+                result.append(fAsOf) # datetime as the first item
+                continue
+
+            if not k in self.eventTypes :
+                raise ValueError('Perspective.floats2D6() unknown etype[%s]' %k )
+
+            stk = self._stacks[k]
+            bV = baseline_Volume
+            if k in self.__evsPerDay.keys():
+               bV /= self.__evsPerDay[k]
+
+            for i in range(int(v)):
+                if i >= stk.size:
+                    result.append([0.0] * 6)
+                else:
+                    fval = stk[i].toFloatD6(baseline_Price=baseline_Price, baseline_Volume= bV)
+                    result.append(fval)
+
+        return result
+
+
     # def engorged(self, symbol=None) :
     #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data
     #     '''
@@ -682,3 +726,10 @@ class PerspectiveState(MarketState):
     #         return self.__dictPerspective[symbol].engorged
         
     #     return [0.0]
+
+    def export2F6(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+
+        if symbol and symbol in self.__dictPerspective.keys():
+            return self.__dictPerspective[symbol].floats2D6(d4wished)
+
+        raise ValueError('Perspective.floats2D6() unknown symbol[%s]' %symbol )

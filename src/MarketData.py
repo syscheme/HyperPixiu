@@ -14,17 +14,18 @@ PRICE_DISPLAY_ROUND_DECIMALS = 3
 
 BASE_LOG10x2 = math.log(10) *2
 
+def floatNormalize(v):
+    if v <0: return 0.0
+    return v if v<1.0 else 1.0
+
 def floatNormalize_LOG10(v, base=1.0):
     v = float(v/base)
     v = math.log(v) / BASE_LOG10x2 +0.5 # 0.1x lead to 0 and 10x lead to 1
-    if v <0: return 0.0
-    return v if v>1.0 else 1.0
+    return floatNormalize(v)
 
 def floatNormalize_PriceChange(newPrice, basePrice=1.0):
     v = float(newPrice/basePrice)
     (v -1) *5.0 + 0.5 # -20% leads to 0, and +20% leads to 1
-    if v <0: return 0.0
-    return v if v>1.0 else 1.0
 
 def floatNormalize_VolumeChange(newVolume, baseVolume=1.0):
     return floatNormalize_LOG10(newVolume, baseVolume)
@@ -98,6 +99,13 @@ class MarketData(EventData):
     def toFloatD4(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim = EXPORT_FLOATS_DIMS for neural network computing
+        '''
+        raise NotImplementedError
+
+    @abstractmethod
+    def toFloatD6(self, baseline_Price=1.0, baseline_Volume =1.0) :
+        '''
+        @return float[] with dim = 6 for neural network computing
         '''
         raise NotImplementedError
 
@@ -208,7 +216,7 @@ class TickData(MarketData):
             for x in [self.b1P, self.b1P, self.b1P, self.b1P, self.b1P] ],
             Y=[self.b1V, self.b1V, self.b1V, self.b1V, self.b1V])
 
-        # the basic dims, min=4
+        # the basic dims=4
         ret = [
             FUNC_floatNormalize(self.price, baseline_Price), 
             FUNC_floatNormalize(self.volume, baseline_Volume),
@@ -223,6 +231,33 @@ class TickData(MarketData):
             ret[5] = FUNC_floatNormalize(self.low, baseline_Price)
         if EXPORT_FLOATS_DIMS > 6:
             ret[6] = FUNC_floatNormalize(self.open, baseline_Price)
+
+        return ret
+
+    @abstractmethod
+    def toFloatD6(self, baseline_Price=1.0, baseline_Volume =1.0) :
+        '''
+        @return float[] with dim =6 for neural network computing
+        '''
+        if baseline_Price <=0: baseline_Price=1.0
+        if baseline_Volume <=0: baseline_Volume=1.0
+
+        #TODO： has the folllowing be normalized into [0.0, 1.0] ???
+        leanAsks = self.__calculateLean(X=[(x- self.price) \
+            for x in [self.a1P, self.a1P, self.a1P, self.a1P, self.a1P]],
+            Y=[self.a1V, self.a1V, self.a1V, self.a1V, self.a1V])
+
+        leanBids = self.__calculateLean(X=[(x- self.price) \
+            for x in [self.b1P, self.b1P, self.b1P, self.b1P, self.b1P] ],
+            Y=[self.b1V, self.b1V, self.b1V, self.b1V, self.b1V])
+
+        # the basic dims=6
+        ret = [
+            floatNormalize_LOG10(self.price, baseline_Price),
+            floatNormalize_LOG10(self.volume, baseline_Volume),
+            float(leanAsks), 
+            float(leanBids),
+            0.0, 0.0]
 
         return ret
 
@@ -323,6 +358,25 @@ class KLineData(MarketData):
 
         return ret
 
+    @abstractmethod
+    def toFloatD6(self, baseline_Price=1.0, baseline_Volume =1.0) :
+        '''
+        @return float[] with dim =6 for neural network computing
+        '''
+        if baseline_Price <=0: baseline_Price=1.0
+        if baseline_Volume <=0: baseline_Volume=1.0
+
+        # the 6-dims floats
+        ret = [
+            floatNormalize_LOG10(self.close, baseline_Price),
+            floatNormalize(5*(self.high / self.close -1)),
+            floatNormalize(5*(self.close / self.low -1)),
+            floatNormalize_LOG10(self.volume, baseline_Volume),
+            floatNormalize(5*(self.open / self.close -1) +0.5),
+            0.0
+        ]
+
+        return ret
 
 ########################################################################
 class MoneyflowData(MarketData):
@@ -381,11 +435,11 @@ class MoneyflowData(MarketData):
 
         # the floats, prioirty first
         ret = [
-            FUNC_floatNormalize(self.netamount, baseline_Price*baseline_Volume), # priority-H1, TODO: indeed the ratio of turnover would be more worthy here. It supposed can be calculated from netamount, ratioNet and netMarketCap
+            floatNormalize_LOG10(self.netamount, baseline_Price*baseline_Volume), # priority-H1, TODO: indeed the ratio of turnover would be more worthy here. It supposed can be calculated from netamount, ratioNet and netMarketCap
             FUNC_floatNormalize(self.ratioNet,    1.0),                          # priority-H2
             FUNC_floatNormalize(self.ratioR0,     1.0),                          # priority-H3
             FUNC_floatNormalize(self.ratioR3cate, 1.0),                          # likely r3=ratioNet-ratioR0
-            FUNC_floatNormalize(self.price,     baseline_Price), # optional because usually this has been presented via KLine/Ticks
+            floatNormalize_LOG10(self.price,     baseline_Price), # optional because usually this has been presented via KLine/Ticks
         ]
 
         #TODO: other optional dims
@@ -396,7 +450,16 @@ class MoneyflowData(MarketData):
         '''
         @return float[] with dim =4 for neural network computing
         '''
-        return self.toFloats(baseline_Price, baseline_Volume)[:4]
+        ret = self.toFloats(baseline_Price, baseline_Volume)
+        return ret[:4] if len(ret) >= 4 else ret +[0.0]* (4-len(ret))
+
+    @abstractmethod
+    def toFloatD6(self, baseline_Price=1.0, baseline_Volume =1.0) :
+        '''
+        @return float[] with dim =6 for neural network computing
+        '''
+        ret = self.toFloats(baseline_Price, baseline_Volume)
+        return ret[:4] if len(ret) >= 4 else ret +[0.0]* (4-len(ret))
 
 ########################################################################
 class TickToKLineMerger(object):
@@ -650,12 +713,32 @@ class MarketState(MetaObj):
 
         raise ValueError('exportFloatsD4() unexpected ret')
 
+    def exportImg6D16x16x4(self, symbol=None) :
+
+        F6SECHMA_16x16x4 = OrderedDict({
+            'asof'               : 1,
+            EVENT_KLINE_1MIN     : 240,
+            EVENT_KLINE_5MIN     : 240,
+            EVENT_KLINE_1DAY     : 256,
+            EVENT_MONEYFLOW_1MIN : 240,
+        })
+
+        ret = self.export2F6(symbol, d4wished=F6SECHMA_16x16x4)
+
+        # TODO: draw the image
+
+        return ret
+
     @abstractmethod
     def exportFloatsD4(self, symbol, d4wished= OrderedDict({ 'asof':1, EVENT_KLINE_1DAY:20 }) ) :
         '''
         @param d4wished OrderedDict to specify number of most recent 4-float of the event category to export
         @return an array_like floats
         '''
+        raise NotImplementedError
+
+    @abstractmethod
+    def export2F6(self, symbol=None) :
         raise NotImplementedError
 
     # @abstractmethod

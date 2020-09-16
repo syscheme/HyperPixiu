@@ -277,7 +277,7 @@ class SinaCrawler(MarketCrawler):
             del self._symbolsToPoll[s]
             return 1 # return as busy for this error case
 
-        if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC):
+        if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC*2):
             return cBusy # well off-trade hours
 
         urlProxy = self.__urlProxy if self._stepAsOf < self.__stampOfNext('all', 'KL_yield456') else None
@@ -295,6 +295,10 @@ class SinaCrawler(MarketCrawler):
 
             stampStart = stampNow
             minutes = SinaCrawler.INTV_MINs_OF_EVENTS[evType]
+
+            if (minutes < (OFFHOUR_ERROR_SEC/60) and self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC)):
+                continue # skip polling in-day KLs shorter after hours
+
             self.__scheduleNext(s, evType, min(30, minutes)*60*0.7)
 
             # if minutes < 240:
@@ -312,8 +316,8 @@ class SinaCrawler(MarketCrawler):
 
             size, lines = self.marketState.sizesOf(s, evType)
             if size >0:
-                lines = 0
-            lines +=10
+                lines -= size
+            lines = (lines+10) if lines >0 else 10
 
             httperr, result = self.GET_RecentKLines(s, minutes, lines, urlProxy)
             if 200 != httperr:
@@ -393,7 +397,7 @@ class SinaCrawler(MarketCrawler):
         if 'SH000' in s or 'SZ399' in s:
             return cBusy
 
-        if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC):
+        if self._stepAsOf < (self.__BEGIN_OF_TODAY - OFFHOUR_ERROR_SEC) or self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC*2):
             return cBusy # well off-trade hours
 
         urlProxy = self.__urlProxy if self._stepAsOf < self.__stampOfNext('all', 'MF_yield456') else None
@@ -406,12 +410,15 @@ class SinaCrawler(MarketCrawler):
 
             stampStart = stampNow
             minutes = SinaCrawler.INTV_MINs_OF_EVENTS[evType]
+            if (minutes < (OFFHOUR_ERROR_SEC/60) and self._stepAsOf > (self.__END_OF_TODAY + OFFHOUR_ERROR_SEC)):
+                continue # skip polling in-day KLs shorter after hours
+
             self.__scheduleNext(s, evType, min(30, minutes)*60*0.7)
 
             size, lines = self.marketState.sizesOf(s, evType)
             if size >0:
-                lines = 0
-            lines +=10
+                lines -= size
+            lines = (lines+10) if lines >0 else 10
 
             httperr, result = self.GET_MoneyFlow(s, lines, EVENT_MONEYFLOW_1MIN== evType)
             if 200 != httperr:

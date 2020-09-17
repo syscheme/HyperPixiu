@@ -6,7 +6,7 @@
     },
 
     "trader": { // a trader operating an account by depending on advisor and marketEvents
-        "objectives": ["SH510050"],
+        "objectives": ["SZ000001"], // ["SH510050"],
 
         "backTest":{
             "startBalance": 100000,
@@ -16,7 +16,7 @@
             // "endDate"  : "2019-06-30",
             // "startDate": "2013-01-01",
             // "endDate"  : "2015-12-31",
-            // "ideal": "T+1",
+            "ideal": "SinaFP", // "SinaFP", "SinaT+1", // "T+1",
         }
     },
 
@@ -40,7 +40,8 @@
 
     "marketEvents": { // the source of market events
         // "source": "sina", // as a crawler to get alive event from SINA
-        "source": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
+        "source": "/mnt/e/AShareSample/ETF/", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
+        // "source": "/mnt/d/workspace.t3600/HyperPixiu/out/tcsvMerger/SZ002008_*.tcsv*", 
         "exchange" : "AShare", // optional for trader, which take that of account normally
     },
 

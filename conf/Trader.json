@@ -6,17 +6,18 @@
     },
 
     "trader": { // a trader operating an account by depending on advisor and marketEvents
-        "objectives": ["SH510050"],
+        "objectives": ["SH600837"], // ["SH510050"],
 
         "backTest":{
             "startBalance": 100000,
             "episodes": 1,
-            "warmupDays": 60,
+            "warmupDays": 10,
             // "startDate": "2017-01-01",
             // "endDate"  : "2019-06-30",
             // "startDate": "2013-01-01",
             // "endDate"  : "2015-12-31",
-            // "ideal": "T+1",
+            "ideal": "T+1",
+            // "ideal": "FuturePrice",
         }
     },
 
@@ -35,12 +36,12 @@
         "type": "redis", // "dnn.S1548I4A3",
         "brainId" : "Cnn1Dx4R2", // "ResNet21", "Cnn1Dx4R2",
         // "processor" : "cpu",
-        "objectives": ["SH510050","SH510500","SZ159949"],
+        "objectives": ["SH600837", "SH603993", "SH510050","SH510500","SZ159949"],
     },
 
     "marketEvents": { // the source of market events
         // "source": "sina", // as a crawler to get alive event from SINA
-        "source": "/mnt/e/AShareSample/ETF", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
+        "source": "/mnt/e/AShareSample/SH600837_evmd_20200905Z.tcsv",  // "/mnt/e/AShareSample/advmd_20200905Z.tar.bz2", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
         "exchange" : "AShare", // optional for trader, which take that of account normally
     },
 

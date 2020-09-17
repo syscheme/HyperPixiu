@@ -709,7 +709,7 @@ class PerspectiveState(MarketState):
 
     #     return [0.0] * PerspectiveState.__dummy.fullFloatSize
 
-    def exportFloatsD4(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+    def export4C(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
         '''
         @param d4wished to specify number of most recent 4-float of the event category to export
         @return an array_like data as float4C
@@ -727,7 +727,7 @@ class PerspectiveState(MarketState):
         
     #     return [0.0]
 
-    def export2D6C(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+    def export6C(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
 
         if symbol and symbol in self.__dictPerspective.keys():
             return self.__dictPerspective[symbol].float2D6C(d4wished)

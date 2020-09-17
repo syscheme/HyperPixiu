@@ -6,7 +6,10 @@ from EventData import *
 from Application import MetaObj
 from datetime import datetime, timedelta
 from collections import OrderedDict
+
 import math
+import numpy as np
+from PIL import Image
 
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 EXPORT_FLOATS_DIMS = 4 # take the minimal dim=4
@@ -705,13 +708,13 @@ class MarketState(MetaObj):
             EVENT_KLINE_1DAY : 260,
         })
 
-        ret = self.exportFloatsD4(symbol, d4wished=F4SECHMA_1548)
+        ret = self.export4C(symbol, d4wished=F4SECHMA_1548)
         if not ret: return [0.0] * 1548
 
         if isinstance(ret, list) and 1548 ==len(ret):
             return ret
 
-        raise ValueError('exportFloatsD4() unexpected ret')
+        raise ValueError('export4C() unexpected ret')
 
     '''
     import math
@@ -739,9 +742,9 @@ class MarketState(MetaObj):
         ret.append((x+7, y+7))
         print('%s=%d ^2 +%d@(%d, %d)' % (i, a, b, x, y))
 
-    print('COORDS_16x16=%s' % ret)
+    print('COORDS_Snail16x16=%s' % ret)
     '''
-    COORDS_16x16=[(0, 0), (8, 7), (8, 8), (7, 8), (6, 8), (6, 7), (6, 6), (7, 6), (8, 6), (9, 6), (9, 7), (9, 8), (9, 9), (8, 9), (7, 9), (6, 9),
+    COORDS_Snail16x16=[(0, 0), (8, 7), (8, 8), (7, 8), (6, 8), (6, 7), (6, 6), (7, 6), (8, 6), (9, 6), (9, 7), (9, 8), (9, 9), (8, 9), (7, 9), (6, 9),
                 (5, 9), (5, 8), (5, 7), (5, 6), (5, 5), (6, 5), (7, 5), (8, 5), (9, 5), (10, 5), (10, 6), (10, 7), (10, 8), (10, 9), (10, 10), (9, 10),
                 (8, 10), (7, 10), (6, 10), (5, 10), (4, 10), (4, 9), (4, 8), (4, 7), (4, 6), (4, 5), (4, 4), (5, 4), (6, 4), (7, 4), (8, 4), (9, 4),
                 (10, 4), (11, 4), (11, 5), (11, 6), (11, 7), (11, 8), (11, 9), (11, 10), (11, 11), (10, 11), (9, 11), (8, 11), (7, 11), (6, 11), (5, 11), (4, 11),
@@ -768,32 +771,38 @@ class MarketState(MetaObj):
             EVENT_MONEYFLOW_1MIN : 240,
         })
 
-        ret = self.export2D6C(symbol, d4wished=C6SECHMA_16x16x4)
+        seq6C = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
+        if not seq6C: return None
 
-        DIRS=[(1, 0), ()]
-
-        # TODO: draw the image
-        img = [ [[0.0]*6] *16] *16
+        # TODO: draw the imagex
+        img6C = [ [ [0.0 for k in range(6)] for x in range(16)] for y in range(16)] # DONOT take [ [[0.0]*6] *16] *16
         for i in range(240):
-            x, y = COORDS_16x16[i]
-            img[x][y] = ret[i]
+            x, y = MarketState.COORDS_Snail16x16[i]
+            img6C[y][x] = seq6C[i]
 
-        return img
+        return self.covertImg6CTo3C(img6C) # return img6C
+
+    bmpSeq=0
 
     def covertImg6CTo3C(self, img6C) :
-        lenR = len(img6C[0])
-        img3C = [ [[0.0]*6] *lenR*2] *len(img6C)
-        for i in range(len(img6C)):
-            for j in range(lenR) :
-                img3C[i][j] = img6C[i][j][:3]
-                img3C[i][lenR + j] = img6C[i][j][3:]
-                
+        lenX = len(img6C[0])
+        lenY = len(img6C)
+        img3C = [ [ [0.0 for k in range(3)] for x in range(lenX*2)] for y in range(lenY) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
+        for y in range(lenY):
+            for x in range(lenX) :
+                img3C[y][2*x], img3C[y][lenX + x] = img6C[y][x][:3], img6C[y][x][3:]
+                # img3C[y][2*x], img3C[y][2*x +1] = img6C[y][x][:3], img6C[y][x][3:]
+
+        imgarray = np.uint8(np.array(img3C)*255)
+        bmp = Image.fromarray(imgarray)
+        bmp.convert('RGB')
+        bmp.save('/mnt/e/bmp/test_%06d.png' % MarketState.bmpSeq)
+        MarketState.bmpSeq +=1
+
         return img3C
 
-
-
     @abstractmethod
-    def exportFloatsD4(self, symbol, d4wished= OrderedDict({ 'asof':1, EVENT_KLINE_1DAY:20 }) ) :
+    def export4C(self, symbol, d4wished= OrderedDict({ 'asof':1, EVENT_KLINE_1DAY:20 }) ) :
         '''
         @param d4wished OrderedDict to specify number of most recent 4-float of the event category to export
         @return an array_like floats
@@ -801,7 +810,7 @@ class MarketState(MetaObj):
         raise NotImplementedError
 
     @abstractmethod
-    def export2D6C(self, symbol=None) :
+    def export6C(self, symbol=None) :
         raise NotImplementedError
 
     # @abstractmethod

@@ -201,6 +201,7 @@ class BackTestApp(MetaTrader):
         
         # step 3.2 subscribe the market events
         self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
+        self.subscribeEvents([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY])
 
         self.resetEpisode()
         _quitEpisode = False
@@ -944,6 +945,7 @@ class OnlineSimulator(MetaTrader):
         self.subscribeEvents([Account.EVENT_ORDER, Account.EVENT_TRADE])
 
         self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
+        self.subscribeEvents([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY])
 
         self.info('doAppInit() done, obj-in-program: %s' % (self._program.listByType(MetaObj)))
         return True
@@ -1941,7 +1943,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         action[ADVICE_DIRECTIONS.index(dirToExec)] =1
         self._mstate = self._marketState.exportF1548(self._tradeSymbol)
-        #self._mstate = self._marketState.exportImg6C16x16x4(self._tradeSymbol)
+        self._mstate = self._marketState.exportImg6C16x16x4(self._tradeSymbol)
 
         if not self._mstate: return
         # if bFullState:

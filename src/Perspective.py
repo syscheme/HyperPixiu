@@ -20,7 +20,7 @@ EVENT_Perspective  = MARKETDATE_EVENT_PREFIX + 'Persp'   # 错误回报事件
 DEFAULT_KLDEPTH_TICK = 0
 # DEFAULT_KLDEPTH_TICK = 120
 DEFAULT_KLDEPTH_1min = 30
-DEFAULT_KLDEPTH_5min = 96
+DEFAULT_KLDEPTH_5min = 240 # 96
 DEFAULT_KLDEPTH_1day = 260
 
 EXPORT_SIGNATURE= '%dT%dM%dF%dD.%s:200109T17' % (DEFAULT_KLDEPTH_TICK, DEFAULT_KLDEPTH_1min, DEFAULT_KLDEPTH_5min, DEFAULT_KLDEPTH_1day, NORMALIZE_ID)
@@ -146,6 +146,9 @@ class Perspective(MarketData):
             EVENT_KLINE_1MIN: 60*4,
             EVENT_KLINE_5MIN: 12*4,
             EVENT_KLINE_1DAY: 1,
+            EVENT_MONEYFLOW_1MIN: 60*4,
+            EVENT_MONEYFLOW_5MIN: 12*4,
+            EVENT_MONEYFLOW_1DAY: 1,
         }
 
         self.__overview = {
@@ -709,7 +712,7 @@ class PerspectiveState(MarketState):
 
     #     return [0.0] * PerspectiveState.__dummy.fullFloatSize
 
-    def exportFloatsD4(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+    def export4C(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
         '''
         @param d4wished to specify number of most recent 4-float of the event category to export
         @return an array_like data as float4C
@@ -727,7 +730,7 @@ class PerspectiveState(MarketState):
         
     #     return [0.0]
 
-    def export2D6C(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+    def export6C(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
 
         if symbol and symbol in self.__dictPerspective.keys():
             return self.__dictPerspective[symbol].float2D6C(d4wished)

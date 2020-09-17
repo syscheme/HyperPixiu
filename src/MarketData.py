@@ -6,7 +6,10 @@ from EventData import *
 from Application import MetaObj
 from datetime import datetime, timedelta
 from collections import OrderedDict
+
 import math
+import numpy as np
+from PIL import Image
 
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 EXPORT_FLOATS_DIMS = 4 # take the minimal dim=4
@@ -18,9 +21,10 @@ def floatNormalize(v):
     if v <0: return 0.0
     return v if v<1.0 else 1.0
 
-def floatNormalize_LOG10(v, base=1.0):
+def floatNormalize_LOG10(v, base=1.0, scale=1.0):
     v = float(v/base)
-    v = math.log(v) / BASE_LOG10x2 +0.5 # 0.1x lead to 0 and 10x lead to 1
+    if v < 0.0001 : return 0.0
+    v = math.log(v) / BASE_LOG10x2 *scale +0.5 # 0.1x lead to 0 and 10x lead to 1
     return floatNormalize(v)
 
 def floatNormalize_PriceChange(newPrice, basePrice=1.0):
@@ -368,11 +372,11 @@ class KLineData(MarketData):
 
         # the 6-dims floats
         ret = [
-            floatNormalize_LOG10(self.close, baseline_Price),
-            floatNormalize(5*(self.high / self.close -1)),
-            floatNormalize(5*(self.close / self.low -1)),
-            floatNormalize_LOG10(self.volume, baseline_Volume),
-            floatNormalize(5*(self.open / self.close -1) +0.5),
+            floatNormalize_LOG10(self.close, baseline_Price, 1.5),
+            floatNormalize(20*(self.high / self.close -1)),
+            floatNormalize(20*(self.close / self.low -1)),
+            floatNormalize_LOG10(self.volume, baseline_Volume, 1.5),
+            floatNormalize(20*(self.open / self.close -1) +0.5),
             0.0
         ]
 
@@ -426,7 +430,7 @@ class MoneyflowData(MarketData):
         ev.setData(md)
         return ev
 
-    def toFloats(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def floatXC(self, baseline_Price=1.0, baseline_Volume =1.0, channel=4) :
         '''
         @return float[] for neural network computing
         '''
@@ -435,31 +439,32 @@ class MoneyflowData(MarketData):
 
         # the floats, prioirty first
         ret = [
-            floatNormalize_LOG10(self.netamount, baseline_Price*baseline_Volume), # priority-H1, TODO: indeed the ratio of turnover would be more worthy here. It supposed can be calculated from netamount, ratioNet and netMarketCap
-            FUNC_floatNormalize(self.ratioNet,    1.0),                          # priority-H2
-            FUNC_floatNormalize(self.ratioR0,     1.0),                          # priority-H3
-            FUNC_floatNormalize(self.ratioR3cate, 1.0),                          # likely r3=ratioNet-ratioR0
-            floatNormalize_LOG10(self.price,     baseline_Price), # optional because usually this has been presented via KLine/Ticks
+            floatNormalize_LOG10(baseline_Price*baseline_Volume, abs(self.netamount)), # priority-H1, TODO: indeed the ratio of turnover would be more worthy here. It supposed can be calculated from netamount, ratioNet and netMarketCap
+            floatNormalize(0.5 + self.ratioNet),                          # priority-H2
+            floatNormalize(0.5 + self.ratioR0),                          # priority-H3
+            floatNormalize(0.5 + self.ratioR3cate),                          # likely r3=ratioNet-ratioR0
+            floatNormalize_LOG10(self.price, baseline_Price), # optional because usually this has been presented via KLine/Ticks
         ]
-
         #TODO: other optional dims
-        return ret
+
+        channel = int(channel)
+        if channel <= 0: return ret
+
+        return ret[:channel] if len(ret) >= channel else ret +[0.0]* (channel-len(ret))
 
     @abstractmethod
     def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim =4 for neural network computing
         '''
-        ret = self.toFloats(baseline_Price, baseline_Volume)
-        return ret[:4] if len(ret) >= 4 else ret +[0.0]* (4-len(ret))
+        return self.floatXC(baseline_Price, baseline_Volume, 4)
 
     @abstractmethod
     def float6C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim =6 for neural network computing
         '''
-        ret = self.toFloats(baseline_Price, baseline_Volume)
-        return ret[:4] if len(ret) >= 4 else ret +[0.0]* (4-len(ret))
+        return self.floatXC(baseline_Price, baseline_Volume, 6)
 
 ########################################################################
 class TickToKLineMerger(object):
@@ -705,13 +710,13 @@ class MarketState(MetaObj):
             EVENT_KLINE_1DAY : 260,
         })
 
-        ret = self.exportFloatsD4(symbol, d4wished=F4SECHMA_1548)
+        ret = self.export4C(symbol, d4wished=F4SECHMA_1548)
         if not ret: return [0.0] * 1548
 
         if isinstance(ret, list) and 1548 ==len(ret):
             return ret
 
-        raise ValueError('exportFloatsD4() unexpected ret')
+        raise ValueError('export4C() unexpected ret')
 
     '''
     import math
@@ -739,9 +744,9 @@ class MarketState(MetaObj):
         ret.append((x+7, y+7))
         print('%s=%d ^2 +%d@(%d, %d)' % (i, a, b, x, y))
 
-    print('COORDS_16x16=%s' % ret)
+    print('COORDS_Snail16x16=%s' % ret)
     '''
-    COORDS_16x16=[(0, 0), (8, 7), (8, 8), (7, 8), (6, 8), (6, 7), (6, 6), (7, 6), (8, 6), (9, 6), (9, 7), (9, 8), (9, 9), (8, 9), (7, 9), (6, 9),
+    COORDS_Snail16x16=[(7, 7), (8, 7), (8, 8), (7, 8), (6, 8), (6, 7), (6, 6), (7, 6), (8, 6), (9, 6), (9, 7), (9, 8), (9, 9), (8, 9), (7, 9), (6, 9),
                 (5, 9), (5, 8), (5, 7), (5, 6), (5, 5), (6, 5), (7, 5), (8, 5), (9, 5), (10, 5), (10, 6), (10, 7), (10, 8), (10, 9), (10, 10), (9, 10),
                 (8, 10), (7, 10), (6, 10), (5, 10), (4, 10), (4, 9), (4, 8), (4, 7), (4, 6), (4, 5), (4, 4), (5, 4), (6, 4), (7, 4), (8, 4), (9, 4),
                 (10, 4), (11, 4), (11, 5), (11, 6), (11, 7), (11, 8), (11, 9), (11, 10), (11, 11), (10, 11), (9, 11), (8, 11), (7, 11), (6, 11), (5, 11), (4, 11),
@@ -757,43 +762,111 @@ class MarketState(MetaObj):
                 (0, 2), (0, 1), (0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 0), (7, 0), (8, 0), (9, 0), (10, 0), (11, 0), (12, 0), (13, 0),
                 (14, 0), (15, 0), (15, 1), (15, 2), (15, 3), (15, 4), (15, 5), (15, 6), (15, 7), (15, 8), (15, 9), (15, 10), (15, 11), (15, 12), (15, 13), (15, 14),
                 (15, 15), (14, 15), (13, 15), (12, 15), (11, 15), (10, 15), (9, 15), (8, 15), (7, 15), (6, 15), (5, 15), (4, 15), (3, 15), (2, 15), (1, 15), (0, 15)]
+    
+    BMP_COLOR_BG_FLOAT=1.0
 
     def exportImg6C16x16x4(self, symbol=None) :
 
         C6SECHMA_16x16x4 = OrderedDict({
             'asof'               : 1,
-            EVENT_KLINE_1MIN     : 240,
+            EVENT_KLINE_1MIN     : 16,
             EVENT_KLINE_5MIN     : 240,
-            EVENT_KLINE_1DAY     : 256,
-            EVENT_MONEYFLOW_1MIN : 240,
+            EVENT_KLINE_1DAY     : 255,
+            EVENT_MONEYFLOW_1MIN : 16,
+            EVENT_MONEYFLOW_5MIN : 48*4, # 4days
+            EVENT_MONEYFLOW_1DAY : 48, # 48days
         })
 
-        ret = self.export2D6C(symbol, d4wished=C6SECHMA_16x16x4)
+        seq6C = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
+        if not seq6C: return None
 
-        DIRS=[(1, 0), ()]
+        # TODO: draw the imagex
+        img6C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(3*16)] # DONOT take [ [[0.0]*6] *16] *16
+        # for i in range(240):
+        #     x, y = MarketState.COORDS_Snail16x16[i]
+        #     img6C[y][x] = seq6C[1 + i]
 
-        # TODO: draw the image
-        img = [ [[0.0]*6] *16] *16
-        for i in range(240):
-            x, y = COORDS_16x16[i]
-            img[x][y] = ret[i]
+        # for i in range(240):
+        #     x, y = MarketState.COORDS_Snail16x16[i]
+        #     img6C[16+y][x] = seq6C[1 +240 + i]
+        
+        # parition 0: the central 4x4 is KL1min up to 16min, the outter are 240KL5min up to a week
+        partition =0
+        seq6C_offset =1
+        for i in range(16): 
+             x, y = MarketState.COORDS_Snail16x16[i]
+             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+        
+        for i in range(16, 16 +240): 
+             x, y = MarketState.COORDS_Snail16x16[i]
+             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
 
-        return img
+        # parition 1: the central 1x1 is current datetime, the outter are 255KL1d covers a year
+        partition +=1
+        x, y = MarketState.COORDS_Snail16x16[0]
+        img6C[partition*16 + y][x] = seq6C[0]
+
+        seq6C_offset =C6SECHMA_16x16x4['asof'] + C6SECHMA_16x16x4[EVENT_KLINE_1MIN] + C6SECHMA_16x16x4[EVENT_KLINE_5MIN]
+        for i in range(1, 1+C6SECHMA_16x16x4[EVENT_KLINE_1DAY]): 
+             x, y = MarketState.COORDS_Snail16x16[i]
+             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        # parition 2 MF: the central 4x4 MF1m, the outter: 48*4MF5m cover 4days, 48 MF1d cover 48days
+        partition +=1
+        x, y = MarketState.COORDS_Snail16x16[0]
+        img6C[partition*16 + y][x] = seq6C[0]
+
+        seq6C_offset =C6SECHMA_16x16x4['asof'] + C6SECHMA_16x16x4[EVENT_KLINE_1MIN] + C6SECHMA_16x16x4[EVENT_KLINE_5MIN] + C6SECHMA_16x16x4[EVENT_KLINE_1DAY] # pointer to where EVENT_MONEYFLOW_1MIN is
+        snail_loc = 0
+        for i in range(C6SECHMA_16x16x4[EVENT_MONEYFLOW_1MIN]): 
+             x, y = MarketState.COORDS_Snail16x16[snail_loc + i]
+             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        snail_loc += C6SECHMA_16x16x4[EVENT_MONEYFLOW_1MIN]
+        for i in range(C6SECHMA_16x16x4[EVENT_MONEYFLOW_5MIN]): 
+             x, y = MarketState.COORDS_Snail16x16[snail_loc + i]
+             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        snail_loc += C6SECHMA_16x16x4[EVENT_MONEYFLOW_5MIN]
+        for i in range(C6SECHMA_16x16x4[EVENT_MONEYFLOW_1DAY]): 
+             x, y = MarketState.COORDS_Snail16x16[snail_loc + i]
+             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        return self.covertImg6CTo3C(img6C) # return img6C
+
+    bmpSeq=0
+    outputSeq=0
 
     def covertImg6CTo3C(self, img6C) :
-        lenR = len(img6C[0])
-        img3C = [ [[0.0]*6] *lenR*2] *len(img6C)
-        for i in range(len(img6C)):
-            for j in range(lenR) :
-                img3C[i][j] = img6C[i][j][:3]
-                img3C[i][lenR + j] = img6C[i][j][3:]
-                
+        lenX = len(img6C[0])
+        lenY = len(img6C)
+        img3C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX*2)] for y in range(lenY) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
+        for y in range(lenY):
+            for x in range(lenX) :
+                # img3C[y][x], img3C[y][lenX + x] = img6C[y][x][:3], img6C[y][x][3:]
+                img3C[y][2*x], img3C[y][2*x +1] = img6C[y][x][:3], img6C[y][x][3:]
+
+        MarketState.bmpSeq +=1
+        width = 320
+        if 0 == MarketState.bmpSeq % 60:
+            imgarray = np.uint8(np.array(img3C)*255)
+            bmp = Image.fromarray(imgarray)
+            if width > lenX:
+                bmp = bmp.resize((width, int(width *1.0/lenX/2 *lenY)), Image.NEAREST)
+            # bmp.convert('RGB')
+            bmp.save('/mnt/e/bmp/test_%06d.png' % int(MarketState.outputSeq))
+            MarketState.outputSeq +=1
+
         return img3C
 
-
-
     @abstractmethod
-    def exportFloatsD4(self, symbol, d4wished= OrderedDict({ 'asof':1, EVENT_KLINE_1DAY:20 }) ) :
+    def export4C(self, symbol, d4wished= OrderedDict({ 'asof':1, EVENT_KLINE_1DAY:20 }) ) :
         '''
         @param d4wished OrderedDict to specify number of most recent 4-float of the event category to export
         @return an array_like floats
@@ -801,7 +874,7 @@ class MarketState(MetaObj):
         raise NotImplementedError
 
     @abstractmethod
-    def export2D6C(self, symbol=None) :
+    def export6C(self, symbol=None) :
         raise NotImplementedError
 
     # @abstractmethod

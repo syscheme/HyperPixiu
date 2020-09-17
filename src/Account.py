@@ -7,7 +7,7 @@ from __future__ import division
 
 from EventData    import EventData, EVENT_SYS_CLOCK, EVENT_NAME_PREFIX, datetime2float
 from Application  import BaseApplication
-from MarketData  import MarketState, PRICE_DISPLAY_ROUND_DECIMALS
+from MarketData   import MarketState, PRICE_DISPLAY_ROUND_DECIMALS
 import HistoryData  as hist
 
 from abc import ABCMeta, abstractmethod

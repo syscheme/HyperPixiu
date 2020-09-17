@@ -23,6 +23,7 @@ def floatNormalize(v):
 
 def floatNormalize_LOG10(v, base=1.0, scale=1.0):
     v = float(v/base)
+    if v < 0.0001 : return 0.0
     v = math.log(v) / BASE_LOG10x2 *scale +0.5 # 0.1x lead to 0 and 10x lead to 1
     return floatNormalize(v)
 

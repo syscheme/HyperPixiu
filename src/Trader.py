@@ -193,7 +193,8 @@ class BaseTrader(MetaTrader):
         
         # step 3.2 subscribe the account and market events
         self.subscribeEvents([Account.EVENT_ORDER,Account.EVENT_TRADE])
-        self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN]) # ,EVENT_KLINE_5MIN,EVENT_KLINE_1DAY]
+        self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_MONEYFLOW_1MIN])
+        self.subscribeEvents([EVENT_KLINE_5MIN, EVENT_KLINE_1DAY, EVENT_MONEYFLOW_1DAY])
 
         if self._recorder :
             self._recorder.registerCategory(Account.RECCATE_ORDER,       params= {'columns' : OrderData.COLUMNS})
@@ -233,8 +234,7 @@ class BaseTrader(MetaTrader):
             symbol = tokens[0]
             ds = tokens[1] if len(tokens) >1 else d.exchange
 
-            if self._marketState:
-                self._marketState.updateByEvent(ev)
+            if self._marketState and self._marketState.updateByEvent(ev) :
                 self.debug('updated marketState by ev[%s]-> %s' % (ev.desc, self._marketState.descOf(symbol)))
 
             if not symbol in self._dictObjectives.keys() : # or ds != self._dictObjectives[symbol]['ds1min']:

@@ -774,7 +774,7 @@ class TaggedCsvStream(Playback):
             if ev: return ev
         except Exception:
             pass
-        None
+
         row, ev = None, None
         while not row:
             if not self.__strmFileIn:
@@ -891,8 +891,9 @@ class TaggedCsvPlayback(Playback):
 
             dtStart, dtEnd = self.datetimeRange
             self._strmTcsv = TaggedCsvStream(strm, startDate =dtStart, endDate=dtEnd, program=self.program)
-            for cat, v in self._dictCategory.items():
-                self.registerConverter(cat, **v)
+            if self._strmTcsv :
+                for cat, v in self._dictCategory.items():
+                    self._strmTcsv.registerConverter(cat, **v)
 
         return self._strmTcsv
 

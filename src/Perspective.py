@@ -146,6 +146,9 @@ class Perspective(MarketData):
             EVENT_KLINE_1MIN: 60*4,
             EVENT_KLINE_5MIN: 12*4,
             EVENT_KLINE_1DAY: 1,
+            EVENT_MONEYFLOW_1MIN: 60*4,
+            EVENT_MONEYFLOW_5MIN: 12*4,
+            EVENT_MONEYFLOW_1DAY: 1,
         }
 
         self.__overview = {

@@ -637,6 +637,7 @@ class MarketState(MetaObj):
         '''Constructor'''
         super(MarketState, self).__init__()
         self._exchange = exchange
+        self.__bmpstamp = None
     
     @property
     def exchange(self) : return self._exchange
@@ -718,6 +719,93 @@ class MarketState(MetaObj):
 
         raise ValueError('export4C() unexpected ret')
 
+    def exportImg6C_3Liner16x32R(self, symbol=None) :
+
+        C6SECHMA_16x32R = OrderedDict({
+            'asof'               : 1,
+            EVENT_KLINE_1MIN     : 32,
+            EVENT_KLINE_5MIN     : 240,
+            EVENT_KLINE_1DAY     : 240,
+        })
+
+        seq6C = self.export6Cx(symbol, d4wished=C6SECHMA_16x32R)  # = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
+        if not seq6C: return None
+
+        # TODO: draw the imagex
+        img6C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(32)] # DONOT take [ [[0.0]*6] *16] *16
+
+        # parition 0: pixel[0,0] as the datetime, 16*2-1 KL1min to cover half an hour
+        startRow =0
+        img6C[0][0] = seq6C[0]
+        seq6C_offset =C6SECHMA_16x32R['asof']
+        for i in range(1, 16*2): 
+             x, y = int(i %16), int(i /16)
+             img6C[startRow + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+        
+        # parition 1: 16*15 KL5min to cover a week
+        startRow =2
+        seq6C_offset =C6SECHMA_16x32R['asof'] + C6SECHMA_16x32R[EVENT_KLINE_1MIN]
+        for i in range(0, 16*15): 
+             x, y = int(i %16), int(i /16)
+             img6C[startRow + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        # parition 3: 16*15 KL1day to cover near a year
+        startRow +=15
+        seq6C_offset =C6SECHMA_16x32R['asof'] + C6SECHMA_16x32R[EVENT_KLINE_1MIN] + C6SECHMA_16x32R[EVENT_KLINE_5MIN]
+        for i in range(0, 16*15): 
+             x, y = int(i %16), int(i /16)
+             img6C[startRow + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        return self.covertImg6CTo3C(img6C) # return img6C
+
+    def exportImg6C_3Liner16x32(self, symbol=None) :
+
+        C6SECHMA_16x16x4 = OrderedDict({
+            'asof'               : 1,
+            EVENT_KLINE_1MIN     : 32,
+            EVENT_KLINE_5MIN     : 240,
+            EVENT_KLINE_1DAY     : 240,
+            EVENT_MONEYFLOW_1MIN : 16,
+            EVENT_MONEYFLOW_5MIN : 48*4, # 4days
+            EVENT_MONEYFLOW_1DAY : 48, # 48days
+        })
+
+        seq6C = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
+        if not seq6C: return None
+
+        # TODO: draw the imagex
+        img6C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(32)] # DONOT take [ [[0.0]*6] *16] *16
+
+        # parition 0: pixel[0,0] as the datetime, 16*2-1 KL1min to cover half an hour
+        startRow =0
+        img6C[0][0] = seq6C[0]
+        seq6C_offset =C6SECHMA_16x16x4['asof']
+        for i in range(1, 16*2): 
+             x, y = int(i %16), int(i /16)
+             img6C[startRow + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+        
+        # parition 1: 16*15 KL5min to cover a week
+        startRow =2
+        seq6C_offset =C6SECHMA_16x16x4['asof'] + C6SECHMA_16x16x4[EVENT_KLINE_1MIN]
+        for i in range(0, 16*15): 
+             x, y = int(i %16), int(i /16)
+             img6C[startRow + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        # parition 3: 16*15 KL1day to cover near a year
+        startRow +=15
+        seq6C_offset =C6SECHMA_16x16x4['asof'] + C6SECHMA_16x16x4[EVENT_KLINE_1MIN] + C6SECHMA_16x16x4[EVENT_KLINE_5MIN]
+        for i in range(0, 16*15): 
+             x, y = int(i %16), int(i /16)
+             img6C[startRow + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        return self.covertImg6CTo3C(img6C) # return img6C
+
     '''
     import math
     for i in range(16*16):
@@ -765,7 +853,7 @@ class MarketState(MetaObj):
     
     BMP_COLOR_BG_FLOAT=1.0
 
-    def exportImg6C16x16x4(self, symbol=None) :
+    def exportImg6C_3Snail16x16(self, symbol=None) :
 
         C6SECHMA_16x16x4 = OrderedDict({
             'asof'               : 1,
@@ -840,9 +928,6 @@ class MarketState(MetaObj):
 
         return self.covertImg6CTo3C(img6C) # return img6C
 
-    bmpSeq=0
-    outputSeq=0
-
     def covertImg6CTo3C(self, img6C) :
         lenX = len(img6C[0])
         lenY = len(img6C)
@@ -852,29 +937,35 @@ class MarketState(MetaObj):
                 # img3C[y][x], img3C[y][lenX + x] = img6C[y][x][:3], img6C[y][x][3:]
                 img3C[y][2*x], img3C[y][2*x +1] = img6C[y][x][:3], img6C[y][x][3:]
 
-        MarketState.bmpSeq +=1
+        ftime = img6C[0][0]
+        mon, day, minute = int(ftime[0] * 12), int(ftime[1] * 31), int(ftime[3] * 24*60)
+        bmpstamp = '%02d%02dT%03d' % (mon, day, minute)
         width = 320
-        if 0 == MarketState.bmpSeq % 60:
+        if  bmpstamp != self.__bmpstamp  and 0 == minute % 60 :
             imgarray = np.uint8(np.array(img3C)*255)
             bmp = Image.fromarray(imgarray)
             if width > lenX:
                 bmp = bmp.resize((width, int(width *1.0/lenX/2 *lenY)), Image.NEAREST)
             # bmp.convert('RGB')
-            bmp.save('/mnt/e/bmp/test_%06d.png' % int(MarketState.outputSeq))
-            MarketState.outputSeq +=1
+            bmp.save('/mnt/e/bmp/test_%s.png' % bmpstamp)
+            self.__bmpstamp = bmpstamp
 
         return img3C
 
     @abstractmethod
     def export4C(self, symbol, d4wished= OrderedDict({ 'asof':1, EVENT_KLINE_1DAY:20 }) ) :
         '''
-        @param d4wished OrderedDict to specify number of most recent 4-float of the event category to export
+        @param d4wished OrderedDict to specify number of mosxt recent 4-float of the event category to export
         @return an array_like floats
         '''
         raise NotImplementedError
 
     @abstractmethod
-    def export6C(self, symbol=None) :
+    def export6C(self, symbol, d4wished) :
+        raise NotImplementedError
+
+    @abstractmethod
+    def export6Cx(self, symbol) :
         raise NotImplementedError
 
     # @abstractmethod

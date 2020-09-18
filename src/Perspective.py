@@ -71,7 +71,7 @@ class EvictableStack(object):
 
     @property
     def exportList(self):
-        return _exportList(self, nilFilled=True)
+        return self._exportList()
 
     @property
     def stampUpdated(self):
@@ -433,11 +433,11 @@ class Perspective(MarketData):
 
         return result
 
-    def float2D6C(self, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+    def float6C(self, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
         '''@return a 2D array of floats
         '''
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
-            return None # float2D6C not available
+            return None # float6C not available
 
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
         baseline_Price, baseline_Volume =klbaseline.close, klbaseline.volume
@@ -460,7 +460,7 @@ class Perspective(MarketData):
                 continue
 
             if not k in self.eventTypes :
-                raise ValueError('Perspective.float2D6C() unknown etype[%s]' %k )
+                raise ValueError('Perspective.float6C() unknown etype[%s]' %k )
 
             stk = self._stacks[k]
             bV = baseline_Volume
@@ -476,6 +476,61 @@ class Perspective(MarketData):
 
         return result
 
+    def __richKL6(listKL, listMF, basePrice, baseVol, minsPerDay):
+        result =[]
+        bV = baseVol /minsPerDay
+
+        for kl in listKL:
+            klf = [
+                floatNormalize_LOG10(kl.close, basePrice, 1.5),
+                floatNormalize_LOG10(kl.volume, bV, 1.5),
+                floatNormalize(minsPerDay*(kl.high / kl.close -1)),
+                floatNormalize(minsPerDay*(kl.close / kl.low -1)),
+                0.0, 0.0
+            ]
+
+            while len(listMF)>0 and listMF[0].asof < kl.asof:
+                del listMF[0]
+                continue
+
+            if len(listMF)>0 and listMF[0].asof == kl.asof:
+                mf = listMF[0]
+                if minsPerDay >1:
+                    klf[4],klf[5] = floatNormalize(0.5 + 10*mf.ratioNet), floatNormalize(0.5 + 10*mf.ratioR0) # in-day KLs
+                else:
+                    klf[4],klf[5] = floatNormalize(0.5 + 10*mf.ratioNet), minsPerDay*(kl.open / kl.high -1)
+            
+            result.append(klf)
+        return result
+        
+
+    def float6Cx(self) :
+        '''@return a 2D array of floats
+        '''
+        if self._stacks[EVENT_KLINE_1DAY].size <=0:
+            return None # float6C not available
+
+        klbaseline = self._stacks[EVENT_KLINE_1DAY].top
+        baseline_Price, baseline_Volume =klbaseline.close, klbaseline.volume
+
+        if baseline_Price <0.01: baseline_Price=1.0
+        if baseline_Volume <0.001: baseline_Volume=1.0
+
+        result = {
+            'asof': [
+                (self.asof.month-1) / 12.0, # normalize to [0.0,1.0]
+                self.asof.day / 31.0, # normalize to [0.0,1.0]
+                self.asof.weekday() / 7.0, # normalize to [0.0,1.0]
+                (self.asof.hour *60 +self.asof.minute) / (24 *60.0), # normalize to [0.0,1.0]
+                0.0, 0.0
+            ],
+        }
+
+        result[EVENT_KLINE_1MIN] = Perspective.__richKL6(self._stacks[EVENT_KLINE_1MIN].exportList, self._stacks[EVENT_MONEYFLOW_1MIN].exportList, baseline_Price, baseline_Volume, self.__evsPerDay[EVENT_KLINE_1MIN])
+        result[EVENT_KLINE_5MIN] = Perspective.__richKL6(self._stacks[EVENT_KLINE_5MIN].exportList, self._stacks[EVENT_MONEYFLOW_5MIN].exportList, baseline_Price, baseline_Volume, self.__evsPerDay[EVENT_KLINE_5MIN])
+        result[EVENT_KLINE_1DAY] = Perspective.__richKL6(self._stacks[EVENT_KLINE_1DAY].exportList, self._stacks[EVENT_MONEYFLOW_1DAY].exportList, baseline_Price, baseline_Volume, 1)
+
+        return result
 
     # def engorged(self, symbol=None) :
     #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data
@@ -733,6 +788,36 @@ class PerspectiveState(MarketState):
     def export6C(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
 
         if symbol and symbol in self.__dictPerspective.keys():
-            return self.__dictPerspective[symbol].float2D6C(d4wished)
+            return self.__dictPerspective[symbol].float6C(d4wished)
 
-        raise ValueError('Perspective.float2D6C() unknown symbol[%s]' %symbol )
+        raise ValueError('Perspective.export6Cx() unknown symbol[%s]' %symbol )
+
+    def export6Cx(self, symbol, d4wished) :
+        if symbol and symbol in self.__dictPerspective.keys():
+            res = self.__dictPerspective[symbol].float6Cx()
+            if not res: return None
+
+            ret =[]
+            for et in d4wished.keys():
+                sz = d4wished[et]
+                if sz <=0: continue
+                if not et in res.keys():
+                    ret += [[0.0 for i in range(6)] for j in range(sz)]
+                    continue
+
+                data = res[et]
+                if 'asof' == et:
+                    ret += [data]
+                    continue
+
+                if len(data) > sz:
+                    ret += data[:sz]
+                else:
+                    ret += data
+                    ret += [[0.0 for i in range(6)] for j in range(sz-len(data))]
+
+            return ret
+
+
+
+        raise ValueError('Perspective.export6Cx() unknown symbol[%s]' %symbol )

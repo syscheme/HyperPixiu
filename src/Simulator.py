@@ -1943,11 +1943,11 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         action[ADVICE_DIRECTIONS.index(dirToExec)] =1
         self._mstate = self._marketState.exportF1548(self._tradeSymbol)
-        self._mstate = self._marketState.exportImg6C16x16x4(self._tradeSymbol)
+        self._mstate = self._marketState.exportImg6C_3Liner16x32R(self._tradeSymbol) # self._marketState.exportImg6C_3Snail16x16(self._tradeSymbol)
 
         if not self._mstate: return
         # if bFullState:
-        self.__pushStateAction(self._mstate, action)
+        # self.__pushStateAction(self._mstate, action)
         self.debug('OnEvent(%s) performed %s upon mstate: %s' % (ev.desc, dirToExec, self._marketState.descOf(self._tradeSymbol)))
 
     def resetEpisode(self) :

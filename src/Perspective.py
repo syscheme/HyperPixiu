@@ -522,7 +522,7 @@ class Perspective(MarketData):
                 (self.asof.day -1) / 31.0, # normalize to [0.0,1.0]
                 self.asof.weekday() / 7.0, # normalize to [0.0,1.0]
                 (self.asof.hour *60 +self.asof.minute) / (24 *60.0), # normalize to [0.0,1.0]
-                int(datetime.strftime(self.asof, '%j') -1) / 366.0, # the julian day of the year
+                (int(datetime.strftime(self.asof, '%j')) -1) / 366.0, # the julian day of the year
                 0.0
             ],
         }

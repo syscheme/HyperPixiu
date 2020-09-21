@@ -76,7 +76,7 @@ fi
 
 cd ${TOPDIR_HP}
 
-TODAY="$(date +%Y%m%d)"
+TODAY="$(date +%Y%m%d)E"
 
 if [ -d ${BAKDIR} ]; then
     cd ${BAKDIR}
@@ -91,7 +91,7 @@ else
     BAKDIR=""
     BAKLIST="$(ls advisor.BAK*.bz2 | sort -r)"
     for f in ${BAKLIST}; do
-        TODAY="$(echo ${f}| sed 's/advisor.BAK\([0-9]*\).*.bz2/\1/g')Z"
+        TODAY="$(echo ${f}| sed 's/advisor.BAK\([0-9]*\).*.bz2/\1/g')B"
         if [ -e ${TOPDIR_HP}/out/advmd_${TODAY}.tar.bz2 ] ; then continue; fi
 
         BAKDIR="${WORKDIR}/advisor.BAK${TODAY}"
@@ -120,7 +120,7 @@ for f in ${BZFILES}; do
     bzcat ${BAKDIR}/$f > ./${f::-4}
 done
 for f in ${TCSVFILES}; do
-    ln -sf ${BAKDIR}/$f .
+    cp -vf $(realpath ${BAKDIR}/$f) .
 done
 
 ls -l advisor*.tcsv | tee filelist_adv.txt

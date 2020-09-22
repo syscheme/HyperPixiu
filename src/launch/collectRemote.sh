@@ -3,7 +3,7 @@
 #CMD=${0##*/}
 CLEAN_REMOTE=no
 REMOTE_PORT=22
-DATE_EXPIRE=$(date +%Y%m%d -d 'last sunday -2 weeks')
+DATE_EXPIRE=$(date +%Y%m%d -d 'last friday -2 weeks')
 
 if [ "-C" == "$1" ]; then 
     CLEAN_REMOTE=yes

@@ -5,7 +5,7 @@
 
 # MODEL="VGG16d1.S1548I4A3"
 MODEL="Cnn1Dx4R2.S1548I4A3"
-CONF="DQNTrainer_U16TfGpu.json"
+CONF="replayTrain_U16TfGpu.json"
 
 PROJLOC=~/wkspaces/HyperPixiu
 
@@ -16,19 +16,19 @@ if ! [ -d ./out/${MODEL} ]; then
     mkdir -vp ./out/${MODEL} ; 
 fi
 
-PID=$(ps aux|grep 'DQNTrainer.py'|grep ${CONF}|awk '{print $2;}')
+PID=$(ps aux|grep 'replayTrain.py'|grep ${CONF}|awk '{print $2;}')
 if [ -z ${PID} ]; then
      if ! [ -e conf/${CONF} ]; then
-        cp -vf conf/DQNTrainer_VGG16d1.json conf/${CONF}
+        cp -vf conf/replayTrain_VGG16d1.json conf/${CONF}
      fi
 
-    ./run.sh src/hpGym/DQNTrainer.py -f conf/${CONF} 2>&1 >/dev/null &
+    ./run.sh src/launch/replayTrain.py -f conf/${CONF} 2>&1 >/dev/null &
     sleep 1 # to wait the above command starts
-    PID=$(ps aux|grep 'DQNTrainer.py'|grep ${CONF}|awk '{print $2;}')
-    echo "started DQNTrainer with PID=${PID}"
+    PID=$(ps aux|grep 'replayTrain.py'|grep ${CONF}|awk '{print $2;}')
+    echo "started replayTrain with PID=${PID}"
 fi
 
-OUTDIR="./out/DQNTrainer_${PID}"
+OUTDIR="./out/replayTrain_${PID}"
 echo "current ${OUTDIR} before moving"
 ls -lh ${OUTDIR}
 
@@ -50,9 +50,9 @@ else
     echo "dir ${OUTDIR} after moving"
     ls -lh ${OUTDIR}
 
-    rm -vf /tmp/${MODEL}/DQNTrainer_*.log
-    cp -vf /tmp/DQNTrainer_${PID}_*.log /tmp/${MODEL}/
-    cp -vf /tmp/DQNTrainer_${PID}_*.log.*bz2 /tmp/${MODEL}/
+    rm -vf /tmp/${MODEL}/replayTrain_*.log
+    cp -vf /tmp/replayTrain_${PID}_*.log /tmp/${MODEL}/
+    cp -vf /tmp/replayTrain_${PID}_*.log.*bz2 /tmp/${MODEL}/
     
     cd /tmp/${MODEL}/
     nice tar cvfj /tmp/${MODEL}.tar.bz2~ .

@@ -954,8 +954,9 @@ class SinaMF1mToXm(object):
 
 ########################################################################
 __totalAmt10K=0
+import math
 def activityOf(item):
-    return sqrt(item['amount'] / __totalAmt10K) + item['turnoverratio']
+    return 10* math.sqrt(item['amount'] / __totalAmt1W) + item['turnoverratio']
 
 def listSymbols(program, mdSina):
     # 3869 symbols as of 2020-06-20
@@ -967,6 +968,7 @@ def listSymbols(program, mdSina):
         urlProxy= dsg.nextProxy() if thruPrxy else None
         httperr, lstSH = md.GET_AllSymbols('SH', urlProxy)
         print('SH-resp(%d) thru[%s]' %(httperr, urlProxy))
+        if 456 == httperr and urlProxy is None: sleep(30)
 
     if 2 == int(httperr/100): dsg.stampGoodProxy()
 
@@ -975,11 +977,13 @@ def listSymbols(program, mdSina):
         urlProxy= dsg.nextProxy() if thruPrxy else None
         httperr, lstSZ = md.GET_AllSymbols('SZ', urlProxy)
         print('SZ-resp(%d) thru[%s]' %(httperr, urlProxy))
-    
+        if 456 == httperr and urlProxy is None: sleep(30)
+
     for i in lstSH + lstSZ:
         result[i['symbol']] =i
     result = list(result.values())
 
+    global __totalAmt10K
     __totalAmt10K=0
     print('-'*10 + ' All %d symbols '%len(result) + '-'*10)
     HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,close,volume"

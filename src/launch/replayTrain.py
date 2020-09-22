@@ -22,7 +22,7 @@ from tensorflow.keras.models import model_from_json
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 # from tensorflow.keras import backend
 from tensorflow.keras.layers import Input, Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D, GlobalAveragePooling1D, ZeroPadding1D
-from tensorflow.keras.layers import BatchNormalization, Flatten, add
+from tensorflow.keras.layers import BatchNormalization, Flatten, add, GlobalAveragePooling2D
 from tensorflow.keras import regularizers
 from tensorflow.keras import backend as backend
 from tensorflow.keras.utils import Sequence
@@ -327,7 +327,7 @@ class ReplayTrainer(BaseApplication):
                 self.logexception(ex)
 
         #TESTCODE: 
-        # self.createModel('ResNet50d2Ext1', knownModels = self.__knownModels_2D)
+        self.createModel('ResNet50d2Ext1', knownModels = self.__knownModels_2D)
 
         if not self._brain:
             self._brain, self._wkModelId = self.createModel(self._wkModelId)
@@ -2559,7 +2559,9 @@ class ReplayTrainer(BaseApplication):
         #TODO model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
         model.add(pretrained)
         model.add(Flatten())
+        model.add(Dense(518))
         model.add(BatchNormalization())
+        model.add(Dropout(0.3))
 
         # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
         model.add(Dense(20, name='VClz512to20.1of2', activation='relu'))

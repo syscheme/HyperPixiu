@@ -992,6 +992,7 @@ def listSymbols(program, mdSina):
         urlProxy = None # urlProxy= dsg.nextProxy() if thruPrxy else None
         httperr, lstSH = md.GET_AllSymbols('SH', urlProxy)
         print('SH-resp(%d) thru[%s] len=%d' %(httperr, urlProxy, len(lstSH)))
+        if 456 == httperr and urlProxy is None: sleep(30)
 
     if 2 == int(httperr/100): dsg.stampGoodProxy()
 
@@ -1000,7 +1001,8 @@ def listSymbols(program, mdSina):
         urlProxy = None # urlProxy= dsg.nextProxy() if thruPrxy else None
         httperr, lstSZ = md.GET_AllSymbols('SZ', urlProxy)
         print('SZ-resp(%d) thru[%s] len=%d' %(httperr, urlProxy, len(lstSZ)))
-    
+        if 456 == httperr and urlProxy is None: sleep(30)
+
     for i in lstSH + lstSZ:
         result[i['symbol']] =i
     result = list(result.values())

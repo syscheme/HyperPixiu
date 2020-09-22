@@ -22,11 +22,13 @@ from tensorflow.keras.models import model_from_json
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 # from tensorflow.keras import backend
 from tensorflow.keras.layers import Input, Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D, GlobalAveragePooling1D, ZeroPadding1D
-from tensorflow.keras.layers import BatchNormalization, Flatten, add
+from tensorflow.keras.layers import BatchNormalization, Flatten, add, GlobalAveragePooling2D
 from tensorflow.keras import regularizers
 from tensorflow.keras import backend as backend
 from tensorflow.keras.utils import Sequence
 # from keras.layers.merge import add
+
+from tensorflow.keras.applications.resnet50 import ResNet50
 
 import tensorflow as tf
 
@@ -157,7 +159,7 @@ class ReplayTrainer(BaseApplication):
         self._batchesPerTrain     = self.getConfig('batchesPerTrain', 8)
         self._recycleSize         = self.getConfig('recycles', 1)
         self._initEpochs          = self.getConfig('initEpochs', 2)
-        self._lossStop            = self.getConfig('lossStop', 0.24) # 0.24 according to average loss value by： grep 'from eval' /mnt/d/tmp/DQNTrainer_14276_0106.log |sed 's/.*loss\[\([^]]*\)\].*/\1/g' | awk '{ total += $1; count++ } END { print total/count }'
+        self._lossStop            = self.getConfig('lossStop', 0.24) # 0.24 according to average loss value by： grep 'from eval' /mnt/d/tmp/replayTrain_14276_0106.log |sed 's/.*loss\[\([^]]*\)\].*/\1/g' | awk '{ total += $1; count++ } END { print total/count }'
         self._lossPctStop         = self.getConfig('lossPctStop', 5)
         self._startLR             = self.getConfig('startLR', 0.01)
         self._evaluateSamples     = self.getConfig('evaluateSamples', 'yes').lower() in BOOL_STRVAL_TRUE
@@ -225,7 +227,7 @@ class ReplayTrainer(BaseApplication):
         self.__latestBthNo=0
         self.__totalAccu, self.__totalEval, self.__totalSamples, self.__stampRound = 0.0, 0, 0, datetime.now()
 
-        self.__knownModels = {
+        self.__knownModels_1D = {
             'VGG16d1'    : self.__createModel_VGG16d1,
             'Cnn1Dx4R2'  : self.__createModel_Cnn1Dx4R2,
             'Cnn1Dx4R3'  : self.__createModel_Cnn1Dx4R3,
@@ -236,6 +238,10 @@ class ReplayTrainer(BaseApplication):
             'ResNet21R1' : self.__createModel_ResNet21R1,
             'ResNet34d1' : self.__createModel_ResNet34d1,
             'ResNet50d1' : self.__createModel_ResNet50d1,
+            }
+
+        self.__knownModels_2D = {
+            'ResNet50d2Ext1' : self.__createModel_ResNet50d2Ext1,
             }
 
         STEPMETHODS = {
@@ -319,6 +325,9 @@ class ReplayTrainer(BaseApplication):
 
             except Exception as ex:
                 self.logexception(ex)
+
+        #TESTCODE: 
+        self.createModel('ResNet50d2Ext1', knownModels = self.__knownModels_2D)
 
         if not self._brain:
             self._brain, self._wkModelId = self.createModel(self._wkModelId)
@@ -1086,16 +1095,20 @@ class ReplayTrainer(BaseApplication):
                 skippedSaves +=1
     
     #----------------------------------------------------------------------
-    def createModel(self, modelId):
-        if not modelId in self.__knownModels.keys():
+    def createModel(self, modelId, knownModels=None):
+        if not knownModels:
+            knownModels = self.__knownModels_1D
+
+        if not modelId in knownModels.keys():
             self.warn('unknown modelId[%s], taking % instead' % (modelId, ReplayTrainer.DEFAULT_MODEL))
             modelId = ReplayTrainer.DEFAULT_MODEL
 
+
         if len(GPUs) <= 1:
-            return self.__knownModels[modelId](), modelId
+            return knownModels[modelId](), modelId
 
         with tf.device("/cpu:0"):
-            return self.__knownModels[modelId](), modelId
+            return knownModels[modelId](), modelId
 
     def exportLayerWeights(self):
         h5fileName = os.path.join(self._outDir, '%s.nonTrainables.h5'% self._wkModelId)
@@ -2527,6 +2540,35 @@ class ReplayTrainer(BaseApplication):
         else:
             x = add([x, inpt])
             return x
+
+    #----------------------------------------------------------------------
+    # pretrained 2D models
+    # https://tensorflow.google.cn/api_docs/python/tf/keras/applications/ResNet50?hl=zh-cn
+    def __createModel_ResNet50d2Ext1(self):
+        
+        # pretrained = ResNet50(weights='imagenet', classes=1000)
+        # may lead to URL fetch failure on https://github.com/fchollet/deep-learning-models/releases/download/v0.2/resnet50_weights_tf_dim_ordering_tf_kernels.h5: None -- [Errno 11] Resource temporarily unavailable
+        # take the pre-downloaded offline-weights
+        pretrained = ResNet50(weights=None, classes=1000, input_shape=(32, 32, 3))
+        pretrained.load_weights('/mnt/e/AShareSample/resnet50_weights_tf_dim_ordering_tf_kernels.h5')
+
+        pretrained.trainable = False # freeze those pretrained weights
+        
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
+        model = Sequential()
+        #TODO model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
+        model.add(pretrained)
+        model.add(Flatten())
+        model.add(Dense(518))
+        model.add(BatchNormalization())
+        model.add(Dropout(0.3))
+
+        # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
+        model.add(Dense(20, name='VClz512to20.1of2', activation='relu'))
+        model.add(Dense(self._actionSize, name='VClz512to20.2of2', activation='softmax')) # this is not Q func, softmax is prefered
+        model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **ReplayTrainer.COMPILE_ARGS)
+        model.summary()
+        return model
 
 ########################################################################
 if __name__ == '__main__':

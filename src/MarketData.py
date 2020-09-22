@@ -938,10 +938,11 @@ class MarketState(MetaObj):
                 img3C[y][2*x], img3C[y][2*x +1] = img6C[y][x][:3], img6C[y][x][3:]
 
         ftime = img6C[0][0]
-        mon, day, minute = int(ftime[0] * 12), int(ftime[1] * 31), int(ftime[3] * 24*60)
+        mon, day, minute = 1+ int(ftime[0] * 12), 1+ int(ftime[1] * 31), int(ftime[3] * 24*60)
         bmpstamp = '%02d%02dT%03d' % (mon, day, minute)
         width = 320
-        if  bmpstamp != self.__bmpstamp  and 0 == minute % 60 :
+        # if  bmpstamp != self.__bmpstamp  and 0 == minute % 60 :
+        if 0 == minute % 60 :
             imgarray = np.uint8(np.array(img3C)*255)
             bmp = Image.fromarray(imgarray)
             if width > lenX:

@@ -1869,6 +1869,10 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self._generateReplayFrames             = self.getConfig('generateReplayFrames', 'directionOnly').lower()
         self._h5compression                    = self.getConfig('h5compression', 'lzf').lower()
 
+        self._samplingRate                     = self.getConfig('samplingRate', 0.2) # 20%
+        if self._samplingRate < 0.001 : self._samplingRate = 0.001
+        if self._samplingRate > 1 :     self._samplingRate = 1
+
         self._pctMaxDrawDown =99.0 # IdealTrader will not be constrainted by max drawndown, so overwrite it with 99%
         self._warmupDays =0 # IdealTrader will not be constrainted by warmupDays
 
@@ -1885,6 +1889,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self.__sampleFrmSize  = 1024*8
         self.__sampleFrm = [None]  * self.__sampleFrmSize
         self.__sampleIdx, self.__frameNo = 0, 0
+        self.__lastestDir, self.__lastmstate, self.__samplingYield  = None, None, 0
 
     def doAppInit(self): # return True if succ
         if not super(IdealTrader_Tplus1, self).doAppInit() :
@@ -1943,12 +1948,27 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         action[ADVICE_DIRECTIONS.index(dirToExec)] =1
         self._mstate = self._marketState.exportF1548(self._tradeSymbol)
-        self._mstate = self._marketState.exportImg6C_3Liner16x32R(self._tradeSymbol) # self._marketState.exportImg6C_3Snail16x16(self._tradeSymbol)
+        # self._mstate = self._marketState.exportImg6C_3Liner16x32R(self._tradeSymbol) # self._marketState.exportImg6C_3Snail16x16(self._tradeSymbol)
 
         if not self._mstate: return
+
         # if bFullState:
-        # self.__pushStateAction(self._mstate, action)
-        self.debug('OnEvent(%s) performed %s upon mstate: %s' % (ev.desc, dirToExec, self._marketState.descOf(self._tradeSymbol)))
+        orderDir = self.__lastestDir
+        if self.__samplingYield <=0 or dirToExec != self.__lastestDir :
+            self.__samplingYield = int (1.0/ self._samplingRate -1)
+
+            if dirToExec != self.__lastestDir and self.__lastmstate: # the (state, dir) piror to dir-change sounds important to save
+                self.__pushStateAction(self.__lastmstate, self.__lastestDir)
+
+            self.__pushStateAction(self._mstate, action)
+            self.__lastestDir, self.__lastmstate = dirToExec, None
+        else :
+            self.__lastmstate, self.__samplingYield = self._mstate, self.__samplingYield -1
+
+        if orderDir != dirToExec:
+            self.info('OnEvent(%s) changedir %s->%s upon mstate: %s' % (ev.desc, orderDir, dirToExec, self._marketState.descOf(self._tradeSymbol)))
+        else:
+            self.debug('OnEvent(%s) continue %s upon mstate: %s' % (ev.desc, dirToExec, self._marketState.descOf(self._tradeSymbol)))
 
     def resetEpisode(self) :
         ret = super(IdealTrader_Tplus1, self).resetEpisode()

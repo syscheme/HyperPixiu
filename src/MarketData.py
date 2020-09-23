@@ -761,6 +761,81 @@ class MarketState(MetaObj):
 
         return self.covertImg6CTo3C(img6C) # return img6C
 
+    def exportImg6C_3Liner16xx(self, symbol=None) :
+
+        C6SECHMA_16xx = OrderedDict({
+            EVENT_KLINE_1MIN     : -1,
+            EVENT_KLINE_5MIN     : -1,
+            EVENT_KLINE_1DAY     : -1,
+        })
+
+        seqdict = self.export(symbol, d4wished=C6SECHMA_16xx)  # = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
+        if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
+            return None
+
+        stk = seqdict[EVENT_KLINE_1DAY]
+        if len(stk) <=0: return None
+        baseline_Price, baseline_Volume= stk[0].close, stk[0].volume
+
+        stk = seqdict[EVENT_KLINE_1MIN]
+        if len(stk) <=0: return None
+
+        img6C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(32)] # DONOT take [ [[0.0]*6] *16] *16
+
+        # parition 0: data[0,:4] as the datetime asof the 1st KL1min, data[1:16,:4] fillin K1min up to an hour
+        startRow =0
+        stampAsof = stk[0].asof
+        img6C[startRow][0] = [
+            (stampAsof.month-1) / 12.0, # normalize to [0.0,1.0]
+            stampAsof.day / 31.0, # normalize to [0.0,1.0]
+            stampAsof.weekday() / 7.0, # normalize to [0.0,1.0]
+            (stampAsof.hour *60 +stampAsof.minute) / (24 *60.0), # normalize to [0.0,1.0]
+            1.0, 1.0
+            ]
+        img6C[startRow+1][0] = img6C[startRow][0]
+        img6C[startRow+2][0] = img6C[startRow][0]
+        img6C[startRow+3][0] = img6C[startRow][0]
+
+        bV = baseline_Volume /240
+        for x in range(1,16):
+            for y in range(0,4):
+                i = (x-1) *4 + y
+                if i < len(stk) :
+                    img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+
+        # parition 1: data[0:16,4:6] fillin 16x6 K5min up to a week
+        startRow =5
+        stk = seqdict[EVENT_KLINE_5MIN]
+        bV = baseline_Volume /48
+        for x in range(0, 16): 
+            for y in range(0, 6):
+                i = x *6 + y
+                if i < len(stk) :
+                    img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+        
+        # parition 2: data[0:16,10:15] fillin 16x5 K1Day up to 16 week or 1/3yr
+        startRow =12
+        stk = seqdict[EVENT_KLINE_1DAY]
+        bV = baseline_Volume
+        for x in range(0, 16): 
+            for y in range(0, 5):
+                i = x *5 + y
+                if i < len(stk) :
+                    img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+
+        # parition 3x: TODO KL1w
+        # optional at the moment:data[0:16,10:15] fillin 16x5 K1Day up to 16 week or 1/3yr
+        startRow =18
+        stk = seqdict[EVENT_KLINE_1DAY]
+        bV = baseline_Volume
+        for x in range(0, 16): 
+            for y in range(0, 10):
+                i = x *5 + y + 16*5
+                if i < len(stk) :
+                    img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+
+        return self.covertImg6CTo3C(img6C) # return img6C
+
     def exportImg6C_3Liner16x32(self, symbol=None) :
 
         C6SECHMA_16x16x4 = OrderedDict({

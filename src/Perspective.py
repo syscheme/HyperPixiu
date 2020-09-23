@@ -300,7 +300,8 @@ class Perspective(MarketData):
 
             evd = ev.data
             if not self.__dayOHLC :
-                self.__dayOHLC = evd
+                if isinstance(evd, KLineData):
+                    self.__dayOHLC = evd
                 return ev
 
             if evd.asof > self.__dayOHLC.asof:
@@ -430,6 +431,19 @@ class Perspective(MarketData):
                 else:
                     fval = stk[i].float4C(baseline_Price=baseline_Price, baseline_Volume= bV)
                     result += fval
+
+        return result
+
+    def export(self, d4wished= { EVENT_KLINE_1DAY:20 } ) :
+        result = {}
+
+        for k, v in d4wished.items():
+            if not k in self.eventTypes :
+                continue
+
+            result[k] = self._stacks[k].exportList
+            if v>0 and v > len(result[k]):
+                del result[k][v:]
 
         return result
 
@@ -785,6 +799,13 @@ class PerspectiveState(MarketState):
     #         return self.__dictPerspective[symbol].engorged
         
     #     return [0.0]
+
+    def export(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+
+        if symbol and symbol in self.__dictPerspective.keys():
+            return self.__dictPerspective[symbol].export(d4wished)
+
+        raise ValueError('Perspective.export6Cx() unknown symbol[%s]' %symbol )
 
     def export6C(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
 

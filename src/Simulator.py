@@ -1948,7 +1948,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         action[ADVICE_DIRECTIONS.index(dirToExec)] =1
         self._mstate = self._marketState.exportF1548(self._tradeSymbol)
-        # self._mstate = self._marketState.exportImg6C_3Liner16x32R(self._tradeSymbol) # self._marketState.exportImg6C_3Snail16x16(self._tradeSymbol)
+        # self._mstate = self._marketState.exportImg6C_3Liner16xx(self._tradeSymbol) # self._mstate = self._marketState.exportImg6C_3Liner16x32R(self._tradeSymbol) # self._marketState.exportImg6C_3Snail16x16(self._tradeSymbol)
 
         if not self._mstate: return
 

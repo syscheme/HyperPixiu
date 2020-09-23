@@ -300,7 +300,8 @@ class Perspective(MarketData):
 
             evd = ev.data
             if not self.__dayOHLC :
-                self.__dayOHLC = evd
+                if isinstance(evd, KLineData):
+                    self.__dayOHLC = evd
                 return ev
 
             if evd.asof > self.__dayOHLC.asof:

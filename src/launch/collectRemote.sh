@@ -24,9 +24,14 @@ SRC_DIR=$(dirname $SRC_DIR)
 DIFF_FILE="/tmp/md5sum.txt"
 
 LOCAL_DIR=$2
-if [ "" == "$LOCAL_DIR" ]; then LOCAL_DIR=$(realpath .); fi
+if ! [ -d "$LOCAL_DIR" ]; then
+    LOCAL_DIR=$(realpath .);
+    echo "failed to access localdir ${LOCAL_DIR}"
+    exit -1
+fi
+
 cd ${LOCAL_DIR}
-echo "$(date +%Y%m%dT%H%M%S)>> collecting ${SRC_HOST}:${SRC_DIR}" | tee ./collectRemote.log
+echo "$(date +%Y%m%dT%H%M%S)>> collecting ${SRC_HOST}:${SRC_DIR} into `pwd`" | tee ./collectRemote.log
 
 ssh -p $REMOTE_PORT ${SRC_HOST} "cd ${SRC_DIR} ; md5sum $SRC_FILE" > ./remote_md5.txt
 md5sum -c ./remote_md5.txt 2>/dev/null > ${DIFF_FILE}

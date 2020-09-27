@@ -24,7 +24,7 @@ while ! [ -e ${WORK_ROOT}/batch_999.req ]; do
     if [ -e ${WORK_ROOT}/batch_999.req ]; then break; fi
 
     # step 1 collecting the src data
-    echo "acquired $LOCKFILE, collecting data beteen ${DATE_OF_MONDAY} and ${DATE_OF_SATDAY} into ${WORK_ROOT}"
+    echo "acquired $LOCKFILE, collecting data between ${DATE_OF_MONDAY} and ${DATE_OF_SATDAY} into ${WORK_ROOT}"
     cd ~
     rm -rfv  ${WORK_ROOT}
     mkdir -p ${WORK_ROOT}
@@ -32,59 +32,69 @@ while ! [ -e ${WORK_ROOT}/batch_999.req ]; do
 
     #part 1. SinaKL??_20200620.tar.bz2, SinaMF??_20200620.tar.bz2 files
     # ./SinaKL5m_20200817.tar.bz2-> .../SinaKL5m_20200817.tar.bz2
-    FILES=$(find ${COLLECTION_ROOT} -name Sina*.tar.bz2)
-    FILES="${FILES}"
+    FILES="$(find ${COLLECTION_ROOT} -name Sina*.tar.bz2)"
     for f in ${FILES}; do
         filedate=$(basename ${f}|cut -d '.' -f 1|cut -d '_' -f 2)
         if [ ${filedate} -lt ${DATE_OF_MONDAY} -o ${filedate} -gt ${DATE_OF_SATDAY} ] ; then continue; fi
-        ln -svf ${f} .
+        # ln -svf ${f} .
+        tar xfvj ${f}
     done
 
-    #part 2. ./advisor_20200817.A300-tc.tar.bz2->.../advisor.BAK20200817T065001.tar.bz2
-    FILES=$(find ${COLLECTION_ROOT} -name advisor.BAK*.tar.bz2)
-    FILES="${FILES}"
-    for f in ${FILES}; do
-        filedate=$(basename ${f}|cut -d '.' -f 2|cut -d 'T' -f 1|grep -o '[0-9]*')
-        if [ ${filedate} -lt ${DATE_OF_MONDAY} -o ${filedate} -gt ${DATE_OF_SATDAY} ] ; then continue; fi
-        hostby=$(basename $(dirname ${f})|cut -d '.' -f 1)
-        # ln -svf ${f} ./advisor_${filedate}.${hostby}.tar.bz2
-        extrdir=${WORK_ROOT}/adv_${filedate}.${hostby}
-        rm -rfv ${extrdir}
-        mkdir -pv ${extrdir}
-        cd ${extrdir}
-        nice tar xfvj ${f} --wildcards '*.tcsv*' --strip 3
-        nice bunzip2 *.bz2
-        TCSVLIST="$(ls |sort)"
+    if [ -z "$(ls |grep 'SinaKL1d')" ]; then
+        LATEST_1d="$(find ${COLLECTION_ROOT} -name SinaKL1d*.tar.bz2 |sort |tail -1)"
+        tar xfvj ${LATEST_1d}
+    fi 
 
-        # ------------------------
-        # filter the evmd from advisor.tcsv
-        rm -rvf evmd
-        mkdir -vp evmd
+    if [ -z "$(ls |grep 'SinaMF1d')" ]; then
+        LATEST_1d="$(find ${COLLECTION_ROOT} -name SinaMF1d*.tar.bz2 |sort |tail -1)"
+        tar xfvj ${LATEST_1d}
+    fi 
 
-        file1st=$(ls -S $TCSVLIST|head -1) # take the biggest file
-        symbollist="$(grep -o "S[HZ][0-9]\{6\}" ${file1st} | sort |uniq)"
-        head -30 ${file1st} |grep '^!evmd' | sort |uniq > evmd/hdr.tcsv
-        evmdlist="$(grep -o '^!evmd[^,]*' evmd/hdr.tcsv |cut -d '!' -f2)"
+    # #part 2. ./advisor_20200817.A300-tc.tar.bz2->.../advisor.BAK20200817T065001.tar.bz2
+    # FILES=$(find ${COLLECTION_ROOT} -name advisor.BAK*.tar.bz2)
+    # FILES="${FILES}"
+    # for f in ${FILES}; do
+    #     filedate=$(basename ${f}|cut -d '.' -f 2|cut -d 'T' -f 1|grep -o '[0-9]*')
+    #     if [ ${filedate} -lt ${DATE_OF_MONDAY} -o ${filedate} -gt ${DATE_OF_SATDAY} ] ; then continue; fi
+    #     hostby=$(basename $(dirname ${f})|cut -d '.' -f 1)
+    #     # ln -svf ${f} ./advisor_${filedate}.${hostby}.tar.bz2
+    #     extrdir=${WORK_ROOT}/adv_${filedate}.${hostby}
+    #     rm -rfv ${extrdir}
+    #     mkdir -pv ${extrdir}
+    #     cd ${extrdir}
+    #     nice tar xfvj ${f} --wildcards '*.tcsv*' --strip 3
+    #     nice bunzip2 *.bz2
+    #     TCSVLIST="$(ls |sort)"
 
-        for s in ${symbollist}; do
-            evmdfile="evmd/${s}_evmd${filedate}.tcsv"
-            grep -h ${s} ${TCSVLIST} | sort |uniq > ${evmdfile}
-            for et in ${evmdlist}; do
-                grep ${et} evmd/hdr.tcsv > evmd/${s}_${et:4}_${filedate}.tcsv
-                grep "^${et}" ${evmdfile} >> evmd/${s}_${et:4}_${filedate}.tcsv
-            done
-            # rm -fv ${evmdfile}
-        done
-        cd evmd
-        nice tar cfvj ${extrdir}/../advmd_${filedate}.${hostby}.tar.bz2 S*.tcsv
-        cd ${extrdir}
+    #     # ------------------------
+    #     # filter the evmd from advisor.tcsv
+    #     rm -rvf evmd
+    #     mkdir -vp evmd
 
-        # ------------------------
+    #     file1st=$(ls -S $TCSVLIST|head -1) # take the biggest file
+    #     symbollist="$(grep -o "S[HZ][0-9]\{6\}" ${file1st} | sort |uniq)"
+    #     head -30 ${file1st} |grep '^!evmd' | sort |uniq > evmd/hdr.tcsv
+    #     evmdlist="$(grep -o '^!evmd[^,]*' evmd/hdr.tcsv |cut -d '!' -f2)"
 
-        nice tar cfvj ${extrdir}/../advisor_${filedate}.${hostby}.tar.bz2 $TCSVLIST
-        cd ${WORK_ROOT}
-        rm -vrf ${extrdir}
-    done
+    #     for s in ${symbollist}; do
+    #         evmdfile="evmd/${s}_evmd${filedate}.tcsv"
+    #         grep -h ${s} ${TCSVLIST} | sort |uniq > ${evmdfile}
+    #         for et in ${evmdlist}; do
+    #             grep ${et} evmd/hdr.tcsv > evmd/${s}_${et:4}_${filedate}.tcsv
+    #             grep "^${et}" ${evmdfile} >> evmd/${s}_${et:4}_${filedate}.tcsv
+    #         done
+    #         # rm -fv ${evmdfile}
+    #     done
+    #     cd evmd
+    #     nice tar cfvj ${extrdir}/../advmd_${filedate}.${hostby}.tar.bz2 S*.tcsv
+    #     cd ${extrdir}
+
+    #     # ------------------------
+
+    #     nice tar cfvj ${extrdir}/../advisor_${filedate}.${hostby}.tar.bz2 $TCSVLIST
+    #     cd ${WORK_ROOT}
+    #     rm -vrf ${extrdir}
+    # done
 
     #part 3. the latest KL1d or MF1d
     #TODO

@@ -125,7 +125,7 @@ if __name__ == '__main__':
     # sys.argv += ['-x', 'SH601377,SZ000636']
     dayInWeek = datetime.now().strftime('%Y%m%d')
     dayInWeek = '20200817'
-    srcFolder = '/mnt/e/AShareSample/SinaWeek.20200817'
+    srcFolder = '/tmp/SinaWeek.20200817' # '/mnt/e/AShareSample/SinaWeek.20200817'
 
     if '-x' in sys.argv :
         pos = sys.argv.index('-x')
@@ -151,9 +151,9 @@ if __name__ == '__main__':
     tarNamePats={
         'tarNamePat_KL5m' : '%s/SinaKL5m_*/' % srcFolder, # '%s/SinaKL5m_*.tar.bz2' %srcFolder,
         'tarNamePat_MF1m' : '%s/SinaMF1m_*/' % srcFolder, # '%s/SinaMF1m_*.tar.bz2' %srcFolder,
-        'tarNamePat_RT'   : '%s/advmd_*/' % srcFolder,    # '%s/advmd_*.tar.bz2' % srcFolder, # '%s/advisor_*.tar.bz2' %srcFolder,
-        'tarNamePat_KL1d' : '%s/SinaKL1d_*.tar.bz2' %srcFolder,
-        'tarNamePat_MF1d' : '%s/SinaMF1d_*.tar.bz2' %srcFolder,
+        # 'tarNamePat_RT'   : '%s/advmd_*/' % srcFolder,    # '%s/advmd_*.tar.bz2' % srcFolder, # '%s/advisor_*.tar.bz2' %srcFolder,
+        'tarNamePat_KL1d' : '%s/SinaKL1d_*/' % srcFolder, # '%s/SinaKL1d_*.tar.bz2' %srcFolder,
+        'tarNamePat_MF1d' : '%s/SinaMF1d_*/' % srcFolder, # '%s/SinaMF1d_*.tar.bz2' %srcFolder,
     }
 
     allSymobols = allSymobols.split(',')

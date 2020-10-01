@@ -1230,7 +1230,6 @@ class TcsvMerger(BaseApplication) :
     def __extractedFolder_sinaJson(self, folderName, evtype):
         allfiles = hist.listAllFiles(folderName, depthAllowed=2)
 
-        memlist = []
         for fn in allfiles:
             '''
             -rw-rw-rw- root/root     20590 2020-09-12 16:26 SZ002588_MF1m20200817.json
@@ -1248,14 +1247,15 @@ class TcsvMerger(BaseApplication) :
             # if '202' in evtype: evtype=evtype[:evtype.index('202')] # a fixup for old data starting since year 2020
             # if not MARKETDATE_EVENT_PREFIX in evtype: evtype = MARKETDATE_EVENT_PREFIX + evtype
             self.debug('file[%s] matched' % (fn))
-            memlist.append(fn) 
 
-        for fn in memlist:
             pb = None
             with open(fn, "rb") as f:
                 pb = self.__jsonToPlayback(f, symbol, evtype)
 
-            if not pb : continue
+            if not pb :
+                self.warn('NULL substrm of file[%s] skipped' % (fn))
+                continue
+
             pb.setId('%s' % (fn))
             self.__mux.addStream(pb)
             self.info('added substrm[%s] into mux' % (pb.id))
@@ -1290,7 +1290,7 @@ class TcsvMerger(BaseApplication) :
                 if fnmatch.fnmatch(os.path.basename(fn), fnSearch):
                     self.__tarballs[evtype].append(fn)
 
-            self.info('associated %d tarballs of event[%s]: %s' % (len(self.__tarballs[evtype]), evtype, ','.join(self.__tarballs[evtype])))
+            self.info('associated %d paths of event[%s]: %s' % (len(self.__tarballs[evtype]), evtype, ','.join(self.__tarballs[evtype])))
 
             for tn in self.__tarballs[evtype]:
                 bname = os.path.basename(tn)

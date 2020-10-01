@@ -121,7 +121,7 @@ class SinaWeek(sina.TcsvMerger) :
 
 if __name__ == '__main__':
 
-    allSymobols='SZ000001,SH601066,SZ000860,SZ399006,SZ399102,SZ399306' #'SH601377,SZ000636,SH510050,SH510500,SH510300' # sample
+    allSymbols='SZ000001,SH601066,SZ000860,SZ399006,SZ399102,SZ399306' #'SH601377,SZ000636,SH510050,SH510500,SH510300' # sample
     # sys.argv += ['-x', 'SH601377,SZ000636']
     dayInWeek = datetime.now().strftime('%Y%m%d')
     dayInWeek = '20200817'
@@ -129,7 +129,7 @@ if __name__ == '__main__':
 
     if '-x' in sys.argv :
         pos = sys.argv.index('-x')
-        allSymobols = sys.argv[pos+1]
+        allSymbols = sys.argv[pos+1]
         del sys.argv[pos:pos+2]
 
     if '-d' in sys.argv :
@@ -156,8 +156,8 @@ if __name__ == '__main__':
         'tarNamePat_MF1d' : '%s/SinaMF1d_*/' % srcFolder, # '%s/SinaMF1d_*.tar.bz2' %srcFolder,
     }
 
-    allSymobols = allSymobols.split(',')
-    if len(allSymobols) <=0:
+    allSymbols = allSymbols.split(',')
+    if len(allSymbols) <=0:
         symbolListBy = tarNamePats['tarNamePat_KL5m']
         fnAll = hist.listAllFiles(os.path.dirname(symbolListBy))
         symbolListBy = os.path.basename(symbolListBy)
@@ -168,10 +168,10 @@ if __name__ == '__main__':
 
         if len(fnMatched) >0:
             fnMatched.sort()
-            allSymobols = SinaWeek.populateSymbolList(fnMatched[-1])
+            allSymbols = SinaWeek.populateSymbolList(fnMatched[-1])
 
     merger = thePROG.createApp(SinaWeek, dayInWeek=dayInWeek, **tarNamePats)
-    merger.setSymbols(allSymobols) # ('SH601377,SZ000636,SH510050,SH510500,SH510300') #symoblist[:20]   
+    merger.setSymbols(allSymbols) # ('SH601377,SZ000636,SH510050,SH510500,SH510300') #symoblist[:20]   
 
     thePROG.start()
     thePROG.setLogLevel('debug')

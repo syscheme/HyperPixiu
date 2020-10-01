@@ -55,7 +55,7 @@ downloadMF1d()
     fi
 
     echo "fetching MF1d of ${SYMBOL} to ${FN}"
-    RET=$(wget --user-agent="${UA}" "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?daima=${SYMBOL}" -O ${FN} 2>&1|grep -o 'awaiting response.*'| grep -o '[0-9]*')
+    RET=$(wget --user-agent="${UA}" "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?daima=${SYMBOL}" -O ${FN} 2>&1| grep -o 'awaiting response.*'| grep -o '[0-9]*')
     if [ "200" == "${RET}" ]; then
         echo "downloaded MF1m of ${SYMBOL} as ${FN}, resp ${RET}"
         return
@@ -82,7 +82,7 @@ downloadKLXm()
         return
     fi
     
-    echo "failed to download KL5m of ${SYMBOL}, resp ${RET}"
+    echo "failed to download KL${SCALE}m of ${SYMBOL}, resp ${RET}"
     rm -f ${FN}
 }
 
@@ -192,6 +192,9 @@ case ${CMD} in
         downloadList downloadMF1m
         DATALEN=100
         downloadList downloadKL5m
+
+        cd ~/wkspaces/HyperPixiu
+        ./run.sh src/crawler/crawlSina.py |bzip2 -9 - > ${TARGETDIR}/act500_${DATE}.txt.bz2
 		;;
 
 esac

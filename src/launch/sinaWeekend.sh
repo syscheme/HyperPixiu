@@ -4,51 +4,64 @@ COLLECTION_ROOT="/mnt/t/BigData/deployments-archives/"
 DATE_OF_MONDAY=$(date +%Y%m%d -d 'last friday -4 days')
 DATE_OF_SATDAY=$(date +%Y%m%d -d 'last friday +1 days') # supposed to be the today of this run
 
-# DATE_OF_MONDAY="20200817" # for test
-# DATE_OF_SATDAY="20200822" # for test
+DATE_OF_MONDAY="20200817" # for test
+DATE_OF_SATDAY="20200822" # for test
 
 PROJPATH="/mnt/d/workspace.t3600/HyperPixiu"
 WORK_ROOT="/tmp/SinaWeek.${DATE_OF_MONDAY}"
 LOCKFILE="/tmp/$(basename $0).lockfile"
 THISFILE=$(realpath $0)
+GEN_TAG="${WORK_ROOT}/batch_9999.req"
 
 # section 1 collecting the src data and generates the batch requests
 # -------------------------------------------------------------------
-while ! [ -e ${WORK_ROOT}/batch_999.req ]; do
+while ! [ -e ${GEN_TAG} ]; do
     if ! ln -s $THISFILE $LOCKFILE ; then
         echo "yield for $LOCKFILE"
         sleep 1
         continue
     fi
 
-    if [ -e ${WORK_ROOT}/batch_999.req ]; then break; fi
+    if [ -e ${GEN_TAG} ]; then break; fi
 
     # step 1 collecting the src data
     echo "acquired $LOCKFILE, collecting data between ${DATE_OF_MONDAY} and ${DATE_OF_SATDAY} into ${WORK_ROOT}"
     cd ~
+
+    cd ${WORK_ROOT}
+
     rm -rfv  ${WORK_ROOT}
     mkdir -p ${WORK_ROOT}
     cd ${WORK_ROOT}
 
     #part 1. SinaKL??_20200620.tar.bz2, SinaMF??_20200620.tar.bz2 files
     # ./SinaKL5m_20200817.tar.bz2-> .../SinaKL5m_20200817.tar.bz2
-    FILES="$(find ${COLLECTION_ROOT} -name Sina*.tar.bz2)"
-    for f in ${FILES}; do
-        filedate=$(basename ${f}|cut -d '.' -f 1|cut -d '_' -f 2)
-        if [ ${filedate} -lt ${DATE_OF_MONDAY} -o ${filedate} -gt ${DATE_OF_SATDAY} ] ; then continue; fi
-        # ln -svf ${f} .
-        tar xfvj ${f}
+    for cat in SinaKL5m SinaMF1m; do
+        FILES="$(find ${COLLECTION_ROOT} -name ${cat}*.tar.bz2)"
+        for f in ${FILES}; do
+            filedate=$(basename ${f}|cut -d '.' -f 1|cut -d '_' -f 2)
+            if [ ${filedate} -lt ${DATE_OF_MONDAY} -o ${filedate} -gt ${DATE_OF_SATDAY} ] ; then continue; fi
+            tar xfvj ${f}
+        done
     done
 
-    if [ -z "$(ls |grep 'SinaKL1d')" ]; then
-        LATEST_1d="$(find ${COLLECTION_ROOT} -name SinaKL1d*.tar.bz2 |sort |tail -1)"
-        tar xfvj ${LATEST_1d}
-    fi 
+    for cat in SinaKL1d SinaMF1d; do
+        LATEST_1d=""
+        if [ -z "$(ls |grep ${cat})" ]; then
+            FILES="$(find ${COLLECTION_ROOT} -name ${cat}*.tar.bz2 |sort)"
+            for f in ${FILES}; do
+                filedate=$(basename ${f}|cut -d '.' -f 1| cut -d '_' -f 2)
+                if [ ${filedate} -ge ${DATE_OF_SATDAY} ] ; then
+                    LATEST_1d=$f
+                    break
+                fi
+            done
 
-    if [ -z "$(ls |grep 'SinaMF1d')" ]; then
-        LATEST_1d="$(find ${COLLECTION_ROOT} -name SinaMF1d*.tar.bz2 |sort |tail -1)"
-        tar xfvj ${LATEST_1d}
-    fi 
+            if ! [ -z ${LATEST_1d} ]; then
+                tar xfvj ${LATEST_1d}
+            fi
+        fi
+    done 
 
     # #part 2. ./advisor_20200817.A300-tc.tar.bz2->.../advisor.BAK20200817T065001.tar.bz2
     # FILES=$(find ${COLLECTION_ROOT} -name advisor.BAK*.tar.bz2)
@@ -96,15 +109,15 @@ while ! [ -e ${WORK_ROOT}/batch_999.req ]; do
     #     rm -vrf ${extrdir}
     # done
 
-    #part 3. the latest KL1d or MF1d
-    #TODO
 
     # step 2 generate the batches according to the symbols
-    TAR4SYMBOLS=$(find . -name 'SinaKL5m_*.tar.bz2' | sort | tail -1)
-    ALLSYMBOLS=$(tar tvfj ${TAR4SYMBOLS}| grep -o 'S.[0-9]\{6\}'|sort|uniq)
+    # TAR4SYMBOLS=$(find ${COLLECTION_ROOT} -name 'SinaKL5m_*.tar.bz2' | sort | tail -1)
+    # ALLSYMBOLS=$(tar tvfj ${TAR4SYMBOLS}| grep -o 'S.[0-9]\{6\}'|sort|uniq)
+    LASTKL5mDir="$(ls |grep SinaKL5m|sort|tail -1)"
+    ALLSYMBOLS=$(ls ${LASTKL5mDir}/ | grep -o 'S.[0-9]\{6\}'|sort|uniq)
     ALLSYMBOLS="${ALLSYMBOLS}"
 
-    SYMBOLS_BATCH_SIZE=100
+    SYMBOLS_BATCH_SIZE=20
     SYMBOLS_BATCH=""
     SYMBOLS_C=0
     BATCH_ID=0
@@ -114,7 +127,7 @@ while ! [ -e ${WORK_ROOT}/batch_999.req ]; do
         let "SYMBOLS_C+=1"
         if [ ${SYMBOLS_C} -ge ${SYMBOLS_BATCH_SIZE} ]; then
             let "BATCH_ID+=1"
-            printf -v BATSTR "%03d" ${BATCH_ID}
+            printf -v BATSTR "%04d" ${BATCH_ID}
             echo "${SYMBOLS_BATCH:1}" > batch_${BATSTR}.req
             SYMBOLS_C=0
             SYMBOLS_BATCH=""
@@ -122,11 +135,11 @@ while ! [ -e ${WORK_ROOT}/batch_999.req ]; do
         fi
     done
 
-    # batch_999.req is known as the last batch request
+    # ${GEN_TAG} is known as the last batch request
     if ! [ -z ${SYMBOLS_BATCH} ] ; then
-        echo "${SYMBOLS_BATCH:1}" > batch_999.req
+        echo "${SYMBOLS_BATCH:1}" > ${GEN_TAG}
     else
-        echo "" > batch_999.req
+        echo "" > ${GEN_TAG}
     fi
 
     rm -f $LOCKFILE # release the locker
@@ -181,7 +194,11 @@ for REQ in ${BATCHREQ_LIST}; do
 
     CMD="nice ./run.sh src/launch/tcsvMerger.py -s ${WORK_ROOT}/ -o ${WORK_ROOT}/${REQID} -d ${DATE_OF_MONDAY} -x \"${SYMBOLS_BATCH}\" "
     echo "${REQID}> executing: ${CMD}" |tee -a ${LOGFILE}
-    ${CMD} |tee -a ${LOGFILE}
+    ${CMD} |tee -a ${LOGFILE} &
+    PID=$(ps aux|grep python|grep "tcsvMerger.py.*${SYMBOLS_BATCH::20}" |awk '{print $2;}')
+    echo "batch${REQID} started as PID ${PID}" |tee -a ${LOGFILE}
+    wait # till the background process done
     echo "${REQID}> done" |tee -a ${LOGFILE}
+    mv -vf /tmp/tcsvMerger_${PID}_*.log* ${WORK_ROOT}/${REQID}/ |tee -a ${LOGFILE}
 
 done

@@ -104,6 +104,92 @@ class EvictableStack(object):
         self.__stampUpdated = datetime.now()
 
 ########################################################################
+class KLlineEx(KLineData):
+
+    EVENT2EXT = {
+        EVENT_MONEYFLOW_1MIN: EVENT_KLINE_1MIN,
+        EVENT_MONEYFLOW_5MIN: EVENT_KLINE_5MIN,
+        EVENT_MONEYFLOW_1DAY: EVENT_KLINE_1DAY,
+    }
+
+    #the columns or data-fields that wish to be saved, their name must match the member var in the EventData
+    COLUMNS = 'symbol,exchange,date,time,price,netamount,ratioNet,ratioR0,ratioR3cate'
+
+    #----------------------------------------------------------------------
+    def __init__(self, exchange, symbol =None):
+        '''Constructor'''
+        super(KLlineEx, self).__init__(exchange, symbol)
+        
+        self.datetime = None
+        self.src = []
+
+        self.ratioNet    = EventData.EMPTY_FLOAT   # 净流入率
+        self.ratioR0     = EventData.EMPTY_FLOAT   # 主力流入率
+        self.ratioR3cate = EventData.EMPTY_FLOAT   # 散户流入率（分钟资金流时）或 行业净流入率（日资金流时）
+
+    @property
+    def desc(self) :
+        return 'XmID.%s@%s>%sx%s/%.2f,%.2f' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.price, self.volume, self.ratioR0, self.ratioNet)
+
+    @abstractmethod
+    def hatch(symbol, evType, exchange=None, **kwargs) :
+        raise NotImplementedError
+
+    def setEvent(self, ev) :
+
+        if not ev or not isinstance(ev, Event) or not isinstance(ev.data, MarketData) :
+            return
+        
+        if not self.datetime:
+            self.datetime = ev.data.datetime
+        
+        self.src.append(ev.type)
+        val = ev.data
+        
+        if isinstance(val, MoneyflowData) :
+            self.close = val.price
+            self.ratioNet, self.ratioR0, self.ratioR3cate = val.ratioNet, val.ratioR0, self.ratioR3cate
+            if val.ratioNet * val.netamount * val.price > 0:
+                self.close  = val.price
+                volume = round(val.netamount / val.ratioNet / val.price, 0)
+                if self.volume < volume:
+                    self.volume = volume
+            return
+        
+        if isinstance(val, KLineData) :
+            self.open  = val.open
+            self.high  = val.high
+            self.low   = val.low
+            self.close = val.close
+            self.openInterest = val.openInterest   
+            
+            if self.volume < val.volume:
+                self.volume = val.volume
+            return
+
+    def floatXC(self, baseline_Price=1.0, baseline_Volume =1.0, channel=4) :
+        '''
+        @return float[] for neural network computing
+        '''
+        if baseline_Price <=0: baseline_Price=1.0
+        if baseline_Volume <=0: baseline_Volume=1.0
+
+        # the floats, prioirty first
+        ret = [
+            floatNormalize_LOG10(self.price, baseline_Price), # optional because usually this has been presented via KLine/Ticks
+            floatNormalize_LOG10(baseline_Price*baseline_Volume, abs(self.netamount)), # priority-H1, TODO: indeed the ratio of turnover would be more worthy here. It supposed can be calculated from netamount, ratioNet and netMarketCap
+            floatNormalize(0.5 + self.ratioNet),                          # priority-H2
+            floatNormalize(0.5 + self.ratioR0),                          # priority-H3
+            floatNormalize(0.5 + self.ratioR3cate),                          # likely r3=ratioNet-ratioR0
+        ]
+        #TODO: other optional dims
+
+        channel = int(channel)
+        if channel <= 0: return ret
+
+        return ret[:channel] if len(ret) >= channel else ret +[0.0]* (channel-len(ret))
+
+########################################################################
 class Perspective(MarketData):
     '''
     Data structure of Perspective:
@@ -127,13 +213,13 @@ class Perspective(MarketData):
 
         self._stacks = {
             EVENT_TICK:       EvictableStack(tickDepth, TickData(self.exchange, self.symbol)),
-            EVENT_KLINE_1MIN: EvictableStack(KLDepth_1min, KLineData(self.exchange, self.symbol)),
-            EVENT_KLINE_5MIN: EvictableStack(KLDepth_5min, KLineData(self.exchange, self.symbol)),
-            EVENT_KLINE_1DAY: EvictableStack(KLDepth_1day, KLineData(self.exchange, self.symbol)),
+            EVENT_KLINE_1MIN: EvictableStack(KLDepth_1min, KLlineEx(self.exchange, self.symbol)),
+            EVENT_KLINE_5MIN: EvictableStack(KLDepth_5min, KLlineEx(self.exchange, self.symbol)),
+            EVENT_KLINE_1DAY: EvictableStack(KLDepth_1day, KLlineEx(self.exchange, self.symbol)),
 
-            EVENT_MONEYFLOW_1MIN: EvictableStack(MFDepth_1min, MoneyflowData(self.exchange, self.symbol)),
-            EVENT_MONEYFLOW_5MIN: EvictableStack(MFDepth_5min, MoneyflowData(self.exchange, self.symbol)),
-            EVENT_MONEYFLOW_1DAY: EvictableStack(MFDepth_1day, MoneyflowData(self.exchange, self.symbol)),
+            # EVENT_MONEYFLOW_1MIN: EvictableStack(MFDepth_1min, MoneyflowData(self.exchange, self.symbol)),
+            # EVENT_MONEYFLOW_5MIN: EvictableStack(MFDepth_5min, MoneyflowData(self.exchange, self.symbol)),
+            # EVENT_MONEYFLOW_1DAY: EvictableStack(MFDepth_1day, MoneyflowData(self.exchange, self.symbol)),
         }
 
         self.__stampLast = None
@@ -325,24 +411,43 @@ class Perspective(MarketData):
         '''
         @return the ev that has been successully pushed into the proper stack, otherwise None
         '''
-        if not ev or not ev.type in self._stacks.keys():
-            return None
+        if not ev: return None
+ 
+        stk, etOfStack  = None, ev.type
+        if etOfStack in self._stacks.keys():
+            stk = self._stacks[etOfStack]
+        elif etOfStack in KLlineEx.EVENT2EXT.keys():
+            etOfStack = KLlineEx.EVENT2EXT[etOfStack]
+            if etOfStack in self._stacks.keys():
+                stk = self._stacks[etOfStack]
 
+        if not stk: return None
+        
         if not self.__stampLast or self.__stampLast < ev.data.datetime :
             self.__stampLast = ev.data.datetime
 
-        latestevd = self._stacks[ev.type].top
+        latestevd = stk.top
         if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
-            self._stacks[ev.type].push(ev.data)
-            if self._stacks[ev.type].size >0:
-                self.__focusLast = ev.type
+            newed = KLlineEx(ev.data.exchange, ev.data.symbol)
+            newed.setEvent(ev)
+            # if EVENT_TICK in ev.type:
+            #     newed.tk = ev.data
+            # elif EVENT_MONEYFLOW_PREFIX in ev.type:
+            #     newed.mf = ev.data
+            # elif EVENT_KLINE_PREFIX in ev.type:
+            #     newed.kl = ev.data
+            # else: return
+
+            stk.push(newed)
+            if stk.size >0:
+                self.__focusLast = etOfStack
             return ev
 
         overwritable = not latestevd.exchange or ('_k2x' in latestevd.exchange or '_t2k' in latestevd.exchange)
         if latestevd.exchange and (not ev.data.exchange or len(ev.data.exchange) <=0) :
             overwritable = False
 
-        if EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] and ev.data.datetime == latestevd.datetime and ev.data.volume > latestevd.volume :
+        if EVENT_KLINE_PREFIX == etOfStack[:len(EVENT_KLINE_PREFIX)] and ev.data.datetime == latestevd.datetime and ev.data.volume > latestevd.volume :
             # SINA KL-data was found has such a bug as below: the later polls got bigger volume, so treat the later larger volume as correct data
             # evmdKL5m,SH510050,AShare,2020-06-19,13:30:00,2.914,2.915,2.914,2.915,570200.0
             # evmdKL5m,SH510050,AShare,2020-06-19,13:30:00,2.914,2.918,2.914,2.918,4575100.0
@@ -352,22 +457,28 @@ class Perspective(MarketData):
         if not overwritable:
             return None # not overwritable
 
-        for i in range(self._stacks[ev.type].size) :
-            if ev.data.datetime > self._stacks[ev.type][i].datetime :
+        for i in range(stk.size) :
+            if ev.data.datetime > stk[i].datetime :
                 continue
 
-            if ev.data.datetime == self._stacks[ev.type][i].datetime :
-                self._stacks[ev.type][i] = ev.data
+            stkdata = stk[i]
+
+            if ev.data.datetime == stkdata.datetime :
+                stkdata.setEvent(ev)
             else :
-                self._stacks[ev.type].insert(i, ev.data)
+                stkdata = KLlineEx(ev.data.exchange, ev.data.symbol)
+                stkdata.setEvent(ev)
+                stk.insert(i, stkdata)
             return ev
         
-        self._stacks[ev.type].insert(-1, ev.data)
-        while self._stacks[ev.type].evictSize >=0 and self._stacks[ev.type].size > self._stacks[ev.type].evictSize:
-            del(self._stacks[ev.type]._data[-1])
+        stkdata = KLlineEx(ev.data.exchange, ev.data.symbol)
+        stkdata.setEvent(ev)
+        stk.insert(-1, stkdata)
+        while stk.evictSize >=0 and stk.size > stk.evictSize:
+            del(stk._data[-1])
 
-        if self._stacks[ev.type].size >0:
-            self.__focusLast = ev.type
+        if stk.size >0:
+            self.__focusLast = etOfStack
 
         return ev
 

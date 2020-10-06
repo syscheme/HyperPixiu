@@ -2391,7 +2391,7 @@ class ShortSwingScanner(OfflineSimulator):
                     price, _ = self.__psptReadAhead.latestPrice
                     ohlc     = self.__psptReadAhead.dailyOHLC_sofar
 
-                    if self.__stampByEvent and self.__stampByEvent == stamp:
+                    if not ohlc or self.__stampByEvent and self.__stampByEvent == stamp:
                         return
                     
                     if 0 != stamp.minute %3 : return # every 15min with self._byEvent=KL5m to reduce samples

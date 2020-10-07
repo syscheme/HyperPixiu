@@ -104,7 +104,7 @@ class EvictableStack(object):
         self.__stampUpdated = datetime.now()
 
 ########################################################################
-class KLlineEx(KLineData):
+class KLineEx(KLineData):
 
     EVENT2EXT = {
         EVENT_MONEYFLOW_1MIN: EVENT_KLINE_1MIN,
@@ -118,7 +118,7 @@ class KLlineEx(KLineData):
     #----------------------------------------------------------------------
     def __init__(self, exchange, symbol =None):
         '''Constructor'''
-        super(KLlineEx, self).__init__(exchange, symbol)
+        super(KLineEx, self).__init__(exchange, symbol)
         
         self.datetime = None
         self.src = []
@@ -129,7 +129,7 @@ class KLlineEx(KLineData):
 
     @property
     def desc(self) :
-        return 'XmID.%s@%s>%sx%s/%.2f,%.2f' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.price, self.volume, self.ratioR0, self.ratioNet)
+        return 'KlEx.%s@%s>%sx%s/%.2f,%.2f%%' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S') if self.datetime else '', self.close, int(self.volume), self.ratioR0, self.ratioNet)
 
     @abstractmethod
     def hatch(symbol, evType, exchange=None, **kwargs) :
@@ -152,8 +152,9 @@ class KLlineEx(KLineData):
             if val.ratioNet * val.netamount * val.price > 0:
                 self.close  = val.price
                 volume = round(val.netamount / val.ratioNet / val.price, 0)
-                if self.volume < volume:
-                    self.volume = volume
+                # DONOT set self.volume as the above volume cacluated was base to today-to-now instead that of this Xmin
+                # if self.volume < volume:
+                #     self.volume = volume
             return
         
         if isinstance(val, KLineData) :
@@ -176,8 +177,8 @@ class KLlineEx(KLineData):
 
         # the floats, prioirty first
         ret = [
-            floatNormalize_LOG10(self.price, baseline_Price), # optional because usually this has been presented via KLine/Ticks
-            floatNormalize_LOG10(baseline_Price*baseline_Volume, abs(self.netamount)), # priority-H1, TODO: indeed the ratio of turnover would be more worthy here. It supposed can be calculated from netamount, ratioNet and netMarketCap
+            floatNormalize_LOG10(self.close, baseline_Price),
+            floatNormalize_LOG10(self.volume, baseline_Volume),
             floatNormalize(0.5 + self.ratioNet),                          # priority-H2
             floatNormalize(0.5 + self.ratioR0),                          # priority-H3
             floatNormalize(0.5 + self.ratioR3cate),                          # likely r3=ratioNet-ratioR0
@@ -188,6 +189,9 @@ class KLlineEx(KLineData):
         if channel <= 0: return ret
 
         return ret[:channel] if len(ret) >= channel else ret +[0.0]* (channel-len(ret))
+
+    def float6C(self, baseline_Price=1.0, baseline_Volume =1.0) :
+        return self.floatXC(baseline_Price, baseline_Volume, channel=6)
 
 ########################################################################
 class Perspective(MarketData):
@@ -213,9 +217,9 @@ class Perspective(MarketData):
 
         self._stacks = {
             EVENT_TICK:       EvictableStack(tickDepth, TickData(self.exchange, self.symbol)),
-            EVENT_KLINE_1MIN: EvictableStack(KLDepth_1min, KLlineEx(self.exchange, self.symbol)),
-            EVENT_KLINE_5MIN: EvictableStack(KLDepth_5min, KLlineEx(self.exchange, self.symbol)),
-            EVENT_KLINE_1DAY: EvictableStack(KLDepth_1day, KLlineEx(self.exchange, self.symbol)),
+            EVENT_KLINE_1MIN: EvictableStack(KLDepth_1min, KLineEx(self.exchange, self.symbol)),
+            EVENT_KLINE_5MIN: EvictableStack(KLDepth_5min, KLineEx(self.exchange, self.symbol)),
+            EVENT_KLINE_1DAY: EvictableStack(KLDepth_1day, KLineEx(self.exchange, self.symbol)),
 
             # EVENT_MONEYFLOW_1MIN: EvictableStack(MFDepth_1min, MoneyflowData(self.exchange, self.symbol)),
             # EVENT_MONEYFLOW_5MIN: EvictableStack(MFDepth_5min, MoneyflowData(self.exchange, self.symbol)),
@@ -246,7 +250,12 @@ class Perspective(MarketData):
 
     @property
     def desc(self) :
-        str = '%s>%s ' % (self.focus[len(MARKETDATE_EVENT_PREFIX):], self.getAsOf(self.focus).strftime('%Y-%m-%dT%H:%M:%S'))
+        str = '%s>' % self.focus[len(MARKETDATE_EVENT_PREFIX):]
+        stack = self._stacks[self.focus]
+        if stack.size >0:
+            str += '%s ' % stack.top.desc
+        else: str += 'NIL '
+
         for i in self.eventTypes :
             str += '%sX%d/%d,' % (i[len(MARKETDATE_EVENT_PREFIX):], self._stacks[i].size, self._stacks[i].evictSize)
         return str
@@ -328,7 +337,7 @@ class Perspective(MarketData):
                 continue
 
             latestAsOf = stk.top.asof
-            ret = stk.top.price if EVENT_TICK == et else stk.top.close
+            ret = stk.top.price if isinstance(stk.top, TickData) else stk.top.close
 
         if latestAsOf is None:
             latestAsOf = DT_EPOCH
@@ -375,7 +384,11 @@ class Perspective(MarketData):
         return self.__dayOHLC
 
     def push(self, ev) :
-        ev = self.__push(ev)
+        ev, stk = self.__push(ev)
+
+        while stk and stk.evictSize >=0 and stk.size > stk.evictSize:
+            del(stk._data[-1])
+
         if not ev :
             return None
 
@@ -416,38 +429,34 @@ class Perspective(MarketData):
         stk, etOfStack  = None, ev.type
         if etOfStack in self._stacks.keys():
             stk = self._stacks[etOfStack]
-        elif etOfStack in KLlineEx.EVENT2EXT.keys():
-            etOfStack = KLlineEx.EVENT2EXT[etOfStack]
+        elif etOfStack in KLineEx.EVENT2EXT.keys():
+            etOfStack = KLineEx.EVENT2EXT[etOfStack]
             if etOfStack in self._stacks.keys():
                 stk = self._stacks[etOfStack]
 
-        if not stk: return None
+        if not stk: return None, None
         
         if not self.__stampLast or self.__stampLast < ev.data.datetime :
             self.__stampLast = ev.data.datetime
 
         latestevd = stk.top
+        self.__focusLast = etOfStack
+
         if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
-            newed = KLlineEx(ev.data.exchange, ev.data.symbol)
-            newed.setEvent(ev)
-            # if EVENT_TICK in ev.type:
-            #     newed.tk = ev.data
-            # elif EVENT_MONEYFLOW_PREFIX in ev.type:
-            #     newed.mf = ev.data
-            # elif EVENT_KLINE_PREFIX in ev.type:
-            #     newed.kl = ev.data
-            # else: return
+            if EVENT_TICK == etOfStack:
+                newed = ev.data
+            else:
+                newed = KLineEx(ev.data.exchange, ev.data.symbol)
+                newed.setEvent(ev)
 
             stk.push(newed)
-            if stk.size >0:
-                self.__focusLast = etOfStack
-            return ev
+            return ev, stk
 
         overwritable = not latestevd.exchange or ('_k2x' in latestevd.exchange or '_t2k' in latestevd.exchange)
         if latestevd.exchange and (not ev.data.exchange or len(ev.data.exchange) <=0) :
             overwritable = False
 
-        if EVENT_KLINE_PREFIX == etOfStack[:len(EVENT_KLINE_PREFIX)] and ev.data.datetime == latestevd.datetime and ev.data.volume > latestevd.volume :
+        if EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] and ev.data.datetime == latestevd.datetime and ev.data.volume > latestevd.volume :
             # SINA KL-data was found has such a bug as below: the later polls got bigger volume, so treat the later larger volume as correct data
             # evmdKL5m,SH510050,AShare,2020-06-19,13:30:00,2.914,2.915,2.914,2.915,570200.0
             # evmdKL5m,SH510050,AShare,2020-06-19,13:30:00,2.914,2.918,2.914,2.918,4575100.0
@@ -455,32 +464,36 @@ class Perspective(MarketData):
             overwritable = True
 
         if not overwritable:
-            return None # not overwritable
+            return None, stk # not overwritable
 
         for i in range(stk.size) :
             if ev.data.datetime > stk[i].datetime :
                 continue
 
-            stkdata = stk[i]
+            if EVENT_TICK == etOfStack:
+                if ev.data.datetime == stkdata.datetime :
+                    stk[i] = ev.data
+                else:
+                    stk.insert(i, ev.data)
 
+            stkdata = stk[i]
             if ev.data.datetime == stkdata.datetime :
                 stkdata.setEvent(ev)
             else :
-                stkdata = KLlineEx(ev.data.exchange, ev.data.symbol)
+                stkdata = KLineEx(ev.data.exchange, ev.data.symbol)
                 stkdata.setEvent(ev)
                 stk.insert(i, stkdata)
-            return ev
+
+            return ev, stk
         
-        stkdata = KLlineEx(ev.data.exchange, ev.data.symbol)
-        stkdata.setEvent(ev)
-        stk.insert(-1, stkdata)
-        while stk.evictSize >=0 and stk.size > stk.evictSize:
-            del(stk._data[-1])
+        if EVENT_TICK == etOfStack:
+            stk.insert(-1,  ev.data)
+        else:
+            stkdata = KLineEx(ev.data.exchange, ev.data.symbol)
+            stkdata.setEvent(ev)
+            stk.insert(-1, stkdata)
 
-        if stk.size >0:
-            self.__focusLast = etOfStack
-
-        return ev
+        return ev, stk
 
     TICK_FLOATS=7
     KLINE_FLOATS=5

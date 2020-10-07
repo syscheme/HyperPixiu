@@ -1907,6 +1907,8 @@ class IdealTrader_Tplus1(OfflineSimulator):
         '''processing an incoming MarketEvent'''
 
         super(IdealTrader_Tplus1, self).OnEvent(ev) # self.wkTrader._dtData = d.asof # self.wkTrader.OnEvent(ev)
+
+        if not MARKETDATE_EVENT_PREFIX in ev.type: return
         
         d = ev.data
         tokens = (d.vtSymbol.split('.'))

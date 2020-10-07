@@ -1051,6 +1051,8 @@ class TcsvMerger(BaseApplication) :
         self.__delayedQuit =100
         self.__marketState = PerspectiveState(exchange="AShare")
 
+        self.__mfMerger   = {} # dict of symbol to SinaMF1mToXm
+
     @property
     def symbols(self) : return self.__symbols
 
@@ -1268,6 +1270,9 @@ class TcsvMerger(BaseApplication) :
         self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
         self.subscribeEvents([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_5MIN, EVENT_MONEYFLOW_1DAY])
 
+        for s in self.__symbols:
+            self.__mfMerger[s] = SinaMF1mToXm(self.__onMF5mMerged, 5)
+
         for evtype in self.__tnPattern.keys():
             if not self.__tnPattern[evtype]:
                 self.__tarballs[evtype] = None
@@ -1377,10 +1382,22 @@ class TcsvMerger(BaseApplication) :
                 # postEvent() then do recording in OnEvent() seems wordy, but allow other applications, which may join the prog, to be
                 # able to process the merged events at the same time while merging
                 self.postEvent(ev)
+
+            if ev and EVENT_MONEYFLOW_1MIN == ev.type:
+                self.__mfMerger[ev.data.symbol].pushMF1m(ev.data)
+
         except StopIteration:
             self.__delayedQuit -=1
         
         return 1
+
+    def __onMF5mMerged(self, mf5m):
+        ev = Event(EVENT_MONEYFLOW_5MIN)
+        ev.setData(mf5m)
+        ev = self.__marketState.updateByEvent(ev)
+        if ev: 
+            self.postEvent(ev)
+            self.debug("onMF5mMerged() merged: %s ->psp: %s" % (mf5m.desc, self.__marketState.descOf(mf5m.symbol)))
 
 ########################################################################
 if __name__ == '__main__':

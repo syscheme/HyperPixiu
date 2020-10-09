@@ -1,9 +1,19 @@
 #!/bin/bash
 # suggested cron line: 0  16  * *  1-5   ~/tasks/sinaDayend.sh 2>&1 > /tmp/sinaDayend.log &
+source "./sina_funcs.sh"
+
 TOPDIR_HP=~/wkspaces/HyperPixiu
 WORKDIR=/mnt/data/hpwkdir
+ARCH_DIR="$(realpath ~/hpdata)"
 
-SECU_LIST="$(grep -o '^S[HZ][0-9]*' ~/deploy-data/hpdata/advisor_objs.txt |sort|uniq)"
+OBJLST_toDownload="$(grep -o '^S[HZ][0-9]*' ${ARCH_DIR}/download_objs.txt |sort|uniq)"
+OBJLST_toScreen="$(grep -o '^S[HZ][0-9]*' ${ARCH_DIR}/screen_objs.txt |sort|uniq)"
+OBJLST_toAdv="$(grep -o '^S[HZ][0-9]*' ${ARCH_DIR}/advisor_objs.txt |sort|uniq)"
+
+# do super-sections
+OBJLST_toScreen="$(echo -e "$OBJLST_toScreen $OBJLST_toAdv"|sed 's/[ \t]/\n/g'|sort|uniq)"
+OBJLST_toDownload="$(echo -e "$OBJLST_toDownload $OBJLST_toScreen"|sed 's/[ \t]/\n/g'|sort|uniq)"
+
 LOCKFILE="/tmp/$(basename $0).lockfile"
 
 HOUR=$(date +%H)
@@ -14,13 +24,14 @@ if [ ${HOUR} -lt ${HOUR2EXEC} ]; then
     exit 0
 fi
 
-STAMP=$(date +%Y%m%dT%H%M%S)
+STAMP="$(date +%Y%m%dT%H%M%S)"
+TODAY="$(date +%Y%m%d)"
 
 cd ${TOPDIR_HP}
 DATASRC=./out/advisor
 BAKDIR=${WORKDIR}/advisor.BAK${STAMP}
 
-CONF=$(realpath ~/deploy-data/hpdata/Advisor.json)
+CONF=$(realpath ${ARCH_DIR}/Advisor.json)
 
 # step 1. kill the running advisor
 PID=$(ps aux|grep 'advisor.py'|grep ${CONF} | grep -v 'run.sh' |awk '{print $2;}' )
@@ -76,13 +87,13 @@ fi
 
 cd ${TOPDIR_HP}
 
-TODAY="$(date +%Y%m%d)E"
+TodayTag="${TODAY}E"
 
 if [ -d ${BAKDIR} ]; then
     cd ${BAKDIR}
     ls -l
-    # BZFILES="$(ls advisor_*.${TODAY}*.tcsv.bz2 |sort)"
-    # TCSVFILES="$(ls advisor_*.${TODAY}*.tcsv |sort) $(ls advisor_*.tcsv |grep -v '\.[0-9]*.tcsv')"
+    # BZFILES="$(ls advisor_*.${TodayTag}*.tcsv.bz2 |sort)"
+    # TCSVFILES="$(ls advisor_*.${TodayTag}*.tcsv |sort) $(ls advisor_*.tcsv |grep -v '\.[0-9]*.tcsv')"
     BZFILES="$(ls advisor_*.tcsv.bz2 |sort)"
     TCSVFILES="$(ls advisor_*.tcsv |sort)"
 else
@@ -91,10 +102,10 @@ else
     BAKDIR=""
     BAKLIST="$(ls advisor.BAK*.bz2 | sort -r)"
     for f in ${BAKLIST}; do
-        TODAY="$(echo ${f}| sed 's/advisor.BAK\([0-9]*\).*.bz2/\1/g')B"
-        if [ -e ${TOPDIR_HP}/out/advmd_${TODAY}.tar.bz2 ] ; then continue; fi
+        TodayTag="$(echo ${f}| sed 's/advisor.BAK\([0-9]*\).*.bz2/\1/g')B"
+        if [ -e ${TOPDIR_HP}/out/advmd_${TodayTag}.tar.bz2 ] ; then continue; fi
 
-        BAKDIR="${WORKDIR}/advisor.BAK${TODAY}"
+        BAKDIR="${WORKDIR}/advisor.BAK${TodayTag}"
         mkdir -p ${BAKDIR}; cd ${BAKDIR}
         tar xfvj ${TOPDIR_HP}/out/${f} --wildcards '*.tcsv*' --strip 3
         ls -l
@@ -115,7 +126,7 @@ extrdir=${WORKDIR}/today
 rm -rf ${extrdir} ; mkdir -p ${extrdir} 
 cd ${extrdir}
 
-# 3.1 extract the advisor.BAK${TODAY}T*.tar.ball
+# 3.1 extract the advisor.BAK${TodayTag}T*.tar.ball
 for f in ${BZFILES}; do
     bzcat ${BAKDIR}/$f > ./${f::-4}
 done
@@ -141,12 +152,12 @@ TCSVLIST="$(ls advisor*.tcsv |sort)"
 rm -rvf evmd ; mkdir -vp evmd
 
 file1st=$(ls -S $TCSVLIST|head -1) # take the biggest file
-# already have the list, no need: SECU_LIST="$(grep -o "S[HZ][0-9]\{6\}" ${file1st} | sort |uniq)"
+# already have the list, no need: OBJLST_toAdv="$(grep -o "S[HZ][0-9]\{6\}" ${file1st} | sort |uniq)"
 head -30 ${file1st} |grep '^!evmd' | sort |uniq > evmd/hdr.tcsv
 evmdlist="$(grep -o '^!evmd[^,]*' evmd/hdr.tcsv |cut -d '!' -f2)"
 
-for s in ${SECU_LIST}; do
-    evmdfile="evmd/${s}_evmd_${TODAY}.tcsv"
+for s in ${OBJLST_toAdv}; do
+    evmdfile="evmd/${s}_evmd_${TodayTag}.tcsv"
     
     # filter and sort the market event by date,time
     echo "filtering evmd of $s into ${evmdfile}"
@@ -154,19 +165,47 @@ for s in ${SECU_LIST}; do
     grep -h "^evmd.*${s}" ${TCSVLIST} | sort -t, -k4,5 |uniq >> ${evmdfile}
     
     # for et in ${evmdlist}; do
-    #     grep ${et} evmd/hdr.tcsv > evmd/${s}_${et:4}_${TODAY}.tcsv
-    #     grep "^${et}" ${evmdfile} >> evmd/${s}_${et:4}_${TODAY}.tcsv
+    #     grep ${et} evmd/hdr.tcsv > evmd/${s}_${et:4}_${TodayTag}.tcsv
+    #     grep "^${et}" ${evmdfile} >> evmd/${s}_${et:4}_${TodayTag}.tcsv
     # done
 done
 
 cd evmd
-nice tar cfvj ${TOPDIR_HP}/out/advmd_${TODAY}.tar.bz2 S*.tcsv
+nice tar cfvj ${TOPDIR_HP}/out/advmd_${TodayTag}.tar.bz2 S*.tcsv
 cd ${extrdir}
-nice tar cfvj ${TOPDIR_HP}/out/adv_${TODAY}.tar.bz2 filelist_adv.txt $TCSVLIST
+nice tar cfvj ${TOPDIR_HP}/out/adv_${TodayTag}.tar.bz2 filelist_adv.txt $TCSVLIST
 
+# step 4. download KL5m and MF1m of dataset OBJLST_toDownload
+cd ${WORKDIR}
+rm -rf download; mkdir download; cd download
+export SYMBOLLIST=${OBJLST_toDownload}
+DATALEN=300
+downloadList downloadMF1m
+DATALEN=100
+downloadList downloadKL5m
+
+# step 5. screening the objects
+#     5.1, collect the json from the above downloaded folder
+cd ${WORKDIR}
+mkdir -p screen; cd screen
+for s in $OBJLST_toScreen; do
+    find ${WORKDIR}/download -name '${s}*.json' -exec cp -vf {} . \;
+done
+
+#     5.2, run sinaDayEnd.py for each symbol
 cd ${TOPDIR_HP}
-rm -rf ${extrdir} ${BAKDIR}
+# TODO point the offline dir to ${WORKDIR}/screen
+for s in $OBJLST_toScreen; do
+    export SYMBOL=$s
+    ./run.sh sinaDayEnd.py -o . ;
+done
+
+#     5.3, evict the old json files from dir ${WORKDIR}/screen
+
+#TODO step 6. sum up and generate screen report
+
 
 # ============================================
 echo "test end"
+rm -rf ${extrdir} ${BAKDIR}
 exit 0

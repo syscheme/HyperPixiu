@@ -50,10 +50,10 @@ if __name__ == '__main__':
     if not '-f' in sys.argv :
         sys.argv += ['-f', os.path.realpath(os.path.dirname(os.path.abspath(__file__))+ '/../../conf') + '/Trader.json' ]
 
-    TODAY = datetime.now().strftime('%Y-%m-%d')
+    SINA_TODAY = datetime.now().strftime('%Y-%m-%d')
     if 'SINA_TODAY' in os.environ.keys():
-        TODAY = [os.environ['SINA_TODAY']]
-    TODAY = datetime.strptime(TODAY, '%Y-%m-%d').replace(hour=0, minute=0, second=0, microsecond=0)
+        SINA_TODAY = [os.environ['SINA_TODAY']]
+    SINA_TODAY = datetime.strptime(SINA_TODAY, '%Y-%m-%d').replace(hour=0, minute=0, second=0, microsecond=0)
 
     p = Program()
     p._heartbeatInterval =-1
@@ -72,7 +72,7 @@ if __name__ == '__main__':
     objectives = tdrCore.objectives
     SYMBOL = objectives[0]
 
-    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.outdir, 'SinaDayEnd_%s.tcsv' % TODAY.strftime('%Y%m%d')))
+    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.outdir, 'SinaDayEnd_%s.tcsv' % SINA_TODAY.strftime('%Y%m%d')))
     revents = None
 
     # determine the Playback instance
@@ -111,13 +111,19 @@ if __name__ == '__main__':
     tdrWraper = p.createApp(SinaDayEnd, configNode ='trader', trader=tdrCore, symbol='SZ000001', dirOfflineData='/mnt/e/AShareSample/SinaWeek.20200629')
 
     tdrWraper.setRecorder(rec)
-    rec.registerCategory('PricePred', params= {'columns' : 
-     1d01p,1d12p,1d25p,1d5pp,1d01n,1d12n,1d2pn',
-     2d01p,2d12p,2d25p,2d5pp,2d01n,2d12n,2d2pn',
-     5d01p,5d12p,5d25p,5d5pp,5d01n,5d12n,5d2pn',]})
+    # rec.registerCategory('PricePred', params= {'columns' : 
+    #  1d01p,1d12p,1d25p,1d5pp,1d01n,1d12n,1d2pn',
+    #  2d01p,2d12p,2d25p,2d5pp,2d01n,2d12n,2d2pn',
+    #  5d01p,5d12p,5d25p,5d5pp,5d01n,5d12n,5d2pn',]})
      
     # subscribe the prediction of 10:00, 11:00, 13:30, 14:30, 15:00 of today
-    tdrWraper.schedulePreidictions([TODAY.replace(hour=10), TODAY.replace(hour=11), TODAY.replace(hour=13, minute=30), TODAY.replace(hour=14, minute=30), TODAY.replace(hour=15)])
+    tdrWraper.schedulePreidictions([
+        SINA_TODAY.replace(hour=10),
+        SINA_TODAY.replace(hour=11),
+        SINA_TODAY.replace(hour=13, minute=30),
+        SINA_TODAY.replace(hour=14, minute=30),
+        SINA_TODAY.replace(hour=15)])
+
     tdrWraper.loadModel(modelName)
 
     p.start()

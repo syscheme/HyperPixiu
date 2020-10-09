@@ -2,12 +2,11 @@
 
 COLLECTION_ROOT="/mnt/t/BigData/deployments-archives/"
 DATE_OF_MONDAY=$(date +%Y%m%d -d 'last friday -4 days')
-DATE_OF_SATDAY=$(date +%Y%m%d -d 'last friday +1 days') # supposed to be the today of this run
-
-DATE_OF_MONDAY="20200817" # for test
-DATE_OF_SATDAY="20200822" # for test
-
 PROJPATH="/mnt/d/workspace.t3600/HyperPixiu"
+
+# DATE_OF_MONDAY="20200817" # for test
+
+DATE_OF_SATDAY=$(date +%Y%m%d -s "${DATE_OF_MONDAY} +5 days") # supposed to be the today of this run
 WORK_ROOT="/tmp/SinaWeek.${DATE_OF_MONDAY}"
 LOCKFILE="/tmp/$(basename $0).lockfile"
 THISFILE=$(realpath $0)

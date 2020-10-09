@@ -4,7 +4,7 @@ SRC_DIR=$(realpath `dirname $0`)
 
 SYMBOLLIST=$(bzcat ${SRC_DIR}/symbols.txt.bz2|grep -o '^[Ss].[0-9]*' | tr '[:lower:]' '[:upper:]')
 # SYMBOLLIST="SZ002881 SH600996 SZ002230"
-DATE=$(date +%Y%m%d)
+SINA_TODAY=$(date +%Y%m%d)
 TARGETDIR="$(realpath ~/hpdata)"
 DATALEN=300
 
@@ -100,7 +100,7 @@ downloadList()
 {
     FUNC_DL=$1
     CATEGORY=$(echo "$FUNC_DL" | sed -e 's/download//g')
-    FOLDER="Sina${CATEGORY}_${DATE}"
+    FOLDER="Sina${CATEGORY}_${SINA_TODAY}"
     
     mkdir -p ${FOLDER}
 
@@ -120,7 +120,7 @@ downloadList()
                 continue
             fi
 
-            ${FUNC_DL} ${i} "${FOLDER}/${i}_${CATEGORY}${DATE}.json"
+            ${FUNC_DL} ${i} "${FOLDER}/${i}_${CATEGORY}${SINA_TODAY}.json"
 
             if [ "456" == "${RET}" ]; then
                 SKIP_AT_456=1
@@ -159,7 +159,7 @@ case ${CMD} in
         if [ "*" == "$1" ] || [ -z "$1" ]; then
             downloadList downloadMF1m
         else
-            downloadMF1m $1 ${1}_${CMD}${DATE}.json
+            downloadMF1m $1 ${1}_${CMD}${SINA_TODAY}.json
         fi
 		;;
 
@@ -167,7 +167,7 @@ case ${CMD} in
         if [ "*" == "$1" ] || [ -z "$1" ]; then
             downloadList downloadMF1d
         else
-            downloadMF1d $1 ${1}_${CMD}${DATE}.json
+            downloadMF1d $1 ${1}_${CMD}${SINA_TODAY}.json
         fi
 		;;
 
@@ -175,7 +175,7 @@ case ${CMD} in
         if [ "*" == "$1" ] || [ -z "$1" ]; then
             downloadList downloadKL5m
         else
-            downloadKL5m $1 ${1}_${CMD}${DATE}.json
+            downloadKL5m $1 ${1}_${CMD}${SINA_TODAY}.json
         fi
 		;;
 
@@ -183,7 +183,7 @@ case ${CMD} in
         if [ "*" == "$1" ] || [ -z "$1" ]; then
             downloadList downloadKL1d
         else
-            downloadKL1d $1 ${1}_${CMD}${DATE}.json
+            downloadKL1d $1 ${1}_${CMD}${SINA_TODAY}.json
         fi
 		;;
 
@@ -194,7 +194,7 @@ case ${CMD} in
         downloadList downloadKL5m
 
         cd ~/wkspaces/HyperPixiu
-        ./run.sh src/crawler/crawlSina.py |bzip2 -9 - > ${TARGETDIR}/act500_${DATE}.txt.bz2
+        ./run.sh src/crawler/crawlSina.py |bzip2 -9 - > ${TARGETDIR}/act500_${SINA_TODAY}.txt.bz2
 		;;
 
 esac

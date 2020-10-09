@@ -16,28 +16,33 @@ def _makeupMux(simulator, dirOffline):
 
     dtStart, _ = simulator._wkHistData.datetimeRange
     symbol = simulator._tradeSymbol
+    # associatedEvents=[]
 
     # part.1 the weekly tcsv collection by advisors that covers KL5m, MF1m, and Ticks
     # in the filename format such as SZ000001_sinaWk20200629.tcsv
     fnAll = hist.listAllFiles(dirOffline)
-    fnFilter = '%s_sinaWk[0-9]*.tcsv' % symbol 
+    fnFilter_SinaWeek = '%s_sinaWk[0-9]*.tcsv' % symbol
+
     for fn in fnAll:
-        bfn =os.path.basename(fn)
-        if not fnmatch.fnmatch(bfn, fnFilter):
+        bfn = os.path.basename(fn)
+        if fnmatch.fnmatch(bfn, fnFilter_SinaWeek):
+            simulator.debug("_makeupMux() loading offline sinaWeek: %s" %(fn))
+            f = open(fn, "rb")
+            pb = hist.TaggedCsvStream(f, program=simulator.program)
+            pb.setId(bfn)
+            # pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
+            # pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
+            pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
+            pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
+
+            pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+            pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+            pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+            simulator._wkHistData.addStream(pb)
+            # associatedEvents += [EVENT_KLINE_5MIN, EVENT_KLINE_1DAY, EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_5MIN, EVENT_MONEYFLOW_1DAY]
             continue
 
-        simulator.debug("__makeupMux() loading offline file: %s" %(fn))
-        f = open(fn, "rb")
-        pb = hist.TaggedCsvStream(f, program=simulator.program)
-        pb.setId(bfn)
-        pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
-        pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
-        pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
-        pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
-
-        pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-        pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-        simulator._wkHistData.addStream(pb)
+        if fnmatch.fnmatch(bfn, fnFilter_SinaWeek):
 
     # part.2 the online daily-data that supply a long term data that might be not covered by the above advisors
     crawl = SinaCrawler(simulator.program, None)
@@ -49,7 +54,7 @@ def _makeupMux(simulator, dirOffline):
     simulator.debug('taking online query as source of event[%s] of %ddays' % (evtype, days))
     httperr, dataseq = crawl.GET_RecentKLines(symbol, 240, days)
     if 200 != httperr or len(dataseq) <=0:
-        simulator.error("__makeupMux() GET_RecentKLines(%s:%s) failed, err(%s) len(%d)" %(symbol, evtype, httperr, len(dataseq)))
+        simulator.error("_makeupMux() GET_RecentKLines(%s:%s) failed, err(%s) len(%d)" %(symbol, evtype, httperr, len(dataseq)))
     else:
         # succ at query
         pb, c = hist.Playback(symbol, program=simulator.program), 0
@@ -60,13 +65,13 @@ def _makeupMux(simulator, dirOffline):
             c+=1
 
         simulator._wkHistData.addStream(pb)
-        simulator.info('__makeupMux() added online query as source of event[%s] len[%d]' % (evtype, c))
+        simulator.info('_makeupMux() added online query as source of event[%s] len[%d]' % (evtype, c))
 
     evtype = EVENT_MONEYFLOW_1DAY
     simulator.debug('taking online query as source of event[%s] of %ddays' % (evtype, days))
     httperr, dataseq = crawl.GET_MoneyFlow(symbol, days, False)
     if 200 != httperr or len(dataseq) <=0:
-        simulator.error("__makeupMux() GET_MoneyFlow(%s:%s) failed, err(%s) len(%d)" %(symbol, evtype, httperr, len(dataseq)))
+        simulator.error("_makeupMux() GET_MoneyFlow(%s:%s) failed, err(%s) len(%d)" %(symbol, evtype, httperr, len(dataseq)))
     else:
         # succ at query
         pb, c = hist.Playback(symbol, program=simulator.program), 0
@@ -77,7 +82,7 @@ def _makeupMux(simulator, dirOffline):
             c+=1
 
         simulator._wkHistData.addStream(pb)
-        simulator.info('__makeupMux() added online query as source of event[%s] len[%d]' % (evtype, c))
+        simulator.info('_makeupMux() added online query as source of event[%s] len[%d]' % (evtype, c))
 
     return simulator._wkHistData.size >0
 

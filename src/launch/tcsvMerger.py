@@ -4,13 +4,13 @@ from Perspective import PerspectiveState
 from EventData   import datetime2float
 from Application import *
 from TradeAdvisor import EVENT_ADVICE
-from crawler import crawlSina as sina
+from crawler.producesSina import TcsvMerger
 
 from datetime import datetime, timedelta
 import os
 
 ########################################################################
-class SinaWeek(sina.TcsvMerger) :
+class SinaWeek(TcsvMerger) :
     '''
     to merge the market events collected in the recent week
     '''

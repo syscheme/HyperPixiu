@@ -35,9 +35,6 @@ class SinaMux(hist.PlaybackMux) :
 
         super(SinaMux, self).__init__(program, startDate =startDate, endDate=endDate)
 
-        self.__delayedQuit =100
-        self.__marketState = PerspectiveState(exchange="AShare")
-
     @property
     def symbols(self) : return self.__symbols
 
@@ -350,48 +347,6 @@ class SinaMux(hist.PlaybackMux) :
         self.info('inited mux with %d substreams' % (self.size))
         return self.size >0
 
-    def OnEvent(self, event):
-        # see notes on postEvent() in doAppStep()
-        # if self._recorder: 
-        #     self._recorder.pushRow(event.type, event.data)
-        pass
-    
-    def doAppStep(self):
-        ev = None
-
-        if self.__delayedQuit <=0:
-            self.program.stop()
-            return 0
-
-        try :
-            ev = next(self.__mux)
-            if not ev or not ev.data.symbol in self.__symbols:
-                return 1
-
-            # self.debug('filtered ev: %s' % ev.desc)
-            ev = self.__marketState.updateByEvent(ev)
-            if ev: 
-                # yes, for merging only, a more straignt-foward way is to directly call self._recorder.pushRow(ev.type, ev.data) here
-                # postEvent() then do recording in OnEvent() seems wordy, but allow other applications, which may join the prog, to be
-                # able to process the merged events at the same time while merging
-                self.postEvent(ev)
-
-            if ev and EVENT_MONEYFLOW_1MIN == ev.type:
-                self.__mfMerger[ev.data.symbol].pushMF1m(ev.data)
-
-        except StopIteration:
-            self.__delayedQuit -=1
-        
-        return 1
-
-    def __onMF5mMerged(self, mf5m):
-        ev = Event(EVENT_MONEYFLOW_5MIN)
-        ev.setData(mf5m)
-        ev = self.__marketState.updateByEvent(ev)
-        if ev: 
-            self.postEvent(ev)
-            self.debug("onMF5mMerged() merged: %s ->psp: %s" % (mf5m.desc, self.__marketState.descOf(mf5m.symbol)))
-
 ########################################################################
 class SinaMerger(hist.PlaybackApp) :
 
@@ -399,7 +354,10 @@ class SinaMerger(hist.PlaybackApp) :
         '''Constructor
         '''
         super(SinaMerger, self).__init__(program, playback, **kwargs)
+
+        self.__marketState = PerspectiveState(exchange="AShare")
         self.__mfMerger   = {} # dict of symbol to SinaMF1mToXm
+        self.__delayedQuit =100
 
     def doAppInit(self): # return True if succ
         if not super(SinaMerger, self).doAppInit() :
@@ -423,8 +381,8 @@ class SinaMerger(hist.PlaybackApp) :
             return 0
 
         try :
-            ev = next(self.__mux)
-            if not ev or not ev.data.symbol in self.__symbols:
+            ev = next(self.pb)
+            if not ev or not ev.data.symbol in self.pb.symbols:
                 return 1
 
             # self.debug('filtered ev: %s' % ev.desc)

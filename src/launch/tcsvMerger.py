@@ -4,13 +4,14 @@ from Perspective import PerspectiveState
 from EventData   import datetime2float
 from Application import *
 from TradeAdvisor import EVENT_ADVICE
-from crawler.producesSina import SinaMux
+from crawler.producesSina import SinaMerger, SinaMux
+
 
 from datetime import datetime, timedelta
 import os
 
 ########################################################################
-class SinaWeek(SinaMux) :
+class SinaWeek(SinaMerger) :
     '''
     to merge the market events collected in the recent week
     '''
@@ -35,8 +36,12 @@ class SinaWeek(SinaMux) :
         self._dtStart -= timedelta(days=self._dtStart.weekday()) # adjust to Monday
         dtEnd   = self._dtStart + timedelta(days=7) - timedelta(microseconds=1)
 
-        super(SinaWeek, self).__init__(program, tarNamePat_KL5m, tarNamePat_MF1m, self._dtStart.strftime('%Y%m%dT000000'), dtEnd.strftime('%Y%m%dT235959'), tarNamePat_RT, tarNamePat_KL1d, tarNamePat_MF1d, **kwargs)
+        playback = SinaMux(program, tarNamePat_KL5m=tarNamePat_KL5m, tarNamePat_MF1m=tarNamePat_MF1m, startDate =self._dtStart.strftime('%Y%m%dT000000'), endDate=dtEnd.strftime('%Y%m%dT235959'), tarNamePat_RT=tarNamePat_RT,tarNamePat_KL1d=tarNamePat_KL1d,tarNamePat_MF1d=tarNamePat_MF1d)
+        super(SinaWeek, self).__init__(program, playback=playback, **kwargs)
         self.__dictRec =  {}
+    
+    def setSymbols(self, objectives) :
+        self.pb.setSymbols(objectives)
 
     def __extractAdvisorStreams(self, tarballName):
         tar = tarfile.open(tarballName)
@@ -90,7 +95,7 @@ class SinaWeek(SinaMux) :
             return
 
         symbol = event.data.symbol
-        if len(self.symbols) >0 and not symbol in self.symbols:
+        if len(self.pb.symbols) >0 and not symbol in self.pb.symbols:
             return
 
         if not symbol in self.__dictRec.keys():

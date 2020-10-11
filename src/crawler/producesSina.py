@@ -15,14 +15,13 @@ import os
 import fnmatch
 
 ########################################################################
-class TcsvMerger(BaseApplication) :
+class SinaMux(hist.PlaybackMux) :
 
     MDEVENTS_FROM_ADV = [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY, EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY] # [EVENT_TICK, EVENT_KLINE_1MIN]
 
     def __init__(self, program, tarNamePat_KL5m, tarNamePat_MF1m, startDate =None, endDate=None, tarNamePat_RT=None, tarNamePat_KL1d=None, tarNamePat_MF1d=None, **kwargs):
         '''Constructor
         '''
-        super(TcsvMerger, self).__init__(program, **kwargs)
         self.__tnPattern = {
             EVENT_KLINE_5MIN:     tarNamePat_KL5m,
             EVENT_KLINE_1DAY:     tarNamePat_KL1d,
@@ -31,14 +30,13 @@ class TcsvMerger(BaseApplication) :
             'realtime':           tarNamePat_RT,
         }
 
-        self.__tarballs = {}
+        self.__srcpaths = {}
         self.__symbols = []
 
-        self.__mux = hist.PlaybackMux(program=self.program, startDate =startDate, endDate=endDate)
+        super(SinaMux, self).__init__(program, startDate =startDate, endDate=endDate)
+
         self.__delayedQuit =100
         self.__marketState = PerspectiveState(exchange="AShare")
-
-        self.__mfMerger   = {} # dict of symbol to SinaMF1mToXm
 
     @property
     def symbols(self) : return self.__symbols
@@ -110,7 +108,7 @@ class TcsvMerger(BaseApplication) :
                 if not pb: continue
                 pb.setId('%s@%s' % (basename, os.path.basename(tarballName)))
                 
-                self.__mux.addStream(pb)
+                self.addStream(pb)
                 self.info('added substrm[%s] into mux' % (pb.id))
     
             if len(foundlist) >= len(self.symbols) : # if self.symbols and self.symbols == symbol:
@@ -129,7 +127,7 @@ class TcsvMerger(BaseApplication) :
         pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
         pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
 
-        self.__mux.addStream(pb)
+        self.addStream(pb)
 
     def __advmdToPlayback(self, advmdtcsvStrm, symbol, evtype) :
         pb = hist.TaggedCsvStream(advmdtcsvStrm, program=self.program)
@@ -163,7 +161,7 @@ class TcsvMerger(BaseApplication) :
             if '2020' in evtype: evtype=evtype[:evtype.index('2020')] # a fixup for old data
             if not MARKETDATE_EVENT_PREFIX in evtype: evtype = MARKETDATE_EVENT_PREFIX + evtype
 
-            if not evtype in TcsvMerger.MDEVENTS_FROM_ADV : 
+            if not evtype in SinaMux.MDEVENTS_FROM_ADV : 
                 continue # exclude some events as we collected in some other ways
 
             self.debug('memberFile[%s] in %s matched' % (member.name, tarballName))
@@ -175,7 +173,7 @@ class TcsvMerger(BaseApplication) :
             if not pb : continue
             pb.setId('%s@%s' % (os.path.basename(member.name), os.path.basename(tarballName)))
 
-            self.__mux.addStream(pb)
+            self.addStream(pb)
             self.info('added substrm[%s] into mux' % (pb.id))
 
     def __extractedFolder_advmd(self, folderName):
@@ -201,7 +199,7 @@ class TcsvMerger(BaseApplication) :
             if '202' in evtype: evtype=evtype[:evtype.index('202')] # a fixup for old data starting since year 2020
             if not MARKETDATE_EVENT_PREFIX in evtype: evtype = MARKETDATE_EVENT_PREFIX + evtype
 
-            if not evtype in TcsvMerger.MDEVENTS_FROM_ADV : 
+            if not evtype in SinaMux.MDEVENTS_FROM_ADV : 
                 continue # exclude some events as we collected in some other ways
 
             self.debug('file[%s] matched' % (fn))
@@ -213,7 +211,7 @@ class TcsvMerger(BaseApplication) :
             if not pb : continue
             pb.setId('%s' % (fn))
 
-            self.__mux.addStream(pb)
+            self.addStream(pb)
             self.info('added substrm[%s] into mux' % (pb.id))
 
     def __extractedFolder_sinaJson(self, folderName, evtype):
@@ -246,26 +244,16 @@ class TcsvMerger(BaseApplication) :
                 continue
 
             pb.setId('%s' % (fn))
-            self.__mux.addStream(pb)
+            self.addStream(pb)
             self.info('added substrm[%s] into mux' % (pb.id))
 
-    def doAppInit(self): # return True if succ
-        if not super(TcsvMerger, self).doAppInit() :
-            return False
-
-        # subscribing, see OnEvent()
-        self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
-        self.subscribeEvents([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_5MIN, EVENT_MONEYFLOW_1DAY])
-
-        for s in self.__symbols:
-            self.__mfMerger[s] = SinaMF1mToXm(self.__onMF5mMerged, 5)
-
+    def load(self): # return True if succ
         for evtype in self.__tnPattern.keys():
             if not self.__tnPattern[evtype]:
-                self.__tarballs[evtype] = None
+                self.__srcpaths[evtype] = None
                 continue
 
-            self.__tarballs[evtype] = []
+            self.__srcpaths[evtype] = []
             fnSearch=self.__tnPattern[evtype]
 
             dirOnly, parentDir = False, os.path.dirname(fnSearch)
@@ -280,29 +268,47 @@ class TcsvMerger(BaseApplication) :
                     if '/' != fn[-1] : continue
                     fn = fn[:-1]
                 if fnmatch.fnmatch(os.path.basename(fn), fnSearch):
-                    self.__tarballs[evtype].append(fn)
+                    self.__srcpaths[evtype].append(fn)
 
-            self.info('associated %d paths of event[%s]: %s' % (len(self.__tarballs[evtype]), evtype, ','.join(self.__tarballs[evtype])))
+            self.info('associated %d paths of event[%s]: %s' % (len(self.__srcpaths[evtype]), evtype, ','.join(self.__srcpaths[evtype])))
 
-            for tn in self.__tarballs[evtype]:
+            for tn in self.__srcpaths[evtype]:
                 bname = os.path.basename(tn)
+                if '.json' == bname[-5:].lower() :
+                    symbol = bname[:bname.index('_')]
+                    if not symbol in self.__symbols:
+                        continue
+
+                    with open(tn, "rb") as f:
+                        pb = self.__jsonToPlayback(f, symbol, evtype)
+                        if not pb :
+                            self.warn('NULL substrm of file[%s] skipped' % (fn))
+                            continue
+
+                        pb.setId(tn)
+                        self.addStream(pb)
+                        self.info('added substrm[%s] into mux' % (pb.id))
+                        continue
 
                 if 'sina' == bname[:4].lower() :
                     self.__extractedFolder_sinaJson(tn, evtype) if dirOnly else self.__extractJsonTarball(tn, evtype)
+                    continue
+
                 if 'realtime' == evtype :
                     if 'advisor' == bname[:len('advisor')] :
                         self.__extractAdvisorTarball(tn) # self.__extractAdvisorStreams(tn)
                     elif 'advmd' == bname[:len('advmd')] : # the pre-filtered tcsv from original advisor.tcsv
                         self.__extractedFolder_advmd(tn) if dirOnly else self.__extractAdvMdTarball(tn)
+                    continue
 
-        if len(self.symbols) >0 and None in [self.__tarballs[EVENT_KLINE_1DAY], self.__tarballs[EVENT_MONEYFLOW_1DAY]]:
+        if len(self.symbols) >0 and None in [self.__srcpaths[EVENT_KLINE_1DAY], self.__srcpaths[EVENT_MONEYFLOW_1DAY]]:
             crawl = SinaCrawler(self.program, None)
-            dtStart, _ = self.__mux.datetimeRange
+            dtStart, _ = self.datetimeRange
             days = (datetime.now() - dtStart).days +2
             if days > 500: days =500
 
             evtype = EVENT_KLINE_1DAY
-            if not self.__tarballs[evtype] :
+            if not self.__srcpaths[evtype] :
                 self.debug('taking online query as source of event[%s] of %ddays' % (evtype, days))
                 for s in self.symbols:
                     httperr, dataseq = crawl.GET_RecentKLines(s, 240, days)
@@ -318,11 +324,11 @@ class TcsvMerger(BaseApplication) :
                         pb.enquePending(ev)
                         c+=1
 
-                    self.__mux.addStream(pb)
+                    self.addStream(pb)
                     self.info('added online query as source of event[%s] len[%d]' % (evtype, c))
 
             evtype = EVENT_MONEYFLOW_1DAY
-            if not self.__tarballs[evtype] :
+            if not self.__srcpaths[evtype] :
                 self.debug('taking online query as source of event[%s] of %ddays' % (evtype, days))
                 for s in self.symbols:
                     httperr, dataseq = crawl.GET_MoneyFlow(s, days, False)
@@ -338,11 +344,11 @@ class TcsvMerger(BaseApplication) :
                         pb.enquePending(ev)
                         c+=1
 
-                    self.__mux.addStream(pb)
+                    self.addStream(pb)
                     self.info('added online query as source of event[%s] len[%d]' % (evtype, c))
 
-        self.info('inited mux with %d substreams' % (self.__mux.size))
-        return self.__mux.size >0
+        self.info('inited mux with %d substreams' % (self.size))
+        return self.size >0
 
     def OnEvent(self, event):
         # see notes on postEvent() in doAppStep()
@@ -350,6 +356,65 @@ class TcsvMerger(BaseApplication) :
         #     self._recorder.pushRow(event.type, event.data)
         pass
     
+    def doAppStep(self):
+        ev = None
+
+        if self.__delayedQuit <=0:
+            self.program.stop()
+            return 0
+
+        try :
+            ev = next(self.__mux)
+            if not ev or not ev.data.symbol in self.__symbols:
+                return 1
+
+            # self.debug('filtered ev: %s' % ev.desc)
+            ev = self.__marketState.updateByEvent(ev)
+            if ev: 
+                # yes, for merging only, a more straignt-foward way is to directly call self._recorder.pushRow(ev.type, ev.data) here
+                # postEvent() then do recording in OnEvent() seems wordy, but allow other applications, which may join the prog, to be
+                # able to process the merged events at the same time while merging
+                self.postEvent(ev)
+
+            if ev and EVENT_MONEYFLOW_1MIN == ev.type:
+                self.__mfMerger[ev.data.symbol].pushMF1m(ev.data)
+
+        except StopIteration:
+            self.__delayedQuit -=1
+        
+        return 1
+
+    def __onMF5mMerged(self, mf5m):
+        ev = Event(EVENT_MONEYFLOW_5MIN)
+        ev.setData(mf5m)
+        ev = self.__marketState.updateByEvent(ev)
+        if ev: 
+            self.postEvent(ev)
+            self.debug("onMF5mMerged() merged: %s ->psp: %s" % (mf5m.desc, self.__marketState.descOf(mf5m.symbol)))
+
+########################################################################
+class SinaMerger(hist.PlaybackApp) :
+
+    def __init__(self, program, playback, **kwargs):
+        '''Constructor
+        '''
+        super(SinaMerger, self).__init__(program, playback, **kwargs)
+        self.__mfMerger   = {} # dict of symbol to SinaMF1mToXm
+
+    def doAppInit(self): # return True if succ
+        if not super(SinaMerger, self).doAppInit() :
+            return False
+        
+        # subscribing, see OnEvent()
+        self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
+        self.subscribeEvents([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_5MIN, EVENT_MONEYFLOW_1DAY])
+
+        self.pb.load()
+        for s in self.pb.symbols:
+            self.__mfMerger[s] = SinaMF1mToXm(self.__onMF5mMerged, 5)
+
+        return True
+
     def doAppStep(self):
         ev = None
 

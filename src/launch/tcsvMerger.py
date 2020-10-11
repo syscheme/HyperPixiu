@@ -4,13 +4,13 @@ from Perspective import PerspectiveState
 from EventData   import datetime2float
 from Application import *
 from TradeAdvisor import EVENT_ADVICE
-from crawler.producesSina import TcsvMerger
+from crawler.producesSina import SinaMux
 
 from datetime import datetime, timedelta
 import os
 
 ########################################################################
-class SinaWeek(TcsvMerger) :
+class SinaWeek(SinaMux) :
     '''
     to merge the market events collected in the recent week
     '''
@@ -148,7 +148,7 @@ if __name__ == '__main__':
     thePROG = Program()
     thePROG._heartbeatInterval =-1
 
-    tarNamePats={
+    muxPathPatterns={
         'tarNamePat_KL5m' : '%s/SinaKL5m_*/' % srcFolder, # '%s/SinaKL5m_*.tar.bz2' %srcFolder,
         'tarNamePat_MF1m' : '%s/SinaMF1m_*/' % srcFolder, # '%s/SinaMF1m_*.tar.bz2' %srcFolder,
         # 'tarNamePat_RT'   : '%s/advmd_*/' % srcFolder,    # '%s/advmd_*.tar.bz2' % srcFolder, # '%s/advisor_*.tar.bz2' %srcFolder,
@@ -158,7 +158,7 @@ if __name__ == '__main__':
 
     allSymbols = allSymbols.split(',')
     if len(allSymbols) <=0:
-        symbolListBy = tarNamePats['tarNamePat_KL5m']
+        symbolListBy = muxPathPatterns['tarNamePat_KL5m']
         fnAll = hist.listAllFiles(os.path.dirname(symbolListBy))
         symbolListBy = os.path.basename(symbolListBy)
         fnMatched = []
@@ -170,7 +170,7 @@ if __name__ == '__main__':
             fnMatched.sort()
             allSymbols = SinaWeek.populateSymbolList(fnMatched[-1])
 
-    merger = thePROG.createApp(SinaWeek, dayInWeek=dayInWeek, **tarNamePats)
+    merger = thePROG.createApp(SinaWeek, dayInWeek=dayInWeek, **muxPathPatterns)
     merger.setSymbols(allSymbols) # ('SH601377,SZ000636,SH510050,SH510500,SH510300') #symoblist[:20]   
 
     thePROG.start()

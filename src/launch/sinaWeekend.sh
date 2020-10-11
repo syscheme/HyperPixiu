@@ -4,8 +4,8 @@ COLLECTION_ROOT="/mnt/t/BigData/deployments-archives/"
 DATE_OF_MONDAY=$(date +%Y%m%d -d 'last friday -4 days')
 DATE_OF_SATDAY=$(date +%Y%m%d -d 'last friday +1 days') # supposed to be the today of this run
 
-DATE_OF_MONDAY="20200817" # for test
-DATE_OF_SATDAY="20200822" # for test
+# DATE_OF_MONDAY="20200504" # for test
+# DATE_OF_SATDAY="20200509" # for test
 
 PROJPATH="/mnt/d/workspace.t3600/HyperPixiu"
 WORK_ROOT="/tmp/SinaWeek.${DATE_OF_MONDAY}"
@@ -195,7 +195,7 @@ for REQ in ${BATCHREQ_LIST}; do
     CMD="nice ./run.sh src/launch/tcsvMerger.py -s ${WORK_ROOT}/ -o ${WORK_ROOT}/${REQID} -d ${DATE_OF_MONDAY} -x \"${SYMBOLS_BATCH}\" "
     echo "${REQID}> executing: ${CMD}" |tee -a ${LOGFILE}
     ${CMD} |tee -a ${LOGFILE} &
-    PID=$(ps aux|grep python|grep "tcsvMerger.py.*${SYMBOLS_BATCH::20}" |awk '{print $2;}')
+    sleep 3; PID=$(ps aux|grep python|grep "tcsvMerger.py.*${SYMBOLS_BATCH::20}" |awk '{print $2;}')
     echo "batch${REQID} started as PID ${PID}" |tee -a ${LOGFILE}
     wait # till the background process done
     echo "${REQID}> done" |tee -a ${LOGFILE}

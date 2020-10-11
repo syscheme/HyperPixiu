@@ -931,33 +931,33 @@ class SinaTickToKL1m(object):
 
 ########################################################################
 class SinaMF1mToXm(object):
-    """
-    SINA Tick合成X分钟MF    """
+    """ SINA MF1m合成X分钟MF    """
 
     #----------------------------------------------------------------------
     def __init__(self, onMFlowXm, X=5):
         """Constructor"""
-        self.__mf1m = None
+        self.__mfLatest = None
         self.__onMFlowXm = onMFlowXm      # callback
         self.__X = int(X)
         if self.__X <1: self.__X =1
 
     @property
-    def lastAsOf(self):
-        return self.__mf1m.asof if self.__mf1m else DT_EPOCH
+    def asof(self):
+        return self.__mfLatest.asof if self.__mfLatest else DT_EPOCH
         
     #----------------------------------------------------------------------
     def pushMF1m(self, mf1m):
-        if not mf1m or self.lastAsOf >= mf1m.asof:
+        if not mf1m or self.asof >= mf1m.asof:
             return
 
-        self.__mf1m = mf1m
-        if self.__onMFlowXm and 0 == (self.__mf1m.asof.hour *60 + self.__mf1m.asof.minute) % self.__X:
-            d = copy(self.__mf1m)
+        if 0 == ((mf1m.asof.hour *60 + mf1m.asof.minute) % self.__X):
+            d = copy(mf1m)
             if not '_m2x' in d.exchange :
                 d.exchange = '%s_m2x' % d.exchange
 
-            self.__onMFlowXm(copy(self.__mf1m))
+            self.__mfLatest = copy(d)
+            if self.__onMFlowXm :
+                self.__onMFlowXm(d)
 
 ########################################################################
 __totalAmt1W=0
@@ -1383,8 +1383,8 @@ class TcsvMerger(BaseApplication) :
                 # able to process the merged events at the same time while merging
                 self.postEvent(ev)
 
-            if ev and EVENT_MONEYFLOW_1MIN == ev.type:
-                self.__mfMerger[ev.data.symbol].pushMF1m(ev.data)
+                if EVENT_MONEYFLOW_1MIN == ev.type and ev.data.symbol in self.__mfMerger.keys():
+                    self.__mfMerger[ev.data.symbol].pushMF1m(ev.data)
 
         except StopIteration:
             self.__delayedQuit -=1

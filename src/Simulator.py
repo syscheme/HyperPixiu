@@ -2348,7 +2348,8 @@ class ShortSwingScanner(OfflineSimulator):
         self.__dtToday = None
 
         self.__eventsOfDays = EvictableStack(evictSize=self._daysLong+1, nildata=[]) # list of days, each item contains events of days that up to self._daysLong
-        self.__psptReadAhead = Perspective('Dummy')
+        self.__psptReadAhead = PerspectiveState('Dummy') # Perspective('Dummy')
+        
 
         self.__sampleFrmSize  = 1024*8
         self.__sampleFrm = [None]  * self.__sampleFrmSize
@@ -2388,13 +2389,15 @@ class ShortSwingScanner(OfflineSimulator):
 
                 symbol = ev.data.symbol
                 if ev.data.datetime <= self._btEndDate:
-                    self.__psptReadAhead.push(ev)
-                    stamp    = self.__psptReadAhead.getAsOf(self._byEvent)
-                    price, _ = self.__psptReadAhead.latestPrice
-                    ohlc     = self.__psptReadAhead.dailyOHLC_sofar
+                    if not self.__psptReadAhead.updateByEvent(ev) : # .push(ev)
+                        return 0
+
+                    stamp    = self.__psptReadAhead.getAsOf(symbol, self._byEvent)
+                    price, _ = self.__psptReadAhead.latestPrice(symbol)
+                    ohlc     = self.__psptReadAhead.dailyOHLC_sofar(symbol)
 
                     if not ohlc or self.__stampByEvent and self.__stampByEvent == stamp:
-                        return
+                        return 0
                     
                     if 0 != stamp.minute %3 : return # every 15min with self._byEvent=KL5m to reduce samples
 
@@ -2427,7 +2430,7 @@ class ShortSwingScanner(OfflineSimulator):
                         self.__eventsOfDays.push([])
 
                         if self.__dtToday:
-                            self.debug('doAppStep() %s day-%d[%s] applied onto [%d,%d]days-ago by %s' % (symbol, self.__cOpenDays, self.__dtToday.strftime('%Y-%m-%d'), self._daysShort, self._daysLong, self._byEvent))
+                            self.debug('doAppStep() %s day-%03d[%s] applied onto [%d,%d]days-ago by %s' % (symbol, self.__cOpenDays, self.__dtToday.strftime('%Y-%m-%d'), self._daysShort, self._daysLong, self._byEvent))
 
                         self.__cOpenDays += 1
                         self.__dtToday = dayOfEvent
@@ -2435,11 +2438,11 @@ class ShortSwingScanner(OfflineSimulator):
                     # in a same day
                     stateOfEvent = {
                         'ohlc'   : [ohlc.open, ohlc.high, ohlc.low, price],
-                        'stateD4f': self.__psptReadAhead.floatsD4(d4wished = self._f4schema),
+                        'stateD4f': self.__psptReadAhead.exportImg6C_3Liner16x32R(symbol, self.outdir), # floatsD4(d4wished = self._f4schema), 
                         }
 
                     self.__eventsOfDays[0].append(stateOfEvent)
-                    return # successfully performed a step by pushing an Event
+                    return 1 # successfully performed a step by pushing an Event
 
                 reachedEnd = True
             except StopIteration:

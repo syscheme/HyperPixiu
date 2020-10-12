@@ -4,17 +4,18 @@ from Perspective import PerspectiveState
 from EventData   import datetime2float
 from Application import *
 from TradeAdvisor import EVENT_ADVICE
-from crawler import crawlSina as sina
+from crawler.producesSina import SinaMerger, SinaMux
+
 
 from datetime import datetime, timedelta
 import os
 
 ########################################################################
-class SinaWeek(sina.TcsvMerger) :
+class SinaWeek(SinaMerger) :
     '''
     to merge the market events collected in the recent week
     '''
-    def __init__(self, program, tarNamePat_KL5m, tarNamePat_MF1m, dayInWeek =None, tarNamePat_RT=None, tarNamePat_KL1d=None, tarNamePat_MF1d=None, **kwargs):
+    def __init__(self, program, srcPathPattern_KL5m, srcPathPattern_MF1m, dayInWeek =None, srcPathPattern_RT=None, srcPathPattern_KL1d=None, srcPathPattern_MF1d=None, **kwargs):
 
         self._dtStart = None
         if dayInWeek and len(dayInWeek) >=8:
@@ -35,8 +36,12 @@ class SinaWeek(sina.TcsvMerger) :
         self._dtStart -= timedelta(days=self._dtStart.weekday()) # adjust to Monday
         dtEnd   = self._dtStart + timedelta(days=7) - timedelta(microseconds=1)
 
-        super(SinaWeek, self).__init__(program, tarNamePat_KL5m, tarNamePat_MF1m, self._dtStart.strftime('%Y%m%dT000000'), dtEnd.strftime('%Y%m%dT235959'), tarNamePat_RT, tarNamePat_KL1d, tarNamePat_MF1d, **kwargs)
+        playback = SinaMux(program, srcPathPattern_KL5m=srcPathPattern_KL5m, srcPathPattern_MF1m=srcPathPattern_MF1m, startDate =self._dtStart.strftime('%Y%m%dT000000'), endDate=dtEnd.strftime('%Y%m%dT235959'), srcPathPattern_RT=srcPathPattern_RT,srcPathPattern_KL1d=srcPathPattern_KL1d,srcPathPattern_MF1d=srcPathPattern_MF1d)
+        super(SinaWeek, self).__init__(program, playback=playback, **kwargs)
         self.__dictRec =  {}
+    
+    def setSymbols(self, objectives) :
+        self.pb.setSymbols(objectives)
 
     def __extractAdvisorStreams(self, tarballName):
         tar = tarfile.open(tarballName)
@@ -90,7 +95,7 @@ class SinaWeek(sina.TcsvMerger) :
             return
 
         symbol = event.data.symbol
-        if len(self.symbols) >0 and not symbol in self.symbols:
+        if len(self.pb.symbols) >0 and not symbol in self.pb.symbols:
             return
 
         if not symbol in self.__dictRec.keys():
@@ -148,17 +153,17 @@ if __name__ == '__main__':
     thePROG = Program()
     thePROG._heartbeatInterval =-1
 
-    tarNamePats={
-        'tarNamePat_KL5m' : '%s/SinaKL5m_*/' % srcFolder, # '%s/SinaKL5m_*.tar.bz2' %srcFolder,
-        'tarNamePat_MF1m' : '%s/SinaMF1m_*/' % srcFolder, # '%s/SinaMF1m_*.tar.bz2' %srcFolder,
-        # 'tarNamePat_RT'   : '%s/advmd_*/' % srcFolder,    # '%s/advmd_*.tar.bz2' % srcFolder, # '%s/advisor_*.tar.bz2' %srcFolder,
-        'tarNamePat_KL1d' : '%s/SinaKL1d_*/' % srcFolder, # '%s/SinaKL1d_*.tar.bz2' %srcFolder,
-        'tarNamePat_MF1d' : '%s/SinaMF1d_*/' % srcFolder, # '%s/SinaMF1d_*.tar.bz2' %srcFolder,
+    srcPathPatternDict={
+        'srcPathPattern_KL5m' : '%s/SinaKL5m_*/' % srcFolder, # '%s/SinaKL5m_*.tar.bz2' %srcFolder,
+        'srcPathPattern_MF1m' : '%s/SinaMF1m_*/' % srcFolder, # '%s/SinaMF1m_*.tar.bz2' %srcFolder,
+        # 'srcPathPattern_RT'   : '%s/advmd_*/' % srcFolder,    # '%s/advmd_*.tar.bz2' % srcFolder, # '%s/advisor_*.tar.bz2' %srcFolder,
+        'srcPathPattern_KL1d' : '%s/SinaKL1d_*/' % srcFolder, # '%s/SinaKL1d_*.tar.bz2' %srcFolder,
+        'srcPathPattern_MF1d' : '%s/SinaMF1d_*/' % srcFolder, # '%s/SinaMF1d_*.tar.bz2' %srcFolder,
     }
 
     allSymbols = allSymbols.split(',')
     if len(allSymbols) <=0:
-        symbolListBy = tarNamePats['tarNamePat_KL5m']
+        symbolListBy = srcPathPatternDict['srcPathPattern_KL5m']
         fnAll = hist.listAllFiles(os.path.dirname(symbolListBy))
         symbolListBy = os.path.basename(symbolListBy)
         fnMatched = []
@@ -170,7 +175,7 @@ if __name__ == '__main__':
             fnMatched.sort()
             allSymbols = SinaWeek.populateSymbolList(fnMatched[-1])
 
-    merger = thePROG.createApp(SinaWeek, dayInWeek=dayInWeek, **tarNamePats)
+    merger = thePROG.createApp(SinaWeek, dayInWeek=dayInWeek, **srcPathPatternDict)
     merger.setSymbols(allSymbols) # ('SH601377,SZ000636,SH510050,SH510500,SH510300') #symoblist[:20]   
 
     thePROG.start()

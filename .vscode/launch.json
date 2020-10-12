@@ -6,42 +6,6 @@
     "configurations": [
 
         {
-            "name": "Python: bt",
-            "env": {
-                "PYTHONPATH":"${workspaceFolder}:${PYTHONPATH}"
-            },
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/vnApp/tests/runBT_AShare.py" // "vnApp/tests/runBT_AShare.py"
-        },
-        {
-            "name": "Python: ld",
-            "env": {
-                "PYTHONPATH":"${workspaceFolder}:${PYTHONPATH}"
-            },
-            "type": "python",
-            "request": "launch",
-            "program": "vnApp/marketdata/mdOffline.py" // "vnApp/tests/runBT_AShare_app.py"
-        },
-        {
-            "name": "Python: dr",
-            "env": {
-                "PYTHONPATH":"${workspaceFolder}:${PYTHONPATH}"
-            },
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/vnApp/tests/runDR_huobi.py"
-        },
-        {
-            "name": "Python: td",
-            "env": {
-                "PYTHONPATH":"${workspaceFolder}:${PYTHONPATH}"
-            },
-            "type": "python",
-            "request": "launch",
-            "program": "vnApp/tests/runTD_huobi.py"
-        },
-        {
             "name": "Python: Current File",
             "env": {
                 "PYTHONPATH":"${workspaceFolder}:${workspaceFolder}/src:${PYTHONPATH}"
@@ -137,7 +101,7 @@
             "name": "Python: All debug Options",
             "type": "python",
             "request": "launch",
-            "pythonPath": "${config:python.pythonPath}",
+            "pythonPath": "${command:python.interpreterPath}",
             "program": "${file}",
             "module": "module.name",
             "env": {

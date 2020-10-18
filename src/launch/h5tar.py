@@ -37,7 +37,11 @@ def tar_utf8(fn_h5tar, fn_members, createmode='a') :
                     compressed = bz2.compress(all_lines.encode('utf8'))
 
             npbytes = np.frombuffer(compressed, dtype=np.uint8)
-            k = quote(m).replace('/','%2F')
+            k = m
+            while len(k) >0 and ('/' == k[0] or '.' == k[0]):
+                k=k[1:]
+
+            k = quote(k).replace('/','%2F')
             if k in g.keys():
                 del g[k]
             sub = g.create_dataset(k, data=npbytes)
@@ -54,7 +58,7 @@ def untar_utf8(fn_h5tar, fn_members =None) :
         g = h5file[GNAME_TEXT_utf8]
         for m in g.keys():
             ofn = unquote(m)
-            while len(ofn) >0 and '/' == ofn[0]:
+            while len(ofn) >0 and ('/' == ofn[0] or '.' == ofn[0]):
                 ofn=ofn[1:]
             
             if len(ofn) <=0:
@@ -125,6 +129,6 @@ if __name__ == '__main__':
         tar_utf8(fn_h5tar, fn_members, cmd[0])
     elif 'x' in cmd:
         untar_utf8(fn_h5tar, fn_members)
-    elif 's' in cmd and len(fn_members) >0:
+    elif 's' == cmd[0] and len(fn_members) >0:
         print(read_utf8(fn_h5tar, fn_members[0]))
 

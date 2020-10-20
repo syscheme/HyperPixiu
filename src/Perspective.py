@@ -665,9 +665,14 @@ class Perspective(MarketData):
             ],
         }
 
-        result[EVENT_KLINE_1MIN] = Perspective.__richKL6(self._stacks[EVENT_KLINE_1MIN].exportList, self._stacks[EVENT_MONEYFLOW_1MIN].exportList, baseline_Price, baseline_Volume, self.__evsPerDay[EVENT_KLINE_1MIN])
-        result[EVENT_KLINE_5MIN] = Perspective.__richKL6(self._stacks[EVENT_KLINE_5MIN].exportList, self._stacks[EVENT_MONEYFLOW_5MIN].exportList, baseline_Price, baseline_Volume, self.__evsPerDay[EVENT_KLINE_5MIN])
-        result[EVENT_KLINE_1DAY] = Perspective.__richKL6(self._stacks[EVENT_KLINE_1DAY].exportList, self._stacks[EVENT_MONEYFLOW_1DAY].exportList, baseline_Price, baseline_Volume, 1)
+        # result[EVENT_KLINE_1MIN] = Perspective.__richKL6(self._stacks[EVENT_KLINE_1MIN].exportList, self._stacks[EVENT_MONEYFLOW_1MIN].exportList, baseline_Price, baseline_Volume, self.__evsPerDay[EVENT_KLINE_1MIN])
+        # result[EVENT_KLINE_5MIN] = Perspective.__richKL6(self._stacks[EVENT_KLINE_5MIN].exportList, self._stacks[EVENT_MONEYFLOW_5MIN].exportList, baseline_Price, baseline_Volume, self.__evsPerDay[EVENT_KLINE_5MIN])
+        # result[EVENT_KLINE_1DAY] = Perspective.__richKL6(self._stacks[EVENT_KLINE_1DAY].exportList, self._stacks[EVENT_MONEYFLOW_1DAY].exportList, baseline_Price, baseline_Volume, 1)
+        for et in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY] :
+            floats =[]
+            for klx in self._stacks[et].exportList:
+                floats.append(klx.float6C(baseline_Price, baseline_Volume/self.__evsPerDay[et]))
+            result[et] = floats
 
         return result
 
@@ -869,7 +874,7 @@ class PerspectiveState(MarketState):
             return '', 0.0, 0.0, 0.0, 0.0, 0
 
         kl = self.__dictPerspective[symbol].dailyOHLC_sofar
-        return kl.date, kl.open, kl.high, kl.low, kl.close
+        return kl # .date, kl.open, kl.high, kl.low, kl.close
         
     def updateByEvent(self, ev) :
         ''' 
@@ -963,7 +968,5 @@ class PerspectiveState(MarketState):
                     ret += [[0.0 for i in range(6)] for j in range(sz-len(data))]
 
             return ret
-
-
 
         raise ValueError('Perspective.export6Cx() unknown symbol[%s]' %symbol )

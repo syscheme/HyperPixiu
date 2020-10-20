@@ -535,6 +535,9 @@ class PlaybackApp(BaseApplication):
         super(PlaybackApp, self).__init__(program, **kwargs)
         self.__playback = playback
 
+    @property
+    def pb(self): return self.__playback
+
     # impl of BaseApplication
     #----------------------------------------------------------------------
     def doAppInit(self): # return True if succ

@@ -19,7 +19,7 @@ from Account import Account_AShare
 from Application import *
 import HistoryData as hist
 from advisors.dnn import DnnAdvisor_S1548I4A3
-from crawler.producesSina import Sina_Tplus1, SinaSwingScanner
+from crawler.producesSina import SinaMux, Sina_Tplus1, SinaSwingScanner
 
 import sys, os, platform
 RFGROUP_PREFIX  = 'ReplayFrame:'
@@ -51,9 +51,9 @@ if __name__ == '__main__':
         sys.argv += ['-f', os.path.realpath(os.path.dirname(os.path.abspath(__file__))+ '/../../conf') + '/Trader.json' ]
 
     SINA_TODAY = datetime.now().strftime('%Y-%m-%d')
+    SINA_TODAY = '2020-10-09'
     if 'SINA_TODAY' in os.environ.keys():
         SINA_TODAY = [os.environ['SINA_TODAY']]
-    SINA_TODAY = datetime.strptime(SINA_TODAY, '%Y-%m-%d').replace(hour=0, minute=0, second=0, microsecond=0)
 
     p = Program()
     p._heartbeatInterval =-1
@@ -67,7 +67,13 @@ if __name__ == '__main__':
     if 'SYMBOL' in os.environ.keys():
         objectives = [os.environ['SYMBOL']]
 
-    acc = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
+    #################
+    objectives=['SZ000002', 'SH600029']
+    evMdSource = '/mnt/e/AShareSample/screen-dataset'
+    #################
+
+    SINA_TODAY = datetime.strptime(SINA_TODAY, '%Y-%m-%d').replace(hour=0, minute=0, second=0, microsecond=0)
+    acc     = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
     tdrCore = p.createApp(BaseTrader, configNode ='trader', objectives=objectives, account=acc)
     objectives = tdrCore.objectives
     SYMBOL = objectives[0]
@@ -77,38 +83,18 @@ if __name__ == '__main__':
 
     # determine the Playback instance
     evMdSource = Program.fixupPath(evMdSource)
-    basename = os.path.basename(evMdSource)
-    if '.tcsv' in basename :
-        p.info('taking TaggedCsvPlayback on %s for symbol[%s]' % (evMdSource, SYMBOL))
-        histReader = hist.TaggedCsvPlayback(program=p, symbol=SYMBOL, tcsvFilePath=evMdSource)
-        histReader.setId('%s@%s' % (SYMBOL, basename))
-        histReader.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
-        histReader.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
-        histReader.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
-        histReader.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
+    srcPathPatternDict={
+        'srcPathPattern_KL5m' : '%s/%s_KL5m*.json' % (evMdSource, SYMBOL),
+        'srcPathPattern_MF1m' : '%s/%s_MF1m*.json' % (evMdSource, SYMBOL),
+        'srcPathPattern_KL1d' : '%s/%s_KL1d*.json' % (evMdSource, SYMBOL),
+        'srcPathPattern_MF1d' : '%s/%s_MF1d*.json' % (evMdSource, SYMBOL),
+    }
 
-        histReader.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-        histReader.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-        histReader.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-
-    elif '.tar.bz2' in basename :
-        p.info('taking TaggedCsvInTarball on %s for symbol[%s]' % (evMdSource, SYMBOL))
-        histReader = hist.TaggedCsvInTarball(program=p, symbol=SYMBOL, fnTarball=evMdSource, memberPattern='%s_evmd_*.tcsv' %SYMBOL )
-        histReader.setId('%s@%s' % (SYMBOL, basename))
-        histReader.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
-        histReader.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
-        histReader.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
-        histReader.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
-
-        histReader.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-        histReader.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-        histReader.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-    else:
-        # csvPlayback can only cover one symbol
-        p.info('taking CsvPlayback on dir %s for symbol[%s]' % (evMdSource, SYMBOL))
-        histReader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
-
-    tdrWraper = p.createApp(SinaDayEnd, configNode ='trader', trader=tdrCore, symbol='SZ000001', dirOfflineData='/mnt/e/AShareSample/SinaWeek.20200629')
+    playback   = SinaMux(p, **srcPathPatternDict) # = p.createApp(SinaMux, **srcPathPatternDict)
+    playback.setSymbols(objectives)
+    playback.load()
+    
+    tdrWraper  = p.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=playback, symbol=SYMBOL) # = p.createApp(SinaDayEnd, configNode ='trader', trader=tdrCore, symbol=SYMBOL, dirOfflineData=evMdSource)
 
     tdrWraper.setRecorder(rec)
     # rec.registerCategory('PricePred', params= {'columns' : 
@@ -116,15 +102,15 @@ if __name__ == '__main__':
     #  2d01p,2d12p,2d25p,2d5pp,2d01n,2d12n,2d2pn',
     #  5d01p,5d12p,5d25p,5d5pp,5d01n,5d12n,5d2pn',]})
      
-    # subscribe the prediction of 10:00, 11:00, 13:30, 14:30, 15:00 of today
-    tdrWraper.schedulePreidictions([
-        SINA_TODAY.replace(hour=10),
-        SINA_TODAY.replace(hour=11),
-        SINA_TODAY.replace(hour=13, minute=30),
-        SINA_TODAY.replace(hour=14, minute=30),
-        SINA_TODAY.replace(hour=15)])
+    # # subscribe the prediction of 10:00, 11:00, 13:30, 14:30, 15:00 of today
+    # tdrWraper.schedulePreidictions([
+    #     SINA_TODAY.replace(hour=10),
+    #     SINA_TODAY.replace(hour=11),
+    #     SINA_TODAY.replace(hour=13, minute=30),
+    #     SINA_TODAY.replace(hour=14, minute=30),
+    #     SINA_TODAY.replace(hour=15)])
 
-    tdrWraper.loadModel(modelName)
+    # tdrWraper.loadModel(modelName)
 
     p.start()
     if tdrWraper.isActive :

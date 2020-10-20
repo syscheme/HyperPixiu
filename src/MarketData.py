@@ -719,7 +719,7 @@ class MarketState(MetaObj):
 
         raise ValueError('export4C() unexpected ret')
 
-    def exportImg6C_3Liner16x32R(self, symbol=None) :
+    def exportImg6C_3Liner16x32R(self, symbol=None, imgDir=None, dem=60) :
 
         C6SECHMA_16x32R = OrderedDict({
             'asof'               : 1,
@@ -759,9 +759,9 @@ class MarketState(MetaObj):
              img6C[startRow + y][x] = seq6C[seq6C_offset]
              seq6C_offset +=1
 
-        return self.covertImg6CTo3C(img6C) # return img6C
+        return self.covertImg6CTo3C(img6C, imgDir, dem) # return img6C
 
-    def exportImg6C_3Liner16xx(self, symbol=None) :
+    def exportImg6C_3Liner16xx(self, symbol=None, imgDir=None, dem=60) :
 
         C6SECHMA_16xx = OrderedDict({
             EVENT_KLINE_1MIN     : -1,
@@ -879,7 +879,7 @@ class MarketState(MetaObj):
              img6C[startRow + y][x] = seq6C[seq6C_offset]
              seq6C_offset +=1
 
-        return self.covertImg6CTo3C(img6C) # return img6C
+        return self.covertImg6CTo3C(img6C, imgDir, dem) # return img6C
 
     '''
     import math
@@ -928,7 +928,7 @@ class MarketState(MetaObj):
     
     BMP_COLOR_BG_FLOAT=1.0
 
-    def exportImg6C_3Snail16x16(self, symbol=None) :
+    def exportImg6C_3Snail16x16(self, symbol=None, imgDir=None, dem=60) :
 
         C6SECHMA_16x16x4 = OrderedDict({
             'asof'               : 1,
@@ -1001,9 +1001,9 @@ class MarketState(MetaObj):
              img6C[partition*16 + y][x] = seq6C[seq6C_offset]
              seq6C_offset +=1
 
-        return self.covertImg6CTo3C(img6C) # return img6C
+        return self.covertImg6CTo3C(img6C, imgDir, dem) # return img6C
 
-    def covertImg6CTo3C(self, img6C) :
+    def covertImg6CTo3C(self, img6C, imgDir=None, dem=60) :
         lenX = len(img6C[0])
         lenY = len(img6C)
         img3C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX*2)] for y in range(lenY) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
@@ -1012,19 +1012,21 @@ class MarketState(MetaObj):
                 # img3C[y][x], img3C[y][lenX + x] = img6C[y][x][:3], img6C[y][x][3:]
                 img3C[y][2*x], img3C[y][2*x +1] = img6C[y][x][:3], img6C[y][x][3:]
 
-        ftime = img6C[0][0]
-        mon, day, minute = 1+ int(ftime[0] * 12), 1+ int(ftime[1] * 31), int(ftime[3] * 24*60)
-        bmpstamp = '%02d%02dT%03d' % (mon, day, minute)
-        width = 320
-        # if  bmpstamp != self.__bmpstamp  and 0 == minute % 60 :
-        if 0 == minute % 60 :
-            imgarray = np.uint8(np.array(img3C)*255)
-            bmp = Image.fromarray(imgarray)
-            if width > lenX:
-                bmp = bmp.resize((width, int(width *1.0/lenX/2 *lenY)), Image.NEAREST)
-            # bmp.convert('RGB')
-            bmp.save('/mnt/e/bmp/test_%s.png' % bmpstamp)
-            self.__bmpstamp = bmpstamp
+        if imgDir:
+            if dem <=0: dem=60
+            ftime = img6C[0][0]
+            mon, day, minute = 1+ int(ftime[0] * 12), 1+ int(ftime[1] * 31), int(ftime[3] * 24*60)
+            bmpstamp = '%02d%02dT%03d' % (mon, day, minute)
+            width = 320
+            # if  bmpstamp != self.__bmpstamp  and 0 == minute % 60 :
+            if 0 == minute % 60 :
+                imgarray = np.uint8(np.array(img3C)*255)
+                bmp = Image.fromarray(imgarray)
+                if width > lenX:
+                    bmp = bmp.resize((width, int(width *1.0/lenX/2 *lenY)), Image.NEAREST)
+                # bmp.convert('RGB')
+                bmp.save('%s/test_%s.png' % (imgDir, bmpstamp))
+                self.__bmpstamp = bmpstamp
 
         return img3C
 

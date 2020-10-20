@@ -19,18 +19,9 @@ class SinaMux(hist.PlaybackMux) :
     MDEVENTS_FROM_ADV = [EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY, EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY] # [EVENT_TICK, EVENT_KLINE_1MIN]
     SRCPATH_PATTERN_ONLINE="$ONLINE$"
 
-    def __init__(self, program, srcPathPattern_KL5m, srcPathPattern_MF1m, startDate =None, endDate=None, srcPathPattern_RT=None, srcPathPattern_KL1d=None, srcPathPattern_MF1d=None, **kwargs):
+    def __init__(self, program, startDate =None, endDate=None, **kwargs):
         '''Constructor
         '''
-        self.__tnPattern = {
-            EVENT_KLINE_5MIN:     srcPathPattern_KL5m,
-            EVENT_KLINE_1DAY:     srcPathPattern_KL1d,
-            EVENT_MONEYFLOW_1MIN: srcPathPattern_MF1m,
-            EVENT_MONEYFLOW_1DAY: srcPathPattern_MF1d,
-            'realtime':           srcPathPattern_RT,
-        }
-
-        self.__srcpaths = {}
         self.__symbols = []
 
         super(SinaMux, self).__init__(program, startDate =startDate, endDate=endDate)
@@ -135,6 +126,7 @@ class SinaMux(hist.PlaybackMux) :
         return pb
 
     def __extractAdvMdTarball(self, tarballName):
+        subStrmsAdded = []
         tar = tarfile.open(tarballName)
         memlist = []
 
@@ -172,8 +164,12 @@ class SinaMux(hist.PlaybackMux) :
 
             self.addStream(pb)
             self.info('added substrm[%s] into mux' % (pb.id))
+            subStrmsAdded.append(pb.id)
+        
+        return subStrmsAdded
 
     def __extractedFolder_advmd(self, folderName):
+        subStrmsAdded =[]
         allfiles = hist.listAllFiles(folderName, depthAllowed=1)
 
         memlist = []
@@ -210,8 +206,13 @@ class SinaMux(hist.PlaybackMux) :
 
             self.addStream(pb)
             self.info('added substrm[%s] into mux' % (pb.id))
+            subStrmsAdded.append(pb.id)
+
+        return subStrmsAdded
 
     def __extractedFolder_sinaJson(self, folderName, evtype):
+        
+        subStrmsAdded=[]
         allfiles = hist.listAllFiles(folderName, depthAllowed=2)
 
         for fn in allfiles:
@@ -243,109 +244,107 @@ class SinaMux(hist.PlaybackMux) :
             pb.setId('%s' % (fn))
             self.addStream(pb)
             self.info('added substrm[%s] into mux' % (pb.id))
+            subStrmsAdded.append(pb.id)
 
-    def load(self): # return True if succ
-        for evtype in self.__tnPattern.keys():
-            if not self.__tnPattern[evtype]:
-                self.__srcpaths[evtype] = None
+        return subStrmsAdded
+
+    def loadOnline(self, evtype, symbol, nSampleLast =1): # return True if succ
+
+        if not symbol or len(symbol) <=0 or not evtype in [EVENT_KLINE_1DAY, EVENT_MONEYFLOW_1DAY] :
+            self.debug('%s of %s does not support online query as source' % (evtype, symbol))
+            return None, None, []
+
+        crawl = SinaCrawler(self.program, None)
+        dtStart, dtEnd = self.datetimeRange
+        days = (datetime.now() - dtStart).days +2
+        if days > 1000: days =0 # seems not specified
+        if days > 500: days =500
+        if days < 240:
+            days =240 # online query of XX1d will always cover minimal one year
+            if dtEnd < datetime.now():
+                days += (datetime.now() - dtEnd).days
+
+        self.debug('taking online query as source of %s/%s of %ddays' % (evtype, symbol, days))
+        httperr, dataseq = 500, []
+        if evtype == EVENT_KLINE_1DAY :
+            httperr, dataseq = crawl.GET_RecentKLines(symbol, 240, days)
+        elif evtype == EVENT_MONEYFLOW_1DAY :
+            httperr, dataseq = crawl.GET_MoneyFlow(symbol, days, False)
+
+        if 200 != httperr or len(dataseq) <=0:
+            self.error("load() query(%s:%s) failed, err(%s) len(%d)" %(symbol, evtype, httperr, len(dataseq)))
+            return httperr, None, []
+
+        # succ at query
+        pb, c = hist.Playback(symbol, program=self.program), 0
+        pb.setId('Online.%s/%s' % (evtype, symbol))
+        for i in dataseq:
+            if dtEnd and i.asof > dtEnd:
+                del dataseq[c:]
+                break
+
+            ev = Event(evtype)
+            ev.setData(i)
+            pb.enquePending(ev)
+            c+=1
+
+        self.addStream(pb)
+        self.info('load() added online query(%s:%s) result len[%d]' % (evtype, symbol, c))
+
+        return httperr, pb.id, dataseq[- min(len(dataseq), nSampleLast) :]
+
+    def loadOffline(self, evtype, fnSearch, minFn=None): # return True if succ
+        
+        subStrmsAdded =[]
+        dirOnly, parentDir = False, os.path.dirname(fnSearch)
+        if '/' == fnSearch[-1]:
+            fnSearch = fnSearch[:-1]
+            dirOnly, parentDir = True, os.path.dirname(fnSearch)
+
+        fnAll = hist.listAllFiles(parentDir, fileOnly = not dirOnly)
+        fnSearch = os.path.basename(fnSearch)
+        srcPaths = []
+        for fn in fnAll:
+            if dirOnly :
+                if '/' != fn[-1] : continue
+                fn = fn[:-1]
+            if fnmatch.fnmatch(os.path.basename(fn), fnSearch):
+                if minFn and len(minFn) >8 and minFn > fn: continue # skip some old files
+                srcPaths.append(fn)
+
+        self.info('associated %d paths of event[%s]: %s' % (len(srcPaths), evtype, ','.join(srcPaths)))
+
+        for tn in srcPaths:
+            bname = os.path.basename(tn)
+            if '.json' == bname[-5:].lower() :
+                symbol = bname[:bname.index('_')]
+                if not symbol in self.__symbols:
+                    continue
+
+                with open(tn, "rb") as f:
+                    pb = self.__jsonToPlayback(f, symbol, evtype)
+                    if not pb :
+                        self.warn('NULL substrm of file[%s] skipped' % (fn))
+                        continue
+
+                    pb.setId(tn)
+                    self.addStream(pb)
+                    self.info('added substrm[%s] into mux' % (pb.id))
+                    subStrmsAdded.append(pb.id)
+                    continue
+
+            if 'sina' == bname[:4].lower() :
+                self.__extractedFolder_sinaJson(tn, evtype) if dirOnly else self.__extractJsonTarball(tn, evtype)
                 continue
 
-            self.__srcpaths[evtype] = []
-            fnSearch=self.__tnPattern[evtype]
-
-            dirOnly, parentDir = False, os.path.dirname(fnSearch)
-            if '/' == fnSearch[-1]:
-                fnSearch = fnSearch[:-1]
-                dirOnly, parentDir = True, os.path.dirname(fnSearch)
-
-            fnAll = hist.listAllFiles(parentDir, fileOnly = not dirOnly)
-            fnSearch = os.path.basename(fnSearch)
-            for fn in fnAll:
-                if dirOnly :
-                    if '/' != fn[-1] : continue
-                    fn = fn[:-1]
-                if fnmatch.fnmatch(os.path.basename(fn), fnSearch):
-                    self.__srcpaths[evtype].append(fn)
-
-            self.info('associated %d paths of event[%s]: %s' % (len(self.__srcpaths[evtype]), evtype, ','.join(self.__srcpaths[evtype])))
-
-            for tn in self.__srcpaths[evtype]:
-                bname = os.path.basename(tn)
-                if '.json' == bname[-5:].lower() :
-                    symbol = bname[:bname.index('_')]
-                    if not symbol in self.__symbols:
-                        continue
-
-                    with open(tn, "rb") as f:
-                        pb = self.__jsonToPlayback(f, symbol, evtype)
-                        if not pb :
-                            self.warn('NULL substrm of file[%s] skipped' % (fn))
-                            continue
-
-                        pb.setId(tn)
-                        self.addStream(pb)
-                        self.info('added substrm[%s] into mux' % (pb.id))
-                        continue
-
-                if 'sina' == bname[:4].lower() :
-                    self.__extractedFolder_sinaJson(tn, evtype) if dirOnly else self.__extractJsonTarball(tn, evtype)
-                    continue
-
-                if 'realtime' == evtype :
-                    if 'advisor' == bname[:len('advisor')] :
-                        self.__extractAdvisorTarball(tn) # self.__extractAdvisorStreams(tn)
-                    elif 'advmd' == bname[:len('advmd')] : # the pre-filtered tcsv from original advisor.tcsv
-                        self.__extractedFolder_advmd(tn) if dirOnly else self.__extractAdvMdTarball(tn)
-                    continue
-
-        if len(self.symbols) >0 and None in [self.__srcpaths[EVENT_KLINE_1DAY], self.__srcpaths[EVENT_MONEYFLOW_1DAY]]:
-            crawl = SinaCrawler(self.program, None)
-            dtStart, _ = self.datetimeRange
-            days = (datetime.now() - dtStart).days +2
-            if days > 500: days =500
-
-            evtype = EVENT_KLINE_1DAY
-            if not self.__srcpaths[evtype] :
-                self.debug('taking online query as source of event[%s] of %ddays' % (evtype, days))
-                for s in self.symbols:
-                    httperr, dataseq = crawl.GET_RecentKLines(s, 240, days)
-                    if 200 != httperr or len(dataseq) <=0:
-                        self.error("doAppInit() GET_RecentKLines(%s:%s) failed, err(%s) len(%d)" %(s, evtype, httperr, len(dataseq)))
-                        continue
-
-                    # succ at query
-                    pb, c = hist.Playback(s, program=self.program), 0
-                    for i in dataseq:
-                        ev = Event(evtype)
-                        ev.setData(i)
-                        pb.enquePending(ev)
-                        c+=1
-
-                    self.addStream(pb)
-                    self.info('added online query as source of event[%s] len[%d]' % (evtype, c))
-
-            evtype = EVENT_MONEYFLOW_1DAY
-            if not self.__srcpaths[evtype] :
-                self.debug('taking online query as source of event[%s] of %ddays' % (evtype, days))
-                for s in self.symbols:
-                    httperr, dataseq = crawl.GET_MoneyFlow(s, days, False)
-                    if 200 != httperr or len(dataseq) <=0:
-                        self.error("doAppInit() GET_MoneyFlow(%s:%s) failed, err(%s) len(%d)" %(s, evtype, httperr, len(dataseq)))
-                        continue
-
-                    # succ at query
-                    pb, c = hist.Playback(s, program=self.program), 0
-                    for i in dataseq:
-                        ev = Event(evtype)
-                        ev.setData(i)
-                        pb.enquePending(ev)
-                        c+=1
-
-                    self.addStream(pb)
-                    self.info('added online query as source of event[%s] len[%d]' % (evtype, c))
-
-        self.info('inited mux with %d substreams' % (self.size))
-        return self.size >0
+            if 'realtime' == evtype :
+                if 'advisor' == bname[:len('advisor')] :
+                    subStrmsAdded += self.__extractAdvisorTarball(tn) # self.__extractAdvisorStreams(tn)
+                elif 'advmd' == bname[:len('advmd')] : # the pre-filtered tcsv from original advisor.tcsv
+                    subStrmsAdded += self.__extractedFolder_advmd(tn) if dirOnly else self.__extractAdvMdTarball(tn)
+                continue
+        
+        return subStrmsAdded
 
 ########################################################################
 class SinaMerger(hist.PlaybackApp) :

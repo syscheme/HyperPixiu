@@ -72,7 +72,7 @@ if __name__ == '__main__':
     evMdSource = '/mnt/e/AShareSample/screen-dataset'
     #################
 
-    SINA_TODAY = datetime.strptime(SINA_TODAY, '%Y-%m-%d').replace(hour=0, minute=0, second=0, microsecond=0)
+    SINA_TODAY = datetime.strptime(SINA_TODAY, '%Y-%m-%d').replace(hour=23, minute=59, second=59, microsecond=0)
     acc     = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
     tdrCore = p.createApp(BaseTrader, configNode ='trader', objectives=objectives, account=acc)
     objectives = tdrCore.objectives
@@ -83,16 +83,18 @@ if __name__ == '__main__':
 
     # determine the Playback instance
     evMdSource = Program.fixupPath(evMdSource)
-    srcPathPatternDict={
-        'srcPathPattern_KL5m' : '%s/%s_KL5m*.json' % (evMdSource, SYMBOL),
-        'srcPathPattern_MF1m' : '%s/%s_MF1m*.json' % (evMdSource, SYMBOL),
-        'srcPathPattern_KL1d' : '%s/%s_KL1d*.json' % (evMdSource, SYMBOL),
-        'srcPathPattern_MF1d' : '%s/%s_MF1d*.json' % (evMdSource, SYMBOL),
-    }
 
-    playback   = SinaMux(p, **srcPathPatternDict) # = p.createApp(SinaMux, **srcPathPatternDict)
+    playback   = SinaMux(p, endDate=SINA_TODAY.strftime('%Y%m%dT%H%M%S')) # = p.createApp(SinaMux, **srcPathPatternDict)
     playback.setSymbols(objectives)
-    playback.load()
+    nLastDays = 5
+    httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, 1 + nLastDays)
+    yymmddNago = lastDays[0].asof.strftime('%Y%m%d')
+    p.info('determined %d-Tdays before %s was %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), yymmddNago))
+    
+    playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL)
+    playback.loadOffline(EVENT_KLINE_5MIN, '%s/%s_KL5m*.json' % (evMdSource, SYMBOL), '%s/%s_KL5m%s.json' % (evMdSource, SYMBOL, yymmddNago))
+    playback.loadOffline(EVENT_MONEYFLOW_1MIN, '%s/%s_MF1m*.json' % (evMdSource, SYMBOL), '%s/%s_MF1m%s.json' % (evMdSource, SYMBOL, yymmddNago))
+    p.info('inited mux with %d substreams' % (playback.size))
     
     tdrWraper  = p.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=playback, symbol=SYMBOL) # = p.createApp(SinaDayEnd, configNode ='trader', trader=tdrCore, symbol=SYMBOL, dirOfflineData=evMdSource)
 

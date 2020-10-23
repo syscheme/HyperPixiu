@@ -52,7 +52,7 @@ downloadMF1d()
     fi
 
     echo "fetching MF1d of ${SYMBOL} to ${FN}"
-    RET=$(${WGET} "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?daima=${SYMBOL}" -O ${FN} 2>&1| grep -o 'awaiting response.*'| grep -o '[0-9]*')
+    RET=$(${WGET} "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?num=${DATALEN}&page=1&daima=${SYMBOL}" -O ${FN} 2>&1| grep -o 'awaiting response.*'| grep -o '[0-9]*')
     if [ "200" == "${RET}" ]; then
         echo "downloaded MF1m of ${SYMBOL} as ${FN}, resp ${RET}"
         return

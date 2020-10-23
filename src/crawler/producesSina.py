@@ -51,7 +51,7 @@ class SinaMux(hist.PlaybackMux) :
         #no self: self.debug('%d symbols found in tarball[%s]: %s' % (len(symbolList), tarballPath, ','.join(symbolList)))
         return symbolList
 
-    def __jsonToPlayback(self, jsonFstream, symbol, evtype):
+    def __jsonToPlayback(self, jsonFstream, symbol, evtype, dtStart =None, dtEnd=None):
 
         content = jsonFstream.read().decode()
         edseq =[]
@@ -64,16 +64,21 @@ class SinaMux(hist.PlaybackMux) :
         elif EVENT_MONEYFLOW_1DAY == evtype:
             edseq = SinaCrawler.convertToMoneyFlow(symbol, content, False)
 
-        if len(edseq) <=0: return None
+        if len(edseq) <=0: return None, edseq
 
-        pb = hist.Playback(symbol, program=self.program)
+        pb, c = hist.Playback(symbol, program=self.program), 0
         pb.setId('%s_%s.json' % (symbol, evtype))
         for ed in edseq:
+            # TODO if dtStart and ed.asof < dtStart:
+            if dtEnd and ed.asof > dtEnd:
+                del dataseq[c:]
+                break
             ev = Event(evtype)
             ev.setData(ed)
             pb.enquePending(ev)
+            c+=1
         
-        return pb
+        return pb, edseq
 
     def __extractJsonTarball(self, tarballName, evtype):
         tar = tarfile.open(tarballName)
@@ -293,6 +298,21 @@ class SinaMux(hist.PlaybackMux) :
 
         return httperr, pb.id, dataseq[- min(len(dataseq), nSampleLast) :]
 
+    def loadOfflineJson(self, evtype, symbol, filename, nSampleLast =1): # return True if succ
+        
+        dtStart, dtEnd = self.datetimeRange
+        with open(filename, "rb") as f:
+            pb, dataseq = self.__jsonToPlayback(f, symbol, evtype, dtEnd)
+            if not pb :
+                self.warn('NULL substrm of file[%s] skipped' % (fn))
+                return None, edseq
+
+            pb.setId(filename)
+            self.addStream(pb)
+            self.info('added substrm[%s] into mux' % (pb.id))
+
+        return pb.id, dataseq[- min(len(dataseq), nSampleLast) :]
+
     def loadOffline(self, evtype, fnSearch, minFn=None): # return True if succ
         
         subStrmsAdded =[]
@@ -321,17 +341,8 @@ class SinaMux(hist.PlaybackMux) :
                 if not symbol in self.__symbols:
                     continue
 
-                with open(tn, "rb") as f:
-                    pb = self.__jsonToPlayback(f, symbol, evtype)
-                    if not pb :
-                        self.warn('NULL substrm of file[%s] skipped' % (fn))
-                        continue
-
-                    pb.setId(tn)
-                    self.addStream(pb)
-                    self.info('added substrm[%s] into mux' % (pb.id))
-                    subStrmsAdded.append(pb.id)
-                    continue
+                pbId, edseq = self.loadOfflineJson(evtype, symbol, tn)
+                continue
 
             if 'sina' == bname[:4].lower() :
                 self.__extractedFolder_sinaJson(tn, evtype) if dirOnly else self.__extractJsonTarball(tn, evtype)

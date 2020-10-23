@@ -6,6 +6,12 @@ SINA_TODAY=$(date +%Y%m%d)
 DATALEN=300
 WGET="echo wget --user-agent='Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)' "
 
+TAR_EXT="tar.bz2"
+TAR_CMD="tar cfvj "
+# HP_HOME="/mnt/d/workspace.t3600/HyperPixiu"
+# TAR_EXT="h5t"
+# TAR_CMD="${HP_HOME}/run.sh ${HP_HOME}/src/launch/h5tar.py c "
+
 #-------------------------------------
 RET=200
 
@@ -135,16 +141,17 @@ downloadList()
 
     done
 
-    echo "${CATEGORY} done, zipping to ${FOLDER}.tar.bz2"
-    tar cfvj ./${FOLDER}.tar.bz2 ${FOLDER}/*
-    if ! [ -e ./${FOLDER}.tar.bz2 ]; then
+    echo "${CATEGORY} done, zipping to ${FOLDER}.${TAR_EXT}"
+    ${TAR_CMD} ./${FOLDER}.${TAR_EXT} ${FOLDER}/*
+    if ! [ -e ./${FOLDER}.${TAR_EXT} ]; then
             return
     fi
 
     rm -rf ${FOLDER}
     if [ -d "${ARCH_DIR}" ]; then
-            mv -vf ./${FOLDER}.tar.bz2 "${ARCH_DIR}"
-            ls -d Sina${CATEGORY}_*| grep -v 'tar.bz2' |sort | head -n -5 | xargs rm -rf 
+            mv -vf ./${FOLDER}.${TAR_EXT} "${ARCH_DIR}"
+            ls -d Sina${CATEGORY}_*| grep -v "${TAR_EXT}" |sort | head -n -5 | xargs rm -rf 
     fi
+
 }
 

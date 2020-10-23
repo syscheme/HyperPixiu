@@ -2507,8 +2507,8 @@ class ShortSwingScanner(OfflineSimulator):
         stateshape = np.array(metrix[0][0]).shape
         col_state  = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype('float16')
 
-        col_gainRates  = np.concatenate(metrix[:, 1]).reshape(lenF, len(rangedFrame[0][1])).astype('float16')
-        col_ohlc       = np.concatenate(metrix[:, 2]).reshape(lenF, len(rangedFrame[0][2])).astype('float16')  # col_price = metrix[:, 2].astype('float16')
+        col_gainRates  = np.concatenate(metrix[:, 1]).reshape(lenF, *np.array(metrix[0][1]).shape).astype('float16')
+        col_ohlc       = np.concatenate(metrix[:, 2]).reshape(lenF, *np.array(metrix[0][2]).shape).astype('float16')  # col_price = metrix[:, 2].astype('float16')
 
         normalizedId = 'FclzD4X%dR%dBy%s' %(col_state.shape[1], self._daysLong, self._byEvent[len(MARKETDATE_EVENT_PREFIX):])
 

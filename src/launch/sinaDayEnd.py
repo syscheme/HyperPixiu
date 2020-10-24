@@ -21,7 +21,7 @@ import HistoryData as hist
 from advisors.dnn import DnnAdvisor_S1548I4A3
 from crawler.producesSina import SinaMux, Sina_Tplus1, SinaSwingScanner
 
-import sys, os, platform
+import sys, os, platform, re
 RFGROUP_PREFIX  = 'ReplayFrame:'
 RFGROUP_PREFIX2 = 'RF'
 OUTFRM_SIZE = 8*1024
@@ -44,13 +44,13 @@ class SinaDayEnd(SinaSwingScanner):
         # TODO
         pass
 
-
 if __name__ == '__main__':
 
     if not '-f' in sys.argv :
         sys.argv += ['-f', os.path.realpath(os.path.dirname(os.path.abspath(__file__))+ '/../../conf') + '/Trader.json' ]
 
-    SINA_TODAY = datetime.now().strftime('%Y-%m-%d')
+    CLOCK_TODAY= datetime.now().replace(hour=23, minute=59, second=59, microsecond=0)
+    SINA_TODAY = CLOCK_TODAY.strftime('%Y-%m-%d')
     SINA_TODAY = '2020-10-09'
     if 'SINA_TODAY' in os.environ.keys():
         SINA_TODAY = [os.environ['SINA_TODAY']]
@@ -71,6 +71,9 @@ if __name__ == '__main__':
 
     modelName   = p.getConfig('scanner/model', 'ModelName') # None
 
+    todayYYMMDD = SINA_TODAY.strftime('%Y%m%d')
+    allFiles = hist.listAllFiles(evMdSource)
+
     for SYMBOL in objectives:
         p.stop()
         p._heartbeatInterval =-1
@@ -87,36 +90,44 @@ if __name__ == '__main__':
         playback   = SinaMux(p, endDate=SINA_TODAY.strftime('%Y%m%dT%H%M%S')) # = p.createApp(SinaMux, **srcPathPatternDict)
         playback.setSymbols(objectives)
         nLastDays = 5
-        _, lastDays = playback.loadOfflineJson(EVENT_KLINE_1DAY, SYMBOL, '%s/%s_KL1d20201008.json' % (evMdSource, SYMBOL), 1 + nLastDays) # httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, 1 + nLastDays)
-        dtStart    = lastDays[0].asof
-        yymmddStart = dtStart.strftime('%Y%m%d')
-        p.info('determined %d-Tdays before %s was %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), yymmddStart))
+
+        bnRegex, filelst = '%s_KL1d([0-9]*).json' % SYMBOL, []
+        for fn in allFiles:
+            m = re.match(bnRegex, os.path.basename(fn))
+            if not m or m.group(1) < todayYYMMDD: continue
+            filelst.append(str(fn))
         
-        playback.loadOfflineJson(EVENT_MONEYFLOW_1DAY, SYMBOL, '%s/%s_MF1d20201003.json' % (evMdSource, SYMBOL), 1 + nLastDays) # playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL)
-        playback.loadOffline(EVENT_KLINE_5MIN, '%s/%s_KL5m*.json' % (evMdSource, SYMBOL), '%s/%s_KL5m%s.json' % (evMdSource, SYMBOL, yymmddStart))
-        playback.loadOffline(EVENT_MONEYFLOW_1MIN, '%s/%s_MF1m*.json' % (evMdSource, SYMBOL), '%s/%s_MF1m%s.json' % (evMdSource, SYMBOL, yymmddStart))
+        if len(filelst) <=0:
+            httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, 1 + nLastDays)
+        else:
+            filelst.sort()
+            _, lastDays = playback.loadOfflineJson(EVENT_KLINE_1DAY, SYMBOL, filelst[0], 1 + nLastDays)
+
+        dtStart    = lastDays[0].asof
+        startYYMMDD = dtStart.strftime('%Y%m%d')
+        p.info('determined %d-Tdays before %s was %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), startYYMMDD))
+        
+        bnRegex, filelst = '%s_MF1d([0-9]*).json' % SYMBOL, []
+        for fn in allFiles:
+            m = re.match(bnRegex, os.path.basename(fn))
+            if not m or m.group(1) < todayYYMMDD: continue
+            filelst.append(fn)
+        
+        if len(filelst) <=0:
+            playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL)
+        else:
+            filelst.sort()
+            playback.loadOfflineJson(EVENT_MONEYFLOW_1DAY, SYMBOL, filelst[0], 1 + nLastDays)
+
+        playback.loadOffline(EVENT_KLINE_5MIN, '%s/%s_KL5m*.json' % (evMdSource, SYMBOL), '%s/%s_KL5m%s.json' % (evMdSource, SYMBOL, startYYMMDD))
+        playback.loadOffline(EVENT_MONEYFLOW_1MIN, '%s/%s_MF1m*.json' % (evMdSource, SYMBOL), '%s/%s_MF1m%s.json' % (evMdSource, SYMBOL, startYYMMDD))
         p.info('inited mux with %d substreams' % (playback.size))
         
         tdrWraper  = p.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=playback, symbol=SYMBOL) # = p.createApp(SinaDayEnd, configNode ='trader', trader=tdrCore, symbol=SYMBOL, dirOfflineData=evMdSource)
         tdrWraper.setTimeRange(dtStart = dtStart)
-        tdrWraper.setSampling(os.path.join(p.outdir, 'SinaDayEnd_%s.h5' % SINA_TODAY.strftime('%Y%m%d')))
+        tdrWraper.setSampling(os.path.join(p.outdir, 'SwingTraining_D%s.h5' % SINA_TODAY.strftime('%Y%m%d')))
 
         tdrWraper.setRecorder(rec)
-
-        # rec.registerCategory('PricePred', params= {'columns' : 
-        #  1d01p,1d12p,1d25p,1d5pp,1d01n,1d12n,1d2pn',
-        #  2d01p,2d12p,2d25p,2d5pp,2d01n,2d12n,2d2pn',
-        #  5d01p,5d12p,5d25p,5d5pp,5d01n,5d12n,5d2pn',]})
-        
-        # # subscribe the prediction of 10:00, 11:00, 13:30, 14:30, 15:00 of today
-        # tdrWraper.schedulePreidictions([
-        #     SINA_TODAY.replace(hour=10),
-        #     SINA_TODAY.replace(hour=11),
-        #     SINA_TODAY.replace(hour=13, minute=30),
-        #     SINA_TODAY.replace(hour=14, minute=30),
-        #     SINA_TODAY.replace(hour=15)])
-
-        # tdrWraper.loadModel(modelName)
 
         p.start()
         if tdrWraper.isActive :
@@ -124,5 +135,9 @@ if __name__ == '__main__':
         p.stop()
 
         statesOfMoments = tdrWraper.stateOfMoments
-        print('statesOf: %s' % statesOfMoments.keys())
+        p.warn('TODO: predicting based on statesOf: %s and output to tcsv for summarizing' % ','.join(list(statesOfMoments.keys())))
+        # rec.registerCategory('PricePred', params= {'columns' : 
+        #  1d01p,1d12p,1d25p,1d5pp,1d01n,1d12n,1d2pn',
+        #  2d01p,2d12p,2d25p,2d5pp,2d01n,2d12n,2d2pn',
+        #  5d01p,5d12p,5d25p,5d5pp,5d01n,5d12n,5d2pn',]})
 

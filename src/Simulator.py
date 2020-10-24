@@ -2463,7 +2463,7 @@ class ShortSwingScanner(OfflineSimulator):
                         return 1
 
                     stateOfEvent = {
-                        'ident'   : '%s@%s' % (symbol, ev.data.datetime.strftime('%Y-%m-%dT%H:%M:%S')),
+                        'ident'   : '%s@%s' % (symbol, ev.data.datetime.strftime('%Y%m%dT%H%M%S')),
                         'ohlc'   : [ohlc.open, ohlc.high, ohlc.low, price],
                         'stateD4f': self.__psptReadAhead.exportImg6C_3Liner16x32R(symbol, self.outdir), # floatsD4(d4wished = self._f4schema), 
                         }
@@ -2556,7 +2556,7 @@ class ShortSwingScanner(OfflineSimulator):
             desc = '%s.%s: dailized gain-rates of %s in future %s days by %s' % (normalizedId, frameId, self._tradeSymbol, self._daysLong, self.ident)
             if frameId in h5file.keys():
                 del h5file[frameId]
-                
+
             g = h5file.create_group(frameId)
             g.attrs['desc']     = desc
             g.attrs['state']     = 'market state'

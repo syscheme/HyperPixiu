@@ -97,13 +97,21 @@ if __name__ == '__main__':
             if not m or m.group(1) < todayYYMMDD: continue
             filelst.append(str(fn))
         
+        daysTolst = (CLOCK_TODAY - SINA_TODAY).days + 1 + nLastDays
         if len(filelst) <=0:
-            httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, 1 + nLastDays, evMdSource)
+            httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, daysTolst, evMdSource)
         else:
             filelst.sort()
-            _, lastDays = playback.loadOfflineJson(EVENT_KLINE_1DAY, SYMBOL, filelst[0], 1 + nLastDays)
+            _, lastDays = playback.loadOfflineJson(EVENT_KLINE_1DAY, SYMBOL, filelst[0], daysTolst)
 
-        dtStart    = lastDays[0].asof
+        dtStart = lastDays[0].asof
+        lastDays.reverse()
+        for i in range(len(lastDays)):
+            if todayYYMMDD > lastDays[i].asof.strftime('%Y%m%d') :
+                if i < len(lastDays) - nLastDays :
+                    dtStart = lastDays[i + nLastDays].asof
+                break
+
         startYYMMDD = dtStart.strftime('%Y%m%d')
         p.info('determined %d-Tdays before %s was %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), startYYMMDD))
         
@@ -125,13 +133,14 @@ if __name__ == '__main__':
         
         tdrWraper  = p.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=playback, symbol=SYMBOL) # = p.createApp(SinaDayEnd, configNode ='trader', trader=tdrCore, symbol=SYMBOL, dirOfflineData=evMdSource)
         tdrWraper.setTimeRange(dtStart = dtStart)
-        tdrWraper.setSampling(os.path.join(p.outdir, 'SwingTraining_D%s.h5' % SINA_TODAY.strftime('%Y%m%d')))
+        tdrWraper.setSampling(os.path.join(p.outdir, 'SwingTrainingDS_%s.h5' % SINA_TODAY.strftime('%Y%m%d')))
 
         tdrWraper.setRecorder(rec)
 
         p.start()
         if tdrWraper.isActive :
             p.loop()
+
         p.stop()
 
         statesOfMoments = tdrWraper.stateOfMoments

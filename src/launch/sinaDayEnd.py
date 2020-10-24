@@ -88,17 +88,20 @@ if __name__ == '__main__':
     playback.setSymbols(objectives)
     nLastDays = 5
     _, lastDays = playback.loadOfflineJson(EVENT_KLINE_1DAY, SYMBOL, '%s/%s_KL1d20201008.json' % (evMdSource, SYMBOL), 1 + nLastDays) # httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, 1 + nLastDays)
-    yymmddNago = lastDays[0].asof.strftime('%Y%m%d')
-    p.info('determined %d-Tdays before %s was %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), yymmddNago))
+    dtStart    = lastDays[0].asof
+    yymmddStart = dtStart.strftime('%Y%m%d')
+    p.info('determined %d-Tdays before %s was %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), yymmddStart))
     
     playback.loadOfflineJson(EVENT_MONEYFLOW_1DAY, SYMBOL, '%s/%s_MF1d20201003.json' % (evMdSource, SYMBOL), 1 + nLastDays) # playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL)
-    playback.loadOffline(EVENT_KLINE_5MIN, '%s/%s_KL5m*.json' % (evMdSource, SYMBOL), '%s/%s_KL5m%s.json' % (evMdSource, SYMBOL, yymmddNago))
-    playback.loadOffline(EVENT_MONEYFLOW_1MIN, '%s/%s_MF1m*.json' % (evMdSource, SYMBOL), '%s/%s_MF1m%s.json' % (evMdSource, SYMBOL, yymmddNago))
+    playback.loadOffline(EVENT_KLINE_5MIN, '%s/%s_KL5m*.json' % (evMdSource, SYMBOL), '%s/%s_KL5m%s.json' % (evMdSource, SYMBOL, yymmddStart))
+    playback.loadOffline(EVENT_MONEYFLOW_1MIN, '%s/%s_MF1m*.json' % (evMdSource, SYMBOL), '%s/%s_MF1m%s.json' % (evMdSource, SYMBOL, yymmddStart))
     p.info('inited mux with %d substreams' % (playback.size))
     
     tdrWraper  = p.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=playback, symbol=SYMBOL) # = p.createApp(SinaDayEnd, configNode ='trader', trader=tdrCore, symbol=SYMBOL, dirOfflineData=evMdSource)
+    tdrWraper.setTimeRange(dtStart = dtStart)
 
     tdrWraper.setRecorder(rec)
+
     # rec.registerCategory('PricePred', params= {'columns' : 
     #  1d01p,1d12p,1d25p,1d5pp,1d01n,1d12n,1d2pn',
     #  2d01p,2d12p,2d25p,2d5pp,2d01n,2d12n,2d2pn',
@@ -118,3 +121,7 @@ if __name__ == '__main__':
     if tdrWraper.isActive :
         p.loop()
     p.stop()
+
+    statesOfMoments = tdrWraper.stateOfMoments
+    print('statesOf: %s' % statesOfMoments.keys())
+

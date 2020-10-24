@@ -98,7 +98,6 @@ class BackTestApp(MetaTrader):
         except:
             pass
 
-        self.__dtLastData = self._btStartDate
         self._bGameOver = False
         self._openDays = 0
 
@@ -109,6 +108,12 @@ class BackTestApp(MetaTrader):
     @property
     def wkTrader(self) :
         return self.__wkTrader
+
+    def setTimeRange(self, dtStart, dtEnd = None) :
+        if dtStart: self._btStartDate = dtStart
+        if dtEnd:   self._btEndDate = dtEnd
+
+        return self._btStartDate, self._btEndDate
 
     def setRecorder(self, recorder) :
         self._recorder = recorder
@@ -169,6 +174,8 @@ class BackTestApp(MetaTrader):
     def doAppInit(self): # return True if succ
         if not super(BackTestApp, self).doAppInit() :
             return False
+
+        self.__dtLastData = self._btStartDate
 
         # step 1. wrapper the Trader
         if not self._initTrader :
@@ -2346,14 +2353,27 @@ class ShortSwingScanner(OfflineSimulator):
         self.__stampByEvent = None
 
         self.__dtToday = None
+        self.__momentsToSample = ['10:00:00', '11:00:00', '13:30:00', '14:30:00', '15:00:00']
+        self.__stateOfMoments = {}
 
         self.__eventsOfDays = EvictableStack(evictSize=self._daysLong+1, nildata=[]) # list of days, each item contains events of days that up to self._daysLong
         self.__psptReadAhead = PerspectiveState('Dummy') # Perspective('Dummy')
         
-
         self.__sampleFrmSize  = 1024*8
         self.__sampleFrm = [None]  * self.__sampleFrmSize
         self.__sampleIdx, self.__frameNo = 0, 0
+
+    @property
+    def stateOfMoments(self) : return self.__stateOfMoments
+
+    @property
+    def measureDays(self) : return self._daysLong
+
+    # overwrite parent's by adjust startDate to measureDays ealier
+    def setTimeRange(self, dtStart, dtEnd = None) :
+        super(ShortSwingScanner, self).setTimeRange(dtStart, dtEnd)
+        dtStart - timedelta(days = 2 + self._daysLong)
+        return self._btStartDate, self._btEndDate
 
     def doAppInit(self): # return True if succ
         if not super(ShortSwingScanner, self).doAppInit() :
@@ -2372,9 +2392,11 @@ class ShortSwingScanner(OfflineSimulator):
         pass # do nothing here
 
     def OnEpisodeDone(self, reachedEnd=True):
-        super(ShortSwingScanner, self).OnEpisodeDone(reachedEnd)
-        if self.__sampleIdx >0 and not None in self.__sampleFrm :
+        # NO neccessary to call super(ShortSwingScanner, self).OnEpisodeDone(reachedEnd)
+        if self.__sampleIdx >0 : # if self.__sampleIdx >0 and not None in self.__sampleFrm :
             self.__saveFrame(self.__sampleFrm[:self.__sampleIdx])
+
+        self.program.stop()
 
     # to replace BackTest's doAppStep
     def doAppStep(self):
@@ -2404,7 +2426,7 @@ class ShortSwingScanner(OfflineSimulator):
                     self.__stampByEvent = stamp
 
                     dayOfEvent = ev.data.datetime.replace(hour=23, minute=59, second=59, microsecond=999999)
-                    if not self.__dtToday or self.__dtToday < dayOfEvent:
+                    if not self.__dtToday or self.__dtToday < dayOfEvent: # a new day comes
 
                         for i in range(0, self.__eventsOfDays.size): # 0 maps today's close price
                             label = 'priceIn%02dd' % i
@@ -2413,20 +2435,10 @@ class ShortSwingScanner(OfflineSimulator):
                                 eventsDaysAgo[e][label] = ohlc.close
                         
                         if self.__eventsOfDays.size >= self.__eventsOfDays.evictSize:
+                            # evicting the oldest date into the __sampleFrm, which were supposed filled all days result
                             eventsDaysAgo = self.__eventsOfDays[self.__eventsOfDays.size -1]
                             self.__saveEventsOfDay(eventsDaysAgo)
 
-                        # eventsLongAgo  =  self.__eventsOfDays[self._daysLong -1] if self.__eventsOfDays.size >=self._daysLong else []
-                        # eventsShortAgo =  self.__eventsOfDays[self._daysShort -1] if self.__eventsOfDays.size >=self._daysShort else []
-                        
-                        # for i in range(len(eventsLongAgo)):
-                        #     eventsLongAgo[i]['futurePriceL'] = ohlc.close
-
-                        # for i in range(len(eventsShortAgo)):
-                        #     eventsShortAgo[i]['futurePriceS'] = ohlc.close
-
-                        # save the day 'long' ago and evict that day
-                        # self.__saveEventsOfDay(eventsLongAgo)
                         self.__eventsOfDays.push([])
 
                         if self.__dtToday:
@@ -2434,14 +2446,23 @@ class ShortSwingScanner(OfflineSimulator):
 
                         self.__cOpenDays += 1
                         self.__dtToday = dayOfEvent
+                        self.__stateOfMoments = {'date': self.__dtToday }
 
                     # in a same day
+                    moment = ev.data.datetime.strftime('%H:%M:00')
+                    if len(self.__momentsToSample) >0 and not moment in self.__momentsToSample:
+                        return 1
+
                     stateOfEvent = {
+                        'asof'   : '%s@%s' % (symbol, ev.data.datetime.strftime('%Y-%m-%dT%H:%M:%S')),
                         'ohlc'   : [ohlc.open, ohlc.high, ohlc.low, price],
                         'stateD4f': self.__psptReadAhead.exportImg6C_3Liner16x32R(symbol, self.outdir), # floatsD4(d4wished = self._f4schema), 
                         }
 
                     self.__eventsOfDays[0].append(stateOfEvent)
+                    self.__stateOfMoments[moment] = stateOfEvent
+                    self.debug('doAppStep() sampled state of %s' % stateOfEvent['asof'])
+
                     return 1 # successfully performed a step by pushing an Event
 
                 reachedEnd = True
@@ -2451,14 +2472,14 @@ class ShortSwingScanner(OfflineSimulator):
             except Exception as ex:
                 self.logexception(ex)
 
-        if self.__sampleIdx >0 :
-            self.__saveFrame(self.__sampleFrm[:self.__sampleIdx])
+        # if self.__sampleIdx >0 :
+        #     self.__saveFrame(self.__sampleFrm[:self.__sampleIdx])
 
         # this test should be done if reached here
         self.info('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self._stepNoInEpisode, self._bGameOver, reachedEnd))
-        self.stop()
+        self.OnEpisodeDone(reachedEnd)
         
-        exit(0) # ShortSwingScanner is not supposed to run forever, just exit instead of return
+        # exit(0) # ShortSwingScanner is not supposed to run forever, just exit instead of return
 
     def __saveEventsOfDay(self, eventsOfDay):
 

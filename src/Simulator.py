@@ -2333,11 +2333,12 @@ class ShortSwingScanner(OfflineSimulator):
         '''
         super(ShortSwingScanner, self).__init__(program, trader, histdata, **kwargs)
 
-        self._daysLong      = self.getConfig('constraints/futureDays',  5) # long-term prospect, default 1week(5days)
+        self._daysLong      = self.getConfig('constraints/futureDays',  3) # long-term prospect, default 1week(5days)
         self._daysShort     = self.getConfig('constraints/shortFuture', 2) # short-term prospect, default 2days
         self._byEvent       = self.getConfig('constraints/byEvent',   EVENT_KLINE_5MIN)
         self._h5compression = self.getConfig('h5compression', 'lzf').lower()
         self._h5compression = self.getConfig('h5compression', 'lzf').lower()
+        self._h5filename    = self.getConfig('h5filename', None)
 
         self._f4schema = f4schema if isinstance(f4schema,dict) else { # the default schema is based on KL only
             'asof':1, 
@@ -2369,6 +2370,10 @@ class ShortSwingScanner(OfflineSimulator):
     @property
     def measureDays(self) : return self._daysLong
 
+    def setSampling(self, h5filename, momentsToSample=['10:00:00', '11:00:00', '13:30:00', '14:30:00', '15:00:00']):
+        if h5filename : self._h5filename = h5filename
+        self.__momentsToSample = momentsToSample
+
     # overwrite parent's by adjust startDate to measureDays ealier
     def setTimeRange(self, dtStart, dtEnd = None) :
         super(ShortSwingScanner, self).setTimeRange(dtStart, dtEnd)
@@ -2392,7 +2397,7 @@ class ShortSwingScanner(OfflineSimulator):
         pass # do nothing here
 
     def OnEpisodeDone(self, reachedEnd=True):
-        # NO neccessary to call super(ShortSwingScanner, self).OnEpisodeDone(reachedEnd)
+        # NO neccessary to call super(ShortSwingScanner, self).OnEpisodeDone(reachedEnd) as we donot generate reports
         if self.__sampleIdx >0 : # if self.__sampleIdx >0 and not None in self.__sampleFrm :
             self.__saveFrame(self.__sampleFrm[:self.__sampleIdx])
 
@@ -2412,6 +2417,9 @@ class ShortSwingScanner(OfflineSimulator):
                 symbol = ev.data.symbol
                 if ev.data.datetime <= self._btEndDate:
                     if not self.__psptReadAhead.updateByEvent(ev) : # .push(ev)
+                        return 0
+
+                    if symbol != self._tradeSymbol :# if not symbol in self.wkTrader.objectives:
                         return 0
 
                     stamp    = self.__psptReadAhead.getAsOf(symbol, self._byEvent)
@@ -2438,6 +2446,7 @@ class ShortSwingScanner(OfflineSimulator):
                             # evicting the oldest date into the __sampleFrm, which were supposed filled all days result
                             eventsDaysAgo = self.__eventsOfDays[self.__eventsOfDays.size -1]
                             self.__saveEventsOfDay(eventsDaysAgo)
+                            self.debug('doAppStep() committed %s into frames' % ','.join([i['ident'] for i in eventsDaysAgo]))
 
                         self.__eventsOfDays.push([])
 
@@ -2454,18 +2463,19 @@ class ShortSwingScanner(OfflineSimulator):
                         return 1
 
                     stateOfEvent = {
-                        'asof'   : '%s@%s' % (symbol, ev.data.datetime.strftime('%Y-%m-%dT%H:%M:%S')),
+                        'ident'   : '%s@%s' % (symbol, ev.data.datetime.strftime('%Y-%m-%dT%H:%M:%S')),
                         'ohlc'   : [ohlc.open, ohlc.high, ohlc.low, price],
                         'stateD4f': self.__psptReadAhead.exportImg6C_3Liner16x32R(symbol, self.outdir), # floatsD4(d4wished = self._f4schema), 
                         }
 
                     self.__eventsOfDays[0].append(stateOfEvent)
                     self.__stateOfMoments[moment] = stateOfEvent
-                    self.debug('doAppStep() sampled state of %s' % stateOfEvent['asof'])
+                    self.debug('doAppStep() sampled state of %s' % stateOfEvent['ident'])
 
                     return 1 # successfully performed a step by pushing an Event
 
                 reachedEnd = True
+
             except StopIteration:
                 reachedEnd = True
                 self.info('hist-read: end of playback')
@@ -2537,12 +2547,16 @@ class ShortSwingScanner(OfflineSimulator):
         if self._h5compression and len(self._h5compression)>0:
             h5args['compression'] = self._h5compression
 
-        fn_frame = os.path.join(self.wkTrader.outdir, '%s_%s.h5' % (normalizedId, self._tradeSymbol) )
-        with h5py.File(fn_frame, 'a') as h5file:
-            frameId = 'frm%s' % str(self.__frameNo).zfill(3)
+        if not self._h5filename or len(self._h5filename) <=0:
+            self._h5filename = os.path.join(self.wkTrader.outdir, '%s_%s.h5' % (normalizedId, self._tradeSymbol) )
+        with h5py.File(self._h5filename, 'a') as h5file:
+            frameId = '%s.frm%s' % (self._tradeSymbol, str(self.__frameNo).zfill(3))
             self.__frameNo += 1
 
             desc = '%s.%s: dailized gain-rates of %s in future %s days by %s' % (normalizedId, frameId, self._tradeSymbol, self._daysLong, self.ident)
+            if frameId in h5file.keys():
+                del h5file[frameId]
+                
             g = h5file.create_group(frameId)
             g.attrs['desc']     = desc
             g.attrs['state']     = 'market state'
@@ -2560,5 +2574,5 @@ class ShortSwingScanner(OfflineSimulator):
             pr = g.create_dataset('ohlc', data= col_ohlc, **h5args)
             pr.attrs['desc'] = 'open-high-low-price so far in the day'
             
-        self.info('saved %s with %s samples into file %s with sig[%s]' % (frameId, len(col_state), fn_frame, self.ident))
+        self.info('saved %s with %s samples into file %s with sig[%s]' % (frameId, len(col_state), self._h5filename, self.ident))
 

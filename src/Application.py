@@ -859,9 +859,16 @@ class Program(object):
         for appId in self.__activeApps :
             app = self.getApp(appId)
             if app: app.stop()
-        
+            
+            self.__activeApps.remove(appId)
+
         # # 保存数据引擎里的合约数据到硬盘
         # self.dataEngine.saveContracts()
+        
+        # clear all applications
+        for appId in self.listApps():
+            app = self.getApp(appId)
+            self.removeApp(app)
 
     #----------------------------------------------------------------------
     @property

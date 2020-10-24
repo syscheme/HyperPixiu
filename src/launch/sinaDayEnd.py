@@ -55,13 +55,7 @@ if __name__ == '__main__':
     if 'SINA_TODAY' in os.environ.keys():
         SINA_TODAY = [os.environ['SINA_TODAY']]
 
-    p = Program()
-    p._heartbeatInterval =-1
-
-    evMdSource  = p.getConfig('marketEvents/source', None) # market data event source
-    ideal       = p.getConfig('trader/backTest/ideal', None) # None
-    modelName   = p.getConfig('scanner/model', 'ModelName') # None
-
+    SINA_TODAY = datetime.strptime(SINA_TODAY, '%Y-%m-%d').replace(hour=23, minute=59, second=59, microsecond=0)
     # In the case that this utility is started from a shell script, this reads env variables for the symbols
     objectives = None
     if 'SYMBOL' in os.environ.keys():
@@ -72,56 +66,63 @@ if __name__ == '__main__':
     evMdSource = '/mnt/e/AShareSample/screen-dataset'
     #################
 
-    SINA_TODAY = datetime.strptime(SINA_TODAY, '%Y-%m-%d').replace(hour=23, minute=59, second=59, microsecond=0)
-    acc     = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-    tdrCore = p.createApp(BaseTrader, configNode ='trader', objectives=objectives, account=acc)
-    objectives = tdrCore.objectives
-    SYMBOL = objectives[0]
+    p = Program()
+    p._heartbeatInterval =-1
 
-    rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.outdir, 'SinaDayEnd_%s.tcsv' % SINA_TODAY.strftime('%Y%m%d')))
-    revents = None
+    modelName   = p.getConfig('scanner/model', 'ModelName') # None
 
-    # determine the Playback instance
-    evMdSource = Program.fixupPath(evMdSource)
+    for SYMBOL in objectives:
+        p.stop()
+        p._heartbeatInterval =-1
 
-    playback   = SinaMux(p, endDate=SINA_TODAY.strftime('%Y%m%dT%H%M%S')) # = p.createApp(SinaMux, **srcPathPatternDict)
-    playback.setSymbols(objectives)
-    nLastDays = 5
-    _, lastDays = playback.loadOfflineJson(EVENT_KLINE_1DAY, SYMBOL, '%s/%s_KL1d20201008.json' % (evMdSource, SYMBOL), 1 + nLastDays) # httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, 1 + nLastDays)
-    dtStart    = lastDays[0].asof
-    yymmddStart = dtStart.strftime('%Y%m%d')
-    p.info('determined %d-Tdays before %s was %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), yymmddStart))
-    
-    playback.loadOfflineJson(EVENT_MONEYFLOW_1DAY, SYMBOL, '%s/%s_MF1d20201003.json' % (evMdSource, SYMBOL), 1 + nLastDays) # playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL)
-    playback.loadOffline(EVENT_KLINE_5MIN, '%s/%s_KL5m*.json' % (evMdSource, SYMBOL), '%s/%s_KL5m%s.json' % (evMdSource, SYMBOL, yymmddStart))
-    playback.loadOffline(EVENT_MONEYFLOW_1MIN, '%s/%s_MF1m*.json' % (evMdSource, SYMBOL), '%s/%s_MF1m%s.json' % (evMdSource, SYMBOL, yymmddStart))
-    p.info('inited mux with %d substreams' % (playback.size))
-    
-    tdrWraper  = p.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=playback, symbol=SYMBOL) # = p.createApp(SinaDayEnd, configNode ='trader', trader=tdrCore, symbol=SYMBOL, dirOfflineData=evMdSource)
-    tdrWraper.setTimeRange(dtStart = dtStart)
+        acc     = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
+        tdrCore = p.createApp(BaseTrader, configNode ='trader', objectives = [SYMBOL], account=acc)
 
-    tdrWraper.setRecorder(rec)
+        rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.outdir, 'SinaDayEnd_%s.tcsv' % SINA_TODAY.strftime('%Y%m%d')))
+        revents = None
 
-    # rec.registerCategory('PricePred', params= {'columns' : 
-    #  1d01p,1d12p,1d25p,1d5pp,1d01n,1d12n,1d2pn',
-    #  2d01p,2d12p,2d25p,2d5pp,2d01n,2d12n,2d2pn',
-    #  5d01p,5d12p,5d25p,5d5pp,5d01n,5d12n,5d2pn',]})
-     
-    # # subscribe the prediction of 10:00, 11:00, 13:30, 14:30, 15:00 of today
-    # tdrWraper.schedulePreidictions([
-    #     SINA_TODAY.replace(hour=10),
-    #     SINA_TODAY.replace(hour=11),
-    #     SINA_TODAY.replace(hour=13, minute=30),
-    #     SINA_TODAY.replace(hour=14, minute=30),
-    #     SINA_TODAY.replace(hour=15)])
+        # determine the Playback instance
+        evMdSource = Program.fixupPath(evMdSource)
 
-    # tdrWraper.loadModel(modelName)
+        playback   = SinaMux(p, endDate=SINA_TODAY.strftime('%Y%m%dT%H%M%S')) # = p.createApp(SinaMux, **srcPathPatternDict)
+        playback.setSymbols(objectives)
+        nLastDays = 5
+        _, lastDays = playback.loadOfflineJson(EVENT_KLINE_1DAY, SYMBOL, '%s/%s_KL1d20201008.json' % (evMdSource, SYMBOL), 1 + nLastDays) # httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, 1 + nLastDays)
+        dtStart    = lastDays[0].asof
+        yymmddStart = dtStart.strftime('%Y%m%d')
+        p.info('determined %d-Tdays before %s was %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), yymmddStart))
+        
+        playback.loadOfflineJson(EVENT_MONEYFLOW_1DAY, SYMBOL, '%s/%s_MF1d20201003.json' % (evMdSource, SYMBOL), 1 + nLastDays) # playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL)
+        playback.loadOffline(EVENT_KLINE_5MIN, '%s/%s_KL5m*.json' % (evMdSource, SYMBOL), '%s/%s_KL5m%s.json' % (evMdSource, SYMBOL, yymmddStart))
+        playback.loadOffline(EVENT_MONEYFLOW_1MIN, '%s/%s_MF1m*.json' % (evMdSource, SYMBOL), '%s/%s_MF1m%s.json' % (evMdSource, SYMBOL, yymmddStart))
+        p.info('inited mux with %d substreams' % (playback.size))
+        
+        tdrWraper  = p.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=playback, symbol=SYMBOL) # = p.createApp(SinaDayEnd, configNode ='trader', trader=tdrCore, symbol=SYMBOL, dirOfflineData=evMdSource)
+        tdrWraper.setTimeRange(dtStart = dtStart)
+        tdrWraper.setSampling(os.path.join(p.outdir, 'SinaDayEnd_%s.h5' % SINA_TODAY.strftime('%Y%m%d')))
 
-    p.start()
-    if tdrWraper.isActive :
-        p.loop()
-    p.stop()
+        tdrWraper.setRecorder(rec)
 
-    statesOfMoments = tdrWraper.stateOfMoments
-    print('statesOf: %s' % statesOfMoments.keys())
+        # rec.registerCategory('PricePred', params= {'columns' : 
+        #  1d01p,1d12p,1d25p,1d5pp,1d01n,1d12n,1d2pn',
+        #  2d01p,2d12p,2d25p,2d5pp,2d01n,2d12n,2d2pn',
+        #  5d01p,5d12p,5d25p,5d5pp,5d01n,5d12n,5d2pn',]})
+        
+        # # subscribe the prediction of 10:00, 11:00, 13:30, 14:30, 15:00 of today
+        # tdrWraper.schedulePreidictions([
+        #     SINA_TODAY.replace(hour=10),
+        #     SINA_TODAY.replace(hour=11),
+        #     SINA_TODAY.replace(hour=13, minute=30),
+        #     SINA_TODAY.replace(hour=14, minute=30),
+        #     SINA_TODAY.replace(hour=15)])
+
+        # tdrWraper.loadModel(modelName)
+
+        p.start()
+        if tdrWraper.isActive :
+            p.loop()
+        p.stop()
+
+        statesOfMoments = tdrWraper.stateOfMoments
+        print('statesOf: %s' % statesOfMoments.keys())
 

@@ -548,7 +548,7 @@ class SinaCrawler(MarketCrawler):
         # klineseq.reverse() # SINA returns from oldest to newest
         return klineseq
 
-    def GET_RecentKLines(self, symbol, minutes=1200, lines=10, urlProxy=None): # deltaDays=2)
+    def GET_RecentKLines(self, symbol, minutes=1200, lines=10, urlProxy=None, saveAs=None): # deltaDays=2)
         '''"查询 KLINE
         will call cortResp.send(csvline) when the result comes
         '''
@@ -574,6 +574,13 @@ class SinaCrawler(MarketCrawler):
             return httperr, klineseq
 
         klineseq = self.__class__.convertToKLineDatas(symbol, text)
+
+        try:
+            if saveAs and len(klineseq) >0:
+                with open(saveAs, 'w') as f:
+                    f.write(text)
+        except: pass
+
         return httperr, klineseq
 
     def sortKeyOfMD(md) : # for sort
@@ -728,7 +735,7 @@ class SinaCrawler(MarketCrawler):
         mfseq.sort(key=SinaCrawler.sortKeyOfMD)
         return mfseq
 
-    def GET_MoneyFlow(self, symbol, lines=260, byMinutes=False, urlProxy=None):
+    def GET_MoneyFlow(self, symbol, lines=260, byMinutes=False, urlProxy=None, saveAs=None) :
         ''' 查询现金流
         '''
         url = 'http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?sort=opendate&page=1&num=%d&daima=%s' % (lines, SinaCrawler.fixupSymbolPrefix(symbol)) # page 1 of 300lines is enough to cover days of a year
@@ -740,6 +747,12 @@ class SinaCrawler(MarketCrawler):
             return httperr, text
 
         mfseq = self.__class__.convertToMoneyFlow(symbol, text, byMinutes)
+        try:
+            if saveAs and len(mfseq) >0:
+                with open(saveAs, 'w') as f:
+                    f.write(text)
+        except: pass
+
         return httperr, mfseq
 
     #------------------------------------------------    

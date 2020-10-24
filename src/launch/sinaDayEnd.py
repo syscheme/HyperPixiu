@@ -98,7 +98,7 @@ if __name__ == '__main__':
             filelst.append(str(fn))
         
         if len(filelst) <=0:
-            httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, 1 + nLastDays)
+            httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, 1 + nLastDays, evMdSource)
         else:
             filelst.sort()
             _, lastDays = playback.loadOfflineJson(EVENT_KLINE_1DAY, SYMBOL, filelst[0], 1 + nLastDays)
@@ -114,7 +114,7 @@ if __name__ == '__main__':
             filelst.append(fn)
         
         if len(filelst) <=0:
-            playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL)
+            playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, evMdSource)
         else:
             filelst.sort()
             playback.loadOfflineJson(EVENT_MONEYFLOW_1DAY, SYMBOL, filelst[0], 1 + nLastDays)

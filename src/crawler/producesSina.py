@@ -253,7 +253,7 @@ class SinaMux(hist.PlaybackMux) :
 
         return subStrmsAdded
 
-    def loadOnline(self, evtype, symbol, nSampleLast =1): # return True if succ
+    def loadOnline(self, evtype, symbol, nSampleLast =1, saveOfflineDir =None): # return True if succ
 
         if not symbol or len(symbol) <=0 or not evtype in [EVENT_KLINE_1DAY, EVENT_MONEYFLOW_1DAY] :
             self.debug('%s of %s does not support online query as source' % (evtype, symbol))
@@ -271,10 +271,12 @@ class SinaMux(hist.PlaybackMux) :
 
         self.debug('taking online query as source of %s/%s of %ddays' % (evtype, symbol, days))
         httperr, dataseq = 500, []
+        saveYYMMDD = (datetime.now() - timedelta(hours=16)).strftime('%Y%m%d')
+        saveFilename = os.path.join(saveOfflineDir, '%s_%s%s.json' %(symbol, evtype[len(MARKETDATE_EVENT_PREFIX):], saveYYMMDD)) if saveOfflineDir else None
         if evtype == EVENT_KLINE_1DAY :
-            httperr, dataseq = crawl.GET_RecentKLines(symbol, 240, days)
+            httperr, dataseq = crawl.GET_RecentKLines(symbol, 240, days, saveAs=saveFilename)
         elif evtype == EVENT_MONEYFLOW_1DAY :
-            httperr, dataseq = crawl.GET_MoneyFlow(symbol, days, False)
+            httperr, dataseq = crawl.GET_MoneyFlow(symbol, days, False, saveAs=saveFilename)
 
         if 200 != httperr or len(dataseq) <=0:
             self.error("load() query(%s:%s) failed, err(%s) len(%d)" %(symbol, evtype, httperr, len(dataseq)))

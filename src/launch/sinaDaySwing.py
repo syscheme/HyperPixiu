@@ -157,7 +157,8 @@ def memberfnInH5tar(fnH5tar, symbol):
     # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
     mfn = os.path.basename(fnH5tar)[:-4]
     idx = mfn.index('_')
-    return '%s/%s_%s%s.json' % (mfn, symbol, mfn[4:idx], mfn[1+idx:])
+    asofYYMMDD = mfn[1+idx:]
+    return '%s/%s_%s%s.json' % (mfn, symbol, mfn[4:idx], asofYYMMDD), asofYYMMDD
 
 def swingOnH5tars():
     if not '-f' in sys.argv :
@@ -252,7 +253,7 @@ def swingOnH5tars():
         for fn in filelst:
             try :
                 # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
-                mfn = memberfnInH5tar(fn, SYMBOL)
+                mfn, _ = memberfnInH5tar(fn, SYMBOL)
                 playback.loadJsonH5t(EVENT_MONEYFLOW_1DAY, SYMBOL, fn, mfn, 1 + nLastDays)
                 loaded = True
                 break
@@ -266,30 +267,38 @@ def swingOnH5tars():
         bnRegex, filelst = 'SinaKL5m_([0-9]*).h5t', []
         # because one download of KL5m covered 5days, so take dtStart directly
         startYYMMDD = dtStart.strftime('%Y%m%d') 
+        latestDay = todayYYMMDD
         for fn in allFiles:
             m = re.match(bnRegex, os.path.basename(fn))
             if not m or m.group(1) < startYYMMDD or m.group(1) > todayYYMMDD: continue
             try :
                 # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
-                mfn = memberfnInH5tar(fn, SYMBOL)
+                mfn, latestDay = memberfnInH5tar(fn, SYMBOL)
                 playback.loadJsonH5t(EVENT_KLINE_5MIN, SYMBOL, fn, mfn)
             except Exception as ex:
                 p.logexception(ex, fn)
+        
+        if CLOCK_TODAY == SINA_TODAY and latestDay < todayYYMMDD:
+            playback.loadOnline(EVENT_KLINE_5MIN, SYMBOL, 0, dirCache)
 
         # 1.c  MF1m
         bnRegex, filelst = 'SinaMF1m_([0-9]*).h5t', []
         # because one download of KL5m covered 1day, so take dtStart directly
         # no need to (dtStart - timedelta(days=5)).strftime('%Y%m%d')
         startYYMMDD = dtStart.strftime('%Y%m%d')
+        latestDay = todayYYMMDD
         for fn in allFiles:
             m = re.match(bnRegex, os.path.basename(fn))
             if not m or m.group(1) < startYYMMDD or m.group(1) > todayYYMMDD : continue
             try :
                 # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
-                mfn = memberfnInH5tar(fn, SYMBOL)
+                mfn, latestDay = memberfnInH5tar(fn, SYMBOL)
                 playback.loadJsonH5t(EVENT_MONEYFLOW_1MIN, SYMBOL, fn, mfn)
             except Exception as ex:
                 p.logexception(ex, fn)
+
+        if CLOCK_TODAY == SINA_TODAY and latestDay < todayYYMMDD:
+            playback.loadOnline(EVENT_MONEYFLOW_1MIN, SYMBOL, 0, dirCache)
 
         p.info('inited mux with %d substreams' % (playback.size))
         

@@ -8,6 +8,7 @@ from MarketData import *
 from Perspective import PerspectiveState
 import HistoryData as hist
 from crawler.crawlSina import *
+import h5tar
 
 from datetime import datetime, timedelta
 import os
@@ -51,9 +52,8 @@ class SinaMux(hist.PlaybackMux) :
         #no self: self.debug('%d symbols found in tarball[%s]: %s' % (len(symbolList), tarballPath, ','.join(symbolList)))
         return symbolList
 
-    def __jsonToPlayback(self, jsonFstream, symbol, evtype, dtStart =None, dtEnd=None):
+    def __jsonStrToPlayback(self, content, symbol, evtype, dtStart =None, dtEnd=None):
 
-        content = jsonFstream.read().decode()
         edseq =[]
 
         # dispatch the convert func up to evtype from tar filename
@@ -71,7 +71,7 @@ class SinaMux(hist.PlaybackMux) :
         for ed in edseq:
             # TODO if dtStart and ed.asof < dtStart:
             if dtEnd and ed.asof > dtEnd:
-                del dataseq[c:]
+                del edseq[c:]
                 break
             ev = Event(evtype)
             ev.setData(ed)
@@ -79,6 +79,11 @@ class SinaMux(hist.PlaybackMux) :
             c+=1
         
         return pb, edseq
+
+    def __jsonToPlayback(self, jsonFstream, symbol, evtype, dtStart =None, dtEnd=None):
+
+        content = jsonFstream.read().decode()
+        return self.__jsonStrToPlayback(content, symbol, evtype, dtStart, dtEnd)
 
     def __extractJsonTarball(self, tarballName, evtype):
         tar = tarfile.open(tarballName)
@@ -314,6 +319,26 @@ class SinaMux(hist.PlaybackMux) :
             self.info('added substrm[%s] into mux' % (pb.id))
 
         return pb.id, dataseq[- min(len(dataseq), nSampleLast) :]
+
+    def loadJsonH5t(self, evtype, symbol, filename, nSampleLast =1): # return True if succ
+        
+        dtStart, dtEnd = self.datetimeRange
+        memberfiles = h5tar.list_utf8(filename)
+        evtag = evtype[len(MARKETDATE_EVENT_PREFIX):]
+        for mfn in memberfiles:
+            bfn = os.path.basename(mfn)
+            if '.json' != bfn[-5:] or not evtag in bfn or not symbol in bfn:
+                continue
+
+            jbody = h5tar.read_utf8(filename, mfn)
+            if not jbody or len(jbody) <=0: continue
+
+            pb, dataseq = self.__jsonStrToPlayback(jbody, symbol, evtype, dtEnd)
+            if not pb : continue
+
+            pb.setId('%s@%s' % (mfn, filename))
+            self.addStream(pb)
+            self.info('added substrm[%s] into mux' % (pb.id))
 
     def loadOffline(self, evtype, fnSearch, minFn=None): # return True if succ
         

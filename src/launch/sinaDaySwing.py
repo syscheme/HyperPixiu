@@ -64,6 +64,7 @@ if __name__ == '__main__':
     #################
     objectives=['SZ000002', 'SH600029']
     evMdSource = '/mnt/e/AShareSample/screen-dataset'
+    evMdArchived = os.path.join(os.environ['HOME'], 'wkspaces/hpx_archived/sina') 
     #################
 
     p = Program()
@@ -72,7 +73,8 @@ if __name__ == '__main__':
     modelName   = p.getConfig('scanner/model', 'ModelName') # None
 
     todayYYMMDD = SINA_TODAY.strftime('%Y%m%d')
-    allFiles = hist.listAllFiles(evMdSource)
+    allFiles    = hist.listAllFiles(evMdSource)
+    # allArchived = hist.listAllFiles(evMdArchived)
 
     for SYMBOL in objectives:
         p.stop()

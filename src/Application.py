@@ -291,10 +291,9 @@ class BaseApplication(MetaApp):
         if not self._program: return
         self._program.critical('APP['+self.ident +'] ' + msg)
 
-    def logexception(self, ex):
+    def logexception(self, ex, msg=''):
         '''报错输出+记录异常信息'''
-        if not self._program: return
-        self._program.logexception('APP['+self.ident +'] %s: %s' % (ex, traceback.format_exc()))
+        self.error('%s %s: %s' % (msg, ex, traceback.format_exc()))
 
     #----------------------------------------------------------------------
     def logError(self, eventType, content):
@@ -521,8 +520,8 @@ class Iterable(MetaObj):
         if not self.__program: return
         self.__program.error('%s[%s] ' %(self.__class__.__name__, self.id) + msg)
 
-    def logexception(self, ex):
-        self.error('%s[%s] %s: %s' % (self.__class__.__name__, self.id, ex, traceback.format_exc()))
+    def logexception(self, ex, msg=''):
+        self.error('%s %s: %s' % (msg, ex, traceback.format_exc()))
 
 ########################################################################
 import sys, getopt, platform
@@ -1231,9 +1230,9 @@ class Program(object):
         else:
             print('%s' % msg)
 
-    def logexception(self, ex):
+    def logexception(self, ex, msg=''):
         '''报错输出+记录异常信息'''
-        self.error('%s: %s' % (ex, traceback.format_exc()))
+        self.error('%s %s: %s' % (msg, ex, traceback.format_exc()))
 
     def eventHdlr_Log(self, event):
         '''处理日志事件'''

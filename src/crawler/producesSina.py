@@ -320,25 +320,40 @@ class SinaMux(hist.PlaybackMux) :
 
         return pb.id, dataseq[- min(len(dataseq), nSampleLast) :]
 
-    def loadJsonH5t(self, evtype, symbol, filename, nSampleLast =1): # return True if succ
+    def loadJsonH5t(self, evtype, symbol, filename, mfn = None, nSampleLast =1): # return True if succ
+        '''
+        '''
         
+        pb, dataseq = None, []
+
         dtStart, dtEnd = self.datetimeRange
-        memberfiles = h5tar.list_utf8(filename)
-        evtag = evtype[len(MARKETDATE_EVENT_PREFIX):]
-        for mfn in memberfiles:
-            bfn = os.path.basename(mfn)
-            if '.json' != bfn[-5:] or not evtag in bfn or not symbol in bfn:
-                continue
 
-            jbody = h5tar.read_utf8(filename, mfn)
-            if not jbody or len(jbody) <=0: continue
+        if not mfn or len(mfn) <=0:
+            evtag = evtype[len(MARKETDATE_EVENT_PREFIX):]
+            memberfiles = h5tar.list_utf8(filename)
+            for mf in memberfiles:
+                if mf['size'] < 10: continue
+                bfn = os.path.basename(mf['name'])
+                if '.json' != bfn[-5:] or not evtag in bfn or not symbol in bfn:
+                    continue
 
-            pb, dataseq = self.__jsonStrToPlayback(jbody, symbol, evtype, dtEnd)
-            if not pb : continue
+            mfn = mf['name']
 
-            pb.setId('%s@%s' % (mfn, filename))
-            self.addStream(pb)
-            self.info('added substrm[%s] into mux' % (pb.id))
+        if not mfn or len(mfn) <=0:
+            self.error('failed to find suitable member file in %s by %s and %s' % (filename, symbol, evtype))
+            return None, []
+
+        jbody = h5tar.read_utf8(filename, mfn)
+        if not jbody or len(jbody) <=0: return None, []
+
+        pb, dataseq = self.__jsonStrToPlayback(jbody, symbol, evtype, dtEnd)
+        if not pb : return None, []
+
+        pb.setId('%s@%s' % (mfn, filename))
+        self.addStream(pb)
+        self.info('added substrm[%s] into mux' % (pb.id))
+
+        return pb.id if pb else None, dataseq[- min(len(dataseq), nSampleLast) :]
 
     def loadOffline(self, evtype, fnSearch, minFn=None): # return True if succ
         

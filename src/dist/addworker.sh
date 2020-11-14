@@ -11,7 +11,7 @@ WORKER=$1
 
 useradd -b /mnt/data/hpwkspace/workers -g hpx ${WORKER}
 chmod -R g+xr /mnt/data/hpwkspace/workers/${WORKER}
-sudo -u ${WORKER} bash -c "cd; tar xfvj ../../master/hpx_template/src/dist/wkr_prof_template.tar.bz2; chown -R ${WORKER}:hpx *; mkdir -m 755 to_publish"
+sudo -u ${WORKER} bash -c "cd; ssh-keygen -q -t rsa -N '' <<<y; tar xfvj ../../master/hpx_template/src/dist/wkr_prof_template.tar.bz2; chown -R ${WORKER}:hpx *; mkdir -m 755 to_publish"
 
 # to delete this worker
 # userdel -r ${WORKER}

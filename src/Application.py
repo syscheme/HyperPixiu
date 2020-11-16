@@ -603,7 +603,7 @@ class Program(object):
         
         # heartbeat
         self.__stampLastHB = None
-        self.__stampLoopTill = None
+        self.__dtLoopTill = None
             
         # __subscribers字典，用来保存对应的事件到appId的订阅关系
         # 其中每个键对应的值是一个列表，列表中保存了对该事件进行监听的appId
@@ -881,23 +881,23 @@ class Program(object):
         busy = True
         cContinuousEvent =0
 
-        self.__stampLoopTill = till
+        self.__dtLoopTill = till
         if timeout and not isinstance(timeout, timedelta):
             timeout = timedelta(seconds=int(timeout), microseconds= int(timeout *1000000) % 1000000)
         
-        if timeout :
-            self.__stampLoopTill = datetime.now() + timeout
+        if timeout and timeout > timedelta(microseconds=1):
+            self.__dtLoopTill = datetime.now() + timeout
 
         while self._bRun:
             timeout =0
             enabledHB = self.hasHeartbeat
 
-            if enabledHB or self.__stampLoopTill:
+            if enabledHB or self.__dtLoopTill:
                 dtNow = datetime.now()
                 stampNow = datetime2float(dtNow)
 
-            if self.__stampLoopTill and dtNow > self.__stampLoopTill:
-                self.info("LoopTill[%s] reached, quit looping" % self.__stampLoopTill)
+            if self.__dtLoopTill and dtNow > self.__dtLoopTill:
+                self.info("LoopTill[%s] reached, quit looping" % self.__dtLoopTill)
                 break
 
             # enabledHB = False

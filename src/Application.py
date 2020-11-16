@@ -8,7 +8,7 @@ import os
 import logging
 from logging.handlers import RotatingFileHandler
 from collections import OrderedDict, defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 from copy import copy
 from abc import ABC, abstractmethod
@@ -603,6 +603,7 @@ class Program(object):
         
         # heartbeat
         self.__stampLastHB = None
+        self.__stampLoopTill = None
             
         # __subscribers字典，用来保存对应的事件到appId的订阅关系
         # 其中每个键对应的值是一个列表，列表中保存了对该事件进行监听的appId
@@ -874,20 +875,33 @@ class Program(object):
     def hasHeartbeat(self) : 
         return (self._heartbeatInterval > 0) # what's wrong!!!!
 
-    def loop(self):
+    def loop(self, timeout=None, till=None):
 
         self.info(u'Program start looping')
         busy = True
         cContinuousEvent =0
 
+        self.__stampLoopTill = till
+        if timeout and not isinstance(timeout, timedelta):
+            timeout = timedelta(seconds=int(timeout), microseconds= int(timeout *1000000) % 1000000)
+        
+        if timeout :
+            self.__stampLoopTill = datetime.now() + timeout
+
         while self._bRun:
             timeout =0
             enabledHB = self.hasHeartbeat
-            # enabledHB = False
-            if enabledHB: # heartbeat enabled
+
+            if enabledHB or self.__stampLoopTill:
                 dtNow = datetime.now()
                 stampNow = datetime2float(dtNow)
-            
+
+            if self.__stampLoopTill and dtNow > self.__stampLoopTill:
+                self.info("LoopTill[%s] reached, quit looping" % self.__stampLoopTill)
+                break
+
+            # enabledHB = False
+            if enabledHB: # heartbeat enabled
                 if not self.__stampLastHB :
                     self.__stampLastHB = stampNow
 

@@ -11,7 +11,7 @@ WORKER=$1
 
 useradd -b /mnt/data/hpwkspace/workers -g hpx ${WORKER}
 chmod -R g+xr /mnt/data/hpwkspace/workers/${WORKER}
-sudo -u ${WORKER} bash -c "cd; echo | ssh-keygen -q -t rsa -N ''; tar xfvj ../../master/hpx_template/src/dist/wkr_prof_template.tar.bz2; chown -R ${WORKER}:hpx *; mkdir -m 755 to_publish"
+sudo -u ${WORKER} bash -c "cd; echo | ssh-keygen -q -t rsa -N ''; tar xfvj ../../master/hpx_template/dist/wkr_prof_template.tar.bz2; chown -R ${WORKER}:hpx *; mkdir -m 755 to_publish"
 
 # to delete this worker
 # userdel -r ${WORKER}
@@ -23,5 +23,5 @@ sudo -u ${WORKER} bash -c "cd; echo | ssh-keygen -q -t rsa -N ''; tar xfvj ../..
 # lrwxrwxrwx 1 root root 15 Nov 14 15:10 hpx_archived -> /mnt/s/archived
 # lrwxrwxrwx 1 root root 17 Nov 14 15:16 hpx_publish -> /mnt/s/to_publish
 # -rw-rw-rw- 1 root root 204 Nov 14 15:31 hpx_rsync_excl.txt
-# drwxrwxrwx 1 root root 26 Nov 14 12:59 hpx_template <- rsync -auv --delete --exclude-from /mnt/s/hpx_template/src/dist/rsync_excl.txt /mnt/s/hpx_template .
+# drwxrwxrwx 1 root root 26 Nov 14 12:59 hpx_template <- rsync -auv --delete --exclude-from /mnt/s/hpx_template/dist/rsync_excl.txt /mnt/s/hpx_template .
 

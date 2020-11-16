@@ -6,6 +6,8 @@ from redlock import Redlock, MultipleRedlockException # redis remote locker http
 
 from pssh.clients import ParallelSSHClient # yum install openssl-devel cmake; pip install parallel-ssh, https://pypi.org/project/parallel-ssh/
 
+# pip install celery[redis]
+
 hosts = ['localhost', 'localhost']
 client = ParallelSSHClient(hosts)
 

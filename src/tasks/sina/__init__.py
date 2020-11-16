@@ -5,6 +5,14 @@ from __future__ import absolute_import, unicode_literals
 
 from ..celery import app as celery_app
 
+__all__ = ['celery_app'] # , 'basic']
+
+# celery_app.tasks.register(basic.add)
+# celery_app.tasks.register(basic.mul)
+
+'''
+from ..celery import app as celery_app
+
 __all__ = ['celery_app',]
 
 import os
@@ -55,3 +63,4 @@ for root, subdirs, files in os.walk(path):
 __all__ += list(TASK_CLASS.keys())
 __all__.append('TASK_CLASS')
 
+'''

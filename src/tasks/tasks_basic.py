@@ -2,16 +2,16 @@
 
 from __future__ import absolute_import, unicode_literals
 
-from ..celery import app
+from tasks.celery import celery_app
 
-@app.task
+@app.task # (name='sina.basic.add')
 def add(x, y):
     return x + y
 
-@app.task
+@app.task #(name='sina.basic.mul')
 def mul(x, y):
     return x * y
 
-@app.task
+@app.task # (name='sina.basic.xsum')
 def xsum(numbers):
     return sum(numbers)

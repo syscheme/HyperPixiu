@@ -3,7 +3,7 @@
 from __future__ import absolute_import, unicode_literals
 # This will make sure the app is always imported
 
-from celery import app as celery_app
+from ..celery import app as celery_app
 
 __all__ = ['celery_app',]
 
@@ -20,14 +20,23 @@ TASK_PREFIX_LEN = len(TASK_PREFIX)
 def __loadTaskModule(moduleName):
     """使用importlib动态载入模块"""
     try:
-        module = importlib.import_module(moduleName)
+        module = importlib.import_module(__name__ + '.' + TASK_PREFIX + moduleName)
         
         # only the class with TASK_PREFIX in the module is TaskClass
         for k in dir(module):
-            if len(k)<= TASK_PREFIX_LEN or TASK_PREFIX != k[:TASK_PREFIX_LEN]:
-                continue
+            # if len(k)<= TASK_PREFIX_LEN or TASK_PREFIX != k[:TASK_PREFIX_LEN]:
+            #     contvinue
+            # v = module.__getattribute__(k)
+            # TASK_CLASS[k[TASK_PREFIX_LEN:]] = v
+
             v = module.__getattribute__(k)
-            TASK_CLASS[k[TASK_PREFIX_LEN:]] = v
+            try:
+                isWorkerTask = getattr(v, 'Worker.task', False)
+                if isWorkerTask: #     if isinstance(v, celery_app.Task) :
+                    TASK_CLASS['%s.%s' % (moduleName, k)] = v
+                    continue
+            except Exception as ex:
+                print ('issubclass(%s) failed %s: %s' % (k, ex, traceback.format_exc()))
 
     except BaseException as ex:
         print ('failed to import task module[%s] %s: %s' % (moduleName, ex, traceback.format_exc()))
@@ -41,8 +50,8 @@ for root, subdirs, files in os.walk(path):
             continue
 
         # 模块名称需要模块路径前缀
-        moduleName = __name__ + '.' + name[:-3]
-        __loadTaskModule(moduleName)
+        __loadTaskModule(name[TASK_PREFIX_LEN :-3])
 
-__all__ + = list(TASK_CLASS.keys())
+__all__ += list(TASK_CLASS.keys())
+__all__.append('TASK_CLASS')
 

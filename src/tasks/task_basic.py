@@ -2,7 +2,7 @@
 
 from __future__ import absolute_import, unicode_literals
 
-from tasks.celery import celery_app
+from .celery import app
 
 @app.task # (name='sina.basic.add')
 def add(x, y):

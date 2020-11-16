@@ -7,6 +7,9 @@ from ..celery import app as celery_app
 
 __all__ = ['celery_app'] # , 'basic']
 
+TASK_PREFIX = 'task_'
+TASK_PREFIX_LEN = len(TASK_PREFIX)
+
 # celery_app.tasks.register(basic.add)
 # celery_app.tasks.register(basic.mul)
 
@@ -21,8 +24,6 @@ import traceback
 
 # 用来保存Task类的字典
 TASK_CLASS = {}
-TASK_PREFIX = 'task_'
-TASK_PREFIX_LEN = len(TASK_PREFIX)
 
 #----------------------------------------------------------------------
 def __loadTaskModule(moduleName):

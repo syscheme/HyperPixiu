@@ -18,20 +18,22 @@ class Worker(Celery) :
     #     return t
             
 app = Worker('HPXWorker',
-    broker='redis://tc.syscheme.com:6379/0',
-    backend='redis://tc.syscheme.com:6379/1') # , include=['proj.tasks'])
-
-# Optional configuration, see the application user guide.
-app.conf.update( result_expires=3600,)
-
-import tasks.sina
+    broker='redis://tc2.syscheme.com:6379/0',
+    backend='redis://tc2.syscheme.com:6379/1', 
+    include=[
+        'tasks.task_basic',
+        # 'tasks.sina.task_basic',
+        ])
 
 @app.task
 def hello():
-    return 'heloo'
+    return 'hello world'
 
 #----------------------------------------------------------------------
 if __name__ == '__main__':
-    app.autodiscover_tasks()
+    # Optional configuration, see the application user guide.
+    app.conf.update( result_expires=3600,)
+
+    # app.autodiscover_tasks()
     app.start()
 

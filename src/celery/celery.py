@@ -1,9 +1,18 @@
 # encoding: UTF-8
+# DO NOT rename this to other than celery.py
 
 from __future__ import absolute_import
 from celery import Celery
 
-app = Celery('proj',
+class Worker(Celery) :
+
+    def gen_task_name(self, name, module):
+        if module.endswith('.tasks'):
+            module = module[:-6]
+        
+        return super(Worker, self).gen_task_name(name, module)
+            
+app = Worker('HPXWorker',
     broker='redis://',
     backend='redis://') # , include=['proj.tasks'])
 

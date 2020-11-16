@@ -330,14 +330,21 @@ class SinaMux(hist.PlaybackMux) :
 
         if not mfn or len(mfn) <=0:
             evtag = evtype[len(MARKETDATE_EVENT_PREFIX):]
-            memberfiles = h5tar.list_utf8(filename)
+
+            memberfiles=[]
+            try:
+                memberfiles = h5tar.list_utf8(filename)
+            except Exception:
+                self.error('failed to list member files in %s by %s and %s' % (filename, symbol, evtype))
+
             for mf in memberfiles:
                 if mf['size'] < 10: continue
                 bfn = os.path.basename(mf['name'])
                 if '.json' != bfn[-5:] or not evtag in bfn or not symbol in bfn:
                     continue
 
-            mfn = mf['name']
+                mfn = mf['name']
+                break
 
         if not mfn or len(mfn) <=0:
             self.error('failed to find suitable member file in %s by %s and %s' % (filename, symbol, evtype))

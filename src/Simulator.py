@@ -21,7 +21,8 @@ import multiprocessing
 import copy
 
 import os
-import h5py, tarfile
+import h5py, tarfile, h5tar
+import bz2
 # import pymongo
 import pandas as pd
 import numpy as np
@@ -2472,6 +2473,8 @@ class ShortSwingScanner(OfflineSimulator):
                     self.__stateOfMoments[moment] = stateOfEvent
                     self.debug('doAppStep() sampled state of %s' % stateOfEvent['ident'])
 
+                    self.saveStateSnapshot(stateOfEvent['ident'], self.__psptReadAhead.dumps(symbol))
+
                     return 1 # successfully performed a step by pushing an Event
 
                 reachedEnd = True
@@ -2490,6 +2493,25 @@ class ShortSwingScanner(OfflineSimulator):
         self.OnEpisodeDone(reachedEnd)
         
         # exit(0) # ShortSwingScanner is not supposed to run forever, just exit instead of return
+
+    def saveStateSnapshot(self, stateId, stateDumpstr):
+
+        snapshoth5fn = os.path.join(self.wkTrader.outdir, '%s_snapshots.h5' % self._tradeSymbol )
+        compressed = bz2.compress(stateDumpstr)
+
+        with h5py.File(snapshoth5fn, 'a') as h5file:
+
+            g = h5file.create_group('marketSnapshot') if not 'marketSnapshot' in h5file.keys() else h5file['marketSnapshot']
+            g.attrs['desc']         = 'pickled market state via bzip2 compression'
+            if stateId in g.keys():
+                del g[stateId]
+            npbytes = np.frombuffer(compressed, dtype=np.uint8)
+            sns = g.create_dataset(stateId, data=np.frombuffer(compressed, dtype=np.uint8))
+            sns.attrs['size'] = len(stateDumpstr)
+            sns.attrs['csize'] = len(compressed)
+            sns.attrs['generated'] = datetime.now().strftime('%Y%m%dT%H%M%S')
+            
+            self.debug('saved snapshot[%s] %dB->%dz into %s' % (stateId, sns.attrs['size'], sns.attrs['csize'], snapshoth5fn))
 
     def __saveEventsOfDay(self, eventsOfDay):
 

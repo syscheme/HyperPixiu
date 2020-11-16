@@ -10,9 +10,8 @@ from datetime import datetime
 from abc import ABCMeta, abstractmethod
 import traceback
 
-import bz2
-import csv
-import copy
+import bz2, csv
+import copy, pickle
 # import tensorflow as tf
 
 EVENT_Perspective  = MARKETDATE_EVENT_PREFIX + 'Persp'   # 错误回报事件
@@ -382,6 +381,31 @@ class Perspective(MarketData):
         self.__dayOHLC.date = self.__dayOHLC.datetime.strftime('%Y-%m-%d')
         self.__dayOHLC.time = self.__dayOHLC.datetime.strftime('%H:%M:%S')
         return self.__dayOHLC
+
+    def dumps(self) :
+        dict = {
+            'stacks' : self._stacks,
+            'overview' : self.__overview,
+            'focus': (self.__stampLast, self.__focusLast),
+            'today' : self.__dayOHLC
+        }
+
+        return pickle.dumps(dict) # this is bytes
+
+    def loads(self, pickleData) : # load the pikledata exported from dump()
+        dict = pickle.loads(pickleData)
+
+        if 'stacks' in dick.keys():
+            self._stacks = dict['stacks']
+
+        if 'overview' in dick.keys():
+            self.__overview = dict['overview']
+
+        if 'focus' in dick.keys():
+            self.__stampLast, self.__focusLast = dict['focus']
+
+        if 'today' in dick.keys():
+            self.__dayOHLC = dict['today']
 
     def push(self, ev) :
         ev, stk = self.__push(ev)
@@ -866,6 +890,15 @@ class PerspectiveState(MarketState):
 
         return strDesc
         
+    def dumps(self, symbol) :
+        if symbol and symbol in self.__dictPerspective.keys():
+            return self.__dictPerspective[symbol].dumps()
+        return b''
+
+    def loads(self, symbol, pickleData) : # load the pikledata exported from dump()
+        if symbol and symbol in self.__dictPerspective.keys():
+            return self.__dictPerspective[symbol].loads(pickleData)
+
     def dailyOHLC_sofar(self, symbol) :
         ''' 
         @return (date, open, high, low, close) as of today

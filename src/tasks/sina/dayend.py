@@ -115,7 +115,7 @@ def swingOnH5tars():
         lastDays =[]
         for fn in filelst:
             try :
-                _, lastDays = playback.loadJsonH5t(EVENT_KLINE_1DAY, SYMBOL, fn, daysTolst)
+                _, lastDays = playback.loadJsonH5t(EVENT_KLINE_1DAY, SYMBOL, fn, None, daysTolst)
                 break
             except Exception as ex:
                 p.logexception(ex, fn)

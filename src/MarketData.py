@@ -113,6 +113,11 @@ class MarketData(EventData):
         '''
         raise NotImplementedError
 
+    def dumps(self) :
+        raise NotImplementedError
+    def loads(self, pickleData) : # load the pikledata exported from dump()
+        raise NotImplementedError
+
 ########################################################################
 class TickData(MarketData):
     '''Tick行情数据类'''
@@ -686,6 +691,11 @@ class MarketState(MetaObj):
         @return the desc of specified symbol
         '''
         return '%s' % symbol
+
+    def dumps(self, symbol) :
+        raise NotImplementedError
+    def loads(self, symbol, pickleData) : # load the pikledata exported from dump()
+        raise NotImplementedError
 
     @abstractmethod
     def dailyOHLC_sofar(self, symbol) :

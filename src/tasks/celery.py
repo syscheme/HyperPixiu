@@ -1,5 +1,6 @@
 # encoding: UTF-8
 # DO NOT rename this to other than celery.py
+# task routine: https://www.celerycn.io/yong-hu-zhi-nan/lu-you-ren-wu-routing-tasks
 
 from __future__ import absolute_import
 from celery import Celery

@@ -2473,7 +2473,7 @@ class ShortSwingScanner(OfflineSimulator):
                     self.__stateOfMoments[moment] = stateOfEvent
                     self.debug('doAppStep() sampled state of %s' % stateOfEvent['ident'])
 
-                    self.saveStateSnapshot(stateOfEvent['ident'], self.__psptReadAhead.dumps(symbol))
+                    self.saveStateSnapshot(symbol, ev.data.datetime)
 
                     return 1 # successfully performed a step by pushing an Event
 
@@ -2494,17 +2494,24 @@ class ShortSwingScanner(OfflineSimulator):
         
         # exit(0) # ShortSwingScanner is not supposed to run forever, just exit instead of return
 
-    def saveStateSnapshot(self, stateId, stateDumpstr):
+    def saveStateSnapshot(self, symbol, dtAsOf) :
 
-        snapshoth5fn = os.path.join(self.wkTrader.outdir, '%s_snapshots.h5' % self._tradeSymbol )
+        stateId = '%s@%s' % (symbol, dtAsOf.strftime('%Y%m%dT%H%M%S'))
+        h5group = '%s@%s' % (symbol, dtAsOf.strftime('%Y%m%d'))
+        stateDumpstr =  self.__psptReadAhead.dumps(symbol)
+        snapshoth5fn = os.path.join(self.wkTrader.outdir, '%s_snapshots.h5' % symbol)
         compressed = bz2.compress(stateDumpstr)
 
         with h5py.File(snapshoth5fn, 'a') as h5file:
 
-            g = h5file.create_group('marketSnapshot') if not 'marketSnapshot' in h5file.keys() else h5file['marketSnapshot']
-            g.attrs['desc']         = 'pickled market state via bzip2 compression'
-            if stateId in g.keys():
-                del g[stateId]
+            if h5group in h5file.keys() :
+                g = h5file[h5group]
+            else:
+                g = h5file.create_group(h5group) 
+                g.attrs['desc']         = 'pickled market state via bzip2 compression'
+
+            if stateId in g.keys(): del g[stateId]
+
             npbytes = np.frombuffer(compressed, dtype=np.uint8)
             sns = g.create_dataset(stateId, data=np.frombuffer(compressed, dtype=np.uint8))
             sns.attrs['size'] = len(stateDumpstr)

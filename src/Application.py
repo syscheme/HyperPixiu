@@ -540,17 +540,19 @@ class Program(object):
     __metaclass__ = Singleton
 
     #----------------------------------------------------------------------
-    def __init__(self, argvs=None) : # setting_filename=None):
+    def __init__(self, name=None, argvs=None) : # setting_filename=None):
         '''Constructor
            usage: Program(sys.argv)
         '''
-        if not argvs or len(argvs) <1:
+        if argvs is None:
             argvs = sys.argv
 
         self.__logdir = tempfile.gettempdir()
         self.__hostname = socket.gethostname()
         self.__pid = os.getpid() # process id
-        self.__progName = os.path.basename(argvs[0])[0:-3] # cut off the .py extname
+        self.__progName = name
+        if not self.__progName and len(argvs)>0:
+            self.__progName = os.path.basename(argvs[0])[0:-3] # cut off the .py extname
         self.__dataRoot = './out/' # should be './data'
         self.__outdir = os.path.join(self.__dataRoot, self.__progName)
         self._heartbeatInterval = BaseApplication.HEARTBEAT_INTERVAL_DEFAULT    # heartbeat间隔（默认1秒）
@@ -561,11 +563,13 @@ class Program(object):
         # self._shelve = None
         self.__lock = threading.Lock()
 
-        try:
-            opts, args = getopt.getopt(argvs[1:], "hf:o:", ["config=","outdir="])
-        except getopt.GetoptError :
-            print('%s.py -f <config-file> -o <outputdir>' % self.__progName)
-            sys.exit(2)
+        opts, args = {}, 0
+        if argvs and len(argvs)>1 :
+            try:
+                opts, args = getopt.getopt(argvs[1:] if argvs and len(argvs)>1 else [], "hf:o:", ["config=","outdir="])
+            except getopt.GetoptError :
+                print('%s.py -f <config-file> -o <outputdir>' % self.__progName)
+                sys.exit(2)
 
         config_filename = None
         for opt, arg in opts:

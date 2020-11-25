@@ -12,7 +12,6 @@
             "program": "${command:SelectScriptName}",
             "args": []
         },
-  
         {
             "name": "Python: Current File",
             "env": {
@@ -22,6 +21,17 @@
             "request": "launch",
             "pythonPath": "/usr/bin/python3", //python3的安装路径
             "program": "${file}"
+        },
+        {
+            "name": "Celery: sinaMaster",
+            "env": {
+                "PYTHONPATH":"${workspaceFolder}:${workspaceFolder}/src:${PYTHONPATH}"
+            },
+            "type": "python",
+            "request": "launch",
+            "pythonPath": "/usr/bin/python3", //python3的安装路径
+            "program": "/usr/local/bin/celery",
+            "args": ["-A", "dapp.sinaMaster", "worker", "-l", "DEBUG"]
         },
         {
             "name": "Python: Attach",
@@ -34,76 +44,10 @@
             "host": "localhost"
         },
         {
-            "name": "Python: Terminal (integrated)",
-            "type": "python",
-            "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "Python: Terminal (external)",
-            "type": "python",
-            "request": "launch",
-            "program": "${file}",
-            "console": "externalTerminal"
-        },
-        {
-            "name": "Python: Django",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/manage.py",
-            "args": [
-                "runserver",
-                "--noreload",
-                "--nothreading"
-            ],
-            "debugOptions": [
-                "RedirectOutput",
-                "Django"
-            ]
-        },
-        {
-            "name": "Python: Flask (0.11.x or later)",
-            "type": "python",
-            "request": "launch",
-            "module": "flask",
-            "env": {
-                "FLASK_APP": "app.py"
-            },
-            "args": [
-                "run",
-                "--no-debugger",
-                "--no-reload"
-            ]
-        },
-        {
             "name": "Python: vnpy.event.eventEngine",
             "type": "python",
             "request": "launch",
             "module": "vnpy.event.eventEngine"
-        },
-        {
-            "name": "Python: Pyramid",
-            "type": "python",
-            "request": "launch",
-            "args": [
-                "${workspaceFolder}/development.ini"
-            ],
-            "debugOptions": [
-                "RedirectOutput",
-                "Pyramid"
-            ]
-        },
-        {
-            "name": "Python: Watson",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/console.py",
-            "args": [
-                "dev",
-                "runserver",
-                "--noreload=True"
-            ]
         },
         {
             "name": "Python: All debug Options",

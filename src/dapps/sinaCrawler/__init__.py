@@ -4,7 +4,7 @@ from __future__ import unicode_literals
 # This will make sure the app is always imported
 
 # import dapp.sinaCrawler.worker as celery
-from dapp.sinaCrawler.worker import worker as app
+from .worker import worker as app
 # __all__ =('app', 'celery',)
 
 '''

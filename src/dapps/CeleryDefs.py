@@ -5,10 +5,16 @@
 from __future__ import absolute_import
 from celery import Celery, shared_task
 
+TASK_PREFIX = 'tasks_'
+TASK_PREFIX_LEN = len(TASK_PREFIX)
+
 class Worker(Celery) :
     def gen_task_name(self, name, module):
-        if module.endswith('.tasks'):
-            module = module[:-6]
+        tokens = module.split('.')
+        if 'tasks' == tokens[-1]:
+            module = '.'.join(tokens[:-1])
+        elif tokens[-1].startswith(TASK_PREFIX):
+            module = '.'.join(tokens[:-1]) + '.%s' % tokens[-1][TASK_PREFIX_LEN:]
         
         return super(Worker, self).gen_task_name(name, module)
 

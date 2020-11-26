@@ -17,8 +17,8 @@ app = Worker('sinaMaster',
     broker='redis://tc2.syscheme.com/0',
     backend='redis://tc2.syscheme.com/1',
     include=[
-        'dapp.sinaMaster.task_basic',
-        'dapp.sinaMaster.tasks',
+        'dapps.sinaMaster.task_basic',
+        'dapps.sinaMaster.tasks',
         ])
 
 app.conf.update( result_expires=3600,)

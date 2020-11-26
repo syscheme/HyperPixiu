@@ -38,7 +38,7 @@ worker = Worker(APP_NAME,
 
 worker.conf.update( result_expires=3600,)
 
-thePROG = Program(name="sinaCrawler", argvs=[])
+thePROG = Program(name=APP_NAME, argvs=[])
 
 #----------------------------------------------------------------------
 if __name__ == '__main__':

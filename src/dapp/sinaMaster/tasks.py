@@ -2,7 +2,7 @@
 
 from __future__ import absolute_import, unicode_literals
 from celery import shared_task
-from .celery import theProg
+from .celery import thePROG
 
 import crawler.crawlSina as sina
 
@@ -47,18 +47,18 @@ def listAllSymbols():
     result ={}
     EOL ="\n"
 
-    md = sina.SinaCrawler(theProg, None)
+    md = sina.SinaCrawler(thePROG, None)
 
     httperr =100
     while 2 != int(httperr /100):
         httperr, lstSH = md.GET_AllSymbols('SH')
-        theProg.warn('SH-resp(%d) len=%d' %(httperr, len(lstSH)))
+        thePROG.warn('SH-resp(%d) len=%d' %(httperr, len(lstSH)))
         if 456 == httperr : sleep(30)
 
     httperr =100
     while 2 != int(httperr/100):
         httperr, lstSZ = md.GET_AllSymbols('SZ')
-        theProg.warn('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
+        thePROG.warn('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
         if 456 == httperr : sleep(30)
 
     for i in lstSH + lstSZ:

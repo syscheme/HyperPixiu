@@ -8,27 +8,24 @@
 # >>> import dapp.sinaMaster.celery.app as app
 # >>> m.add.delay(5,5).get()
 
-from __future__ import absolute_import
-from celery import shared_task
-from ..CeleryDefs import Worker
+from dapp.CeleryDefs import Worker
 from Application import Program
 
-app = Worker('sinaMaster',
+worker = Worker('sinaCrawler',
     broker='redis://tc2.syscheme.com/0',
     backend='redis://tc2.syscheme.com/1',
     include=[
-        'dapp.sinaMaster.task_basic',
-        'dapp.sinaMaster.tasks',
+        'dapp.sinaCrawler.tasks',
         ])
 
-app.conf.update( result_expires=3600,)
+worker.conf.update( result_expires=3600,)
 
-thePROG = Program(name="sinaMaster", argvs=[])
+thePROG = Program(name="sinaCrawler", argvs=[])
 
 #----------------------------------------------------------------------
 if __name__ == '__main__':
     # Optional configuration, see the application user guide.
 
     # app.autodiscover_tasks()
-    app.start()
+    worker.start()
 

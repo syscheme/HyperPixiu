@@ -20,6 +20,7 @@ from Application import *
 import HistoryData as hist
 from advisors.dnn import DnnAdvisor_S1548I4A3
 from crawler.producesSina import SinaMux, Sina_Tplus1, SinaSwingScanner
+from worker import thePROG
 
 import sys, os, platform, re
 RFGROUP_PREFIX  = 'ReplayFrame:'
@@ -55,8 +56,6 @@ def memberfnInH5tar(fnH5tar, symbol):
 
 ####################################
 def swingOnH5tars():
-    if not '-f' in sys.argv :
-        sys.argv += ['-f', os.path.realpath(os.path.dirname(os.path.abspath(__file__))+ '/../../conf') + '/Trader.json' ]
 
     CLOCK_TODAY= datetime.now().replace(hour=23, minute=59, second=59, microsecond=0)
     SINA_TODAY = CLOCK_TODAY.strftime('%Y-%m-%d')
@@ -76,10 +75,9 @@ def swingOnH5tars():
     dirArchived = os.path.join(os.environ['HOME'], 'wkspaces/hpx_archived/sina') 
     #################
 
-    p = Program()
-    p._heartbeatInterval =-1
+    thePROG._heartbeatInterval =-1
 
-    modelName   = p.getConfig('scanner/model', 'ModelName') # None
+    modelName   = thePROG.getConfig('scanner/model', 'ModelName') # None
 
     todayYYMMDD = SINA_TODAY.strftime('%Y%m%d')
 
@@ -87,17 +85,17 @@ def swingOnH5tars():
     allFiles    = hist.listAllFiles(dirArchived)
 
     for SYMBOL in objectives:
-        p.stop()
-        p._heartbeatInterval =-1
+        thePROG.stop()
+        thePROG._heartbeatInterval =-1
 
-        acc     = p.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-        tdrCore = p.createApp(BaseTrader, configNode ='trader', objectives = [SYMBOL], account=acc)
+        acc     = thePROG.createApp(Account_AShare, configNode ='account', ratePer10K =30)
+        tdrCore = thePROG.createApp(BaseTrader, configNode ='trader', objectives = [SYMBOL], account=acc)
 
-        rec = p.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(p.outdir, 'SinaDayEnd_%s.tcsv' % SINA_TODAY.strftime('%Y%m%d')))
+        rec = thePROG.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(thePROG.outdir, 'SinaDayEnd_%s.tcsv' % SINA_TODAY.strftime('%Y%m%d')))
         revents = None
 
         # step 1. build up the Playback Mux
-        playback   = SinaMux(p, endDate=SINA_TODAY.strftime('%Y%m%dT%H%M%S')) # = p.createApp(SinaMux, **srcPathPatternDict)
+        playback   = SinaMux(thePROG, endDate=SINA_TODAY.strftime('%Y%m%dT%H%M%S')) # = thePROG.createApp(SinaMux, **srcPathPatternDict)
         playback.setSymbols(objectives)
         nLastDays = 5
 
@@ -118,7 +116,7 @@ def swingOnH5tars():
                 _, lastDays = playback.loadJsonH5t(EVENT_KLINE_1DAY, SYMBOL, fn, None, daysTolst)
                 break
             except Exception as ex:
-                p.logexception(ex, fn)
+                thePROG.logexception(ex, fn)
 
         if len(lastDays) <=0:
             httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, daysTolst, dirCache)
@@ -132,7 +130,7 @@ def swingOnH5tars():
                 break
 
         startYYMMDD = dtStart.strftime('%Y%m%d')
-        p.info('loaded KL1d and determined swing-start with %d-Tdays to %s was %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), startYYMMDD))
+        thePROG.info('loaded KL1d and determined swing-start with %d-Tdays to %s was %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), startYYMMDD))
         
         # 1.b  MF1d
         bnRegex, filelst = 'SinaMF1d_([0-9]*).h5t', []
@@ -152,7 +150,7 @@ def swingOnH5tars():
                 loaded = True
                 break
             except Exception as ex:
-                p.logexception(ex, fn)
+                thePROG.logexception(ex, fn)
 
         if not loaded:
             playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, dirCache)
@@ -170,7 +168,7 @@ def swingOnH5tars():
                 mfn, latestDay = memberfnInH5tar(fn, SYMBOL)
                 playback.loadJsonH5t(EVENT_KLINE_5MIN, SYMBOL, fn, mfn)
             except Exception as ex:
-                p.logexception(ex, fn)
+                thePROG.logexception(ex, fn)
         
         if CLOCK_TODAY == SINA_TODAY and latestDay < todayYYMMDD:
             playback.loadOnline(EVENT_KLINE_5MIN, SYMBOL, 0, dirCache)
@@ -189,27 +187,27 @@ def swingOnH5tars():
                 mfn, latestDay = memberfnInH5tar(fn, SYMBOL)
                 playback.loadJsonH5t(EVENT_MONEYFLOW_1MIN, SYMBOL, fn, mfn)
             except Exception as ex:
-                p.logexception(ex, fn)
+                thePROG.logexception(ex, fn)
 
         if CLOCK_TODAY == SINA_TODAY and latestDay < todayYYMMDD:
             playback.loadOnline(EVENT_MONEYFLOW_1MIN, SYMBOL, 0, dirCache)
 
-        p.info('inited mux with %d substreams' % (playback.size))
+        thePROG.info('inited mux with %d substreams' % (playback.size))
         
-        tdrWraper  = p.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=playback, symbol=SYMBOL) # = p.createApp(SinaDayEnd, configNode ='trader', trader=tdrCore, symbol=SYMBOL, dirOfflineData=evMdSource)
+        tdrWraper  = thePROG.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=playback, symbol=SYMBOL) # = thePROG.createApp(SinaDayEnd, configNode ='trader', trader=tdrCore, symbol=SYMBOL, dirOfflineData=evMdSource)
         tdrWraper.setTimeRange(dtStart = dtStart)
-        tdrWraper.setSampling(os.path.join(p.outdir, 'SwingTrainingDS_%s.h5' % SINA_TODAY.strftime('%Y%m%d')))
+        tdrWraper.setSampling(os.path.join(thePROG.outdir, 'SwingTrainingDS_%s.h5' % SINA_TODAY.strftime('%Y%m%d')))
 
         tdrWraper.setRecorder(rec)
 
-        p.start()
+        thePROG.start()
         if tdrWraper.isActive :
-            p.loop()
+            thePROG.loop()
 
-        p.stop()
+        thePROG.stop()
 
         statesOfMoments = tdrWraper.stateOfMoments
-        p.warn('TODO: predicting based on statesOf: %s and output to tcsv for summarizing' % ','.join(list(statesOfMoments.keys())))
+        thePROG.warn('TODO: predicting based on statesOf: %s and output to tcsv for summarizing' % ','.join(list(statesOfMoments.keys())))
         # rec.registerCategory('PricePred', params= {'columns' : 
         #  1d01p,1d12p,1d25p,1d5pp,1d01n,1d12n,1d2pn',
         #  2d01p,2d12p,2d25p,2d5pp,2d01n,2d12n,2d2pn',

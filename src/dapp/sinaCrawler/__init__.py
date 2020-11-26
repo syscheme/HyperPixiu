@@ -1,8 +1,13 @@
 # encoding: UTF-8
 
-from __future__ import absolute_import, unicode_literals
+from __future__ import unicode_literals
 # This will make sure the app is always imported
 
+# import dapp.sinaCrawler.worker as celery
+from dapp.sinaCrawler.worker import worker as app
+# __all__ =('app', 'celery',)
+
+'''
 from ..celery import app as celery_app
 
 __all__ = ['celery_app'] # , 'basic']
@@ -13,7 +18,6 @@ TASK_PREFIX_LEN = len(TASK_PREFIX)
 # celery_app.tasks.register(basic.add)
 # celery_app.tasks.register(basic.mul)
 
-'''
 from ..celery import app as celery_app
 
 __all__ = ['celery_app',]

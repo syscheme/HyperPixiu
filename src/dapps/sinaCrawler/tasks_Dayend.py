@@ -129,7 +129,14 @@ def swingOnH5tars(SYMBOL, todayYYMMDD =None):
             thePROG.logexception(ex, fn)
 
     if len(lastDays) <=0:
-        httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, daysTolst, dirCache)
+        for retry in range(10):
+            httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, daysTolst, dirCache)
+            if 456 == httperr:
+                sleep(10*retry):
+                continue
+            break
+    if len(lastDays) <=0
+        return "456 busy"
             
     dtStart = lastDays[0].asof
     lastDays.reverse()

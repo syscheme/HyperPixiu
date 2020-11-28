@@ -2,6 +2,7 @@
 
 from __future__ import absolute_import, unicode_literals
 from celery import shared_task
+
 import sys, os, re
 if __name__ == '__main__':
     sys.path.append(".")
@@ -68,7 +69,7 @@ def listAllSymbols(self):
     return csvNoneST, csvSTs
 
 @shared_task(bind=True, base=Retryable)
-def archiveSymbol(self, login, symbol, asofYYMMDD, fnJsons, fnSnapshot) :
+def commitToday(self, login, symbol, asofYYMMDD, fnJsons, fnSnapshot) :
     '''
     fnJsons = ['SZ000002_KL1d20201127.json', 'SZ000002_MF1d20201127.json', 'SZ000002_KL5m20201127.json', 'SZ000002_MF1m20201127.json']
     fnSnapshot = 'SZ000002_sns.h5';
@@ -152,6 +153,23 @@ def __listAllSymbols():
     
     return noneST, STs
 
+'''
+@worker.on_after_configure.connect
+def setup_periodic_tasks(sender, **kwargs):
+    # Calls test('hello') every 10 seconds.
+    sender.add_periodic_task(10.0, test.s('hello'), name='add every 10')
+ 
+    # Calls test('world') every 30 seconds
+    sender.add_periodic_task(30.0, test.s('world'), expires=10)
+ 
+    # Executes every Monday morning at 7:30 a.m.
+    sender.add_periodic_task(
+        crontab(hour=7, minute=30, day_of_week=1),
+        test.s('Happy Mondays!'),
+    )
+'''
+ 
+
 ####################################
 if __name__ == '__main__':
     # csvNoneST, csvSTs = listAllSymbols()
@@ -162,5 +180,5 @@ if __name__ == '__main__':
     fnJsons = ['SZ000002_KL1d20201127.json', 'SZ000002_MF1d20201127.json', 'SZ000002_KL5m20201127.json', 'SZ000002_MF1m20201127.json']
     fnSnapshot = 'SZ000002_sns.h5';
 
-    archiveSymbol(login, symbol, asofYYMMDD, fnJsons, fnSnapshot)
+    commitToday(login, symbol, asofYYMMDD, fnJsons, fnSnapshot)
 

@@ -11,6 +11,7 @@
 from dapps.CeleryDefs import Worker, TASK_PREFIX, TASK_PREFIX_LEN
 from Application import Program
 import os
+from celery.schedules import crontab
 
 TASK_MODELS=[]
 
@@ -37,6 +38,22 @@ worker = Worker(APP_NAME,
     include=TASK_MODELS)
 
 worker.conf.update( result_expires=3600,)
+worker.conf.beat_schedule = {
+    '''
+    # Executes every Monday morning at 7:30 a.m.
+    'add-every-monday-morning': {
+        'task': 'tasks.add',
+        'schedule': crontab(hour=7, minute=30, day_of_week=1),
+        'args': (16, 16),
+    },
+    '''
+    # Executes every weekday at 16:30
+    'every-weekday-end': {
+        'task': 'listSymbols',
+        'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
+        # 'args': (16, 16),
+    },
+}
 
 thePROG = Program(name=APP_NAME, argvs=[])
 thePROG._heartbeatInterval =-1

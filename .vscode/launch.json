@@ -5,14 +5,6 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "type": "bashdb",
-            "request": "launch",
-            "name": "Bash-Debug (select script from list of sh files)",
-            "cwd": "${workspaceFolder}",
-            "program": "${command:SelectScriptName}",
-            "args": []
-        },
-        {
             "name": "Python: Current File",
             "env": {
                 "PYTHONPATH":"${workspaceFolder}:${workspaceFolder}/src:${PYTHONPATH}"
@@ -23,6 +15,14 @@
             "program": "${file}"
         },
         {
+            "type": "bashdb",
+            "request": "launch",
+            "name": "Bash-Debug (select script from list of sh files)",
+            "cwd": "${workspaceFolder}",
+            "program": "${command:SelectScriptName}",
+            "args": []
+        },
+        {
             "name": "Celery: sinaMaster",
             "env": {
                 "PYTHONPATH":"${workspaceFolder}:${workspaceFolder}/src:${PYTHONPATH}"
@@ -31,7 +31,7 @@
             "request": "launch",
             "pythonPath": "/usr/bin/python3", //python3的安装路径
             "program": "/usr/local/bin/celery",
-            "args": ["-A", "dapp.sinaMaster", "worker", "-l", "DEBUG"]
+            "args": ["-A", "dapps.sinaMaster", "worker", "-l", "DEBUG"]
         },
         {
             "name": "Python: Attach",

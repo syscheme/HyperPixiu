@@ -2,11 +2,23 @@
 
 from __future__ import absolute_import, unicode_literals
 from celery import shared_task
-from .celery import thePROG
+import sys, os, re
+if __name__ == '__main__':
+    sys.path.append(".")
+    from worker import thePROG, getLogin
+else:
+    from .worker import thePROG, getLogin
 
+from dapps.CeleryDefs import RetryableError, Retryable
 import crawler.crawlSina as sina
+import crawler.producesSina as prod
 
 from time import sleep
+
+HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,close,volume"
+EOL = "\r\n"
+
+__accLogin, __accHome, __workersRoot= None, '/mnt/s', '/mnt/data/hpwkspace/workers'
 
 @shared_task
 def add(x, y):
@@ -20,8 +32,8 @@ def mul(x, y):
 def xsum(numbers):
     return sum(numbers)
 
-__totalAmt1W=0
 import math
+__totalAmt1W =1
 def activityOf(item):
     ret = 10* math.sqrt(item['amount'] / __totalAmt1W)
     ret += item['turnoverratio']  
@@ -42,47 +54,113 @@ def activityOf(item):
 
     return ret
 
-@shared_task
-def listAllSymbols():
+@shared_task(bind=True, base=Retryable)
+def listAllSymbols(self):
+    noneST, STs = __listAllSymbols()
+    csvNoneST = HEADERSEQ + EOL
+    for i in noneST:
+        csvNoneST += ','.join([str(i[k]) for k in HEADERSEQ.split(',')]) +EOL
+
+    csvSTs = HEADERSEQ + EOL
+    for i in STs:
+        csvSTs += ','.join([str(i[k]) for k in HEADERSEQ.split(',')]) +EOL
+
+    return csvNoneST, csvSTs
+
+@shared_task(bind=True, base=Retryable)
+def archiveSymbol(self, login, symbol, asofYYMMDD, fnJsons, fnSnapshot) :
+    '''
+    fnJsons = ['SZ000002_KL1d20201127.json', 'SZ000002_MF1d20201127.json', 'SZ000002_KL5m20201127.json', 'SZ000002_MF1m20201127.json']
+    fnSnapshot = 'SZ000002_sns.h5';
+    '''
+
+    global __accLogin, __accHome, __workersRoot
+    if '@' in login : login = login[:login.index('@')]
+    if ':' in login : login = login[:login.index(':')]
+
+    pubHome = os.path.join(__workersRoot, login, to_publish)
+
+    # step 1. zip the JSON files
+    for fn in fnJsons:
+        srcpath = os.path.join(pubHome, fn)
+        fn = os.path.basename(fn)
+        evt = 
+        destpath = os.path.join(__accHome, 'archived', 'sina', 'Sina%s_%s.h5t' % (evt, asofYYMMDD) )
+        h5tar.tar_utf8(destpath, srcpath)
+
+    # step 2. zip the snapshots
+    srcpath = os.path.join(pubHome, fnSnapshot)
+    destpath = os.path.join(__accHome, 'archived', 'sina', 'SNS_%s.h5' % (symbol) )
+    with h5.open(srcpath, 'r') as h5f:
+        pass
+
+
+def __listAllSymbols():
     result ={}
     EOL ="\n"
 
     md = sina.SinaCrawler(thePROG, None)
 
-    httperr =100
-    while 2 != int(httperr /100):
+    httperr, retryNo =100, 0
+    for i in range(50):
         httperr, lstSH = md.GET_AllSymbols('SH')
-        thePROG.warn('SH-resp(%d) len=%d' %(httperr, len(lstSH)))
-        if 456 == httperr : sleep(30)
+        if 2 == int(httperr/100): break
 
-    httperr =100
-    while 2 != int(httperr/100):
+        thePROG.warn('SH-resp(%d) len=%d' %(httperr, len(lstSH)))
+        if 456 == httperr :
+            retryNo += 1
+            sleep(prod.defaultNextYield(retryNo))
+            continue
+
+    if len(lstSH) <=0:
+        raise RetryableError(httperr, "no SH fetched")
+    thePROG.info('SH-resp(%d) len=%d' %(httperr, len(lstSH)))
+
+    for i in range(50):
         httperr, lstSZ = md.GET_AllSymbols('SZ')
+        if 2 == int(httperr/100): break
+
         thePROG.warn('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
-        if 456 == httperr : sleep(30)
+        if 456 == httperr :
+            retryNo += 1
+            sleep(prod.defaultNextYield(retryNo))
+            continue
+
+    if len(lstSZ) <=0:
+        raise RetryableError(httperr, "no SZ fetched")
+    thePROG.info('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
 
     for i in lstSH + lstSZ:
         result[i['symbol']] =i
     result = list(result.values())
 
-    global __totalAmt1W
-    __totalAmt1W=0
-    HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,close,volume"
-    csvAll = HEADERSEQ + EOL
+    totalAmt1W=0
     for i in result:
-        __totalAmt1W += i['amount'] /10000.0
-        csvAll += ','.join([str(i[k]) for k in HEADERSEQ.split(',')]) +EOL
+        totalAmt1W += i['amount'] /10000.0
 
-    # filter the top active 1000
-    topXXX = list(filter(lambda x: not 'ST' in x['name'], result))
-    topNum = min(500, int(len(topXXX)/50) *10)
+    if totalAmt1W >1.0: # for activityOf() 
+        global __totalAmt1W
+        __totalAmt1W = totalAmt1W
 
-    topXXX.sort(key=activityOf)
-    topXXX= topXXX[-topNum:]
-    topXXX.reverse()
-    csvTop = HEADERSEQ + EOL
-    for i in topXXX:
-        csvTop += ','.join([str(i[k]) for k in HEADERSEQ.split(',')]) +EOL
+    noneST = list(filter(lambda x: not 'ST' in x['name'], result))
+    noneST.sort(key=activityOf)
+    noneST.reverse()
+
+    STs = list(filter(lambda x: 'ST' in x['name'], result))
+    STs.sort(key=activityOf)
+    STs.reverse()
     
-    return csvTop, csvAll
+    return noneST, STs
+
+####################################
+if __name__ == '__main__':
+    # csvNoneST, csvSTs = listAllSymbols()
+    # print(csvNoneST)
+    # print(csvSTs)
+    login = 'hpx01@tc2.syscheme.com'
+    asofYYMMDD = '20201127'
+    fnJsons = ['SZ000002_KL1d20201127.json', 'SZ000002_MF1d20201127.json', 'SZ000002_KL5m20201127.json', 'SZ000002_MF1m20201127.json']
+    fnSnapshot = 'SZ000002_sns.h5';
+
+    archiveSymbol(login, symbol, asofYYMMDD, fnJsons, fnSnapshot)
 

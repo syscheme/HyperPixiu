@@ -12,7 +12,7 @@ import HistoryData as hist
 from MarketData import TickData, KLineData, NORMALIZE_ID, EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY, MARKETDATE_EVENT_PREFIX
 
 from Perspective import *
-import vn.VnTrader as vn
+# import vn.VnTrader as vn
 
 from datetime import datetime, timedelta
 from collections import OrderedDict

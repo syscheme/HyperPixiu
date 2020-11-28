@@ -24,6 +24,7 @@ else:
 
 from Application import *
 from Perspective import *
+from MarketData import *
 import HistoryData as hist
 from crawler.producesSina import SinaMux, Sina_Tplus1, SinaSwingScanner
 from dapps.CeleryDefs import RetryableError, Retryable
@@ -85,8 +86,8 @@ def downloadToday(self, SYMBOL, todayYYMMDD =None):
     if not __accLogin:
         __accLogin, __accHome = getLogin()
 
-    h5, cached = __downloadSymbol(SYMBOL)
-    print('%s, %s' % (h5, cached))
+    ret = __downloadSymbol(SYMBOL)
+    print('%s' % ret)
 
 def __downloadSymbol(SYMBOL, todayYYMMDD =None):
 
@@ -107,6 +108,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
     playback   = SinaMux(thePROG, endDate=SINA_TODAY.strftime('%Y%m%dT%H%M%S')) # = thePROG.createApp(SinaMux, **srcPathPatternDict)
     playback.setId('Dayend.%s' % SYMBOL)
     playback.setSymbols([SYMBOL])
+
     nLastDays = 5
 
     # 1.a  KL1d and determine the date of n-open-days ago
@@ -170,14 +172,26 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
     snapshot = {}
     snapshoth5fn = os.path.join(dirCache, '%s_sns.h5' % (SYMBOL))
 
+    fnTcsv = os.path.join(dirCache, '%s_day%s.tcsv' % (SYMBOL, todayYYMMDD))
+    os.remove(fnTcsv)
+    rec = thePROG.createApp(hist.TaggedCsvRecorder, filepath = fnTcsv)
+    rec.registerCategory(EVENT_TICK,           params={'columns': TickData.COLUMNS})
+    rec.registerCategory(EVENT_KLINE_1MIN,     params={'columns': KLineData.COLUMNS})
+    rec.registerCategory(EVENT_KLINE_5MIN,     params={'columns': KLineData.COLUMNS})
+    rec.registerCategory(EVENT_KLINE_1DAY,     params={'columns': KLineData.COLUMNS})
+    rec.registerCategory(EVENT_MONEYFLOW_1MIN, params={'columns': MoneyflowData.COLUMNS})
+    rec.registerCategory(EVENT_MONEYFLOW_1DAY, params={'columns': MoneyflowData.COLUMNS})
+
     while True:
         try :
+            rec.doAppStep() # to flush the recorder
             ev = next(playback)
             if not ev or MARKETDATE_EVENT_PREFIX != ev.type[:len(MARKETDATE_EVENT_PREFIX)] : continue
 
             symbol = ev.data.symbol
             if ev.data.datetime <= SINA_TODAY:
-                if not psptMarketState.updateByEvent(ev) or symbol != SYMBOL :
+                ev = psptMarketState.updateByEvent(ev)
+                if not ev or symbol != SYMBOL :
                     continue
 
                 stamp    = psptMarketState.getAsOf(symbol)
@@ -186,6 +200,8 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
 
                 if not ohlc or todayYYMMDD != stamp.strftime('%Y%m%d'): # or not today
                     continue
+
+                rec.pushRow(ev.type, ev.data)
 
                 if len(momentsToSample) >0 and stamp.strftime('%H:%M:00') in momentsToSample:
                     snapshot = {
@@ -212,12 +228,22 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
             thePROG.logexception(ex)
             raise ex
 
+    for i in range(2): rec.doAppStep() # to flush the recorder
+
     if snapshot and len(snapshot) >0:
         h5group = snapshot['ident']
         h5group = h5group[:h5group.index('T')]
         saveSnapshot(snapshoth5fn, h5group= h5group, dsName=snapshot['ident'], snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc'])
 
-    return snapshoth5fn, playback.cachedFiles
+    dirNameLen = len(dirCache) +1
+
+    return {
+        'symbol': SYMBOL,
+        'date': todayYYMMDD,
+        'snapshot': snapshoth5fn[dirNameLen:], 
+        'cachedJsons': [x[dirNameLen:] for x in playback.cachedFiles],
+        'tcsv': fnTcsv[dirNameLen:],
+    }
 
 ####################################
 if __name__ == '__main__':

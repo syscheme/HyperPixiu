@@ -19,7 +19,6 @@ from time import sleep
 
 EXECLUDE_LIST = ["SH600005"]
 
-
 '''
 分类-中国银行: http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssi_gupiao_fenlei?daima=SH601988
 [{cate_type:"2",cate_name:"银行业",category:"hangye_ZI01"}]
@@ -797,7 +796,7 @@ class SinaCrawler(MarketCrawler):
          {"symbol":"sh600241","code":"600241","name":"*ST\u65f6\u4e07","trade":"3.390","pricechange":"-0.010","changepercent":"-0.294","buy":"3.380","sell":"3.390","settlement":"3.400","open":"3.400","high":"3.400","low":"3.370","volume":1572918,"amount":5328448,"ticktime":"15:00:00","per":-3.606,"pb":1.025,"mktcap":99768.416985,"nmc":85281.237408,"turnoverratio":0.62525},
         ]
         '''
-        HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,trade,open,high,low,volume,amount"
+        HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,trade,open,high,low,volume,amount,pb"
         HEADERS=HEADERSEQ.split(',')
         MAX_SYM_COUNT=6000
         ex_node = ex_node.lower()
@@ -813,6 +812,10 @@ class SinaCrawler(MarketCrawler):
                 self.warn("GET_AllSymbols(%s) page %d got httperr(%d)" %(ex_node, page, httperr))
                 continue
 
+            '''
+            [{"symbol":"sh600000","code":"600000","name":"\\u6d66\\u53d1\\u94f6\\u884c","trade":"9.670","pricechange":-0.07,"changepercent":-0.719,"buy":"9.670","sell":"9.680","settlement":"9.740","open":"9.680","high":"9.720","low":"9.610","volume":46631360,"amount":450166503,"ticktime":"15:00:00","per":4.959,"pb":0.553,"mktcap":28383513.700809,"nmc":28383513.700809,"turnoverratio":0.15887},
+            {"symbol":"sh600004","code":"600004","name":"\\u767d\\u4e91\\u673a\\u573a","trade":"15.280","pricechange":-0.1,"changepercent...
+            '''
             jsonData = demjson.decode(text)
             if not jsonData:
                 continue

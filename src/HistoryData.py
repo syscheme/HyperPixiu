@@ -84,7 +84,7 @@ class Recorder(BaseApplication):
 
     def doAppStep(self):
         cStep =0
-        while self.isActive:
+        while True:
             try:
                 category, row = self.__queRowsToRecord.get(block=False, timeout=0.05)
                 self._saveRow(category, row)

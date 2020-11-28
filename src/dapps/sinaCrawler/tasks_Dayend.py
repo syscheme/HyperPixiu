@@ -15,24 +15,19 @@
 '''
 # from __future__ import absolute_import, unicode_literals
 from celery import shared_task
-import sys, os, platform, re
+import sys, os, re
 if __name__ == '__main__':
     sys.path.append(".")
     from worker import thePROG
 else:
     from .worker import thePROG
 
-from Simulator import *
-from Account import Account_AShare
 from Application import *
+from Perspective import *
 import HistoryData as hist
-from advisors.dnn import DnnAdvisor_S1548I4A3
 from crawler.producesSina import SinaMux, Sina_Tplus1, SinaSwingScanner
 
-RFGROUP_PREFIX  = 'ReplayFrame:'
-RFGROUP_PREFIX2 = 'RF'
-OUTFRM_SIZE = 8*1024
-import random
+import h5py
 
 @shared_task
 def add(x, y):
@@ -46,23 +41,6 @@ def mul(x, y):
 def xsum(numbers):
     return sum(numbers)
 
-########################################################################
-class SinaDayEnd(SinaSwingScanner):
-
-    def __init__(self, program, **kwargs):
-        '''Constructor
-        '''
-        super(SinaDayEnd, self).__init__(program, **kwargs)
-        self.__dictPredict={} # dict of time to (state, predictions)
-
-    def schedulePreidictions(self, timesToPredict):
-        for t in timesToPredict:
-            self.__dictPredict[t] = {'state': None, 'pred': None }
-
-    def loadModel(self, modelName):
-        # TODO
-        pass
-
 # ===================================================
 def memberfnInH5tar(fnH5tar, symbol):
     # we knew the member file would like SinaMF1d_20201010/SH600029_MF1d20201010.json@/root/wkspaces/hpx_archived/sina/SinaMF1d_20201010.h5t
@@ -72,9 +50,34 @@ def memberfnInH5tar(fnH5tar, symbol):
     asofYYMMDD = mfn[1+idx:]
     return '%s/%s_%s%s.json' % (mfn, symbol, mfn[4:idx], asofYYMMDD), asofYYMMDD
 
+def saveSnapshot(filename, h5group, dsName, snapshot, ohlc):
+    compressed = bz2.compress(snapshot)
+
+    with h5py.File(filename, 'a') as h5file:
+
+        if h5group in h5file.keys() :
+            g = h5file[h5group]
+        else:
+            g = h5file.create_group(h5group) 
+            g.attrs['desc']         = 'pickled market state via bzip2 compression'
+
+        if dsName in g.keys(): del g[dsName]
+
+        npbytes = np.frombuffer(compressed, dtype=np.uint8)
+        sns = g.create_dataset(dsName, data=np.frombuffer(compressed, dtype=np.uint8))
+        sns.attrs['size'] = len(snapshot)
+        sns.attrs['csize'] = len(compressed)
+        sns.attrs['open'] = ohlc[0]
+        sns.attrs['high'] = ohlc[1]
+        sns.attrs['low']  = ohlc[2]
+        sns.attrs['price'] = ohlc[3]
+        sns.attrs['generated'] = datetime.now().strftime('%Y%m%dT%H%M%S')
+        
+        thePROG.info('saved snapshot[%s] %dB->%dz into %s' % (dsName, sns.attrs['size'], sns.attrs['csize'], filename))
+
 # ===================================================
 @shared_task
-def swingOnH5tars(SYMBOL, todayYYMMDD =None):
+def downloadToday(SYMBOL, todayYYMMDD =None):
 
     CLOCK_TODAY= datetime.now().replace(hour=23, minute=59, second=59, microsecond=0)
     SINA_TODAY = CLOCK_TODAY.strftime('%Y-%m-%d') if not todayYYMMDD else todayYYMMDD
@@ -86,56 +89,22 @@ def swingOnH5tars(SYMBOL, todayYYMMDD =None):
     dirCache = '/tmp/aaa'
     dirArchived = os.path.join(os.environ['HOME'], 'wkspaces/hpx_archived/sina') 
 
-    thePROG._heartbeatInterval =-1
-
-    modelName   = thePROG.getConfig('scanner/model', 'ModelName') # None
-
     todayYYMMDD = SINA_TODAY.strftime('%Y%m%d')
-
     dirArchived = Program.fixupPath(dirArchived)
-    allFiles    = hist.listAllFiles(dirArchived)
-
-    thePROG.stop()
-    thePROG._heartbeatInterval =-1
-
-    acc     = thePROG.createApp(Account_AShare, configNode ='account', ratePer10K =30)
-    tdrCore = thePROG.createApp(BaseTrader, configNode ='trader', objectives = [SYMBOL], account=acc)
-
-    rec = thePROG.createApp(hist.TaggedCsvRecorder, configNode ='recorder', filepath = os.path.join(thePROG.outdir, 'SinaDayEnd_%s.tcsv' % SINA_TODAY.strftime('%Y%m%d')))
-    revents = None
-
+    
     # step 1. build up the Playback Mux
     playback   = SinaMux(thePROG, endDate=SINA_TODAY.strftime('%Y%m%dT%H%M%S')) # = thePROG.createApp(SinaMux, **srcPathPatternDict)
+    playback.setId('Dayend.%s' % SYMBOL)
     playback.setSymbols([SYMBOL])
     nLastDays = 5
 
     # 1.a  KL1d and determine the date of n-open-days ago
-    bnRegex, filelst = 'SinaKL1d_([0-9]*).h5t', []
-    for fn in allFiles:
-        m = re.match(bnRegex, os.path.basename(fn))
-        if not m or m.group(1) < todayYYMMDD: continue
-        filelst.append(str(fn))
-    
     caldays = (CLOCK_TODAY - SINA_TODAY).days
 
     daysTolst = int(caldays/7) *5 + (caldays %7) + 1 + nLastDays
-    filelst.sort()
     lastDays =[]
-    for fn in filelst:
-        try :
-            _, lastDays = playback.loadJsonH5t(EVENT_KLINE_1DAY, SYMBOL, fn, None, daysTolst)
-            break
-        except Exception as ex:
-            thePROG.logexception(ex, fn)
-
-    if len(lastDays) <=0:
-        for retry in range(10):
-            httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, daysTolst, dirCache)
-            if 456 == httperr:
-                sleep(10*retry):
-                continue
-            break
-    if len(lastDays) <=0
+    httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, daysTolst, dirCache)
+    if len(lastDays) <=0 :
         return "456 busy"
             
     dtStart = lastDays[0].asof
@@ -147,69 +116,91 @@ def swingOnH5tars(SYMBOL, todayYYMMDD =None):
             break
 
     startYYMMDD = dtStart.strftime('%Y%m%d')
-    thePROG.info('loaded KL1d and determined swing-start with %d-Tdays to %s was %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), startYYMMDD))
+    todayYYMMDD = lastDays[0].asof.strftime('%Y%m%d')
+
+    thePROG.info('loaded KL1d and determined %d-Tdays pirior to %s was %s, adjusted today as %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), startYYMMDD, todayYYMMDD))
     
     # 1.b  MF1d
-    bnRegex, filelst = 'SinaMF1d_([0-9]*).h5t', []
-    for fn in allFiles:
-        m = re.match(bnRegex, os.path.basename(fn))
-        if not m or m.group(1) < todayYYMMDD: continue
-        filelst.append(str(fn))
-
-    loaded=False
-    
-    filelst.sort()
-    for fn in filelst:
-        try :
-            # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
-            mfn, _ = memberfnInH5tar(fn, SYMBOL)
-            playback.loadJsonH5t(EVENT_MONEYFLOW_1DAY, SYMBOL, fn, mfn, 1 + nLastDays)
-            loaded = True
-            break
-        except Exception as ex:
-            thePROG.logexception(ex, fn)
-
-    if not loaded:
-        playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, dirCache)
+    httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, dirCache)
 
     # 1.c  KL5m
-    bnRegex, filelst = 'SinaKL5m_([0-9]*).h5t', []
-    # because one download of KL5m covered 5days, so take dtStart directly
-    startYYMMDD = dtStart.strftime('%Y%m%d') 
-    latestDay = todayYYMMDD
-    for fn in allFiles:
-        m = re.match(bnRegex, os.path.basename(fn))
-        if not m or m.group(1) < startYYMMDD or m.group(1) > todayYYMMDD: continue
-        try :
-            # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
-            mfn, latestDay = memberfnInH5tar(fn, SYMBOL)
-            playback.loadJsonH5t(EVENT_KLINE_5MIN, SYMBOL, fn, mfn)
-        except Exception as ex:
-            thePROG.logexception(ex, fn)
-    
-    if CLOCK_TODAY == SINA_TODAY and latestDay < todayYYMMDD:
-        playback.loadOnline(EVENT_KLINE_5MIN, SYMBOL, 0, dirCache)
+    httperr, _, _ = playback.loadOnline(EVENT_KLINE_5MIN, SYMBOL, 0, dirCache)
 
     # 1.c  MF1m
-    bnRegex, filelst = 'SinaMF1m_([0-9]*).h5t', []
-    # because one download of KL5m covered 1day, so take dtStart directly
-    # no need to (dtStart - timedelta(days=5)).strftime('%Y%m%d')
-    startYYMMDD = dtStart.strftime('%Y%m%d')
-    latestDay = todayYYMMDD
-    for fn in allFiles:
-        m = re.match(bnRegex, os.path.basename(fn))
-        if not m or m.group(1) < startYYMMDD or m.group(1) > todayYYMMDD : continue
-        try :
-            # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
-            mfn, latestDay = memberfnInH5tar(fn, SYMBOL)
-            playback.loadJsonH5t(EVENT_MONEYFLOW_1MIN, SYMBOL, fn, mfn)
-        except Exception as ex:
-            thePROG.logexception(ex, fn)
+    # bnRegex, filelst = 'SinaMF1m_([0-9]*).h5t', []
+    # # because one download of KL5m covered 1day, so take dtStart directly
+    # # no need to (dtStart - timedelta(days=5)).strftime('%Y%m%d')
+    # startYYMMDD = dtStart.strftime('%Y%m%d')
+    # latestDay = todayYYMMDD
+    # for fn in allFiles:
+    #     m = re.match(bnRegex, os.path.basename(fn))
+    #     if not m or m.group(1) < startYYMMDD or m.group(1) > todayYYMMDD : continue
+    #     try :
+    #         # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
+    #         mfn, latestDay = memberfnInH5tar(fn, SYMBOL)
+    #         playback.loadJsonH5t(EVENT_MONEYFLOW_1MIN, SYMBOL, fn, mfn)
+    #     except Exception as ex:
+    #         thePROG.logexception(ex, fn)
 
-    if CLOCK_TODAY == SINA_TODAY and latestDay < todayYYMMDD:
-        playback.loadOnline(EVENT_MONEYFLOW_1MIN, SYMBOL, 0, dirCache)
+    # if CLOCK_TODAY == SINA_TODAY and latestDay < todayYYMMDD:
+    httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1MIN, SYMBOL, 0, dirCache)
 
     thePROG.info('inited mux with %d substreams' % (playback.size))
+    psptMarketState = PerspectiveState(SYMBOL)
+    stampOfState, momentsToSample = None, ['10:00:00', '10:30:00', '11:00:00', '11:30:00', '13:30:00', '14:30:00', '15:00:00']
+    snapshot = {}
+    snapshoth5fn = os.path.join(dirCache, '%s_sns.h5' % (SYMBOL))
+
+    while True:
+        try :
+            ev = next(playback)
+            if not ev or MARKETDATE_EVENT_PREFIX != ev.type[:len(MARKETDATE_EVENT_PREFIX)] : continue
+
+            symbol = ev.data.symbol
+            if ev.data.datetime <= SINA_TODAY:
+                if not psptMarketState.updateByEvent(ev) or symbol != SYMBOL :
+                    continue
+
+                stamp    = psptMarketState.getAsOf(symbol)
+                price, _ = psptMarketState.latestPrice(symbol)
+                ohlc     = psptMarketState.dailyOHLC_sofar(symbol)
+
+                if not ohlc or todayYYMMDD != stamp.strftime('%Y%m%d'): # or not today
+                    continue
+
+                if len(momentsToSample) >0 and stamp.strftime('%H:%M:00') in momentsToSample:
+                    snapshot = {
+                        'ident'   : '%s@%s' % (symbol, stamp.strftime('%Y%m%dT%H%M%S')),
+                        'ohlc'   : [ohlc.open, ohlc.high, ohlc.low, price],
+                        'snapshot': psptMarketState.dumps(symbol)
+                    }
+
+                if stampOfState and stampOfState == stamp:
+                    continue
+                
+                stampOfState = stamp
+
+                if snapshot and len(snapshot) >0:
+                    h5group = snapshot['ident']
+                    h5group = h5group[:h5group.index('T')]
+                    saveSnapshot(snapshoth5fn, h5group= h5group, dsName=snapshot['ident'], snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc'])
+                    snapshot ={}
+        
+        except StopIteration:
+            thePROG.info('hist-read: end of playback')
+            break
+        except Exception as ex:
+            thePROG.logexception(ex)
+            break
+
+    if snapshot and len(snapshot) >0:
+        h5group = snapshot['ident']
+        h5group = h5group[:h5group.index('T')]
+        saveSnapshot(snapshoth5fn, h5group= h5group, dsName=snapshot['ident'], snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc'])
+
+    return snapshoth5fn, playback.cachedFiles
+    '''
+        # -----------------------------------
     
     tdrWraper  = thePROG.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=playback, symbol=SYMBOL) # = thePROG.createApp(SinaDayEnd, configNode ='trader', trader=tdrCore, symbol=SYMBOL, dirOfflineData=evMdSource)
     tdrWraper.setTimeRange(dtStart = dtStart)
@@ -229,7 +220,9 @@ def swingOnH5tars(SYMBOL, todayYYMMDD =None):
     #  1d01p,1d12p,1d25p,1d5pp,1d01n,1d12n,1d2pn',
     #  2d01p,2d12p,2d25p,2d5pp,2d01n,2d12n,2d2pn',
     #  5d01p,5d12p,5d25p,5d5pp,5d01n,5d12n,5d2pn',]})
+    '''
 
 ####################################
 if __name__ == '__main__':
-    swingOnH5tars('SZ000003')
+    h5, cached = downloadToday('SZ000002')
+    print('%s, %s' % (h5, cached))

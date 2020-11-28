@@ -39,6 +39,7 @@ worker = Worker(APP_NAME,
 worker.conf.update( result_expires=3600,)
 
 thePROG = Program(name=APP_NAME, argvs=[])
+thePROG._heartbeatInterval =-1
 
 #----------------------------------------------------------------------
 if __name__ == '__main__':

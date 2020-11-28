@@ -14,6 +14,9 @@ from datetime import datetime, timedelta
 import os
 import fnmatch
 
+def defaultNextYield(retryNo) :
+    return MIN(10.0* int(1+ retryNo), 120.0) if retryNo >0 else -1
+
 ########################################################################
 class SinaMux(hist.PlaybackMux) :
 
@@ -26,9 +29,13 @@ class SinaMux(hist.PlaybackMux) :
         self.__symbols = []
 
         super(SinaMux, self).__init__(program, startDate =startDate, endDate=endDate)
+        self.__cachedFiles=[]
 
     @property
     def symbols(self) : return self.__symbols
+    
+    @property
+    def cachedFiles(self) : return self.__cachedFiles
 
     def setSymbols(self, symbols) :
         if isinstance(symbols, str):
@@ -258,9 +265,9 @@ class SinaMux(hist.PlaybackMux) :
 
         return subStrmsAdded
 
-    def loadOnline(self, evtype, symbol, nSampleLast =1, saveOfflineDir =None): # return True if succ
+    def loadOnline(self, evtype, symbol, nSampleLast =1, saveOfflineDir =None, nextYield=defaultNextYield): # return True if succ
 
-        if not symbol or len(symbol) <=0 or not evtype in [EVENT_KLINE_1DAY, EVENT_MONEYFLOW_1DAY] :
+        if not symbol or len(symbol) <=0 or not evtype in [EVENT_KLINE_1DAY, EVENT_KLINE_5MIN, EVENT_MONEYFLOW_1DAY, EVENT_MONEYFLOW_1MIN] :
             self.debug('%s of %s does not support online query as source' % (evtype, symbol))
             return None, None, []
 
@@ -276,18 +283,38 @@ class SinaMux(hist.PlaybackMux) :
 
         self.debug('taking online query as source of %s/%s of %ddays' % (evtype, symbol, days))
         httperr, dataseq = 500, []
-        saveYYMMDD = (datetime.now() - timedelta(hours=16)).strftime('%Y%m%d')
+        saveYYMMDD = (datetime.now() - timedelta(hours=16)).strftime('%Y%m%d') # 16hr fit to the latest date
         saveFilename = os.path.join(saveOfflineDir, '%s_%s%s.json' %(symbol, evtype[len(MARKETDATE_EVENT_PREFIX):], saveYYMMDD)) if saveOfflineDir else None
-        if evtype == EVENT_KLINE_1DAY :
-            httperr, dataseq = crawl.GET_RecentKLines(symbol, 240, days, saveAs=saveFilename)
-        elif evtype == EVENT_MONEYFLOW_1DAY :
-            httperr, dataseq = crawl.GET_MoneyFlow(symbol, days, False, saveAs=saveFilename)
 
-        if 200 != httperr or len(dataseq) <=0:
+        for retryNo in range(10) :
+            if evtype == EVENT_KLINE_1DAY :
+                httperr, dataseq = crawl.GET_RecentKLines(symbol, 240, days, saveAs=saveFilename)
+            elif evtype == EVENT_KLINE_5MIN :
+                httperr, dataseq = crawl.GET_RecentKLines(symbol, 5, 48*min(10, days), saveAs=saveFilename)
+            elif evtype == EVENT_MONEYFLOW_1DAY :
+                httperr, dataseq = crawl.GET_MoneyFlow(symbol, days, False, saveAs=saveFilename)
+            elif evtype == EVENT_MONEYFLOW_1MIN :
+                httperr, dataseq = crawl.GET_MoneyFlow(symbol, 240*min(5, days), True, saveAs=saveFilename)
+
+            if 200 == httperr:
+                self.__cachedFiles.append(saveFilename)
+                break
+
+            if 456 == httperr:
+                secYield = nextYield(retryNo)
+                self.error("load() query(%s:%s) failed, err(%s) len(%d), yield %ssec" %(symbol, evtype, httperr, len(dataseq), secYield))
+                if secYield >0:
+                    sleep(secYield)
+                    continue
+
             self.error("load() query(%s:%s) failed, err(%s) len(%d)" %(symbol, evtype, httperr, len(dataseq)))
             return httperr, None, []
 
         # succ at query
+        if len(dataseq) <=0:
+            self.warn("load() query(%s:%s) %s got empty list" %(symbol, evtype, httperr))
+            return httperr, None, []
+
         pb, c = hist.Playback(symbol, program=self.program), 0
         pb.setId('Online.%s/%s' % (evtype, symbol))
         for i in dataseq:

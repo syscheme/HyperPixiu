@@ -8,6 +8,7 @@ from celery import Celery, shared_task
 TASK_PREFIX = 'tasks_'
 TASK_PREFIX_LEN = len(TASK_PREFIX)
 
+#----------------------------------------------------------------------
 class Worker(Celery) :
     def gen_task_name(self, name, module):
         tokens = module.split('.')
@@ -24,6 +25,7 @@ class Worker(Celery) :
     #     setattr(t, '$Worker_task', True)
     #     return t
             
+#----------------------------------------------------------------------
 # app = Worker('HPXWorker',
 #     broker='redis://tc2.syscheme.com/0',
 #     backend='redis://tc2.syscheme.com/1',

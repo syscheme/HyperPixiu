@@ -18,9 +18,9 @@ from celery import shared_task
 import sys, os, re
 if __name__ == '__main__':
     sys.path.append(".")
-    from worker import thePROG
+    from worker import thePROG, getLogin
 else:
-    from .worker import thePROG
+    from .worker import thePROG, getLogin
 
 from Application import *
 from Perspective import *
@@ -45,6 +45,7 @@ def xsum(numbers):
 def memberfnInH5tar(fnH5tar, symbol):
     # we knew the member file would like SinaMF1d_20201010/SH600029_MF1d20201010.json@/root/wkspaces/hpx_archived/sina/SinaMF1d_20201010.h5t
     # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
+    fnH5tar = os.path.realpath(fnH5tar)
     mfn = os.path.basename(fnH5tar)[:-4]
     idx = mfn.index('_')
     asofYYMMDD = mfn[1+idx:]
@@ -75,9 +76,20 @@ def saveSnapshot(filename, h5group, dsName, snapshot, ohlc):
         
         thePROG.info('saved snapshot[%s] %dB->%dz into %s' % (dsName, sns.attrs['size'], sns.attrs['csize'], filename))
 
+
+
 # ===================================================
+__accLogin, __accHome = None, None
 @shared_task
 def downloadToday(SYMBOL, todayYYMMDD =None):
+    global __accLogin, __accHome
+    if not __accLogin:
+        __accLogin, __accHome = getLogin()
+
+    h5, cached = __downloadSymbol(SYMBOL)
+    print('%s, %s' % (h5, cached))
+
+def __downloadSymbol(SYMBOL, todayYYMMDD =None):
 
     CLOCK_TODAY= datetime.now().replace(hour=23, minute=59, second=59, microsecond=0)
     SINA_TODAY = CLOCK_TODAY.strftime('%Y-%m-%d') if not todayYYMMDD else todayYYMMDD
@@ -101,24 +113,30 @@ def downloadToday(SYMBOL, todayYYMMDD =None):
     # 1.a  KL1d and determine the date of n-open-days ago
     caldays = (CLOCK_TODAY - SINA_TODAY).days
 
-    daysTolst = int(caldays/7) *5 + (caldays %7) + 1 + nLastDays
+    daysTolst = int(caldays/7) *5 + (caldays %7) + 5 + nLastDays
     lastDays =[]
     httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, daysTolst, dirCache)
     if len(lastDays) <=0 :
         return "456 busy"
             
-    dtStart = lastDays[0].asof
     lastDays.reverse()
-    for i in range(len(lastDays)):
-        if todayYYMMDD > lastDays[i].asof.strftime('%Y%m%d') :
-            if i < len(lastDays) - nLastDays :
-                dtStart = lastDays[i + nLastDays].asof
+    tmp = lastDays
+    lastDays = []
+    for i in tmp:
+        if i.asof.strftime('%Y%m%d') > todayYYMMDD:
+            continue
+        lastDays.append(i)
+        if len(lastDays) >= nLastDays:
             break
 
+    if len(lastDays) <=0:
+        return "failed to get recent days"
+    
+    dtStart = lastDays[-1].asof
     startYYMMDD = dtStart.strftime('%Y%m%d')
     todayYYMMDD = lastDays[0].asof.strftime('%Y%m%d')
-
-    thePROG.info('loaded KL1d and determined %d-Tdays pirior to %s was %s, adjusted today as %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), startYYMMDD, todayYYMMDD))
+    
+    thePROG.info('loaded KL1d and determined %d-Tdays pirior to %s, %ddays: %s ~ %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), len(lastDays), startYYMMDD, todayYYMMDD))
     
     # 1.b  MF1d
     httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, dirCache)
@@ -144,6 +162,18 @@ def downloadToday(SYMBOL, todayYYMMDD =None):
 
     # if CLOCK_TODAY == SINA_TODAY and latestDay < todayYYMMDD:
     httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1MIN, SYMBOL, 0, dirCache)
+
+    for i in lastDays[1:]:
+        offline_mf1m = os.path.join(dirArchived, 'SinaMF1m_%s.h5t' % i.asof.strftime('%Y%m%d'))
+        try :
+            size = os.stat(offline_mf1m).st_size
+            if size <=0: continue
+
+            # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
+            mfn, latestDay = memberfnInH5tar(offline_mf1m, SYMBOL)
+            playback.loadJsonH5t(EVENT_MONEYFLOW_1MIN, SYMBOL, offline_mf1m, mfn)
+        except Exception as ex:
+            thePROG.logexception(ex, offline_mf1m)
 
     thePROG.info('inited mux with %d substreams' % (playback.size))
     psptMarketState = PerspectiveState(SYMBOL)
@@ -224,5 +254,4 @@ def downloadToday(SYMBOL, todayYYMMDD =None):
 
 ####################################
 if __name__ == '__main__':
-    h5, cached = downloadToday('SZ000002')
-    print('%s, %s' % (h5, cached))
+    downloadToday('SZ000002')

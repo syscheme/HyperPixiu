@@ -3,11 +3,23 @@
 # task routine: https://www.celerycn.io/yong-hu-zhi-nan/lu-you-ren-wu-routing-tasks
 
 from __future__ import absolute_import
-from celery import Celery, shared_task
+from celery import Celery, shared_task, Task
 
 TASK_PREFIX = 'tasks_'
 TASK_PREFIX_LEN = len(TASK_PREFIX)
 
+#----------------------------------------------------------------------
+class RetryableError(Exception):
+    def __init__(self, errCode, message):
+        self.errCode = errCode
+        self.message = message
+        super().__init__(self.message)
+
+class Retryable(Task):
+    autoretry_for = (RetryableError,)
+    retry_kwargs = {'max_retries': 5}
+    retry_backoff = True
+    
 #----------------------------------------------------------------------
 class Worker(Celery) :
     def gen_task_name(self, name, module):

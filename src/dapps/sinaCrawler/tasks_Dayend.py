@@ -26,6 +26,7 @@ from Application import *
 from Perspective import *
 import HistoryData as hist
 from crawler.producesSina import SinaMux, Sina_Tplus1, SinaSwingScanner
+from dapps.CeleryDefs import RetryableError, Retryable
 
 import h5py
 
@@ -76,12 +77,10 @@ def saveSnapshot(filename, h5group, dsName, snapshot, ohlc):
         
         thePROG.info('saved snapshot[%s] %dB->%dz into %s' % (dsName, sns.attrs['size'], sns.attrs['csize'], filename))
 
-
-
 # ===================================================
 __accLogin, __accHome = None, None
-@shared_task
-def downloadToday(SYMBOL, todayYYMMDD =None):
+@shared_task(bind=True, base=Retryable)
+def downloadToday(self, SYMBOL, todayYYMMDD =None):
     global __accLogin, __accHome
     if not __accLogin:
         __accLogin, __accHome = getLogin()
@@ -116,8 +115,8 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
     daysTolst = int(caldays/7) *5 + (caldays %7) + 5 + nLastDays
     lastDays =[]
     httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, daysTolst, dirCache)
-    if len(lastDays) <=0 :
-        return "456 busy"
+    if 456 == httperr:
+        raise RetryableError(httperr, "blocked by sina at %s@%s" %(EVENT_KLINE_1DAY, SYMBOL))
             
     lastDays.reverse()
     tmp = lastDays
@@ -130,7 +129,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
             break
 
     if len(lastDays) <=0:
-        return "failed to get recent days"
+        raise ValueError("failed to get recent %d days" %nLastDays)
     
     dtStart = lastDays[-1].asof
     startYYMMDD = dtStart.strftime('%Y%m%d')
@@ -140,28 +139,18 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
     
     # 1.b  MF1d
     httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, dirCache)
+    if 456 == httperr:
+        raise RetryableError(httperr, "blocked by sina at %s@%s" %(EVENT_MONEYFLOW_1DAY, SYMBOL))
 
     # 1.c  KL5m
     httperr, _, _ = playback.loadOnline(EVENT_KLINE_5MIN, SYMBOL, 0, dirCache)
+    if 456 == httperr:
+        raise RetryableError(httperr, "blocked by sina at %s@%s" %(EVENT_KLINE_5MIN, SYMBOL))
 
     # 1.c  MF1m
-    # bnRegex, filelst = 'SinaMF1m_([0-9]*).h5t', []
-    # # because one download of KL5m covered 1day, so take dtStart directly
-    # # no need to (dtStart - timedelta(days=5)).strftime('%Y%m%d')
-    # startYYMMDD = dtStart.strftime('%Y%m%d')
-    # latestDay = todayYYMMDD
-    # for fn in allFiles:
-    #     m = re.match(bnRegex, os.path.basename(fn))
-    #     if not m or m.group(1) < startYYMMDD or m.group(1) > todayYYMMDD : continue
-    #     try :
-    #         # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
-    #         mfn, latestDay = memberfnInH5tar(fn, SYMBOL)
-    #         playback.loadJsonH5t(EVENT_MONEYFLOW_1MIN, SYMBOL, fn, mfn)
-    #     except Exception as ex:
-    #         thePROG.logexception(ex, fn)
-
-    # if CLOCK_TODAY == SINA_TODAY and latestDay < todayYYMMDD:
     httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1MIN, SYMBOL, 0, dirCache)
+    if 456 == httperr:
+        raise RetryableError(httperr, "blocked by sina at %s@%s" %(EVENT_MONEYFLOW_1MIN, SYMBOL))
 
     for i in lastDays[1:]:
         offline_mf1m = os.path.join(dirArchived, 'SinaMF1m_%s.h5t' % i.asof.strftime('%Y%m%d'))
@@ -221,7 +210,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
             break
         except Exception as ex:
             thePROG.logexception(ex)
-            break
+            raise ex
 
     if snapshot and len(snapshot) >0:
         h5group = snapshot['ident']
@@ -229,28 +218,6 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
         saveSnapshot(snapshoth5fn, h5group= h5group, dsName=snapshot['ident'], snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc'])
 
     return snapshoth5fn, playback.cachedFiles
-    '''
-        # -----------------------------------
-    
-    tdrWraper  = thePROG.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=playback, symbol=SYMBOL) # = thePROG.createApp(SinaDayEnd, configNode ='trader', trader=tdrCore, symbol=SYMBOL, dirOfflineData=evMdSource)
-    tdrWraper.setTimeRange(dtStart = dtStart)
-    tdrWraper.setSampling(os.path.join(thePROG.outdir, 'SwingTrainingDS_%s.h5' % SINA_TODAY.strftime('%Y%m%d')))
-
-    tdrWraper.setRecorder(rec)
-
-    thePROG.start()
-    if tdrWraper.isActive :
-        thePROG.loop()
-
-    thePROG.stop()
-
-    statesOfMoments = tdrWraper.stateOfMoments
-    thePROG.warn('TODO: predicting based on statesOf: %s and output to tcsv for summarizing' % ','.join(list(statesOfMoments.keys())))
-    # rec.registerCategory('PricePred', params= {'columns' : 
-    #  1d01p,1d12p,1d25p,1d5pp,1d01n,1d12n,1d2pn',
-    #  2d01p,2d12p,2d25p,2d5pp,2d01n,2d12n,2d2pn',
-    #  5d01p,5d12p,5d25p,5d5pp,5d01n,5d12n,5d2pn',]})
-    '''
 
 ####################################
 if __name__ == '__main__':

@@ -100,7 +100,7 @@ def read_utf8(fn_h5tar, fn_member) :
         g = h5file[GNAME_TEXT_utf8]
         m = quote(fn_member).replace('/','%2F')
         if not m in g.keys():
-            print('member[%s] not found' % fn_members)
+            print('member[%s] not found' % m)
             return ''
         
         compressed = g[m].value.tobytes()

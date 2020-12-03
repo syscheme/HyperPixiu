@@ -4,13 +4,16 @@ from __future__ import absolute_import, unicode_literals
 from celery import shared_task
 
 import sys, os, re
+from MarketData import MARKETDATE_EVENT_PREFIX
+import h5tar, h5py
+
 if __name__ == '__main__':
     sys.path.append(".")
-    from worker import thePROG, getLogin
+    from worker import thePROG
 else:
-    from .worker import thePROG, getLogin
+    from .worker import thePROG
 
-from dapps.CeleryDefs import RetryableError, Retryable
+from dapps.CeleryDefs import RetryableError, Retryable, getMappedAs
 import crawler.crawlSina as sina
 import crawler.producesSina as prod
 
@@ -18,8 +21,8 @@ from time import sleep
 
 HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,close,volume"
 EOL = "\r\n"
-
-__accLogin, __accHome, __workersRoot= None, '/mnt/s', '/mnt/data/hpwkspace/workers'
+SINA_USERS_ROOT = '/mnt/data/hpwkspace/users'
+MAPPED_USER, MAPPED_HOME = getMappedAs()
 
 @shared_task
 def add(x, y):
@@ -69,31 +72,59 @@ def listAllSymbols(self):
     return csvNoneST, csvSTs
 
 @shared_task(bind=True, base=Retryable)
-def commitToday(self, login, symbol, asofYYMMDD, fnJsons, fnSnapshot) :
+def commitToday(self, login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv) :
     '''
-    fnJsons = ['SZ000002_KL1d20201127.json', 'SZ000002_MF1d20201127.json', 'SZ000002_KL5m20201127.json', 'SZ000002_MF1m20201127.json']
+    fnJsons = ['SZ000002_KL1d20201202.json', 'SZ000002_MF1d20201202.json', 'SZ000002_KL5m20201202.json', 'SZ000002_MF1m20201202.json']
     fnSnapshot = 'SZ000002_sns.h5';
+    ~{HOME}
+    |-- archived -> ../archived
+    `-- hpx_template -> /home/wkspaces/hpx_template
+
     '''
 
-    global __accLogin, __accHome, __workersRoot
     if '@' in login : login = login[:login.index('@')]
     if ':' in login : login = login[:login.index(':')]
 
-    pubHome = os.path.join(__workersRoot, login, to_publish)
+    pubDir = os.path.join(SINA_USERS_ROOT, login, 'hpx_publish')
 
     # step 1. zip the JSON files
     for fn in fnJsons:
-        srcpath = os.path.join(pubHome, fn)
+        srcpath = os.path.join(pubDir, fn)
         fn = os.path.basename(fn)
-        evt = 
-        destpath = os.path.join(__accHome, 'archived', 'sina', 'Sina%s_%s.h5t' % (evt, asofYYMMDD) )
-        h5tar.tar_utf8(destpath, srcpath)
+        m = re.match(r'%s_([A-Za-z0-9]*)%s.json' %(symbol, asofYYMMDD), fn)
+        if not m : continue
+        evtShort = m.group(1)
 
-    # step 2. zip the snapshots
-    srcpath = os.path.join(pubHome, fnSnapshot)
-    destpath = os.path.join(__accHome, 'archived', 'sina', 'SNS_%s.h5' % (symbol) )
-    with h5.open(srcpath, 'r') as h5f:
-        pass
+        destpath = os.path.join(MAPPED_HOME, 'archived', 'sina', 'Sina%s_%s.h5t' % (evtShort, asofYYMMDD) )
+        if h5tar.tar_utf8(destpath, srcpath) :
+            thePROG.info('archived %s into %s' %(srcpath, destpath))
+
+    # step 1. zip the Tcsv file
+    srcpath = os.path.join(pubDir, fnTcsv)
+    destpath = os.path.join(MAPPED_HOME, 'archived', 'sina', 'SinaDay_%s.h5t' % asofYYMMDD )
+    if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
+        thePROG.info('archived %s into %s' %(srcpath, destpath))
+
+    # step 3. append the snapshots
+    srcpath = os.path.join(pubDir, fnSnapshot)
+    destpath = os.path.join(MAPPED_HOME, 'archived', 'sina', 'SNS_%s.h5' % (symbol) )
+    gns = []
+    with h5py.File(srcpath, 'r') as h5r:
+        with h5py.File(destpath, 'a') as h5w:
+            for gn in h5r.keys():
+                if not symbol in gn: continue
+                g = h5r[gn]
+                if not 'desc' in g.attrs or not 'pickled market state' in g.attrs['desc'] : continue
+
+                if gn in h5w.keys(): del h5w[gn]
+                # Note that this is not a copy of the dataset! Like hard links in a UNIX file system, objects in an HDF5 file can be stored in multiple groups
+                # So, h5w[gn] = g doesn't work because across different files
+                go = h5w.create_group(gn)
+                h5w.copy(g, go)
+                # h5w[gn] = g()
+                # h5py.Group.copy(g, h5w[gn])
+                gns.append(gn)
+    thePROG.info('added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
 
 
 def __listAllSymbols():
@@ -175,10 +206,12 @@ if __name__ == '__main__':
     # csvNoneST, csvSTs = listAllSymbols()
     # print(csvNoneST)
     # print(csvSTs)
-    login = 'hpx01@tc2.syscheme.com'
-    asofYYMMDD = '20201127'
-    fnJsons = ['SZ000002_KL1d20201127.json', 'SZ000002_MF1d20201127.json', 'SZ000002_KL5m20201127.json', 'SZ000002_MF1m20201127.json']
+    symbol = 'SZ000002'
+    login = 'root@tc2.syscheme.com'
+    asofYYMMDD = '20201202'
+    fnJsons = ['SZ000002_KL1d20201202.json', 'SZ000002_MF1d20201202.json', 'SZ000002_KL5m20201202.json', 'SZ000002_MF1m20201202.json']
     fnSnapshot = 'SZ000002_sns.h5';
+    fnTcsv = 'SZ000002_day20201202.tcsv';
 
-    commitToday(login, symbol, asofYYMMDD, fnJsons, fnSnapshot)
+    commitToday(login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv)
 

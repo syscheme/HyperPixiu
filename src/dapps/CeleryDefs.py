@@ -5,8 +5,11 @@
 from __future__ import absolute_import
 from celery import Celery, shared_task, Task
 
+import os
+
 TASK_PREFIX = 'tasks_'
 TASK_PREFIX_LEN = len(TASK_PREFIX)
+MAPPED_HOME = '/mnt/s'
 
 #----------------------------------------------------------------------
 class RetryableError(Exception):
@@ -50,6 +53,24 @@ class Worker(Celery) :
 # @shared_task
 # def hello():
 #     return 'hello world'
+
+#----------------------------------------------------------------------
+def getMappedAs(homeDir = MAPPED_HOME) :
+    accLogin = None
+
+    try :
+        if not homeDir or len(homeDir) <=1:
+            homeDir = os.path.join(os.environ['HOME'], 'wkspaces/hpx_publish/..')
+            homeDir = os.path.realpath(homeDir)
+
+        with open(os.path.join(homeDir, '.ssh', 'id_rsa.pub'), 'r') as fkey:
+            line = fkey.readline().strip()
+            accLogin = line.split(' ')[-1]
+    except Exception as ex:
+        pass
+        
+    return accLogin, homeDir
+    
 
 #----------------------------------------------------------------------
 if __name__ == '__main__':

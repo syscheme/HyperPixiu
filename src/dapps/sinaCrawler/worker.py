@@ -42,23 +42,6 @@ thePROG = Program(name=APP_NAME, argvs=[])
 thePROG._heartbeatInterval =-1
 
 #----------------------------------------------------------------------
-def getLogin(homeDir = None) :
-    accLogin = None
-
-    try :
-        if not homeDir or len(homeDir) <=1:
-            homeDir = os.path.join(os.environ['HOME'], 'wkspaces/hpx_publish/..')
-            homeDir = os.path.realpath(homeDir)
-
-        with open(os.path.join(homeDir, '.ssh', 'id_rsa.pub'), 'r') as fkey:
-            line = fkey.readline().strip()
-            accLogin = line.split(' ')[-1]
-    except Exception as ex:
-        thePROG.logexception(ex)
-        
-    return accLogin, homeDir
-
-#----------------------------------------------------------------------
 if __name__ == '__main__':
     # Optional configuration, see the application user guide.
 

@@ -13,23 +13,19 @@
     
     step 2. take the state of 10:00, 11:00, 13:30, 14:30, 15:00 of today to prediction of 1day, 2day and 5day into SinaDayEnd_YYYYMMDD.tcsv output
 '''
-# from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, unicode_literals
 from celery import shared_task
 import sys, os, re
 import shutil
 
-if __name__ == '__main__':
-    sys.path.append(".")
-    from worker import thePROG
-else:
-    from .worker import thePROG
+from dapps.sinaCrawler.worker import thePROG
+from dapps.celeryCommon import RetryableError, Retryable, getMappedAs
 
 from Application import *
 from Perspective import *
 from MarketData import *
 import HistoryData as hist
 from crawler.producesSina import SinaMux, Sina_Tplus1, SinaSwingScanner
-from dapps.celeryCommon import RetryableError, Retryable, getMappedAs
 
 import h5py
 

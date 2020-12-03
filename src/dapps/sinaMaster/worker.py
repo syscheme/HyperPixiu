@@ -8,6 +8,7 @@
 # >>> import dapp.sinaMaster.celery.app as app
 # >>> m.add.delay(5,5).get()
 
+from __future__ import absolute_import, unicode_literals
 from dapps.celeryCommon import populateTaskModules, createWorkerProgram
 import os
 

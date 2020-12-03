@@ -7,11 +7,7 @@ import sys, os, re
 from MarketData import MARKETDATE_EVENT_PREFIX
 import h5tar, h5py
 
-if __name__ == '__main__':
-    sys.path.append(".")
-    from worker import thePROG
-else:
-    from .worker import thePROG
+from dapps.sinaMaster.worker import thePROG
 
 from dapps.celeryCommon import RetryableError, Retryable, getMappedAs
 import crawler.crawlSina as sina

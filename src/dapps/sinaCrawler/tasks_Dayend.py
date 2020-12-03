@@ -29,7 +29,7 @@ from Perspective import *
 from MarketData import *
 import HistoryData as hist
 from crawler.producesSina import SinaMux, Sina_Tplus1, SinaSwingScanner
-from dapps.CeleryDefs import RetryableError, Retryable, getMappedAs
+from dapps.celeryCommon import RetryableError, Retryable, getMappedAs
 
 import h5py
 

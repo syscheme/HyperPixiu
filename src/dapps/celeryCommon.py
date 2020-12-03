@@ -4,12 +4,52 @@
 
 from __future__ import absolute_import
 from celery import Celery, shared_task, Task
+from Application import Program
 
 import os
 
 TASK_PREFIX = 'tasks_'
 TASK_PREFIX_LEN = len(TASK_PREFIX)
 MAPPED_HOME = '/mnt/s'
+
+#----------------------------------------------------------------------
+def populateTaskModules(dirOfParent, moduleParent =''):
+    taskModules = []
+    if moduleParent and len(moduleParent) >0 :
+        if '.' != moduleParent[-1]:
+            moduleParent += '.'
+    else:
+        moduleParent =''
+
+    for root, subdirs, files in os.walk(dirOfParent):
+        for name in files:
+            # 只有文件名TASK_PREFIX且以.py结尾的文件，才是TaskModule
+            if '.py' != name[-3:] :
+                continue
+
+            name = name[:-3]
+            if 'tasks' != name and TASK_PREFIX != name[:TASK_PREFIX_LEN] :
+                continue
+
+            taskModules.append('%s%s' % (moduleParent, name))
+
+    return taskModules
+
+#----------------------------------------------------------------------
+def createWorkerProgram(appName, taskModules = []):
+    worker = Worker(appName,
+        broker='redis://:hpxwkr@tc2.syscheme.com:15379/0',
+        backend='redis://:hpxwkr@tc2.syscheme.com:15379/1',
+        include=taskModules)
+
+    worker.conf.update(
+            result_expires=3600,
+            )
+
+    prog = Program(name=appName, argvs=[])
+    prog._heartbeatInterval =-1
+
+    return worker, prog
 
 #----------------------------------------------------------------------
 class RetryableError(Exception):

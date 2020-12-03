@@ -13,7 +13,7 @@ if __name__ == '__main__':
 else:
     from .worker import thePROG
 
-from dapps.CeleryDefs import RetryableError, Retryable, getMappedAs
+from dapps.celeryCommon import RetryableError, Retryable, getMappedAs
 import crawler.crawlSina as sina
 import crawler.producesSina as prod
 

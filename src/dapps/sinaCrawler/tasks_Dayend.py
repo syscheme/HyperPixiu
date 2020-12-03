@@ -105,6 +105,7 @@ def downloadToday(self, SYMBOL, todayYYMMDD =None):
     result = __downloadSymbol(SYMBOL)
 
     print('%s' % result) # sample: {'symbol': 'SZ000002', 'date': '20201127', 'snapshot': 'SZ000002_sns.h5', 'cachedJsons': ['SZ000002_KL1d20201128.json', 'SZ000002_MF1d20201128.json', 'SZ000002_KL5m20201128.json', 'SZ000002_MF1m20201128.json'], 'tcsv': 'SZ000002_day20201127.tcsv'}
+    return result
 
 def __downloadSymbol(SYMBOL, todayYYMMDD =None):
 
@@ -190,7 +191,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
     psptMarketState = PerspectiveState(SYMBOL)
     stampOfState, momentsToSample = None, ['10:00:00', '10:30:00', '11:00:00', '11:30:00', '13:30:00', '14:30:00', '15:00:00']
     snapshot = {}
-    snapshoth5fn = os.path.join(dirCache, '%s_sns.h5' % (SYMBOL))
+    snapshoth5fn = os.path.join(dirCache, '%s_sns%s.h5' % (SYMBOL, todayYYMMDD))
 
     fnTcsv = os.path.join(dirCache, '%s_day%s.tcsv' % (SYMBOL, todayYYMMDD))
     try:

@@ -71,8 +71,18 @@ def listAllSymbols(self):
 
     return csvNoneST, csvSTs
 
+# def commitToday(self, login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv) :
 @shared_task(bind=True, base=Retryable)
-def commitToday(self, login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv) :
+def commitToday(self, optDict) : # urgly at the parameter list
+    '''
+    in order to chain:
+    import celery
+    import dapps.sinaMaster.tasks as mt
+    import dapps.sinaCrawler.tasks_Dayend as ct
+    s3 = celery.chain(ct.downloadToday.s('SZ000005'), mt.commitToday.s())
+    s3().get()
+    '''
+    login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv = optDict['login'], optDict['symbol'], optDict['asofYYMMDD'], optDict['fnJsons'], optDict['fnSnapshot'], optDict['fnTcsv']
     '''
     fnJsons = ['SZ000002_KL1d20201202.json', 'SZ000002_MF1d20201202.json', 'SZ000002_KL5m20201202.json', 'SZ000002_MF1m20201202.json']
     fnSnapshot = 'SZ000002_sns.h5';

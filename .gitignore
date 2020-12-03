@@ -28,6 +28,7 @@ Untitled*.*
 *.pyo
 *.png
 .~*
+celerybeat-schedule
 
 *.csv
 

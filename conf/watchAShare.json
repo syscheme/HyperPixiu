@@ -55,6 +55,7 @@
     "remoteEvents": {
         "redis": {
             "host" : "tc.syscheme.com", // "172.16.20.170", 
+            // "host" : "tc2.syscheme.com", "port": 15379, "password": "hpxwkr",  
             "outgoing": ["evmdKL1m","evmdKL5m","evmdKL1d","evmdMF1m","evmdMF1d"], // ["evmdKL1m"],
         },
     },

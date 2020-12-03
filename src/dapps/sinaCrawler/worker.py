@@ -32,8 +32,8 @@ if not APP_NAME or len(APP_NAME) <=0:
     APP_NAME = path.split('/')[-1]
 
 worker = Worker(APP_NAME,
-    broker='redis://tc2.syscheme.com/0',
-    backend='redis://tc2.syscheme.com/1',
+    broker='redis://:hpxwkr@tc2.syscheme.com:15379/0',
+    backend='redis://:hpxwkr@tc2.syscheme.com:15379/1',
     include=TASK_MODELS)
 
 worker.conf.update( result_expires=3600,)

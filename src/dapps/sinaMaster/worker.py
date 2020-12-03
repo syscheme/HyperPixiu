@@ -33,26 +33,28 @@ if not APP_NAME or len(APP_NAME) <=0:
     APP_NAME = path.split('/')[-1]
 
 worker = Worker(APP_NAME,
-    broker='redis://tc2.syscheme.com/0',
-    backend='redis://tc2.syscheme.com/1',
+    broker='redis://:hpxwkr@tc2.syscheme.com:15379/0',
+    backend='redis://:hpxwkr@tc2.syscheme.com:15379/1',
     include=TASK_MODELS)
 
-worker.conf.update( result_expires=3600,)
+worker.conf.update(
+    result_expires=3600,
+    )
+
 worker.conf.beat_schedule = {
-    '''
-    # Executes every Monday morning at 7:30 a.m.
-    'add-every-monday-morning': {
-        'task': 'tasks.add',
-        'schedule': crontab(hour=7, minute=30, day_of_week=1),
-        'args': (16, 16),
+    "add-every-minute":{
+        "task":"dapps.sinaMaster.add",
+        "schedule":crontab(minute="*/1"),
+        "args":(3, 4),
+        # "options":{'queue':'hipri'}
     },
-    '''
-    # Executes every weekday at 16:30
-    'every-weekday-end': {
-        'task': 'listSymbols',
-        'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
-        # 'args': (16, 16),
-    },
+
+    # # Executes every weekday at 16:30
+    # 'every-weekday-end': {
+    #     'task': 'listSymbols',
+    #     'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
+    #     # 'args': (16, 16),
+    # },
 }
 
 thePROG = Program(name=APP_NAME, argvs=[])

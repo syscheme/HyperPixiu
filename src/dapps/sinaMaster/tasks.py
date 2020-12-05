@@ -3,9 +3,9 @@
 from __future__ import absolute_import, unicode_literals
 from celery import shared_task
 
-import sys, os, re
+import sys, os, datetime, re, glob
 from MarketData import MARKETDATE_EVENT_PREFIX
-import h5tar, h5py
+import h5tar, h5py, pickle, bz2
 
 from dapps.sinaMaster.worker import thePROG
 
@@ -15,7 +15,7 @@ import crawler.producesSina as prod
 
 from time import sleep
 
-HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,close,volume"
+SYMBOL_LIST_HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,open,high,low,close,volume"
 EOL = "\r\n"
 SINA_USERS_ROOT = '/mnt/data/hpwkspace/users'
 MAPPED_USER, MAPPED_HOME = getMappedAs()
@@ -35,9 +35,16 @@ def xsum(numbers):
 import math
 __totalAmt1W =1
 def activityOf(item):
-    ret = 10* math.sqrt(item['amount'] / __totalAmt1W)
-    ret += item['turnoverratio']  
+
+    ret = item['amount'] / __totalAmt1W
+    if ret >0.0:
+        ret = 10* math.sqrt(math.sqrt(ret))
+    if item['turnoverratio'] >0.2 :
+        ret += math.sqrt(math.sqrt(item['turnoverratio']))
+    else: ret /=2
+
     '''
+        excel with SQRT(SQRT($E2))+SQRT(SQRT($I2))*10, top2000 is good to cover my interests
         mktcap,nmc单位：万元
         volume单位：股
         turnoverratio: %
@@ -54,18 +61,75 @@ def activityOf(item):
 
     return ret
 
+def __writeCsv(f, sybmolLst) :
+    line = SYMBOL_LIST_HEADERSEQ + EOL
+    f.write(line.encode('utf-8'))
+    for i in sybmolLst:
+        line = ','.join([str(i[k]) for k in SYMBOL_LIST_HEADERSEQ.split(',')]) + EOL
+        f.write(line.encode('utf-8'))
+
 @shared_task(bind=True, base=Retryable)
 def listAllSymbols(self):
-    noneST, STs = __listAllSymbols()
-    csvNoneST = HEADERSEQ + EOL
-    for i in noneST:
-        csvNoneST += ','.join([str(i[k]) for k in HEADERSEQ.split(',')]) +EOL
 
-    csvSTs = HEADERSEQ + EOL
-    for i in STs:
-        csvSTs += ','.join([str(i[k]) for k in HEADERSEQ.split(',')]) +EOL
+    lstSHZ = []
+    fnCachedLst = os.path.join(MAPPED_HOME, 'hpx_publish', 'lstSHZ_%s' % datetime.datetime.now().strftime('%Y%m%d'))
+    try :
+        fn = fnCachedLst + '.pkl.bz2'
+        st = os.stat(fn)
+        ctime = datetime.datetime.fromtimestamp(st.st_ctime)
+        if st.st_size >1000 and (ctime.isoweekday() >5 or ctime.hour >=16): 
+            with bz2.open(fn, 'rb') as f:
+                lstSHZ = pickle.load(f)
+    except Exception as ex:
+        pass
 
-    return csvNoneST, csvSTs
+    if len(lstSHZ) <=2000:
+        lstSH, lstSZ = __listAllSymbols()
+        lstSHZ = {} # temporarily via dict
+        for i in lstSH + lstSZ:
+            lstSHZ[i['symbol']] =i
+        lstSHZ = list(lstSHZ.values())
+
+        totalAmt1W=0
+        for i in lstSHZ:
+            totalAmt1W += i['amount'] /10000.0
+
+        if totalAmt1W >1.0: # for activityOf() 
+            global __totalAmt1W
+            __totalAmt1W = totalAmt1W
+
+        noneST = list(filter(lambda x: not 'ST' in x['name'], lstSHZ))
+        noneST.sort(key=activityOf)
+        noneST.reverse()
+
+        STs = list(filter(lambda x: 'ST' in x['name'], lstSHZ))
+        STs.sort(key=activityOf)
+        STs.reverse()
+
+        lstSHZ = noneST + STs
+        for fn in glob.glob(os.path.join(MAPPED_HOME, 'hpx_publish') + "/lstSHZ_*.pkl.bz2") :
+            try :
+                os.remove(fn)
+            except Exception as ex:
+                pass
+
+        with bz2.open(fnCachedLst + '.pkl.bz2', 'wb') as f:
+            f.write(pickle.dumps(lstSHZ))
+
+        with bz2.open(fnCachedLst + '.csv.bz2', 'wt') as f:
+            __writeCsv(f, lstSHZ)
+    
+    return lstSHZ
+
+    # csvNoneST = SYMBOL_LIST_HEADERSEQ + EOL
+    # for i in noneST:
+    #     csvNoneST += ','.join([str(i[k]) for k in SYMBOL_LIST_HEADERSEQ.split(',')]) +EOL
+
+    # csvSTs = SYMBOL_LIST_HEADERSEQ + EOL
+    # for i in STs:
+    #     csvSTs += ','.join([str(i[k]) for k in SYMBOL_LIST_HEADERSEQ.split(',')]) +EOL
+
+    # return csvNoneST, csvSTs
 
 # def commitToday(self, login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv) :
 @shared_task(bind=True, base=Retryable)
@@ -132,7 +196,6 @@ def commitToday(self, optDict) : # urgly at the parameter list
                 gns.append(gn)
     thePROG.info('added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
 
-
 def __listAllSymbols():
     result ={}
     EOL ="\n"
@@ -167,28 +230,7 @@ def __listAllSymbols():
     if len(lstSZ) <=0:
         raise RetryableError(httperr, "no SZ fetched")
     thePROG.info('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
-
-    for i in lstSH + lstSZ:
-        result[i['symbol']] =i
-    result = list(result.values())
-
-    totalAmt1W=0
-    for i in result:
-        totalAmt1W += i['amount'] /10000.0
-
-    if totalAmt1W >1.0: # for activityOf() 
-        global __totalAmt1W
-        __totalAmt1W = totalAmt1W
-
-    noneST = list(filter(lambda x: not 'ST' in x['name'], result))
-    noneST.sort(key=activityOf)
-    noneST.reverse()
-
-    STs = list(filter(lambda x: 'ST' in x['name'], result))
-    STs.sort(key=activityOf)
-    STs.reverse()
-    
-    return noneST, STs
+    return lstSH, lstSZ
 
 '''
 @worker.on_after_configure.connect
@@ -206,18 +248,25 @@ def setup_periodic_tasks(sender, **kwargs):
     )
 '''
  
+@shared_task(bind=True, base=Retryable)
+def topActives(self, topNum = 500):
+    lstTops = listAllSymbols() [:topNum]
+    return lstTops
+
 
 ####################################
 if __name__ == '__main__':
-    # csvNoneST, csvSTs = listAllSymbols()
-    # print(csvNoneST)
-    # print(csvSTs)
-    symbol = 'SZ000002'
-    login = 'root@tc2.syscheme.com'
-    asofYYMMDD = '20201202'
-    fnJsons = ['SZ000002_KL1d20201202.json', 'SZ000002_MF1d20201202.json', 'SZ000002_KL5m20201202.json', 'SZ000002_MF1m20201202.json']
-    fnSnapshot = 'SZ000002_sns.h5';
-    fnTcsv = 'SZ000002_day20201202.tcsv';
+    nTop = 1000
+    lstSHZ = topActives(nTop)
+    with open(os.path.join(MAPPED_HOME, 'hpx_publish', 'top%s_%s' % (nTop, datetime.datetime.now().strftime('%Y%m%d'))) + '.csv', 'wb') as f:
+        __writeCsv(f, lstSHZ)
+    print(lstSHZ)
+    # symbol = 'SZ000002'
+    # login = 'root@tc2.syscheme.com'
+    # asofYYMMDD = '20201202'
+    # fnJsons = ['SZ000002_KL1d20201202.json', 'SZ000002_MF1d20201202.json', 'SZ000002_KL5m20201202.json', 'SZ000002_MF1m20201202.json']
+    # fnSnapshot = 'SZ000002_sns.h5';
+    # fnTcsv = 'SZ000002_day20201202.tcsv';
 
-    commitToday(login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv)
+    # commitToday(login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv)
 

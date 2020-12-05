@@ -17,16 +17,34 @@ APP_NAME = '.'.join(__name__.split('.')[:-1])
 
 taskMods = populateTaskModules(os.path.dirname(__file__), APP_NAME)
 
+# the master also do the Crawler works on the local machine
+taskCrawler = populateTaskModules(os.path.dirname(__file__) + "/../sinaCrawler", 'dapps.sinaCrawler')
+
 if not APP_NAME or len(APP_NAME) <=0:
     APP_NAME = os.path.abspath(os.path.dirname(__file__)).split('/')[-1]
 
-worker, thePROG = createWorkerProgram(APP_NAME, taskMods)
+worker, thePROG = createWorkerProgram(APP_NAME, taskMods + taskCrawler)
 
 worker.conf.beat_schedule = {
+    "checkResult-every-5min":{
+        "task":"dapps.sinaMaster.schOn_Every5min",
+        "schedule":crontab(minute="*/5"),
+        "args":(),
+        # "options":{'queue':'hipri'}
+    },
+
     "add-every-minute":{
         "task":"dapps.sinaMaster.add",
         "schedule":crontab(minute="*/1"),
         "args":(3, 4),
+        # "options":{'queue':'hipri'}
+    },
+
+    "every_TradeDayClose":{
+        "task":"dapps.sinaMaster.schOn_TradeDayClose",
+        "schedule":crontab(minute="*/3"),
+    #    'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
+        "args":(),
         # "options":{'queue':'hipri'}
     },
 

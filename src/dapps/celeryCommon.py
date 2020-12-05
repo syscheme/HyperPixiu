@@ -36,6 +36,7 @@ def populateTaskModules(dirOfParent, moduleParent =''):
     return taskModules
 
 #----------------------------------------------------------------------
+_thePROG = None
 def createWorkerProgram(appName, taskModules = []):
     worker = Worker(appName,
         broker='redis://:hpxwkr@tc2.syscheme.com:15379/0',
@@ -46,10 +47,12 @@ def createWorkerProgram(appName, taskModules = []):
             result_expires=3600,
             )
 
-    prog = Program(name=appName, argvs=[])
-    prog._heartbeatInterval =-1
+    global _thePROG
+    if not _thePROG:
+        _thePROG = Program(name=appName, argvs=[])
+        _thePROG._heartbeatInterval =-1
 
-    return worker, prog
+    return worker, _thePROG
 
 #----------------------------------------------------------------------
 class RetryableError(Exception):

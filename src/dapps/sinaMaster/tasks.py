@@ -13,6 +13,8 @@ from dapps.celeryCommon import RetryableError, Retryable, getMappedAs
 import crawler.crawlSina as sina
 import crawler.producesSina as prod
 
+import dapps.sinaCrawler.tasks_Dayend as CTDayend
+
 from time import sleep
 
 SYMBOL_LIST_HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,open,high,low,close,volume"
@@ -253,14 +255,65 @@ def topActives(self, topNum = 500):
     lstTops = listAllSymbols() [:topNum]
     return lstTops
 
+__asyncResult_downloadToday = {}
+
+@shared_task(bind=True, base=Retryable)
+def schOn_Every5min(self):
+    global __asyncResult_downloadToday
+    todels = []
+    for k, v in __asyncResult_downloadToday.items():
+        if not v: 
+            todels.append(k)
+            continue
+
+        if v.ready():
+            todels.append(k)
+            thePROG.info('schOn_Every5min() downloadToday[%s]%s done: failed[%s] and will clear' %(k, v.task_id, v.failed()))
+            continue
+
+        thePROG.info('schOn_Every5min() downloadToday[%s]%s still working' %(k, v.task_id))
+
+    if len(todels) >0:
+        thePROG.info('schOn_Every5min() clearing keys: %s' % ','.join(todels))
+        for k in todels:
+            del __asyncResult_downloadToday[k]
+        if len(__asyncResult_downloadToday) <=0:
+            thePROG.info('schOn_Every5min() downloadToday all done')
+
+@shared_task(bind=True, base=Retryable)
+def schOn_TradeDayClose(self):
+    lstSHZ = listAllSymbols()
+
+    thePROG.info('schOn_TradeDayClose() listAllSymbols got %d symbols' %len(lstSHZ))
+    if len(lstSHZ) <=2000:
+        raise RetryableError(401, 'incompleted symbol list')
+
+    global __asyncResult_downloadToday
+    __asyncResult_downloadToday = {}
+
+    for i in lstSHZ[:10]: # should be the complete lstSHZ
+        symbol = i['symbol']
+        if symbol in __asyncResult_downloadToday.keys():
+            continue
+
+        thePROG.debug('schOn_TradeDayClose() adding subtask to download %s %s' % (symbol, i['name']))
+        wflow = CTDayend.downloadToday.s(symbol) | commitToday.s()
+        __asyncResult_downloadToday[symbol] = wflow()
+
 
 ####################################
 if __name__ == '__main__':
-    nTop = 1000
-    lstSHZ = topActives(nTop)
-    with open(os.path.join(MAPPED_HOME, 'hpx_publish', 'top%s_%s' % (nTop, datetime.datetime.now().strftime('%Y%m%d'))) + '.csv', 'wb') as f:
-        __writeCsv(f, lstSHZ)
-    print(lstSHZ)
+    schOn_TradeDayClose()
+    for i in range(20):
+        schOn_Every5min()
+        sleep(10)
+
+    # nTop = 1000
+    # lstSHZ = topActives(nTop)
+    # with open(os.path.join(MAPPED_HOME, 'hpx_publish', 'top%s_%s' % (nTop, datetime.datetime.now().strftime('%Y%m%d'))) + '.csv', 'wb') as f:
+    #     __writeCsv(f, lstSHZ)
+    # print(lstSHZ)
+
     # symbol = 'SZ000002'
     # login = 'root@tc2.syscheme.com'
     # asofYYMMDD = '20201202'
@@ -270,3 +323,9 @@ if __name__ == '__main__':
 
     # commitToday(login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv)
 
+''' A test
+import dapps.sinaCrawler.tasks_Dayend as ct
+import dapps.sinaMaster.tasks as mt
+c1 = ct.downloadToday.s('SZ000002') | mt.commitToday.s()
+c1().get()
+'''

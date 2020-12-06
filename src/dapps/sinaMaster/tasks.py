@@ -3,23 +3,24 @@
 from __future__ import absolute_import, unicode_literals
 from celery import shared_task
 
-import sys, os, re
-if __name__ == '__main__':
-    sys.path.append(".")
-    from worker import thePROG, getLogin
-else:
-    from .worker import thePROG, getLogin
+import sys, os, datetime, re, glob
+from MarketData import MARKETDATE_EVENT_PREFIX
+import h5tar, h5py, pickle, bz2
 
-from dapps.CeleryDefs import RetryableError, Retryable
+from dapps.sinaMaster.worker import thePROG
+
+from dapps.celeryCommon import RetryableError, Retryable, getMappedAs
 import crawler.crawlSina as sina
 import crawler.producesSina as prod
 
+import dapps.sinaCrawler.tasks_Dayend as CTDayend
+
 from time import sleep
 
-HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,close,volume"
+SYMBOL_LIST_HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,open,high,low,close,volume"
 EOL = "\r\n"
-
-__accLogin, __accHome, __workersRoot= None, '/mnt/s', '/mnt/data/hpwkspace/workers'
+SINA_USERS_ROOT = '/mnt/data/hpwkspace/users'
+MAPPED_USER, MAPPED_HOME = getMappedAs()
 
 @shared_task
 def add(x, y):
@@ -36,9 +37,16 @@ def xsum(numbers):
 import math
 __totalAmt1W =1
 def activityOf(item):
-    ret = 10* math.sqrt(item['amount'] / __totalAmt1W)
-    ret += item['turnoverratio']  
+
+    ret = item['amount'] / __totalAmt1W
+    if ret >0.0:
+        ret = 10* math.sqrt(math.sqrt(ret))
+    if item['turnoverratio'] >0.2 :
+        ret += math.sqrt(math.sqrt(item['turnoverratio']))
+    else: ret /=2
+
     '''
+        excel with SQRT(SQRT($E2))+SQRT(SQRT($I2))*10, top2000 is good to cover my interests
         mktcap,nmc单位：万元
         volume单位：股
         turnoverratio: %
@@ -55,46 +63,140 @@ def activityOf(item):
 
     return ret
 
+def __writeCsv(f, sybmolLst) :
+    line = SYMBOL_LIST_HEADERSEQ + EOL
+    f.write(line.encode('utf-8'))
+    for i in sybmolLst:
+        line = ','.join([str(i[k]) for k in SYMBOL_LIST_HEADERSEQ.split(',')]) + EOL
+        f.write(line.encode('utf-8'))
+
 @shared_task(bind=True, base=Retryable)
 def listAllSymbols(self):
-    noneST, STs = __listAllSymbols()
-    csvNoneST = HEADERSEQ + EOL
-    for i in noneST:
-        csvNoneST += ','.join([str(i[k]) for k in HEADERSEQ.split(',')]) +EOL
 
-    csvSTs = HEADERSEQ + EOL
-    for i in STs:
-        csvSTs += ','.join([str(i[k]) for k in HEADERSEQ.split(',')]) +EOL
+    lstSHZ = []
+    fnCachedLst = os.path.join(MAPPED_HOME, 'hpx_publish', 'lstSHZ_%s' % datetime.datetime.now().strftime('%Y%m%d'))
+    try :
+        fn = fnCachedLst + '.pkl.bz2'
+        st = os.stat(fn)
+        ctime = datetime.datetime.fromtimestamp(st.st_ctime)
+        if st.st_size >1000 and (ctime.isoweekday() >5 or ctime.hour >=16): 
+            with bz2.open(fn, 'rb') as f:
+                lstSHZ = pickle.load(f)
+    except Exception as ex:
+        pass
 
-    return csvNoneST, csvSTs
+    if len(lstSHZ) <=2000:
+        lstSH, lstSZ = __listAllSymbols()
+        lstSHZ = {} # temporarily via dict
+        for i in lstSH + lstSZ:
+            lstSHZ[i['symbol']] =i
+        lstSHZ = list(lstSHZ.values())
 
+        totalAmt1W=0
+        for i in lstSHZ:
+            totalAmt1W += i['amount'] /10000.0
+
+        if totalAmt1W >1.0: # for activityOf() 
+            global __totalAmt1W
+            __totalAmt1W = totalAmt1W
+
+        noneST = list(filter(lambda x: not 'ST' in x['name'], lstSHZ))
+        noneST.sort(key=activityOf)
+        noneST.reverse()
+
+        STs = list(filter(lambda x: 'ST' in x['name'], lstSHZ))
+        STs.sort(key=activityOf)
+        STs.reverse()
+
+        lstSHZ = noneST + STs
+        for fn in glob.glob(os.path.join(MAPPED_HOME, 'hpx_publish') + "/lstSHZ_*.pkl.bz2") :
+            try :
+                os.remove(fn)
+            except Exception as ex:
+                pass
+
+        with bz2.open(fnCachedLst + '.pkl.bz2', 'wb') as f:
+            f.write(pickle.dumps(lstSHZ))
+
+        with bz2.open(fnCachedLst + '.csv.bz2', 'wt') as f:
+            __writeCsv(f, lstSHZ)
+    
+    return lstSHZ
+
+    # csvNoneST = SYMBOL_LIST_HEADERSEQ + EOL
+    # for i in noneST:
+    #     csvNoneST += ','.join([str(i[k]) for k in SYMBOL_LIST_HEADERSEQ.split(',')]) +EOL
+
+    # csvSTs = SYMBOL_LIST_HEADERSEQ + EOL
+    # for i in STs:
+    #     csvSTs += ','.join([str(i[k]) for k in SYMBOL_LIST_HEADERSEQ.split(',')]) +EOL
+
+    # return csvNoneST, csvSTs
+
+# def commitToday(self, login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv) :
 @shared_task(bind=True, base=Retryable)
-def commitToday(self, login, symbol, asofYYMMDD, fnJsons, fnSnapshot) :
+def commitToday(self, optDict) : # urgly at the parameter list
     '''
-    fnJsons = ['SZ000002_KL1d20201127.json', 'SZ000002_MF1d20201127.json', 'SZ000002_KL5m20201127.json', 'SZ000002_MF1m20201127.json']
+    in order to chain:
+    import celery
+    import dapps.sinaMaster.tasks as mt
+    import dapps.sinaCrawler.tasks_Dayend as ct
+    s3 = celery.chain(ct.downloadToday.s('SZ000005'), mt.commitToday.s())
+    s3().get()
+    '''
+    login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv = optDict['login'], optDict['symbol'], optDict['asofYYMMDD'], optDict['fnJsons'], optDict['fnSnapshot'], optDict['fnTcsv']
+    '''
+    fnJsons = ['SZ000002_KL1d20201202.json', 'SZ000002_MF1d20201202.json', 'SZ000002_KL5m20201202.json', 'SZ000002_MF1m20201202.json']
     fnSnapshot = 'SZ000002_sns.h5';
+    ~{HOME}
+    |-- archived -> ../archived
+    `-- hpx_template -> /home/wkspaces/hpx_template
+
     '''
 
-    global __accLogin, __accHome, __workersRoot
     if '@' in login : login = login[:login.index('@')]
     if ':' in login : login = login[:login.index(':')]
 
-    pubHome = os.path.join(__workersRoot, login, to_publish)
+    pubDir = os.path.join(SINA_USERS_ROOT, login, 'hpx_publish')
 
     # step 1. zip the JSON files
     for fn in fnJsons:
-        srcpath = os.path.join(pubHome, fn)
+        srcpath = os.path.join(pubDir, fn)
         fn = os.path.basename(fn)
-        evt = 
-        destpath = os.path.join(__accHome, 'archived', 'sina', 'Sina%s_%s.h5t' % (evt, asofYYMMDD) )
-        h5tar.tar_utf8(destpath, srcpath)
+        m = re.match(r'%s_([A-Za-z0-9]*)%s.json' %(symbol, asofYYMMDD), fn)
+        if not m : continue
+        evtShort = m.group(1)
 
-    # step 2. zip the snapshots
-    srcpath = os.path.join(pubHome, fnSnapshot)
-    destpath = os.path.join(__accHome, 'archived', 'sina', 'SNS_%s.h5' % (symbol) )
-    with h5.open(srcpath, 'r') as h5f:
-        pass
+        destpath = os.path.join(MAPPED_HOME, 'archived', 'sina', 'Sina%s_%s.h5t' % (evtShort, asofYYMMDD) )
+        if h5tar.tar_utf8(destpath, srcpath) :
+            thePROG.info('archived %s into %s' %(srcpath, destpath))
 
+    # step 1. zip the Tcsv file
+    srcpath = os.path.join(pubDir, fnTcsv)
+    destpath = os.path.join(MAPPED_HOME, 'archived', 'sina', 'SinaDay_%s.h5t' % asofYYMMDD )
+    if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
+        thePROG.info('archived %s into %s' %(srcpath, destpath))
+
+    # step 3. append the snapshots
+    srcpath = os.path.join(pubDir, fnSnapshot)
+    destpath = os.path.join(MAPPED_HOME, 'archived', 'sina', 'SNS_%s.h5' % (symbol) )
+    gns = []
+    with h5py.File(srcpath, 'r') as h5r:
+        with h5py.File(destpath, 'a') as h5w:
+            for gn in h5r.keys():
+                if not symbol in gn: continue
+                g = h5r[gn]
+                if not 'desc' in g.attrs or not 'pickled market state' in g.attrs['desc'] : continue
+
+                if gn in h5w.keys(): del h5w[gn]
+                # Note that this is not a copy of the dataset! Like hard links in a UNIX file system, objects in an HDF5 file can be stored in multiple groups
+                # So, h5w[gn] = g doesn't work because across different files
+                go = h5w.create_group(gn)
+                h5w.copy(g, go)
+                # h5w[gn] = g()
+                # h5py.Group.copy(g, h5w[gn])
+                gns.append(gn)
+    thePROG.info('added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
 
 def __listAllSymbols():
     result ={}
@@ -130,28 +232,7 @@ def __listAllSymbols():
     if len(lstSZ) <=0:
         raise RetryableError(httperr, "no SZ fetched")
     thePROG.info('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
-
-    for i in lstSH + lstSZ:
-        result[i['symbol']] =i
-    result = list(result.values())
-
-    totalAmt1W=0
-    for i in result:
-        totalAmt1W += i['amount'] /10000.0
-
-    if totalAmt1W >1.0: # for activityOf() 
-        global __totalAmt1W
-        __totalAmt1W = totalAmt1W
-
-    noneST = list(filter(lambda x: not 'ST' in x['name'], result))
-    noneST.sort(key=activityOf)
-    noneST.reverse()
-
-    STs = list(filter(lambda x: 'ST' in x['name'], result))
-    STs.sort(key=activityOf)
-    STs.reverse()
-    
-    return noneST, STs
+    return lstSH, lstSZ
 
 '''
 @worker.on_after_configure.connect
@@ -169,16 +250,82 @@ def setup_periodic_tasks(sender, **kwargs):
     )
 '''
  
+@shared_task(bind=True, base=Retryable)
+def topActives(self, topNum = 500):
+    lstTops = listAllSymbols() [:topNum]
+    return lstTops
+
+__asyncResult_downloadToday = {}
+
+@shared_task(bind=True, base=Retryable)
+def schOn_Every5min(self):
+    global __asyncResult_downloadToday
+    todels = []
+    for k, v in __asyncResult_downloadToday.items():
+        if not v: 
+            todels.append(k)
+            continue
+
+        if v.ready():
+            todels.append(k)
+            thePROG.info('schOn_Every5min() downloadToday[%s]%s done: failed[%s] and will clear' %(k, v.task_id, v.failed()))
+            continue
+
+        thePROG.info('schOn_Every5min() downloadToday[%s]%s still working' %(k, v.task_id))
+
+    if len(todels) >0:
+        thePROG.info('schOn_Every5min() clearing keys: %s' % ','.join(todels))
+        for k in todels:
+            del __asyncResult_downloadToday[k]
+        if len(__asyncResult_downloadToday) <=0:
+            thePROG.info('schOn_Every5min() downloadToday all done')
+
+@shared_task(bind=True, base=Retryable)
+def schOn_TradeDayClose(self):
+    lstSHZ = listAllSymbols()
+
+    thePROG.info('schOn_TradeDayClose() listAllSymbols got %d symbols' %len(lstSHZ))
+    if len(lstSHZ) <=2000:
+        raise RetryableError(401, 'incompleted symbol list')
+
+    global __asyncResult_downloadToday
+    __asyncResult_downloadToday = {}
+
+    for i in lstSHZ[:10]: # should be the complete lstSHZ
+        symbol = i['symbol']
+        if symbol in __asyncResult_downloadToday.keys():
+            continue
+
+        thePROG.debug('schOn_TradeDayClose() adding subtask to download %s %s' % (symbol, i['name']))
+        wflow = CTDayend.downloadToday.s(symbol) | commitToday.s()
+        __asyncResult_downloadToday[symbol] = wflow()
+
 
 ####################################
 if __name__ == '__main__':
-    # csvNoneST, csvSTs = listAllSymbols()
-    # print(csvNoneST)
-    # print(csvSTs)
-    login = 'hpx01@tc2.syscheme.com'
-    asofYYMMDD = '20201127'
-    fnJsons = ['SZ000002_KL1d20201127.json', 'SZ000002_MF1d20201127.json', 'SZ000002_KL5m20201127.json', 'SZ000002_MF1m20201127.json']
-    fnSnapshot = 'SZ000002_sns.h5';
+    schOn_TradeDayClose()
+    for i in range(20):
+        schOn_Every5min()
+        sleep(10)
 
-    commitToday(login, symbol, asofYYMMDD, fnJsons, fnSnapshot)
+    # nTop = 1000
+    # lstSHZ = topActives(nTop)
+    # with open(os.path.join(MAPPED_HOME, 'hpx_publish', 'top%s_%s' % (nTop, datetime.datetime.now().strftime('%Y%m%d'))) + '.csv', 'wb') as f:
+    #     __writeCsv(f, lstSHZ)
+    # print(lstSHZ)
 
+    # symbol = 'SZ000002'
+    # login = 'root@tc2.syscheme.com'
+    # asofYYMMDD = '20201202'
+    # fnJsons = ['SZ000002_KL1d20201202.json', 'SZ000002_MF1d20201202.json', 'SZ000002_KL5m20201202.json', 'SZ000002_MF1m20201202.json']
+    # fnSnapshot = 'SZ000002_sns.h5';
+    # fnTcsv = 'SZ000002_day20201202.tcsv';
+
+    # commitToday(login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv)
+
+''' A test
+import dapps.sinaCrawler.tasks_Dayend as ct
+import dapps.sinaMaster.tasks as mt
+c1 = ct.downloadToday.s('SZ000002') | mt.commitToday.s()
+c1().get()
+'''

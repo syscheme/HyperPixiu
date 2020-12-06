@@ -283,7 +283,7 @@ class SinaMux(hist.PlaybackMux) :
 
         self.debug('taking online query as source of %s/%s of %ddays' % (evtype, symbol, days))
         httperr, dataseq = 500, []
-        saveYYMMDD = (datetime.now() - timedelta(hours=16)).strftime('%Y%m%d') # 16hr fit to the latest date
+        saveYYMMDD = (datetime.now() - timedelta(hours=15, minutes=30)).strftime('%Y%m%d') # 16hr fit to the latest date
         saveFilename = os.path.join(saveOfflineDir, '%s_%s%s.json' %(symbol, evtype[len(MARKETDATE_EVENT_PREFIX):], saveYYMMDD)) if saveOfflineDir else None
 
         for retryNo in range(10) :

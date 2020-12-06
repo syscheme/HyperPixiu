@@ -13,23 +13,23 @@
     
     step 2. take the state of 10:00, 11:00, 13:30, 14:30, 15:00 of today to prediction of 1day, 2day and 5day into SinaDayEnd_YYYYMMDD.tcsv output
 '''
-# from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, unicode_literals
 from celery import shared_task
 import sys, os, re
-if __name__ == '__main__':
-    sys.path.append(".")
-    from worker import thePROG, getLogin
-else:
-    from .worker import thePROG, getLogin
+import shutil
+
+from dapps.sinaCrawler.worker import thePROG
+from dapps.celeryCommon import RetryableError, Retryable, getMappedAs
 
 from Application import *
 from Perspective import *
 from MarketData import *
 import HistoryData as hist
 from crawler.producesSina import SinaMux, Sina_Tplus1, SinaSwingScanner
-from dapps.CeleryDefs import RetryableError, Retryable
 
 import h5py
+
+MAPPED_USER, MAPPED_HOME = getMappedAs()
 
 @shared_task
 def add(x, y):
@@ -78,17 +78,30 @@ def saveSnapshot(filename, h5group, dsName, snapshot, ohlc):
         
         thePROG.info('saved snapshot[%s] %dB->%dz into g[%s] of %s' % (dsName, sns.attrs['size'], sns.attrs['csize'], h5group, filename))
 
+def __publishFiles(srcfiles) :
+    destPubDir = os.path.join(MAPPED_HOME, "hpx_publish")
+    pubed = []
+    for fn in srcfiles:
+        try:
+            bn = os.path.basename(fn)
+            destFn = os.path.join(destPubDir, bn)
+            shutil.copyfile(fn, destFn + "~")
+            shutil.move(destFn + "~", destFn)
+            pubed.append(bn)
+        except Exception as ex:
+            thePROG.logexception(ex, 'publishFile[%s]' % fn)
+
+    return pubed, destPubDir
+
+
 # ===================================================
-__accLogin, __accHome = None, None
 @shared_task(bind=True, base=Retryable)
 def downloadToday(self, SYMBOL, todayYYMMDD =None):
-    global __accLogin, __accHome
-    if not __accLogin:
-        __accLogin, __accHome = getLogin()
-
+    global MAPPED_USER, MAPPED_HOME
     result = __downloadSymbol(SYMBOL)
 
     print('%s' % result) # sample: {'symbol': 'SZ000002', 'date': '20201127', 'snapshot': 'SZ000002_sns.h5', 'cachedJsons': ['SZ000002_KL1d20201128.json', 'SZ000002_MF1d20201128.json', 'SZ000002_KL5m20201128.json', 'SZ000002_MF1m20201128.json'], 'tcsv': 'SZ000002_day20201127.tcsv'}
+    return result
 
 def __downloadSymbol(SYMBOL, todayYYMMDD =None):
 
@@ -100,6 +113,9 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
     SINA_TODAY = datetime.strptime(SINA_TODAY, '%Y-%m-%d').replace(hour=23, minute=59, second=59, microsecond=0)
 
     dirCache = '/tmp/aaa'
+    try:
+        os.mkdir(dirCache)
+    except: pass
     dirArchived = os.path.join(os.environ['HOME'], 'wkspaces/hpx_archived/sina') 
 
     todayYYMMDD = SINA_TODAY.strftime('%Y%m%d')
@@ -171,10 +187,13 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
     psptMarketState = PerspectiveState(SYMBOL)
     stampOfState, momentsToSample = None, ['10:00:00', '10:30:00', '11:00:00', '11:30:00', '13:30:00', '14:30:00', '15:00:00']
     snapshot = {}
-    snapshoth5fn = os.path.join(dirCache, '%s_sns.h5' % (SYMBOL))
+    snapshoth5fn = os.path.join(dirCache, '%s_sns%s.h5' % (SYMBOL, todayYYMMDD))
 
     fnTcsv = os.path.join(dirCache, '%s_day%s.tcsv' % (SYMBOL, todayYYMMDD))
-    os.remove(fnTcsv)
+    try:
+        os.remove(fnTcsv)
+    except: pass
+
     rec = thePROG.createApp(hist.TaggedCsvRecorder, filepath = fnTcsv)
     rec.registerCategory(EVENT_TICK,           params={'columns': TickData.COLUMNS})
     rec.registerCategory(EVENT_KLINE_1MIN,     params={'columns': KLineData.COLUMNS})
@@ -237,13 +256,16 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
         saveSnapshot(snapshoth5fn, h5group= h5group, dsName=snapshot['ident'], snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc'])
 
     dirNameLen = len(dirCache) +1
+    pubDir, bns = __publishFiles([snapshoth5fn, fnTcsv] + playback.cachedFiles)
 
+    # map to the arguments of sinaMaster.commitToday()
     return {
         'symbol': SYMBOL,
-        'date': todayYYMMDD,
-        'snapshot': snapshoth5fn[dirNameLen:], 
-        'cachedJsons': [x[dirNameLen:] for x in playback.cachedFiles],
-        'tcsv': fnTcsv[dirNameLen:],
+        'login': MAPPED_USER,
+        'asofYYMMDD': todayYYMMDD,
+        'fnSnapshot': snapshoth5fn[dirNameLen:], 
+        'fnJsons': [x[dirNameLen:] for x in playback.cachedFiles],
+        'fnTcsv': fnTcsv[dirNameLen:],
     }
 
 ####################################

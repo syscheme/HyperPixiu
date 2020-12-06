@@ -12,9 +12,12 @@ from urllib.parse import quote, unquote
 
 GNAME_TEXT_utf8 = 'utf8_bz2'
 
-def tar_utf8(fn_h5tar, fn_members, createmode='a') :
+def tar_utf8(fn_h5tar, fn_members, createmode='a', baseNameAsKey=False) :
 
     createmode = createmode if 'a'==createmode else 'w'
+    ret = []
+    if isinstance(fn_members, str):
+        fn_members = [fn_members]
 
     with h5py.File(fn_h5tar, createmode) as h5file:
         g = h5file.create_group(GNAME_TEXT_utf8) if not GNAME_TEXT_utf8 in h5file.keys() else h5file[GNAME_TEXT_utf8]
@@ -38,15 +41,20 @@ def tar_utf8(fn_h5tar, fn_members, createmode='a') :
 
             npbytes = np.frombuffer(compressed, dtype=np.uint8)
             k = m
-            while len(k) >0 and ('/' == k[0] or '.' == k[0]):
-                k=k[1:]
-
-            k = quote(k).replace('/','%2F')
+            if baseNameAsKey: k = os.path.basename(k)
+            else:
+                while len(k) >0 and ('/' == k[0] or '.' == k[0]):
+                    k=k[1:]
+                k = quote(k).replace('/','%2F')
+                
             if k in g.keys():
                 del g[k]
             sub = g.create_dataset(k, data=npbytes)
             sub.attrs['size'] = filesize
             sub.attrs['csize'] = len(compressed)
+            ret.append(m)
+
+    return ret
 
 def untar_utf8(fn_h5tar, fn_members =None) :
 

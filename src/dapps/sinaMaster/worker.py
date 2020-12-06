@@ -8,72 +8,53 @@
 # >>> import dapp.sinaMaster.celery.app as app
 # >>> m.add.delay(5,5).get()
 
-from dapps.CeleryDefs import Worker, TASK_PREFIX, TASK_PREFIX_LEN
-from Application import Program
+from __future__ import absolute_import, unicode_literals
+from dapps.celeryCommon import populateTaskModules, createWorkerProgram
 import os
+
 from celery.schedules import crontab
-
-TASK_MODELS=[]
-
 APP_NAME = '.'.join(__name__.split('.')[:-1])
 
-path = os.path.abspath(os.path.dirname(__file__))
-for root, subdirs, files in os.walk(path):
-    for name in files:
-        # 只有文件名TASK_PREFIX且以.py结尾的文件，才是TaskModule
-        if '.py' != name[-3:] :
-            continue
-        name = name[:-3]
-        if 'tasks' != name and TASK_PREFIX != name[:TASK_PREFIX_LEN] :
-            continue
+taskMods = populateTaskModules(os.path.dirname(__file__), APP_NAME)
 
-        TASK_MODELS.append('%s.%s' % (APP_NAME, name) if len(APP_NAME)>0 else name)
+# the master also do the Crawler works on the local machine
+taskCrawler = populateTaskModules(os.path.dirname(__file__) + "/../sinaCrawler", 'dapps.sinaCrawler')
 
 if not APP_NAME or len(APP_NAME) <=0:
-    APP_NAME = path.split('/')[-1]
+    APP_NAME = os.path.abspath(os.path.dirname(__file__)).split('/')[-1]
 
-worker = Worker(APP_NAME,
-    broker='redis://tc2.syscheme.com/0',
-    backend='redis://tc2.syscheme.com/1',
-    include=TASK_MODELS)
+worker, thePROG = createWorkerProgram(APP_NAME, taskMods + taskCrawler)
 
-worker.conf.update( result_expires=3600,)
 worker.conf.beat_schedule = {
-    '''
-    # Executes every Monday morning at 7:30 a.m.
-    'add-every-monday-morning': {
-        'task': 'tasks.add',
-        'schedule': crontab(hour=7, minute=30, day_of_week=1),
-        'args': (16, 16),
+    "checkResult-every-5min":{
+        "task":"dapps.sinaMaster.schOn_Every5min",
+        "schedule":crontab(minute="*/5"),
+        "args":(),
+        # "options":{'queue':'hipri'}
     },
-    '''
-    # Executes every weekday at 16:30
-    'every-weekday-end': {
-        'task': 'listSymbols',
-        'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
-        # 'args': (16, 16),
+
+    "add-every-minute":{
+        "task":"dapps.sinaMaster.add",
+        "schedule":crontab(minute="*/1"),
+        "args":(3, 4),
+        # "options":{'queue':'hipri'}
     },
+
+    "every_TradeDayClose":{
+        "task":"dapps.sinaMaster.schOn_TradeDayClose",
+        "schedule":crontab(minute="*/3"),
+    #    'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
+        "args":(),
+        # "options":{'queue':'hipri'}
+    },
+
+    # # Executes every weekday at 16:30
+    # 'every-weekday-end': {
+    #     'task': 'listSymbols',
+    #     'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
+    #     # 'args': (16, 16),
+    # },
 }
-
-thePROG = Program(name=APP_NAME, argvs=[])
-thePROG._heartbeatInterval =-1
-
-#----------------------------------------------------------------------
-def getLogin(homeDir = None) :
-    accLogin = None
-
-    try :
-        if not homeDir or len(homeDir) <=1:
-            homeDir = os.path.join(os.environ['HOME'], 'wkspaces/hpx_publish/..')
-            homeDir = os.path.realpath(homeDir)
-
-        with open(os.path.join(homeDir, '.ssh', 'id_rsa.pub'), 'r') as fkey:
-            line = fkey.readline().strip()
-            accLogin = line.split(' ')[-1]
-    except Exception as ex:
-        thePROG.logexception(ex)
-        
-    return accLogin, homeDir
 
 #----------------------------------------------------------------------
 if __name__ == '__main__':

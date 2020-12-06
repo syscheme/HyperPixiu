@@ -11,7 +11,7 @@
             },
             "type": "python",
             "request": "launch",
-            "pythonPath": "/usr/bin/python3", //python3的安装路径
+            "python": "/usr/bin/python3", //python3的安装路径
             "program": "${file}"
         },
         {
@@ -29,9 +29,20 @@
             },
             "type": "python",
             "request": "launch",
-            "pythonPath": "/usr/bin/python3", //python3的安装路径
+            "python": "/usr/bin/python3", //python3的安装路径
             "program": "/usr/local/bin/celery",
             "args": ["-A", "dapps.sinaMaster", "worker", "-l", "DEBUG"]
+        },
+        {
+            "name": "Celery: sinaCrawler",
+            "env": {
+                "PYTHONPATH":"${workspaceFolder}:${workspaceFolder}/src:${PYTHONPATH}"
+            },
+            "type": "python",
+            "request": "launch",
+            "python": "/usr/bin/python3", //python3的安装路径
+            "program": "/usr/local/bin/celery",
+            "args": ["-A", "dapps.sinaCrawler", "worker", "-l", "DEBUG"]
         },
         {
             "name": "Python: Attach",
@@ -53,7 +64,7 @@
             "name": "Python: All debug Options",
             "type": "python",
             "request": "launch",
-            "pythonPath": "${command:python.interpreterPath}",
+            "python": "${command:python.interpreterPath}",
             "program": "${file}",
             "module": "module.name",
             "env": {

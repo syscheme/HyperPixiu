@@ -4,9 +4,55 @@
 
 from __future__ import absolute_import
 from celery import Celery, shared_task, Task
+from Application import Program
+
+import os
 
 TASK_PREFIX = 'tasks_'
 TASK_PREFIX_LEN = len(TASK_PREFIX)
+MAPPED_HOME = '/mnt/s'
+
+#----------------------------------------------------------------------
+def populateTaskModules(dirOfParent, moduleParent =''):
+    taskModules = []
+    if moduleParent and len(moduleParent) >0 :
+        if '.' != moduleParent[-1]:
+            moduleParent += '.'
+    else:
+        moduleParent =''
+
+    for root, subdirs, files in os.walk(dirOfParent):
+        for name in files:
+            # 只有文件名TASK_PREFIX且以.py结尾的文件，才是TaskModule
+            if '.py' != name[-3:] :
+                continue
+
+            name = name[:-3]
+            if 'tasks' != name and TASK_PREFIX != name[:TASK_PREFIX_LEN] :
+                continue
+
+            taskModules.append('%s%s' % (moduleParent, name))
+
+    return taskModules
+
+#----------------------------------------------------------------------
+_thePROG = None
+def createWorkerProgram(appName, taskModules = []):
+    worker = Worker(appName,
+        broker='redis://:hpxwkr@tc2.syscheme.com:15379/0',
+        backend='redis://:hpxwkr@tc2.syscheme.com:15379/1',
+        include=taskModules)
+
+    worker.conf.update(
+            result_expires=3600,
+            )
+
+    global _thePROG
+    if not _thePROG:
+        _thePROG = Program(name=appName, argvs=[])
+        _thePROG._heartbeatInterval =-1
+
+    return worker, _thePROG
 
 #----------------------------------------------------------------------
 class RetryableError(Exception):
@@ -50,6 +96,24 @@ class Worker(Celery) :
 # @shared_task
 # def hello():
 #     return 'hello world'
+
+#----------------------------------------------------------------------
+def getMappedAs(homeDir = MAPPED_HOME) :
+    accLogin = None
+
+    try :
+        if not homeDir or len(homeDir) <=1:
+            homeDir = os.path.join(os.environ['HOME'], 'wkspaces/hpx_publish/..')
+            homeDir = os.path.realpath(homeDir)
+
+        with open(os.path.join(homeDir, '.ssh', 'id_rsa.pub'), 'r') as fkey:
+            line = fkey.readline().strip()
+            accLogin = line.split(' ')[-1]
+    except Exception as ex:
+        pass
+        
+    return accLogin, homeDir
+    
 
 #----------------------------------------------------------------------
 if __name__ == '__main__':

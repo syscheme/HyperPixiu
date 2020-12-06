@@ -203,7 +203,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
 
     # step 1. zip the Tcsv file
     srcpath = os.path.join(pubDir, fnTcsv)
-    destpath = os.path.join(archDir, 'SinaDay_%s.h5t' % asofYYMMDD )
+    destpath = os.path.join(archDir, 'SinaMDay_%s.h5t' % asofYYMMDD )
     if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
         thePROG.info('commitToday() archived %s into %s' %(srcpath, destpath))
         __rmfile(srcpath)
@@ -215,10 +215,11 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     destpath = os.path.join(archDir, 'SNS_%s.h5' % (symbol) )
     gns = []
 
-    TodayClose = lastDays[0][4] if len(lastDays) >0 else 0
+    lastDates = [ x[0] for x in lastDays] if lastDays and len(lastDays)>0 else []
     try :
-        with h5py.File(srcpath, 'r') as h5r:
-            with h5py.File(destpath, 'a') as h5w:
+        with h5py.File(destpath, 'a') as h5w:
+            # step 1, copy the new SNS into the dest h5f
+            with h5py.File(srcpath, 'r') as h5r:
                 for gn in h5r.keys():
                     if not symbol in gn: continue
                     g = h5r[gn]
@@ -232,22 +233,32 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
                     h5r.copy(g.name, h5w) # note the destGroup is the parent where the group want to copy under-to
                     go = h5w[gn]
                     gns.append(gn)
-                    m1, m2 = list(g.keys()), list(go.keys())
-                    a1, a2 = list(g.attrs.keys()), list(go.attrs.keys())
+                    # m1, m2 = list(g.keys()), list(go.keys())
+                    # a1, a2 = list(g.attrs.keys()), list(go.attrs.keys())
+
+            # step 2, determine the grainRate_X based on lastDays
+            if len(lastDates) >0:
+                start, end = '%sT000000' % lastDays[-1][0], '%sT235959' % lastDays[0][0]
+                for k in h5w.keys() :
+                    if not symbol +'@' in k : continue
+                    strAsOf = k[1 + k.index('@'):]
+                    if strAsOf < start or strAsOf > end: continue
+                    go = h5w[k]
+                    if not 'price' in go.attrs.keys() or float(go.attrs['price']) <=0.0:
+                        continue
 
                     try :
-                        if TodayClose <=0 or not lastDays[0][0] in gdesc:
-                            continue
+                        strYYMMDD = strAsOf[:strAsOf.index('T'):] if 'T' in strAsOf else strAsOf
+                        nDaysAgo = lastDates.index(strYYMMDD)
+                        if nDaysAgo <0: continue
 
-                        if not 'price' in go.attrs.keys() or float(go.attrs['price']) <=0.0:
-                            continue
-
-                        go.attrs['grainRate_0'] = TodayClose / go.attrs['price'] -1
+                        grk, grv = 'grainRate_%d' % nDaysAgo, lastDays[nDaysAgo][4] / go.attrs['price'] -1
+                        go.attrs[grk] = grv
                     except Exception as ex:
-                        thePROG.warn('commitToday() failed to determine grainRate_0: %s' % (srcpath, destpath))
+                        thePROG.warn('commitToday() failed to determine grainRate for: %s' % k)
                     
         thePROG.info('commitToday() added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
-        __rmfile(srcpath)
+        # __rmfile(srcpath)
     except Exception as ex:
         thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
 
@@ -344,7 +355,7 @@ def schOn_TradeDayClose(self):
     global __asyncResult_downloadToday
     __asyncResult_downloadToday = {}
 
-    for i in lstSHZ[:10]: # should be the complete lstSHZ
+    for i in lstSHZ[:5]: # should be the complete lstSHZ
         symbol = i['symbol']
         if symbol in __asyncResult_downloadToday.keys():
             continue

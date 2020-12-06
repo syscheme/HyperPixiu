@@ -3,7 +3,6 @@
 from __future__ import absolute_import, unicode_literals
 from celery import shared_task
 
-import sys, os, datetime, re, glob
 from MarketData import MARKETDATE_EVENT_PREFIX
 import h5tar, h5py, pickle, bz2
 
@@ -15,6 +14,8 @@ import crawler.producesSina as prod
 
 import dapps.sinaCrawler.tasks_Dayend as CTDayend
 
+import sys, os, re, glob
+from datetime import datetime, timedelta
 from time import sleep
 
 SYMBOL_LIST_HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,open,high,low,close,volume"
@@ -65,20 +66,20 @@ def activityOf(item):
 
 def __writeCsv(f, sybmolLst) :
     line = SYMBOL_LIST_HEADERSEQ + EOL
-    f.write(line.encode('utf-8'))
+    f.write(line)
     for i in sybmolLst:
         line = ','.join([str(i[k]) for k in SYMBOL_LIST_HEADERSEQ.split(',')]) + EOL
-        f.write(line.encode('utf-8'))
+        f.write(line)
 
 @shared_task(bind=True, base=Retryable)
 def listAllSymbols(self):
 
     lstSHZ = []
-    fnCachedLst = os.path.join(MAPPED_HOME, 'hpx_publish', 'lstSHZ_%s' % datetime.datetime.now().strftime('%Y%m%d'))
+    fnCachedLst = os.path.join(MAPPED_HOME, 'hpx_publish', 'lstSHZ_%s' % datetime.now().strftime('%Y%m%d'))
     try :
         fn = fnCachedLst + '.pkl.bz2'
         st = os.stat(fn)
-        ctime = datetime.datetime.fromtimestamp(st.st_ctime)
+        ctime = datetime.fromtimestamp(st.st_ctime)
         if st.st_size >1000 and (ctime.isoweekday() >5 or ctime.hour >=16): 
             with bz2.open(fn, 'rb') as f:
                 lstSHZ = pickle.load(f)
@@ -118,7 +119,7 @@ def listAllSymbols(self):
         with bz2.open(fnCachedLst + '.pkl.bz2', 'wb') as f:
             f.write(pickle.dumps(lstSHZ))
 
-        with bz2.open(fnCachedLst + '.csv.bz2', 'wt') as f:
+        with bz2.open(fnCachedLst + '.csv.bz2', 'wt', encoding='utf-8') as f:
             __writeCsv(f, lstSHZ)
     
     return lstSHZ
@@ -135,7 +136,7 @@ def listAllSymbols(self):
 
 # def commitToday(self, login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv) :
 @shared_task(bind=True, base=Retryable)
-def commitToday(self, optDict) : # urgly at the parameter list
+def commitToday(self, dictArgs) : # urgly at the parameter list
     '''
     in order to chain:
     import celery
@@ -144,20 +145,40 @@ def commitToday(self, optDict) : # urgly at the parameter list
     s3 = celery.chain(ct.downloadToday.s('SZ000005'), mt.commitToday.s())
     s3().get()
     '''
-    login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv = optDict['login'], optDict['symbol'], optDict['asofYYMMDD'], optDict['fnJsons'], optDict['fnSnapshot'], optDict['fnTcsv']
-    '''
+    if not dictArgs or not isinstance(dictArgs, dict) or len(dictArgs) <=0:
+        thePROG.error('commitToday() invalid dictArgs: %s' % str(dictArgs))
+        return
+
+    login, asofYYMMDD = 'hpx01', datetime.now().strftime('%Y%m%d')
+    login = dictArgs.get('login', login)
+    asofYYMMDD = dictArgs.get('asofYYMMDD', asofYYMMDD)
+
+    symbol = dictArgs.get('symbol', None)
+    fnJsons = dictArgs.get('fnJsons', [])
+    fnSnapshot = dictArgs.get('fnSnapshot', None)
+    fnTcsv = dictArgs.get('fnTcsv', None)
+    ''' sample value:
     fnJsons = ['SZ000002_KL1d20201202.json', 'SZ000002_MF1d20201202.json', 'SZ000002_KL5m20201202.json', 'SZ000002_MF1m20201202.json']
     fnSnapshot = 'SZ000002_sns.h5';
     ~{HOME}
     |-- archived -> ../archived
     `-- hpx_template -> /home/wkspaces/hpx_template
-
     '''
+
+    if not symbol:
+        thePROG.error('commitToday() invalid dictArgs: %s' % str(dictArgs))
+        return
 
     if '@' in login : login = login[:login.index('@')]
     if ':' in login : login = login[:login.index(':')]
 
     pubDir = os.path.join(SINA_USERS_ROOT, login, 'hpx_publish')
+    archDir = os.path.join(MAPPED_HOME, 'archived', 'sina')
+
+    # archDir = '/tmp/arch_test' # test hardcode
+    # pubDir = '/mnt/s/hpx_publish' # test hardcode
+
+    thePROG.debug('commitToday() %s_%s dictArgs: %s from %s to %s' % (symbol, asofYYMMDD, str(dictArgs), pubDir, archDir))
 
     # step 1. zip the JSON files
     for fn in fnJsons:
@@ -167,19 +188,19 @@ def commitToday(self, optDict) : # urgly at the parameter list
         if not m : continue
         evtShort = m.group(1)
 
-        destpath = os.path.join(MAPPED_HOME, 'archived', 'sina', 'Sina%s_%s.h5t' % (evtShort, asofYYMMDD) )
+        destpath = os.path.join(archDir, 'Sina%s_%s.h5t' % (evtShort, asofYYMMDD) )
         if h5tar.tar_utf8(destpath, srcpath) :
             thePROG.info('archived %s into %s' %(srcpath, destpath))
 
     # step 1. zip the Tcsv file
     srcpath = os.path.join(pubDir, fnTcsv)
-    destpath = os.path.join(MAPPED_HOME, 'archived', 'sina', 'SinaDay_%s.h5t' % asofYYMMDD )
+    destpath = os.path.join(archDir, 'SinaDay_%s.h5t' % asofYYMMDD )
     if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
         thePROG.info('archived %s into %s' %(srcpath, destpath))
 
     # step 3. append the snapshots
     srcpath = os.path.join(pubDir, fnSnapshot)
-    destpath = os.path.join(MAPPED_HOME, 'archived', 'sina', 'SNS_%s.h5' % (symbol) )
+    destpath = os.path.join(archDir, 'SNS_%s.h5' % (symbol) )
     gns = []
     with h5py.File(srcpath, 'r') as h5r:
         with h5py.File(destpath, 'a') as h5w:
@@ -268,7 +289,7 @@ def schOn_Every5min(self):
 
         if v.ready():
             todels.append(k)
-            thePROG.info('schOn_Every5min() downloadToday[%s]%s done: failed[%s] and will clear' %(k, v.task_id, v.failed()))
+            thePROG.info('schOn_Every5min() downloadToday[%s]%s done: succ[%s] and will clear' %(k, v.task_id, v.successful()))
             continue
 
         thePROG.info('schOn_Every5min() downloadToday[%s]%s still working' %(k, v.task_id))
@@ -310,7 +331,7 @@ if __name__ == '__main__':
 
     # nTop = 1000
     # lstSHZ = topActives(nTop)
-    # with open(os.path.join(MAPPED_HOME, 'hpx_publish', 'top%s_%s' % (nTop, datetime.datetime.now().strftime('%Y%m%d'))) + '.csv', 'wb') as f:
+    # with open(os.path.join(MAPPED_HOME, 'hpx_publish', 'top%s_%s' % (nTop, datetime.now().strftime('%Y%m%d'))) + '.csv', 'wb') as f:
     #     __writeCsv(f, lstSHZ)
     # print(lstSHZ)
 

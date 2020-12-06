@@ -490,7 +490,7 @@ class SinaCrawler(MarketCrawler):
     # private methods
     def __sinaGET(self, url, apiName, urlProxy=None):
         errmsg = '%s GET ' % (apiName)
-        httperr = 400
+        httperr = 408
         strThru =''
         try:
             self.debug("%s GET %s" %(apiName, url))

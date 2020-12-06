@@ -76,7 +76,7 @@ def saveSnapshot(filename, h5group, dsName, snapshot, ohlc):
         sns.attrs['price'] = ohlc[3]
         sns.attrs['generated'] = datetime.now().strftime('%Y%m%dT%H%M%S')
         
-        thePROG.info('saved snapshot[%s] %dB->%dz into %s' % (dsName, sns.attrs['size'], sns.attrs['csize'], filename))
+        thePROG.info('saved snapshot[%s] %dB->%dz into g[%s] of %s' % (dsName, sns.attrs['size'], sns.attrs['csize'], h5group, filename))
 
 # ===================================================
 __accLogin, __accHome = None, None

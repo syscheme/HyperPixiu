@@ -43,6 +43,9 @@ def mul(x, y):
 def xsum(numbers):
     return sum(numbers)
 
+def __rmfile(fn) :
+    os.remove(fn)
+
 # ===================================================
 def memberfnInH5tar(fnH5tar, symbol):
     # we knew the member file would like SinaMF1d_20201010/SH600029_MF1d20201010.json@/root/wkspaces/hpx_archived/sina/SinaMF1d_20201010.h5t
@@ -53,30 +56,27 @@ def memberfnInH5tar(fnH5tar, symbol):
     asofYYMMDD = mfn[1+idx:]
     return '%s/%s_%s%s.json' % (mfn, symbol, mfn[4:idx], asofYYMMDD), asofYYMMDD
 
-def saveSnapshot(filename, h5group, dsName, snapshot, ohlc):
+def saveSnapshot(filename, h5group, snapshot, ohlc):
     compressed = bz2.compress(snapshot)
 
     with h5py.File(filename, 'a') as h5file:
 
-        if h5group in h5file.keys() :
-            g = h5file[h5group]
-        else:
-            g = h5file.create_group(h5group) 
-            g.attrs['desc']         = 'pickled market state via bzip2 compression'
+        if h5group in h5file.keys(): del h5file[h5group]
 
-        if dsName in g.keys(): del g[dsName]
+        g = h5file.create_group(h5group) 
+        g.attrs['desc'] = '%s: pickled market state via bzip2 compression' % h5group
 
         npbytes = np.frombuffer(compressed, dtype=np.uint8)
-        sns = g.create_dataset(dsName, data=np.frombuffer(compressed, dtype=np.uint8))
-        sns.attrs['size'] = len(snapshot)
-        sns.attrs['csize'] = len(compressed)
-        sns.attrs['open'] = ohlc[0]
-        sns.attrs['high'] = ohlc[1]
-        sns.attrs['low']  = ohlc[2]
-        sns.attrs['price'] = ohlc[3]
-        sns.attrs['generated'] = datetime.now().strftime('%Y%m%dT%H%M%S')
+        sns = g.create_dataset(TAG_SNAPSHORT, data=np.frombuffer(compressed, dtype=np.uint8))
+        g.attrs['size'] = len(snapshot)
+        g.attrs['csize'] = len(compressed)
+        g.attrs['open'] = ohlc[0]
+        g.attrs['high'] = ohlc[1]
+        g.attrs['low']  = ohlc[2]
+        g.attrs['price'] = ohlc[3]
+        g.attrs['generated'] = datetime.now().strftime('%Y%m%dT%H%M%S')
         
-        thePROG.debug('saved snapshot[%s] %dB->%dz into g[%s] of %s' % (dsName, sns.attrs['size'], sns.attrs['csize'], h5group, filename))
+        thePROG.debug('saved snapshot[%s] %dB->%dz into %s' % (h5group, g.attrs['size'], g.attrs['csize'], filename))
         return True
     
     return False
@@ -91,6 +91,7 @@ def __publishFiles(srcfiles) :
             shutil.copyfile(fn, destFn + "~")
             shutil.move(destFn + "~", destFn)
             pubed.append(bn)
+            __rmfile(fn)
         except Exception as ex:
             thePROG.logexception(ex, 'publishFile[%s]' % fn)
 
@@ -115,7 +116,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
 
     SINA_TODAY = datetime.strptime(SINA_TODAY, '%Y-%m-%d').replace(hour=23, minute=59, second=59, microsecond=0)
 
-    dirCache = '/tmp/aaa'
+    dirCache = '/tmp/sina_cache'
     try:
         os.mkdir(dirCache)
     except: pass
@@ -136,8 +137,9 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
 
     daysTolst = int(caldays/7) *5 + (caldays %7) + 5 + nLastDays
     lastDays =[]
-    httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, daysTolst, dirCache)
-    if 456 == httperr or 408 == httperr:
+
+    httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, daysTolst, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_KLINE_1DAY), todayYYMMDD)))
+    if httperr in [408, 456]:
         raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_KLINE_1DAY, SYMBOL, httperr))
             
     lastDays.reverse()
@@ -160,18 +162,18 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
     thePROG.info('loaded KL1d and determined %d-Tdays pirior to %s, %ddays: %s ~ %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), len(lastDays), startYYMMDD, todayYYMMDD))
     
     # 1.b  MF1d
-    httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, dirCache)
-    if httperr in [408, 456]:
+    httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1DAY), todayYYMMDD)))
+    if httperr in [408, 456] :
         raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1DAY, SYMBOL, httperr))
 
     # 1.c  KL5m
-    httperr, _, _ = playback.loadOnline(EVENT_KLINE_5MIN, SYMBOL, 0, dirCache)
-    if httperr in [408, 456]:
+    httperr, _, _ = playback.loadOnline(EVENT_KLINE_5MIN, SYMBOL, 0, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_KLINE_5MIN), todayYYMMDD)))
+    if httperr in [408, 456] :
         raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_KLINE_5MIN, SYMBOL, httperr))
 
     # 1.c  MF1m
-    httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1MIN, SYMBOL, 0, dirCache)
-    if httperr in [408, 456]:
+    httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1MIN, SYMBOL, 0, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1MIN), todayYYMMDD)))
+    if httperr in [408, 456] :
         raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1MIN, SYMBOL, httperr))
 
     for i in lastDays[1:]:
@@ -242,9 +244,8 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
                 stampOfState = stamp
 
                 if snapshot and len(snapshot) >0:
-                    h5ident = snapshot['ident']
-                    h5group = h5ident[:h5ident.index('T')]
-                    if saveSnapshot(snapshoth5fn, h5group= h5group, dsName=h5ident, snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc']):
+                    h5ident = '%s.%s' %(TAG_SNAPSHORT, snapshot['ident'])
+                    if saveSnapshot(snapshoth5fn, h5group=h5ident, snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc']):
                         savedSns.append(h5ident)
 
                     snapshot ={}
@@ -259,9 +260,8 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
     for i in range(2): rec.doAppStep() # to flush the recorder
 
     if snapshot and len(snapshot) >0:
-        h5ident = snapshot['ident']
-        h5group = h5ident[:h5ident.index('T')]
-        if saveSnapshot(snapshoth5fn, h5group= h5group, dsName=h5ident, snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc']):
+        h5ident = '%s.%s' %(TAG_SNAPSHORT, snapshot['ident'])
+        if saveSnapshot(snapshoth5fn, h5group=h5ident, snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc']):
             savedSns.append(h5ident)
 
     cachedJsons = playback.cachedFiles
@@ -277,6 +277,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
         'fnSnapshot': snapshoth5fn[dirNameLen:], 
         'fnJsons': [x[dirNameLen:] for x in cachedJsons],
         'fnTcsv': fnTcsv[dirNameLen:],
+        'lastDays': [[x.asof.strftime('%Y%m%d'), x.open, x.high, x.low, x.close, x.volume] for x in lastDays]
     }
 
 ####################################

@@ -28,7 +28,7 @@ def tar_utf8(fn_h5tar, fn_members, createmode='a', baseNameAsKey=False) :
             except:
                 continue
 
-            print('adding %s\tsize:%s' % (m, filesize))
+            print('tar_utf8() adding %s\tsize:%s' % (m, filesize))
             if '.bz2' == m[-4:]:
                 with open(m, 'rb') as mf:
                     compressed = mf.read()
@@ -72,7 +72,7 @@ def untar_utf8(fn_h5tar, fn_members =None) :
             if len(ofn) <=0:
                 continue
             
-            print('extracting %s' % ofn)
+            print('untar_utf8() extracting %s' % ofn)
             dir = os.path.dirname(ofn)
             if len(dir) >0 and dir != ofn:
                 try :

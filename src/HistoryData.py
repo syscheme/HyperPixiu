@@ -1309,7 +1309,7 @@ class MarketRecorder(BaseApplication):
         if not self._recorder or len(settingnode({})) <=0:
             return
 
-        eventCatg = eventType[len(MARKETDATE_EVENT_PREFIX):]
+        eventCatg = chopMarketEVStr(eventType)
         for i in settingnode :
             try:
                 symbol = i.symbol('')
@@ -1337,7 +1337,7 @@ class MarketRecorder(BaseApplication):
         if  MARKETDATE_EVENT_PREFIX != eventType[:len(MARKETDATE_EVENT_PREFIX)] :
             return
 
-        category = eventType[len(MARKETDATE_EVENT_PREFIX):]
+        category = chopMarketEVStr(eventType)
         eData = event.data # this is a TickData or KLineData
         # if tick.sourceType != MarketData.DATA_SRCTYPE_REALTIME:
         if MarketData.TAG_BACKTEST in eData.exchange :

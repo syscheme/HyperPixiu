@@ -71,6 +71,12 @@ def __writeCsv(f, sybmolLst) :
         line = ','.join([str(i[k]) for k in SYMBOL_LIST_HEADERSEQ.split(',')]) + EOL
         f.write(line)
 
+def __rmfile(fn) :
+    try :
+        os.remove(fn)
+    except:
+        pass
+
 @shared_task(bind=True, base=Retryable)
 def listAllSymbols(self):
 
@@ -157,6 +163,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     fnJsons = dictArgs.get('fnJsons', [])
     fnSnapshot = dictArgs.get('fnSnapshot', None)
     fnTcsv = dictArgs.get('fnTcsv', None)
+    lastDays = dictArgs.get('lastDays', [])
     ''' sample value:
     fnJsons = ['SZ000002_KL1d20201202.json', 'SZ000002_MF1d20201202.json', 'SZ000002_KL5m20201202.json', 'SZ000002_MF1m20201202.json']
     fnSnapshot = 'SZ000002_sns.h5';
@@ -178,46 +185,71 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     # archDir = '/tmp/arch_test' # test hardcode
     # pubDir = '/mnt/s/hpx_publish' # test hardcode
 
-    thePROG.debug('commitToday() %s_%s dictArgs: %s from %s to %s' % (symbol, asofYYMMDD, str(dictArgs), pubDir, archDir))
+    thePROG.debug('commitToday() archiving %s_%s dictArgs: %s from %s to %s' % (symbol, asofYYMMDD, str(dictArgs), pubDir, archDir))
 
     # step 1. zip the JSON files
     for fn in fnJsons:
         srcpath = os.path.join(pubDir, fn)
-        fn = os.path.basename(fn)
-        m = re.match(r'%s_([A-Za-z0-9]*)%s.json' %(symbol, asofYYMMDD), fn)
+        m = re.match(r'%s_([A-Za-z0-9]*)%s.json' %(symbol, asofYYMMDD), os.path.basename(srcpath))
         if not m : continue
         evtShort = m.group(1)
 
         destpath = os.path.join(archDir, 'Sina%s_%s.h5t' % (evtShort, asofYYMMDD) )
         if h5tar.tar_utf8(destpath, srcpath) :
-            thePROG.info('archived %s into %s' %(srcpath, destpath))
+            thePROG.info('commitToday() archived %s into %s' %(srcpath, destpath))
+            __rmfile(srcpath)
+        else:
+            thePROG.error('commitToday() failed to archived %s into %s' %(srcpath, destpath))
 
     # step 1. zip the Tcsv file
     srcpath = os.path.join(pubDir, fnTcsv)
     destpath = os.path.join(archDir, 'SinaDay_%s.h5t' % asofYYMMDD )
     if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
-        thePROG.info('archived %s into %s' %(srcpath, destpath))
+        thePROG.info('commitToday() archived %s into %s' %(srcpath, destpath))
+        __rmfile(srcpath)
+    else:
+        thePROG.error('commitToday() failed to archived %s into %s' %(srcpath, destpath))
 
     # step 3. append the snapshots
     srcpath = os.path.join(pubDir, fnSnapshot)
     destpath = os.path.join(archDir, 'SNS_%s.h5' % (symbol) )
     gns = []
-    with h5py.File(srcpath, 'r') as h5r:
-        with h5py.File(destpath, 'a') as h5w:
-            for gn in h5r.keys():
-                if not symbol in gn: continue
-                g = h5r[gn]
-                if not 'desc' in g.attrs or not 'pickled market state' in g.attrs['desc'] : continue
 
-                if gn in h5w.keys(): del h5w[gn]
-                # Note that this is not a copy of the dataset! Like hard links in a UNIX file system, objects in an HDF5 file can be stored in multiple groups
-                # So, h5w[gn] = g doesn't work because across different files
-                go = h5w.create_group(gn)
-                h5w.copy(g, go)
-                # h5w[gn] = g()
-                # h5py.Group.copy(g, h5w[gn])
-                gns.append(gn)
-    thePROG.info('added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
+    TodayClose = lastDays[0][4] if len(lastDays) >0 else 0
+    try :
+        with h5py.File(srcpath, 'r') as h5r:
+            with h5py.File(destpath, 'a') as h5w:
+                for gn in h5r.keys():
+                    if not symbol in gn: continue
+                    g = h5r[gn]
+                    if not 'desc' in g.attrs.keys() or not 'pickled market state' in g.attrs['desc'] : continue
+                    gdesc = g.attrs['desc']
+
+                    if gn in h5w.keys(): del h5w[gn]
+                    # Note that this is not a copy of the dataset! Like hard links in a UNIX file system, objects in an HDF5 file can be stored in multiple groups
+                    # So, h5w[gn] = g doesn't work because across different files
+                    # go = h5w.create_group(gn)
+                    h5r.copy(g.name, h5w) # note the destGroup is the parent where the group want to copy under-to
+                    go = h5w[gn]
+                    gns.append(gn)
+                    m1, m2 = list(g.keys()), list(go.keys())
+                    a1, a2 = list(g.attrs.keys()), list(go.attrs.keys())
+
+                    try :
+                        if TodayClose <=0 or not lastDays[0][0] in gdesc:
+                            continue
+
+                        if not 'price' in go.attrs.keys() or float(go.attrs['price']) <=0.0:
+                            continue
+
+                        go.attrs['grainRate_0'] = TodayClose / go.attrs['price'] -1
+                    except Exception as ex:
+                        thePROG.warn('commitToday() failed to determine grainRate_0: %s' % (srcpath, destpath))
+                    
+        thePROG.info('commitToday() added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
+        __rmfile(srcpath)
+    except Exception as ex:
+        thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
 
 def __listAllSymbols():
     result ={}
@@ -324,10 +356,12 @@ def schOn_TradeDayClose(self):
 
 ####################################
 if __name__ == '__main__':
-    schOn_TradeDayClose()
-    for i in range(20):
-        schOn_Every5min()
-        sleep(10)
+    thePROG.setLogLevel('debug')
+
+    # schOn_TradeDayClose()
+    # for i in range(20):
+    #     schOn_Every5min()
+    #     sleep(10)
 
     # nTop = 1000
     # lstSHZ = topActives(nTop)
@@ -335,14 +369,30 @@ if __name__ == '__main__':
     #     __writeCsv(f, lstSHZ)
     # print(lstSHZ)
 
-    # symbol = 'SZ000002'
-    # login = 'root@tc2.syscheme.com'
-    # asofYYMMDD = '20201202'
-    # fnJsons = ['SZ000002_KL1d20201202.json', 'SZ000002_MF1d20201202.json', 'SZ000002_KL5m20201202.json', 'SZ000002_MF1m20201202.json']
-    # fnSnapshot = 'SZ000002_sns.h5';
-    # fnTcsv = 'SZ000002_day20201202.tcsv';
-
-    # commitToday(login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv)
+    symbol, asofYYMMDD = 'SZ002670', '20201204'
+    
+    login = 'root@tc2.syscheme.com'
+    fnJsons = []
+    for evt in ['KL1d', 'MF1d', 'KL5m', 'MF1m']:
+        fnJsons.append('%s_%s%s.json' % (symbol, evt, asofYYMMDD))
+    
+    today = {
+        'symbol': symbol,
+        'login': 'hxp01@test',
+        'asofYYMMDD': asofYYMMDD,
+        'fnSnapshot': '%s_sns%s.h5' % (symbol, asofYYMMDD), 
+        'fnJsons': fnJsons,
+        'fnTcsv': '%s_day%s.tcsv' % (symbol, asofYYMMDD),
+        'lastDays': [
+            ['20201204', 15.31, 17.5, 15.0, 15.5, 222133283.0], 
+            ['20201203', 15.98, 16.48, 15.5, 15.97, 176615259.0], 
+            ['20201202', 14.38, 14.98, 14.26, 14.98, 113319552.0], 
+            ['20201201', 12.41, 13.62, 11.77, 13.62, 163043226.0], 
+            ['20201130', 12.17, 12.72, 12.02, 12.38, 166906351.0]
+            ]
+    }
+    
+    commitToday(today)
 
 ''' A test
 import dapps.sinaCrawler.tasks_Dayend as ct

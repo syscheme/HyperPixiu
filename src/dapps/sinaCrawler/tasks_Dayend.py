@@ -196,13 +196,6 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
 
     psptMarketState = PerspectiveState(SYMBOL)
 
-    def __onMF5mMerged(mf5m) :
-        ev = Event(EVENT_MONEYFLOW_5MIN)
-        ev.setData(mf5m)
-        ev = psptMarketState.updateByEvent(ev)
-
-    mf1mTo5m = sina.SinaMF1mToXm(__onMF5mMerged, 5)
-
     stampOfState, momentsToSample = None, ['10:00:00', '10:30:00', '11:00:00', '11:30:00', '13:30:00', '14:30:00', '15:00:00']
     snapshot = {}
     snapshoth5fn = os.path.join(dirCache, '%s_sns%s.h5' % (SYMBOL, todayYYMMDD))
@@ -221,6 +214,14 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
     rec.registerCategory(EVENT_MONEYFLOW_5MIN, params={'columns': MoneyflowData.COLUMNS})
     rec.registerCategory(EVENT_MONEYFLOW_1DAY, params={'columns': MoneyflowData.COLUMNS})
 
+    def __onMF5mMerged(mf5m) :
+        ev = Event(EVENT_MONEYFLOW_5MIN)
+        ev.setData(mf5m)
+        psptMarketState.updateByEvent(ev)
+        rec.pushRow(ev.type, ev.data)
+
+    mf1mTo5m = sina.SinaMF1mToXm(__onMF5mMerged, 5)
+
     savedSns= []
     while True:
         try :
@@ -230,12 +231,12 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
 
             symbol = ev.data.symbol
             if ev.data.datetime <= SINA_TODAY:
-                if EVENT_MONEYFLOW_1MIN == ev.type:
-                    mf1mTo5m.pushMF1m(ev.data)
-
                 ev = psptMarketState.updateByEvent(ev)
                 if not ev or symbol != SYMBOL :
                     continue
+
+                if EVENT_MONEYFLOW_1MIN == ev.type:
+                    mf1mTo5m.pushMF1m(ev.data)
 
                 stamp    = psptMarketState.getAsOf(symbol)
                 price, _ = psptMarketState.latestPrice(symbol)

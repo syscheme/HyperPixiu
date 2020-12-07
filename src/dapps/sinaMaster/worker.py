@@ -23,7 +23,7 @@ taskCrawler = populateTaskModules(os.path.dirname(__file__) + "/../sinaCrawler",
 if not APP_NAME or len(APP_NAME) <=0:
     APP_NAME = os.path.abspath(os.path.dirname(__file__)).split('/')[-1]
 
-worker, thePROG = createWorkerProgram(APP_NAME, taskMods + taskCrawler)
+worker, thePROG = createWorkerProgram(APP_NAME, taskMods) #  + taskCrawler)
 
 worker.conf.beat_schedule = {
     "checkResult-every-5min":{

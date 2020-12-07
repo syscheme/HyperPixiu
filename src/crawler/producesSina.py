@@ -16,7 +16,7 @@ import os
 import fnmatch
 
 def defaultNextYield(retryNo) :
-    return min(10.0* int(1+ retryNo), 120.0) if retryNo >0 else 0.1
+    return min(10.0* (2 ** retryNo), 300.0) if retryNo >0 else 0.1
 
 ########################################################################
 class SinaMux(hist.PlaybackMux) :

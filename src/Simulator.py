@@ -12,7 +12,7 @@ import HistoryData as hist
 from MarketData import TickData, KLineData, NORMALIZE_ID, EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY, MARKETDATE_EVENT_PREFIX
 
 from Perspective import *
-import vn.VnTrader as vn
+# import vn.VnTrader as vn
 
 from datetime import datetime, timedelta
 from collections import OrderedDict
@@ -229,7 +229,7 @@ class BackTestApp(MetaTrader):
                     self._marketState.updateByEvent(ev)
                     s = ev.data.symbol
                     price, asofP = self._marketState.latestPrice(s)
-                    self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, ev.type[len(MARKETDATE_EVENT_PREFIX):], asofP.strftime('%Y%m%dT%H%M'), price, self._marketState.dailyOHLC_sofar(s)))
+                    self.debug('hist-read: symbol[%s]%s asof[%s] lastPrice[%s] OHLC%s' % (s, chopMarketEVStr(ev.type), asofP.strftime('%Y%m%dT%H%M'), price, self._marketState.dailyOHLC_sofar(s)))
                     self.postEvent(ev) # self.OnEvent(ev) # call Trader
                     self._stepNoInEpisode += 1
                     return # successfully performed a step by pushing an Event
@@ -2570,7 +2570,7 @@ class ShortSwingScanner(OfflineSimulator):
         col_gainRates  = np.concatenate(metrix[:, 1]).reshape(lenF, *np.array(metrix[0][1]).shape).astype('float16')
         col_ohlc       = np.concatenate(metrix[:, 2]).reshape(lenF, *np.array(metrix[0][2]).shape).astype('float16')  # col_price = metrix[:, 2].astype('float16')
 
-        normalizedId = 'FclzD4X%dR%dBy%s' %(col_state.shape[1], self._daysLong, self._byEvent[len(MARKETDATE_EVENT_PREFIX):])
+        normalizedId = 'FclzD4X%dR%dBy%s' %(col_state.shape[1], self._daysLong, chopMarketEVStr(self._byEvent))
 
         h5args =copy.copy(hist.H5DSET_DEFAULT_ARGS)
         if self._h5compression and len(self._h5compression)>0:

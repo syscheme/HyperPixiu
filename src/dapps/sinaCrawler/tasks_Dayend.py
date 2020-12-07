@@ -13,21 +13,25 @@
     
     step 2. take the state of 10:00, 11:00, 13:30, 14:30, 15:00 of today to prediction of 1day, 2day and 5day into SinaDayEnd_YYYYMMDD.tcsv output
 '''
-# from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, unicode_literals
 from celery import shared_task
 import sys, os, re
-if __name__ == '__main__':
-    sys.path.append(".")
-    from worker import thePROG
-else:
-    from .worker import thePROG
+import shutil
+
+from dapps.sinaCrawler.worker import thePROG
+from dapps.celeryCommon import RetryableError, Retryable, getMappedAs
 
 from Application import *
 from Perspective import *
+from MarketData import *
+from EventData import Event
 import HistoryData as hist
 from crawler.producesSina import SinaMux, Sina_Tplus1, SinaSwingScanner
+import crawler.crawlSina as sina
 
 import h5py
+
+MAPPED_USER, MAPPED_HOME = getMappedAs()
 
 @shared_task
 def add(x, y):
@@ -41,43 +45,71 @@ def mul(x, y):
 def xsum(numbers):
     return sum(numbers)
 
+def __rmfile(fn) :
+    os.remove(fn)
+
 # ===================================================
 def memberfnInH5tar(fnH5tar, symbol):
     # we knew the member file would like SinaMF1d_20201010/SH600029_MF1d20201010.json@/root/wkspaces/hpx_archived/sina/SinaMF1d_20201010.h5t
     # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
+    fnH5tar = os.path.realpath(fnH5tar)
     mfn = os.path.basename(fnH5tar)[:-4]
     idx = mfn.index('_')
     asofYYMMDD = mfn[1+idx:]
     return '%s/%s_%s%s.json' % (mfn, symbol, mfn[4:idx], asofYYMMDD), asofYYMMDD
 
-def saveSnapshot(filename, h5group, dsName, snapshot, ohlc):
+def saveSnapshot(filename, h5group, snapshot, ohlc):
     compressed = bz2.compress(snapshot)
 
     with h5py.File(filename, 'a') as h5file:
 
-        if h5group in h5file.keys() :
-            g = h5file[h5group]
-        else:
-            g = h5file.create_group(h5group) 
-            g.attrs['desc']         = 'pickled market state via bzip2 compression'
+        if h5group in h5file.keys(): del h5file[h5group]
 
-        if dsName in g.keys(): del g[dsName]
+        g = h5file.create_group(h5group) 
+        g.attrs['desc'] = '%s: pickled market state via bzip2 compression' % h5group
 
         npbytes = np.frombuffer(compressed, dtype=np.uint8)
-        sns = g.create_dataset(dsName, data=np.frombuffer(compressed, dtype=np.uint8))
-        sns.attrs['size'] = len(snapshot)
-        sns.attrs['csize'] = len(compressed)
-        sns.attrs['open'] = ohlc[0]
-        sns.attrs['high'] = ohlc[1]
-        sns.attrs['low']  = ohlc[2]
-        sns.attrs['price'] = ohlc[3]
-        sns.attrs['generated'] = datetime.now().strftime('%Y%m%dT%H%M%S')
+        sns = g.create_dataset(TAG_SNAPSHORT, data=np.frombuffer(compressed, dtype=np.uint8))
+        g.attrs['size'] = len(snapshot)
+        g.attrs['csize'] = len(compressed)
+        g.attrs['open'] = ohlc[0]
+        g.attrs['high'] = ohlc[1]
+        g.attrs['low']  = ohlc[2]
+        g.attrs['price'] = ohlc[3]
+        g.attrs['generated'] = datetime.now().strftime('%Y%m%dT%H%M%S')
         
-        thePROG.info('saved snapshot[%s] %dB->%dz into %s' % (dsName, sns.attrs['size'], sns.attrs['csize'], filename))
+        thePROG.debug('saved snapshot[%s] %dB->%dz into %s' % (h5group, g.attrs['size'], g.attrs['csize'], filename))
+        return True
+    
+    return False
+
+def __publishFiles(srcfiles) :
+    destPubDir = os.path.join(MAPPED_HOME, "hpx_publish")
+    pubed = []
+    for fn in srcfiles:
+        try:
+            bn = os.path.basename(fn)
+            destFn = os.path.join(destPubDir, bn)
+            shutil.copyfile(fn, destFn + "~")
+            shutil.move(destFn + "~", destFn)
+            pubed.append(bn)
+            __rmfile(fn)
+        except Exception as ex:
+            thePROG.logexception(ex, 'publishFile[%s]' % fn)
+
+    return pubed, destPubDir
+
 
 # ===================================================
-@shared_task
-def downloadToday(SYMBOL, todayYYMMDD =None):
+@shared_task(bind=True, base=Retryable)
+def downloadToday(self, SYMBOL, todayYYMMDD =None):
+    global MAPPED_USER, MAPPED_HOME
+    result = __downloadSymbol(SYMBOL)
+
+    print('%s' % result) # sample: {'symbol': 'SZ000002', 'date': '20201127', 'snapshot': 'SZ000002_sns.h5', 'cachedJsons': ['SZ000002_KL1d20201128.json', 'SZ000002_MF1d20201128.json', 'SZ000002_KL5m20201128.json', 'SZ000002_MF1m20201128.json'], 'tcsv': 'SZ000002_day20201127.tcsv'}
+    return result
+
+def __downloadSymbol(SYMBOL, todayYYMMDD =None):
 
     CLOCK_TODAY= datetime.now().replace(hour=23, minute=59, second=59, microsecond=0)
     SINA_TODAY = CLOCK_TODAY.strftime('%Y-%m-%d') if not todayYYMMDD else todayYYMMDD
@@ -86,7 +118,10 @@ def downloadToday(SYMBOL, todayYYMMDD =None):
 
     SINA_TODAY = datetime.strptime(SINA_TODAY, '%Y-%m-%d').replace(hour=23, minute=59, second=59, microsecond=0)
 
-    dirCache = '/tmp/aaa'
+    dirCache = '/tmp/sina_cache'
+    try:
+        os.mkdir(dirCache)
+    except: pass
     dirArchived = os.path.join(os.environ['HOME'], 'wkspaces/hpx_archived/sina') 
 
     todayYYMMDD = SINA_TODAY.strftime('%Y%m%d')
@@ -96,69 +131,110 @@ def downloadToday(SYMBOL, todayYYMMDD =None):
     playback   = SinaMux(thePROG, endDate=SINA_TODAY.strftime('%Y%m%dT%H%M%S')) # = thePROG.createApp(SinaMux, **srcPathPatternDict)
     playback.setId('Dayend.%s' % SYMBOL)
     playback.setSymbols([SYMBOL])
+
     nLastDays = 5
 
     # 1.a  KL1d and determine the date of n-open-days ago
     caldays = (CLOCK_TODAY - SINA_TODAY).days
 
-    daysTolst = int(caldays/7) *5 + (caldays %7) + 1 + nLastDays
+    daysTolst = int(caldays/7) *5 + (caldays %7) + 5 + nLastDays
     lastDays =[]
-    httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, daysTolst, dirCache)
-    if len(lastDays) <=0 :
-        return "456 busy"
+
+    httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, daysTolst, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_KLINE_1DAY), todayYYMMDD)))
+    if httperr in [408, 456]:
+        raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_KLINE_1DAY, SYMBOL, httperr))
             
-    dtStart = lastDays[0].asof
     lastDays.reverse()
-    for i in range(len(lastDays)):
-        if todayYYMMDD > lastDays[i].asof.strftime('%Y%m%d') :
-            if i < len(lastDays) - nLastDays :
-                dtStart = lastDays[i + nLastDays].asof
+    tmp = lastDays
+    lastDays = []
+    for i in tmp:
+        if i.asof.strftime('%Y%m%d') > todayYYMMDD:
+            continue
+        lastDays.append(i)
+        if len(lastDays) >= nLastDays:
             break
 
+    if len(lastDays) <=0:
+        raise ValueError("failed to get recent %d days" %nLastDays)
+    
+    dtStart = lastDays[-1].asof
     startYYMMDD = dtStart.strftime('%Y%m%d')
     todayYYMMDD = lastDays[0].asof.strftime('%Y%m%d')
-
-    thePROG.info('loaded KL1d and determined %d-Tdays pirior to %s was %s, adjusted today as %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), startYYMMDD, todayYYMMDD))
+    
+    thePROG.info('loaded KL1d and determined %d-Tdays pirior to %s, %ddays: %s ~ %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), len(lastDays), startYYMMDD, todayYYMMDD))
     
     # 1.b  MF1d
-    httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, dirCache)
+    httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1DAY), todayYYMMDD)))
+    if httperr in [408, 456] :
+        raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1DAY, SYMBOL, httperr))
 
     # 1.c  KL5m
-    httperr, _, _ = playback.loadOnline(EVENT_KLINE_5MIN, SYMBOL, 0, dirCache)
+    httperr, _, _ = playback.loadOnline(EVENT_KLINE_5MIN, SYMBOL, 0, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_KLINE_5MIN), todayYYMMDD)))
+    if httperr in [408, 456] :
+        raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_KLINE_5MIN, SYMBOL, httperr))
 
     # 1.c  MF1m
-    # bnRegex, filelst = 'SinaMF1m_([0-9]*).h5t', []
-    # # because one download of KL5m covered 1day, so take dtStart directly
-    # # no need to (dtStart - timedelta(days=5)).strftime('%Y%m%d')
-    # startYYMMDD = dtStart.strftime('%Y%m%d')
-    # latestDay = todayYYMMDD
-    # for fn in allFiles:
-    #     m = re.match(bnRegex, os.path.basename(fn))
-    #     if not m or m.group(1) < startYYMMDD or m.group(1) > todayYYMMDD : continue
-    #     try :
-    #         # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
-    #         mfn, latestDay = memberfnInH5tar(fn, SYMBOL)
-    #         playback.loadJsonH5t(EVENT_MONEYFLOW_1MIN, SYMBOL, fn, mfn)
-    #     except Exception as ex:
-    #         thePROG.logexception(ex, fn)
+    httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1MIN, SYMBOL, 0, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1MIN), todayYYMMDD)))
+    if httperr in [408, 456] :
+        raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1MIN, SYMBOL, httperr))
 
-    # if CLOCK_TODAY == SINA_TODAY and latestDay < todayYYMMDD:
-    httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1MIN, SYMBOL, 0, dirCache)
+    for i in lastDays[1:]:
+        offline_mf1m = os.path.join(dirArchived, 'SinaMF1m_%s.h5t' % i.asof.strftime('%Y%m%d'))
+        try :
+            size = os.stat(offline_mf1m).st_size
+            if size <=0: continue
+
+            # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
+            mfn, latestDay = memberfnInH5tar(offline_mf1m, SYMBOL)
+            playback.loadJsonH5t(EVENT_MONEYFLOW_1MIN, SYMBOL, offline_mf1m, mfn)
+        except FileNotFoundError as ex:
+            thePROG.warn('no offline file avail: %s' %offline_mf1m)
+        except Exception as ex:
+            thePROG.logexception(ex, offline_mf1m)
 
     thePROG.info('inited mux with %d substreams' % (playback.size))
+
     psptMarketState = PerspectiveState(SYMBOL)
+
+    def __onMF5mMerged(mf5m) :
+        ev = Event(EVENT_MONEYFLOW_5MIN)
+        ev.setData(mf5m)
+        ev = psptMarketState.updateByEvent(ev)
+
+    mf1mTo5m = sina.SinaMF1mToXm(__onMF5mMerged, 5)
+
     stampOfState, momentsToSample = None, ['10:00:00', '10:30:00', '11:00:00', '11:30:00', '13:30:00', '14:30:00', '15:00:00']
     snapshot = {}
-    snapshoth5fn = os.path.join(dirCache, '%s_sns.h5' % (SYMBOL))
+    snapshoth5fn = os.path.join(dirCache, '%s_sns%s.h5' % (SYMBOL, todayYYMMDD))
 
+    fnTcsv = os.path.join(dirCache, '%s_day%s.tcsv' % (SYMBOL, todayYYMMDD))
+    try:
+        os.remove(fnTcsv)
+    except: pass
+
+    rec = thePROG.createApp(hist.TaggedCsvRecorder, filepath = fnTcsv)
+    rec.registerCategory(EVENT_TICK,           params={'columns': TickData.COLUMNS})
+    rec.registerCategory(EVENT_KLINE_1MIN,     params={'columns': KLineData.COLUMNS})
+    rec.registerCategory(EVENT_KLINE_5MIN,     params={'columns': KLineData.COLUMNS})
+    rec.registerCategory(EVENT_KLINE_1DAY,     params={'columns': KLineData.COLUMNS})
+    rec.registerCategory(EVENT_MONEYFLOW_1MIN, params={'columns': MoneyflowData.COLUMNS})
+    rec.registerCategory(EVENT_MONEYFLOW_5MIN, params={'columns': MoneyflowData.COLUMNS})
+    rec.registerCategory(EVENT_MONEYFLOW_1DAY, params={'columns': MoneyflowData.COLUMNS})
+
+    savedSns= []
     while True:
         try :
+            rec.doAppStep() # to flush the recorder
             ev = next(playback)
             if not ev or MARKETDATE_EVENT_PREFIX != ev.type[:len(MARKETDATE_EVENT_PREFIX)] : continue
 
             symbol = ev.data.symbol
             if ev.data.datetime <= SINA_TODAY:
-                if not psptMarketState.updateByEvent(ev) or symbol != SYMBOL :
+                if EVENT_MONEYFLOW_1MIN == ev.type:
+                    mf1mTo5m.pushMF1m(ev.data)
+
+                ev = psptMarketState.updateByEvent(ev)
+                if not ev or symbol != SYMBOL :
                     continue
 
                 stamp    = psptMarketState.getAsOf(symbol)
@@ -167,6 +243,8 @@ def downloadToday(SYMBOL, todayYYMMDD =None):
 
                 if not ohlc or todayYYMMDD != stamp.strftime('%Y%m%d'): # or not today
                     continue
+
+                rec.pushRow(ev.type, ev.data)
 
                 if len(momentsToSample) >0 and stamp.strftime('%H:%M:00') in momentsToSample:
                     snapshot = {
@@ -181,9 +259,10 @@ def downloadToday(SYMBOL, todayYYMMDD =None):
                 stampOfState = stamp
 
                 if snapshot and len(snapshot) >0:
-                    h5group = snapshot['ident']
-                    h5group = h5group[:h5group.index('T')]
-                    saveSnapshot(snapshoth5fn, h5group= h5group, dsName=snapshot['ident'], snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc'])
+                    h5ident = '%s.%s' %(TAG_SNAPSHORT, snapshot['ident'])
+                    if saveSnapshot(snapshoth5fn, h5group=h5ident, snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc']):
+                        savedSns.append(h5ident)
+
                     snapshot ={}
         
         except StopIteration:
@@ -191,38 +270,31 @@ def downloadToday(SYMBOL, todayYYMMDD =None):
             break
         except Exception as ex:
             thePROG.logexception(ex)
-            break
+            raise ex
+
+    for i in range(2): rec.doAppStep() # to flush the recorder
 
     if snapshot and len(snapshot) >0:
-        h5group = snapshot['ident']
-        h5group = h5group[:h5group.index('T')]
-        saveSnapshot(snapshoth5fn, h5group= h5group, dsName=snapshot['ident'], snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc'])
+        h5ident = '%s.%s' %(TAG_SNAPSHORT, snapshot['ident'])
+        if saveSnapshot(snapshoth5fn, h5group=h5ident, snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc']):
+            savedSns.append(h5ident)
 
-    return snapshoth5fn, playback.cachedFiles
-    '''
-        # -----------------------------------
-    
-    tdrWraper  = thePROG.createApp(ShortSwingScanner, configNode ='trader', trader=tdrCore, histdata=playback, symbol=SYMBOL) # = thePROG.createApp(SinaDayEnd, configNode ='trader', trader=tdrCore, symbol=SYMBOL, dirOfflineData=evMdSource)
-    tdrWraper.setTimeRange(dtStart = dtStart)
-    tdrWraper.setSampling(os.path.join(thePROG.outdir, 'SwingTrainingDS_%s.h5' % SINA_TODAY.strftime('%Y%m%d')))
+    cachedJsons = playback.cachedFiles
+    thePROG.info('cached %s, generated %s and snapshots:%s, publishing' % (','.join(cachedJsons), fnTcsv, ','.join(savedSns)))
+    dirNameLen = len(dirCache) +1
+    pubDir, bns = __publishFiles([snapshoth5fn, fnTcsv] + playback.cachedFiles)
 
-    tdrWraper.setRecorder(rec)
-
-    thePROG.start()
-    if tdrWraper.isActive :
-        thePROG.loop()
-
-    thePROG.stop()
-
-    statesOfMoments = tdrWraper.stateOfMoments
-    thePROG.warn('TODO: predicting based on statesOf: %s and output to tcsv for summarizing' % ','.join(list(statesOfMoments.keys())))
-    # rec.registerCategory('PricePred', params= {'columns' : 
-    #  1d01p,1d12p,1d25p,1d5pp,1d01n,1d12n,1d2pn',
-    #  2d01p,2d12p,2d25p,2d5pp,2d01n,2d12n,2d2pn',
-    #  5d01p,5d12p,5d25p,5d5pp,5d01n,5d12n,5d2pn',]})
-    '''
+    # map to the arguments of sinaMaster.commitToday()
+    return {
+        'symbol': SYMBOL,
+        'login': MAPPED_USER,
+        'asofYYMMDD': todayYYMMDD,
+        'fnSnapshot': snapshoth5fn[dirNameLen:], 
+        'fnJsons': [x[dirNameLen:] for x in cachedJsons],
+        'fnTcsv': fnTcsv[dirNameLen:],
+        'lastDays': [[x.asof.strftime('%Y%m%d'), x.open, x.high, x.low, x.close, x.volume] for x in lastDays]
+    }
 
 ####################################
 if __name__ == '__main__':
-    h5, cached = downloadToday('SZ000002')
-    print('%s, %s' % (h5, cached))
+    downloadToday('SZ000002')

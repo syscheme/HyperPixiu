@@ -17,6 +17,9 @@ PRICE_DISPLAY_ROUND_DECIMALS = 3
 
 BASE_LOG10x2 = math.log(10) *2
 
+def chopMarketEVStr(eventType):
+    return eventType[len(MARKETDATE_EVENT_PREFIX):]
+
 def floatNormalize(v):
     if v <0: return 0.0
     return v if v<1.0 else 1.0
@@ -39,6 +42,7 @@ def floatNormalize_M1X5(var, base=1.0):
 
 NORMALIZE_ID        = 'D%sM1X5' % EXPORT_FLOATS_DIMS
 FUNC_floatNormalize = floatNormalize_M1X5
+TAG_SNAPSHORT       = "SNS"
 
 # Market相关events
 EVENT_TICK          = MARKETDATE_EVENT_PREFIX + 'Tick'                   # TICK行情事件，可后接具体的vtSymbol

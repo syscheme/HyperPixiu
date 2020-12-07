@@ -11,11 +11,12 @@ from crawler.crawlSina import *
 import h5tar
 
 from datetime import datetime, timedelta
+from time import sleep
 import os
 import fnmatch
 
 def defaultNextYield(retryNo) :
-    return MIN(10.0* int(1+ retryNo), 120.0) if retryNo >0 else -1
+    return min(10.0* int(1+ retryNo), 120.0) if retryNo >0 else 0.1
 
 ########################################################################
 class SinaMux(hist.PlaybackMux) :
@@ -237,7 +238,7 @@ class SinaMux(hist.PlaybackMux) :
             -rw-rw-rw- root/root     20590 2020-09-12 16:26 SZ002588_MF1m20200817.json
             '''
             basename = os.path.basename(fn)
-            if not fnmatch.fnmatch(basename, 'S[HZ][0-9]*_%s*.json' % evtype[len(MARKETDATE_EVENT_PREFIX):]):
+            if not fnmatch.fnmatch(basename, 'S[HZ][0-9]*_%s*.json' % chopMarketEVStr(evtype)):
                 continue
             
             tokens = basename.split('.')[0].split('_')
@@ -265,7 +266,7 @@ class SinaMux(hist.PlaybackMux) :
 
         return subStrmsAdded
 
-    def loadOnline(self, evtype, symbol, nSampleLast =1, saveOfflineDir =None, nextYield=defaultNextYield): # return True if succ
+    def loadOnline(self, evtype, symbol, nSampleLast =1, saveAs=None, saveDir =None, nextYield=defaultNextYield): # return True if succ
 
         if not symbol or len(symbol) <=0 or not evtype in [EVENT_KLINE_1DAY, EVENT_KLINE_5MIN, EVENT_MONEYFLOW_1DAY, EVENT_MONEYFLOW_1MIN] :
             self.debug('%s of %s does not support online query as source' % (evtype, symbol))
@@ -283,8 +284,10 @@ class SinaMux(hist.PlaybackMux) :
 
         self.debug('taking online query as source of %s/%s of %ddays' % (evtype, symbol, days))
         httperr, dataseq = 500, []
-        saveYYMMDD = (datetime.now() - timedelta(hours=16)).strftime('%Y%m%d') # 16hr fit to the latest date
-        saveFilename = os.path.join(saveOfflineDir, '%s_%s%s.json' %(symbol, evtype[len(MARKETDATE_EVENT_PREFIX):], saveYYMMDD)) if saveOfflineDir else None
+        saveFilename = saveAs
+        if (not saveFilename or len(saveFilename) <=0) and saveDir and len(saveDir) >0:
+            saveYYMMDD = (datetime.now() - timedelta(hours=15, minutes=30)).strftime('%Y%m%d') # 16hr fit to the latest date
+            saveFilename = os.path.join(saveDir, '%s_%s%s.json' %(symbol, chopMarketEVStr(evtype), saveYYMMDD)) if saveDir else None
 
         for retryNo in range(10) :
             if evtype == EVENT_KLINE_1DAY :
@@ -300,7 +303,7 @@ class SinaMux(hist.PlaybackMux) :
                 self.__cachedFiles.append(saveFilename)
                 break
 
-            if 456 == httperr:
+            if httperr in [408, 456]:
                 secYield = nextYield(retryNo)
                 self.error("load() query(%s:%s) failed, err(%s) len(%d), yield %ssec" %(symbol, evtype, httperr, len(dataseq), secYield))
                 if secYield >0:
@@ -356,7 +359,7 @@ class SinaMux(hist.PlaybackMux) :
         dtStart, dtEnd = self.datetimeRange
 
         if not mfn or len(mfn) <=0:
-            evtag = evtype[len(MARKETDATE_EVENT_PREFIX):]
+            evtag = chopMarketEVStr(evtype)
 
             memberfiles=[]
             try:
@@ -637,3 +640,40 @@ class SinaSwingScanner(ShortSwingScanner):
             return False
 
         return True
+
+
+########################################################################
+# utility funcs
+def listAllSymbols(prog, maxRetryAt456=20):
+
+    lstSH, lstSZ = [], []
+    md = SinaCrawler(prog, None)
+
+    httperr, retryNo =408, 0
+    for i in range(maxRetryAt456):
+        httperr, lstSH = md.GET_AllSymbols('SH')
+        if 2 == int(httperr/100): break
+
+        prog.warn('SH-resp(%d) len=%d' %(httperr, len(lstSH)))
+        if httperr in [408, 456]:
+            retryNo += 1
+            sleep(defaultNextYield(retryNo))
+            continue
+
+    prog.info('SH-resp(%d) len=%d' %(httperr, len(lstSH)))
+    if len(lstSH) <=0:
+        return lstSH, lstSZ
+
+    httperr, retryNo =408, 1
+    for i in range(maxRetryAt456):
+        httperr, lstSZ = md.GET_AllSymbols('SZ')
+        if 2 == int(httperr/100): break
+
+        prog.warn('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
+        if httperr in [408, 456]:
+            retryNo += 1
+            sleep(defaultNextYield(retryNo))
+            continue
+
+    prog.info('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
+    return lstSH, lstSZ

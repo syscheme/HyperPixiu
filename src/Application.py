@@ -1191,14 +1191,14 @@ class Program(object):
 
     def setLogLevel(self, level):
         '''设置日志级别'''
+        if isinstance(level, str):
+            level = STR2LEVEL[level.lower()]
+        self.__loglevel = level
+
         if self.__logger ==None:
             return
         
-        if isinstance(level, str):
-            level = STR2LEVEL[level.lower()]
-
         self.__logger.setLevel(level)
-        self.__loglevel = level
     
     @abstractmethod
     def log(self, level, msg):

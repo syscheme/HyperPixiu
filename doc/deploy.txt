@@ -81,3 +81,35 @@ cd ${WKSPACE}/HyperPixiu/
    91  cat conf/DQNTrainer_U16TfGpu.json 
    92  top
    93  history
+
+
+
+
+on master node
+mkdir -p /mnt/data/redis
+echo "" > /mnt/data/redis/users.acl
+echo "aclfile /data/users.acl" > /mnt/data/redis/redis.conf
+echo "dir /data" >> /mnt/data/redis/redis.conf
+docker run --name=redis6 -d --restart=always -p 15379:6379 -v /mnt/data/redis:/data redis redis-server /data/redis.conf
+redis-cli -p 15379
+127.0.0.1:15379> config set requirepass <passwd>
+127.0.0.1:15379> ACL SETUSER hpxwkr +set
+127.0.0.1:15379> ACL SETUSER hpxwkr +get
+127.0.0.1:15379> ACL SETUSER hpxwkr +@pubsub
+127.0.0.1:15379> ACL SETUSER hpxwkr on >hpxwkr
+127.0.0.1:15379> ACL save
+
+https://hub.docker.com/_/celery
+start celery worker via docker
+DOCKER_HOST_IP=$(ip address show dev docker0 |grep -o 'inet [0-9\.]*' |cut -d ' ' -f2)
+
+# no need to specify the out-side port 15379, container celery is able to connect to 6379 of container redis6
+CELERY_COMMON_OPT=--link redis6:redis -e CELERY_BROKER_URL=redis://redis -v /home/wkspaces/hpx_template:/hpx_template -d celery
+docker run ${CELERY_COMMON_OPT} --name beat "cd /hpx_template/src; celery dapps.sinaMaster beat -l INFO"
+docker run ${CELERY_COMMON_OPT} --name beat "cd /hpx_template/src; celery dapps.sinaMaster worker -l INFO"
+
+the result would be like
+[root@tc2 hpx_template]$ cat /mnt/data/redis/users.acl 
+user ahs on #ca8280a415746b39200ea7a5e7e6388c4a3ddd4414901542cdc9a1830f02750e ~* +@all
+user default on #7fed46305d7a75700bbce9186f838ada36c3876d1ce3078dcbb057e35e336e48 ~* +@all -@admin
+user hpxwkr on #7fed46305d7a75700bbce9186f838ada36c3876d1ce3078dcbb057e35e336e48 ~* -@all +@pubsub +set +get

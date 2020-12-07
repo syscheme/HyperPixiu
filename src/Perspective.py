@@ -249,14 +249,14 @@ class Perspective(MarketData):
 
     @property
     def desc(self) :
-        str = '%s>' % self.focus[len(MARKETDATE_EVENT_PREFIX):]
+        str = '%s>' % chopMarketEVStr(self.focus)
         stack = self._stacks[self.focus]
         if stack.size >0:
             str += '%s ' % stack.top.desc
         else: str += 'NIL '
 
         for i in self.eventTypes :
-            str += '%sX%d/%d,' % (i[len(MARKETDATE_EVENT_PREFIX):], self._stacks[i].size, self._stacks[i].evictSize)
+            str += '%sX%d/%d,' % (chopMarketEVStr(i), self._stacks[i].size, self._stacks[i].evictSize)
         return str
 
     @property

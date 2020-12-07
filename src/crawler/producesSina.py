@@ -11,11 +11,12 @@ from crawler.crawlSina import *
 import h5tar
 
 from datetime import datetime, timedelta
+from time import sleep
 import os
 import fnmatch
 
 def defaultNextYield(retryNo) :
-    return MIN(10.0* int(1+ retryNo), 120.0) if retryNo >0 else -1
+    return min(10.0* int(1+ retryNo), 120.0) if retryNo >0 else -1
 
 ########################################################################
 class SinaMux(hist.PlaybackMux) :
@@ -302,7 +303,7 @@ class SinaMux(hist.PlaybackMux) :
                 self.__cachedFiles.append(saveFilename)
                 break
 
-            if 456 == httperr:
+            if httperr in [408, 456]:
                 secYield = nextYield(retryNo)
                 self.error("load() query(%s:%s) failed, err(%s) len(%d), yield %ssec" %(symbol, evtype, httperr, len(dataseq), secYield))
                 if secYield >0:
@@ -639,3 +640,40 @@ class SinaSwingScanner(ShortSwingScanner):
             return False
 
         return True
+
+
+########################################################################
+# utility funcs
+def listAllSymbols(prog, maxRetryAt456=20):
+
+    lstSH, lstSZ = [], []
+    md = SinaCrawler(prog, None)
+
+    httperr, retryNo =408, 0
+    for i in range(maxRetryAt456):
+        httperr, lstSH = md.GET_AllSymbols('SH')
+        if 2 == int(httperr/100): break
+
+        prog.warn('SH-resp(%d) len=%d' %(httperr, len(lstSH)))
+        if httperr in [408, 456]:
+            retryNo += 1
+            sleep(defaultNextYield(retryNo))
+            continue
+
+    prog.info('SH-resp(%d) len=%d' %(httperr, len(lstSH)))
+    if len(lstSH) <=0:
+        return lstSH, lstSZ
+
+    httperr, retryNo =408, 1
+    for i in range(maxRetryAt456):
+        httperr, lstSZ = md.GET_AllSymbols('SZ')
+        if 2 == int(httperr/100): break
+
+        prog.warn('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
+        if httperr in [408, 456]:
+            retryNo += 1
+            sleep(defaultNextYield(retryNo))
+            continue
+
+    prog.info('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
+    return lstSH, lstSZ

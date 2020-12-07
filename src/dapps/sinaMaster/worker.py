@@ -27,23 +27,16 @@ worker, thePROG = createWorkerProgram(APP_NAME, taskMods + taskCrawler)
 
 worker.conf.beat_schedule = {
     "checkResult-every-5min":{
-        "task":"dapps.sinaMaster.schOn_Every5min",
-        "schedule":crontab(minute="*/5"),
+        "task":"dapps.sinaMaster.Archive.schOn_Every5min",
+        "schedule":crontab(minute="*/1"),
         "args":(),
         # "options":{'queue':'hipri'}
     },
 
-    "add-every-minute":{
-        "task":"dapps.sinaMaster.add",
-        "schedule":crontab(minute="*/1"),
-        "args":(3, 4),
-        # "options":{'queue':'hipri'}
-    },
-
     "every_TradeDayClose":{
-        "task":"dapps.sinaMaster.schOn_TradeDayClose",
-        "schedule":crontab(minute="*/3"),
-    #    'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
+        "task":"dapps.sinaMaster.Archive.schOn_TradeDayClose",
+    #    "schedule":crontab(minute="*/5"),
+        'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
         "args":(),
         # "options":{'queue':'hipri'}
     },
@@ -53,6 +46,12 @@ worker.conf.beat_schedule = {
     #     'task': 'listSymbols',
     #     'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
     #     # 'args': (16, 16),
+    # },
+    # "add-every-minute":{
+    #     "task":"dapps.sinaMaster.add",
+    #     "schedule":crontab(minute="*/1"),
+    #     "args":(3, 4),
+    #     # "options":{'queue':'hipri'}
     # },
 }
 

@@ -16,7 +16,6 @@ import dapps.sinaCrawler.tasks_Dayend as CTDayend
 
 import sys, os, re, glob
 from datetime import datetime, timedelta
-from time import sleep
 
 SYMBOL_LIST_HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,open,high,low,close,volume"
 EOL = "\r\n"
@@ -61,7 +60,6 @@ def activityOf(item):
         turnover(SZ002797) =11.110*168994316/3891166.4     =482.51/万    vs turnoverratio=4.8251%
         turnover(SZ300008) =8.690*63820266/645690.804517   =858.92/万    vs turnoverratio=8.58922%
     '''
-
     return ret
 
 def __writeCsv(f, sybmolLst) :
@@ -93,7 +91,10 @@ def listAllSymbols(self):
         pass
 
     if len(lstSHZ) <=2000:
-        lstSH, lstSZ = __listAllSymbols()
+        lstSH, lstSZ = prod.listAllSymbols(thePROG)
+        if len(lstSH) <= 0 or len(lstSZ) <= 0:
+            raise RetryableError(456, "empty SH[%s] or empty SH[%s] fetched" %(len(lstSH), len(lstSZ)))
+
         lstSHZ = {} # temporarily via dict
         for i in lstSH + lstSZ:
             lstSHZ[i['symbol']] =i
@@ -262,58 +263,6 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     except Exception as ex:
         thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
 
-def __listAllSymbols():
-    result ={}
-    EOL ="\n"
-
-    md = sina.SinaCrawler(thePROG, None)
-
-    httperr, retryNo =100, 0
-    for i in range(50):
-        httperr, lstSH = md.GET_AllSymbols('SH')
-        if 2 == int(httperr/100): break
-
-        thePROG.warn('SH-resp(%d) len=%d' %(httperr, len(lstSH)))
-        if 456 == httperr :
-            retryNo += 1
-            sleep(prod.defaultNextYield(retryNo))
-            continue
-
-    if len(lstSH) <=0:
-        raise RetryableError(httperr, "no SH fetched")
-    thePROG.info('SH-resp(%d) len=%d' %(httperr, len(lstSH)))
-
-    for i in range(50):
-        httperr, lstSZ = md.GET_AllSymbols('SZ')
-        if 2 == int(httperr/100): break
-
-        thePROG.warn('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
-        if 456 == httperr :
-            retryNo += 1
-            sleep(prod.defaultNextYield(retryNo))
-            continue
-
-    if len(lstSZ) <=0:
-        raise RetryableError(httperr, "no SZ fetched")
-    thePROG.info('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
-    return lstSH, lstSZ
-
-'''
-@worker.on_after_configure.connect
-def setup_periodic_tasks(sender, **kwargs):
-    # Calls test('hello') every 10 seconds.
-    sender.add_periodic_task(10.0, test.s('hello'), name='add every 10')
- 
-    # Calls test('world') every 30 seconds
-    sender.add_periodic_task(30.0, test.s('world'), expires=10)
- 
-    # Executes every Monday morning at 7:30 a.m.
-    sender.add_periodic_task(
-        crontab(hour=7, minute=30, day_of_week=1),
-        test.s('Happy Mondays!'),
-    )
-'''
- 
 @shared_task(bind=True, base=Retryable)
 def topActives(self, topNum = 500):
     lstTops = listAllSymbols() [:topNum]

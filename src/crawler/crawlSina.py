@@ -320,7 +320,7 @@ class SinaCrawler(MarketCrawler):
             httperr, result = self.GET_RecentKLines(s, minutes, lines, urlProxy)
             if 200 != httperr:
                 self.error("step_pollKline(%s:%s) failed, err(%s)" %(s, evType, httperr))
-                if 456 == httperr:
+                if httperr in [408, 456]:
                     self.__urlProxy = None # self.__urlProxy = dsg.nextProxy()
                     self.__scheduleNext('all', 'KL_yield456', self._secYield456) # self.__scheduleNext('all', 'KL', self._secYield456)
                     self.warn("step_pollKline(%s:%s) [%d/%d]sym SINA complained err(%s), yielding %ssec, nextProxy[%s]" %(s, evType, self.__idxKL, cSyms, httperr, self._secYield456, self.__urlProxy))
@@ -421,7 +421,7 @@ class SinaCrawler(MarketCrawler):
             httperr, result = self.GET_MoneyFlow(s, lines, EVENT_MONEYFLOW_1MIN== evType)
             if 200 != httperr:
                 self.error("step_pollMoneyflow(%s:%s) failed, err(%s)" %(s, evType, httperr))
-                if 456 == httperr:
+                if httperr in [408, 456]:
                     self.__urlProxy = dsg.nextProxy()
                     self.__scheduleNext('all', 'MF_yield456', self._secYield456) # self.__scheduleNext('all', 'MF', self._secYield456)
                     self.warn("step_pollMoneyflow(%s:%s) [%d/%d]sym SINA complained err(%s), yielding %ssec, nextProxy[%s]" %(s, evType, self.__idxKL, cSyms, httperr, self._secYield456, self.__urlProxy))
@@ -1007,7 +1007,7 @@ def listSymbols(program, mdSina):
         urlProxy = None # urlProxy= dsg.nextProxy() if thruPrxy else None
         httperr, lstSH = md.GET_AllSymbols('SH', urlProxy)
         print('SH-resp(%d) thru[%s] len=%d' %(httperr, urlProxy, len(lstSH)))
-        if 456 == httperr and urlProxy is None: sleep(30)
+        if httperr in [408, 456] and urlProxy is None: sleep(30)
 
     if 2 == int(httperr/100): dsg.stampGoodProxy()
 
@@ -1016,7 +1016,7 @@ def listSymbols(program, mdSina):
         urlProxy = None # urlProxy= dsg.nextProxy() if thruPrxy else None
         httperr, lstSZ = md.GET_AllSymbols('SZ', urlProxy)
         print('SZ-resp(%d) thru[%s] len=%d' %(httperr, urlProxy, len(lstSZ)))
-        if 456 == httperr and urlProxy is None: sleep(30)
+        if httperr in [408, 456] and urlProxy is None: sleep(30)
 
     for i in lstSH + lstSZ:
         result[i['symbol']] =i

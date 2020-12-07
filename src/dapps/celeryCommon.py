@@ -46,6 +46,8 @@ def createWorkerProgram(appName, taskModules = []):
 
     worker.conf.update(
             result_expires=3600,
+            timezone = 'Asia/Shanghai',
+            enable_utc=False,
             )
 
     global _thePROG

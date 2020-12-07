@@ -230,12 +230,12 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
 
             symbol = ev.data.symbol
             if ev.data.datetime <= SINA_TODAY:
+                if EVENT_MONEYFLOW_1MIN == ev.type:
+                    mf1mTo5m.pushMF1m(ev.data)
+
                 ev = psptMarketState.updateByEvent(ev)
                 if not ev or symbol != SYMBOL :
                     continue
-
-                if EVENT_MONEYFLOW_1MIN == ev.type:
-                    mf1mTo5m.pushMF1m(ev.data)
 
                 stamp    = psptMarketState.getAsOf(symbol)
                 price, _ = psptMarketState.latestPrice(symbol)

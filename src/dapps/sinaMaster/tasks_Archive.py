@@ -304,8 +304,8 @@ def schOn_TradeDayClose(self):
     global __asyncResult_downloadToday
     __asyncResult_downloadToday = {}
 
-    # for i in lstSHZ[:5]: # should be the complete lstSHZ
-    for i in lstSHZ[:5]: # should be the complete lstSHZ
+    # del lstSHZ[5:] # should be the complete lstSHZ
+    for i in lstSHZ : # the full lstSHZ
         symbol = i['symbol']
         if symbol in __asyncResult_downloadToday.keys():
             continue

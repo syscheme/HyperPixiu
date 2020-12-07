@@ -4,7 +4,7 @@ CMD=${0##*/}
 SRC_DIR=$(realpath `dirname $0`)
 SINA_TODAY=$(date +%Y%m%d)
 DATALEN=300
-WGET="echo wget --user-agent='Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)' "
+WGET="wget --user-agent='Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)' "
 
 TAR_EXT="tar.bz2"
 TAR_CMD="tar cfvj "

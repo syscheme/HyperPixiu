@@ -79,7 +79,7 @@ def untar_utf8(fn_h5tar, fn_members =None) :
                     os.makedirs(dir)
                 except FileExistsError:  pass
             
-            compressed = g[m].value.tobytes()
+            compressed =g[m][()].tobytes() # compressed = g[m].value.tobytes()
             all_lines = bz2.decompress(compressed).decode('utf8')
 
             with open(ofn, 'w') as mf:
@@ -110,8 +110,8 @@ def read_utf8(fn_h5tar, fn_member) :
         if not m in g.keys():
             print('member[%s] not found' % m)
             return ''
-        
-        compressed = g[m].value.tobytes()
+
+        compressed =g[m][()].tobytes() # compressed = g[m].value.tobytes()
         all_lines = bz2.decompress(compressed).decode('utf8')
         return all_lines
 

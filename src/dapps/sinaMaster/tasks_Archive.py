@@ -22,6 +22,14 @@ EOL = "\r\n"
 SINA_USERS_ROOT = '/mnt/data/hpwkspace/users'
 MAPPED_USER, MAPPED_HOME = getMappedAs()
 
+IDXs_to_COLLECT=[ # http://vip.stock.finance.sina.com.cn/mkt/#dpzs
+'SH000001',	# 上证指数
+'SZ399001',	# 深证成指
+'SZ399005',	# 中小板指
+'SZ399006',	# 创业板指
+'SH000011',	# 基金指数
+]
+
 ETFs_to_COLLECT=[   # asof 2020-12-08 top actives: http://vip.stock.finance.sina.com.cn/fund_center/index.html#jjhqetf
 'SH510300','SH512880','SH510050','SH510900','SH518880','SZ159919','SH510500','SZ159934','SZ159949','SH512000',
 'SH511660','SZ159920','SZ159995','SH588000','SH510330','SZ159915','SH515030','SH512760','SH512800','SZ159937',
@@ -313,7 +321,7 @@ def schOn_Every5min(self):
 def schOn_TradeDayClose(self):
     global __asyncResult_downloadToday
     __asyncResult_downloadToday = {}
-    for s in ETFs_to_COLLECT:
+    for s in IDXs_to_COLLECT + ETFs_to_COLLECT:
         if s in __asyncResult_downloadToday.keys():
             continue
 

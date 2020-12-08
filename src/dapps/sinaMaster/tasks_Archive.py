@@ -22,6 +22,22 @@ EOL = "\r\n"
 SINA_USERS_ROOT = '/mnt/data/hpwkspace/users'
 MAPPED_USER, MAPPED_HOME = getMappedAs()
 
+ETFs_to_COLLECT=[   # asof 2020-12-08 top actives: http://vip.stock.finance.sina.com.cn/fund_center/index.html#jjhqetf
+'SH510300','SH512880','SH510050','SH510900','SH518880','SZ159919','SH510500','SZ159934','SZ159949','SH512000',
+'SH511660','SZ159920','SZ159995','SH588000','SH510330','SZ159915','SH515030','SH512760','SH512800','SZ159937',
+'SH512660','SH512480','SH512690','SH515700','SH515050','SH515380','SH518800','SH512400','SZ159922','SH588080',
+'SH512500','SZ159001','SH588050','SZ159003','SH510310','SH515000','SH513050','SH588090','SZ159992','SH510880',
+'SH513090','SH512290','SZ159928','SZ159901','SZ159806','SH511260','SH512010','SH515220','SZ159952','SH511810',
+'SH512710','SH510850','SH510510','SH512900','SZ159966','SH512170','SZ159994','SH511010','SH510180','SZ159996',
+'SZ159801','SZ159967','SH510230','SH515210','SZ159993','SH515880','SZ159997','SH513100','SZ159807','SH512070',
+'SZ159941','SH515330','SH511380','SH515260','SH512200','SH513500','SZ159905','SH512720','SZ159820','SH512980',
+'SH515650','SH515800','SH515560','SH511690','SH515770','SH510760','SH515750','SZ159819','SZ159948','SH512100',
+'SH512670','SZ159813','SH512700','SZ159977','SH510710','SH510630','SZ159939','SH510580','SH510350','SZ159968',
+'SZ159902','SH512680','SH512910','SZ159998','SH513300','SZ159816','SH512090','SH510100','SZ159972','SH512160',
+'SZ159980','SH515530','SH512580','SH515630','SZ159938','SZ159811','SZ159985','SH515390','SZ159929','SH515580',
+'SH515070','SH510800','SH510600','SH511180','SH515980','SZ159808','SH512510','SH510390','SH510150','SH512730'
+]
+
 @shared_task
 def add(x, y):
     return x + y
@@ -295,14 +311,20 @@ def schOn_Every5min(self):
 
 @shared_task(bind=True, base=Retryable)
 def schOn_TradeDayClose(self):
-    lstSHZ = listAllSymbols()
+    global __asyncResult_downloadToday
+    __asyncResult_downloadToday = {}
+    for s in ETFs_to_COLLECT:
+        if s in __asyncResult_downloadToday.keys():
+            continue
 
+        thePROG.debug('schOn_TradeDayClose() adding subtask to download ETF[%s]' % s)
+        wflow = CTDayend.downloadToday.s(s, excludeMoneyFlow=True) | commitToday.s()
+        __asyncResult_downloadToday[s] = wflow()
+
+    lstSHZ = listAllSymbols()
     thePROG.info('schOn_TradeDayClose() listAllSymbols got %d symbols' %len(lstSHZ))
     if len(lstSHZ) <=2000:
         raise RetryableError(401, 'incompleted symbol list')
-
-    global __asyncResult_downloadToday
-    __asyncResult_downloadToday = {}
 
     # del lstSHZ[5:] # should be the complete lstSHZ
     for i in lstSHZ : # the full lstSHZ
@@ -319,10 +341,10 @@ def schOn_TradeDayClose(self):
 if __name__ == '__main__':
     thePROG.setLogLevel('debug')
 
-    # schOn_TradeDayClose()
-    # for i in range(20):
-    #     schOn_Every5min()
-    #     sleep(10)
+    schOn_TradeDayClose()
+    for i in range(20):
+        schOn_Every5min()
+        sleep(10)
 
     # nTop = 1000
     # lstSHZ = topActives(nTop)
@@ -330,6 +352,7 @@ if __name__ == '__main__':
     #     __writeCsv(f, lstSHZ)
     # print(lstSHZ)
 
+    '''
     symbol, asofYYMMDD = 'SZ002670', '20201204'
     
     login = 'root@tc2.syscheme.com'
@@ -352,8 +375,10 @@ if __name__ == '__main__':
             ['20201130', 12.17, 12.72, 12.02, 12.38, 166906351.0]
             ]
     }
-    
+
     commitToday(today)
+    '''
+    
 
 ''' A test
 import dapps.sinaCrawler.tasks_Dayend as ct

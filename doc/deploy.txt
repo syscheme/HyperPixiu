@@ -86,6 +86,7 @@ cd ${WKSPACE}/HyperPixiu/
 
 
 on master node
+=================
 mkdir -p /mnt/data/redis
 echo "" > /mnt/data/redis/users.acl
 echo "aclfile /data/users.acl" > /mnt/data/redis/redis.conf
@@ -98,6 +99,14 @@ redis-cli -p 15379
 127.0.0.1:15379> ACL SETUSER hpxwkr +@pubsub
 127.0.0.1:15379> ACL SETUSER hpxwkr on >hpxwkr
 127.0.0.1:15379> ACL save
+
+non-docker-mode to start celery:
+ 1) start the master with concurrency=1: 
+      cd ${HPXPROJ}; echo "rm -rf /tmp/wkr.sinaMaster.log; src/dapps/startWorker.sh sinaMaster -l DEBUG -c 1 -Q master,celery" |at now
+ 2) optional start a crawler with concurrency=1:
+      cd ${HPXPROJ}; echo "rm -rf /tmp/wkr.sinaCrawler.log; src/dapps/startWorker.sh sinaCrawler -l DEBUG -c 1 -Q crawler,celery" |at now
+ 2) start a beat:
+      cd ${HPXPROJ}/src; echo "celery -A dapps.sinaMaster beat -l DEBUG --logfile /tmp/beat.log" |at now
 
 https://hub.docker.com/_/celery
 start celery worker via docker
@@ -113,3 +122,12 @@ the result would be like
 user ahs on #ca8280a415746b39200ea7a5e7e6388c4a3ddd4414901542cdc9a1830f02750e ~* +@all
 user default on #7fed46305d7a75700bbce9186f838ada36c3876d1ce3078dcbb057e35e336e48 ~* +@all -@admin
 user hpxwkr on #7fed46305d7a75700bbce9186f838ada36c3876d1ce3078dcbb057e35e336e48 ~* -@all +@pubsub +set +get
+
+
+on worker node
+=================
+mount fs by taking sync_write but allow read-cache
+sshfs -o sshfs_sync -p <sshport> <user>@<master-host>:/mnt/data/hpwkspaces/users/<user> /mnt/s
+non-docker-mode to start celery:
+ 1) start a crawler with default concurrency= number of CPUs:
+      cd ${HPXPROJ}; echo "rm -rf /tmp/wkr.sinaCrawler.log; src/dapps/startWorker.sh sinaCrawler -l DEBUG -Q crawler,celery" |at now

@@ -38,24 +38,30 @@ def populateTaskModules(dirOfParent, moduleParent =''):
 
 #----------------------------------------------------------------------
 _thePROG = None
+_theWorker = None
 def createWorkerProgram(appName, taskModules = []):
-    worker = Worker(appName,
-        broker='redis://:hpxwkr@tc2.syscheme.com:15379/0',
-        backend='redis://:hpxwkr@tc2.syscheme.com:15379/1',
-        include=taskModules)
+    global _theWorker, _thePROG
+    if not _theWorker:
+        _theWorker = Worker(appName,
+            broker='redis://:hpxwkr@tc2.syscheme.com:15379/0',
+            backend='redis://:hpxwkr@tc2.syscheme.com:15379/1',
+            include=taskModules)
 
-    worker.conf.update(
-            result_expires=3600,
-            timezone = 'Asia/Shanghai',
-            enable_utc=False,
-            )
+        _theWorker.conf.update(
+                result_expires=3600,
+                timezone = 'Asia/Shanghai',
+                enable_utc=False,
+                task_routes= {
+                    'dapps.sinaCrawler.*': {'queue': 'crawler'},
+                    'dapps.sinaMaster.*': {'queue': 'master'},
+                    },
+                )
 
-    global _thePROG
     if not _thePROG:
         _thePROG = Program(name=appName, argvs=[])
         _thePROG._heartbeatInterval =-1
 
-    return worker, _thePROG
+    return _theWorker, _thePROG
 
 #----------------------------------------------------------------------
 class RetryableError(Exception):

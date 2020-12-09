@@ -131,3 +131,16 @@ sshfs -o sshfs_sync -p <sshport> <user>@<master-host>:/mnt/data/hpwkspaces/users
 non-docker-mode to start celery:
  1) start a crawler with default concurrency= number of CPUs:
       cd ${HPXPROJ}; echo "rm -rf /tmp/wkr.sinaCrawler.log; src/dapps/startWorker.sh sinaCrawler -l DEBUG -Q crawler,celery" |at now
+
+ or start by script:
+     root@~# cat ~/tasks/runWorker.sh
+     #!/bin/bash
+     WORKER=$(cat /mnt/s/.ssh/id_rsa.pub |cut -d ' ' -f3|cut -d '@' -f1)
+     
+     mkdir  ~/wkspaces; cd ~/wkspaces
+     ln -sf /mnt/s/hpx_publish .
+     ln -sf /mnt/w/archived .
+     rsync -auv --delete --exclude-from /mnt/w/hpx_template/dist/rsync_excl.txt /mnt/w/hpx_template .
+
+     cd hpx_template
+     echo "rm -rf /tmp/wkr.sinaCrawler.log; src/dapps/startWorker.sh sinaCrawler -l DEBUG -Q crawler,celery -n ${WORKER}@%h" |at now

@@ -210,6 +210,10 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     # archDir = '/tmp/arch_test' # test hardcode
     # pubDir = '/mnt/s/hpx_publish' # test hardcode
 
+    try:
+        os.mkdir(os.path.join(archDir, 'snapshots'))
+    except: pass
+    
     thePROG.debug('commitToday() archiving %s_%s dictArgs: %s from %s to %s' % (symbol, asofYYMMDD, str(dictArgs), pubDir, archDir))
 
     # step 1. zip the JSON files
@@ -237,7 +241,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
 
     # step 3. append the snapshots
     srcpath = os.path.join(pubDir, fnSnapshot)
-    destpath = os.path.join(archDir, 'SNS_%s.h5' % (symbol) )
+    destpath = os.path.join(archDir, 'snapshots', 'SNS_%s.h5' % (symbol) )
     gns = []
 
     lastDates = [ x[0] for x in lastDays] if lastDays and len(lastDays)>0 else []

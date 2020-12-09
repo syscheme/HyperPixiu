@@ -28,7 +28,7 @@ worker, thePROG = createWorkerProgram(APP_NAME, taskMods) #  + taskCrawler)
 worker.conf.beat_schedule = {
     "checkResult-every-5min":{
         "task":"dapps.sinaMaster.Archive.schOn_Every5min",
-        "schedule":crontab(minute="*/1"),
+        "schedule":crontab(minute="*/5"),
         "args":(),
         # "options":{'queue':'hipri'}
     },

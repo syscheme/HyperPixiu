@@ -273,7 +273,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
             break
         except Exception as ex:
             thePROG.logexception(ex)
-            raise ex
+            break # NOT sure why StopIteration not caught above but fell here # raise ex
 
     for i in range(2): rec.doAppStep() # to flush the recorder
 

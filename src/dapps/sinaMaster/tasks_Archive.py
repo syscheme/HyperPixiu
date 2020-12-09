@@ -312,7 +312,7 @@ def schOn_Every5min(self):
         cWorking += 1
         thePROG.debug('schOn_Every5min() downloadToday[%s]%s still working' %(k, v.task_id))
 
-    thePROG.info('schOn_Every5min() downloadToday has %d working and %d done' %(cWorking, len(todels)))
+    thePROG.info('schOn_Every5min() downloadToday has %d-working and %d-done tasks' %(cWorking, len(todels)))
     if len(todels) >0:
         thePROG.info('schOn_Every5min() clearing keys: %s' % ','.join(todels))
         for k in todels:

@@ -1109,11 +1109,13 @@ class PlaybackMux(Playback):
                         
                         # insert into self.__seqNextPB, earist ev.asof first
                         n =0
-                        for n in range(len(self.__seqNextPB)):
+                        while n < len(self.__seqNextPB): # DONOT use for-loop as n could not exceed: for n in range(len(self.__seqNextPB)):
                             npb = self.__seqNextPB[n]
                             nev =  self.__dictStrmPB[npb]
                             if ev.data.asof < nev.data.asof:
                                 break
+                            n += 1
+
                         self.__seqNextPB.insert(n, strm)
 
                     except StopIteration:

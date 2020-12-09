@@ -20,6 +20,10 @@ if not APP_NAME or len(APP_NAME) <=0:
     APP_NAME = os.path.abspath(os.path.dirname(__file__)).split('/')[-1]
 
 worker, thePROG = createWorkerProgram(APP_NAME, taskMods)
+worker.conf.update(
+    result_expires=7200, # extend the result of crawling to 2hr
+    }
+
 
 #----------------------------------------------------------------------
 if __name__ == '__main__':

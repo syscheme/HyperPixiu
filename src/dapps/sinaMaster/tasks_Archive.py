@@ -283,7 +283,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
                         thePROG.warn('commitToday() failed to determine grainRate for: %s' % k)
                     
         thePROG.info('commitToday() added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
-        # __rmfile(srcpath)
+        __rmfile(srcpath)
     except Exception as ex:
         thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
 

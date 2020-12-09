@@ -101,7 +101,7 @@ def __publishFiles(srcfiles) :
 
 
 # ===================================================
-@shared_task(bind=True, base=Retryable)
+@shared_task(bind=True, base=Retryable, default_retry_delay=10.0)
 def downloadToday(self, SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     global MAPPED_USER, MAPPED_HOME
     result = __downloadSymbol(SYMBOL, todayYYMMDD, excludeMoneyFlow)
@@ -132,7 +132,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     playback.setId('Dayend.%s' % SYMBOL)
     playback.setSymbols([SYMBOL])
 
-    nLastDays = 5
+    nLastDays = 5 +1
 
     # 1.a  KL1d and determine the date of n-open-days ago
     caldays = (CLOCK_TODAY - SINA_TODAY).days

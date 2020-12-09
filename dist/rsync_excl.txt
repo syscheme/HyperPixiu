@@ -24,5 +24,6 @@ __pycache__/
 *.BAK
 docker/*.zip
 docker/*.tar.*
+celerybeat-schedule
 
 

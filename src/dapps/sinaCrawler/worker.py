@@ -22,7 +22,7 @@ if not APP_NAME or len(APP_NAME) <=0:
 worker, thePROG = createWorkerProgram(APP_NAME, taskMods)
 worker.conf.update(
     result_expires=7200, # extend the result of crawling to 2hr
-    }
+    )
 
 
 #----------------------------------------------------------------------

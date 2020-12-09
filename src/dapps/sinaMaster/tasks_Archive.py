@@ -274,6 +274,7 @@ __asyncResult_downloadToday = {}
 def schOn_Every5min(self):
     global __asyncResult_downloadToday
     todels = []
+    cWorking =0
     for k, v in __asyncResult_downloadToday.items():
         if not v: 
             todels.append(k)
@@ -284,8 +285,10 @@ def schOn_Every5min(self):
             thePROG.info('schOn_Every5min() downloadToday[%s]%s done: succ[%s] and will clear' %(k, v.task_id, v.successful()))
             continue
 
-        thePROG.info('schOn_Every5min() downloadToday[%s]%s still working' %(k, v.task_id))
+        cWorking += 1
+        thePROG.debug('schOn_Every5min() downloadToday[%s]%s still working' %(k, v.task_id))
 
+    thePROG.info('schOn_Every5min() downloadToday has %d working and %d done' %(cWorking, len(todels)))
     if len(todels) >0:
         thePROG.info('schOn_Every5min() clearing keys: %s' % ','.join(todels))
         for k in todels:

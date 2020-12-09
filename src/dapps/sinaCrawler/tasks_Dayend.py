@@ -102,14 +102,14 @@ def __publishFiles(srcfiles) :
 
 # ===================================================
 @shared_task(bind=True, base=Retryable)
-def downloadToday(self, SYMBOL, todayYYMMDD =None):
+def downloadToday(self, SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     global MAPPED_USER, MAPPED_HOME
-    result = __downloadSymbol(SYMBOL)
+    result = __downloadSymbol(SYMBOL, todayYYMMDD, excludeMoneyFlow)
 
     print('%s' % result) # sample: {'symbol': 'SZ000002', 'date': '20201127', 'snapshot': 'SZ000002_sns.h5', 'cachedJsons': ['SZ000002_KL1d20201128.json', 'SZ000002_MF1d20201128.json', 'SZ000002_KL5m20201128.json', 'SZ000002_MF1m20201128.json'], 'tcsv': 'SZ000002_day20201127.tcsv'}
     return result
 
-def __downloadSymbol(SYMBOL, todayYYMMDD =None):
+def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
 
     CLOCK_TODAY= datetime.now().replace(hour=23, minute=59, second=59, microsecond=0)
     SINA_TODAY = CLOCK_TODAY.strftime('%Y-%m-%d') if not todayYYMMDD else todayYYMMDD
@@ -164,9 +164,10 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
     thePROG.info('loaded KL1d and determined %d-Tdays pirior to %s, %ddays: %s ~ %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), len(lastDays), startYYMMDD, todayYYMMDD))
     
     # 1.b  MF1d
-    httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1DAY), todayYYMMDD)))
-    if httperr in [408, 456] :
-        raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1DAY, SYMBOL, httperr))
+    if not excludeMoneyFlow:
+        httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1DAY), todayYYMMDD)))
+        if httperr in [408, 456] :
+            raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1DAY, SYMBOL, httperr))
 
     # 1.c  KL5m
     httperr, _, _ = playback.loadOnline(EVENT_KLINE_5MIN, SYMBOL, 0, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_KLINE_5MIN), todayYYMMDD)))
@@ -174,23 +175,24 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
         raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_KLINE_5MIN, SYMBOL, httperr))
 
     # 1.c  MF1m
-    httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1MIN, SYMBOL, 0, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1MIN), todayYYMMDD)))
-    if httperr in [408, 456] :
-        raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1MIN, SYMBOL, httperr))
+    if not excludeMoneyFlow:
+        httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1MIN, SYMBOL, 0, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1MIN), todayYYMMDD)))
+        if httperr in [408, 456] :
+            raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1MIN, SYMBOL, httperr))
 
-    for i in lastDays[1:]:
-        offline_mf1m = os.path.join(dirArchived, 'SinaMF1m_%s.h5t' % i.asof.strftime('%Y%m%d'))
-        try :
-            size = os.stat(offline_mf1m).st_size
-            if size <=0: continue
+        for i in lastDays[1:]:
+            offline_mf1m = os.path.join(dirArchived, 'SinaMF1m_%s.h5t' % i.asof.strftime('%Y%m%d'))
+            try :
+                size = os.stat(offline_mf1m).st_size
+                if size <=0: continue
 
-            # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
-            mfn, latestDay = memberfnInH5tar(offline_mf1m, SYMBOL)
-            playback.loadJsonH5t(EVENT_MONEYFLOW_1MIN, SYMBOL, offline_mf1m, mfn)
-        except FileNotFoundError as ex:
-            thePROG.warn('no offline file avail: %s' %offline_mf1m)
-        except Exception as ex:
-            thePROG.logexception(ex, offline_mf1m)
+                # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
+                mfn, latestDay = memberfnInH5tar(offline_mf1m, SYMBOL)
+                playback.loadJsonH5t(EVENT_MONEYFLOW_1MIN, SYMBOL, offline_mf1m, mfn)
+            except FileNotFoundError as ex:
+                thePROG.warn('no offline file avail: %s' %offline_mf1m)
+            except Exception as ex:
+                thePROG.logexception(ex, offline_mf1m)
 
     thePROG.info('inited mux with %d substreams' % (playback.size))
 
@@ -298,4 +300,5 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None):
 
 ####################################
 if __name__ == '__main__':
-    downloadToday('SZ000002')
+    # downloadToday('SH510300', excludeMoneyFlow=True)
+    downloadToday('SZ003011')

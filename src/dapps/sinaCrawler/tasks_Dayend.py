@@ -106,7 +106,8 @@ def downloadToday(self, SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     global MAPPED_USER, MAPPED_HOME
     result = __downloadSymbol(SYMBOL, todayYYMMDD, excludeMoneyFlow)
 
-    print('%s' % result) # sample: {'symbol': 'SZ000002', 'date': '20201127', 'snapshot': 'SZ000002_sns.h5', 'cachedJsons': ['SZ000002_KL1d20201128.json', 'SZ000002_MF1d20201128.json', 'SZ000002_KL5m20201128.json', 'SZ000002_MF1m20201128.json'], 'tcsv': 'SZ000002_day20201127.tcsv'}
+    thePROG.info('downloadToday() result: %s' % result) 
+    # sample: {'symbol': 'SZ000002', 'date': '20201127', 'snapshot': 'SZ000002_sns.h5', 'cachedJsons': ['SZ000002_KL1d20201128.json', 'SZ000002_MF1d20201128.json', 'SZ000002_KL5m20201128.json', 'SZ000002_MF1m20201128.json'], 'tcsv': 'SZ000002_day20201127.tcsv'}
     return result
 
 def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):

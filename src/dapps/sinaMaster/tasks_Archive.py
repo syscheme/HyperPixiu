@@ -213,7 +213,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     try:
         os.mkdir(os.path.join(archDir, 'snapshots'))
     except: pass
-    
+
     thePROG.debug('commitToday() archiving %s_%s dictArgs: %s from %s to %s' % (symbol, asofYYMMDD, str(dictArgs), pubDir, archDir))
 
     # step 1. zip the JSON files
@@ -224,13 +224,13 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
         evtShort = m.group(1)
 
         destpath = os.path.join(archDir, 'Sina%s_%s.h5t' % (evtShort, asofYYMMDD) )
-        if h5tar.tar_utf8(destpath, srcpath) :
+        if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
             thePROG.info('commitToday() archived %s into %s' %(srcpath, destpath))
             __rmfile(srcpath)
         else:
             thePROG.error('commitToday() failed to archived %s into %s' %(srcpath, destpath))
 
-    # step 1. zip the Tcsv file
+    # step 2. zip the Tcsv file
     srcpath = os.path.join(pubDir, fnTcsv)
     destpath = os.path.join(archDir, 'SinaMDay_%s.h5t' % asofYYMMDD )
     if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
@@ -247,7 +247,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     lastDates = [ x[0] for x in lastDays] if lastDays and len(lastDays)>0 else []
     try :
         with h5py.File(destpath, 'a') as h5w:
-            # step 1, copy the new SNS into the dest h5f
+            # step 3.1, copy the new SNS into the dest h5f
             with h5py.File(srcpath, 'r') as h5r:
                 for gn in h5r.keys():
                     if not symbol in gn: continue
@@ -265,7 +265,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
                     # m1, m2 = list(g.keys()), list(go.keys())
                     # a1, a2 = list(g.attrs.keys()), list(go.attrs.keys())
 
-            # step 2, determine the grainRate_X based on lastDays
+            # step 3.2, determine the grainRate_X based on lastDays
             if len(lastDates) >0:
                 start, end = '%sT000000' % lastDays[-1][0], '%sT235959' % lastDays[0][0]
                 for k in h5w.keys() :

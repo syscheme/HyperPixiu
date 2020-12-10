@@ -56,7 +56,8 @@ def memberfnInH5tar(fnH5tar, symbol):
     mfn = os.path.basename(fnH5tar)[:-4]
     idx = mfn.index('_')
     asofYYMMDD = mfn[1+idx:]
-    return '%s/%s_%s%s.json' % (mfn, symbol, mfn[4:idx], asofYYMMDD), asofYYMMDD
+    return '%s_%s%s.json' % (symbol, mfn[4:idx], asofYYMMDD), asofYYMMDD
+    # return '%s/%s_%s%s.json' % (mfn, symbol, mfn[4:idx], asofYYMMDD), asofYYMMDD
 
 def saveSnapshot(filename, h5group, snapshot, ohlc):
     compressed = bz2.compress(snapshot)
@@ -221,7 +222,8 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
         ev = Event(EVENT_MONEYFLOW_5MIN)
         ev.setData(mf5m)
         psptMarketState.updateByEvent(ev)
-        rec.pushRow(ev.type, ev.data)
+        if todayYYMMDD == mf5m.asof.strftime('%Y%m%d') :
+            rec.pushRow(ev.type, ev.data)
 
     mf1mTo5m = sina.SinaMF1mToXm(__onMF5mMerged, 5)
 
@@ -302,4 +304,4 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
 ####################################
 if __name__ == '__main__':
     # downloadToday('SH510300', excludeMoneyFlow=True)
-    downloadToday('SZ003011')
+    downloadToday('SZ002008')

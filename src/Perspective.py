@@ -1068,6 +1068,8 @@ class Formatter_base2dImg(Formatter):
             ]
 
 
+    '''
+    TODO def stkItemToFloats(stkItem, channels=6):
     def export6Cx(self, symbol, d4wished) :
         if symbol and symbol in self.mstate._dictPerspective.keys():
             res = self.mstate._dictPerspective[symbol].float6Cx()
@@ -1095,7 +1097,8 @@ class Formatter_base2dImg(Formatter):
             return ret
 
         raise ValueError('Perspective.export6Cx() unknown symbol[%s]' %symbol )
-
+    '''
+    
     def covertImg6CTo3C(self, img6C) :
         lenX, lenY = len(img6C[0]), len(img6C)
         img3C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX*2)] for y in range(lenY) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
@@ -1346,11 +1349,3 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
     #         return self._dictPerspective[symbol].engorged
         
     #     return [0.0]
-
-    def export6C(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
-
-        if symbol and symbol in self._dictPerspective.keys():
-            return self._dictPerspective[symbol].float6C(d4wished)
-
-        raise ValueError('Perspective.export6Cx() unknown symbol[%s]' %symbol )
-

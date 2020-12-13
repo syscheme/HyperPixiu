@@ -703,8 +703,8 @@ class Perspective(MarketData):
     # def engorged(self, symbol=None) :
     #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data
     #     '''
-    #     if symbol and symbol in self.__dictPerspective.keys():
-    #         return self.__dictPerspective[symbol].engorged
+    #     if symbol and symbol in self._dictPerspective.keys():
+    #         return self._dictPerspective[symbol].engorged
 
     @property
     def TickFloats(self) :
@@ -821,92 +821,92 @@ class PerspectiveState(MarketState):
     def __init__(self, exchange):
         """Constructor"""
         super(PerspectiveState, self).__init__(exchange)
-        self.__dictPerspective ={} # dict of symbol to Perspective
+        self._dictPerspective ={} # dict of symbol to Perspective
         # self.__dictMoneyflow ={} # dict of symbol to MoneyflowPerspective
 
     # -- impl of MarketState --------------------------------------------------------------
     def listOberserves(self) :
-        return [ s for s in self.__dictPerspective.keys()]
+        return [ s for s in self._dictPerspective.keys()]
 
     def addMonitor(self, symbol) :
         ''' add a symbol to monitor
         '''
-        if symbol and not symbol in self.__dictPerspective.keys() :
-            self.__dictPerspective[symbol] = Perspective(self.exchange, symbol)
+        if symbol and not symbol in self._dictPerspective.keys() :
+            self._dictPerspective[symbol] = Perspective(self.exchange, symbol)
 
     def latestPrice(self, symbol) :
         ''' query for latest price of the given symbol
         @return the price, datetimeAsOf
         '''
-        if not symbol in self.__dictPerspective.keys() :
+        if not symbol in self._dictPerspective.keys() :
             return 0.0, DT_EPOCH
         
-        return self.__dictPerspective[symbol].latestPrice
+        return self._dictPerspective[symbol].latestPrice
 
     def getAsOf(self, symbol=None, evType =None) :
         ''' 
         @return the datetime as of latest observing
         '''
-        if len(self.__dictPerspective) <=0: return DT_EPOCH
-        if symbol and symbol in self.__dictPerspective.keys():
-            psp = self.__dictPerspective[symbol]
+        if len(self._dictPerspective) <=0: return DT_EPOCH
+        if symbol and symbol in self._dictPerspective.keys():
+            psp = self._dictPerspective[symbol]
             if psp:
                 if evType and evType in psp._stacks.keys():
                     return psp.getAsOf(evType)
                 return psp.asof
 
-        return max([pofs.asof for pofs in self.__dictPerspective.values()])
+        return max([pofs.asof for pofs in self._dictPerspective.values()])
 
     def stampUpdatedOf(self, symbol=None, evType=None) :
-        if len(self.__dictPerspective) <=0: return DT_EPOCH
+        if len(self._dictPerspective) <=0: return DT_EPOCH
         if symbol and symbol in dict:
-            return self.__dictPerspective[symbol].stampUpdatedOf(evType)
+            return self._dictPerspective[symbol].stampUpdatedOf(evType)
 
-        return max([pofs.asof for pofs in self.__dictPerspective.values()])
+        return max([pofs.asof for pofs in self._dictPerspective.values()])
 
     def sizesOf(self, symbol, evType =None) :
         ''' 
         @return the size of specified symbol/evType
         '''
-        if symbol and symbol in self.__dictPerspective.keys():
-            return self.__dictPerspective[symbol].sizesOf(evType)
+        if symbol and symbol in self._dictPerspective.keys():
+            return self._dictPerspective[symbol].sizesOf(evType)
         return 0, 0
 
     def resize(self, symbol, evType, evictSize) :
-        if symbol and symbol in self.__dictPerspective.keys():
-            return self.__dictPerspective[symbol].resize(evType, evictSize)
+        if symbol and symbol in self._dictPerspective.keys():
+            return self._dictPerspective[symbol].resize(evType, evictSize)
 
     def descOf(self, symbol) :
         ''' 
         @return the desc of specified symbol
         '''
         strDesc=''
-        if symbol and symbol in self.__dictPerspective.keys():
-            strDesc += self.__dictPerspective[symbol].desc
+        if symbol and symbol in self._dictPerspective.keys():
+            strDesc += self._dictPerspective[symbol].desc
             return strDesc
         
-        for s, v in self.__dictPerspective.items() :
+        for s, v in self._dictPerspective.items() :
             strDesc += '%s{%s};' %(s, v.desc)
 
         return strDesc
         
     def dumps(self, symbol) :
-        if symbol and symbol in self.__dictPerspective.keys():
-            return self.__dictPerspective[symbol].dumps()
+        if symbol and symbol in self._dictPerspective.keys():
+            return self._dictPerspective[symbol].dumps()
         return b''
 
     def loads(self, symbol, pickleData) : # load the pikledata exported from dump()
-        if symbol and symbol in self.__dictPerspective.keys():
-            return self.__dictPerspective[symbol].loads(pickleData)
+        if symbol and symbol in self._dictPerspective.keys():
+            return self._dictPerspective[symbol].loads(pickleData)
 
     def dailyOHLC_sofar(self, symbol) :
         ''' 
         @return (date, open, high, low, close) as of today
         '''
-        if not symbol in self.__dictPerspective.keys():
+        if not symbol in self._dictPerspective.keys():
             return '', 0.0, 0.0, 0.0, 0.0, 0
 
-        kl = self.__dictPerspective[symbol].dailyOHLC_sofar
+        kl = self._dictPerspective[symbol].dailyOHLC_sofar
         return kl # .date, kl.open, kl.high, kl.low, kl.close
         
     def updateByEvent(self, ev) :
@@ -914,71 +914,147 @@ class PerspectiveState(MarketState):
         @event could be Event(Tick), Event(KLine), Event(Perspective)
         '''
         if EVENT_Perspective == ev.type :
-            self.__dictPerspective[ev.data.symbol] = ev.data
+            self._dictPerspective[ev.data.symbol] = ev.data
             return None
 
         s = ev.data.symbol
         # if ev.type in Perspective.EVENT_SEQ_KLTICK :
-        #     if not s in self.__dictPerspective.keys() :
-        #         self.__dictPerspective[s] = Perspective(self.exchange, s)
-        #     self.__dictPerspective[s].push(ev)
+        #     if not s in self._dictPerspective.keys() :
+        #         self._dictPerspective[s] = Perspective(self.exchange, s)
+        #     self._dictPerspective[s].push(ev)
 
         # if ev.type in MoneyflowPerspective.EVENT_SEQ_KLTICK :
         #     if not s in self.__dictMoneyflow.keys() :
         #         self.__dictMoneyflow[s] = MoneyflowPerspective(self.exchange, s)
         #     self.__dictMoneyflow[s].push(ev)
-        if not s in self.__dictPerspective.keys() :
-            self.__dictPerspective[s] = Perspective(self.exchange, s)
+        if not s in self._dictPerspective.keys() :
+            self._dictPerspective[s] = Perspective(self.exchange, s)
         
-        return self.__dictPerspective[s].push(ev)
+        return self._dictPerspective[s].push(ev)
 
-    # __dummy = None
-    # def exportF1548(self, symbol=None) :
-    #     '''@return an array_like data as float4C, maybe [] or numpy.array
-    #     '''
-    #     if symbol and symbol in self.__dictPerspective.keys():
-    #         return self.__dictPerspective[symbol]._S1548I4
 
-    #     if not PerspectiveState.__dummy:
-    #         PerspectiveState.__dummy = Perspective(self.exchange, 'Dummy')
+########################################################################
+class Formatter_F1548(Formatter):
+    '''
+    '''
+    def __init__(self, marketState =None):
+        '''Constructor'''
+        super(Formatter_F1548, self).__init__()
 
-    #     return [0.0] * PerspectiveState.__dummy.fullFloatSize
+        if marketState:
+            self.attach(marketState)
 
-    def export4C(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
-        '''
-        @param d4wished to specify number of most recent 4-float of the event category to export
-        @return an array_like data as float4C
-        '''
-        if symbol and symbol in self.__dictPerspective.keys():
-            return self.__dictPerspective[symbol].floatsD4(d4wished)
+    def format(self, symbol=None) :
 
-        raise ValueError('Perspective.floatsD4() unknown symbol[%s]' %symbol )
+        if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
+            raise ValueError('%s could not attach marketState of %s' %(self.__class__.__name__, str(self.mstate)))
 
-    # def engorged(self, symbol=None) :
-    #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data
-    #     '''
-    #     if symbol and symbol in self.__dictPerspective.keys():
-    #         return self.__dictPerspective[symbol].engorged
+        F4SECHMA_1548 = OrderedDict({
+            'asof':              1,
+            EVENT_KLINE_1MIN :  30,
+            EVENT_KLINE_5MIN :  96,
+            EVENT_KLINE_1DAY : 260,
+        })
+
+        if symbol and symbol in self.mstate._dictPerspective.keys():
+            ret = self.mstate._dictPerspective[symbol].floatsD4(d4wished)
+        else : 
+            raise ValueError('Perspective.floatsD4() unknown symbol[%s]' %symbol )
+
+        if not ret: return [0.0] * 1548
+        if isinstance(ret, list) and 1548 ==len(ret):
+            return ret
+
+        raise ValueError('%s.format() unexpected ret' % self.__class__.__name__)
+
+########################################################################
+class Formatter_3Liner16xx(Formatter):
+    '''
+    '''
+    def __init__(self, imgDir=None, dem=60):
+        '''Constructor'''
+        super(Formatter_3Liner16x32R, self).__init__()
+        self._imgDir = imgDir
+        self._dem = dem
+
+    def format(self, symbol=None) :
+
+        C6SECHMA_16xx = OrderedDict({
+            EVENT_KLINE_1MIN     : -1,
+            EVENT_KLINE_5MIN     : -1,
+            EVENT_KLINE_1DAY     : -1,
+        })
+
+        seqdict = self.export(symbol, d4wished=C6SECHMA_16xx)  # = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
+        if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
+            return None
+
+        stk = seqdict[EVENT_KLINE_1DAY]
+        if len(stk) <=0: return None
+        baseline_Price, baseline_Volume= stk[0].close, stk[0].volume
+
+        stk = seqdict[EVENT_KLINE_1MIN]
+        if len(stk) <=0: return None
+
+        img6C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(32)] # DONOT take [ [[0.0]*6] *16] *16
+
+        # parition 0: data[0,:4] as the datetime asof the 1st KL1min, data[1:16,:4] fillin K1min up to an hour
+        startRow =0
+        stampAsof = stk[0].asof
+        img6C[startRow][0] = [
+            (stampAsof.month-1) / 12.0, # normalize to [0.0,1.0]
+            stampAsof.day / 31.0, # normalize to [0.0,1.0]
+            stampAsof.weekday() / 7.0, # normalize to [0.0,1.0]
+            (stampAsof.hour *60 +stampAsof.minute) / (24 *60.0), # normalize to [0.0,1.0]
+            1.0, 1.0
+            ]
+        img6C[startRow+1][0] = img6C[startRow][0]
+        img6C[startRow+2][0] = img6C[startRow][0]
+        img6C[startRow+3][0] = img6C[startRow][0]
+
+        bV = baseline_Volume /240
+        for x in range(1,16):
+            for y in range(0,4):
+                i = (x-1) *4 + y
+                if i < len(stk) :
+                    img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+
+        # parition 1: data[0:16,4:6] fillin 16x6 K5min up to a week
+        startRow =5
+        stk = seqdict[EVENT_KLINE_5MIN]
+        bV = baseline_Volume /48
+        for x in range(0, 16): 
+            for y in range(0, 6):
+                i = x *6 + y
+                if i < len(stk) :
+                    img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
         
-    #     return [0.0]
+        # parition 2: data[0:16,10:15] fillin 16x5 K1Day up to 16 week or 1/3yr
+        startRow =12
+        stk = seqdict[EVENT_KLINE_1DAY]
+        bV = baseline_Volume
+        for x in range(0, 16): 
+            for y in range(0, 5):
+                i = x *5 + y
+                if i < len(stk) :
+                    img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
 
-    def export(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+        # parition 3x: TODO KL1w
+        # optional at the moment:data[0:16,10:15] fillin 16x5 K1Day up to 16 week or 1/3yr
+        startRow =18
+        stk = seqdict[EVENT_KLINE_1DAY]
+        bV = baseline_Volume
+        for x in range(0, 16): 
+            for y in range(0, 10):
+                i = x *5 + y + 16*5
+                if i < len(stk) :
+                    img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
 
-        if symbol and symbol in self.__dictPerspective.keys():
-            return self.__dictPerspective[symbol].export(d4wished)
-
-        raise ValueError('Perspective.export6Cx() unknown symbol[%s]' %symbol )
-
-    def export6C(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
-
-        if symbol and symbol in self.__dictPerspective.keys():
-            return self.__dictPerspective[symbol].float6C(d4wished)
-
-        raise ValueError('Perspective.export6Cx() unknown symbol[%s]' %symbol )
+        return self.covertImg6CTo3C(img6C) # return img6C
 
     def export6Cx(self, symbol, d4wished) :
-        if symbol and symbol in self.__dictPerspective.keys():
-            res = self.__dictPerspective[symbol].float6Cx()
+        if symbol and symbol in self._mstate._dictPerspective.keys():
+            res = self._mstate._dictPerspective[symbol].float6Cx()
             if not res: return None
 
             ret =[]
@@ -1003,3 +1079,308 @@ class PerspectiveState(MarketState):
             return ret
 
         raise ValueError('Perspective.export6Cx() unknown symbol[%s]' %symbol )
+
+    def covertImg6CTo3C(self, img6C, imgDir=None, dem=60) :
+        lenX = len(img6C[0])
+        lenY = len(img6C)
+        img3C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX*2)] for y in range(lenY) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
+        for y in range(lenY):
+            for x in range(lenX) :
+                # img3C[y][x], img3C[y][lenX + x] = img6C[y][x][:3], img6C[y][x][3:]
+                img3C[y][2*x], img3C[y][2*x +1] = img6C[y][x][:3], img6C[y][x][3:]
+
+        if imgDir:
+            if dem <=0: dem=60
+            ftime = img6C[0][0]
+            mon, day, minute = 1+ int(ftime[0] * 12), 1+ int(ftime[1] * 31), int(ftime[3] * 24*60)
+            bmpstamp = '%02d%02dT%03d' % (mon, day, minute)
+            width = 320
+            # if  bmpstamp != self.__bmpstamp  and 0 == minute % 60 :
+            if 0 == minute % 60 :
+                imgarray = np.uint8(np.array(img3C)*255)
+                bmp = Image.fromarray(imgarray)
+                if width > lenX:
+                    bmp = bmp.resize((width, int(width *1.0/lenX/2 *lenY)), Image.NEAREST)
+                # bmp.convert('RGB')
+                bmp.save('%s/test_%s.png' % (imgDir, bmpstamp))
+                self.__bmpstamp = bmpstamp
+
+        return img3C
+
+########################################################################
+class Formatter_3Liner16x32R(Formatter_3Liner16xx):
+
+    def __init__(self, imgDir=None, dem=60):
+        '''Constructor'''
+        super(Formatter_3Liner16x32R, self).__init__(imgDir=None, dem=60)
+
+    def format(self, symbol=None) :
+        if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
+            raise ValueError('%s could not attach marketState of %s' %(self.__class__.__name__, str(self.mstate)))
+
+        C6SECHMA_16x32R = OrderedDict({
+            'asof'               : 1,
+            EVENT_KLINE_1MIN     : 32,
+            EVENT_KLINE_5MIN     : 240,
+            EVENT_KLINE_1DAY     : 240,
+        })
+
+        seq6C = self.export6Cx(symbol, d4wished=C6SECHMA_16x32R)  # = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
+        if not seq6C: return None
+
+        # TODO: draw the imagex
+        img6C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(32)] # DONOT take [ [[0.0]*6] *16] *16
+
+        # parition 0: pixel[0,0] as the datetime, 16*2-1 KL1min to cover half an hour
+        startRow =0
+        img6C[0][0] = seq6C[0]
+        seq6C_offset =C6SECHMA_16x32R['asof']
+        for i in range(1, 16*2): 
+             x, y = int(i %16), int(i /16)
+             img6C[startRow + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+        
+        # parition 1: 16*15 KL5min to cover a week
+        startRow =2
+        seq6C_offset =C6SECHMA_16x32R['asof'] + C6SECHMA_16x32R[EVENT_KLINE_1MIN]
+        for i in range(0, 16*15): 
+             x, y = int(i %16), int(i /16)
+             img6C[startRow + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        # parition 3: 16*15 KL1day to cover near a year
+        startRow +=15
+        seq6C_offset =C6SECHMA_16x32R['asof'] + C6SECHMA_16x32R[EVENT_KLINE_1MIN] + C6SECHMA_16x32R[EVENT_KLINE_5MIN]
+        for i in range(0, 16*15): 
+             x, y = int(i %16), int(i /16)
+             img6C[startRow + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        return self.covertImg6CTo3C(img6C, imgDir, dem) # return img6C
+
+########################################################################
+class Formatter_3Liner16x32(Formatter_3Liner16xx):
+
+    def __init__(self, imgDir=None, dem=60):
+        '''Constructor'''
+        super(Formatter_3Liner16x32, self).__init__(imgDir=None, dem=60)
+
+    def format(self, symbol=None) :
+        if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
+            raise ValueError('%s could not attach marketState of %s' %(self.__class__.__name__, str(self.mstate)))
+
+        C6SECHMA_16x16x4 = OrderedDict({
+            'asof'               : 1,
+            EVENT_KLINE_1MIN     : 32,
+            EVENT_KLINE_5MIN     : 240,
+            EVENT_KLINE_1DAY     : 240,
+            EVENT_MONEYFLOW_1MIN : 16,
+            EVENT_MONEYFLOW_5MIN : 48*4, # 4days
+            EVENT_MONEYFLOW_1DAY : 48, # 48days
+        })
+
+        seq6C = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
+        if not seq6C: return None
+
+        # TODO: draw the imagex
+        img6C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(32)] # DONOT take [ [[0.0]*6] *16] *16
+
+        # parition 0: pixel[0,0] as the datetime, 16*2-1 KL1min to cover half an hour
+        startRow =0
+        img6C[0][0] = seq6C[0]
+        seq6C_offset =C6SECHMA_16x16x4['asof']
+        for i in range(1, 16*2): 
+             x, y = int(i %16), int(i /16)
+             img6C[startRow + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+        
+        # parition 1: 16*15 KL5min to cover a week
+        startRow =2
+        seq6C_offset =C6SECHMA_16x16x4['asof'] + C6SECHMA_16x16x4[EVENT_KLINE_1MIN]
+        for i in range(0, 16*15): 
+             x, y = int(i %16), int(i /16)
+             img6C[startRow + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        # parition 3: 16*15 KL1day to cover near a year
+        startRow +=15
+        seq6C_offset =C6SECHMA_16x16x4['asof'] + C6SECHMA_16x16x4[EVENT_KLINE_1MIN] + C6SECHMA_16x16x4[EVENT_KLINE_5MIN]
+        for i in range(0, 16*15): 
+             x, y = int(i %16), int(i /16)
+             img6C[startRow + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        return self.covertImg6CTo3C(img6C, imgDir, dem) # return img6C
+
+########################################################################
+class Formatter_3Snail16x16(Formatter_3Liner16xx):
+
+    def __init__(self, imgDir=None, dem=60):
+        '''Constructor'''
+        super(Formatter_3Liner16x32, self).__init__(imgDir=None, dem=60)
+
+    '''
+    import math
+    for i in range(16*16):
+        if i<=0:
+            ret=[(0,0)]
+            continue
+
+        a = int(math.sqrt(i))
+        b = i - a*a
+        c = int(a/2)
+
+        if a == c*2:
+            x, y = -c, c
+            if b >=a:
+                y -= a
+                x += (b -a)
+            else: y -= b
+        else:
+            x, y = c+1, -c
+            if b >=a:
+                y += a
+                x -= (b -a)
+            else: y += b
+        ret.append((x+7, y+7))
+        print('%s=%d ^2 +%d@(%d, %d)' % (i, a, b, x, y))
+
+    print('COORDS_Snail16x16=%s' % ret)
+    '''
+    COORDS_Snail16x16=[(7, 7), (8, 7), (8, 8), (7, 8), (6, 8), (6, 7), (6, 6), (7, 6), (8, 6), (9, 6), (9, 7), (9, 8), (9, 9), (8, 9), (7, 9), (6, 9),
+                (5, 9), (5, 8), (5, 7), (5, 6), (5, 5), (6, 5), (7, 5), (8, 5), (9, 5), (10, 5), (10, 6), (10, 7), (10, 8), (10, 9), (10, 10), (9, 10),
+                (8, 10), (7, 10), (6, 10), (5, 10), (4, 10), (4, 9), (4, 8), (4, 7), (4, 6), (4, 5), (4, 4), (5, 4), (6, 4), (7, 4), (8, 4), (9, 4),
+                (10, 4), (11, 4), (11, 5), (11, 6), (11, 7), (11, 8), (11, 9), (11, 10), (11, 11), (10, 11), (9, 11), (8, 11), (7, 11), (6, 11), (5, 11), (4, 11),
+                (3, 11), (3, 10), (3, 9), (3, 8), (3, 7), (3, 6), (3, 5), (3, 4), (3, 3), (4, 3), (5, 3), (6, 3), (7, 3), (8, 3), (9, 3), (10, 3),
+                (11, 3), (12, 3), (12, 4), (12, 5), (12, 6), (12, 7), (12, 8), (12, 9), (12, 10), (12, 11), (12, 12), (11, 12), (10, 12), (9, 12), (8, 12), (7, 12),
+                (6, 12), (5, 12), (4, 12), (3, 12), (2, 12), (2, 11), (2, 10), (2, 9), (2, 8), (2, 7), (2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (3, 2),
+                (4, 2), (5, 2), (6, 2), (7, 2), (8, 2), (9, 2), (10, 2), (11, 2), (12, 2), (13, 2), (13, 3), (13, 4), (13, 5), (13, 6), (13, 7), (13, 8),
+                (13, 9), (13, 10), (13, 11), (13, 12), (13, 13), (12, 13), (11, 13), (10, 13), (9, 13), (8, 13), (7, 13), (6, 13), (5, 13), (4, 13), (3, 13), (2, 13),
+                (1, 13), (1, 12), (1, 11), (1, 10), (1, 9), (1, 8), (1, 7), (1, 6), (1, 5), (1, 4), (1, 3), (1, 2), (1, 1), (2, 1), (3, 1), (4, 1),
+                (5, 1), (6, 1), (7, 1), (8, 1), (9, 1), (10, 1), (11, 1), (12, 1), (13, 1), (14, 1), (14, 2), (14, 3), (14, 4), (14, 5), (14, 6), (14, 7),
+                (14, 8), (14, 9), (14, 10), (14, 11), (14, 12), (14, 13), (14, 14), (13, 14), (12, 14), (11, 14), (10, 14), (9, 14), (8, 14), (7, 14), (6, 14), (5, 14),
+                (4, 14), (3, 14), (2, 14), (1, 14), (0, 14), (0, 13), (0, 12), (0, 11), (0, 10), (0, 9), (0, 8), (0, 7), (0, 6), (0, 5), (0, 4), (0, 3),
+                (0, 2), (0, 1), (0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 0), (7, 0), (8, 0), (9, 0), (10, 0), (11, 0), (12, 0), (13, 0),
+                (14, 0), (15, 0), (15, 1), (15, 2), (15, 3), (15, 4), (15, 5), (15, 6), (15, 7), (15, 8), (15, 9), (15, 10), (15, 11), (15, 12), (15, 13), (15, 14),
+                (15, 15), (14, 15), (13, 15), (12, 15), (11, 15), (10, 15), (9, 15), (8, 15), (7, 15), (6, 15), (5, 15), (4, 15), (3, 15), (2, 15), (1, 15), (0, 15)]
+    
+    BMP_COLOR_BG_FLOAT=1.0
+
+    def format(self, symbol=None) :
+        if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
+            raise ValueError('%s could not attach marketState of %s' %(self.__class__.__name__, str(self.mstate)))
+
+        C6SECHMA_16x16x4 = OrderedDict({
+            'asof'               : 1,
+            EVENT_KLINE_1MIN     : 16,
+            EVENT_KLINE_5MIN     : 240,
+            EVENT_KLINE_1DAY     : 255,
+            EVENT_MONEYFLOW_1MIN : 16,
+            EVENT_MONEYFLOW_5MIN : 48*4, # 4days
+            EVENT_MONEYFLOW_1DAY : 48, # 48days
+        })
+
+        seq6C = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
+        if not seq6C: return None
+
+        # TODO: draw the imagex
+        img6C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(3*16)] # DONOT take [ [[0.0]*6] *16] *16
+        # for i in range(240):
+        #     x, y = MarketState.COORDS_Snail16x16[i]
+        #     img6C[y][x] = seq6C[1 + i]
+
+        # for i in range(240):
+        #     x, y = MarketState.COORDS_Snail16x16[i]
+        #     img6C[16+y][x] = seq6C[1 +240 + i]
+        
+        # parition 0: the central 4x4 is KL1min up to 16min, the outter are 240KL5min up to a week
+        partition =0
+        seq6C_offset =1
+        for i in range(16): 
+             x, y = MarketState.COORDS_Snail16x16[i]
+             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+        
+        for i in range(16, 16 +240): 
+             x, y = MarketState.COORDS_Snail16x16[i]
+             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        # parition 1: the central 1x1 is current datetime, the outter are 255KL1d covers a year
+        partition +=1
+        x, y = MarketState.COORDS_Snail16x16[0]
+        img6C[partition*16 + y][x] = seq6C[0]
+
+        seq6C_offset =C6SECHMA_16x16x4['asof'] + C6SECHMA_16x16x4[EVENT_KLINE_1MIN] + C6SECHMA_16x16x4[EVENT_KLINE_5MIN]
+        for i in range(1, 1+C6SECHMA_16x16x4[EVENT_KLINE_1DAY]): 
+             x, y = MarketState.COORDS_Snail16x16[i]
+             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        # parition 2 MF: the central 4x4 MF1m, the outter: 48*4MF5m cover 4days, 48 MF1d cover 48days
+        partition +=1
+        x, y = MarketState.COORDS_Snail16x16[0]
+        img6C[partition*16 + y][x] = seq6C[0]
+
+        seq6C_offset =C6SECHMA_16x16x4['asof'] + C6SECHMA_16x16x4[EVENT_KLINE_1MIN] + C6SECHMA_16x16x4[EVENT_KLINE_5MIN] + C6SECHMA_16x16x4[EVENT_KLINE_1DAY] # pointer to where EVENT_MONEYFLOW_1MIN is
+        snail_loc = 0
+        for i in range(C6SECHMA_16x16x4[EVENT_MONEYFLOW_1MIN]): 
+             x, y = MarketState.COORDS_Snail16x16[snail_loc + i]
+             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        snail_loc += C6SECHMA_16x16x4[EVENT_MONEYFLOW_1MIN]
+        for i in range(C6SECHMA_16x16x4[EVENT_MONEYFLOW_5MIN]): 
+             x, y = MarketState.COORDS_Snail16x16[snail_loc + i]
+             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        snail_loc += C6SECHMA_16x16x4[EVENT_MONEYFLOW_5MIN]
+        for i in range(C6SECHMA_16x16x4[EVENT_MONEYFLOW_1DAY]): 
+             x, y = MarketState.COORDS_Snail16x16[snail_loc + i]
+             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
+             seq6C_offset +=1
+
+        return self.covertImg6CTo3C(img6C, imgDir, dem) # return img6C
+
+    # @abstractmethod
+    # def engorged(self, symbol=None) :
+    #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data
+    #     '''
+    #     raise NotImplementedError
+
+
+    # __dummy = None
+    # def exportF1548(self, symbol=None) :
+    #     '''@return an array_like data as float4C, maybe [] or numpy.array
+    #     '''
+    #     if symbol and symbol in self._dictPerspective.keys():
+    #         return self._dictPerspective[symbol]._S1548I4
+
+    #     if not PerspectiveState.__dummy:
+    #         PerspectiveState.__dummy = Perspective(self.exchange, 'Dummy')
+
+    #     return [0.0] * PerspectiveState.__dummy.fullFloatSize
+
+    # def engorged(self, symbol=None) :
+    #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data
+    #     '''
+    #     if symbol and symbol in self._dictPerspective.keys():
+    #         return self._dictPerspective[symbol].engorged
+        
+    #     return [0.0]
+
+    def export(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+
+        if symbol and symbol in self._dictPerspective.keys():
+            return self._dictPerspective[symbol].export(d4wished)
+
+        raise ValueError('Perspective.export6Cx() unknown symbol[%s]' %symbol )
+
+    def export6C(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+
+        if symbol and symbol in self._dictPerspective.keys():
+            return self._dictPerspective[symbol].float6C(d4wished)
+
+        raise ValueError('Perspective.export6Cx() unknown symbol[%s]' %symbol )
+

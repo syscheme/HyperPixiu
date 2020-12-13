@@ -139,7 +139,7 @@ non-docker-mode to start celery:
 
      mkdir  ~/wkspaces; cd ~/wkspaces
      ln -sf /mnt/s/hpx_publish .
-     ln -sf /mnt/w/archived .
+     ln -sf /mnt/w/archived hpx_archived
      rsync -auv --delete --exclude-from /mnt/w/hpx_template/dist/rsync_excl.txt /mnt/w/hpx_template .
 
      cd hpx_template

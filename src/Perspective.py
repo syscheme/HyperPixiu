@@ -932,6 +932,13 @@ class PerspectiveState(MarketState):
         
         return self._dictPerspective[s].push(ev)
 
+    def export(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+
+        if symbol and symbol in self._dictPerspective.keys():
+            return self._dictPerspective[symbol].export(d4wished)
+
+        raise ValueError('Perspective.export() unknown symbol[%s]' %symbol )
+
 
 ########################################################################
 class Formatter_F1548(Formatter):
@@ -957,7 +964,7 @@ class Formatter_F1548(Formatter):
         })
 
         if symbol and symbol in self.mstate._dictPerspective.keys():
-            ret = self.mstate._dictPerspective[symbol].floatsD4(d4wished)
+            ret = self.mstate._dictPerspective[symbol].floatsD4(F4SECHMA_1548)
         else : 
             raise ValueError('Perspective.floatsD4() unknown symbol[%s]' %symbol )
 
@@ -968,16 +975,22 @@ class Formatter_F1548(Formatter):
         raise ValueError('%s.format() unexpected ret' % self.__class__.__name__)
 
 ########################################################################
-class Formatter_3Liner16xx(Formatter):
+class Formatter_base2dImg(Formatter):
     '''
     '''
+    BMP_COLOR_BG_FLOAT=1.0
+
     def __init__(self, imgDir=None, dem=60):
         '''Constructor'''
-        super(Formatter_3Liner16x32R, self).__init__()
+        super(Formatter_base2dImg, self).__init__()
         self._imgDir = imgDir
         self._dem = dem
+        if self._dem <=0: self._dem=60
 
     def format(self, symbol=None) :
+
+        if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
+            raise ValueError('%s could not attach marketState of %s' %(self.__class__.__name__, str(self.mstate)))
 
         C6SECHMA_16xx = OrderedDict({
             EVENT_KLINE_1MIN     : -1,
@@ -985,7 +998,7 @@ class Formatter_3Liner16xx(Formatter):
             EVENT_KLINE_1DAY     : -1,
         })
 
-        seqdict = self.export(symbol, d4wished=C6SECHMA_16xx)  # = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
+        seqdict = self.mstate.export(symbol, d4wished=C6SECHMA_16xx)  # = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
         if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
             return None
 
@@ -993,26 +1006,19 @@ class Formatter_3Liner16xx(Formatter):
         if len(stk) <=0: return None
         baseline_Price, baseline_Volume= stk[0].close, stk[0].volume
 
-        stk = seqdict[EVENT_KLINE_1MIN]
+        stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
         if len(stk) <=0: return None
 
-        img6C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(32)] # DONOT take [ [[0.0]*6] *16] *16
+        img6C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(32)] # DONOT take [ [[0.0]*6] *16] *16
 
         # parition 0: data[0,:4] as the datetime asof the 1st KL1min, data[1:16,:4] fillin K1min up to an hour
         startRow =0
         stampAsof = stk[0].asof
-        img6C[startRow][0] = [
-            (stampAsof.month-1) / 12.0, # normalize to [0.0,1.0]
-            stampAsof.day / 31.0, # normalize to [0.0,1.0]
-            stampAsof.weekday() / 7.0, # normalize to [0.0,1.0]
-            (stampAsof.hour *60 +stampAsof.minute) / (24 *60.0), # normalize to [0.0,1.0]
-            1.0, 1.0
-            ]
+        img6C[startRow][0] = Formatter_base2dImg.datetimeTo6C(stampAsof)
         img6C[startRow+1][0] = img6C[startRow][0]
         img6C[startRow+2][0] = img6C[startRow][0]
         img6C[startRow+3][0] = img6C[startRow][0]
 
-        bV = baseline_Volume /240
         for x in range(1,16):
             for y in range(0,4):
                 i = (x-1) *4 + y
@@ -1021,8 +1027,7 @@ class Formatter_3Liner16xx(Formatter):
 
         # parition 1: data[0:16,4:6] fillin 16x6 K5min up to a week
         startRow =5
-        stk = seqdict[EVENT_KLINE_5MIN]
-        bV = baseline_Volume /48
+        stk, bV = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48
         for x in range(0, 16): 
             for y in range(0, 6):
                 i = x *6 + y
@@ -1031,8 +1036,7 @@ class Formatter_3Liner16xx(Formatter):
         
         # parition 2: data[0:16,10:15] fillin 16x5 K1Day up to 16 week or 1/3yr
         startRow =12
-        stk = seqdict[EVENT_KLINE_1DAY]
-        bV = baseline_Volume
+        stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
         for x in range(0, 16): 
             for y in range(0, 5):
                 i = x *5 + y
@@ -1040,6 +1044,7 @@ class Formatter_3Liner16xx(Formatter):
                     img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
 
         # parition 3x: TODO KL1w
+        '''
         # optional at the moment:data[0:16,10:15] fillin 16x5 K1Day up to 16 week or 1/3yr
         startRow =18
         stk = seqdict[EVENT_KLINE_1DAY]
@@ -1049,12 +1054,23 @@ class Formatter_3Liner16xx(Formatter):
                 i = x *5 + y + 16*5
                 if i < len(stk) :
                     img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+        '''
 
         return self.covertImg6CTo3C(img6C) # return img6C
 
+    def datetimeTo6C(dt) :
+        return [
+            (dt.month-1) / 12.0, # normalize to [0.0,1.0]
+            dt.day / 31.0, # normalize to [0.0,1.0]
+            dt.weekday() / 7.0, # normalize to [0.0,1.0]
+            (dt.hour *60 +dt.minute) / (24 *60.0), # normalize to [0.0,1.0]
+            1.0, 1.0
+            ]
+
+
     def export6Cx(self, symbol, d4wished) :
-        if symbol and symbol in self._mstate._dictPerspective.keys():
-            res = self._mstate._dictPerspective[symbol].float6Cx()
+        if symbol and symbol in self.mstate._dictPerspective.keys():
+            res = self.mstate._dictPerspective[symbol].float6Cx()
             if not res: return None
 
             ret =[]
@@ -1080,17 +1096,15 @@ class Formatter_3Liner16xx(Formatter):
 
         raise ValueError('Perspective.export6Cx() unknown symbol[%s]' %symbol )
 
-    def covertImg6CTo3C(self, img6C, imgDir=None, dem=60) :
-        lenX = len(img6C[0])
-        lenY = len(img6C)
-        img3C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX*2)] for y in range(lenY) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
+    def covertImg6CTo3C(self, img6C) :
+        lenX, lenY = len(img6C[0]), len(img6C)
+        img3C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX*2)] for y in range(lenY) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
         for y in range(lenY):
             for x in range(lenX) :
                 # img3C[y][x], img3C[y][lenX + x] = img6C[y][x][:3], img6C[y][x][3:]
                 img3C[y][2*x], img3C[y][2*x +1] = img6C[y][x][:3], img6C[y][x][3:]
 
-        if imgDir:
-            if dem <=0: dem=60
+        if self._imgDir:
             ftime = img6C[0][0]
             mon, day, minute = 1+ int(ftime[0] * 12), 1+ int(ftime[1] * 31), int(ftime[3] * 24*60)
             bmpstamp = '%02d%02dT%03d' % (mon, day, minute)
@@ -1102,17 +1116,17 @@ class Formatter_3Liner16xx(Formatter):
                 if width > lenX:
                     bmp = bmp.resize((width, int(width *1.0/lenX/2 *lenY)), Image.NEAREST)
                 # bmp.convert('RGB')
-                bmp.save('%s/test_%s.png' % (imgDir, bmpstamp))
+                bmp.save('%s/test_%s.png' % (self._imgDir, bmpstamp))
                 self.__bmpstamp = bmpstamp
 
         return img3C
 
 ########################################################################
-class Formatter_3Liner16x32R(Formatter_3Liner16xx):
+class Formatter_2dImg16x32(Formatter_base2dImg):
 
     def __init__(self, imgDir=None, dem=60):
         '''Constructor'''
-        super(Formatter_3Liner16x32R, self).__init__(imgDir=None, dem=60)
+        super(Formatter_2dImg16x32, self).__init__(imgDir, dem)
 
     def format(self, symbol=None) :
         if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
@@ -1125,99 +1139,54 @@ class Formatter_3Liner16x32R(Formatter_3Liner16xx):
             EVENT_KLINE_1DAY     : 240,
         })
 
-        seq6C = self.export6Cx(symbol, d4wished=C6SECHMA_16x32R)  # = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
-        if not seq6C: return None
+        seqdict = self.mstate.export(symbol, d4wished=C6SECHMA_16x32R)  # = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
+        if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
+            return None
+
+        stk = seqdict[EVENT_KLINE_1DAY]
+        if len(stk) <=0: return None
+        baseline_Price, baseline_Volume= stk[0].close, stk[0].volume
 
         # TODO: draw the imagex
-        img6C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(32)] # DONOT take [ [[0.0]*6] *16] *16
+        img6C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(32)] # DONOT take [ [[0.0]*6] *16] *16
 
         # parition 0: pixel[0,0] as the datetime, 16*2-1 KL1min to cover half an hour
         startRow =0
-        img6C[0][0] = seq6C[0]
-        seq6C_offset =C6SECHMA_16x32R['asof']
-        for i in range(1, 16*2): 
+        stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
+        if len(stk) <=0: return None
+
+        stampAsof = stk[0].asof
+        img6C[startRow][0] = Formatter_base2dImg.datetimeTo6C(stampAsof)
+
+        # seq6C_offset =C6SECHMA_16x32R['asof']
+        for i in range(1, min(len(stk), 16*2)): 
              x, y = int(i %16), int(i /16)
-             img6C[startRow + y][x] = seq6C[seq6C_offset]
-             seq6C_offset +=1
+             img6C[startRow + y][x] = stk[i -1].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
         
         # parition 1: 16*15 KL5min to cover a week
         startRow =2
-        seq6C_offset =C6SECHMA_16x32R['asof'] + C6SECHMA_16x32R[EVENT_KLINE_1MIN]
-        for i in range(0, 16*15): 
+        stk, bV = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48
+        # seq6C_offset =C6SECHMA_16x32R['asof'] + C6SECHMA_16x32R[EVENT_KLINE_1MIN]
+        for i in range(0, min(len(stk), 16*15)): 
              x, y = int(i %16), int(i /16)
-             img6C[startRow + y][x] = seq6C[seq6C_offset]
-             seq6C_offset +=1
+             img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
 
         # parition 3: 16*15 KL1day to cover near a year
         startRow +=15
-        seq6C_offset =C6SECHMA_16x32R['asof'] + C6SECHMA_16x32R[EVENT_KLINE_1MIN] + C6SECHMA_16x32R[EVENT_KLINE_5MIN]
-        for i in range(0, 16*15): 
+        stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
+        # seq6C_offset =C6SECHMA_16x32R['asof'] + C6SECHMA_16x32R[EVENT_KLINE_1MIN] + C6SECHMA_16x32R[EVENT_KLINE_5MIN]
+        for i in range(0, min(len(stk), 16*15)): 
              x, y = int(i %16), int(i /16)
-             img6C[startRow + y][x] = seq6C[seq6C_offset]
-             seq6C_offset +=1
+             img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
 
-        return self.covertImg6CTo3C(img6C, imgDir, dem) # return img6C
+        return self.covertImg6CTo3C(img6C) # return img6C
 
 ########################################################################
-class Formatter_3Liner16x32(Formatter_3Liner16xx):
+class Formatter_2dImgSnail16(Formatter_base2dImg):
 
     def __init__(self, imgDir=None, dem=60):
         '''Constructor'''
-        super(Formatter_3Liner16x32, self).__init__(imgDir=None, dem=60)
-
-    def format(self, symbol=None) :
-        if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
-            raise ValueError('%s could not attach marketState of %s' %(self.__class__.__name__, str(self.mstate)))
-
-        C6SECHMA_16x16x4 = OrderedDict({
-            'asof'               : 1,
-            EVENT_KLINE_1MIN     : 32,
-            EVENT_KLINE_5MIN     : 240,
-            EVENT_KLINE_1DAY     : 240,
-            EVENT_MONEYFLOW_1MIN : 16,
-            EVENT_MONEYFLOW_5MIN : 48*4, # 4days
-            EVENT_MONEYFLOW_1DAY : 48, # 48days
-        })
-
-        seq6C = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
-        if not seq6C: return None
-
-        # TODO: draw the imagex
-        img6C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(32)] # DONOT take [ [[0.0]*6] *16] *16
-
-        # parition 0: pixel[0,0] as the datetime, 16*2-1 KL1min to cover half an hour
-        startRow =0
-        img6C[0][0] = seq6C[0]
-        seq6C_offset =C6SECHMA_16x16x4['asof']
-        for i in range(1, 16*2): 
-             x, y = int(i %16), int(i /16)
-             img6C[startRow + y][x] = seq6C[seq6C_offset]
-             seq6C_offset +=1
-        
-        # parition 1: 16*15 KL5min to cover a week
-        startRow =2
-        seq6C_offset =C6SECHMA_16x16x4['asof'] + C6SECHMA_16x16x4[EVENT_KLINE_1MIN]
-        for i in range(0, 16*15): 
-             x, y = int(i %16), int(i /16)
-             img6C[startRow + y][x] = seq6C[seq6C_offset]
-             seq6C_offset +=1
-
-        # parition 3: 16*15 KL1day to cover near a year
-        startRow +=15
-        seq6C_offset =C6SECHMA_16x16x4['asof'] + C6SECHMA_16x16x4[EVENT_KLINE_1MIN] + C6SECHMA_16x16x4[EVENT_KLINE_5MIN]
-        for i in range(0, 16*15): 
-             x, y = int(i %16), int(i /16)
-             img6C[startRow + y][x] = seq6C[seq6C_offset]
-             seq6C_offset +=1
-
-        return self.covertImg6CTo3C(img6C, imgDir, dem) # return img6C
-
-########################################################################
-class Formatter_3Snail16x16(Formatter_3Liner16xx):
-
-    def __init__(self, imgDir=None, dem=60):
-        '''Constructor'''
-        super(Formatter_3Liner16x32, self).__init__(imgDir=None, dem=60)
+        super(Formatter_2dImgSnail16, self).__init__(imgDir, dem)
 
     '''
     import math
@@ -1247,7 +1216,7 @@ class Formatter_3Snail16x16(Formatter_3Liner16xx):
 
     print('COORDS_Snail16x16=%s' % ret)
     '''
-    COORDS_Snail16x16=[(7, 7), (8, 7), (8, 8), (7, 8), (6, 8), (6, 7), (6, 6), (7, 6), (8, 6), (9, 6), (9, 7), (9, 8), (9, 9), (8, 9), (7, 9), (6, 9),
+    COORDS=[(7, 7), (8, 7), (8, 8), (7, 8), (6, 8), (6, 7), (6, 6), (7, 6), (8, 6), (9, 6), (9, 7), (9, 8), (9, 9), (8, 9), (7, 9), (6, 9),
                 (5, 9), (5, 8), (5, 7), (5, 6), (5, 5), (6, 5), (7, 5), (8, 5), (9, 5), (10, 5), (10, 6), (10, 7), (10, 8), (10, 9), (10, 10), (9, 10),
                 (8, 10), (7, 10), (6, 10), (5, 10), (4, 10), (4, 9), (4, 8), (4, 7), (4, 6), (4, 5), (4, 4), (5, 4), (6, 4), (7, 4), (8, 4), (9, 4),
                 (10, 4), (11, 4), (11, 5), (11, 6), (11, 7), (11, 8), (11, 9), (11, 10), (11, 11), (10, 11), (9, 11), (8, 11), (7, 11), (6, 11), (5, 11), (4, 11),
@@ -1264,8 +1233,6 @@ class Formatter_3Snail16x16(Formatter_3Liner16xx):
                 (14, 0), (15, 0), (15, 1), (15, 2), (15, 3), (15, 4), (15, 5), (15, 6), (15, 7), (15, 8), (15, 9), (15, 10), (15, 11), (15, 12), (15, 13), (15, 14),
                 (15, 15), (14, 15), (13, 15), (12, 15), (11, 15), (10, 15), (9, 15), (8, 15), (7, 15), (6, 15), (5, 15), (4, 15), (3, 15), (2, 15), (1, 15), (0, 15)]
     
-    BMP_COLOR_BG_FLOAT=1.0
-
     def format(self, symbol=None) :
         if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
             raise ValueError('%s could not attach marketState of %s' %(self.__class__.__name__, str(self.mstate)))
@@ -1275,73 +1242,83 @@ class Formatter_3Snail16x16(Formatter_3Liner16xx):
             EVENT_KLINE_1MIN     : 16,
             EVENT_KLINE_5MIN     : 240,
             EVENT_KLINE_1DAY     : 255,
-            EVENT_MONEYFLOW_1MIN : 16,
-            EVENT_MONEYFLOW_5MIN : 48*4, # 4days
-            EVENT_MONEYFLOW_1DAY : 48, # 48days
+            # EVENT_MONEYFLOW_1MIN : 16,
+            # EVENT_MONEYFLOW_5MIN : 48*4, # 4days
+            # EVENT_MONEYFLOW_1DAY : 48, # 48days
         })
 
-        seq6C = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
-        if not seq6C: return None
+        seqdict = self.mstate.export(symbol, d4wished=C6SECHMA_16x16x4)  # = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
+        if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
+            return None
+
+        stk = seqdict[EVENT_KLINE_1DAY]
+        if len(stk) <=0: return None
+        baseline_Price, baseline_Volume= stk[0].close, stk[0].volume
 
         # TODO: draw the imagex
-        img6C = [ [ [MarketState.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(3*16)] # DONOT take [ [[0.0]*6] *16] *16
+        img6C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(3*16)] # DONOT take [ [[0.0]*6] *16] *16
         # for i in range(240):
-        #     x, y = MarketState.COORDS_Snail16x16[i]
+        #     x, y = Formatter_2dImgSnail16.COORDS[i]
         #     img6C[y][x] = seq6C[1 + i]
 
         # for i in range(240):
-        #     x, y = MarketState.COORDS_Snail16x16[i]
+        #     x, y = Formatter_2dImgSnail16.COORDS[i]
         #     img6C[16+y][x] = seq6C[1 +240 + i]
         
         # parition 0: the central 4x4 is KL1min up to 16min, the outter are 240KL5min up to a week
+        stampAsof = None
         partition =0
-        seq6C_offset =1
-        for i in range(16): 
-             x, y = MarketState.COORDS_Snail16x16[i]
-             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
-             seq6C_offset +=1
+        stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
+        if not stampAsof and len(stk) >0 : stampAsof = stk[0].asof
+
+        for i in range(min(len(stk), C6SECHMA_16x16x4[EVENT_KLINE_1MIN])): 
+             x, y = Formatter_2dImgSnail16.COORDS[i]
+             img6C[y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
         
-        for i in range(16, 16 +240): 
-             x, y = MarketState.COORDS_Snail16x16[i]
-             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
-             seq6C_offset +=1
+        stk, bV = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48
+        if not stampAsof and len(stk) >0 : stampAsof = stk[0].asof
+        for i in range(min(len(stk), C6SECHMA_16x16x4[EVENT_KLINE_5MIN])): 
+             x, y = Formatter_2dImgSnail16.COORDS[16 +i]
+             img6C[y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
 
         # parition 1: the central 1x1 is current datetime, the outter are 255KL1d covers a year
-        partition +=1
-        x, y = MarketState.COORDS_Snail16x16[0]
-        img6C[partition*16 + y][x] = seq6C[0]
+        if not stampAsof: return None
+        partition =1
+        x, y = Formatter_2dImgSnail16.COORDS[0]
+        img6C[partition*16 + y][x] = Formatter_base2dImg.datetimeTo6C(stampAsof)
 
-        seq6C_offset =C6SECHMA_16x16x4['asof'] + C6SECHMA_16x16x4[EVENT_KLINE_1MIN] + C6SECHMA_16x16x4[EVENT_KLINE_5MIN]
-        for i in range(1, 1+C6SECHMA_16x16x4[EVENT_KLINE_1DAY]): 
-             x, y = MarketState.COORDS_Snail16x16[i]
-             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
-             seq6C_offset +=1
+        stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
+        for i in range(min(len(stk), C6SECHMA_16x16x4[EVENT_KLINE_1DAY])): 
+             x, y = Formatter_2dImgSnail16.COORDS[partition*16 + i]
+             img6C[partition*16 + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
 
+        '''
         # parition 2 MF: the central 4x4 MF1m, the outter: 48*4MF5m cover 4days, 48 MF1d cover 48days
         partition +=1
-        x, y = MarketState.COORDS_Snail16x16[0]
+        x, y = Formatter_2dImgSnail16.COORDS[0]
         img6C[partition*16 + y][x] = seq6C[0]
 
         seq6C_offset =C6SECHMA_16x16x4['asof'] + C6SECHMA_16x16x4[EVENT_KLINE_1MIN] + C6SECHMA_16x16x4[EVENT_KLINE_5MIN] + C6SECHMA_16x16x4[EVENT_KLINE_1DAY] # pointer to where EVENT_MONEYFLOW_1MIN is
         snail_loc = 0
         for i in range(C6SECHMA_16x16x4[EVENT_MONEYFLOW_1MIN]): 
-             x, y = MarketState.COORDS_Snail16x16[snail_loc + i]
+             x, y = Formatter_2dImgSnail16.COORDS[snail_loc + i]
              img6C[partition*16 + y][x] = seq6C[seq6C_offset]
              seq6C_offset +=1
 
         snail_loc += C6SECHMA_16x16x4[EVENT_MONEYFLOW_1MIN]
         for i in range(C6SECHMA_16x16x4[EVENT_MONEYFLOW_5MIN]): 
-             x, y = MarketState.COORDS_Snail16x16[snail_loc + i]
+             x, y = Formatter_2dImgSnail16.COORDS[snail_loc + i]
              img6C[partition*16 + y][x] = seq6C[seq6C_offset]
              seq6C_offset +=1
 
         snail_loc += C6SECHMA_16x16x4[EVENT_MONEYFLOW_5MIN]
         for i in range(C6SECHMA_16x16x4[EVENT_MONEYFLOW_1DAY]): 
-             x, y = MarketState.COORDS_Snail16x16[snail_loc + i]
+             x, y = Formatter_2dImgSnail16.COORDS[snail_loc + i]
              img6C[partition*16 + y][x] = seq6C[seq6C_offset]
              seq6C_offset +=1
+        '''
 
-        return self.covertImg6CTo3C(img6C, imgDir, dem) # return img6C
+        return self.covertImg6CTo3C(img6C) # return img6C
 
     # @abstractmethod
     # def engorged(self, symbol=None) :
@@ -1369,13 +1346,6 @@ class Formatter_3Snail16x16(Formatter_3Liner16xx):
     #         return self._dictPerspective[symbol].engorged
         
     #     return [0.0]
-
-    def export(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
-
-        if symbol and symbol in self._dictPerspective.keys():
-            return self._dictPerspective[symbol].export(d4wished)
-
-        raise ValueError('Perspective.export6Cx() unknown symbol[%s]' %symbol )
 
     def export6C(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
 

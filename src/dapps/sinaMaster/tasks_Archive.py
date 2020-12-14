@@ -223,12 +223,15 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
         if not m : continue
         evtShort = m.group(1)
 
-        destpath = os.path.join(archDir, 'Sina%s_%s.h5t' % (evtShort, asofYYMMDD) )
-        if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
-            thePROG.info('commitToday() archived %s into %s' %(srcpath, destpath))
-            __rmfile(srcpath)
-        else:
-            thePROG.error('commitToday() failed to archived %s into %s' %(srcpath, destpath))
+        try :
+            destpath = os.path.join(archDir, 'Sina%s_%s.h5t' % (evtShort, asofYYMMDD) )
+            if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
+                thePROG.info('commitToday() archived %s into %s' %(srcpath, destpath))
+                __rmfile(srcpath)
+            else:
+                thePROG.error('commitToday() failed to archived %s into %s' %(srcpath, destpath))
+        except Exception as ex:
+            thePROG.logexception(ex, 'commitToday() archiving[%s->%s] error' % (srcpath, destpath))
 
     # step 2. zip the Tcsv file
     srcpath = os.path.join(pubDir, fnTcsv)

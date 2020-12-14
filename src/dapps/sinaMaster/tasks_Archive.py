@@ -298,7 +298,7 @@ def topActives(self, topNum = 500):
 
 __asyncResult_downloadToday = {}
 
-@shared_task(bind=True, base=Retryable)
+@shared_task(bind=True, ignore_result=True)
 def schOn_Every5min(self):
     global __asyncResult_downloadToday
     todels = []

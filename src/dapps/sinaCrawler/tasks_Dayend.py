@@ -56,7 +56,8 @@ def memberfnInH5tar(fnH5tar, symbol):
     mfn = os.path.basename(fnH5tar)[:-4]
     idx = mfn.index('_')
     asofYYMMDD = mfn[1+idx:]
-    return '%s/%s_%s%s.json' % (mfn, symbol, mfn[4:idx], asofYYMMDD), asofYYMMDD
+    return '%s_%s%s.json' % (symbol, mfn[4:idx], asofYYMMDD), asofYYMMDD
+    # return '%s/%s_%s%s.json' % (mfn, symbol, mfn[4:idx], asofYYMMDD), asofYYMMDD
 
 def saveSnapshot(filename, h5group, snapshot, ohlc):
     compressed = bz2.compress(snapshot)
@@ -106,7 +107,8 @@ def downloadToday(self, SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     global MAPPED_USER, MAPPED_HOME
     result = __downloadSymbol(SYMBOL, todayYYMMDD, excludeMoneyFlow)
 
-    print('%s' % result) # sample: {'symbol': 'SZ000002', 'date': '20201127', 'snapshot': 'SZ000002_sns.h5', 'cachedJsons': ['SZ000002_KL1d20201128.json', 'SZ000002_MF1d20201128.json', 'SZ000002_KL5m20201128.json', 'SZ000002_MF1m20201128.json'], 'tcsv': 'SZ000002_day20201127.tcsv'}
+    thePROG.info('downloadToday() result: %s' % result) 
+    # sample: {'symbol': 'SZ000002', 'date': '20201127', 'snapshot': 'SZ000002_sns.h5', 'cachedJsons': ['SZ000002_KL1d20201128.json', 'SZ000002_MF1d20201128.json', 'SZ000002_KL5m20201128.json', 'SZ000002_MF1m20201128.json'], 'tcsv': 'SZ000002_day20201127.tcsv'}
     return result
 
 def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
@@ -220,7 +222,8 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
         ev = Event(EVENT_MONEYFLOW_5MIN)
         ev.setData(mf5m)
         psptMarketState.updateByEvent(ev)
-        rec.pushRow(ev.type, ev.data)
+        if todayYYMMDD == mf5m.asof.strftime('%Y%m%d') :
+            rec.pushRow(ev.type, ev.data)
 
     mf1mTo5m = sina.SinaMF1mToXm(__onMF5mMerged, 5)
 
@@ -301,4 +304,4 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
 ####################################
 if __name__ == '__main__':
     # downloadToday('SH510300', excludeMoneyFlow=True)
-    downloadToday('SZ003011')
+    downloadToday('SZ002008')

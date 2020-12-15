@@ -61,6 +61,8 @@ def memberfnInH5tar(fnH5tar, symbol):
 
 def saveSnapshot(filename, h5group, snapshot, ohlc):
     compressed = bz2.compress(snapshot)
+    dsize = len(snapshot)
+    csize = len(compressed)
 
     with h5py.File(filename, 'a') as h5file:
 
@@ -71,8 +73,8 @@ def saveSnapshot(filename, h5group, snapshot, ohlc):
 
         npbytes = np.frombuffer(compressed, dtype=np.uint8)
         sns = g.create_dataset(TAG_SNAPSHORT, data=np.frombuffer(compressed, dtype=np.uint8))
-        g.attrs['size'] = len(snapshot)
-        g.attrs['csize'] = len(compressed)
+        g.attrs['size'] = dsize
+        g.attrs['csize'] = csize
         g.attrs['open'] = ohlc[0]
         g.attrs['high'] = ohlc[1]
         g.attrs['low']  = ohlc[2]
@@ -82,6 +84,7 @@ def saveSnapshot(filename, h5group, snapshot, ohlc):
         thePROG.debug('saved snapshot[%s] %dB->%dz into %s' % (h5group, g.attrs['size'], g.attrs['csize'], filename))
         return True
     
+    thePROG.error('failed to save snapshot[%s] %dB->%dz into %s' % (h5group, dsize, csize, filename))
     return False
 
 def __publishFiles(srcfiles) :
@@ -192,11 +195,11 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
                 mfn, latestDay = memberfnInH5tar(offline_mf1m, SYMBOL)
                 playback.loadJsonH5t(EVENT_MONEYFLOW_1MIN, SYMBOL, offline_mf1m, mfn)
             except FileNotFoundError as ex:
-                thePROG.warn('no offline file avail: %s' %offline_mf1m)
+                thePROG.warn('%s no offline file avail: %s' % (SYMBOL, offline_mf1m))
             except Exception as ex:
                 thePROG.logexception(ex, offline_mf1m)
 
-    thePROG.info('inited mux with %d substreams' % (playback.size))
+    thePROG.info('inited mux[%s] with %d substreams' % (SYMBOL, playback.size))
 
     psptMarketState = PerspectiveState(SYMBOL)
 
@@ -278,7 +281,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
             thePROG.logexception(ex)
             break # NOT sure why StopIteration not caught above but fell here # raise ex
 
-    for i in range(2): rec.doAppStep() # to flush the recorder
+    for i in range(10): rec.doAppStep() # to flush the recorder
 
     if snapshot and len(snapshot) >0:
         h5ident = '%s.%s' %(TAG_SNAPSHORT, snapshot['ident'])

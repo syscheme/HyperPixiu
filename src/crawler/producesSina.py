@@ -314,7 +314,7 @@ class SinaMux(hist.PlaybackMux) :
             return httperr, None, []
 
         # succ at query
-        if len(dataseq) <=0:
+        if not isinstace(dataseq, list) or len(dataseq) <=0:
             self.warn("load() query(%s:%s) %s got empty list" %(symbol, evtype, httperr))
             return httperr, None, []
 

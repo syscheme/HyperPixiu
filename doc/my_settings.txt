@@ -1,0 +1,44 @@
+# file ~/my_settings.py
+import os
+
+ABC='123'
+
+EDF = {
+    'A':1,
+    'B': [2,3,4],
+    'C': {
+        'a':5,
+        'b':6
+    }
+}
+
+H = os.environ.get("HOME")
+
+'''
+>>> import importlib.machinery, importlib.util
+>>> import os
+>>> path = os.path.expanduser('~/my_settings.py')
+>>> loader = importlib.machinery.SourceFileLoader('my_settings', path)
+>>> spec = importlib.util.spec_from_loader(loader.name, loader)
+>>> my_settings = importlib.util.module_from_spec(spec)
+>>> loader.exec_module(my_settings)
+>>> my_settings
+<module 'my_settings' from '/root/my_settings.py'>
+>>> my_settings.ABC
+'123'
+>>> my_settings.EDF
+{'A': 1, 'B': [2, 3, 4], 'C': {'a': 5, 'b': 6}}
+>>> my_settings.EDF.get('A')
+1
+>>> my_settings.EDF.get('D', '23')
+'23'
+>>> 
+>>> from python_settings import settings
+>>> settings.configure(my_settings)
+>>> settings
+<python_settings.SetupSettings object at 0x7f269fd54f98>
+>>> settings.configured
+True
+>>> settings.ABC
+'123'
+'''

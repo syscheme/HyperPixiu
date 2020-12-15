@@ -111,7 +111,7 @@ class MarketData(EventData):
         raise NotImplementedError
 
     @abstractmethod
-    def float6C(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def floatXC(self, baseline_Price=1.0, baseline_Volume =1.0, channels=6) :
         '''
         @return float[] with dim = 6 for neural network computing
         '''
@@ -248,9 +248,9 @@ class TickData(MarketData):
         return ret
 
     @abstractmethod
-    def float6C(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def floatXC(self, baseline_Price=1.0, baseline_Volume =1.0, channels=6) :
         '''
-        @return float[] with dim =6 for neural network computing
+        @return float[] for neural network computing
         '''
         if baseline_Price <=0: baseline_Price=1.0
         if baseline_Volume <=0: baseline_Volume=1.0
@@ -269,10 +269,10 @@ class TickData(MarketData):
             floatNormalize_LOG10(self.price, baseline_Price),
             floatNormalize_LOG10(self.volume, baseline_Volume),
             float(leanAsks), 
-            float(leanBids),
-            0.0, 0.0]
+            float(leanBids)]
 
-        return ret
+        channels = int(channels)
+        return ret[:channels] if len(ret) >= channels else ret +[0.0]* (channels -len(ret))
 
 ########################################################################
 class KLineData(MarketData):
@@ -372,7 +372,7 @@ class KLineData(MarketData):
         return ret
 
     @abstractmethod
-    def float6C(self, baseline_Price=1.0, baseline_Volume =1.0) :
+    def floatXC(self, baseline_Price=1.0, baseline_Volume =1.0, channels=6) :
         '''
         @return float[] with dim =6 for neural network computing
         '''
@@ -389,7 +389,8 @@ class KLineData(MarketData):
             0.0
         ]
 
-        return ret
+        channels = int(channels)
+        return ret[:channels] if len(ret) >= channels else ret +[0.0]* (channels -len(ret))
 
 ########################################################################
 class MoneyflowData(MarketData):
@@ -439,7 +440,7 @@ class MoneyflowData(MarketData):
         ev.setData(md)
         return ev
 
-    def floatXC(self, baseline_Price=1.0, baseline_Volume =1.0, channel=4) :
+    def floatXC(self, baseline_Price=1.0, baseline_Volume =1.0, channels=6) :
         '''
         @return float[] for neural network computing
         '''
@@ -456,10 +457,8 @@ class MoneyflowData(MarketData):
         ]
         #TODO: other optional dims
 
-        channel = int(channel)
-        if channel <= 0: return ret
-
-        return ret[:channel] if len(ret) >= channel else ret +[0.0]* (channel-len(ret))
+        channels = int(channels)
+        return ret[:channels] if len(ret) >= channels else ret +[0.0]* (channels -len(ret))
 
     @abstractmethod
     def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :
@@ -467,13 +466,6 @@ class MoneyflowData(MarketData):
         @return float[] with dim =4 for neural network computing
         '''
         return self.floatXC(baseline_Price, baseline_Volume, 4)
-
-    @abstractmethod
-    def float6C(self, baseline_Price=1.0, baseline_Volume =1.0) :
-        '''
-        @return float[] with dim =6 for neural network computing
-        '''
-        return self.floatXC(baseline_Price, baseline_Volume, 6)
 
 ########################################################################
 class TickToKLineMerger(object):
@@ -718,7 +710,9 @@ class MarketState(MetaObj):
 
     def format(self, formatter, symbol=None) :
         formatter.attach(self)
-        ret = formatter.format(symbol)
+        if not formatter.validate(): return None
+
+        ret = formatter.doFormat(symbol)
         formatter.unattach()
         return ret
 
@@ -750,7 +744,11 @@ class Formatter(MetaObj):
     '''
 
     @abstractmethod
-    def format(self, symbol=None) :
+    def validate(self) :
+        raise ValueError('abstract Formatter')
+
+    @abstractmethod
+    def doFormat(self, symbol=None) :
         raise NotImplementedError
 
 

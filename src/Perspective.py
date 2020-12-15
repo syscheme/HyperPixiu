@@ -167,7 +167,7 @@ class KLineEx(KLineData):
                 self.volume = val.volume
             return
 
-    def floatXC(self, baseline_Price=1.0, baseline_Volume =1.0, channel=4) :
+    def floatXC(self, baseline_Price=1.0, baseline_Volume =1.0, channels=6) :
         '''
         @return float[] for neural network computing
         '''
@@ -184,13 +184,8 @@ class KLineEx(KLineData):
         ]
         #TODO: other optional dims
 
-        channel = int(channel)
-        if channel <= 0: return ret
-
-        return ret[:channel] if len(ret) >= channel else ret +[0.0]* (channel-len(ret))
-
-    def float6C(self, baseline_Price=1.0, baseline_Volume =1.0) :
-        return self.floatXC(baseline_Price, baseline_Volume, channel=6)
+        channels = int(channels)
+        return ret[:channels] if len(ret) >= channels else ret +[0.0]* (channels -len(ret))
 
 ########################################################################
 class Perspective(MarketData):
@@ -595,6 +590,7 @@ class Perspective(MarketData):
 
         return result
 
+    """
     def float6C(self, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
         '''@return a 2D array of floats
         '''
@@ -637,35 +633,7 @@ class Perspective(MarketData):
                     result.append(fval)
 
         return result
-
-    def __richKL6(listKL, listMF, basePrice, baseVol, minsPerDay):
-        result =[]
-        bV = baseVol /minsPerDay
-
-        for kl in listKL:
-            klf = [
-                floatNormalize_LOG10(kl.close, basePrice, 1.5),
-                floatNormalize_LOG10(kl.volume, bV, 1.5),
-                floatNormalize(minsPerDay*(kl.high / kl.close -1)),
-                floatNormalize(minsPerDay*(kl.close / kl.low -1)),
-                0.0, 0.0
-            ]
-
-            while len(listMF)>0 and listMF[0].asof < kl.asof:
-                del listMF[0]
-                continue
-
-            if len(listMF)>0 and listMF[0].asof == kl.asof:
-                mf = listMF[0]
-                if minsPerDay >1:
-                    klf[4],klf[5] = floatNormalize(0.5 + 10*mf.ratioNet), floatNormalize(0.5 + 10*mf.ratioR0) # in-day KLs
-                else:
-                    klf[4],klf[5] = floatNormalize(0.5 + 10*mf.ratioNet), minsPerDay*(kl.open / kl.high -1)
-            
-            result.append(klf)
-        return result
-        
-
+    
     def float6Cx(self) :
         '''@return a 2D array of floats
         '''
@@ -700,6 +668,35 @@ class Perspective(MarketData):
 
         return result
 
+    """
+
+    def __richKL6(listKL, listMF, basePrice, baseVol, minsPerDay):
+        result =[]
+        bV = baseVol /minsPerDay
+
+        for kl in listKL:
+            klf = [
+                floatNormalize_LOG10(kl.close, basePrice, 1.5),
+                floatNormalize_LOG10(kl.volume, bV, 1.5),
+                floatNormalize(minsPerDay*(kl.high / kl.close -1)),
+                floatNormalize(minsPerDay*(kl.close / kl.low -1)),
+                0.0, 0.0
+            ]
+
+            while len(listMF)>0 and listMF[0].asof < kl.asof:
+                del listMF[0]
+                continue
+
+            if len(listMF)>0 and listMF[0].asof == kl.asof:
+                mf = listMF[0]
+                if minsPerDay >1:
+                    klf[4],klf[5] = floatNormalize(0.5 + 10*mf.ratioNet), floatNormalize(0.5 + 10*mf.ratioR0) # in-day KLs
+                else:
+                    klf[4],klf[5] = floatNormalize(0.5 + 10*mf.ratioNet), minsPerDay*(kl.open / kl.high -1)
+            
+            result.append(klf)
+        return result
+        
     # def engorged(self, symbol=None) :
     #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data
     #     '''
@@ -941,30 +938,39 @@ class PerspectiveState(MarketState):
 
 
 ########################################################################
-class Formatter_F1548(Formatter):
+class PerspectiveFormatter(Formatter):
     '''
     '''
     def __init__(self, marketState =None):
         '''Constructor'''
-        super(Formatter_F1548, self).__init__()
+        super(PerspectiveFormatter, self).__init__()
 
         if marketState:
             self.attach(marketState)
 
-    def format(self, symbol=None) :
-
+    def validate(self) :
         if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
-            raise ValueError('%s could not attach marketState of %s' %(self.__class__.__name__, str(self.mstate)))
+            return False
 
-        F4SECHMA_1548 = OrderedDict({
-            'asof':              1,
-            EVENT_KLINE_1MIN :  30,
-            EVENT_KLINE_5MIN :  96,
-            EVENT_KLINE_1DAY : 260,
-        })
+        return True
+
+########################################################################
+class Formatter_F1548(PerspectiveFormatter):
+    F4SECHMA_1548 = OrderedDict({
+        'asof':              1,
+        EVENT_KLINE_1MIN :  30,
+        EVENT_KLINE_5MIN :  96,
+        EVENT_KLINE_1DAY : 260,
+    })
+
+    def __init__(self):
+        '''Constructor'''
+        super(Formatter_F1548, self).__init__()
+
+    def doFormat(self, symbol=None) :
 
         if symbol and symbol in self.mstate._dictPerspective.keys():
-            ret = self.mstate._dictPerspective[symbol].floatsD4(F4SECHMA_1548)
+            ret = self.mstate._dictPerspective[symbol].floatsD4(self.__class__.F4SECHMA_1548)
         else : 
             raise ValueError('Perspective.floatsD4() unknown symbol[%s]' %symbol )
 
@@ -975,7 +981,7 @@ class Formatter_F1548(Formatter):
         raise ValueError('%s.format() unexpected ret' % self.__class__.__name__)
 
 ########################################################################
-class Formatter_base2dImg(Formatter):
+class Formatter_base2dImg(PerspectiveFormatter):
     '''
     '''
     BMP_COLOR_BG_FLOAT=1.0
@@ -987,10 +993,7 @@ class Formatter_base2dImg(Formatter):
         self._dem = dem
         if self._dem <=0: self._dem=60
 
-    def format(self, symbol=None) :
-
-        if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
-            raise ValueError('%s could not attach marketState of %s' %(self.__class__.__name__, str(self.mstate)))
+    def doFormat(self, symbol=None) :
 
         C6SECHMA_16xx = OrderedDict({
             EVENT_KLINE_1MIN     : -1,
@@ -1023,7 +1026,7 @@ class Formatter_base2dImg(Formatter):
             for y in range(0,4):
                 i = (x-1) *4 + y
                 if i < len(stk) :
-                    img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+                    img6C[startRow + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
 
         # parition 1: data[0:16,4:6] fillin 16x6 K5min up to a week
         startRow =5
@@ -1032,7 +1035,7 @@ class Formatter_base2dImg(Formatter):
             for y in range(0, 6):
                 i = x *6 + y
                 if i < len(stk) :
-                    img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+                    img6C[startRow + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
         
         # parition 2: data[0:16,10:15] fillin 16x5 K1Day up to 16 week or 1/3yr
         startRow =12
@@ -1041,7 +1044,7 @@ class Formatter_base2dImg(Formatter):
             for y in range(0, 5):
                 i = x *5 + y
                 if i < len(stk) :
-                    img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+                    img6C[startRow + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
 
         # parition 3x: TODO KL1w
         '''
@@ -1053,7 +1056,7 @@ class Formatter_base2dImg(Formatter):
             for y in range(0, 10):
                 i = x *5 + y + 16*5
                 if i < len(stk) :
-                    img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+                    img6C[startRow + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
         '''
 
         return self.covertImg6CTo3C(img6C) # return img6C
@@ -1131,10 +1134,7 @@ class Formatter_2dImg16x32(Formatter_base2dImg):
         '''Constructor'''
         super(Formatter_2dImg16x32, self).__init__(imgDir, dem)
 
-    def format(self, symbol=None) :
-        if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
-            raise ValueError('%s could not attach marketState of %s' %(self.__class__.__name__, str(self.mstate)))
-
+    def doFormat(self, symbol=None) :
         C6SECHMA_16x32R = OrderedDict({
             'asof'               : 1,
             EVENT_KLINE_1MIN     : 32,
@@ -1164,7 +1164,7 @@ class Formatter_2dImg16x32(Formatter_base2dImg):
         # seq6C_offset =C6SECHMA_16x32R['asof']
         for i in range(1, min(len(stk), 16*2)): 
              x, y = int(i %16), int(i /16)
-             img6C[startRow + y][x] = stk[i -1].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+             img6C[startRow + y][x] = stk[i -1].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
         
         # parition 1: 16*15 KL5min to cover a week
         startRow =2
@@ -1172,7 +1172,7 @@ class Formatter_2dImg16x32(Formatter_base2dImg):
         # seq6C_offset =C6SECHMA_16x32R['asof'] + C6SECHMA_16x32R[EVENT_KLINE_1MIN]
         for i in range(0, min(len(stk), 16*15)): 
              x, y = int(i %16), int(i /16)
-             img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+             img6C[startRow + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
 
         # parition 3: 16*15 KL1day to cover near a year
         startRow +=15
@@ -1180,7 +1180,7 @@ class Formatter_2dImg16x32(Formatter_base2dImg):
         # seq6C_offset =C6SECHMA_16x32R['asof'] + C6SECHMA_16x32R[EVENT_KLINE_1MIN] + C6SECHMA_16x32R[EVENT_KLINE_5MIN]
         for i in range(0, min(len(stk), 16*15)): 
              x, y = int(i %16), int(i /16)
-             img6C[startRow + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+             img6C[startRow + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
 
         return self.covertImg6CTo3C(img6C) # return img6C
 
@@ -1236,7 +1236,7 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
                 (14, 0), (15, 0), (15, 1), (15, 2), (15, 3), (15, 4), (15, 5), (15, 6), (15, 7), (15, 8), (15, 9), (15, 10), (15, 11), (15, 12), (15, 13), (15, 14),
                 (15, 15), (14, 15), (13, 15), (12, 15), (11, 15), (10, 15), (9, 15), (8, 15), (7, 15), (6, 15), (5, 15), (4, 15), (3, 15), (2, 15), (1, 15), (0, 15)]
     
-    def format(self, symbol=None) :
+    def doFormat(self, symbol=None) :
         if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
             raise ValueError('%s could not attach marketState of %s' %(self.__class__.__name__, str(self.mstate)))
 
@@ -1276,13 +1276,13 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
 
         for i in range(min(len(stk), C6SECHMA_16x16x4[EVENT_KLINE_1MIN])): 
              x, y = Formatter_2dImgSnail16.COORDS[i]
-             img6C[y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+             img6C[y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
         
         stk, bV = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48
         if not stampAsof and len(stk) >0 : stampAsof = stk[0].asof
         for i in range(min(len(stk), C6SECHMA_16x16x4[EVENT_KLINE_5MIN])): 
              x, y = Formatter_2dImgSnail16.COORDS[16 +i]
-             img6C[y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+             img6C[y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
 
         # parition 1: the central 1x1 is current datetime, the outter are 255KL1d covers a year
         if not stampAsof: return None
@@ -1293,7 +1293,7 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
         stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
         for i in range(min(len(stk), C6SECHMA_16x16x4[EVENT_KLINE_1DAY])): 
              x, y = Formatter_2dImgSnail16.COORDS[partition*16 + i]
-             img6C[partition*16 + y][x] = stk[i].float6C(baseline_Price=baseline_Price, baseline_Volume= bV)
+             img6C[partition*16 + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
 
         '''
         # parition 2 MF: the central 4x4 MF1m, the outter: 48*4MF5m cover 4days, 48 MF1d cover 48days

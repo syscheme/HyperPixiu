@@ -243,57 +243,56 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
         thePROG.error('commitToday() failed to archived %s into %s' %(srcpath, destpath))
 
     # step 3. append the snapshots
-    if fnSnapshot and len(fnSnapshot) >2:
-        srcpath = os.path.join(pubDir, fnSnapshot)
-        destpath = os.path.join(archDir, 'snapshots', 'SNS_%s.h5' % (symbol) )
-        gns = []
+    srcpath = os.path.join(pubDir, fnSnapshot)
+    destpath = os.path.join(archDir, 'snapshots', 'SNS_%s.h5' % (symbol) )
+    gns = []
 
-        lastDates = [ x[0] for x in lastDays] if lastDays and len(lastDays)>0 else []
-        try :
-            with h5py.File(destpath, 'a') as h5w:
-                # step 3.1, copy the new SNS into the dest h5f
-                with h5py.File(srcpath, 'r') as h5r:
-                    for gn in h5r.keys():
-                        if not symbol in gn: continue
-                        g = h5r[gn]
-                        if not 'desc' in g.attrs.keys() or not 'pickled market state' in g.attrs['desc'] : continue
-                        gdesc = g.attrs['desc']
+    lastDates = [ x[0] for x in lastDays] if lastDays and len(lastDays)>0 else []
+    try :
+        with h5py.File(destpath, 'a') as h5w:
+            # step 3.1, copy the new SNS into the dest h5f
+            with h5py.File(srcpath, 'r') as h5r:
+                for gn in h5r.keys():
+                    if not symbol in gn: continue
+                    g = h5r[gn]
+                    if not 'desc' in g.attrs.keys() or not 'pickled market state' in g.attrs['desc'] : continue
+                    gdesc = g.attrs['desc']
 
-                        if gn in h5w.keys(): del h5w[gn]
-                        # Note that this is not a copy of the dataset! Like hard links in a UNIX file system, objects in an HDF5 file can be stored in multiple groups
-                        # So, h5w[gn] = g doesn't work because across different files
-                        # go = h5w.create_group(gn)
-                        h5r.copy(g.name, h5w) # note the destGroup is the parent where the group want to copy under-to
-                        go = h5w[gn]
-                        gns.append(gn)
-                        # m1, m2 = list(g.keys()), list(go.keys())
-                        # a1, a2 = list(g.attrs.keys()), list(go.attrs.keys())
+                    if gn in h5w.keys(): del h5w[gn]
+                    # Note that this is not a copy of the dataset! Like hard links in a UNIX file system, objects in an HDF5 file can be stored in multiple groups
+                    # So, h5w[gn] = g doesn't work because across different files
+                    # go = h5w.create_group(gn)
+                    h5r.copy(g.name, h5w) # note the destGroup is the parent where the group want to copy under-to
+                    go = h5w[gn]
+                    gns.append(gn)
+                    # m1, m2 = list(g.keys()), list(go.keys())
+                    # a1, a2 = list(g.attrs.keys()), list(go.attrs.keys())
 
-                # step 3.2, determine the grainRate_X based on lastDays
-                if len(lastDates) >0:
-                    start, end = '%sT000000' % lastDays[-1][0], '%sT235959' % lastDays[0][0]
-                    for k in h5w.keys() :
-                        if not symbol +'@' in k : continue
-                        strAsOf = k[1 + k.index('@'):]
-                        if strAsOf < start or strAsOf > end: continue
-                        go = h5w[k]
-                        if not 'price' in go.attrs.keys() or float(go.attrs['price']) <=0.0:
-                            continue
+            # step 3.2, determine the grainRate_X based on lastDays
+            if len(lastDates) >0:
+                start, end = '%sT000000' % lastDays[-1][0], '%sT235959' % lastDays[0][0]
+                for k in h5w.keys() :
+                    if not symbol +'@' in k : continue
+                    strAsOf = k[1 + k.index('@'):]
+                    if strAsOf < start or strAsOf > end: continue
+                    go = h5w[k]
+                    if not 'price' in go.attrs.keys() or float(go.attrs['price']) <=0.0:
+                        continue
 
-                        try :
-                            strYYMMDD = strAsOf[:strAsOf.index('T'):] if 'T' in strAsOf else strAsOf
-                            nDaysAgo = lastDates.index(strYYMMDD)
-                            if nDaysAgo <0: continue
+                    try :
+                        strYYMMDD = strAsOf[:strAsOf.index('T'):] if 'T' in strAsOf else strAsOf
+                        nDaysAgo = lastDates.index(strYYMMDD)
+                        if nDaysAgo <0: continue
 
-                            grk, grv = 'grainRate_%d' % nDaysAgo, lastDays[nDaysAgo][4] / go.attrs['price'] -1
-                            go.attrs[grk] = grv
-                        except Exception as ex:
-                            thePROG.warn('commitToday() failed to determine grainRate for: %s' % k)
-                        
-            thePROG.info('commitToday() added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
-            __rmfile(srcpath)
-        except Exception as ex:
-            thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
+                        grk, grv = 'grainRate_%d' % nDaysAgo, lastDays[nDaysAgo][4] / go.attrs['price'] -1
+                        go.attrs[grk] = grv
+                    except Exception as ex:
+                        thePROG.warn('commitToday() failed to determine grainRate for: %s' % k)
+                    
+        thePROG.info('commitToday() added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
+        __rmfile(srcpath)
+    except Exception as ex:
+        thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
 
 @shared_task(bind=True, base=Retryable)
 def topActives(self, topNum = 500):

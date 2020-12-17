@@ -92,6 +92,8 @@ def __publishFiles(srcfiles) :
     pubed = []
     for fn in srcfiles:
         try:
+            if not fn or len(fn) <=0: continue
+
             bn = os.path.basename(fn)
             destFn = os.path.join(destPubDir, bn)
             shutil.copyfile(fn, destFn + "~")
@@ -275,12 +277,14 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
                     snapshot ={}
         
         except StopIteration:
-            thePROG.info('hist-read: end of playback')
             break
         except Exception as ex:
             thePROG.logexception(ex)
             break # NOT sure why StopIteration not caught above but fell here # raise ex
+        except :
+            break # NOT sure why StopIteration not caught above but fell here # raise ex
 
+    thePROG.info('hist-read: end of playback')
     for i in range(10): rec.doAppStep() # to flush the recorder
 
     if snapshot and len(snapshot) >0:
@@ -288,17 +292,23 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
         if saveSnapshot(snapshoth5fn, h5group=h5ident, snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc']):
             savedSns.append(h5ident)
 
+    if not savedSns or len(savedSns) <=0:
+        snapshoth5fn = None
+
     cachedJsons = playback.cachedFiles
     thePROG.info('cached %s, generated %s and snapshots:%s, publishing' % (','.join(cachedJsons), fnTcsv, ','.join(savedSns)))
     dirNameLen = len(dirCache) +1
     pubDir, bns = __publishFiles([snapshoth5fn, fnTcsv] + playback.cachedFiles)
 
     # map to the arguments of sinaMaster.commitToday()
+    if snapshoth5fn and len(snapshoth5fn) >dirNameLen:
+        snapshoth5fn = snapshoth5fn[dirNameLen:]
+
     return {
         'symbol': SYMBOL,
         'login': MAPPED_USER,
         'asofYYMMDD': todayYYMMDD,
-        'fnSnapshot': snapshoth5fn[dirNameLen:], 
+        'fnSnapshot': snapshoth5fn, 
         'fnJsons': [x[dirNameLen:] for x in cachedJsons],
         'fnTcsv': fnTcsv[dirNameLen:],
         'lastDays': [[x.asof.strftime('%Y%m%d'), x.open, x.high, x.low, x.close, x.volume] for x in lastDays]

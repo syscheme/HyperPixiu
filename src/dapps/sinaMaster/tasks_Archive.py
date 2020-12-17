@@ -317,11 +317,12 @@ def schOn_Every5min(self):
             continue
 
         cWorking += 1
-        thePROG.debug('schOn_Every5min() downloadToday[%s]%s still working' %(k, v.task_id))
+        if __asyncResult_downloadToday and len(__asyncResult_downloadToday) <=50: # skip enumerating if there are too many
+            thePROG.debug('schOn_Every5min() downloadToday[%s]%s still working' %(k, v.task_id))
 
     thePROG.info('schOn_Every5min() downloadToday has %d-working and %d-done tasks' %(cWorking, len(todels)))
     if len(todels) >0:
-        thePROG.info('schOn_Every5min() clearing keys: %s' % ','.join(todels))
+        thePROG.info('schOn_Every5min() clearing %s keys: %s' % (len(todels), ','.join(todels)))
         for k in todels:
             del __asyncResult_downloadToday[k]
         if len(__asyncResult_downloadToday) <=0:
@@ -356,10 +357,11 @@ def schOn_TradeDayClose(self):
 
 
 ####################################
+from time import sleep
 if __name__ == '__main__':
     thePROG.setLogLevel('debug')
 
-    schOn_TradeDayClose()
+    # schOn_TradeDayClose()
     for i in range(20):
         schOn_Every5min()
         sleep(10)

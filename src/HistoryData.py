@@ -1121,6 +1121,9 @@ class PlaybackMux(Playback):
                     except StopIteration:
                         strmsToEvict.append(strm)
                         continue
+                    except RuntimeError:
+                        strmsToEvict.append(strm)
+                        continue
 
             for sd in strmsToEvict:
                 del self.__dictStrmPB[sd]

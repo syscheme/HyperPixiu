@@ -1,6 +1,7 @@
 # encoding: UTF-8
 
 from __future__ import division
+from __future__ import generator_stop
 
 from EventData import Event, EventData, EVENT_SYS_CLOCK, DT_EPOCH, datetime2float
 
@@ -443,7 +444,7 @@ class Iterable(MetaObj):
             self._iterableEnd = False
 
         if not self.__gen :
-            raise StopIteration
+            raise StopIteration # ('%s NULL gen' %self.id)
 
         return next(self.__gen)
 
@@ -473,7 +474,8 @@ class Iterable(MetaObj):
                 break
 
         self.__gen=None
-        raise StopIteration
+        # since python3.7 DONOT raise StopIteration, no return/yield of __generate() will trigger StopIteration automatically,
+        # otherwise 'raise StopIteration' will be converted to 'RuntimeError: generator raised StopIteration'
 
     @property
     def pendingSize(self) :

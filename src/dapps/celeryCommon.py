@@ -107,22 +107,29 @@ class Worker(Celery) :
 #     return 'hello world'
 
 #----------------------------------------------------------------------
-def getMappedAs(homeDir = MAPPED_HOME) :
+def getMappedAs(homeDir = None) :
     accLogin = None
 
     try :
         if not homeDir or len(homeDir) <=1:
-            homeDir = os.path.join(os.environ['HOME'], 'wkspaces/hpx_publish/..')
-            homeDir = os.path.realpath(homeDir)
+            rsync_sshloc = os.environ.get('RSYNC_SSH_HOME', None)
+            if rsync_sshloc and '@' in rsync_sshloc and ':' in rsync_sshloc:
+                homeDir = rsync_sshloc
+                accLogin = homeDir.split('@')[0]
+                return accLogin, homeDir
 
-        with open(os.path.join(homeDir, '.ssh', 'id_rsa.pub'), 'r') as fkey:
-            line = fkey.readline().strip()
-            accLogin = line.split(' ')[-1]
+            homeDir = '/mnt/s'
+            with open(os.path.join(homeDir, '.ssh', 'id_rsa.pub'), 'r') as fkey:
+                line = fkey.readline().strip()
+                accLogin = line.split(' ')[-1]
+                return accLogin, homeDir
+
     except Exception as ex:
         pass
         
-    return accLogin, homeDir
-    
+    homeDir = os.path.join(os.environ['HOME'], 'wkspaces/hpx_publish/..')
+    homeDir = os.path.realpath(homeDir)
+    return 'nobody', homeDir
 
 #----------------------------------------------------------------------
 if __name__ == '__main__':

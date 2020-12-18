@@ -8,6 +8,7 @@ from EventData import Event, EventData, EVENT_SYS_CLOCK, DT_EPOCH, datetime2floa
 import os
 import logging
 from logging.handlers import RotatingFileHandler
+# from colorama import Fore # , init, Back, Style
 from collections import OrderedDict, defaultdict
 from datetime import datetime, timedelta
 import time
@@ -1216,7 +1217,7 @@ class Program(object):
         if self.__logger: 
             self.__logger.debug(msg)
         else:
-            print('%s' % msg)
+            print('%s' % msg) # print(Fore.GREEN + '%s' % msg + Fore.RESET)
         
     @abstractmethod
     def info(self, msg):
@@ -1224,7 +1225,7 @@ class Program(object):
         if self.__logger: 
             self.__logger.info(msg)
         else:
-            print('%s' % msg)
+            print('%s' % msg) # print(Fore.GREEN + '%s' % msg + Fore.RESET)
 
     @abstractmethod
     def warn(self, msg):
@@ -1232,7 +1233,7 @@ class Program(object):
         if self.__logger: 
             self.__logger.warning(msg)
         else:
-            print('%s' % msg)
+            print('%s' % msg) # print(Fore.YELLOW + '%s' % msg + Fore.RESET)
         
     @abstractmethod
     def error(self, msg):
@@ -1240,7 +1241,7 @@ class Program(object):
         if self.__logger: 
             self.__logger.error(msg)
         else:
-            print('%s' % msg)
+            print('%s' % msg) # print(Fore.RED + '%s' % msg + Fore.RESET)
         
     @abstractmethod
     def critical(self, msg):
@@ -1248,7 +1249,7 @@ class Program(object):
         if self.__logger: 
             self.__logger.critical(msg)
         else:
-            print('%s' % msg)
+            print('%s' % msg) # print(Fore.RED + '%s' % msg + Fore.RESET)
 
     def logexception(self, ex, msg=''):
         '''报错输出+记录异常信息'''

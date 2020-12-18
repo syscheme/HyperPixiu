@@ -90,16 +90,38 @@ def saveSnapshot(filename, h5group, snapshot, ohlc):
 def __publishFiles(srcfiles) :
     destPubDir = os.path.join(MAPPED_HOME, "hpx_publish")
     pubed = []
+
+    modeRsyncSsh = False
+    if '@' in destPubDir and ':' in destPubDir :
+        modeRsyncSsh = True
+        rsync_sshcmd = os.environ.get('RSYNC_SSH_CMD', 'ssh')
+
     for fn in srcfiles:
         try:
             if not fn or len(fn) <=0: continue
-
             bn = os.path.basename(fn)
             destFn = os.path.join(destPubDir, bn)
-            shutil.copyfile(fn, destFn + "~")
-            shutil.move(destFn + "~", destFn)
-            pubed.append(bn)
-            __rmfile(fn)
+
+            if modeRsyncSsh :
+                cmd = "rsync -av -e '{0}' {1} {2}".format(rsync_sshcmd, fn, destFn)
+                thePROG.debug('exec: %s' % cmd)
+                ret = os.system(cmd)
+                thePROG.debug('exec: %s ret(%d)' % (cmd, ret))
+                # or
+                # cmd = "rsync -av -e '{0}' {1} {2}~".format(rsync_sshcmd, fn, destFn)
+                # ret = os.system(cmd)
+                # remoteFn = destFn[1+ destFn.index(':'): ]
+                # cmd = "{0} 'mv -vf {1}~ {1}'".format(rsync_sshcmd, remoteFn, remoteFn)
+                # ret = os.system(cmd)
+                if 0 ==ret:
+                    pubed.append(bn)
+            else:
+                shutil.copyfile(fn, destFn + "~")
+                shutil.move(destFn + "~", destFn)
+                pubed.append(bn)
+
+            if bn in pubed:
+                __rmfile(fn)
         except Exception as ex:
             thePROG.logexception(ex, 'publishFile[%s]' % fn)
 

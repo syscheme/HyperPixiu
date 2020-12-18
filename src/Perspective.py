@@ -18,7 +18,7 @@ EVENT_Perspective  = MARKETDATE_EVENT_PREFIX + 'Persp'   # 错误回报事件
 
 DEFAULT_KLDEPTH_TICK = 0
 # DEFAULT_KLDEPTH_TICK = 120
-DEFAULT_KLDEPTH_1min = 30
+DEFAULT_KLDEPTH_1min = 32
 DEFAULT_KLDEPTH_5min = 240 # 96
 DEFAULT_KLDEPTH_1day = 260
 
@@ -77,10 +77,11 @@ class EvictableStack(object):
         return self.__stampUpdated if self.__stampUpdated else DT_EPOCH
 
     def _exportList(self, nilFilled=False):
+        data = copy.deepcopy(self.__data)
         if nilFilled :
             fillsize = (self.evictSize - self.size) if self.evictSize >=0 else 0
-            return self.__data + [self.__dataNIL] *fillsize
-        return self.__data
+            data += [self.__dataNIL] *fillsize
+        return data
 
     def overwrite(self, item):
         self.__data[0] =item
@@ -1071,37 +1072,6 @@ class Formatter_base2dImg(PerspectiveFormatter):
             1.0
             ]
 
-    '''
-    TODO def stkItemToFloats(stkItem, channels=6):
-    def export6Cx(self, symbol, lstsWished) :
-        if symbol and symbol in self.mstate._dictPerspective.keys():
-            res = self.mstate._dictPerspective[symbol].float6Cx()
-            if not res: return None
-
-            ret =[]
-            for et in lstsWished.keys():
-                sz = lstsWished[et]
-                if sz <=0: continue
-                if not et in res.keys():
-                    ret += [[0.0 for i in range(6)] for j in range(sz)]
-                    continue
-
-                data = res[et]
-                if 'asof' == et:
-                    ret += [data]
-                    continue
-
-                if len(data) > sz:
-                    ret += data[:sz]
-                else:
-                    ret += data
-                    ret += [[0.0 for i in range(6)] for j in range(sz-len(data))]
-
-            return ret
-
-        raise ValueError('Perspective.export6Cx() unknown symbol[%s]' %symbol )
-    '''
-    
     def covertImg6CTo3C(self, img6C) :
         lenX, lenY = len(img6C[0]), len(img6C)
         img3C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX*2)] for y in range(lenY) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
@@ -1116,7 +1086,7 @@ class Formatter_base2dImg(PerspectiveFormatter):
             bmpstamp = '%02d-%02d-%02dm%03d' % (yy, mon, day, minute)
             width = 320
             # if  bmpstamp != self.__bmpstamp  and 0 == minute % 60 :
-            if 0 == minute % 60 :
+            if self._dem >0 and 0 == minute % self._dem :
                 imgarray = np.uint8(np.array(img3C)*255)
                 bmp = Image.fromarray(imgarray)
                 if width > lenX:
@@ -1135,6 +1105,7 @@ class Formatter_2dImg16x32(Formatter_base2dImg):
         super(Formatter_2dImg16x32, self).__init__(imgDir, dem)
 
     def doFormat(self, symbol=None) :
+        X_LEN, Y_LEN = 16, 32
         C6SECHMA_16x32R = OrderedDict({
             'asof'               : 1,
             EVENT_KLINE_1MIN     : 32,
@@ -1151,35 +1122,52 @@ class Formatter_2dImg16x32(Formatter_base2dImg):
         baseline_Price, baseline_Volume= stk[0].close, stk[0].volume
 
         # TODO: draw the imagex
-        img6C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(32)] # DONOT take [ [[0.0]*6] *16] *16
+        img6C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(X_LEN)] for y in range(Y_LEN)] # DONOT take [ [[0.0]*6] *16] *16
 
-        # parition 0: pixel[0,0] as the datetime, 16*2-1 KL1min to cover half an hour
+        # parition 0: pixel[0,0] as the datetime, X_LEN* 2rows -1 KL1min to cover half an hour
         startRow =0
         stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
         if len(stk) <=0: return None
 
         stampAsof = stk[0].asof
         img6C[startRow][0] = Formatter_base2dImg.datetimeTo6C(stampAsof)
+        todayYYMMDD = stampAsof.strftime('%Y%m%d')
 
         # seq6C_offset =C6SECHMA_16x32R['asof']
-        for i in range(1, min(len(stk), 16*2)): 
-             x, y = int(i %16), int(i /16)
-             img6C[startRow + y][x] = stk[i -1].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+        for i in range(1, min(1+ len(stk), X_LEN*2)): 
+             kl = stk[i-1]
+             if kl.asof.strftime('%Y%m%d') != todayYYMMDD: continue # represent only today's
+             x, y = int(i %X_LEN), int(i /X_LEN)
+             img6C[startRow + y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+        startRow +=2
         
-        # parition 1: 16*15 KL5min to cover a week
-        startRow =2
+        # parition 1: X_LEN *15rows KL5min to cover a week
         stk, bV = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48
-        # seq6C_offset =C6SECHMA_16x32R['asof'] + C6SECHMA_16x32R[EVENT_KLINE_1MIN]
-        for i in range(0, min(len(stk), 16*15)): 
-             x, y = int(i %16), int(i /16)
-             img6C[startRow + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
 
-        # parition 3: 16*15 KL1day to cover near a year
-        startRow +=15
+        # parition 1.1.: X_LEN *3rows today's KL5min
+        for i in range(0, min(len(stk), X_LEN*15)): 
+             kl = stk[i]
+             if kl.asof.strftime('%Y%m%d') != todayYYMMDD:
+                  # split today's out of the days before
+                 if i>0: 
+                    del stk[:i]
+                 break
+             x, y = int(i %X_LEN), int(i /X_LEN)
+             img6C[startRow + y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+        startRow +=3
+
+        # parition 1.2.: X_LEN *12rows to cover 4 days before today
+        for i in range(0, min(len(stk), X_LEN*12)): 
+             kl = stk[i]
+             x, y = int(i %X_LEN), int(i /X_LEN)
+             img6C[startRow + y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+        startRow +=12
+
+        # parition 3: X_LEN*15 KL1day to cover near a year
         stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
         # seq6C_offset =C6SECHMA_16x32R['asof'] + C6SECHMA_16x32R[EVENT_KLINE_1MIN] + C6SECHMA_16x32R[EVENT_KLINE_5MIN]
-        for i in range(0, min(len(stk), 16*15)): 
-             x, y = int(i %16), int(i /16)
+        for i in range(0, min(len(stk), X_LEN*15)): 
+             x, y = int(i %X_LEN), int(i /X_LEN)
              img6C[startRow + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
 
         return self.covertImg6CTo3C(img6C) # return img6C

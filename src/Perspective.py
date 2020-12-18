@@ -1072,28 +1072,42 @@ class Formatter_base2dImg(PerspectiveFormatter):
             1.0
             ]
 
-    def covertImg6CTo3C(self, img6C) :
-        lenX, lenY = len(img6C[0]), len(img6C)
-        img3C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX*2)] for y in range(lenY) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
-        for y in range(lenY):
-            for x in range(lenX) :
-                # img3C[y][x], img3C[y][lenX + x] = img6C[y][x][:3], img6C[y][x][3:]
-                img3C[y][2*x], img3C[y][2*x +1] = img6C[y][x][:3], img6C[y][x][3:]
+    def covertImg6CTo3C(self, img6C, expandX =False) :
+        img3C = elf.__6CTo3C_expandX(img6C) if expandX else self.__6CTo3C_expandY(img6C)
 
         if self._imgPathPrefix:
             ftime = img6C[0][0]
             yy, mon, day, minute = int(ftime[4] * 100), 1+ int(ftime[0] * 12), int(ftime[1] * 31), int(ftime[3] * 24*60)
             bmpstamp = '%02d-%02d-%02dm%03d' % (yy, mon, day, minute)
             width = 320
+            lenX, lenY = len(img3C[0]), len(img3C)
             # if  bmpstamp != self.__bmpstamp  and 0 == minute % 60 :
             if self._dem >0 and 0 == minute % self._dem :
                 imgarray = np.uint8(np.array(img3C)*255)
                 bmp = Image.fromarray(imgarray)
                 if width > lenX:
-                    bmp = bmp.resize((width, int(width *1.0/lenX/2 *lenY)), Image.NEAREST)
+                    bmp = bmp.resize((width, int(width *1.0/lenX *lenY)), Image.NEAREST)
                 # bmp.convert('RGB')
                 bmp.save('%s%s_%s.png' % (self._imgPathPrefix, self.id, bmpstamp))
                 self.__bmpstamp = bmpstamp
+
+        return img3C
+
+    def __6CTo3C_expandX(self, img6C) :
+        lenX, lenY = len(img6C[0]), len(img6C)
+        img3C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX*2)] for y in range(lenY) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
+        for y in range(lenY):
+            for x in range(lenX) :
+                img3C[y][2*x], img3C[y][2*x +1] = img6C[y][x][:3], img6C[y][x][3:]
+
+        return img3C
+
+    def __6CTo3C_expandY(self, img6C) :
+        lenX, lenY = len(img6C[0]), len(img6C)
+        img3C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX)] for y in range(lenY*2) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
+        for y in range(lenY):
+            for x in range(lenX) :
+                img3C[2*y][x], img3C[2*y+1][x] = img6C[y][x][:3], img6C[y][x][3:]
 
         return img3C
 
@@ -1105,7 +1119,7 @@ class Formatter_2dImg16x32(Formatter_base2dImg):
         super(Formatter_2dImg16x32, self).__init__(imgDir, dem)
 
     def doFormat(self, symbol=None) :
-        X_LEN, Y_LEN = 16, 32
+        X_LEN, Y_LEN = 32, 16
         C6SECHMA_16x32R = OrderedDict({
             'asof'               : 1,
             EVENT_KLINE_1MIN     : 32,
@@ -1124,8 +1138,9 @@ class Formatter_2dImg16x32(Formatter_base2dImg):
         # TODO: draw the imagex
         img6C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(X_LEN)] for y in range(Y_LEN)] # DONOT take [ [[0.0]*6] *16] *16
 
-        # parition 0: pixel[0,0] as the datetime, X_LEN* 2rows -1 KL1min to cover half an hour
         startRow =0
+        # parition 0: pixel[0,0] as the datetime, X_LEN* 2rows -1 KL1min to cover half an hour
+        rows =1
         stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
         if len(stk) <=0: return None
 
@@ -1134,41 +1149,44 @@ class Formatter_2dImg16x32(Formatter_base2dImg):
         todayYYMMDD = stampAsof.strftime('%Y%m%d')
 
         # seq6C_offset =C6SECHMA_16x32R['asof']
-        for i in range(1, min(1+ len(stk), X_LEN*2)): 
+        for i in range(1, min(1+ len(stk), X_LEN*rows)): 
              kl = stk[i-1]
              if kl.asof.strftime('%Y%m%d') != todayYYMMDD: continue # represent only today's
              x, y = int(i %X_LEN), int(i /X_LEN)
              img6C[startRow + y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
-        startRow +=2
+        startRow +=rows
         
         # parition 1: X_LEN *15rows KL5min to cover a week
         stk, bV = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48
 
         # parition 1.1.: X_LEN *3rows today's KL5min
-        for i in range(0, min(len(stk), X_LEN*15)): 
+        rows =2
+        for i in range(0, min(len(stk), X_LEN*rows)): 
              kl = stk[i]
              if kl.asof.strftime('%Y%m%d') != todayYYMMDD:
                   # split today's out of the days before
-                 if i>0: 
-                    del stk[:i]
+                 if i>0: del stk[:i]
                  break
              x, y = int(i %X_LEN), int(i /X_LEN)
              img6C[startRow + y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
-        startRow +=3
+        startRow +=rows
 
         # parition 1.2.: X_LEN *12rows to cover 4 days before today
-        for i in range(0, min(len(stk), X_LEN*12)): 
+        rows =6
+        for i in range(0, min(len(stk), X_LEN*rows)): 
              kl = stk[i]
              x, y = int(i %X_LEN), int(i /X_LEN)
              img6C[startRow + y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
-        startRow +=12
+        startRow +=rows
 
         # parition 3: X_LEN*15 KL1day to cover near a year
+        rows =8
         stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
         # seq6C_offset =C6SECHMA_16x32R['asof'] + C6SECHMA_16x32R[EVENT_KLINE_1MIN] + C6SECHMA_16x32R[EVENT_KLINE_5MIN]
-        for i in range(0, min(len(stk), X_LEN*15)): 
+        for i in range(0, min(len(stk), X_LEN*rows)): 
              x, y = int(i %X_LEN), int(i /X_LEN)
              img6C[startRow + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+        startRow +=rows
 
         return self.covertImg6CTo3C(img6C) # return img6C
 

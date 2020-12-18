@@ -1957,7 +1957,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 super(IdealTrader_Tplus1, self).OnEvent(evAdv) # to perform the real handling
 
         action[ADVICE_DIRECTIONS.index(dirToExec)] =1
-        fmtr = Formatter_F1548() # = Formatter_2dImg16x32('/mnt/e/bmp/%s.' % symbol)  = Formatter_2dImgSnail16() = Formatter_F1548()
+        fmtr = Formatter_F1548() # = Formatter_2dImg16x32('/mnt/e/bmp/%s.' % symbol, dem=5)  = Formatter_2dImgSnail16() = Formatter_F1548()
         self._mstate = self._marketState.format(fmtr, self._tradeSymbol) # self._mstate = self._marketState.exportF1548(self._tradeSymbol)
 
         if not self._mstate: return

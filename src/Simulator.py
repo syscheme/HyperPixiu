@@ -1957,7 +1957,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 super(IdealTrader_Tplus1, self).OnEvent(evAdv) # to perform the real handling
 
         action[ADVICE_DIRECTIONS.index(dirToExec)] =1
-        fmtr = Formatter_F1548() # = Formatter_2dImg16x32() # = Formatter_2dImgSnail16()
+        fmtr = Formatter_F1548() # = Formatter_2dImg16x32('/mnt/e/bmp/%s.' % symbol)  = Formatter_2dImgSnail16() = Formatter_F1548()
         self._mstate = self._marketState.format(fmtr, self._tradeSymbol) # self._mstate = self._marketState.exportF1548(self._tradeSymbol)
 
         if not self._mstate: return
@@ -2466,7 +2466,7 @@ class ShortSwingScanner(OfflineSimulator):
                     stateOfEvent = {
                         'ident'   : '%s@%s' % (symbol, ev.data.datetime.strftime('%Y%m%dT%H%M%S')),
                         'ohlc'   : [ohlc.open, ohlc.high, ohlc.low, price],
-                        'stateD4f': self.__psptReadAhead.exportImg6C_3Liner16x32R(symbol, self.outdir), # floatsD4(d4wished = self._f4schema), 
+                        'stateD4f': self.__psptReadAhead.exportImg6C_3Liner16x32R(symbol, self.outdir), # floatsD4(lstsWished = self._f4schema), 
                         }
 
                     self.__eventsOfDays[0].append(stateOfEvent)

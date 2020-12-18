@@ -725,9 +725,15 @@ class Formatter(MetaObj):
         '''Constructor'''
         super(Formatter, self).__init__()
         self.__mstate = None
+        self._id = self.__class__.__name__
+        if 'Formatter_' == self._id[:10] :
+            self._id = self._id[10:]
     
     @property
     def mstate(self) : return self.__mstate
+
+    @property
+    def id(self) : return self._id
 
     def attach(self, marketState):
         self.__mstate = marketState

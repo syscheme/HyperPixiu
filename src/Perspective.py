@@ -534,7 +534,7 @@ class Perspective(MarketData):
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
         return self.__exportS1548I4(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume)
     
-    def floatsD4(self, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+    def floatsD4(self, lstsWished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
         '''@return an array_like data as float4C, maybe [] or numpy.array
         '''
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
@@ -547,7 +547,7 @@ class Perspective(MarketData):
         if baseline_Volume <0.001: baseline_Volume=1.0
 
         result = []
-        for k, v in d4wished.items():
+        for k, v in lstsWished.items():
             if 'asof' ==k and int(v) >0:
                 fAsOf = [0.0] * EXPORT_FLOATS_DIMS
                 try :
@@ -577,10 +577,10 @@ class Perspective(MarketData):
 
         return result
 
-    def export(self, d4wished= { EVENT_KLINE_1DAY:20 } ) :
+    def export(self, lstsWished= { EVENT_KLINE_1DAY:20 } ) :
         result = {}
 
-        for k, v in d4wished.items():
+        for k, v in lstsWished.items():
             if not k in self.eventTypes :
                 continue
 
@@ -591,7 +591,7 @@ class Perspective(MarketData):
         return result
 
     """
-    def float6C(self, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+    def float6C(self, lstsWished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
         '''@return a 2D array of floats
         '''
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
@@ -604,7 +604,7 @@ class Perspective(MarketData):
         if baseline_Volume <0.001: baseline_Volume=1.0
 
         result = []
-        for k, v in d4wished.items():
+        for k, v in lstsWished.items():
             if 'asof' ==k and int(v) >0:
                 fAsOf = [0.0] * 6
                 try :
@@ -929,10 +929,10 @@ class PerspectiveState(MarketState):
         
         return self._dictPerspective[s].push(ev)
 
-    def export(self, symbol, d4wished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
+    def export(self, symbol, lstsWished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
 
         if symbol and symbol in self._dictPerspective.keys():
-            return self._dictPerspective[symbol].export(d4wished)
+            return self._dictPerspective[symbol].export(lstsWished)
 
         raise ValueError('Perspective.export() unknown symbol[%s]' %symbol )
 
@@ -986,10 +986,10 @@ class Formatter_base2dImg(PerspectiveFormatter):
     '''
     BMP_COLOR_BG_FLOAT=1.0
 
-    def __init__(self, imgDir=None, dem=60):
+    def __init__(self, imgPathPrefix=None, dem=60):
         '''Constructor'''
         super(Formatter_base2dImg, self).__init__()
-        self._imgDir = imgDir
+        self._imgPathPrefix = imgPathPrefix
         self._dem = dem
         if self._dem <=0: self._dem=60
 
@@ -1001,7 +1001,7 @@ class Formatter_base2dImg(PerspectiveFormatter):
             EVENT_KLINE_1DAY     : -1,
         })
 
-        seqdict = self.mstate.export(symbol, d4wished=C6SECHMA_16xx)  # = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
+        seqdict = self.mstate.export(symbol, lstsWished=C6SECHMA_16xx)  # = self.export6C(symbol, lstsWished=C6SECHMA_16x16x4)
         if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
             return None
 
@@ -1067,20 +1067,20 @@ class Formatter_base2dImg(PerspectiveFormatter):
             dt.day / 31.0, # normalize to [0.0,1.0]
             dt.weekday() / 7.0, # normalize to [0.0,1.0]
             (dt.hour *60 +dt.minute) / (24 *60.0), # normalize to [0.0,1.0]
-            1.0, 1.0
+            (dt.year %100)/100.0, 
+            1.0
             ]
-
 
     '''
     TODO def stkItemToFloats(stkItem, channels=6):
-    def export6Cx(self, symbol, d4wished) :
+    def export6Cx(self, symbol, lstsWished) :
         if symbol and symbol in self.mstate._dictPerspective.keys():
             res = self.mstate._dictPerspective[symbol].float6Cx()
             if not res: return None
 
             ret =[]
-            for et in d4wished.keys():
-                sz = d4wished[et]
+            for et in lstsWished.keys():
+                sz = lstsWished[et]
                 if sz <=0: continue
                 if not et in res.keys():
                     ret += [[0.0 for i in range(6)] for j in range(sz)]
@@ -1110,10 +1110,10 @@ class Formatter_base2dImg(PerspectiveFormatter):
                 # img3C[y][x], img3C[y][lenX + x] = img6C[y][x][:3], img6C[y][x][3:]
                 img3C[y][2*x], img3C[y][2*x +1] = img6C[y][x][:3], img6C[y][x][3:]
 
-        if self._imgDir:
+        if self._imgPathPrefix:
             ftime = img6C[0][0]
-            mon, day, minute = 1+ int(ftime[0] * 12), 1+ int(ftime[1] * 31), int(ftime[3] * 24*60)
-            bmpstamp = '%02d%02dT%03d' % (mon, day, minute)
+            yy, mon, day, minute = int(ftime[4] * 100), 1+ int(ftime[0] * 12), int(ftime[1] * 31), int(ftime[3] * 24*60)
+            bmpstamp = '%02d-%02d-%02dm%03d' % (yy, mon, day, minute)
             width = 320
             # if  bmpstamp != self.__bmpstamp  and 0 == minute % 60 :
             if 0 == minute % 60 :
@@ -1122,7 +1122,7 @@ class Formatter_base2dImg(PerspectiveFormatter):
                 if width > lenX:
                     bmp = bmp.resize((width, int(width *1.0/lenX/2 *lenY)), Image.NEAREST)
                 # bmp.convert('RGB')
-                bmp.save('%s/test_%s.png' % (self._imgDir, bmpstamp))
+                bmp.save('%s%s_%s.png' % (self._imgPathPrefix, self.id, bmpstamp))
                 self.__bmpstamp = bmpstamp
 
         return img3C
@@ -1142,7 +1142,7 @@ class Formatter_2dImg16x32(Formatter_base2dImg):
             EVENT_KLINE_1DAY     : 240,
         })
 
-        seqdict = self.mstate.export(symbol, d4wished=C6SECHMA_16x32R)  # = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
+        seqdict = self.mstate.export(symbol, lstsWished=C6SECHMA_16x32R)  # = self.export6C(symbol, lstsWished=C6SECHMA_16x16x4)
         if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
             return None
 
@@ -1250,7 +1250,7 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
             # EVENT_MONEYFLOW_1DAY : 48, # 48days
         })
 
-        seqdict = self.mstate.export(symbol, d4wished=C6SECHMA_16x16x4)  # = self.export6C(symbol, d4wished=C6SECHMA_16x16x4)
+        seqdict = self.mstate.export(symbol, lstsWished=C6SECHMA_16x16x4)  # = self.export6C(symbol, lstsWished=C6SECHMA_16x16x4)
         if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
             return None
 

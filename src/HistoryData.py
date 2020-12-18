@@ -632,7 +632,8 @@ class CsvPlayback(Playback):
         for fn in files:
             try :
                 os.stat(fn)
-            except :
+            except Exception as ex:
+                self.logexception(ex, 'access file[%s]' % fn)
                 continue
 
             name = os.path.basename(fn)

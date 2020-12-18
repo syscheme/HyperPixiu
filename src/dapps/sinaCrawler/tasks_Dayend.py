@@ -106,7 +106,7 @@ def __publishFiles(srcfiles) :
                 cmd = "rsync -av -e '{0}' {1} {2}".format(rsync_sshcmd, fn, destFn)
                 thePROG.debug('exec: %s' % cmd)
                 ret = os.system(cmd)
-                thePROG.debug('exec: %s ret(%d)' % (cmd, ret))
+                thePROG.info('exec: %s ret(%d)' % (cmd, ret))
                 # or
                 # cmd = "rsync -av -e '{0}' {1} {2}~".format(rsync_sshcmd, fn, destFn)
                 # ret = os.system(cmd)

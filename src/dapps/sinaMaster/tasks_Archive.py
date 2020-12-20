@@ -20,7 +20,8 @@ from datetime import datetime, timedelta
 SYMBOL_LIST_HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,open,high,low,close,volume"
 EOL = "\r\n"
 SINA_USERS_ROOT = '/mnt/data/hpwkspace/users'
-MAPPED_USER, MAPPED_HOME = getMappedAs()
+MAPPED_USER, MAPPED_HOME = getMappedAs(homeDir = '/mnt/s') # master certainly take the local volume /mnt/s
+if MAPPED_USER in [ None, 'nobody'] :  MAPPED_USER = 'hpx'
 
 IDXs_to_COLLECT=[ # http://vip.stock.finance.sina.com.cn/mkt/#dpzs
 'SH000001',	# 上证指数

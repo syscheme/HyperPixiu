@@ -92,6 +92,7 @@ def __publishFiles(srcfiles) :
     pubed = []
 
     modeRsyncSsh = False
+    thePROG.debug('publishing %s to destDir[%s]' % (','.join(srcfiles), destPubDir))
     if '@' in destPubDir and ':' in destPubDir :
         modeRsyncSsh = True
         rsync_sshcmd = os.environ.get('RSYNC_SSH_CMD', 'ssh')
@@ -106,7 +107,11 @@ def __publishFiles(srcfiles) :
                 cmd = "rsync -av -e '{0}' {1} {2}".format(rsync_sshcmd, fn, destFn)
                 thePROG.debug('exec: %s' % cmd)
                 ret = os.system(cmd)
-                thePROG.info('exec: %s ret(%d)' % (cmd, ret))
+                if 0 == ret:
+                    thePROG.debug('exec succ: %s' % cmd)
+                else:
+                    thePROG.error('exec fail: %s ret(%d)' % (cmd, ret))
+
                 # or
                 # cmd = "rsync -av -e '{0}' {1} {2}~".format(rsync_sshcmd, fn, destFn)
                 # ret = os.system(cmd)

@@ -42,6 +42,7 @@ import math
 # except ImportError:
 #     pass
 
+SAMPLES_PER_H5FRAME = 1024*8
 RFGROUP_PREFIX = 'ReplayFrame:'
 RECCATE_ESPSUMMARY = 'EspSum'
 COLUMNS_ESPSUMMARY ='episodeNo,endBalance,openDays,startDate,endDate,totalDays,tradeDay_1st,tradeDay_last,profitDays,lossDays,maxDrawdown,maxDdPercent,' \
@@ -1894,10 +1895,11 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self.__dtTomrrow = None
         self.__mdEventsTomrrow = [] # list of the datetime of open, high, low, close price occured 'tomorrow'
 
-        self.__sampleFrmSize  = 1024*8
+        self.__sampleFrmSize  = SAMPLES_PER_H5FRAME
         self.__sampleFrm = [None]  * self.__sampleFrmSize
         self.__sampleIdx, self.__frameNo = 0, 0
         self.__lastestDir, self.__lastmstate, self.__samplingYield  = OrderData.DIRECTION_NONE, None, 0
+        self.__fmtId = 'UKNOWN'
 
     def doAppInit(self): # return True if succ
         if not super(IdealTrader_Tplus1, self).doAppInit() :
@@ -1956,8 +1958,9 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 evAdv.setData(nextAdvice)
                 super(IdealTrader_Tplus1, self).OnEvent(evAdv) # to perform the real handling
 
-        fmtr = Formatter_F1548() # = Formatter_2dImg16x32('/mnt/e/bmp/%s.' % symbol, dem=5)  = Formatter_2dImgSnail16() = Formatter_F1548()
+        fmtr = Formatter_2dImg16x32() # = Formatter_2dImg16x32('/mnt/e/bmp/%s.' % symbol, dem=5)  = Formatter_2dImgSnail16() = Formatter_F1548()
         self._mstate = self._marketState.format(fmtr, self._tradeSymbol) # self._mstate = self._marketState.exportF1548(self._tradeSymbol)
+        self.__fmtId = fmtr.id
 
         if not self._mstate: return
 
@@ -2092,7 +2095,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         col_state  = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype('float16')
         col_action = np.concatenate(metrix[:, 1]).reshape(lenF, actionshape)
 
-        fn_frame = os.path.join(self.wkTrader.outdir, 'RFrm%s_%s.h5' % (NORMALIZE_ID, self._tradeSymbol) )
+        fn_frame = os.path.join(self.wkTrader.outdir, 'RFrm%s_%s.h5' % (self.__fmtId, self._tradeSymbol) )
         
         h5args =copy.copy(hist.H5DSET_DEFAULT_ARGS)
         if self._h5compression and len(self._h5compression)>0:
@@ -2109,13 +2112,15 @@ class IdealTrader_Tplus1(OfflineSimulator):
             g.attrs['size'] = col_state.shape[0]
             g.attrs['signature'] = EXPORT_SIGNATURE
 
-            g.create_dataset(u'title',      data= '%s replay %s of %s by %s' % (self._generateReplayFrames, frameId, self._tradeSymbol, self.ident))
+            title = '%s replay-frame %s %s of %s by %s, shapes[state:%s, action:%s]' % (self._generateReplayFrames, self.__fmtId, frameId, self._tradeSymbol, self.ident, stateshape, actionshape )
+            g.create_dataset(u'title',      data= title)
+
             st = g.create_dataset('state',  data= col_state, **h5args)
             st.attrs['dim'] = col_state.shape[1]
             ac = g.create_dataset('action', data= col_action, **h5args)
             ac.attrs['dim'] = col_action.shape[1]
             
-        self.info('saved %s len[%s] into file %s with sig[%s]' % (frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
+        self.info('saved %s %s len[%s] into file %s with sig[%s]' % (self.__fmtId, frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
 
     def __scanEventsSequence(self, evseq) :
 
@@ -2367,7 +2372,7 @@ class ShortSwingScanner(OfflineSimulator):
         self.__eventsOfDays = EvictableStack(evictSize=self._daysLong+1, nildata=[]) # list of days, each item contains events of days that up to self._daysLong
         self.__psptReadAhead = PerspectiveState('Dummy') # Perspective('Dummy')
         
-        self.__sampleFrmSize  = 1024*8
+        self.__sampleFrmSize  = SAMPLES_PER_H5FRAME
         self.__sampleFrm = [None]  * self.__sampleFrmSize
         self.__sampleIdx, self.__frameNo = 0, 0
 

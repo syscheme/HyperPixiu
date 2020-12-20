@@ -1897,7 +1897,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self.__sampleFrmSize  = 1024*8
         self.__sampleFrm = [None]  * self.__sampleFrmSize
         self.__sampleIdx, self.__frameNo = 0, 0
-        self.__lastestDir, self.__lastmstate, self.__samplingYield  = None, None, 0
+        self.__lastestDir, self.__lastmstate, self.__samplingYield  = OrderData.DIRECTION_NONE, None, 0
 
     def doAppInit(self): # return True if succ
         if not super(IdealTrader_Tplus1, self).doAppInit() :
@@ -1956,27 +1956,26 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 evAdv.setData(nextAdvice)
                 super(IdealTrader_Tplus1, self).OnEvent(evAdv) # to perform the real handling
 
-        action[ADVICE_DIRECTIONS.index(dirToExec)] =1
         fmtr = Formatter_F1548() # = Formatter_2dImg16x32('/mnt/e/bmp/%s.' % symbol, dem=5)  = Formatter_2dImgSnail16() = Formatter_F1548()
         self._mstate = self._marketState.format(fmtr, self._tradeSymbol) # self._mstate = self._marketState.exportF1548(self._tradeSymbol)
 
         if not self._mstate: return
 
         # if bFullState:
-        orderDir = self.__lastestDir
+        prevDir = self.__lastestDir # backup for logging
         if self.__samplingYield <=0 or dirToExec != self.__lastestDir :
             self.__samplingYield = int (1.0/ self._samplingRate -1)
 
             if dirToExec != self.__lastestDir and self.__lastmstate: # the (state, dir) piror to dir-change sounds important to save
                 self.__pushStateAction(self.__lastmstate, self.__lastestDir)
 
-            self.__pushStateAction(self._mstate, action)
+            self.__pushStateAction(self._mstate, dirToExec)
             self.__lastestDir, self.__lastmstate = dirToExec, None
         else :
             self.__lastmstate, self.__samplingYield = self._mstate, self.__samplingYield -1
 
-        if orderDir != dirToExec:
-            self.info('OnEvent(%s) changedir %s->%s upon mstate: %s' % (ev.desc, orderDir, dirToExec, self._marketState.descOf(self._tradeSymbol)))
+        if prevDir != dirToExec:
+            self.info('OnEvent(%s) changedir %s->%s upon mstate: %s' % (ev.desc, prevDir, dirToExec, self._marketState.descOf(self._tradeSymbol)))
         else:
             self.debug('OnEvent(%s) continue %s upon mstate: %s' % (ev.desc, dirToExec, self._marketState.descOf(self._tradeSymbol)))
 
@@ -2069,7 +2068,10 @@ class IdealTrader_Tplus1(OfflineSimulator):
         
         exit(0) # IdealTrader_Tplus1 is not supposed to run forever, just exit instead of return
 
-    def __pushStateAction(self, mstate, action):
+    def __pushStateAction(self, mstate, dirAction):
+
+        action = [0] * len(ADVICE_DIRECTIONS)
+        action[ADVICE_DIRECTIONS.index(dirAction)] =1
 
         if (self.__sampleIdx + self.__frameNo) <=0 and all(v == 0.0 for v in mstate): return # skip the leading all[0.0]
 
@@ -2082,9 +2084,13 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self.__sampleIdx +=1
 
     def __saveFrame(self, rangedFrame):
-        metrix     = np.array(rangedFrame)
-        col_state  = np.concatenate(metrix[:, 0]).reshape(len(rangedFrame), len(rangedFrame[0][0]))
-        col_action = np.concatenate(metrix[:, 1]).reshape(len(rangedFrame), len(rangedFrame[0][1]))
+        metrix  = np.array(rangedFrame)
+        lenF    = len(rangedFrame)
+
+        #col_state  = np.concatenate(metrix[:, 0]).reshape(len(rangedFrame), len(rangedFrame[0][0]))
+        stateshape, actionshape = np.array(metrix[0][0]).shape, len(rangedFrame[0][1])
+        col_state  = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype('float16')
+        col_action = np.concatenate(metrix[:, 1]).reshape(lenF, actionshape)
 
         fn_frame = os.path.join(self.wkTrader.outdir, 'RFrm%s_%s.h5' % (NORMALIZE_ID, self._tradeSymbol) )
         

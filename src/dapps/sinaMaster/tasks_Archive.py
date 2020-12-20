@@ -104,13 +104,12 @@ def __rmfile(fn) :
 def listAllSymbols(self):
 
     lstSHZ = []
-    fnCachedLst = os.path.join(MAPPED_HOME, 'hpx_publish', 'lstSHZ_%s' % datetime.now().strftime('%Y%m%d'))
+    fnCachedLst = os.path.join(MAPPED_HOME, 'hpx_publish', 'lstSHZ_%s.pkl.bz2' % datetime.now().strftime('%Y%m%d'))
     try :
-        fn = fnCachedLst + '.pkl.bz2'
-        st = os.stat(fn)
+        st = os.stat(fnCachedLst)
         ctime = datetime.fromtimestamp(st.st_ctime)
         if st.st_size >1000 and (ctime.isoweekday() >5 or ctime.hour >=16): 
-            with bz2.open(fn, 'rb') as f:
+            with bz2.open(fnCachedLst, 'rb') as f:
                 lstSHZ = pickle.load(f)
     except Exception as ex:
         pass
@@ -148,11 +147,15 @@ def listAllSymbols(self):
             except Exception as ex:
                 pass
 
-        with bz2.open(fnCachedLst + '.pkl.bz2', 'wb') as f:
+        with bz2.open(fnCachedLst, 'wb') as f:
             f.write(pickle.dumps(lstSHZ))
 
-        with bz2.open(fnCachedLst + '.csv.bz2', 'wt', encoding='utf-8') as f:
-            __writeCsv(f, lstSHZ)
+        try:
+            lstArch = os.path.join(MAPPED_HOME, 'hpx_archived', 'sina', 'lstSHZ_%s.csv.bz2' % datetime.now().strftime('%Y%m%d'))
+            with bz2.open(lstArch, 'wt', encoding='utf-8') as f:
+                __writeCsv(f, lstSHZ)
+        except :
+            pass
     
     return lstSHZ
 
@@ -362,6 +365,7 @@ from time import sleep
 if __name__ == '__main__':
     thePROG.setLogLevel('debug')
 
+    listAllSymbols()
     # schOn_TradeDayClose()
     for i in range(20):
         schOn_Every5min()

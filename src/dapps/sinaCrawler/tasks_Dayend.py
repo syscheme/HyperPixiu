@@ -107,19 +107,20 @@ def __publishFiles(srcfiles) :
 
             if modeRsyncSsh :
                 cmd = "rsync -av -e '{0}' {1} {2}".format(rsync_sshcmd, fn, destFn)
-                thePROG.debug('exec: %s' % cmd)
+                # thePROG.debug('exec: %s' % cmd)
                 ret = os.system(cmd)
-                if 0 == ret:
-                    thePROG.debug('exec succ: %s' % cmd)
-                else:
-                    thePROG.error('exec fail: %s ret(%d)' % (cmd, ret))
-
                 # or
                 # cmd = "rsync -av -e '{0}' {1} {2}~".format(rsync_sshcmd, fn, destFn)
                 # ret = os.system(cmd)
                 # remoteFn = destFn[1+ destFn.index(':'): ]
                 # cmd = "{0} 'mv -vf {1}~ {1}'".format(rsync_sshcmd, remoteFn, remoteFn)
                 # ret = os.system(cmd)
+
+                if 0 != ret:
+                    raise RetryableError(100, 'failed to publish: %s ret(%d)' % (cmd, ret))
+
+                thePROG.debug('published: %s' % cmd)
+
                 if 0 ==ret:
                     pubed.append(bn)
             else:
@@ -131,6 +132,7 @@ def __publishFiles(srcfiles) :
                 __rmfile(fn)
         except Exception as ex:
             thePROG.logexception(ex, 'publishFile[%s]' % fn)
+            raise RetryableError(100, 'failed to publish: %s' % fn)
 
     return pubed, destPubDir
 
@@ -232,9 +234,9 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
                         thePROG.debug('exec: %s' % cmd)
                         ret = os.system(cmd)
                         if 0 == ret:
-                            thePROG.info('fetched succ: %s' % cmd)
+                            thePROG.info('cached from arch: %s' % cmd)
                         else:
-                            thePROG.error('exec fail: %s ret(%d)' % (cmd, ret))
+                            thePROG.error('failed to cache: %s ret(%d)' % (cmd, ret))
                             continue
                     else:
                         shutil.copyfile('%s/%s' % (dirArchived, offlineBn), '%s/%s' % (dirCache, offlineBn))
@@ -247,7 +249,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
             except Exception as ex:
                 thePROG.logexception(ex, offline_mf1m)
 
-        evictBn = 'SinaMF1m_%s' % (dtStart- timedelta(days=7)).strftime('%Y%m%d')
+        evictBn = 'SinaMF1m_%s' % (dtStart- timedelta(days=10)).strftime('%Y%m%d')
         for fn in hist.listAllFiles(dirCache) :
             bn = os.path.basename(fn)
             if '.h5t' == bn[-4:] and 'SinaMF1m_' in bn and bn < evictBn :

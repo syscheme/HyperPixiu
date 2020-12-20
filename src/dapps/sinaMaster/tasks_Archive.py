@@ -403,7 +403,7 @@ if __name__ == '__main__':
 
 ''' A test
 import dapps.sinaCrawler.tasks_Dayend as ct
-import dapps.sinaMaster.tasks as mt
+import dapps.sinaMaster.tasks_Archive as mt
 c1 = ct.downloadToday.s('SZ000002') | mt.commitToday.s()
 c1().get()
 '''

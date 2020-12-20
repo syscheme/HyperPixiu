@@ -15,8 +15,6 @@
 '''
 from __future__ import absolute_import, unicode_literals
 from celery import shared_task
-import sys, os, re
-import shutil
 
 from dapps.sinaCrawler.worker import thePROG
 from dapps.celeryCommon import RetryableError, Retryable, getMappedAs
@@ -30,6 +28,10 @@ from crawler.producesSina import SinaMux, Sina_Tplus1, SinaSwingScanner
 import crawler.crawlSina as sina
 
 import h5py
+
+import sys, os, re
+from datetime import datetime, timedelta
+import shutil
 
 MAPPED_USER, MAPPED_HOME = getMappedAs()
 
@@ -156,7 +158,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     try:
         os.mkdir(dirCache)
     except: pass
-    dirArchived = os.path.join(os.environ['HOME'], 'wkspaces/hpx_archived/sina') 
+    dirArchived = os.path.join(MAPPED_HOME, "hpx_archived/sina") # os.path.join(os.environ['HOME'], 'wkspaces/hpx_archived/sina') 
 
     todayYYMMDD = SINA_TODAY.strftime('%Y%m%d')
     dirArchived = Program.fixupPath(dirArchived)
@@ -214,11 +216,28 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
         if httperr in [408, 456] :
             raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1MIN, SYMBOL, httperr))
 
+        offlineBn= None
         for i in lastDays[1:]:
-            offline_mf1m = os.path.join(dirArchived, 'SinaMF1m_%s.h5t' % i.asof.strftime('%Y%m%d'))
+            offlineBn = 'SinaMF1m_%s.h5t' % i.asof.strftime('%Y%m%d')
+            offline_mf1m = os.path.join(dirCache, offlineBn)
             try :
-                size = os.stat(offline_mf1m).st_size
-                if size <=0: continue
+                try:
+                    size = os.stat(offline_mf1m).st_size
+                    if size <=0: continue
+                except FileNotFoundError as ex:
+                    thePROG.warn('%s no offline file avail: %s' % (SYMBOL, offline_mf1m))
+                    if '@' in dirArchived and ':' in dirArchived :
+                        rsync_sshcmd = os.environ.get('RSYNC_SSH_CMD', 'ssh')
+                        cmd = "rsync -av -e '{0}' {1}/{2} {3}".format(rsync_sshcmd, dirArchived, offlineBn, dirCache)
+                        thePROG.debug('exec: %s' % cmd)
+                        ret = os.system(cmd)
+                        if 0 == ret:
+                            thePROG.info('fetched succ: %s' % cmd)
+                        else:
+                            thePROG.error('exec fail: %s ret(%d)' % (cmd, ret))
+                            continue
+                    else:
+                        shutil.copyfile('%s/%s' % (dirArchived, offlineBn), '%s/%s' % (dirCache, offlineBn))
 
                 # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
                 mfn, latestDay = memberfnInH5tar(offline_mf1m, SYMBOL)
@@ -227,6 +246,13 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
                 thePROG.warn('%s no offline file avail: %s' % (SYMBOL, offline_mf1m))
             except Exception as ex:
                 thePROG.logexception(ex, offline_mf1m)
+
+        evictBn = 'SinaMF1m_%s' % (dtStart- timedelta(days=7)).strftime('%Y%m%d')
+        for fn in hist.listAllFiles(dirCache) :
+            bn = os.path.basename(fn)
+            if '.h5t' == bn[-4:] and 'SinaMF1m_' in bn and bn < evictBn :
+                __rmfile(fn)
+                thePROG.info('old cache[%s] evicted' % fn)
 
     thePROG.info('inited mux[%s] with %d substreams' % (SYMBOL, playback.size))
 

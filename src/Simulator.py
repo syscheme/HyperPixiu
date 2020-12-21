@@ -1898,7 +1898,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self.__sampleFrmSize  = SAMPLES_PER_H5FRAME
         self.__sampleFrm = [None]  * self.__sampleFrmSize
         self.__sampleIdx, self.__frameNo = 0, 0
-        self.__lastestDir, self.__lastmstate, self.__samplingYield  = OrderData.DIRECTION_NONE, None, 0
+        self.__lastestDir, self.__lastmstate, self.__continuousSamplesToIgnore  = OrderData.DIRECTION_NONE, None, 0
         self.__fmtId = 'UKNOWN'
 
     def doAppInit(self): # return True if succ
@@ -1966,8 +1966,8 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         # if bFullState:
         prevDir = self.__lastestDir # backup for logging
-        if self.__samplingYield <=0 or dirToExec != self.__lastestDir :
-            self.__samplingYield = int (1.0/ self._samplingRate -1)
+        if self.__continuousSamplesToIgnore <=0 or dirToExec != self.__lastestDir :
+            self.__continuousSamplesToIgnore = int (1.0/ self._samplingRate -1)
 
             if dirToExec != self.__lastestDir and self.__lastmstate: # the (state, dir) piror to dir-change sounds important to save
                 self.__pushStateAction(self.__lastmstate, self.__lastestDir)
@@ -1975,7 +1975,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
             self.__pushStateAction(self._mstate, dirToExec)
             self.__lastestDir, self.__lastmstate = dirToExec, None
         else :
-            self.__lastmstate, self.__samplingYield = self._mstate, self.__samplingYield -1
+            self.__lastmstate, self.__continuousSamplesToIgnore = self._mstate, self.__continuousSamplesToIgnore -1
 
         if prevDir != dirToExec:
             self.info('OnEvent(%s) changedir %s->%s upon mstate: %s' % (ev.desc, prevDir, dirToExec, self._marketState.descOf(self._tradeSymbol)))

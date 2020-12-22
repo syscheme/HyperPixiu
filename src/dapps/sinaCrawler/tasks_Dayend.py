@@ -91,25 +91,32 @@ def saveSnapshot(filename, h5group, snapshot, ohlc):
     thePROG.error('failed to save snapshot[%s] %dB->%dz into %s' % (h5group, dsize, csize, filename))
     return False
 
+
+__pubSshClient, __dirRemote = None, None
+
 def __publishFiles(srcfiles) :
     destPubDir = os.path.join(MAPPED_HOME, "hpx_publish")
     pubed = []
 
+    global __pubSshClient, __dirRemote
     sshcmd, sshclient = None, None
     thePROG.debug('publishing %s to destDir[%s]' % (','.join(srcfiles), destPubDir))
     if '@' in destPubDir and ':' in destPubDir :
         sshcmd = os.environ.get('SSH_CMD', 'ssh')
-        tokens = destPubDir.split('@')
-        username, host, port = tokens[0], tokens[1], 22
-        tokens = host.split(':')
-        host, dirRemote=tokens[0], tokens[1]
-        tokens = sshcmd.split(' ')
-        if '-p' in tokens and tokens.index('-p') < len(tokens):
-            port = int(tokens[1+ tokens.index('-p')])
+        if not __pubSshClient:
+            tokens = destPubDir.split('@')
+            username, host, port = tokens[0], tokens[1], 22
+            tokens = host.split(':')
+            host, __dirRemote=tokens[0], tokens[1]
+            tokens = sshcmd.split(' ')
+            if '-p' in tokens and tokens.index('-p') < len(tokens):
+                port = int(tokens[1+ tokens.index('-p')])
 
-        sshclient = paramiko.SSHClient()
-        sshclient.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        sshclient.connect(host, port=port, username=username)
+            __pubSshClient = paramiko.SSHClient()
+            __pubSshClient.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            __pubSshClient.connect(host, port=port, username=username)
+        
+        sshclient, dirRemote = __pubSshClient, __dirRemote
 
     for fn in srcfiles:
         try:
@@ -140,6 +147,8 @@ def __publishFiles(srcfiles) :
         except Exception as ex:
             thePROG.logexception(ex, 'publishFile[%s]' % fn)
             raise RetryableError(100, 'failed to publish: %s' % fn)
+            if __pubSshClient: __pubSshClient.close()
+            __pubSshClient = None
 
     return pubed, destPubDir
 
@@ -272,6 +281,8 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
                 thePROG.warn('%s no offline file avail: %s' % (SYMBOL, offline_mf1m))
             except Exception as ex:
                 thePROG.logexception(ex, offline_mf1m)
+
+        if sshclient: sshclient.close()
 
         evictBn = 'SinaMF1m_%s' % (dtStart- timedelta(days=10)).strftime('%Y%m%d')
         for fn in hist.listAllFiles(dirCache) :

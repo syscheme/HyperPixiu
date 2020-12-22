@@ -144,8 +144,8 @@ def __publishFiles(srcfiles) :
 
     if sshclient: sshclient.close()
     sshclient = None
+    thePROG.info('published %s of %s to %s' % (','.join(pubed), ','.join(srcfiles), destPubDir))
     return pubed, destPubDir
-
 
 # ===================================================
 @shared_task(bind=True, base=Retryable, default_retry_delay=10.0)

@@ -148,8 +148,8 @@ downloadList()
     fi
 
     rm -rf ${FOLDER}
-    if [ -d "${ARCH_DIR}" ]; then
-            mv -vf ./${FOLDER}.${TAR_EXT} "${ARCH_DIR}"
+    if [ -d "${PUBLISH_DIR}" ]; then
+            mv -vf ./${FOLDER}.${TAR_EXT} "${PUBLISH_DIR}"
             ls -d Sina${CATEGORY}_*| grep -v "${TAR_EXT}" |sort | head -n -5 | xargs rm -rf 
     fi
 

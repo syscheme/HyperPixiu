@@ -1,13 +1,18 @@
 #!/bin/bash
 
-SECU_LIST=$(grep -o '^S[HZ][0-9]*' ~/deploy-data/hpdata/sim_objs.txt |sort|uniq)
-TOPDIR_HP=$(realpath ~/wkspaces/HyperPixiu)
+if [ -e ~/hpx_conf/hpx_settings.sh ]; then source ~/hpx_conf/hpx_settings.sh; fi
+
+if [ -z "${CONF_DIR}" ]; then CONF_DIR="$(realpath ~/hpx_conf)"; fi
+if [ -z "${TOPDIR_HP}" ]; then TOPDIR_HP="$(realpath ~/wkspaces/HyperPixiu)" ; fi
+
+SECU_LIST=$(grep -o '^S[HZ][0-9]*' ${CONF_DIR}/sim_objs.txt |sort|uniq)
+
 STAMP=$(date +%Y%m%dT%H%M%S)
 
 cd ${TOPDIR_HP}
 
 OUTDIR="./out/sim_online"
-CONF=$(realpath ~/deploy-data/hpdata/Trader.json)
+CONF=$(realpath ${CONF_DIR}/Trader.json)
 PIDLIST=$(ps aux|grep 'sim_online.py'|grep " \-f ${OUTDIR}/"|awk '{print $2;}')
 if ! [ -z "${PIDLIST}" ]; then
     echo "existing sim_online is running with PIDLIST=${PIDLIST}, you may kill first"

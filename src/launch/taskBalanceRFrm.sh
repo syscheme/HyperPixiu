@@ -1,7 +1,9 @@
 #!/bin/bash
 RFFolder="/mnt/e/h5_to_h5b/RFrmD4M1X5_2006-2018/ETF"
 # RFFolder="/mnt/e/h5_to_h5b/RFrmD4M1X5_2006-2018/500top50"
-PROJPATH=~/wkspaces/HP_advisor
+
+if [ -e ~/hpx_conf/hpx_settings.sh ]; then source ~/hpx_conf/hpx_settings.sh; fi
+TOPDIR_HP=~/wkspaces/HP_advisor
 
 THISFILE=$(realpath $0)
 LOCKFILE="/tmp/$(basename $0).lockfile"
@@ -38,7 +40,7 @@ for FILE in ${FILEIN_LIST}; do
 
     # ok, got the token here
     echo "balancing ${FILE}..."
-    cd ${PROJPATH}
+    cd ${TOPDIR_HP}
     nice ./run.sh src/launch/sim_offline.py -z -b ${FILE} |tee ${LOGFILE}
 
 done

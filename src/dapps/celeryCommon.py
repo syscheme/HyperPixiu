@@ -112,9 +112,9 @@ def getMappedAs(homeDir = None) :
 
     try :
         if not homeDir or len(homeDir) <=1:
-            rsync_sshloc = os.environ.get('RSYNC_SSH_HOME', None)
-            if rsync_sshloc and '@' in rsync_sshloc:
-                homeDir = rsync_sshloc
+            sshhome = os.environ.get('SSH_HOME', None)
+            if sshhome and '@' in sshhome:
+                homeDir = sshhome
                 accLogin = homeDir.split('@')[0]
                 if not ':' in homeDir or len(homeDir.split(':')[-1]) <=0:
                     homeDir += ':~'

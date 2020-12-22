@@ -186,7 +186,7 @@ class KLineEx(KLineData):
         #TODO: other optional dims
 
         channels = int(channels)
-        return ret[:channels] if len(ret) >= channels else ret +[0.0]* (channels -len(ret))
+        return ret[:channels] if len(ret) >= channels else ret +[NORMALIZED_FLOAT_UNAVAIL]* (channels -len(ret))
 
 ########################################################################
 class Perspective(MarketData):
@@ -1069,7 +1069,7 @@ class Formatter_base2dImg(PerspectiveFormatter):
             dt.weekday() / 7.0, # normalize to [0.0,1.0]
             (dt.hour *60 +dt.minute) / (24 *60.0), # normalize to [0.0,1.0]
             (dt.year %100)/100.0, 
-            1.0
+            NORMALIZED_FLOAT_UNAVAIL
             ]
 
     def covertImg6CTo3C(self, img6C, dtAsOf, expandX =False) :

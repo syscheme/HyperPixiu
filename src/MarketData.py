@@ -14,6 +14,7 @@ from PIL import Image
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 EXPORT_FLOATS_DIMS = 4 # take the minimal dim=4
 PRICE_DISPLAY_ROUND_DECIMALS = 3 
+NORMALIZED_FLOAT_UNAVAIL =0.0
 
 BASE_LOG10x2 = math.log(10) *2
 
@@ -272,7 +273,7 @@ class TickData(MarketData):
             float(leanBids)]
 
         channels = int(channels)
-        return ret[:channels] if len(ret) >= channels else ret +[0.0]* (channels -len(ret))
+        return ret[:channels] if len(ret) >= channels else ret +[NORMALIZED_FLOAT_UNAVAIL]* (channels -len(ret))
 
 ########################################################################
 class KLineData(MarketData):
@@ -390,7 +391,7 @@ class KLineData(MarketData):
         ]
 
         channels = int(channels)
-        return ret[:channels] if len(ret) >= channels else ret +[0.0]* (channels -len(ret))
+        return ret[:channels] if len(ret) >= channels else ret +[NORMALIZED_FLOAT_UNAVAIL]* (channels -len(ret))
 
 ########################################################################
 class MoneyflowData(MarketData):
@@ -458,7 +459,7 @@ class MoneyflowData(MarketData):
         #TODO: other optional dims
 
         channels = int(channels)
-        return ret[:channels] if len(ret) >= channels else ret +[0.0]* (channels -len(ret))
+        return ret[:channels] if len(ret) >= channels else ret +[NORMALIZED_FLOAT_UNAVAIL]* (channels -len(ret))
 
     @abstractmethod
     def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :

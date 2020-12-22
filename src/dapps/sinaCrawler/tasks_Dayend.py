@@ -92,32 +92,26 @@ def saveSnapshot(filename, h5group, snapshot, ohlc):
     return False
 
 
-__pubSshClient, __dirRemote = None, None
-
 def __publishFiles(srcfiles) :
     destPubDir = os.path.join(MAPPED_HOME, "hpx_publish")
     pubed = []
 
-    global __pubSshClient, __dirRemote
     sshcmd, sshclient = None, None
     thePROG.debug('publishing %s to destDir[%s]' % (','.join(srcfiles), destPubDir))
     if '@' in destPubDir and ':' in destPubDir :
         sshcmd = os.environ.get('SSH_CMD', 'ssh')
-        if not __pubSshClient:
-            tokens = destPubDir.split('@')
-            username, host, port = tokens[0], tokens[1], 22
-            tokens = host.split(':')
-            host, __dirRemote=tokens[0], tokens[1]
-            tokens = sshcmd.split(' ')
-            if '-p' in tokens and tokens.index('-p') < len(tokens):
-                port = int(tokens[1+ tokens.index('-p')])
+        tokens = destPubDir.split('@')
+        username, host, port = tokens[0], tokens[1], 22
+        tokens = host.split(':')
+        host, dirRemote=tokens[0], tokens[1]
+        tokens = sshcmd.split(' ')
+        if '-p' in tokens and tokens.index('-p') < len(tokens):
+            port = int(tokens[1+ tokens.index('-p')])
 
-            __pubSshClient = paramiko.SSHClient()
-            __pubSshClient.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            __pubSshClient.connect(host, port=port, username=username)
+        sshclient = paramiko.SSHClient()
+        sshclient.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        sshclient.connect(host, port=port, username=username)
         
-        sshclient, dirRemote = __pubSshClient, __dirRemote
-
     for fn in srcfiles:
         try:
             if not fn or len(fn) <=0: continue
@@ -147,9 +141,9 @@ def __publishFiles(srcfiles) :
         except Exception as ex:
             thePROG.logexception(ex, 'publishFile[%s]' % fn)
             raise RetryableError(100, 'failed to publish: %s' % fn)
-            if __pubSshClient: __pubSshClient.close()
-            __pubSshClient = None
 
+    if sshclient: sshclient.close()
+    sshclient = None
     return pubed, destPubDir
 
 

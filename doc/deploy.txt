@@ -144,3 +144,12 @@ non-docker-mode to start celery:
 
      cd hpx_template
      echo "rm -rf /tmp/wkr.sinaCrawler.log; src/dapps/startWorker.sh sinaCrawler -l DEBUG -Q crawler,celery -n ${WORKER}@%h" |at now
+
+
+>>> import paramiko
+>>> ssh = paramiko.SSHClient()
+>>> ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+>>> ssh.connect('tc2.syscheme.com', port=10022, username='root')
+>>> from scp import SCPClient
+>>> with SCPClient(ssh.get_transport()) as scp:
+...     scp.get('/tmp/beat.log')

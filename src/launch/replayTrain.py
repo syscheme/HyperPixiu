@@ -14,6 +14,7 @@ EXPORT_FLOATS_DIMS = 4
 DUMMY_BIG_VAL = 999999
 NN_FLOAT = 'float32'
 RFGROUP_PREFIX = 'ReplayFrame:'
+RFGROUP_PREFIX2 = 'RF'
 # ----------------------------
 
 from tensorflow.keras.models import Model, Sequential
@@ -327,10 +328,10 @@ class ReplayTrainer(BaseApplication):
                 self.logexception(ex)
 
         #TESTCODE: 
-        self.createModel('ResNet50d2Ext1', knownModels = self.__knownModels_2D)
+        # self.createModel('ResNet50d2Ext1', knownModels = self.__knownModels_2D)
 
         if not self._brain:
-            self._brain, self._wkModelId = self.createModel(self._wkModelId)
+            self._brain, self._wkModelId = self.createModel(self._wkModelId, knownModels = self.__knownModels_2D) # = self.createModel(self._wkModelId)
             self._wkModelId += '.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
 
         try :
@@ -799,8 +800,8 @@ class ReplayTrainer(BaseApplication):
                         with h5py.File(h5fileName, 'r') as h5f:
                             framesInHd5 = []
                             for name in h5f.keys() :
-                                if RFGROUP_PREFIX == name[:len(RFGROUP_PREFIX)] :
-                                    framesInHd5.append(name[len(RFGROUP_PREFIX):])
+                                if RFGROUP_PREFIX == name[:len(RFGROUP_PREFIX)] or RFGROUP_PREFIX2 == name[:len(RFGROUP_PREFIX2)] :
+                                    framesInHd5.append(name)
 
                             # I'd like to skip frame-0 as it most-likly includes many zero-samples
                             if not self._preBalanced and len(framesInHd5)>3:
@@ -815,8 +816,8 @@ class ReplayTrainer(BaseApplication):
                                 self.error('file %s eliminated as too few ReplayFrames in it' % (h5fileName) )
                                 continue
 
-                            f1st = RFGROUP_PREFIX + framesInHd5[0]
-                            frm = h5f[f1st]
+                            f1st = framesInHd5[0]
+                            frm  = h5f[f1st]
                             frameSize  = frm['state'].shape[0]
                             stateSize  = frm['state'].shape[1]
                             actionSize = frm['action'].shape[1]
@@ -866,7 +867,7 @@ class ReplayTrainer(BaseApplication):
             # reading the frame from the h5
             self.debug('readAhead() reading %s of %s' % (frameName, h5fileName))
             with h5py.File(h5fileName, 'r') as h5f:
-                frame = h5f[RFGROUP_PREFIX + frameName]
+                frame = h5f[frameName] # h5f[RFGROUP_PREFIX + frameName]
 
                 for col in COLS :
                     if col in frameDict.keys():
@@ -2550,7 +2551,7 @@ class ReplayTrainer(BaseApplication):
         # may lead to URL fetch failure on https://github.com/fchollet/deep-learning-models/releases/download/v0.2/resnet50_weights_tf_dim_ordering_tf_kernels.h5: None -- [Errno 11] Resource temporarily unavailable
         # take the pre-downloaded offline-weights
         pretrained = ResNet50(weights=None, classes=1000, input_shape=(32, 32, 3))
-        pretrained.load_weights('/mnt/e/AShareSample/resnet50_weights_tf_dim_ordering_tf_kernels.h5')
+        pretrained.load_weights(Program.fixupPath('/mnt/e/AShareSample/resnet50_weights_tf_dim_ordering_tf_kernels.h5'))
 
         pretrained.trainable = False # freeze those pretrained weights
         
@@ -2571,6 +2572,7 @@ class ReplayTrainer(BaseApplication):
         return model
 
 ########################################################################
+@shared_task # (name='sina.basic.add')
 if __name__ == '__main__':
 
     exportNonTrainable = False

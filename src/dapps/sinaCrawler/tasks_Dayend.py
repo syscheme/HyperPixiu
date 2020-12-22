@@ -32,6 +32,8 @@ import h5py
 import sys, os, re
 from datetime import datetime, timedelta
 import shutil
+import paramiko
+from scp import SCPClient # pip install scp
 
 MAPPED_USER, MAPPED_HOME = getMappedAs()
 
@@ -93,11 +95,21 @@ def __publishFiles(srcfiles) :
     destPubDir = os.path.join(MAPPED_HOME, "hpx_publish")
     pubed = []
 
-    modeRsyncSsh = False
+    sshcmd, sshclient = None, None
     thePROG.debug('publishing %s to destDir[%s]' % (','.join(srcfiles), destPubDir))
     if '@' in destPubDir and ':' in destPubDir :
-        modeRsyncSsh = True
-        rsync_sshcmd = os.environ.get('RSYNC_SSH_CMD', 'ssh')
+        sshcmd = os.environ.get('SSH_CMD', 'ssh')
+        tokens = destPubDir.split('@')
+        username, host, port = tokens[0], tokens[1], 22
+        tokens = host.split(':')
+        host, dirRemote=tokens[0], tokens[1]
+        tokens = sshcmd.split(' ')
+        if '-p' in tokens and tokens.index('-p') < len(tokens):
+            port = int(tokens[1+ tokens.index('-p')])
+
+        sshclient = paramiko.SSHClient()
+        sshclient.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        sshclient.connect(host, port=port, username=username)
 
     for fn in srcfiles:
         try:
@@ -105,24 +117,19 @@ def __publishFiles(srcfiles) :
             bn = os.path.basename(fn)
             destFn = os.path.join(destPubDir, bn)
 
-            if modeRsyncSsh :
-                cmd = "rsync -av -e '{0}' {1} {2}".format(rsync_sshcmd, fn, destFn)
-                # thePROG.debug('exec: %s' % cmd)
-                ret = os.system(cmd)
-                # or
-                # cmd = "rsync -av -e '{0}' {1} {2}~".format(rsync_sshcmd, fn, destFn)
+            if sshclient :
+                # rsync appears too slow at a single file copying because it will checksum on both side
+                # cmd = "rsync -av -e '{0}' {1} {2}".format(sshcmd, fn, destFn)
+                # # thePROG.debug('exec: %s' % cmd)
                 # ret = os.system(cmd)
-                # remoteFn = destFn[1+ destFn.index(':'): ]
-                # cmd = "{0} 'mv -vf {1}~ {1}'".format(rsync_sshcmd, remoteFn, remoteFn)
-                # ret = os.system(cmd)
-
-                if 0 != ret:
-                    raise RetryableError(100, 'failed to publish: %s ret(%d)' % (cmd, ret))
-
-                thePROG.debug('published: %s' % cmd)
-
-                if 0 ==ret:
-                    pubed.append(bn)
+                # if 0 != ret:
+                #     raise RetryableError(100, 'failed to publish: %s ret(%d)' % (cmd, ret))
+                # thePROG.debug('published: %s' % cmd)
+                with SCPClient(sshclient.get_transport()) as scp:
+                    scp.put(fn, os.path.join(dirRemote, bn))
+                    thePROG.debug('published %s to %s' % (fn, destFn))
+                
+                pubed.append(bn)
             else:
                 shutil.copyfile(fn, destFn + "~")
                 shutil.move(destFn + "~", destFn)
@@ -219,6 +226,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
             raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1MIN, SYMBOL, httperr))
 
         offlineBn= None
+        sshclient, dirRemote =None, '~'
         for i in lastDays[1:]:
             offlineBn = 'SinaMF1m_%s.h5t' % i.asof.strftime('%Y%m%d')
             offline_mf1m = os.path.join(dirCache, offlineBn)
@@ -229,17 +237,33 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
                 except FileNotFoundError as ex:
                     thePROG.warn('%s no offline file avail: %s' % (SYMBOL, offline_mf1m))
                     if '@' in dirArchived and ':' in dirArchived :
-                        rsync_sshcmd = os.environ.get('RSYNC_SSH_CMD', 'ssh')
-                        cmd = "rsync -av -e '{0}' {1}/{2} {3}".format(rsync_sshcmd, dirArchived, offlineBn, dirCache)
-                        thePROG.debug('exec: %s' % cmd)
-                        ret = os.system(cmd)
-                        if 0 == ret:
-                            thePROG.info('cached from arch: %s' % cmd)
-                        else:
-                            thePROG.error('failed to cache: %s ret(%d)' % (cmd, ret))
-                            continue
-                    else:
-                        shutil.copyfile('%s/%s' % (dirArchived, offlineBn), '%s/%s' % (dirCache, offlineBn))
+                        sshcmd = os.environ.get('SSH_CMD', 'ssh')
+                        if not sshclient:
+                            tokens = dirArchived.split('@')
+                            username, host, port = tokens[0], tokens[1], 22
+                            tokens = host.split(':')
+                            host, dirRemote=tokens[0], tokens[1]
+                            tokens = sshcmd.split(' ')
+                            if '-p' in tokens and tokens.index('-p') < len(tokens):
+                                port = int(tokens[1+ tokens.index('-p')])
+
+                            sshclient = paramiko.SSHClient()
+                            sshclient.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                            sshclient.connect(host, port=port, username=username)
+
+                        # cmd = "rsync -av -e '{0}' {1}/{2} {3}".format(sshcmd, dirArchived, offlineBn, dirCache)
+                        # thePROG.debug('exec: %s' % cmd)
+                        # ret = os.system(cmd)
+                        # if 0 == ret:
+                        #     thePROG.info('cached from arch: %s' % cmd)
+                        # else:
+                        #     thePROG.error('failed to cache: %s ret(%d)' % (cmd, ret))
+                        #     continue
+
+                        with SCPClient(sshclient.get_transport()) as scp:
+                            fnRemote = '%s/%s' %(dirRemote, offlineBn)
+                            scp.get(fnRemote, dirCache)
+                            thePROG.info('cached from arch: %s/%s' % (dirArchived, fnRemote))
 
                 # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
                 mfn, latestDay = memberfnInH5tar(offline_mf1m, SYMBOL)

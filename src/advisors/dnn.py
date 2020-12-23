@@ -6,7 +6,7 @@ from __future__ import division
 
 from EventData    import EventData, datetime2float, EVENT_NAME_PREFIX
 from MarketData   import *
-from Perspective  import PerspectiveState
+from Perspective  import PerspectiveState, Formatter_F1548
 from Application  import BaseApplication, BOOL_STRVAL_TRUE
 from TradeAdvisor import *
 from Trader       import MetaTrader, BaseTrader
@@ -125,7 +125,9 @@ class DnnAdvisor_S1548I4A3(TradeAdvisor):
                 self.debug('generateAdviceOnMarketEvent() recently adviced %ss ago, skip predicting on event: %s' % (secAgo, ev.desc))
                 return None
 
-        floatstate = self._marketState.exportF1548(symbol)
+        # floatstate = self._marketState.exportF1548(symbol)
+        fmtr = Formatter_F1548()
+        floatstate = self._marketState.format(fmtr, symbol)
         if all(v == 0.0 for v in floatstate):
             self.debug('generateAdviceOnMarketEvent() rack of marketState on %s' % ev.desc)
             return None # skip advising pirior to plenty state data

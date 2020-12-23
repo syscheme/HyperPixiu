@@ -996,13 +996,13 @@ class Formatter_base2dImg(PerspectiveFormatter):
 
     def doFormat(self, symbol=None) :
 
-        C6SECHMA_16xx = OrderedDict({
+        EXP_SECHEMA = OrderedDict({
             EVENT_KLINE_1MIN     : -1,
             EVENT_KLINE_5MIN     : -1,
             EVENT_KLINE_1DAY     : -1,
         })
 
-        seqdict = self.mstate.export(symbol, lstsWished=C6SECHMA_16xx)  # = self.export6C(symbol, lstsWished=C6SECHMA_16x16)
+        seqdict = self.mstate.export(symbol, lstsWished=EXP_SECHEMA)  # = self.export6C(symbol, lstsWished=EXP_SECHEMA)
         if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
             return None
 
@@ -1113,22 +1113,22 @@ class Formatter_base2dImg(PerspectiveFormatter):
         return img3C
 
 ########################################################################
-class Formatter_2dImg16x32(Formatter_base2dImg):
+class Formatter_2dImg32x36(Formatter_base2dImg):
 
     def __init__(self, imgDir=None, dem=60):
         '''Constructor'''
-        super(Formatter_2dImg16x32, self).__init__(imgDir, dem)
+        super(Formatter_2dImg32x36, self).__init__(imgDir, dem)
 
     def doFormat(self, symbol=None) :
         X_LEN, Y_LEN = 32, 16
-        C6SECHMA_16x32R = OrderedDict({
+        EXP_SECHEMA = OrderedDict({
             'asof'               : 1,
             EVENT_KLINE_1MIN     : 32,
             EVENT_KLINE_5MIN     : 240,
             EVENT_KLINE_1DAY     : 240,
         })
 
-        seqdict = self.mstate.export(symbol, lstsWished=C6SECHMA_16x32R)  # = self.export6C(symbol, lstsWished=C6SECHMA_16x16)
+        seqdict = self.mstate.export(symbol, lstsWished=EXP_SECHEMA)  # = self.export6C(symbol, lstsWished=EXP_SECHEMA)
         if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
             return None
 
@@ -1256,7 +1256,7 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
         if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
             raise ValueError('%s could not attach marketState of %s' %(self.__class__.__name__, str(self.mstate)))
 
-        C6SECHMA_16x16 = OrderedDict({
+        EXP_SECHEMA = OrderedDict({
             'asof'               : 1,
             EVENT_KLINE_1MIN     : 16,
             EVENT_KLINE_5MIN     : 240,
@@ -1266,7 +1266,7 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
             # EVENT_MONEYFLOW_1DAY : 48, # 48days
         })
 
-        seqdict = self.mstate.export(symbol, lstsWished=C6SECHMA_16x16)  # = self.export6C(symbol, lstsWished=C6SECHMA_16x16)
+        seqdict = self.mstate.export(symbol, lstsWished=EXP_SECHEMA)  # = self.export6C(symbol, lstsWished=EXP_SECHEMA)
         if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
             return None
 
@@ -1314,21 +1314,21 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
         x, y = Formatter_2dImgSnail16.COORDS16x16[0]
         img6C[partition*16 + y][x] = seq6C[0]
 
-        seq6C_offset =C6SECHMA_16x16['asof'] + C6SECHMA_16x16[EVENT_KLINE_1MIN] + C6SECHMA_16x16[EVENT_KLINE_5MIN] + C6SECHMA_16x16[EVENT_KLINE_1DAY] # pointer to where EVENT_MONEYFLOW_1MIN is
+        seq6C_offset =EXP_SECHEMA['asof'] + EXP_SECHEMA[EVENT_KLINE_1MIN] + EXP_SECHEMA[EVENT_KLINE_5MIN] + EXP_SECHEMA[EVENT_KLINE_1DAY] # pointer to where EVENT_MONEYFLOW_1MIN is
         snail_loc = 0
-        for i in range(C6SECHMA_16x16[EVENT_MONEYFLOW_1MIN]): 
+        for i in range(EXP_SECHEMA[EVENT_MONEYFLOW_1MIN]): 
              x, y = Formatter_2dImgSnail16.COORDS16x16[snail_loc + i]
              img6C[partition*16 + y][x] = seq6C[seq6C_offset]
              seq6C_offset +=1
 
-        snail_loc += C6SECHMA_16x16[EVENT_MONEYFLOW_1MIN]
-        for i in range(C6SECHMA_16x16[EVENT_MONEYFLOW_5MIN]): 
+        snail_loc += EXP_SECHEMA[EVENT_MONEYFLOW_1MIN]
+        for i in range(EXP_SECHEMA[EVENT_MONEYFLOW_5MIN]): 
              x, y = Formatter_2dImgSnail16.COORDS16x16[snail_loc + i]
              img6C[partition*16 + y][x] = seq6C[seq6C_offset]
              seq6C_offset +=1
 
-        snail_loc += C6SECHMA_16x16[EVENT_MONEYFLOW_5MIN]
-        for i in range(C6SECHMA_16x16[EVENT_MONEYFLOW_1DAY]): 
+        snail_loc += EXP_SECHEMA[EVENT_MONEYFLOW_5MIN]
+        for i in range(EXP_SECHEMA[EVENT_MONEYFLOW_1DAY]): 
              x, y = Formatter_2dImgSnail16.COORDS16x16[snail_loc + i]
              img6C[partition*16 + y][x] = seq6C[seq6C_offset]
              seq6C_offset +=1

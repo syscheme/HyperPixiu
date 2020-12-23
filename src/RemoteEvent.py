@@ -397,15 +397,29 @@ class ZmqEventChannel(BaseApplication):
 
 
 import redis
+import urllib.parse as urlparse
+
 ########################################################################
 class RedisEE(EventEnd):
 
     def __init__(self, program, **kwargs) :
         super(RedisEE, self).__init__(program, **kwargs)
 
-        self._redisHost    = self.getConfig('host', "localhost")
-        self._redisPort    = self.getConfig('port', 6379)
-        self._redisPasswd  = self.getConfig('password', None)
+        url    = self.getConfig('url', None)
+        self._redisPort = 6379
+        if url and len(url) > 6:
+            url = urlparse.urlparse(url)
+            # if 'redis' == url.scheme:
+            self._redisHost, self._redisPort, self._redisPasswd = url.hostname, url.port, url.password # , url.username
+        else:
+            self._redisHost, self._redisPasswd = 'localhost', None # , None
+
+        if not self._redisPasswd or len(self._redisPasswd) <=0: self._redisPasswd = None
+
+        self._redisHost    = self.getConfig('host', self._redisHost)
+        self._redisPort    = self.getConfig('port', self._redisPort)
+        self._redisPasswd  = self.getConfig('password', self._redisPasswd)
+
         self.__redisConn   = None
         self.__connPool    = redis.ConnectionPool(host=self._redisHost, port=self._redisPort, password=self._redisPasswd, db=0, socket_connect_timeout=1.0)
 

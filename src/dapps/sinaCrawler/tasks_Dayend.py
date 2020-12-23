@@ -91,6 +91,7 @@ def saveSnapshot(filename, h5group, snapshot, ohlc):
     thePROG.error('failed to save snapshot[%s] %dB->%dz into %s' % (h5group, dsize, csize, filename))
     return False
 
+
 def __publishFiles(srcfiles) :
     destPubDir = os.path.join(MAPPED_HOME, "hpx_publish")
     pubed = []
@@ -110,7 +111,7 @@ def __publishFiles(srcfiles) :
         sshclient = paramiko.SSHClient()
         sshclient.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         sshclient.connect(host, port=port, username=username)
-
+        
     for fn in srcfiles:
         try:
             if not fn or len(fn) <=0: continue
@@ -141,8 +142,10 @@ def __publishFiles(srcfiles) :
             thePROG.logexception(ex, 'publishFile[%s]' % fn)
             raise RetryableError(100, 'failed to publish: %s' % fn)
 
+    if sshclient: sshclient.close()
+    sshclient = None
+    thePROG.info('published %s of %s to %s' % (','.join(pubed), ','.join(srcfiles), destPubDir))
     return pubed, destPubDir
-
 
 # ===================================================
 @shared_task(bind=True, base=Retryable, default_retry_delay=10.0)
@@ -272,6 +275,8 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
                 thePROG.warn('%s no offline file avail: %s' % (SYMBOL, offline_mf1m))
             except Exception as ex:
                 thePROG.logexception(ex, offline_mf1m)
+
+        if sshclient: sshclient.close()
 
         evictBn = 'SinaMF1m_%s' % (dtStart- timedelta(days=10)).strftime('%Y%m%d')
         for fn in hist.listAllFiles(dirCache) :

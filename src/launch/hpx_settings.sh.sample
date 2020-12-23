@@ -1,0 +1,18 @@
+LOG_LEVEL=DEBUG
+
+CONF_DIR="$(realpath ~/hpx_conf)"
+TOPDIR_HP="$(realpath ~/wkspaces/HyperPixiu)"
+# WORK_DIR=/mnt/data/hpwkdir
+WORK_DIR=/tmp
+# ARCH_DIR="$(realpath ~/hpdata)"
+ARCHED_DIR="$(realpath ~/wkspace/hpx_archived)"
+PUBLISH_DIR="$(realpath ~/wkspace/hpx_publish)"
+
+WORKER_OF=sinaCrawler
+WORK_AS="" # WORK_AS="hpx53"
+WORKER_COUNT=1
+SSH_HOST="tc2.syscheme.com"
+SSH_PORT=22
+
+export SSH_CMD="ssh -p ${SSH_PORT}"
+export SSH_HOME="${WORK_AS}@${SSH_HOST}:~"

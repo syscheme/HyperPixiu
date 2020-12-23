@@ -5,6 +5,9 @@ MODEL="Cnn1Dx4R2.S1548I4A3"
 
 TRAINERS="111.44.254.183:48642:ResNet21.S1548I4A3"
 
+if [ -e ~/hpx_conf/hpx_settings.sh ]; then source ~/hpx_conf/hpx_settings.sh; fi
+if [ -z "${PUBLISH_DIR}" ]; then PUBLISH_DIR="$(realpath ~/wkspace/hpx_publish)" ; fi
+
 STAMP=$(date +%m%d%H%M%S)
 for i in ${TRAINERS} ; do
     IP=$(echo ${i} |cut -d ':' -f 1)
@@ -25,7 +28,7 @@ for i in ${TRAINERS} ; do
     fi
 
     echo "collecting from ${IP}:${PORT}"
-    DESTDIR="/Trainers/${IP}_${PORT}"
+    DESTDIR="${PUBLISH_DIR}/${IP}_${PORT}"
     mkdir -p ${DESTDIR}
     ls -lh ${DESTDIR} ;
 

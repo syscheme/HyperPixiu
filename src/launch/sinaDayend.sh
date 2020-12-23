@@ -1,14 +1,20 @@
 #!/bin/bash
 # suggested cron line: 0  16  * *  1-5   ~/tasks/sinaDayend.sh 2>&1 > /tmp/sinaDayend.log &
+
+if [ -e ~/hpx_conf/hpx_settings.sh ]; then source ~/hpx_conf/hpx_settings.sh; fi
+
+if [ -z "${CONF_DIR}" ]; then CONF_DIR="$(realpath ~/hpx_conf)"; fi
+if [ -z "${TOPDIR_HP}" ]; then TOPDIR_HP="$(realpath ~/wkspaces/HyperPixiu)" ; fi
+if [ -z "${PUBLISH_DIR}" ]; then PUBLISH_DIR="$(realpath ~/wkspace/hpx_publish)" ; fi
+if [ -z "${WORK_DIR}" ]; then WORK_DIR="$(realpath /tmp)" ; fi
+
+mkdir -p "${WORK_DIR}" "${PUBLISH_DIR}"
 source "./sina_funcs.sh"
 
-TOPDIR_HP=~/wkspaces/HyperPixiu
-WORKDIR=/mnt/data/hpwkdir
-ARCH_DIR="$(realpath ~/hpdata)"
-
-OBJLST_toDownload="$(grep -o '^S[HZ][0-9]*' ${ARCH_DIR}/download_objs.txt |sort|uniq)"
-OBJLST_toScreen="$(grep -o '^S[HZ][0-9]*' ${ARCH_DIR}/screen_objs.txt |sort|uniq)"
-OBJLST_toAdv="$(grep -o '^S[HZ][0-9]*' ${ARCH_DIR}/advisor_objs.txt |sort|uniq)"
+CONF=$(realpath ${CONF_DIR}/Advisor.json)
+OBJLST_toDownload="$(grep -o '^S[HZ][0-9]*' ${CONF_DIR}/download_objs.txt |sort|uniq)"
+OBJLST_toScreen="$(grep -o '^S[HZ][0-9]*' ${CONF_DIR}/screen_objs.txt |sort|uniq)"
+OBJLST_toAdv="$(grep -o '^S[HZ][0-9]*' ${CONF_DIR}/advisor_objs.txt |sort|uniq)"
 
 # do super-sections
 OBJLST_toScreen="$(echo -e "$OBJLST_toScreen $OBJLST_toAdv"|sed 's/[ \t]/\n/g'|sort|uniq)"
@@ -29,9 +35,7 @@ TODAY="$(date +%Y%m%d)"
 
 cd ${TOPDIR_HP}
 DATASRC=./out/advisor
-BAKDIR=${WORKDIR}/advisor.BAK${STAMP}
-
-CONF=$(realpath ${ARCH_DIR}/Advisor.json)
+BAKDIR=${WORK_DIR}/advisor.BAK${STAMP}
 
 # step 1. kill the running advisor
 PID=$(ps aux|grep 'advisor.py'|grep ${CONF} | grep -v 'run.sh' |awk '{print $2;}' )
@@ -105,7 +109,7 @@ else
         TodayTag="$(echo ${f}| sed 's/advisor.BAK\([0-9]*\).*.bz2/\1/g')B"
         if [ -e ${TOPDIR_HP}/out/advmd_${TodayTag}.tar.bz2 ] ; then continue; fi
 
-        BAKDIR="${WORKDIR}/advisor.BAK${TodayTag}"
+        BAKDIR="${WORK_DIR}/advisor.BAK${TodayTag}"
         mkdir -p ${BAKDIR}; cd ${BAKDIR}
         tar xfvj ${TOPDIR_HP}/out/${f} --wildcards '*.tcsv*' --strip 3
         ls -l
@@ -122,7 +126,7 @@ else
 fi
 
 # step 3. process the collected bz2 files of today
-extrdir=${WORKDIR}/today
+extrdir=${WORK_DIR}/today
 rm -rf ${extrdir} ; mkdir -p ${extrdir} 
 cd ${extrdir}
 
@@ -176,7 +180,7 @@ cd ${extrdir}
 nice tar cfvj ${TOPDIR_HP}/out/adv_${TodayTag}.tar.bz2 filelist_adv.txt $TCSVLIST
 
 # step 4. download KL5m and MF1m of dataset OBJLST_toDownload
-cd ${WORKDIR}
+cd ${WORK_DIR}
 rm -rf download; mkdir download; cd download
 export SYMBOLLIST=${OBJLST_toDownload}
 DATALEN=300
@@ -186,21 +190,21 @@ downloadList downloadKL5m
 
 # step 5. screening the objects
 #     5.1, collect the json from the above downloaded folder
-cd ${WORKDIR}
+cd ${WORK_DIR}
 mkdir -p screen; cd screen
 for s in $OBJLST_toScreen; do
-    find ${WORKDIR}/download -name '${s}*.json' -exec cp -vf {} . \;
+    find ${WORK_DIR}/download -name '${s}*.json' -exec cp -vf {} . \;
 done
 
 #     5.2, run sinaDayEnd.py for each symbol
 cd ${TOPDIR_HP}
-# TODO point the offline dir to ${WORKDIR}/screen
+# TODO point the offline dir to ${WORK_DIR}/screen
 for s in $OBJLST_toScreen; do
     export SYMBOL=$s
     ./run.sh sinaDayEnd.py -o . ;
 done
 
-#     5.3, evict the old json files from dir ${WORKDIR}/screen
+#     5.3, evict the old json files from dir ${WORK_DIR}/screen
 
 #TODO step 6. sum up and generate screen report
 

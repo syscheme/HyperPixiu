@@ -34,25 +34,17 @@ worker.conf.beat_schedule = {
     },
 
     "every_TradeDayClose":{
-        "task":"dapps.sinaMaster.Archive.schOn_TradeDayClose",
-    #    "schedule":crontab(minute="*/5"),
-        'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
+        "task":"dapps.sinaMaster.Archive.schDo_cachePrevDays",
+        'schedule': crontab(hour=16, minute=5, day_of_week='1-5'),
         "args":(),
-        # "options":{'queue':'hipri'}
     },
 
-    # # Executes every weekday at 16:30
-    # 'every-weekday-end': {
-    #     'task': 'listSymbols',
-    #     'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
-    #     # 'args': (16, 16),
-    # },
-    # "add-every-minute":{
-    #     "task":"dapps.sinaMaster.add",
-    #     "schedule":crontab(minute="*/1"),
-    #     "args":(3, 4),
-    #     # "options":{'queue':'hipri'}
-    # },
+    "every_1hrAfterTradeDayClose":{
+        "task":"dapps.sinaMaster.Archive.schDo_kickoffDownloadToday",
+        'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
+        "args":(),
+    },
+
 }
 
 #----------------------------------------------------------------------

@@ -36,6 +36,7 @@ import paramiko
 from scp import SCPClient # pip install scp
 
 MAPPED_USER, MAPPED_HOME = getMappedAs()
+WORKDIR_CACHE = '/tmp/sina_cache'
 
 @shared_task
 def add(x, y):
@@ -149,6 +150,51 @@ def __publishFiles(srcfiles) :
 
 # ===================================================
 @shared_task(bind=True, base=Retryable, default_retry_delay=10.0)
+def fetchArchivedFiles(self, filesToCache):
+    ret = []
+
+    global WORKDIR_CACHE
+    try:
+        os.mkdir(WORKDIR_CACHE)
+    except: pass
+
+    sshclient, dirArchived = None, os.path.join(MAPPED_HOME, "hpx_archived/sina") # os.path.join(os.environ['HOME'], 'wkspaces/hpx_archived/sina') 
+
+    for bn in filesToCache:
+        offlineFn = os.path.join(WORKDIR_CACHE, bn)
+        try:
+            size = os.stat(offlineFn).st_size
+            if size >0: continue
+        except FileNotFoundError as ex:
+            thePROG.warn('no offline file avail: %s' % offlineFn)
+                
+        if '@' in dirArchived and ':' in dirArchived :
+            sshcmd = os.environ.get('SSH_CMD', 'ssh')
+            if not sshclient:
+                tokens = dirArchived.split('@')
+                username, host, port = tokens[0], tokens[1], 22
+                tokens = host.split(':')
+                host, dirRemote=tokens[0], tokens[1]
+                tokens = sshcmd.split(' ')
+                if '-p' in tokens and tokens.index('-p') < len(tokens):
+                    port = int(tokens[1+ tokens.index('-p')])
+
+                sshclient = paramiko.SSHClient()
+                sshclient.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                sshclient.connect(host, port=port, username=username)
+
+            with SCPClient(sshclient.get_transport()) as scp:
+                fnRemote = '%s/%s' %(dirRemote, bn)
+                scp.get(fnRemote, WORKDIR_CACHE)
+                ret.append(bn)
+                thePROG.info('pre-cached from arch: %s/%s' % (dirArchived, fnRemote))
+
+    if sshclient: sshclient.close()
+    sshclient = None
+    return ret
+
+# ===================================================
+@shared_task(bind=True, base=Retryable, default_retry_delay=10.0)
 def downloadToday(self, SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     global MAPPED_USER, MAPPED_HOME
     result = __downloadSymbol(SYMBOL, todayYYMMDD, excludeMoneyFlow)
@@ -156,6 +202,27 @@ def downloadToday(self, SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     thePROG.info('downloadToday() result: %s' % result) 
     # sample: {'symbol': 'SZ000002', 'date': '20201127', 'snapshot': 'SZ000002_sns.h5', 'cachedJsons': ['SZ000002_KL1d20201128.json', 'SZ000002_MF1d20201128.json', 'SZ000002_KL5m20201128.json', 'SZ000002_MF1m20201128.json'], 'tcsv': 'SZ000002_day20201127.tcsv'}
     return result
+
+def __importArchivedDays(mux, SYMBOL, YYYYMMDDs):
+    from dapps.sinaMaster.tasks_Archive import readArchivedDays
+    import io
+
+    # compressed = readArchivedDays.delay(SYMBOL, YYYYMMDDs).get() # = readArchivedDays(SYMBOL, YYYYMMDDs)
+    # allLines = bz2.decompress(compressed).decode('utf8')
+    allLines = readArchivedDays.apply_async(args=[SYMBOL, YYYYMMDDs], compression='bzip2').get()
+    stream = io.StringIO(allLines)
+    pb = hist.TaggedCsvStream(stream, program=thePROG)
+    pb.setId('ArchDays.%s' % SYMBOL)
+
+    pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
+    pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
+    pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
+    pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
+
+    pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+    pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+    pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+    mux.addStream(pb)
 
 def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
 
@@ -166,9 +233,9 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
 
     SINA_TODAY = datetime.strptime(SINA_TODAY, '%Y-%m-%d').replace(hour=23, minute=59, second=59, microsecond=0)
 
-    dirCache = '/tmp/sina_cache'
+    global WORKDIR_CACHE
     try:
-        os.mkdir(dirCache)
+        os.mkdir(WORKDIR_CACHE)
     except: pass
     dirArchived = os.path.join(MAPPED_HOME, "hpx_archived/sina") # os.path.join(os.environ['HOME'], 'wkspaces/hpx_archived/sina') 
 
@@ -188,7 +255,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     daysTolst = int(caldays/7) *5 + (caldays %7) + 5 + nLastDays
     lastDays =[]
 
-    httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, daysTolst, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_KLINE_1DAY), todayYYMMDD)))
+    httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, SYMBOL, daysTolst, saveAs=os.path.join(WORKDIR_CACHE, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_KLINE_1DAY), todayYYMMDD)))
     if httperr in [408, 456]:
         raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_KLINE_1DAY, SYMBOL, httperr))
             
@@ -213,26 +280,32 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     
     # 1.b  MF1d
     if not excludeMoneyFlow:
-        httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1DAY), todayYYMMDD)))
+        httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, saveAs=os.path.join(WORKDIR_CACHE, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1DAY), todayYYMMDD)))
         if httperr in [408, 456] :
             raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1DAY, SYMBOL, httperr))
 
     # 1.c  KL5m
-    httperr, _, _ = playback.loadOnline(EVENT_KLINE_5MIN, SYMBOL, 0, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_KLINE_5MIN), todayYYMMDD)))
+    httperr, _, _ = playback.loadOnline(EVENT_KLINE_5MIN, SYMBOL, 0, saveAs=os.path.join(WORKDIR_CACHE, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_KLINE_5MIN), todayYYMMDD)))
     if httperr in [408, 456] :
         raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_KLINE_5MIN, SYMBOL, httperr))
 
     # 1.c  MF1m
     if not excludeMoneyFlow:
-        httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1MIN, SYMBOL, 0, saveAs=os.path.join(dirCache, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1MIN), todayYYMMDD)))
+        httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1MIN, SYMBOL, 0, saveAs=os.path.join(WORKDIR_CACHE, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1MIN), todayYYMMDD)))
         if httperr in [408, 456] :
             raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1MIN, SYMBOL, httperr))
 
+        YYYYMMDDs = [ lastDays[i].asof.strftime('%Y%m%d') for i in range(1, len(lastDays)) ]
+        __importArchivedDays(playback, SYMBOL, YYYYMMDDs)
+        '''
         offlineBn= None
         sshclient, dirRemote =None, '~'
         for i in lastDays[1:]:
             offlineBn = 'SinaMF1m_%s.h5t' % i.asof.strftime('%Y%m%d')
-            offline_mf1m = os.path.join(dirCache, offlineBn)
+            offline_mf1m = os.path.join(WORKDIR_CACHE, offlineBn)
+            # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
+            mfn, latestDay = memberfnInH5tar(offline_mf1m, SYMBOL)
+
             try :
                 try:
                     size = os.stat(offline_mf1m).st_size
@@ -254,7 +327,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
                             sshclient.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                             sshclient.connect(host, port=port, username=username)
 
-                        # cmd = "rsync -av -e '{0}' {1}/{2} {3}".format(sshcmd, dirArchived, offlineBn, dirCache)
+                        # cmd = "rsync -av -e '{0}' {1}/{2} {3}".format(sshcmd, dirArchived, offlineBn, WORKDIR_CACHE)
                         # thePROG.debug('exec: %s' % cmd)
                         # ret = os.system(cmd)
                         # if 0 == ret:
@@ -265,7 +338,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
 
                         with SCPClient(sshclient.get_transport()) as scp:
                             fnRemote = '%s/%s' %(dirRemote, offlineBn)
-                            scp.get(fnRemote, dirCache)
+                            scp.get(fnRemote, WORKDIR_CACHE)
                             thePROG.info('cached from arch: %s/%s' % (dirArchived, fnRemote))
 
                 # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
@@ -279,21 +352,22 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
         if sshclient: sshclient.close()
 
         evictBn = 'SinaMF1m_%s' % (dtStart- timedelta(days=10)).strftime('%Y%m%d')
-        for fn in hist.listAllFiles(dirCache) :
+        for fn in hist.listAllFiles(WORKDIR_CACHE) :
             bn = os.path.basename(fn)
             if '.h5t' == bn[-4:] and 'SinaMF1m_' in bn and bn < evictBn :
                 __rmfile(fn)
                 thePROG.info('old cache[%s] evicted' % fn)
+        '''
 
-    thePROG.info('inited mux[%s] with %d substreams' % (SYMBOL, playback.size))
+    thePROG.info('inited mux[%s] with %d substreams: %s' % (SYMBOL, playback.size, ','.join(playback.subStreamIds)))
 
     psptMarketState = PerspectiveState(SYMBOL)
 
     stampOfState, momentsToSample = None, ['10:00:00', '10:30:00', '11:00:00', '11:30:00', '13:30:00', '14:30:00', '15:00:00']
     snapshot = {}
-    snapshoth5fn = os.path.join(dirCache, '%s_sns%s.h5' % (SYMBOL, todayYYMMDD))
+    snapshoth5fn = os.path.join(WORKDIR_CACHE, '%s_sns%s.h5' % (SYMBOL, todayYYMMDD))
 
-    fnTcsv = os.path.join(dirCache, '%s_day%s.tcsv' % (SYMBOL, todayYYMMDD))
+    fnTcsv = os.path.join(WORKDIR_CACHE, '%s_day%s.tcsv' % (SYMBOL, todayYYMMDD))
     try:
         os.remove(fnTcsv)
     except: pass
@@ -348,17 +422,14 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
                         'snapshot': psptMarketState.dumps(symbol)
                     }
 
-                if stampOfState and stampOfState == stamp:
-                    continue
-                
-                stampOfState = stamp
+                    stampOfState = stamp
 
-                if snapshot and len(snapshot) >0:
-                    h5ident = '%s.%s' %(TAG_SNAPSHORT, snapshot['ident'])
-                    if saveSnapshot(snapshoth5fn, h5group=h5ident, snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc']):
-                        savedSns.append(h5ident)
-
-                    snapshot ={}
+                if stampOfState and stamp > stampOfState:
+                    if snapshot and len(snapshot) >0:
+                        h5ident = '%s.%s' %(TAG_SNAPSHORT, snapshot['ident'])
+                        if saveSnapshot(snapshoth5fn, h5group=h5ident, snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc']):
+                            savedSns.append(h5ident)
+                        snapshot ={}
         
         except StopIteration:
             break
@@ -381,7 +452,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
 
     cachedJsons = playback.cachedFiles
     thePROG.info('cached %s, generated %s and snapshots:%s, publishing' % (','.join(cachedJsons), fnTcsv, ','.join(savedSns)))
-    dirNameLen = len(dirCache) +1
+    dirNameLen = len(WORKDIR_CACHE) +1
     pubDir, bns = __publishFiles([snapshoth5fn, fnTcsv] + playback.cachedFiles)
 
     # map to the arguments of sinaMaster.commitToday()
@@ -398,7 +469,22 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
         'lastDays': [[x.asof.strftime('%Y%m%d'), x.open, x.high, x.low, x.close, x.volume] for x in lastDays]
     }
 
+# ===================================================
+'''
+from celery.worker.control import control_command
+@control_command(
+    args=[('n', int)],
+    signature='[N=1]',  # <- used for help on the command-line.
+)
+def prefetch_archieved(state, n=1) :
+    state.consumer.qos.increment_eventually(n)
+    return {'ok': 'prefetch count incremented'}
+'''
+
 ####################################
 if __name__ == '__main__':
+    thePROG.setLogLevel('debug')
+
     # downloadToday('SH510300', excludeMoneyFlow=True)
-    downloadToday('SZ002008')
+    downloadToday('SZ002008', '2020-12-23')
+    # fetchArchivedFiles(['SinaMF1m_20201222.h5t', 'SinaMF1m_20201221.h5t'])

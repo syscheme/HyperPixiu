@@ -279,11 +279,11 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     thePROG.info('loaded KL1d and determined %d-Tdays pirior to %s, %ddays: %s ~ %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), len(lastDays), startYYMMDD, todayYYMMDD))
     
     # 1.b  MF1d
-    ar = None
+    read_sig = None
     if not excludeMoneyFlow:
         # kick off the reading archive at Master side to work concurrently
         from dapps.sinaMaster.tasks_Archive import readArchivedDays
-        ar = readArchivedDays.apply_async(args=[SYMBOL, [ lastDays[i].asof.strftime('%Y%m%d') for i in range(1, len(lastDays)) ] ], compression='bzip2')
+        read_sig = readArchivedDays.s(args=[SYMBOL, [ lastDays[i].asof.strftime('%Y%m%d') for i in range(1, len(lastDays)) ] ], compression='bzip2')
 
         # download MF1d
         httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, saveAs=os.path.join(WORKDIR_CACHE, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1DAY), todayYYMMDD)))
@@ -302,9 +302,9 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
             raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1MIN, SYMBOL, httperr))
 
         # __importArchivedDays(playback, SYMBOL, YYYYMMDDs)
-        try:
-            if ar:
-                stream = io.StringIO(ar.get())
+        if read_sig:
+            try:
+                stream = io.StringIO(read_sig())
                 pb = hist.TaggedCsvStream(stream, program=thePROG)
                 pb.setId('ArchDays.%s' % SYMBOL)
 
@@ -317,8 +317,10 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
                 pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
                 pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
                 playback.addStream(pb)
-        except:
-            thePROG.logexception(ex, 'read ArchDays')
+            except Exception as ex:
+                thePROG.logexception(ex, 'read ArchDays')
+
+            # ar.revoke()
 
         '''
         offlineBn= None

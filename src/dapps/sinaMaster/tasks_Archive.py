@@ -370,7 +370,7 @@ def schDo_kickoffDownloadToday(self):
 
 # ===================================================
 @shared_task(bind=True, base=Retryable)
-def schDo_distributeArch(self):
+def schDo_pitchArchiedFiles(self):
 
     listAllSymbols()
 
@@ -400,8 +400,34 @@ def schDo_distributeArch(self):
     for c in crawlers:
         q = c.split('@')[0]
         if not q or len(q) <=0: continue
-        r = CTDayend.preCacheFiles.apply_async(args=[cacheFiles], queue=q)
-        thePROG.info('schDo_distributeArch() called crawler[%s].preCacheFiles: %s' % (q, ','.join(cacheFiles)))
+        r = CTDayend.fetchArchivedFiles.apply_async(args=[cacheFiles], queue=q)
+        thePROG.info('schDo_pitchArchiedFiles() called crawler[%s].fetchArchivedFiles: %s' % (q, ','.join(cacheFiles)))
+
+# ===================================================
+@shared_task(bind=True, max_retries=0, compression='bzip2')
+def readArchivedDays(self, symbol, YYMMDDs):
+    if isinstance(YYMMDDs, str):
+        YYMMDDs = [YYMMDDs]
+
+    YYMMDDs.sort()
+
+    all_lines=''
+    readtxn = ''
+    for yymmdd in YYMMDDs:
+        fnArch = os.path.join(MAPPED_HOME, 'archived', 'sina', 'SinaMDay_%s.h5t' % yymmdd)
+        # fnArch = '/mnt/e/AShareSample/arch/SinaMDay_%s.h5t' % yymmdd
+        memName = '%s_day%s.tcsv' %(symbol, yymmdd)
+        try :
+            lines = ''
+            lines = h5tar.read_utf8(fnArch, memName)
+            if lines and len(lines) >0 :
+                all_lines += '\n' + lines
+            readtxn += '%s(%dB)@%s, ' % (memName, len(lines), fnArch)
+        except:
+            thePROG.error('readArchivedDays() failed to read %s from %s' % (memName, fnArch))
+
+    thePROG.info('readArchivedDays() read %s' % readtxn) 
+    return all_lines # take celery's compression instead of return bz2.compress(all_lines.encode('utf8'))
 
 # ===================================================
 @shared_task(bind=True, base=Retryable)
@@ -436,7 +462,8 @@ def readArchivedH5t(self, h5tFileName, memberNode):
 from time import sleep
 if __name__ == '__main__':
     thePROG.setLogLevel('debug')
-    # schDo_distributeArch()
+    # schDo_pitchArchiedFiles()
+    readArchivedDays('SZ300913', ['20201221', '20201222'])
     readArchivedH5t('SinaMF1m_20201222.h5t', 'SZ300913_MF1m20201222.json')
 
     listAllSymbols()

@@ -1074,6 +1074,11 @@ class PlaybackMux(Playback):
     @property
     def size(self): return len(self.__dictStrmPB)
 
+    @property
+    def subStreamIds(self): 
+        return [ k.id for k in self.__dictStrmPB.keys() ]
+
+
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):
         super(PlaybackMux, self).resetRead()

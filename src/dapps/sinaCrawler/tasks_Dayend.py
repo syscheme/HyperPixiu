@@ -150,7 +150,7 @@ def __publishFiles(srcfiles) :
 
 # ===================================================
 @shared_task(bind=True, base=Retryable, default_retry_delay=10.0)
-def preCacheFiles(self, filesToCache):
+def fetchArchivedFiles(self, filesToCache):
     ret = []
 
     global WORKDIR_CACHE
@@ -202,6 +202,27 @@ def downloadToday(self, SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     thePROG.info('downloadToday() result: %s' % result) 
     # sample: {'symbol': 'SZ000002', 'date': '20201127', 'snapshot': 'SZ000002_sns.h5', 'cachedJsons': ['SZ000002_KL1d20201128.json', 'SZ000002_MF1d20201128.json', 'SZ000002_KL5m20201128.json', 'SZ000002_MF1m20201128.json'], 'tcsv': 'SZ000002_day20201127.tcsv'}
     return result
+
+def __importArchivedDays(mux, SYMBOL, YYMMDDs):
+    from dapps.sinaMaster.tasks_Archive import readArchivedDays
+    import io
+
+    # compressed = readArchivedDays.delay(SYMBOL, YYMMDDs).get() # = readArchivedDays(SYMBOL, YYMMDDs)
+    # allLines = bz2.decompress(compressed).decode('utf8')
+    allLines = readArchivedDays.apply_async(args=[SYMBOL, YYMMDDs], compression='bzip2').get()
+    stream = io.StringIO(allLines)
+    pb = hist.TaggedCsvStream(stream, program=thePROG)
+    pb.setId('ArchDays.%s' % SYMBOL)
+
+    pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
+    pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
+    pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
+    pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
+
+    pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+    pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+    pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+    mux.addStream(pb)
 
 def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
 
@@ -274,11 +295,17 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
         if httperr in [408, 456] :
             raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1MIN, SYMBOL, httperr))
 
+        YYMMDDs = [ lastDays[i].asof.strftime('%Y%m%d') for i in range(1, len(lastDays)) ]
+        __importArchivedDays(playback, SYMBOL, YYMMDDs)
+        '''
         offlineBn= None
         sshclient, dirRemote =None, '~'
         for i in lastDays[1:]:
             offlineBn = 'SinaMF1m_%s.h5t' % i.asof.strftime('%Y%m%d')
             offline_mf1m = os.path.join(WORKDIR_CACHE, offlineBn)
+            # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
+            mfn, latestDay = memberfnInH5tar(offline_mf1m, SYMBOL)
+
             try :
                 try:
                     size = os.stat(offline_mf1m).st_size
@@ -330,8 +357,9 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
             if '.h5t' == bn[-4:] and 'SinaMF1m_' in bn and bn < evictBn :
                 __rmfile(fn)
                 thePROG.info('old cache[%s] evicted' % fn)
+        '''
 
-    thePROG.info('inited mux[%s] with %d substreams' % (SYMBOL, playback.size))
+    thePROG.info('inited mux[%s] with %d substreams: %s' % (SYMBOL, playback.size, ','.join(playback.subStreamIds)))
 
     psptMarketState = PerspectiveState(SYMBOL)
 
@@ -394,17 +422,14 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
                         'snapshot': psptMarketState.dumps(symbol)
                     }
 
-                if stampOfState and stampOfState == stamp:
-                    continue
-                
-                stampOfState = stamp
+                    stampOfState = stamp
 
-                if snapshot and len(snapshot) >0:
-                    h5ident = '%s.%s' %(TAG_SNAPSHORT, snapshot['ident'])
-                    if saveSnapshot(snapshoth5fn, h5group=h5ident, snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc']):
-                        savedSns.append(h5ident)
-
-                    snapshot ={}
+                if stampOfState and stamp > stampOfState:
+                    if snapshot and len(snapshot) >0:
+                        h5ident = '%s.%s' %(TAG_SNAPSHORT, snapshot['ident'])
+                        if saveSnapshot(snapshoth5fn, h5group=h5ident, snapshot=snapshot['snapshot'], ohlc=snapshot['ohlc']):
+                            savedSns.append(h5ident)
+                        snapshot ={}
         
         except StopIteration:
             break
@@ -455,9 +480,11 @@ def prefetch_archieved(state, n=1) :
     state.consumer.qos.increment_eventually(n)
     return {'ok': 'prefetch count incremented'}
 '''
-    
+
 ####################################
 if __name__ == '__main__':
+    thePROG.setLogLevel('debug')
+
     # downloadToday('SH510300', excludeMoneyFlow=True)
-    # downloadToday('SZ002008')
-    preCacheFiles(['SinaMF1m_20201222.h5t', 'SinaMF1m_20201221.h5t'])
+    downloadToday('SZ002008', '2020-12-23')
+    # fetchArchivedFiles(['SinaMF1m_20201222.h5t', 'SinaMF1m_20201221.h5t'])

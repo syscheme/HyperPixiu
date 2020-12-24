@@ -27,9 +27,8 @@ import HistoryData as hist
 from crawler.producesSina import SinaMux, Sina_Tplus1, SinaSwingScanner
 import crawler.crawlSina as sina
 
+import sys, os, re, io
 import h5py
-
-import sys, os, re
 from datetime import datetime, timedelta
 import shutil
 import paramiko
@@ -203,10 +202,10 @@ def downloadToday(self, SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     # sample: {'symbol': 'SZ000002', 'date': '20201127', 'snapshot': 'SZ000002_sns.h5', 'cachedJsons': ['SZ000002_KL1d20201128.json', 'SZ000002_MF1d20201128.json', 'SZ000002_KL5m20201128.json', 'SZ000002_MF1m20201128.json'], 'tcsv': 'SZ000002_day20201127.tcsv'}
     return result
 
+'''
 def __importArchivedDays(mux, SYMBOL, YYYYMMDDs):
-    from dapps.sinaMaster.tasks_Archive import readArchivedDays
-    import io
 
+    from dapps.sinaMaster.tasks_Archive import readArchivedDays
     # compressed = readArchivedDays.delay(SYMBOL, YYYYMMDDs).get() # = readArchivedDays(SYMBOL, YYYYMMDDs)
     # allLines = bz2.decompress(compressed).decode('utf8')
     allLines = readArchivedDays.apply_async(args=[SYMBOL, YYYYMMDDs], compression='bzip2').get()
@@ -223,6 +222,7 @@ def __importArchivedDays(mux, SYMBOL, YYYYMMDDs):
     pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
     pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
     mux.addStream(pb)
+'''
 
 def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
 
@@ -279,7 +279,13 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     thePROG.info('loaded KL1d and determined %d-Tdays pirior to %s, %ddays: %s ~ %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), len(lastDays), startYYMMDD, todayYYMMDD))
     
     # 1.b  MF1d
+    ar = None
     if not excludeMoneyFlow:
+        # kick off the reading archive at Master side to work concurrently
+        from dapps.sinaMaster.tasks_Archive import readArchivedDays
+        ar = readArchivedDays.apply_async(args=[SYMBOL, [ lastDays[i].asof.strftime('%Y%m%d') for i in range(1, len(lastDays)) ] ], compression='bzip2')
+
+        # download MF1d
         httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, saveAs=os.path.join(WORKDIR_CACHE, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1DAY), todayYYMMDD)))
         if httperr in [408, 456] :
             raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1DAY, SYMBOL, httperr))
@@ -295,8 +301,25 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
         if httperr in [408, 456] :
             raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1MIN, SYMBOL, httperr))
 
-        YYYYMMDDs = [ lastDays[i].asof.strftime('%Y%m%d') for i in range(1, len(lastDays)) ]
-        __importArchivedDays(playback, SYMBOL, YYYYMMDDs)
+        # __importArchivedDays(playback, SYMBOL, YYYYMMDDs)
+        try:
+            if ar:
+                stream = io.StringIO(ar.get())
+                pb = hist.TaggedCsvStream(stream, program=thePROG)
+                pb.setId('ArchDays.%s' % SYMBOL)
+
+                pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
+                pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
+                pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
+                pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
+
+                pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+                pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+                pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+                playback.addStream(pb)
+        except:
+            thePROG.logexception(ex, 'read ArchDays')
+
         '''
         offlineBn= None
         sshclient, dirRemote =None, '~'
@@ -486,5 +509,5 @@ if __name__ == '__main__':
     thePROG.setLogLevel('debug')
 
     # downloadToday('SH510300', excludeMoneyFlow=True)
-    downloadToday('SZ002008', '2020-12-23')
+    downloadToday('SZ002008')
     # fetchArchivedFiles(['SinaMF1m_20201222.h5t', 'SinaMF1m_20201221.h5t'])

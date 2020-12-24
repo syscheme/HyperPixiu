@@ -34,7 +34,7 @@ worker.conf.beat_schedule = {
     },
 
     "every_TradeDayClose":{
-        "task":"dapps.sinaMaster.Archive.schDo_cachePrevDays",
+        "task":"dapps.sinaMaster.Archive.schDo_pitchArchiedFiles",
         'schedule': crontab(hour=16, minute=5, day_of_week='1-5'),
         "args":(),
     },
@@ -44,6 +44,26 @@ worker.conf.beat_schedule = {
         'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
         "args":(),
     },
+
+    ''' TODO
+    "reload_beforeDayClose":
+    {
+        crawlers = wkr.control.ping(timeout=2.0, queue='crawler')
+        crawlers = [ list(c.keys())[0] for c in crawlers ]
+        # for c in crawlers
+        'schedule': crontab(hour=16, minute=15, day_of_week='1-5'),
+        wkr.control.pool_restart(reload=Rrue, destination=['hpx'])
+
+        'schedule': crontab(hour=16, minute=35, day_of_week='1-5'),
+        wkr.control.pool_restart(reload=Rrue, destination=['hpx53'])
+
+        'schedule': crontab(hour=16, minute=40, day_of_week='1-5'),
+        wkr.control.pool_restart(reload=Rrue, destination=['hpx79'])
+
+        'schedule': crontab(hour=16, minute=50, day_of_week='1-5'),
+        wkr.control.pool_restart(reload=Rrue, destination=['hpx50'])
+    }
+    '''
 
 }
 

@@ -405,15 +405,15 @@ def schDo_pitchArchiedFiles(self):
 
 # ===================================================
 @shared_task(bind=True, max_retries=0, compression='bzip2')
-def readArchivedDays(self, symbol, YYMMDDs):
-    if isinstance(YYMMDDs, str):
-        YYMMDDs = [YYMMDDs]
+def readArchivedDays(self, symbol, YYYYMMDDs):
+    if isinstance(YYYYMMDDs, str):
+        YYYYMMDDs = [YYYYMMDDs]
 
-    YYMMDDs.sort()
+    YYYYMMDDs.sort()
 
     all_lines=''
     readtxn = ''
-    for yymmdd in YYMMDDs:
+    for yymmdd in YYYYMMDDs:
         fnArch = os.path.join(MAPPED_HOME, 'archived', 'sina', 'SinaMDay_%s.h5t' % yymmdd)
         # fnArch = '/mnt/e/AShareSample/arch/SinaMDay_%s.h5t' % yymmdd
         memName = '%s_day%s.tcsv' %(symbol, yymmdd)

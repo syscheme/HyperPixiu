@@ -203,13 +203,13 @@ def downloadToday(self, SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     # sample: {'symbol': 'SZ000002', 'date': '20201127', 'snapshot': 'SZ000002_sns.h5', 'cachedJsons': ['SZ000002_KL1d20201128.json', 'SZ000002_MF1d20201128.json', 'SZ000002_KL5m20201128.json', 'SZ000002_MF1m20201128.json'], 'tcsv': 'SZ000002_day20201127.tcsv'}
     return result
 
-def __importArchivedDays(mux, SYMBOL, YYMMDDs):
+def __importArchivedDays(mux, SYMBOL, YYYYMMDDs):
     from dapps.sinaMaster.tasks_Archive import readArchivedDays
     import io
 
-    # compressed = readArchivedDays.delay(SYMBOL, YYMMDDs).get() # = readArchivedDays(SYMBOL, YYMMDDs)
+    # compressed = readArchivedDays.delay(SYMBOL, YYYYMMDDs).get() # = readArchivedDays(SYMBOL, YYYYMMDDs)
     # allLines = bz2.decompress(compressed).decode('utf8')
-    allLines = readArchivedDays.apply_async(args=[SYMBOL, YYMMDDs], compression='bzip2').get()
+    allLines = readArchivedDays.apply_async(args=[SYMBOL, YYYYMMDDs], compression='bzip2').get()
     stream = io.StringIO(allLines)
     pb = hist.TaggedCsvStream(stream, program=thePROG)
     pb.setId('ArchDays.%s' % SYMBOL)
@@ -295,8 +295,8 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
         if httperr in [408, 456] :
             raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1MIN, SYMBOL, httperr))
 
-        YYMMDDs = [ lastDays[i].asof.strftime('%Y%m%d') for i in range(1, len(lastDays)) ]
-        __importArchivedDays(playback, SYMBOL, YYMMDDs)
+        YYYYMMDDs = [ lastDays[i].asof.strftime('%Y%m%d') for i in range(1, len(lastDays)) ]
+        __importArchivedDays(playback, SYMBOL, YYYYMMDDs)
         '''
         offlineBn= None
         sshclient, dirRemote =None, '~'

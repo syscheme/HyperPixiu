@@ -283,7 +283,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     if not excludeMoneyFlow:
         # kick off the reading archive at Master side to work concurrently
         from dapps.sinaMaster.tasks_Archive import readArchivedDays
-        read_sig = readArchivedDays.s(SYMBOL, [ lastDays[i].asof.strftime('%Y%m%d') for i in range(1, len(lastDays)) ], compression='bzip2')
+        read_sig = readArchivedDays.s(SYMBOL, [ lastDays[i].asof.strftime('%Y%m%d') for i in range(1, len(lastDays)) ])
 
         # download MF1d
         httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, saveAs=os.path.join(WORKDIR_CACHE, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1DAY), todayYYMMDD)))

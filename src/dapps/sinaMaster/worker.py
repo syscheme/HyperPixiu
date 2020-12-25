@@ -45,7 +45,9 @@ worker.conf.beat_schedule = {
         "args":(),
     },
 
-    ''' TODO
+}
+'''
+    TODO
     "reload_beforeDayClose":
     {
         crawlers = wkr.control.ping(timeout=2.0, queue='crawler')
@@ -63,9 +65,7 @@ worker.conf.beat_schedule = {
         'schedule': crontab(hour=16, minute=50, day_of_week='1-5'),
         wkr.control.pool_restart(reload=Rrue, destination=['hpx50'])
     }
-    '''
-
-}
+'''
 
 #----------------------------------------------------------------------
 if __name__ == '__main__':

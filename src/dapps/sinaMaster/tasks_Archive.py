@@ -17,8 +17,6 @@ from urllib.parse import quote, unquote
 import sys, os, re, glob
 from datetime import datetime, timedelta
 
-import sqlite3
-
 SYMBOL_LIST_HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,open,high,low,close,volume"
 EOL = "\r\n"
 SINA_USERS_ROOT = '/mnt/data/hpwkspace/users'
@@ -407,19 +405,19 @@ def schOn_Every5min(self):
 
 # ===================================================
 @shared_task(bind=True, base=Retryable)
-def schDo_kickoffDownloadToday(self):
+def schDo_kickoffDownloadToday000(self):
     global __asyncResult_downloadToday
     __asyncResult_downloadToday = {}
     for s in IDXs_to_COLLECT + ETFs_to_COLLECT:
         if s in __asyncResult_downloadToday.keys():
             continue
 
-        thePROG.debug('schDo_kickoffDownloadToday() adding subtask to download ETF[%s]' % s)
+        thePROG.debug('schDo_kickoffDownloadToday000() adding subtask to download ETF[%s]' % s)
         wflow = CTDayend.downloadToday.s(s, excludeMoneyFlow=True) | commitToday.s()
         __asyncResult_downloadToday[s] = wflow()
 
     lstSHZ = listAllSymbols()
-    thePROG.info('schDo_kickoffDownloadToday() listAllSymbols got %d symbols' %len(lstSHZ))
+    thePROG.info('schDo_kickoffDownloadToday000() listAllSymbols got %d symbols' %len(lstSHZ))
     if len(lstSHZ) <=2000:
         raise RetryableError(401, 'incompleted symbol list')
 
@@ -429,7 +427,7 @@ def schDo_kickoffDownloadToday(self):
         if symbol in __asyncResult_downloadToday.keys():
             continue
 
-        thePROG.debug('schDo_kickoffDownloadToday() adding subtask to download %s %s' % (symbol, i['name']))
+        thePROG.debug('schDo_kickoffDownloadToday000() adding subtask to download %s %s' % (symbol, i['name']))
         wflow = CTDayend.downloadToday.s(symbol) | commitToday.s()
         __asyncResult_downloadToday[symbol] = wflow()
 
@@ -458,8 +456,9 @@ def _saveDownloadReqs(dirReqs):
     except Exception as ex:
         pass
 
+# ===================================================
 @shared_task(bind=True, base=Retryable)
-def schDo_kickoffDownloadToday2(self):
+def schDo_kickoffDownloadToday(self):
     lastYYMMDDs = prod.determineLastDays(thePROG, nLastDays =7)
     if len(lastYYMMDDs) <=0:
         return

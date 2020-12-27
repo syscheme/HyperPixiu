@@ -238,7 +238,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
         try :
             destpath = os.path.join(archDir, 'Sina%s_%s.h5t' % (evtShort, asofYYMMDD) )
             if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
-                thePROG.info('commitToday() archived %s into %s' %(srcpath, destpath))
+                thePROG.debug('commitToday() archived %s into %s' %(srcpath, destpath))
                 __rmfile(srcpath)
             else:
                 thePROG.error('commitToday() failed to archived %s into %s' %(srcpath, destpath))
@@ -301,19 +301,24 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
                     except Exception as ex:
                         thePROG.warn('commitToday() failed to determine grainRate for: %s' % k)
                     
-        thePROG.info('commitToday() added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
+        thePROG.debug('commitToday() added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
         __rmfile(srcpath)
     except Exception as ex:
         thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
 
     dirReqs = os.path.join(archDir, 'reqs')
-    __rmfile(os.path.join(dirReqs, '%s_%s.tcsv.bz2' % (asofYYMMDD, symbol)))
+    fnReq = os.path.join(dirReqs, '%s_%s.tcsv.bz2' % (asofYYMMDD, symbol))
+    __rmfile(fnReq)
+    thePROG.debug('commitToday() removed %s' % fnReq)
 
     dictDownloadReqs = _loadDownloadReqs(dirReqs)
     if asofYYMMDD in dictDownloadReqs.keys():
         if symbol in dictDownloadReqs[asofYYMMDD]:
-            dictDownloadReqs[asofYYMMDD][symbol]['done'] + datetime.now()
-            thePROG.info('commitToday() removed dictDownloadReqs[%s][%s]' % (asofYYMMDD, symbol))
+            stampNow = datetime.now()
+            taskId, stampIssued = dictDownloadReqs[asofYYMMDD][symbol]['taskId'], dictDownloadReqs[asofYYMMDD][symbol]['issued']
+            dictDownloadReqs[asofYYMMDD][symbol]['done'] = stampNow
+            thePROG.info('commitToday() dictDownloadReqs[%s][%s] task[%s] took %s, cleaned %s' % (asofYYMMDD, symbol, taskId, stampNow - stampIssued, fnReq))
+            del dictDownloadReqs[asofYYMMDD][symbol]
         
         nleft = len(dictDownloadReqs[asofYYMMDD])
         if nleft<=0:
@@ -363,7 +368,11 @@ def schOn_Every5min000(self):
 # ===================================================
 @shared_task(bind=True, ignore_result=True)
 def schOn_Every5min(self):
-    global TODAY_YYMMDD
+    global MAPPED_HOME, TODAY_YYMMDD
+
+    if not TODAY_YYMMDD: return
+    
+    dirReqs = os.path.join(MAPPED_HOME, 'archived', 'sina', 'reqs')
     dictDownloadReqs = _loadDownloadReqs(dirReqs)
     if not dictDownloadReqs or not TODAY_YYMMDD or not TODAY_YYMMDD in dictDownloadReqs.keys():
         return
@@ -475,9 +484,13 @@ def schDo_kickoffDownloadToday2(self):
     if not TODAY_YYMMDD in __dictDownloadReqs.keys():
         dictDownloadReqs[TODAY_YYMMDD] = {}
 
-    for symbol in IDXs_to_COLLECT + ETFs_to_COLLECT + lstSHZ:
+    lstIdxFunds = IDXs_to_COLLECT + ETFs_to_COLLECT
+    lstStocks = [ x['symbol'] for x in lstSHZ ]
+
+    for symbol in lstIdxFunds + lstStocks:
         rfnRequest = os.path.join(subdirReqs, '%s_%s.tcsv.bz2' % (TODAY_YYMMDD, symbol))
         fullfnRequest = os.path.join(dirArched, rfnRequest)
+        excludeMoneyFlow = True if symbol in lstIdxFunds else False
         try:
             st = os.stat(fullfnRequest)
             thePROG.debug('schDo_kickoffDownloadToday() % already exists' % rfnRequest)
@@ -489,7 +502,7 @@ def schDo_kickoffDownloadToday2(self):
         with bz2.open(fullfnRequest, 'wt', encoding='utf-8') as f:
             f.write(alllines)
 
-        wflow = CTDayend.downloadToday.s(symbol, fnPrevTcsv =rfnRequest, excludeMoneyFlow=True) | commitToday.s()
+        wflow = CTDayend.downloadToday.s(symbol, fnPrevTcsv =rfnRequest, excludeMoneyFlow=excludeMoneyFlow) | commitToday.s()
         task = wflow()
         dictDownloadReqs[TODAY_YYMMDD][symbol] = {
             'taskId': task.id,
@@ -648,3 +661,4 @@ import dapps.sinaMaster.tasks_Archive as mt
 c1 = ct.downloadToday.s('SZ000002') | mt.commitToday.s()
 c1().get()
 '''
+

@@ -8,11 +8,11 @@ from MarketData import *
 from Perspective import PerspectiveState
 import HistoryData as hist
 from crawler.crawlSina import *
-import h5tar
+import h5tar, h5py, pickle, bz2
 
 from datetime import datetime, timedelta
 from time import sleep
-import os
+import os, copy
 import fnmatch
 
 def defaultNextYield(retryNo) :
@@ -686,3 +686,72 @@ def listAllSymbols(prog, maxRetryAt456=20):
 
     prog.info('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
     return lstSH, lstSZ
+
+
+########################################################################
+def readArchivedDays(prog, dirArchived, symbol, YYYYMMDDs):
+    YYYYMMDDs = copy.copy(YYYYMMDDs)
+    if isinstance(YYYYMMDDs, str):
+        YYYYMMDDs = [YYYYMMDDs]
+
+    YYYYMMDDs.sort()
+
+    all_lines=''
+    readtxn = ''
+    for yymmdd in YYYYMMDDs:
+        fnArch = os.path.join(dirArchived, 'SinaMDay_%s.h5t' % yymmdd)
+        memName = '%s_day%s.tcsv' %(symbol, yymmdd)
+        try :
+            lines = ''
+            lines = h5tar.read_utf8(fnArch, memName)
+            if lines and len(lines) >0 :
+                all_lines += '\n' + lines
+            readtxn += '%s(%dB)@%s, ' % (memName, len(lines), fnArch)
+        except:
+            prog.error('readArchivedDays() failed to read %s from %s' % (memName, fnArch))
+
+    prog.info('readArchivedDays() read %s' % readtxn) 
+    return all_lines # take celery's compression instead of return bz2.compress(all_lines.encode('utf8'))
+
+########################################################################
+def determineLastDays(prog, nLastDays =7, todayYYMMDD= None):
+    lastYYMMDDs = []
+    if not todayYYMMDD:
+        todayYYMMDD = datetime.now().strftime('%Y%m%d')
+
+    symbol = 'SH000001'  # 上证指数
+    playback = SinaMux(prog)
+
+    lastDays = []
+    httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, 'SH000001', nLastDays+3)
+    lastDays.reverse()
+    for i in lastDays:
+        yymmdd = i.asof.strftime('%Y%m%d')
+        if yymmdd >= todayYYMMDD:
+            continue
+        lastYYMMDDs.append(yymmdd)
+        if len(lastYYMMDDs) >= nLastDays:
+            break
+    
+    prog.debug('determineLastDays() last %d trade-days are %s according to %s' % (nLastDays, ','.join(lastYYMMDDs), symbol))
+    return lastYYMMDDs
+
+####################################
+from time import sleep
+if __name__ == '__main__':
+    from Application import Program
+
+    prog = Program(name='test', argvs=[])
+    prog._heartbeatInterval =-1
+    prog.setLogLevel('debug')
+
+    dirArched = '/mnt/e/AShareSample/hpx_archived/sina'
+    sybmol = 'SZ300913'
+
+    alllines = readArchivedDays(prog, dirArched, 'SZ300913', ['20201221', '20201222'])
+    # print(alllines)
+
+    dirTickets = '/mnt/e/AShareSample/hpx_archived/tickets'
+    with bz2.open(os.path.join(dirTickets, 'Tickets_%s.tcsv.bz2' % sybmol), 'wt', encoding='utf-8') as f:
+        f.write(alllines)
+

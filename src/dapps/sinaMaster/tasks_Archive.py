@@ -3,21 +3,21 @@
 from __future__ import absolute_import, unicode_literals
 from celery import shared_task
 
-from MarketData import MARKETDATE_EVENT_PREFIX, EVENT_KLINE_1DAY
-from crawler.producesSina import SinaMux
-import h5tar, h5py, pickle, bz2
-from urllib.parse import quote, unquote
-
-from dapps.sinaMaster.worker import thePROG
-
 from dapps.celeryCommon import RetryableError, Retryable, getMappedAs
+from dapps.sinaMaster.worker import thePROG
+import dapps.sinaCrawler.tasks_Dayend as CTDayend
+
 import crawler.crawlSina as sina
 import crawler.producesSina as prod
 
-import dapps.sinaCrawler.tasks_Dayend as CTDayend
+from MarketData import MARKETDATE_EVENT_PREFIX, EVENT_KLINE_1DAY
 
+import h5tar, h5py, pickle, bz2
+from urllib.parse import quote, unquote
 import sys, os, re, glob
 from datetime import datetime, timedelta
+
+import sqlite3
 
 SYMBOL_LIST_HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,open,high,low,close,volume"
 EOL = "\r\n"
@@ -369,6 +369,81 @@ def schDo_kickoffDownloadToday(self):
         __asyncResult_downloadToday[symbol] = wflow()
 
 # ===================================================
+__dictDownloadReqs = None
+def _loadDownloadReqs(dirReqs) :
+    global __dictDownloadReqs
+    if not __dictDownloadReqs:
+        fn = os.path.join(dirReqs, 'dictDownloadReqs.pkl.bz2')
+        try:
+            with bz2.open(fn, 'rb') as f:
+                __dictDownloadReqs = pickle.load(f)
+        except Exception as ex:
+            __dictDownloadReqs ={}
+            __rmfile(fn)
+
+    return __dictDownloadReqs
+
+def _saveDownloadReqs(dirReqs):
+    global __dictDownloadReqs
+    if not __dictDownloadReqs: return
+    fn = os.path.join(dirReqs, 'dictDownloadReqs.pkl.bz2')
+    try:
+        with bz2.open(fn, 'wb') as f:
+            f.write(pickle.dumps(__dictDownloadReqs))
+    except Exception as ex:
+        pass
+
+@shared_task(bind=True, base=Retryable)
+def schDo_kickoffDownloadToday2(self):
+    lastYYMMDDs = prod.determineLastDays(thePROG, nLastDays =7)
+    if len(lastYYMMDDs) <=0:
+        return
+
+    todayYYMMDD = lastYYMMDDs[0]
+    subdirReqs, dirArched = 'reqs', os.path.join(MAPPED_HOME, 'archived', 'sina')
+    # dirArched = '/mnt/e/AShareSample/hpx_archived/sina'  # TEST CODE
+    dirReqs = os.path.join(dirArched, subdirReqs)
+
+    try:
+        os.mkdir(dirReqs)
+    except: pass
+
+    dictDownloadReqs = _loadDownloadReqs(dirReqs)
+
+    lstSHZ = listAllSymbols()
+    thePROG.info('schDo_kickoffDownloadToday() listAllSymbols got %d symbols' %len(lstSHZ))
+    if len(lstSHZ) <=2000:
+        raise RetryableError(401, 'incompleted symbol list')
+
+    if not todayYYMMDD in __dictDownloadReqs.keys():
+        dictDownloadReqs[todayYYMMDD] = {}
+
+    for symbol in IDXs_to_COLLECT + ETFs_to_COLLECT + lstSHZ:
+        rfnRequest = os.path.join(subdirReqs, '%s_%s.tcsv.bz2' % (todayYYMMDD, symbol))
+        fullfnRequest = os.path.join(dirArched, rfnRequest)
+        try:
+            st = os.stat(fullfnRequest)
+            thePROG.debug('schDo_kickoffDownloadToday() % already exists' % rfnRequest)
+            continue
+        except: pass
+
+        thePROG.debug('schDo_kickoffDownloadToday() generating request-file %s' % rfnRequest)
+        alllines = prod.readArchivedDays(thePROG, dirArched, symbol, lastYYMMDDs)
+        with bz2.open(fullfnRequest, 'wt', encoding='utf-8') as f:
+            f.write(alllines)
+
+        wflow = CTDayend.downloadToday.s(symbol, fnPrevTcsv =rfnRequest, excludeMoneyFlow=True) | commitToday.s()
+        task = wflow()
+        dictDownloadReqs[todayYYMMDD][symbol] = {
+            'taskId': task.id,
+            'issued': datetime.now()
+        }
+
+        # break # TEST CODE
+
+    _saveDownloadReqs(dirReqs)
+
+# ===================================================
 @shared_task(bind=True, base=Retryable)
 def schDo_pitchArchiedFiles(self):
 
@@ -377,7 +452,7 @@ def schDo_pitchArchiedFiles(self):
     nLastDays, lastDays = 7, []
     todayYYMMDD = datetime.now().strftime('%Y%m%d')
 
-    playback = SinaMux(thePROG)
+    playback = prod.SinaMux(thePROG)
     httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, IDXs_to_COLLECT[0], nLastDays+3)
     lastDays.reverse()
     yymmddToCache = []
@@ -462,7 +537,9 @@ def readArchivedH5t(self, h5tFileName, memberNode):
 from time import sleep
 if __name__ == '__main__':
     thePROG.setLogLevel('debug')
-    # schDo_pitchArchiedFiles()
+    schDo_kickoffDownloadToday2()
+    exit(0)
+
     readArchivedDays('SZ300913', ['20201221', '20201222'])
     readArchivedH5t('SinaMF1m_20201222.h5t', 'SZ300913_MF1m20201222.json')
 

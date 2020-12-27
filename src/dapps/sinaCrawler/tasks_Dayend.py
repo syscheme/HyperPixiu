@@ -36,6 +36,9 @@ from scp import SCPClient # pip install scp
 
 MAPPED_USER, MAPPED_HOME = getMappedAs()
 WORKDIR_CACHE = '/tmp/sina_cache'
+try:
+    os.mkdir(WORKDIR_CACHE)
+except: pass
 
 @shared_task
 def add(x, y):
@@ -153,10 +156,6 @@ def fetchArchivedFiles(self, filesToCache):
     ret = []
 
     global WORKDIR_CACHE
-    try:
-        os.mkdir(WORKDIR_CACHE)
-    except: pass
-
     sshclient, dirArchived = None, os.path.join(MAPPED_HOME, "hpx_archived/sina") # os.path.join(os.environ['HOME'], 'wkspaces/hpx_archived/sina') 
 
     for bn in filesToCache:
@@ -194,37 +193,73 @@ def fetchArchivedFiles(self, filesToCache):
 
 # ===================================================
 @shared_task(bind=True, base=Retryable, default_retry_delay=10.0)
-def downloadToday(self, SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
+def downloadToday(self, SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False, fnPrevTcsv=None):
     global MAPPED_USER, MAPPED_HOME
-    result = __downloadSymbol(SYMBOL, todayYYMMDD, excludeMoneyFlow)
+    dirArchived = os.path.join(MAPPED_HOME, "hpx_archived/sina") # os.path.join(os.environ['HOME'], 'wkspaces/hpx_archived/sina') 
+    # dirArchived = '/mnt/e/AShareSample/hpx_archived/sina'  # TEST CODE
+    fnArched, pbArched  = None, None
+    if fnPrevTcsv:
+        fnArched = os.path.join(dirArchived, fnPrevTcsv)
+        tcsvArched = __loadArchivedFile(fnArched)
+        if tcsvArched:
+            pbArched = hist.TaggedCsvStream(tcsvArched, program=thePROG)
+            pbArched.setId('ArchDays.%s' % os.path.basename(fnArched))
+            pbArched.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
+            pbArched.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
+            pbArched.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
+            pbArched.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
+
+            pbArched.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+            pbArched.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+            pbArched.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+
+    result = __downloadSymbol(SYMBOL, todayYYMMDD, excludeMoneyFlow, pbArched)
 
     thePROG.info('downloadToday() result: %s' % result) 
     # sample: {'symbol': 'SZ000002', 'date': '20201127', 'snapshot': 'SZ000002_sns.h5', 'cachedJsons': ['SZ000002_KL1d20201128.json', 'SZ000002_MF1d20201128.json', 'SZ000002_KL5m20201128.json', 'SZ000002_MF1m20201128.json'], 'tcsv': 'SZ000002_day20201127.tcsv'}
     return result
 
-'''
-def __importArchivedDays(mux, SYMBOL, YYYYMMDDs):
+def __loadArchivedFile(fnArched):
 
-    from dapps.sinaMaster.tasks_Archive import readArchivedDays
-    # compressed = readArchivedDays.delay(SYMBOL, YYYYMMDDs).get() # = readArchivedDays(SYMBOL, YYYYMMDDs)
-    # allLines = bz2.decompress(compressed).decode('utf8')
-    allLines = readArchivedDays.apply_async(args=[SYMBOL, YYYYMMDDs], compression='bzip2').get()
-    stream = io.StringIO(allLines)
-    pb = hist.TaggedCsvStream(stream, program=thePROG)
-    pb.setId('ArchDays.%s' % SYMBOL)
+    offlineFn = os.path.join(WORKDIR_CACHE, os.path.basename(fnArched))
 
-    pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
-    pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
-    pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
-    pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
+    if '@' in fnArched and ':' in fnArched :
+        sshclient = None
+        try :
+            sshcmd = os.environ.get('SSH_CMD', 'ssh')
+            if not sshclient:
+                tokens = fnArched.split('@')
+                username, host, port = tokens[0], tokens[1], 22
+                tokens = host.split(':')
+                host, fnRemote=tokens[0], tokens[1]
+                tokens = sshcmd.split(' ')
+                if '-p' in tokens and tokens.index('-p') < len(tokens):
+                    port = int(tokens[1+ tokens.index('-p')])
 
-    pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-    pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-    pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-    mux.addStream(pb)
-'''
+                sshclient = paramiko.SSHClient()
+                sshclient.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                sshclient.connect(host, port=port, username=username)
 
-def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
+            with SCPClient(sshclient.get_transport()) as scp:
+                scp.get(fnRemote, WORKDIR_CACHE)
+        except Exception as ex:
+            thePROG.logexception(ex, 'ssh failed')
+
+        if sshclient: sshclient.close()
+        sshclient = None
+    else:
+        shutil.copyfile(fnArched, offlineFn)
+
+    strm =None
+    try:
+        strm = bz2.open(offlineFn, 'rt', encoding='utf-8')
+    except Exception as ex:
+        pass
+
+    __rmfile(offlineFn)
+    return strm
+
+def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False, playbackArchived=None):
 
     CLOCK_TODAY= datetime.now().replace(hour=23, minute=59, second=59, microsecond=0)
     SINA_TODAY = CLOCK_TODAY.strftime('%Y-%m-%d') if not todayYYMMDD else todayYYMMDD
@@ -237,15 +272,17 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     try:
         os.mkdir(WORKDIR_CACHE)
     except: pass
-    dirArchived = os.path.join(MAPPED_HOME, "hpx_archived/sina") # os.path.join(os.environ['HOME'], 'wkspaces/hpx_archived/sina') 
 
     todayYYMMDD = SINA_TODAY.strftime('%Y%m%d')
-    dirArchived = Program.fixupPath(dirArchived)
     
     # step 1. build up the Playback Mux
     playback   = SinaMux(thePROG, endDate=SINA_TODAY.strftime('%Y%m%dT%H%M%S')) # = thePROG.createApp(SinaMux, **srcPathPatternDict)
     playback.setId('Dayend.%s' % SYMBOL)
     playback.setSymbols([SYMBOL])
+
+    if playbackArchived :
+        playback.addStream(playbackArchived)
+        thePROG.info('loaded archived playback: %s' % playbackArchived.id)
 
     nLastDays = 5 +1
 
@@ -279,12 +316,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
     thePROG.info('loaded KL1d and determined %d-Tdays pirior to %s, %ddays: %s ~ %s' % (nLastDays, SINA_TODAY.strftime('%Y-%m-%d'), len(lastDays), startYYMMDD, todayYYMMDD))
     
     # 1.b  MF1d
-    read_sig = None
     if not excludeMoneyFlow:
-        # kick off the reading archive at Master side to work concurrently
-        from dapps.sinaMaster.tasks_Archive import readArchivedDays
-        read_sig = readArchivedDays.s(SYMBOL, [ lastDays[i].asof.strftime('%Y%m%d') for i in range(1, len(lastDays)) ])
-
         # download MF1d
         httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1DAY, SYMBOL, 0, saveAs=os.path.join(WORKDIR_CACHE, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1DAY), todayYYMMDD)))
         if httperr in [408, 456] :
@@ -300,89 +332,6 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False):
         httperr, _, _ = playback.loadOnline(EVENT_MONEYFLOW_1MIN, SYMBOL, 0, saveAs=os.path.join(WORKDIR_CACHE, '%s_%s%s.json' %(SYMBOL, chopMarketEVStr(EVENT_MONEYFLOW_1MIN), todayYYMMDD)))
         if httperr in [408, 456] :
             raise RetryableError(httperr, "blocked by sina at %s@%s, resp(%s)" %(EVENT_MONEYFLOW_1MIN, SYMBOL, httperr))
-
-        # __importArchivedDays(playback, SYMBOL, YYYYMMDDs)
-        if read_sig:
-            try:
-                stream = io.StringIO(read_sig())
-                pb = hist.TaggedCsvStream(stream, program=thePROG)
-                pb.setId('ArchDays.%s' % SYMBOL)
-
-                pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
-                pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
-                pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
-                pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
-
-                pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-                pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-                pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-                playback.addStream(pb)
-            except Exception as ex:
-                thePROG.logexception(ex, 'read ArchDays')
-
-            # ar.revoke()
-
-        '''
-        offlineBn= None
-        sshclient, dirRemote =None, '~'
-        for i in lastDays[1:]:
-            offlineBn = 'SinaMF1m_%s.h5t' % i.asof.strftime('%Y%m%d')
-            offline_mf1m = os.path.join(WORKDIR_CACHE, offlineBn)
-            # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
-            mfn, latestDay = memberfnInH5tar(offline_mf1m, SYMBOL)
-
-            try :
-                try:
-                    size = os.stat(offline_mf1m).st_size
-                    if size <=0: continue
-                except FileNotFoundError as ex:
-                    thePROG.warn('%s no offline file avail: %s' % (SYMBOL, offline_mf1m))
-                    if '@' in dirArchived and ':' in dirArchived :
-                        sshcmd = os.environ.get('SSH_CMD', 'ssh')
-                        if not sshclient:
-                            tokens = dirArchived.split('@')
-                            username, host, port = tokens[0], tokens[1], 22
-                            tokens = host.split(':')
-                            host, dirRemote=tokens[0], tokens[1]
-                            tokens = sshcmd.split(' ')
-                            if '-p' in tokens and tokens.index('-p') < len(tokens):
-                                port = int(tokens[1+ tokens.index('-p')])
-
-                            sshclient = paramiko.SSHClient()
-                            sshclient.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                            sshclient.connect(host, port=port, username=username)
-
-                        # cmd = "rsync -av -e '{0}' {1}/{2} {3}".format(sshcmd, dirArchived, offlineBn, WORKDIR_CACHE)
-                        # thePROG.debug('exec: %s' % cmd)
-                        # ret = os.system(cmd)
-                        # if 0 == ret:
-                        #     thePROG.info('cached from arch: %s' % cmd)
-                        # else:
-                        #     thePROG.error('failed to cache: %s ret(%d)' % (cmd, ret))
-                        #     continue
-
-                        with SCPClient(sshclient.get_transport()) as scp:
-                            fnRemote = '%s/%s' %(dirRemote, offlineBn)
-                            scp.get(fnRemote, WORKDIR_CACHE)
-                            thePROG.info('cached from arch: %s/%s' % (dirArchived, fnRemote))
-
-                # instead to scan the member file list of h5t, just directly determine the member file and read it, which save a lot of time
-                mfn, latestDay = memberfnInH5tar(offline_mf1m, SYMBOL)
-                playback.loadJsonH5t(EVENT_MONEYFLOW_1MIN, SYMBOL, offline_mf1m, mfn)
-            except FileNotFoundError as ex:
-                thePROG.warn('%s no offline file avail: %s' % (SYMBOL, offline_mf1m))
-            except Exception as ex:
-                thePROG.logexception(ex, offline_mf1m)
-
-        if sshclient: sshclient.close()
-
-        evictBn = 'SinaMF1m_%s' % (dtStart- timedelta(days=10)).strftime('%Y%m%d')
-        for fn in hist.listAllFiles(WORKDIR_CACHE) :
-            bn = os.path.basename(fn)
-            if '.h5t' == bn[-4:] and 'SinaMF1m_' in bn and bn < evictBn :
-                __rmfile(fn)
-                thePROG.info('old cache[%s] evicted' % fn)
-        '''
 
     thePROG.info('inited mux[%s] with %d substreams: %s' % (SYMBOL, playback.size, ','.join(playback.subStreamIds)))
 
@@ -511,5 +460,5 @@ if __name__ == '__main__':
     thePROG.setLogLevel('debug')
 
     # downloadToday('SH510300', excludeMoneyFlow=True)
-    downloadToday('SZ002008')
+    downloadToday('SZ002008', fnPrevTcsv ='reqs/20201225_SZ159919.tcsv.bz2')
     # fetchArchivedFiles(['SinaMF1m_20201222.h5t', 'SinaMF1m_20201221.h5t'])

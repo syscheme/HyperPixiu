@@ -49,6 +49,8 @@ ETFs_to_COLLECT=[   # asof 2020-12-08 top actives: http://vip.stock.finance.sina
 'SH515070','SH510800','SH510600','SH511180','SH515980','SZ159808','SH512510','SH510390','SH510150','SH512730'
 ]
 
+TODAY_YYMMDD = None
+
 @shared_task
 def add(x, y):
     return x + y
@@ -304,6 +306,24 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     except Exception as ex:
         thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
 
+    dirReqs = os.path.join(archDir, 'reqs')
+    __rmfile(os.path.join(dirReqs, '%s_%s.tcsv.bz2' % (asofYYMMDD, symbol)))
+
+    dictDownloadReqs = _loadDownloadReqs(dirReqs)
+    if asofYYMMDD in dictDownloadReqs.keys():
+        if symbol in dictDownloadReqs[asofYYMMDD]:
+            dictDownloadReqs[asofYYMMDD][symbol]['done'] + datetime.now()
+            thePROG.info('commitToday() removed dictDownloadReqs[%s][%s]' % (asofYYMMDD, symbol))
+        
+        nleft = len(dictDownloadReqs[asofYYMMDD])
+        if nleft<=0:
+            del dictDownloadReqs[asofYYMMDD]
+            thePROG.info('commitToday() all dictDownloadReqs[%s] done, removed' % (asofYYMMDD))
+        else:
+            thePROG.debug('commitToday() dictDownloadReqs[%s] has %d onging' % (asofYYMMDD, nleft))
+        
+        _saveDownloadReqs(dirReqs)
+
 # ===================================================
 @shared_task(bind=True, base=Retryable)
 def topActives(self, topNum = 500):
@@ -314,7 +334,7 @@ def topActives(self, topNum = 500):
 __asyncResult_downloadToday = {}
 
 @shared_task(bind=True, ignore_result=True)
-def schOn_Every5min(self):
+def schOn_Every5min000(self):
     global __asyncResult_downloadToday
     todels = []
     cWorking =0
@@ -338,6 +358,42 @@ def schOn_Every5min(self):
         for k in todels:
             del __asyncResult_downloadToday[k]
         if len(__asyncResult_downloadToday) <=0:
+            thePROG.info('schOn_Every5min() downloadToday all done')
+
+# ===================================================
+@shared_task(bind=True, ignore_result=True)
+def schOn_Every5min(self):
+    global TODAY_YYMMDD
+    dictDownloadReqs = _loadDownloadReqs(dirReqs)
+    if not dictDownloadReqs or not TODAY_YYMMDD or not TODAY_YYMMDD in dictDownloadReqs.keys():
+        return
+
+    dictToday = dictDownloadReqs[TODAY_YYMMDD]
+    stampNow = datetime.now()
+
+    todels = []
+    cWorking =0
+    for k, v in dictToday.items():
+        if not v: 
+            todels.append(k)
+            continue
+
+        try :
+            # ar = v['task']
+            if v['done']:
+                todels.append(k)
+                thePROG.info('schOn_Every5min() downloadToday[%s]%s done, took %s' %(k, v['taskId'], v['done']-v['issued']))
+                continue
+            cWorking += 1
+            thePROG.debug('schOn_Every5min() downloadToday[%s]%s has spent %s' %(k, v['taskId'], stampNow - v['issued']))
+        except Exception as ex:
+            pass
+
+    thePROG.info('schOn_Every5min() downloadToday has %d-working and %d-done tasks' %(cWorking, len(todels)))
+    if len(todels) >0:
+        thePROG.info('schOn_Every5min() clearing %s keys: %s' % (len(todels), ','.join(todels)))
+        for k in todels: del dictToday[k]
+        if len(dictToday) <=0:
             thePROG.info('schOn_Every5min() downloadToday all done')
 
 # ===================================================
@@ -399,7 +455,8 @@ def schDo_kickoffDownloadToday2(self):
     if len(lastYYMMDDs) <=0:
         return
 
-    todayYYMMDD = lastYYMMDDs[0]
+    global TODAY_YYMMDD
+    TODAY_YYMMDD = lastYYMMDDs[0]
     subdirReqs, dirArched = 'reqs', os.path.join(MAPPED_HOME, 'archived', 'sina')
     # dirArched = '/mnt/e/AShareSample/hpx_archived/sina'  # TEST CODE
     dirReqs = os.path.join(dirArched, subdirReqs)
@@ -415,11 +472,11 @@ def schDo_kickoffDownloadToday2(self):
     if len(lstSHZ) <=2000:
         raise RetryableError(401, 'incompleted symbol list')
 
-    if not todayYYMMDD in __dictDownloadReqs.keys():
-        dictDownloadReqs[todayYYMMDD] = {}
+    if not TODAY_YYMMDD in __dictDownloadReqs.keys():
+        dictDownloadReqs[TODAY_YYMMDD] = {}
 
     for symbol in IDXs_to_COLLECT + ETFs_to_COLLECT + lstSHZ:
-        rfnRequest = os.path.join(subdirReqs, '%s_%s.tcsv.bz2' % (todayYYMMDD, symbol))
+        rfnRequest = os.path.join(subdirReqs, '%s_%s.tcsv.bz2' % (TODAY_YYMMDD, symbol))
         fullfnRequest = os.path.join(dirArched, rfnRequest)
         try:
             st = os.stat(fullfnRequest)
@@ -434,9 +491,11 @@ def schDo_kickoffDownloadToday2(self):
 
         wflow = CTDayend.downloadToday.s(symbol, fnPrevTcsv =rfnRequest, excludeMoneyFlow=True) | commitToday.s()
         task = wflow()
-        dictDownloadReqs[todayYYMMDD][symbol] = {
+        dictDownloadReqs[TODAY_YYMMDD][symbol] = {
             'taskId': task.id,
-            'issued': datetime.now()
+            'issued': datetime.now(),
+            # 'task': task,
+            'done': None
         }
 
         # break # TEST CODE
@@ -450,7 +509,7 @@ def schDo_pitchArchiedFiles(self):
     listAllSymbols()
 
     nLastDays, lastDays = 7, []
-    todayYYMMDD = datetime.now().strftime('%Y%m%d')
+    TODAY_YYMMDD = datetime.now().strftime('%Y%m%d')
 
     playback = prod.SinaMux(thePROG)
     httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, IDXs_to_COLLECT[0], nLastDays+3)
@@ -458,7 +517,7 @@ def schDo_pitchArchiedFiles(self):
     yymmddToCache = []
     for i in lastDays:
         yymmdd = i.asof.strftime('%Y%m%d')
-        if yymmdd >= todayYYMMDD:
+        if yymmdd >= TODAY_YYMMDD:
             continue
         yymmddToCache.append(yymmdd)
         if len(yymmddToCache) >= nLastDays:

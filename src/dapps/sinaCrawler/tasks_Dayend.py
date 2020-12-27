@@ -185,7 +185,7 @@ def fetchArchivedFiles(self, filesToCache):
                 fnRemote = '%s/%s' %(dirRemote, bn)
                 scp.get(fnRemote, WORKDIR_CACHE)
                 ret.append(bn)
-                thePROG.info('pre-cached from arch: %s/%s' % (dirArchived, fnRemote))
+                thePROG.info('pre-cached from arch: %s/%s in %s' % (dirArchived, fnRemote, WORKDIR_CACHE))
 
     if sshclient: sshclient.close()
     sshclient = None
@@ -241,6 +241,7 @@ def __loadArchivedFile(fnArched):
                 sshclient.connect(host, port=port, username=username)
 
             with SCPClient(sshclient.get_transport()) as scp:
+                thePROG.debug('downloading arch: %s as %s' % (fnArched, offlineFn))
                 scp.get(fnRemote, WORKDIR_CACHE)
         except Exception as ex:
             thePROG.logexception(ex, 'ssh failed')
@@ -249,10 +250,12 @@ def __loadArchivedFile(fnArched):
         sshclient = None
     else:
         shutil.copyfile(fnArched, offlineFn)
+        thePROG.debug('copied arch: %s as %s' % (fnArched, offlineFn))
 
     strm =None
     try:
         strm = bz2.open(offlineFn, 'rt', encoding='utf-8')
+        thePROG.info('loaded offline %s from arch: %s' % (offlineFn, fnArched))
     except Exception as ex:
         pass
 

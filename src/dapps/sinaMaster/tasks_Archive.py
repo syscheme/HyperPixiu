@@ -247,10 +247,10 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     srcpath = os.path.join(pubDir, fnTcsv)
     destpath = os.path.join(archDir, 'SinaMDay_%s.h5t' % asofYYMMDD )
     if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
-        thePROG.info('commitToday() archived %s into %s' %(srcpath, destpath))
+        thePROG.debug('commitToday() archived %s by[%s] into %s' %(srcpath, login, destpath))
         __rmfile(srcpath)
     else:
-        thePROG.error('commitToday() failed to archived %s into %s' %(srcpath, destpath))
+        thePROG.error('commitToday() failed to archived %s by[%s] into %s' %(srcpath, login, destpath))
 
     # step 3. append the snapshots
     srcpath = os.path.join(pubDir, fnSnapshot)
@@ -315,7 +315,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
             stampNow = datetime.now()
             taskId, stampIssued = dictDownloadReqs[asofYYMMDD][symbol]['taskId'], dictDownloadReqs[asofYYMMDD][symbol]['issued']
             dictDownloadReqs[asofYYMMDD][symbol]['done'] = stampNow
-            thePROG.info('commitToday() dictDownloadReqs[%s][%s] task[%s] took %s, cleaned %s' % (asofYYMMDD, symbol, taskId, stampNow - stampIssued, fnReq))
+            thePROG.info('commitToday() dictDownloadReqs[%s][%s] task[%s] took %s by[%s], cleaned %s' % (asofYYMMDD, symbol, taskId, stampNow - stampIssued, login, fnReq))
             del dictDownloadReqs[asofYYMMDD][symbol]
         
         nleft = len(dictDownloadReqs[asofYYMMDD])
@@ -368,15 +368,18 @@ def schOn_Every5min000(self):
 def schChkRes_DownloadToday(self):
     global MAPPED_HOME, TODAY_YYMMDD
 
-    if not TODAY_YYMMDD: return
+    stampNow = datetime.now()
+    if not TODAY_YYMMDD:
+        TODAY_YYMMDD = stampNow.strftime('%Y%m%d')
     
     dirReqs = os.path.join(MAPPED_HOME, 'archived', 'sina', 'reqs')
     dictDownloadReqs = _loadDownloadReqs(dirReqs)
     if not dictDownloadReqs or not TODAY_YYMMDD or not TODAY_YYMMDD in dictDownloadReqs.keys():
+        thePROG.debug('schChkRes_DownloadToday() no active downloadToday[%s]' %TODAY_YYMMDD)
         return
 
     dictToday = dictDownloadReqs[TODAY_YYMMDD]
-    stampNow = datetime.now()
+    thePROG.debug('schChkRes_DownloadToday() %d active downloadToday[%s]' %len(dictToday))
 
     todels = []
     cWorking =0
@@ -392,7 +395,10 @@ def schChkRes_DownloadToday(self):
                 thePROG.info('schChkRes_DownloadToday() downloadToday[%s]%s done, took %s' %(k, v['taskId'], v['done']-v['issued']))
                 continue
             cWorking += 1
-            thePROG.debug('schChkRes_DownloadToday() downloadToday[%s]%s has spent %s' %(k, v['taskId'], stampNow - v['issued']))
+            tstate = ''
+            if 'task' in v.keys() and v['task']:
+                tstate = '(%s)' % v['task'].state
+            thePROG.debug('schChkRes_DownloadToday() downloadToday[%s]%s%s has spent %s' %(k, v['taskId'], tstate, stampNow - v['issued']))
         except Exception as ex:
             pass
 
@@ -486,6 +492,8 @@ def schKickOff_DownloadToday(self):
     lstIdxFunds = IDXs_to_COLLECT + ETFs_to_COLLECT
     lstStocks = [ x['symbol'] for x in lstSHZ ]
 
+    cTasks =0
+
     for symbol in lstIdxFunds + lstStocks:
         rfnRequest = os.path.join(subdirReqs, '%s_%s.tcsv.bz2' % (TODAY_YYMMDD, symbol))
         fullfnRequest = os.path.join(dirArched, rfnRequest)
@@ -503,15 +511,18 @@ def schKickOff_DownloadToday(self):
 
         wflow = CTDayend.downloadToday.s(symbol, fnPrevTcsv =rfnRequest, excludeMoneyFlow=excludeMoneyFlow) | commitToday.s()
         task = wflow()
+        taskId = task.id
         dictDownloadReqs[TODAY_YYMMDD][symbol] = {
-            'taskId': task.id,
+            'taskId': taskId,
             'issued': datetime.now(),
-            # 'task': task,
+            'task': task,
             'done': None
         }
 
-        # break # TEST CODE
+        cTasks +=1
+        thePROG.info('schKickOff_DownloadToday() issued request[%s] No.%d task Id[%s]' % (rfnRequest, cTasks, taskId))
 
+    thePROG.info('schKickOff_DownloadToday() all %d downloadToday(%s) tasks are fired' % (cTasks, TODAY_YYMMDD))
     _saveDownloadReqs(dirReqs)
 
 # ===================================================
@@ -619,7 +630,7 @@ def schDo_ZipWeek(self):
 from time import sleep
 if __name__ == '__main__':
     thePROG.setLogLevel('debug')
-    schDo_kickoffDownloadToday2()
+    schKickOff_DownloadToday()
     exit(0)
 
     readArchivedDays('SZ300913', ['20201221', '20201222'])

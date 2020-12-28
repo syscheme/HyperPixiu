@@ -22,6 +22,8 @@ EOL = "\r\n"
 SINA_USERS_ROOT = '/mnt/data/hpwkspace/users'
 MAPPED_USER, MAPPED_HOME = getMappedAs(homeDir = '/mnt/s') # master certainly take the local volume /mnt/s
 if MAPPED_USER in [ None, 'nobody'] :  MAPPED_USER = 'hpx'
+SUBDIR_Reqs = 'reqs'
+DIR_ARCHED_HOME = os.path.join(MAPPED_HOME, 'archived', 'sina')
 
 IDXs_to_COLLECT=[ # http://vip.stock.finance.sina.com.cn/mkt/#dpzs
 'SH000001',	# 上证指数
@@ -176,7 +178,7 @@ def listAllSymbols(self):
     # return csvNoneST, csvSTs
 
 # ===================================================
-@shared_task(bind=True, base=Retryable)
+@shared_task(bind=True, base=Retryable, max_retries=5)
 def commitToday(self, dictArgs) : # urgly at the parameter list
     '''
     in order to chain:
@@ -336,7 +338,7 @@ def topActives(self, topNum = 500):
 # ===================================================
 __asyncResult_downloadToday = {}
 
-@shared_task(bind=True, ignore_result=True)
+@shared_task(bind=True)
 def schOn_Every5min000(self):
     global __asyncResult_downloadToday
     todels = []
@@ -363,8 +365,10 @@ def schOn_Every5min000(self):
         if len(__asyncResult_downloadToday) <=0:
             thePROG.info('schChkRes_DownloadToday() downloadToday all done')
 
+# RETRY_DOWNLOAD_INTERVAL = timedelta(hours=1)
+RETRY_DOWNLOAD_INTERVAL = timedelta(minutes=30)
 # ===================================================
-@shared_task(bind=True, ignore_result=True)
+@shared_task(bind=True)
 def schChkRes_DownloadToday(self):
     global MAPPED_HOME, TODAY_YYMMDD
 
@@ -379,7 +383,7 @@ def schChkRes_DownloadToday(self):
         return
 
     dictToday = dictDownloadReqs[TODAY_YYMMDD]
-    thePROG.debug('schChkRes_DownloadToday() %d active downloadToday[%s]' %len(dictToday))
+    thePROG.debug('schChkRes_DownloadToday() %d active downloadToday[%s]' %(len(dictToday), TODAY_YYMMDD))
 
     todels = []
     cWorking =0
@@ -398,7 +402,22 @@ def schChkRes_DownloadToday(self):
             tstate = ''
             if 'task' in v.keys() and v['task']:
                 tstate = '(%s)' % v['task'].state
-            thePROG.debug('schChkRes_DownloadToday() downloadToday[%s]%s%s has spent %s' %(k, v['taskId'], tstate, stampNow - v['issued']))
+
+            timelive = stampNow - v['issued']
+            retried =''
+            if 'PENDING' in tstate and timelive> RETRY_DOWNLOAD_INTERVAL:
+                try:
+                    rfnReq = os.path.join(SUBDIR_Reqs, '%s_%s.tcsv.bz2' % (TODAY_YYMMDD, k))
+                    if os.stat(os.path.join(DIR_ARCHED_HOME, rfnReq)).st_size >0:
+                        task = __issueTask_DownloadToday(dictDownloadReqs, TODAY_YYMMDD, k, rfnReq, k in IDXs_to_COLLECT + ETFs_to_COLLECT)
+                        retried = ', retried as %s' % task.id
+                    else:
+                        todels.append(k)
+                except:
+                    todels.append(k)
+
+            thePROG.debug('schChkRes_DownloadToday() downloadToday[%s]%s%s has spent %s%s' %(k, v['taskId'], tstate, timelive, retried))
+
         except Exception as ex:
             pass
 
@@ -462,6 +481,33 @@ def _saveDownloadReqs(dirReqs):
     except Exception as ex:
         pass
 
+def __issueTask_DownloadToday(dictDownloadReqs, TODAY_YYMMDD, symbol, rfnRequest, excludeMoneyFlow):
+
+    try:
+        node ={}
+        if TODAY_YYMMDD in dictDownloadReqs.keys() and symbol in dictDownloadReqs[TODAY_YYMMDD].keys():
+            node = dictDownloadReqs[TODAY_YYMMDD][symbol]
+            del dictDownloadReqs[TODAY_YYMMDD][symbol]
+
+        if 'task' in node.keys() and node['task']:
+            thePROG.debug('__issueTask_DownloadToday() revoking old %s[%s]' %(symbol, node['task'].id))
+            node['task'].revoke()
+    except Exception as ex:
+        thePROG.logexception(ex, '__issueTask_DownloadToday() revoking old %s' % (symbol))
+
+    wflow = CTDayend.downloadToday.s(symbol, fnPrevTcsv =rfnRequest, excludeMoneyFlow=excludeMoneyFlow) | commitToday.s()
+    task = wflow()
+    taskId = task.id
+    dictDownloadReqs[TODAY_YYMMDD][symbol] = {
+        'taskId': taskId,
+        'issued': datetime.now(),
+        'task': task,
+        'done': None
+    }
+    
+    thePROG.debug('__issueTask_DownloadToday() new %s[%s]' %(symbol, taskId))
+    return task
+
 # ===================================================
 @shared_task(bind=True, base=Retryable)
 def schKickOff_DownloadToday(self):
@@ -471,9 +517,8 @@ def schKickOff_DownloadToday(self):
 
     global TODAY_YYMMDD
     TODAY_YYMMDD = lastYYMMDDs[0]
-    subdirReqs, dirArched = 'reqs', os.path.join(MAPPED_HOME, 'archived', 'sina')
-    # dirArched = '/mnt/e/AShareSample/hpx_archived/sina'  # TEST CODE
-    dirReqs = os.path.join(dirArched, subdirReqs)
+    # DIR_ARCHED_HOME = '/mnt/e/AShareSample/hpx_archived/sina'  # TEST CODE
+    dirReqs = os.path.join(DIR_ARCHED_HOME, SUBDIR_Reqs)
 
     try:
         os.mkdir(dirReqs)
@@ -495,8 +540,8 @@ def schKickOff_DownloadToday(self):
     cTasks =0
 
     for symbol in lstIdxFunds + lstStocks:
-        rfnRequest = os.path.join(subdirReqs, '%s_%s.tcsv.bz2' % (TODAY_YYMMDD, symbol))
-        fullfnRequest = os.path.join(dirArched, rfnRequest)
+        rfnRequest = os.path.join(SUBDIR_Reqs, '%s_%s.tcsv.bz2' % (TODAY_YYMMDD, symbol))
+        fullfnRequest = os.path.join(DIR_ARCHED_HOME, rfnRequest)
         excludeMoneyFlow = True if symbol in lstIdxFunds else False
         try:
             st = os.stat(fullfnRequest)
@@ -505,19 +550,11 @@ def schKickOff_DownloadToday(self):
         except: pass
 
         thePROG.debug('schKickOff_DownloadToday() generating request-file %s' % rfnRequest)
-        alllines = prod.readArchivedDays(thePROG, dirArched, symbol, lastYYMMDDs)
+        alllines = prod.readArchivedDays(thePROG, DIR_ARCHED_HOME, symbol, lastYYMMDDs)
         with bz2.open(fullfnRequest, 'wt', encoding='utf-8') as f:
             f.write(alllines)
 
-        wflow = CTDayend.downloadToday.s(symbol, fnPrevTcsv =rfnRequest, excludeMoneyFlow=excludeMoneyFlow) | commitToday.s()
-        task = wflow()
-        taskId = task.id
-        dictDownloadReqs[TODAY_YYMMDD][symbol] = {
-            'taskId': taskId,
-            'issued': datetime.now(),
-            'task': task,
-            'done': None
-        }
+        task = __issueTask_DownloadToday(dictDownloadReqs, TODAY_YYMMDD, symbol, rfnRequest, excludeMoneyFlow)
 
         cTasks +=1
         thePROG.info('schKickOff_DownloadToday() issued request[%s] No.%d task Id[%s]' % (rfnRequest, cTasks, taskId))
@@ -619,11 +656,11 @@ def readArchivedH5t(self, h5tFileName, memberNode):
 @shared_task(bind=True, base=Retryable)
 def schDo_ZipWeek(self):
     global MAPPED_HOME
-    dirArched = os.path.join(MAPPED_HOME, 'archived', 'sina')
+    DIR_ARCHED_HOME = os.path.join(MAPPED_HOME, 'archived', 'sina')
     dtInWeek = datetime.now() - timedelta(days=5)
 
-    thePROG.debug('schDo_ZipWeek() start archiving the week of %s under %s' % (dtInWeek.strftime('%Y-%m-%d'), dirArched))
-    fn, lst = prod.archiveWeek(dirArched, None, dtInWeek, thePROG)
+    thePROG.debug('schDo_ZipWeek() start archiving the week of %s under %s' % (dtInWeek.strftime('%Y-%m-%d'), DIR_ARCHED_HOME))
+    fn, lst = prod.archiveWeek(DIR_ARCHED_HOME, None, dtInWeek, thePROG)
     thePROG.info('schDo_ZipWeek() %s archived %s symbols'% (fn, len(lst)))
 
 ####################################

@@ -192,7 +192,7 @@ def fetchArchivedFiles(self, filesToCache):
     return ret
 
 # ===================================================
-@shared_task(bind=True, base=Retryable, default_retry_delay=10.0)
+@shared_task(bind=True, base=Retryable, max_retries=7, default_retry_delay=30.0)
 def downloadToday(self, SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False, fnPrevTcsv=None):
     global MAPPED_USER, MAPPED_HOME
     dirArchived = os.path.join(MAPPED_HOME, "hpx_archived/sina") # os.path.join(os.environ['HOME'], 'wkspaces/hpx_archived/sina') 

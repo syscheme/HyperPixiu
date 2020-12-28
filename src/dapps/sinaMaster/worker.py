@@ -27,7 +27,7 @@ worker, thePROG = createWorkerProgram(APP_NAME, taskMods) #  + taskCrawler)
 
 worker.conf.beat_schedule = {
     "checkResult-every-5min":{
-        "task":"dapps.sinaMaster.Archive.schOn_Every5min",
+        "task":"dapps.sinaMaster.Archive.schChkRes_DownloadToday",
         "schedule":crontab(minute="*/5"),
         "args":(),
         # "options":{'queue':'hipri'}
@@ -40,7 +40,7 @@ worker.conf.beat_schedule = {
     },
 
     "every_1hrAfterTradeDayClose":{
-        "task":"dapps.sinaMaster.Archive.schDo_kickoffDownloadToday",
+        "task":"dapps.sinaMaster.Archive.schKickOff_DownloadToday",
         'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
         "args":(),
     },

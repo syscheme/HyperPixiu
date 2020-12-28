@@ -348,24 +348,24 @@ def schOn_Every5min000(self):
 
         if v.ready():
             todels.append(k)
-            thePROG.info('schOn_Every5min() downloadToday[%s]%s done: succ[%s] and will clear' %(k, v.task_id, v.successful()))
+            thePROG.info('schChkRes_DownloadToday() downloadToday[%s]%s done: succ[%s] and will clear' %(k, v.task_id, v.successful()))
             continue
 
         cWorking += 1
         if __asyncResult_downloadToday and len(__asyncResult_downloadToday) <=50: # skip enumerating if there are too many
-            thePROG.debug('schOn_Every5min() downloadToday[%s]%s still working' %(k, v.task_id))
+            thePROG.debug('schChkRes_DownloadToday() downloadToday[%s]%s still working' %(k, v.task_id))
 
-    thePROG.info('schOn_Every5min() downloadToday has %d-working and %d-done tasks' %(cWorking, len(todels)))
+    thePROG.info('schChkRes_DownloadToday() downloadToday has %d-working and %d-done tasks' %(cWorking, len(todels)))
     if len(todels) >0:
-        thePROG.info('schOn_Every5min() clearing %s keys: %s' % (len(todels), ','.join(todels)))
+        thePROG.info('schChkRes_DownloadToday() clearing %s keys: %s' % (len(todels), ','.join(todels)))
         for k in todels:
             del __asyncResult_downloadToday[k]
         if len(__asyncResult_downloadToday) <=0:
-            thePROG.info('schOn_Every5min() downloadToday all done')
+            thePROG.info('schChkRes_DownloadToday() downloadToday all done')
 
 # ===================================================
 @shared_task(bind=True, ignore_result=True)
-def schOn_Every5min(self):
+def schChkRes_DownloadToday(self):
     global MAPPED_HOME, TODAY_YYMMDD
 
     if not TODAY_YYMMDD: return
@@ -389,19 +389,19 @@ def schOn_Every5min(self):
             # ar = v['task']
             if v['done']:
                 todels.append(k)
-                thePROG.info('schOn_Every5min() downloadToday[%s]%s done, took %s' %(k, v['taskId'], v['done']-v['issued']))
+                thePROG.info('schChkRes_DownloadToday() downloadToday[%s]%s done, took %s' %(k, v['taskId'], v['done']-v['issued']))
                 continue
             cWorking += 1
-            thePROG.debug('schOn_Every5min() downloadToday[%s]%s has spent %s' %(k, v['taskId'], stampNow - v['issued']))
+            thePROG.debug('schChkRes_DownloadToday() downloadToday[%s]%s has spent %s' %(k, v['taskId'], stampNow - v['issued']))
         except Exception as ex:
             pass
 
-    thePROG.info('schOn_Every5min() downloadToday has %d-working and %d-done tasks' %(cWorking, len(todels)))
+    thePROG.info('schChkRes_DownloadToday() downloadToday has %d-working and %d-done tasks' %(cWorking, len(todels)))
     if len(todels) >0:
-        thePROG.info('schOn_Every5min() clearing %s keys: %s' % (len(todels), ','.join(todels)))
+        thePROG.info('schChkRes_DownloadToday() clearing %s keys: %s' % (len(todels), ','.join(todels)))
         for k in todels: del dictToday[k]
         if len(dictToday) <=0:
-            thePROG.info('schOn_Every5min() downloadToday all done')
+            thePROG.info('schChkRes_DownloadToday() downloadToday all done')
 
 # ===================================================
 @shared_task(bind=True, base=Retryable)
@@ -458,7 +458,7 @@ def _saveDownloadReqs(dirReqs):
 
 # ===================================================
 @shared_task(bind=True, base=Retryable)
-def schDo_kickoffDownloadToday(self):
+def schKickOff_DownloadToday(self):
     lastYYMMDDs = prod.determineLastDays(thePROG, nLastDays =7)
     if len(lastYYMMDDs) <=0:
         return
@@ -476,7 +476,7 @@ def schDo_kickoffDownloadToday(self):
     dictDownloadReqs = _loadDownloadReqs(dirReqs)
 
     lstSHZ = listAllSymbols()
-    thePROG.info('schDo_kickoffDownloadToday() listAllSymbols got %d symbols' %len(lstSHZ))
+    thePROG.info('schKickOff_DownloadToday() listAllSymbols got %d symbols' %len(lstSHZ))
     if len(lstSHZ) <=2000:
         raise RetryableError(401, 'incompleted symbol list')
 
@@ -492,11 +492,11 @@ def schDo_kickoffDownloadToday(self):
         excludeMoneyFlow = True if symbol in lstIdxFunds else False
         try:
             st = os.stat(fullfnRequest)
-            thePROG.debug('schDo_kickoffDownloadToday() % already exists' % rfnRequest)
+            thePROG.debug('schKickOff_DownloadToday() % already exists' % rfnRequest)
             continue
         except: pass
 
-        thePROG.debug('schDo_kickoffDownloadToday() generating request-file %s' % rfnRequest)
+        thePROG.debug('schKickOff_DownloadToday() generating request-file %s' % rfnRequest)
         alllines = prod.readArchivedDays(thePROG, dirArched, symbol, lastYYMMDDs)
         with bz2.open(fullfnRequest, 'wt', encoding='utf-8') as f:
             f.write(alllines)
@@ -615,9 +615,9 @@ if __name__ == '__main__':
     readArchivedH5t('SinaMF1m_20201222.h5t', 'SZ300913_MF1m20201222.json')
 
     listAllSymbols()
-    # schDo_kickoffDownloadToday()
+    # schKickOff_DownloadToday()
     for i in range(20):
-        schOn_Every5min()
+        schChkRes_DownloadToday()
         sleep(10)
 
     # nTop = 1000

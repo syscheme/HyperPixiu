@@ -609,10 +609,11 @@ def readArchivedH5t(self, h5tFileName, memberNode):
 def schDo_ZipWeek(self):
     global MAPPED_HOME
     dirArched = os.path.join(MAPPED_HOME, 'archived', 'sina')
+    dtInWeek = datetime.now() - timedelta(days=5)
 
-    thePROG.debug('schDo_ZipWeek() start archiving the week under %s' % dirArched)
-    fn, lst = prod.archiveWeek(dirArched, None, None, thePROG)
-    thePROG.info('schDo_ZipWeek() %s archived %s symbols'% (fn, len(lst))
+    thePROG.debug('schDo_ZipWeek() start archiving the week of %s under %s' % (dtInWeek.strftime('%Y-%m-%d'), dirArched))
+    fn, lst = prod.archiveWeek(dirArched, None, dtInWeek, thePROG)
+    thePROG.info('schDo_ZipWeek() %s archived %s symbols'% (fn, len(lst)))
 
 ####################################
 from time import sleep

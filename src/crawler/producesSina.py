@@ -747,6 +747,8 @@ def archiveWeek(dirArchived, symbols, dtInWeek=None, prog=None):
                     if not s in symbols: symbols.append(s)
             except: pass
 
+    if prog: prog.debug('archiveWeek() determined week of %s is %s, archiving %d symbols into %s' % (dtInWeek, ','.join(YYYYMMDDs), len(symbols), fnOut))
+
     slist=[]
     for symbol in symbols: 
         linesMday=''

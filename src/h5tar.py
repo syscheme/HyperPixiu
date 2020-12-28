@@ -117,6 +117,32 @@ def read_utf8(fn_h5tar, fn_member) :
 
     return ''
 
+def write_utf8(fn_h5tar, memberName, text, createmode='a') :
+
+    createmode = createmode if 'a'==createmode else 'w'
+    with h5py.File(fn_h5tar, createmode) as h5file:
+        g = h5file.create_group(GNAME_TEXT_utf8) if not GNAME_TEXT_utf8 in h5file.keys() else h5file[GNAME_TEXT_utf8]
+        g.attrs['desc']         = 'text member files via utf-8 encoding and bzip2 compression'
+
+        tsize = len(text)
+        print('tar_utf8() adding %s  text-size:%s' % (memberName, tsize))
+        compressed = bz2.compress(text.encode('utf8'))
+        zsize = len(compressed)
+        npbytes = np.frombuffer(compressed, dtype=np.uint8)
+        k = memberName
+        while len(k) >0 and ('/' == k[0] or '.' == k[0]):
+            k=k[1:]
+        k = quote(k).replace('/','%2F')
+            
+        if k in g.keys():
+            del g[k]
+
+        sub = g.create_dataset(k, data=npbytes)
+        sub.attrs['size'] = tsize
+        sub.attrs['csize'] = len(compressed)
+        return zsize, tsize
+
+
 ########################################################################
 if __name__ == '__main__':
 

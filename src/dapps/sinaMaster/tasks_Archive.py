@@ -604,6 +604,16 @@ def readArchivedH5t(self, h5tFileName, memberNode):
         thePROG.error('readArchivedH5t() read %s[%s] failed: %s'% (h5tFileName, memberNode, ret))
     return ret
 
+# ===================================================
+@shared_task(bind=True, base=Retryable)
+def schDo_ZipWeek(self):
+    global MAPPED_HOME
+    dirArched = os.path.join(MAPPED_HOME, 'archived', 'sina')
+
+    thePROG.debug('schDo_ZipWeek() start archiving the week under %s' % dirArched)
+    fn, lst = prod.archiveWeek(dirArched, None, None, thePROG)
+    thePROG.info('schDo_ZipWeek() %s archived %s symbols'% (fn, len(lst))
+
 ####################################
 from time import sleep
 if __name__ == '__main__':

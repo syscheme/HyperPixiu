@@ -39,6 +39,12 @@ worker.conf.beat_schedule = {
         "args":(),
     },
 
+    "every_Satday6am":{
+        "task":"dapps.sinaMaster.Archive.schDo_ZipWeek",
+        'schedule': crontab(hour=6, minute=5, day_of_week='6'),
+        "args":(),
+    },
+
     "every_1hrAfterTradeDayClose":{
         "task":"dapps.sinaMaster.Archive.schKickOff_DownloadToday",
         'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),

@@ -33,11 +33,11 @@ worker.conf.beat_schedule = {
         # "options":{'queue':'hipri'}
     },
 
-    "every_TradeDayClose":{
-        "task":"dapps.sinaMaster.Archive.schDo_pitchArchiedFiles",
-        'schedule': crontab(hour=16, minute=5, day_of_week='1-5'),
-        "args":(),
-    },
+    # "every_TradeDayClose":{
+    #     "task":"dapps.sinaMaster.Archive.schDo_pitchArchiedFiles",
+    #     'schedule': crontab(hour=16, minute=5, day_of_week='1-5'),
+    #     "args":(),
+    # },
 
     "every_Satday6am":{
         "task":"dapps.sinaMaster.Archive.schDo_ZipWeek",
@@ -47,7 +47,7 @@ worker.conf.beat_schedule = {
 
     "every_1hrAfterTradeDayClose":{
         "task":"dapps.sinaMaster.Archive.schKickOff_DownloadToday",
-        'schedule': crontab(hour=16, minute=30, day_of_week='1-5'),
+        'schedule': crontab(hour=16, minute=45, day_of_week='1-5'),
         "args":(),
     },
 

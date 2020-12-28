@@ -492,8 +492,8 @@ def schKickOff_DownloadToday(self):
         excludeMoneyFlow = True if symbol in lstIdxFunds else False
         try:
             st = os.stat(fullfnRequest)
-            thePROG.debug('schKickOff_DownloadToday() % already exists' % rfnRequest)
-            continue
+            thePROG.debug('schKickOff_DownloadToday() %s already exists' % rfnRequest)
+            # continue
         except: pass
 
         thePROG.debug('schKickOff_DownloadToday() generating request-file %s' % rfnRequest)

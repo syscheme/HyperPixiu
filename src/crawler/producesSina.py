@@ -807,7 +807,7 @@ def determineLastDays(prog, nLastDays =7, todayYYMMDD= None):
     lastDays.reverse()
     for i in lastDays:
         yymmdd = i.asof.strftime('%Y%m%d')
-        if yymmdd >= todayYYMMDD:
+        if yymmdd > todayYYMMDD:
             continue
         lastYYMMDDs.append(yymmdd)
         if len(lastYYMMDDs) >= nLastDays:

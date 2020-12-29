@@ -14,7 +14,7 @@ from MarketData import MARKETDATE_EVENT_PREFIX, EVENT_KLINE_1DAY
 
 import h5tar, h5py, pickle, bz2
 from urllib.parse import quote, unquote
-import sys, os, re, glob
+import sys, os, re, glob, stat, shutil
 from datetime import datetime, timedelta
 
 SYMBOL_LIST_HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,open,high,low,close,volume"
@@ -223,6 +223,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
 
     try:
         os.mkdir(os.path.join(DIR_ARCHED_HOME, 'snapshots'))
+        os.chmod(dirReqs, stat.S_IRWXU | stat.S_IRWXG |stat.S_IROTH )
     except: pass
 
     thePROG.debug('commitToday() archiving %s_%s dictArgs: %s from %s to %s' % (symbol, asofYYMMDD, str(dictArgs), pubDir, DIR_ARCHED_HOME))
@@ -526,6 +527,8 @@ def schKickOff_DownloadToday(self):
 
     try:
         os.mkdir(dirReqs)
+        os.chmod(dirReqs, stat.S_IRWXU | stat.S_IRWXG |stat.S_IRWXO )
+        shutil.chown(dirReqs, group ='hpx')
     except: pass
 
     dictDownloadReqs = _loadDownloadReqs(dirReqs)
@@ -557,11 +560,15 @@ def schKickOff_DownloadToday(self):
         alllines = prod.readArchivedDays(thePROG, DIR_ARCHED_HOME, symbol, lastYYMMDDs[1:])
         with bz2.open(fullfnRequest, 'wt', encoding='utf-8') as f:
             f.write(alllines)
+            shutil.chown(fullfnRequest, group ='hpx')
+            os.chmod(fullfnRequest, stat.S_IREAD|stat.S_IWRITE|stat.S_IRGRP|stat.S_IWGRP|stat.S_IROTH )
+
 
         task = __issueTask_DownloadToday(dictDownloadReqs, TODAY_YYMMDD, symbol, rfnRequest, excludeMoneyFlow)
 
-        cTasks +=1
-        thePROG.info('schKickOff_DownloadToday() issued request[%s] No.%d task Id[%s]' % (rfnRequest, cTasks, taskId))
+        if task:
+            cTasks +=1
+            thePROG.info('schKickOff_DownloadToday() issued request[%s] No.%d task Id[%s]' % (rfnRequest, cTasks, task.id))
 
     thePROG.info('schKickOff_DownloadToday() all %d downloadToday(%s) tasks are fired' % (cTasks, TODAY_YYMMDD))
     _saveDownloadReqs(dirReqs)

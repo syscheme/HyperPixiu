@@ -217,16 +217,15 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     if ':' in login : login = login[:login.index(':')]
 
     pubDir = os.path.join(SINA_USERS_ROOT, login, 'hpx_publish')
-    archDir = os.path.join(MAPPED_HOME, 'archived', 'sina')
 
-    # archDir = '/tmp/arch_test' # test hardcode
     # pubDir = '/mnt/s/hpx_publish' # test hardcode
+    # DIR_ARCHED_HOME = '/tmp/arch_test' # test hardcode
 
     try:
-        os.mkdir(os.path.join(archDir, 'snapshots'))
+        os.mkdir(os.path.join(DIR_ARCHED_HOME, 'snapshots'))
     except: pass
 
-    thePROG.debug('commitToday() archiving %s_%s dictArgs: %s from %s to %s' % (symbol, asofYYMMDD, str(dictArgs), pubDir, archDir))
+    thePROG.debug('commitToday() archiving %s_%s dictArgs: %s from %s to %s' % (symbol, asofYYMMDD, str(dictArgs), pubDir, DIR_ARCHED_HOME))
 
     # step 1. zip the JSON files
     for fn in fnJsons:
@@ -236,7 +235,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
         evtShort = m.group(1)
 
         try :
-            destpath = os.path.join(archDir, 'Sina%s_%s.h5t' % (evtShort, asofYYMMDD) )
+            destpath = os.path.join(DIR_ARCHED_HOME, 'Sina%s_%s.h5t' % (evtShort, asofYYMMDD) )
             if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
                 thePROG.debug('commitToday() archived %s into %s' %(srcpath, destpath))
                 __rmfile(srcpath)
@@ -247,7 +246,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
 
     # step 2. zip the Tcsv file
     srcpath = os.path.join(pubDir, fnTcsv)
-    destpath = os.path.join(archDir, 'SinaMDay_%s.h5t' % asofYYMMDD )
+    destpath = os.path.join(DIR_ARCHED_HOME, 'SinaMDay_%s.h5t' % asofYYMMDD )
     if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
         thePROG.debug('commitToday() archived %s by[%s] into %s' %(srcpath, login, destpath))
         __rmfile(srcpath)
@@ -256,7 +255,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
 
     # step 3. append the snapshots
     srcpath = os.path.join(pubDir, fnSnapshot)
-    destpath = os.path.join(archDir, 'snapshots', 'SNS_%s.h5' % (symbol) )
+    destpath = os.path.join(DIR_ARCHED_HOME, 'snapshots', 'SNS_%s.h5' % (symbol) )
     gns = []
 
     lastDates = [ x[0] for x in lastDays] if lastDays and len(lastDays)>0 else []
@@ -306,7 +305,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     except Exception as ex:
         thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
 
-    dirReqs = os.path.join(archDir, 'reqs')
+    dirReqs = os.path.join(DIR_ARCHED_HOME, SUBDIR_Reqs)
     fnReq = os.path.join(dirReqs, '%s_%s.tcsv.bz2' % (asofYYMMDD, symbol))
     __rmfile(fnReq)
     thePROG.debug('commitToday() removed %s' % fnReq)
@@ -376,7 +375,7 @@ def schChkRes_DownloadToday(self):
     if not TODAY_YYMMDD:
         TODAY_YYMMDD = (stampNow-timedelta(hours=9)).strftime('%Y%m%d')
     
-    dirReqs = os.path.join(MAPPED_HOME, 'archived', 'sina', 'reqs')
+    dirReqs = os.path.join(DIR_ARCHED_HOME, SUBDIR_Reqs)
     dictDownloadReqs = _loadDownloadReqs(dirReqs)
     if not dictDownloadReqs or not TODAY_YYMMDD or not TODAY_YYMMDD in dictDownloadReqs.keys():
         thePROG.debug('schChkRes_DownloadToday() no active downloadToday[%s]' %TODAY_YYMMDD)
@@ -385,7 +384,7 @@ def schChkRes_DownloadToday(self):
     dictToday = dictDownloadReqs[TODAY_YYMMDD]
     thePROG.debug('schChkRes_DownloadToday() %d active downloadToday[%s]' %(len(dictToday), TODAY_YYMMDD))
 
-    todels = []
+    todels, bDirty = [], False
     cWorking =0
     for k, v in dictToday.items():
         if not v: 
@@ -411,6 +410,7 @@ def schChkRes_DownloadToday(self):
                     if os.stat(os.path.join(DIR_ARCHED_HOME, rfnReq)).st_size >0:
                         task = __issueTask_DownloadToday(dictDownloadReqs, TODAY_YYMMDD, k, rfnReq, k in IDXs_to_COLLECT + ETFs_to_COLLECT)
                         retried = ', retried as %s' % task.id
+                        bDirty = True
                     else:
                         todels.append(k)
                 except:
@@ -423,10 +423,14 @@ def schChkRes_DownloadToday(self):
 
     thePROG.info('schChkRes_DownloadToday() downloadToday has %d-working and %d-done tasks' %(cWorking, len(todels)))
     if len(todels) >0:
+        bDirty = True
         thePROG.info('schChkRes_DownloadToday() clearing %s keys: %s' % (len(todels), ','.join(todels)))
         for k in todels: del dictToday[k]
         if len(dictToday) <=0:
             thePROG.info('schChkRes_DownloadToday() downloadToday all done')
+    
+    if bDirty :
+        _saveDownloadReqs(dirReqs)
 
 # ===================================================
 @shared_task(bind=True, base=Retryable)

@@ -374,7 +374,7 @@ def schChkRes_DownloadToday(self):
 
     stampNow = datetime.now()
     if not TODAY_YYMMDD:
-        TODAY_YYMMDD = stampNow.strftime('%Y%m%d')
+        TODAY_YYMMDD = (stampNow-timedelta(hours=9)).strftime('%Y%m%d')
     
     dirReqs = os.path.join(MAPPED_HOME, 'archived', 'sina', 'reqs')
     dictDownloadReqs = _loadDownloadReqs(dirReqs)
@@ -405,7 +405,7 @@ def schChkRes_DownloadToday(self):
 
             timelive = stampNow - v['issued']
             retried =''
-            if 'PENDING' in tstate and timelive> RETRY_DOWNLOAD_INTERVAL:
+            if ('PENDING' in tstate or 'REVOKED' in tstate) and timelive> RETRY_DOWNLOAD_INTERVAL:
                 try:
                     rfnReq = os.path.join(SUBDIR_Reqs, '%s_%s.tcsv.bz2' % (TODAY_YYMMDD, k))
                     if os.stat(os.path.join(DIR_ARCHED_HOME, rfnReq)).st_size >0:
@@ -569,7 +569,8 @@ def schDo_pitchArchiedFiles(self):
     listAllSymbols()
 
     nLastDays, lastDays = 7, []
-    TODAY_YYMMDD = datetime.now().strftime('%Y%m%d')
+    yymmddToday = (stampNow-timedelta(hours=9)).strftime('%Y%m%d')
+    yymmddToday = datetime.now().strftime('%Y%m%d')
 
     playback = prod.SinaMux(thePROG)
     httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, IDXs_to_COLLECT[0], nLastDays+3)
@@ -577,7 +578,7 @@ def schDo_pitchArchiedFiles(self):
     yymmddToCache = []
     for i in lastDays:
         yymmdd = i.asof.strftime('%Y%m%d')
-        if yymmdd >= TODAY_YYMMDD:
+        if yymmdd >= yymmddToday:
             continue
         yymmddToCache.append(yymmdd)
         if len(yymmddToCache) >= nLastDays:
@@ -654,10 +655,19 @@ def readArchivedH5t(self, h5tFileName, memberNode):
 
 # ===================================================
 @shared_task(bind=True, base=Retryable)
-def schDo_ZipWeek(self):
+def schDo_ZipWeek(self, asofYYMMDD =None) :
     global MAPPED_HOME
     DIR_ARCHED_HOME = os.path.join(MAPPED_HOME, 'archived', 'sina')
-    dtInWeek = datetime.now() - timedelta(days=5)
+    
+    dtInWeek = None
+    try :
+        if isinstance(asofYYMMDD, str):
+            dtInWeek = datetime.strptime(asofYYMMDD, '%Y-%m-%d')
+    except:
+        dtInWeek = None
+
+    if not dtInWeek:
+        dtInWeek = datetime.now() - timedelta(days=5)
 
     thePROG.debug('schDo_ZipWeek() start archiving the week of %s under %s' % (dtInWeek.strftime('%Y-%m-%d'), DIR_ARCHED_HOME))
     fn, lst = prod.archiveWeek(DIR_ARCHED_HOME, None, dtInWeek, thePROG)

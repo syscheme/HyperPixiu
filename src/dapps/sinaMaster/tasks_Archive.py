@@ -505,7 +505,7 @@ def schKickOff_DownloadToday(self):
         except: pass
 
         thePROG.debug('schKickOff_DownloadToday() generating request-file %s' % rfnRequest)
-        alllines = prod.readArchivedDays(thePROG, dirArched, symbol, lastYYMMDDs)
+        alllines = prod.readArchivedDays(thePROG, dirArched, symbol, lastYYMMDDs[1:])
         with bz2.open(fullfnRequest, 'wt', encoding='utf-8') as f:
             f.write(alllines)
 

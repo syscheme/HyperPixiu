@@ -465,15 +465,17 @@ def __refreshBatch_DownloadToday(dirReqs, TODAY_YYMMDD):
         thePROG.debug('__refreshBatch_DownloadToday() %d pendings[%s ~ %s] hit max %d, no more add-in' % (len(reqsPending), reqsPending[0], reqsPending[-1], BATCHSIZE_DownloadToday))
         return
 
-    Tname_batchStart = os.path.basename(reqsPending[-1]) if len(reqsPending) >0 else ''
+    Tname_batchStart = os.path.basename(max(reqsPending)) if len(reqsPending) >0 else ''
 
     allfiles = hist.listAllFiles(dirReqs, depthAllowed=1)
     taskfiles, potentialRetries = [], []
     for fn in allfiles:
         bn = os.path.basename(fn)
         if not fnmatch.fnmatch(bn, 'T%s.*.tcsv.bz2' % TODAY_YYMMDD) :
-            if bn <= Tname_batchStart and (len(potentialRetries) + len(taskfiles)) < cTasksToAdd and not fn in reqsPending:
-                potentialRetries.append(fn)
+            continue
+
+        if bn <= Tname_batchStart and (len(potentialRetries) + len(taskfiles)) < cTasksToAdd and not fn in reqsPending:
+            potentialRetries.append(fn)
             continue
 
         taskfiles.append(fn)
@@ -559,7 +561,7 @@ def schKickOff_DownloadToday(self):
         try:
             st = os.stat(fullfnRequest)
             thePROG.debug('schKickOff_DownloadToday() %s already exists' % rfnRequest)
-            # continue
+            continue
         except: pass
 
         thePROG.debug('schKickOff_DownloadToday() generating request-file %s' % rfnRequest)

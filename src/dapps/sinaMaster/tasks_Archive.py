@@ -53,7 +53,7 @@ ETFs_to_COLLECT=[   # asof 2020-12-08 top actives: http://vip.stock.finance.sina
 SYMBOLS_WithNoMF = IDXs_to_COLLECT + ETFs_to_COLLECT
 
 TASK_TIMEOUT_DownloadToday = timedelta(minutes=60)
-BATCHSIZE_DownloadToday    = 200
+BATCHSIZE_DownloadToday    = 500
 
 TODAY_YYMMDD = None
 
@@ -196,7 +196,11 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     s3 = celery.chain(ct.downloadToday.s('SZ000005'), mt.commitToday.s())
     s3().get()
     '''
-    if not dictArgs or not isinstance(dictArgs, dict) or len(dictArgs) <=0:
+    if dictArgs is None:
+        thePROG.warn('commitToday() None dictArgs, prev-req might be cancelled')
+        return
+
+    if not isinstance(dictArgs, dict) or len(dictArgs) <=0:
         thePROG.error('commitToday() invalid dictArgs: %s' % str(dictArgs))
         return
 
@@ -315,25 +319,27 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
         thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
 
     dirReqs = os.path.join(DIR_ARCHED_HOME, SUBDIR_Reqs)
-    fnReq = os.path.join(dirReqs, '%s_%s.tcsv.bz2' % (asofYYMMDD, symbol))
-    __rmfile(fnReq)
-    thePROG.debug('commitToday() removed %s' % fnReq)
+    # fnReq = os.path.join(dirReqs, '%s_%s.tcsv.bz2' % (asofYYMMDD, symbol))
+    # __rmfile(fnReq)
+    # thePROG.debug('commitToday() removed %s' % fnReq)
 
     dictDownloadReqs = _loadDownloadReqs(dirReqs)
     if asofYYMMDD in dictDownloadReqs.keys():
         if symbol in dictDownloadReqs[asofYYMMDD]:
+            reqNode = dictDownloadReqs[asofYYMMDD][symbol]
             stampNow = datetime.now()
-            taskId, stampIssued = dictDownloadReqs[asofYYMMDD][symbol]['taskId'], dictDownloadReqs[asofYYMMDD][symbol]['stampIssued']
-            dictDownloadReqs[asofYYMMDD][symbol]['stampCommitted'] = stampNow
-            thePROG.info('commitToday() dictDownloadReqs[%s][%s] task[%s] took %s by[%s], cleaned %s' % (asofYYMMDD, symbol, taskId, stampNow - stampIssued, login, fnReq))
-            del dictDownloadReqs[asofYYMMDD][symbol]
+            taskId, stampIssued, tn = reqNode['taskId'], reqNode['stampIssued'], reqNode['taskFn']
+            reqNode['stampCommitted'] = stampNow
+            __rmfile(tn)
+            thePROG.info('commitToday() dictDownloadReqs[%s][%s] task[%s] took %s by[%s], deleted %s' % (asofYYMMDD, symbol, taskId, stampNow - stampIssued, login, tn))
         
         nleft = len(dictDownloadReqs[asofYYMMDD])
         if nleft<=0:
             del dictDownloadReqs[asofYYMMDD]
             thePROG.info('commitToday() all dictDownloadReqs[%s] done, removed' % (asofYYMMDD))
         else:
-            thePROG.debug('commitToday() dictDownloadReqs[%s] has %d onging' % (asofYYMMDD, nleft))
+            c = sum([1 if not v['stampCommitted'] else 0 for v in dictDownloadReqs[asofYYMMDD].values() ])
+            thePROG.debug('commitToday() dictDownloadReqs[%s] has %d/%d onging' % (asofYYMMDD, c, nleft))
         
         _saveDownloadReqs(dirReqs)
 
@@ -343,41 +349,12 @@ def topActives(self, topNum = 500):
     lstTops = listAllSymbols() [:topNum]
     return lstTops
 
-# ===================================================
-__asyncResult_downloadToday = {}
-
-@shared_task(bind=True)
-def schOn_Every5min000(self):
-    global __asyncResult_downloadToday
-    todels = []
-    cWorking =0
-    for k, v in __asyncResult_downloadToday.items():
-        if not v: 
-            todels.append(k)
-            continue
-
-        if v.ready():
-            todels.append(k)
-            thePROG.info('schChkRes_DownloadToday() downloadToday[%s]%s done: succ[%s] and will clear' %(k, v.task_id, v.successful()))
-            continue
-
-        cWorking += 1
-        if __asyncResult_downloadToday and len(__asyncResult_downloadToday) <=50: # skip enumerating if there are too many
-            thePROG.debug('schChkRes_DownloadToday() downloadToday[%s]%s still working' %(k, v.task_id))
-
-    thePROG.info('schChkRes_DownloadToday() downloadToday has %d-working and %d-done tasks' %(cWorking, len(todels)))
-    if len(todels) >0:
-        thePROG.info('schChkRes_DownloadToday() clearing %s keys: %s' % (len(todels), ','.join(todels)))
-        for k in todels:
-            del __asyncResult_downloadToday[k]
-        if len(__asyncResult_downloadToday) <=0:
-            thePROG.info('schChkRes_DownloadToday() downloadToday all done')
 
 # RETRY_DOWNLOAD_INTERVAL = timedelta(hours=1)
 RETRY_DOWNLOAD_INTERVAL = timedelta(minutes=30)
 # ===================================================
 @shared_task(bind=True)
-def schChkRes_DownloadToday(self, asofYYMMDD =None):
+def schChkRes_Crawlers(self, asofYYMMDD =None): # asofYYMMDD ='20201231'):
     global MAPPED_HOME, TODAY_YYMMDD
 
     if asofYYMMDD:
@@ -389,8 +366,23 @@ def schChkRes_DownloadToday(self, asofYYMMDD =None):
     
     dirReqs = os.path.join(DIR_ARCHED_HOME, SUBDIR_Reqs)
 
-    thePROG.debug('schChkRes_DownloadToday() refreshing tasks of downloadTodays[%s]' % TODAY_YYMMDD)
+    thePROG.debug('schChkRes_Crawlers() refreshing tasks of downloadTodays[%s]' % TODAY_YYMMDD)
     __refreshBatch_DownloadToday(dirReqs, TODAY_YYMMDD)
+
+    from dapps.sinaCrawler.worker import worker as crawler
+    crawlers = crawler.control.ping(timeout=2.0, queue='crawler')
+    crawlers = [ list(c.keys())[0] for c in crawlers ]
+    thePROG.info('schChkRes_Crawlers() found %d crawlers: %s' % (len(crawlers), ','.join(crawlers) ) )
+    '''
+    cacheFiles = [ 'SinaMF1m_%s.h5t' %i for i in yymmddToCache]
+
+    for c in crawlers:
+        q = c.split('@')[0]
+        if not q or len(q) <=0: continue
+        r = CTDayend.fetchArchivedFiles.apply_async(args=[cacheFiles], queue=q)
+        thePROG.info('schDo_pitchArchiedFiles() called crawler[%s].fetchArchivedFiles: %s' % (q, ','.join(cacheFiles)))
+    '''
+
 
 # ===================================================
 __dictDownloadReqs = None
@@ -442,7 +434,7 @@ def __refreshBatch_DownloadToday(dirReqs, TODAY_YYMMDD):
             timelive = stampNow - v['stampIssued']
             if v['stampCommitted']:
                 todels.append(k)
-                thePROG.info('__refreshBatch_DownloadToday() downloadToday[%s]%s committed, took %s' %(k, task.id, v['stampCommitted']-v['stampIssued']))
+                thePROG.info('__refreshBatch_DownloadToday() downloadToday[%s]%s committed, duration %s, removed from dictToday' %(k, task.id, v['stampCommitted']-v['stampIssued']))
                 continue
 
             if not v['stampReady'] and task.ready():
@@ -476,27 +468,35 @@ def __refreshBatch_DownloadToday(dirReqs, TODAY_YYMMDD):
     Tname_batchStart = os.path.basename(reqsPending[-1]) if len(reqsPending) >0 else ''
 
     allfiles = hist.listAllFiles(dirReqs, depthAllowed=1)
-    taskfiles = []
+    taskfiles, potentialRetries = [], []
     for fn in allfiles:
         bn = os.path.basename(fn)
-        if not fnmatch.fnmatch(bn, 'T%s.*.tcsv.bz2' % TODAY_YYMMDD) or bn <= Tname_batchStart:
+        if not fnmatch.fnmatch(bn, 'T%s.*.tcsv.bz2' % TODAY_YYMMDD) :
+            if bn <= Tname_batchStart and (len(potentialRetries) + len(taskfiles)) < cTasksToAdd and not fn in reqsPending:
+                potentialRetries.append(fn)
             continue
 
         taskfiles.append(fn)
     
     taskfiles.sort()
+    potentialRetries.sort()
     newissued = []
 
-    for tn in taskfiles:
+    prefix2cut = DIR_ARCHED_HOME +'/'
+    prefixlen = len(prefix2cut)
+
+    for tn in taskfiles + potentialRetries:
         bn = os.path.basename(tn)
         symbol = bn.split('.')[2]
         exclMF = symbol in SYMBOLS_WithNoMF
-        wflow = CTDayend.downloadToday.s(symbol, fnPrevTcsv =tn, excludeMoneyFlow=exclMF) | commitToday.s()
+        fnTask = tn[prefixlen:] if prefix2cut == tn[: prefixlen] else tn
+        wflow = CTDayend.downloadToday.s(symbol, fnPrevTcsv = fnTask, excludeMoneyFlow=exclMF) | commitToday.s()
         task = wflow()
         dictToday[symbol] = {
             'symbol': symbol,
             'taskFn': tn,
             'task': task,
+            'taskId': task.id,
             'stampIssued': datetime.now(),
             'stampReady': None,
             'stampCommitted': None
@@ -703,7 +703,7 @@ if __name__ == '__main__':
     listAllSymbols()
     # schKickOff_DownloadToday()
     for i in range(20):
-        schChkRes_DownloadToday('20201231')
+        schChkRes_Crawlers('20201231')
         sleep(10)
 
     # nTop = 1000

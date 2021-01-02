@@ -389,6 +389,7 @@ def schChkRes_DownloadToday(self, asofYYMMDD =None):
     
     dirReqs = os.path.join(DIR_ARCHED_HOME, SUBDIR_Reqs)
 
+    thePROG.debug('schChkRes_DownloadToday() refreshing tasks of downloadTodays[%s]' % TODAY_YYMMDD)
     __refreshBatch_DownloadToday(dirReqs, TODAY_YYMMDD)
 
 # ===================================================

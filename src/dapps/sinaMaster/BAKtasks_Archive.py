@@ -11,11 +11,10 @@ import crawler.crawlSina as sina
 import crawler.producesSina as prod
 
 from MarketData import MARKETDATE_EVENT_PREFIX, EVENT_KLINE_1DAY
-import HistoryData as hist
 
 import h5tar, h5py, pickle, bz2
 from urllib.parse import quote, unquote
-import sys, os, re, glob, stat, shutil, fnmatch
+import sys, os, re, glob, stat, shutil
 from datetime import datetime, timedelta
 
 SYMBOL_LIST_HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,open,high,low,close,volume"
@@ -50,21 +49,14 @@ ETFs_to_COLLECT=[   # asof 2020-12-08 top actives: http://vip.stock.finance.sina
 'SH515070','SH510800','SH510600','SH511180','SH515980','SZ159808','SH512510','SH510390','SH510150','SH512730'
 ]
 
-SYMBOLS_WithNoMF = IDXs_to_COLLECT + ETFs_to_COLLECT
-
-TASK_TIMEOUT_DownloadToday = timedelta(minutes=60)
-BATCHSIZE_DownloadToday    = 200
-
 TODAY_YYMMDD = None
 
 @shared_task
 def add(x, y):
-    sleep(30)
     return x + y
 
 @shared_task
 def mul(x, y):
-    sleep(30)
     return x * y
 
 @shared_task
@@ -323,8 +315,8 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     if asofYYMMDD in dictDownloadReqs.keys():
         if symbol in dictDownloadReqs[asofYYMMDD]:
             stampNow = datetime.now()
-            taskId, stampIssued = dictDownloadReqs[asofYYMMDD][symbol]['taskId'], dictDownloadReqs[asofYYMMDD][symbol]['stampIssued']
-            dictDownloadReqs[asofYYMMDD][symbol]['stampCommitted'] = stampNow
+            taskId, stampIssued = dictDownloadReqs[asofYYMMDD][symbol]['taskId'], dictDownloadReqs[asofYYMMDD][symbol]['issued']
+            dictDownloadReqs[asofYYMMDD][symbol]['done'] = stampNow
             thePROG.info('commitToday() dictDownloadReqs[%s][%s] task[%s] took %s by[%s], cleaned %s' % (asofYYMMDD, symbol, taskId, stampNow - stampIssued, login, fnReq))
             del dictDownloadReqs[asofYYMMDD][symbol]
         
@@ -377,19 +369,97 @@ def schOn_Every5min000(self):
 RETRY_DOWNLOAD_INTERVAL = timedelta(minutes=30)
 # ===================================================
 @shared_task(bind=True)
-def schChkRes_DownloadToday(self, asofYYMMDD =None):
+def schChkRes_DownloadToday(self):
     global MAPPED_HOME, TODAY_YYMMDD
-
-    if asofYYMMDD:
-        TODAY_YYMMDD = asofYYMMDD
 
     stampNow = datetime.now()
     if not TODAY_YYMMDD:
         TODAY_YYMMDD = (stampNow-timedelta(hours=9)).strftime('%Y%m%d')
     
     dirReqs = os.path.join(DIR_ARCHED_HOME, SUBDIR_Reqs)
+    dictDownloadReqs = _loadDownloadReqs(dirReqs)
+    if not dictDownloadReqs or not TODAY_YYMMDD or not TODAY_YYMMDD in dictDownloadReqs.keys():
+        thePROG.debug('schChkRes_DownloadToday() no active downloadToday[%s]' %TODAY_YYMMDD)
+        return
 
-    __refreshBatch_DownloadToday(dirReqs, TODAY_YYMMDD)
+    dictToday = dictDownloadReqs[TODAY_YYMMDD]
+    thePROG.debug('schChkRes_DownloadToday() %d active downloadToday[%s]' %(len(dictToday), TODAY_YYMMDD))
+
+    todels, bDirty = [], False
+    cWorking =0
+    for k, v in dictToday.items():
+        if not v: 
+            todels.append(k)
+            continue
+
+        try :
+            # ar = v['task']
+            if v['done']:
+                todels.append(k)
+                thePROG.info('schChkRes_DownloadToday() downloadToday[%s]%s done, took %s' %(k, v['taskId'], v['done']-v['issued']))
+                continue
+            cWorking += 1
+            tstate = ''
+            if 'task' in v.keys() and v['task']:
+                tstate = '(%s)' % v['task'].state
+
+            timelive = stampNow - v['issued']
+            retried =''
+            if ('PENDING' in tstate or 'REVOKED' in tstate) and timelive> RETRY_DOWNLOAD_INTERVAL:
+                try:
+                    rfnReq = os.path.join(SUBDIR_Reqs, '%s_%s.tcsv.bz2' % (TODAY_YYMMDD, k))
+                    if os.stat(os.path.join(DIR_ARCHED_HOME, rfnReq)).st_size >0:
+                        task = __issueTask_DownloadToday(dictDownloadReqs, TODAY_YYMMDD, k, rfnReq, k in IDXs_to_COLLECT + ETFs_to_COLLECT)
+                        retried = ', retried as %s' % task.id
+                        bDirty = True
+                    else:
+                        todels.append(k)
+                except:
+                    todels.append(k)
+
+            thePROG.debug('schChkRes_DownloadToday() downloadToday[%s]%s%s has spent %s%s' %(k, v['taskId'], tstate, timelive, retried))
+
+        except Exception as ex:
+            pass
+
+    thePROG.info('schChkRes_DownloadToday() downloadToday[%s] has %d-working and %d-done tasks' %(TODAY_YYMMDD, cWorking, len(todels)))
+    if len(todels) >0:
+        bDirty = True
+        thePROG.info('schChkRes_DownloadToday() clearing %s keys: %s' % (len(todels), ','.join(todels)))
+        for k in todels: del dictToday[k]
+        if len(dictToday) <=0:
+            thePROG.info('schChkRes_DownloadToday() downloadToday all done')
+    
+    if bDirty :
+        _saveDownloadReqs(dirReqs)
+
+# ===================================================
+@shared_task(bind=True, base=Retryable)
+def schDo_kickoffDownloadToday000(self):
+    global __asyncResult_downloadToday
+    __asyncResult_downloadToday = {}
+    for s in IDXs_to_COLLECT + ETFs_to_COLLECT:
+        if s in __asyncResult_downloadToday.keys():
+            continue
+
+        thePROG.debug('schDo_kickoffDownloadToday000() adding subtask to download ETF[%s]' % s)
+        wflow = CTDayend.downloadToday.s(s, excludeMoneyFlow=True) | commitToday.s()
+        __asyncResult_downloadToday[s] = wflow()
+
+    lstSHZ = listAllSymbols()
+    thePROG.info('schDo_kickoffDownloadToday000() listAllSymbols got %d symbols' %len(lstSHZ))
+    if len(lstSHZ) <=2000:
+        raise RetryableError(401, 'incompleted symbol list')
+
+    # del lstSHZ[5:] # should be the complete lstSHZ
+    for i in lstSHZ : # the full lstSHZ
+        symbol = i['symbol']
+        if symbol in __asyncResult_downloadToday.keys():
+            continue
+
+        thePROG.debug('schDo_kickoffDownloadToday000() adding subtask to download %s %s' % (symbol, i['name']))
+        wflow = CTDayend.downloadToday.s(symbol) | commitToday.s()
+        __asyncResult_downloadToday[symbol] = wflow()
 
 # ===================================================
 __dictDownloadReqs = None
@@ -416,98 +486,32 @@ def _saveDownloadReqs(dirReqs):
     except Exception as ex:
         pass
 
-# ===================================================
-def __refreshBatch_DownloadToday(dirReqs, TODAY_YYMMDD):
+def __issueTask_DownloadToday(dictDownloadReqs, TODAY_YYMMDD, symbol, rfnRequest, excludeMoneyFlow):
 
-    dictDownloadReqs = _loadDownloadReqs(dirReqs)
-    if not dictDownloadReqs or not TODAY_YYMMDD or not TODAY_YYMMDD in dictDownloadReqs.keys():
-        thePROG.debug('__refreshBatch_DownloadToday() no active downloadToday[%s]' %TODAY_YYMMDD)
-        return
+    try:
+        node ={}
+        if TODAY_YYMMDD in dictDownloadReqs.keys() and symbol in dictDownloadReqs[TODAY_YYMMDD].keys():
+            node = dictDownloadReqs[TODAY_YYMMDD][symbol]
+            del dictDownloadReqs[TODAY_YYMMDD][symbol]
 
-    dictToday = dictDownloadReqs[TODAY_YYMMDD]
-    thePROG.debug('__refreshBatch_DownloadToday() %d actives in downloadToday[%s]' %(len(dictToday), TODAY_YYMMDD))
+        if 'task' in node.keys() and node['task']:
+            thePROG.debug('__issueTask_DownloadToday() revoking old %s[%s]' %(symbol, node['task'].id))
+            node['task'].revoke()
+    except Exception as ex:
+        thePROG.logexception(ex, '__issueTask_DownloadToday() revoking old %s' % (symbol))
 
-    todels, bDirty = [], False
-    reqsPending = []
-    stampNow = datetime.now()
-
-    for k, v in dictToday.items():
-        if not v or not 'task' in v.keys() or not v['task']: 
-            todels.append(k)
-            continue
-
-        task = v['task']
-        try :
-            timelive = stampNow - v['stampIssued']
-            if v['stampCommitted']:
-                todels.append(k)
-                thePROG.info('__refreshBatch_DownloadToday() downloadToday[%s]%s committed, took %s' %(k, task.id, v['stampCommitted']-v['stampIssued']))
-                continue
-
-            if not v['stampReady'] and task.ready():
-                v['stampReady'] = stampNow
-                thePROG.debug('__refreshBatch_DownloadToday() downloadToday[%s]%s:%s succ[%s], took %s' %(k, task.id, task.state, task.successful(), timelive))
-                continue
-
-            if timelive > TASK_TIMEOUT_DownloadToday and task.state in ['PENDING', 'REVOKED']:
-                todels.append(k)
-                thePROG.warn('__refreshBatch_DownloadToday() downloadToday[%s]%s:%s took %s timeout, revoking[%s] and retry' %(k, task.id, task.state, timelive, task.parent.id))
-                task.parent.revoke() # we only revoke the first in the chain here, always let commitToday go if its prev steps have been completed
-                continue
-
-            reqsPending.append(v['taskFn'])
-
-        except Exception as ex:
-            thePROG.logexception(ex, '__refreshBatch_DownloadToday() checking task of %s' % (k))
-
-    if len(todels) >0:
-        bDirty = True
-        thePROG.info('__refreshBatch_DownloadToday() clearing %s keys: %s' % (len(todels), ','.join(todels)))
-        for k in todels:
-            del dictToday[k]
-
-    cTasksToAdd = BATCHSIZE_DownloadToday - len(reqsPending)
-
-    if cTasksToAdd <=0:
-        thePROG.debug('__refreshBatch_DownloadToday() %d pendings[%s ~ %s] hit max %d, no more add-in' % (len(reqsPending), reqsPending[0], reqsPending[-1], BATCHSIZE_DownloadToday))
-        return
-
-    Tname_batchStart = os.path.basename(reqsPending[-1]) if len(reqsPending) >0 else ''
-
-    allfiles = hist.listAllFiles(dirReqs, depthAllowed=1)
-    taskfiles = []
-    for fn in allfiles:
-        bn = os.path.basename(fn)
-        if not fnmatch.fnmatch(bn, 'T%s.*.tcsv.bz2' % TODAY_YYMMDD) or bn <= Tname_batchStart:
-            continue
-
-        taskfiles.append(fn)
+    wflow = CTDayend.downloadToday.s(symbol, fnPrevTcsv =rfnRequest, excludeMoneyFlow=excludeMoneyFlow) | commitToday.s()
+    task = wflow()
+    taskId = task.id
+    dictDownloadReqs[TODAY_YYMMDD][symbol] = {
+        'taskId': taskId,
+        'issued': datetime.now(),
+        'task': task,
+        'done': None
+    }
     
-    taskfiles.sort()
-    newissued = []
-
-    for tn in taskfiles:
-        bn = os.path.basename(tn)
-        symbol = bn.split('.')[2]
-        exclMF = symbol in SYMBOLS_WithNoMF
-        wflow = CTDayend.downloadToday.s(symbol, fnPrevTcsv =tn, excludeMoneyFlow=exclMF) | commitToday.s()
-        task = wflow()
-        dictToday[symbol] = {
-            'symbol': symbol,
-            'taskFn': tn,
-            'task': task,
-            'stampIssued': datetime.now(),
-            'stampReady': None,
-            'stampCommitted': None
-            }
-
-        newissued.append(symbol)
-        if len(newissued) >= cTasksToAdd: break
-
-    if len(newissued) >0 : bDirty = True
-    thePROG.info('__refreshBatch_DownloadToday() fired %d/%d new requests: %s' % (len(newissued), len(taskfiles), ','.join(newissued)))
-    if bDirty:
-        _saveDownloadReqs(dirReqs)
+    thePROG.debug('__issueTask_DownloadToday() new %s[%s]' %(symbol, taskId))
+    return task
 
 # ===================================================
 @shared_task(bind=True, base=Retryable)
@@ -530,31 +534,22 @@ def schKickOff_DownloadToday(self):
     dictDownloadReqs = _loadDownloadReqs(dirReqs)
 
     lstSHZ = listAllSymbols()
-    thePROG.info('schKickOff_DownloadToday() listAllSymbols got %d symbols and last trade-days: %s' % (len(lstSHZ), ','.join(lastYYMMDDs)))
+    thePROG.info('schKickOff_DownloadToday() listAllSymbols got %d symbols' %len(lstSHZ))
     if len(lstSHZ) <=2000:
         raise RetryableError(401, 'incompleted symbol list')
 
     if not TODAY_YYMMDD in __dictDownloadReqs.keys():
-        # TODO cancel dictDownloadReqs[TODAY_YYMMDD]
         dictDownloadReqs[TODAY_YYMMDD] = {}
-    else:
-        for v in dictDownloadReqs[TODAY_YYMMDD].values():
-            try :
-                if 'task' in v.keys() or not v['task']: continue
-                task = v['task']
-                task.parent.revoke() # we only revoke the first in the chain here, always let commitToday go if its prev steps have been completed
-            except: pass
 
-    _saveDownloadReqs(dirReqs)
-
+    lstIdxFunds = IDXs_to_COLLECT + ETFs_to_COLLECT
     lstStocks = [ x['symbol'] for x in lstSHZ ]
 
     cTasks =0
-    for symbol in IDXs_to_COLLECT + ETFs_to_COLLECT + lstStocks:
-        cTasks += 1
-        rfnRequest = os.path.join(SUBDIR_Reqs, 'T%s.%04d.%s.tcsv.bz2' % (TODAY_YYMMDD, cTasks, symbol))
+
+    for symbol in lstIdxFunds + lstStocks:
+        rfnRequest = os.path.join(SUBDIR_Reqs, '%s_%s.tcsv.bz2' % (TODAY_YYMMDD, symbol))
         fullfnRequest = os.path.join(DIR_ARCHED_HOME, rfnRequest)
-        excludeMoneyFlow = symbol in SYMBOLS_WithNoMF
+        excludeMoneyFlow = True if symbol in lstIdxFunds else False
         try:
             st = os.stat(fullfnRequest)
             thePROG.debug('schKickOff_DownloadToday() %s already exists' % rfnRequest)
@@ -569,15 +564,18 @@ def schKickOff_DownloadToday(self):
         #     continue
         with bz2.open(fullfnRequest, 'wt', encoding='utf-8') as f:
             f.write(alllines)
-            try:
-                shutil.chown(fullfnRequest, group ='hpx')
-                os.chmod(fullfnRequest, stat.S_IREAD|stat.S_IWRITE|stat.S_IRGRP|stat.S_IWGRP|stat.S_IROTH )
-            except: pass
-            thePROG.debug('schKickOff_DownloadToday() generated task-file %s' % rfnRequest)
+            shutil.chown(fullfnRequest, group ='hpx')
+            os.chmod(fullfnRequest, stat.S_IREAD|stat.S_IWRITE|stat.S_IRGRP|stat.S_IWGRP|stat.S_IROTH )
 
-    __refreshBatch_DownloadToday(dirReqs, TODAY_YYMMDD)
+        task = __issueTask_DownloadToday(dictDownloadReqs, TODAY_YYMMDD, symbol, rfnRequest, excludeMoneyFlow)
 
-'''
+        if task:
+            cTasks +=1
+            thePROG.info('schKickOff_DownloadToday() issued request[%s] No.%d task Id[%s]' % (rfnRequest, cTasks, task.id))
+
+    thePROG.info('schKickOff_DownloadToday() all %d downloadToday(%s) tasks are fired' % (cTasks, TODAY_YYMMDD))
+    _saveDownloadReqs(dirReqs)
+
 # ===================================================
 @shared_task(bind=True, base=Retryable)
 def schDo_pitchArchiedFiles(self):
@@ -613,7 +611,6 @@ def schDo_pitchArchiedFiles(self):
         if not q or len(q) <=0: continue
         r = CTDayend.fetchArchivedFiles.apply_async(args=[cacheFiles], queue=q)
         thePROG.info('schDo_pitchArchiedFiles() called crawler[%s].fetchArchivedFiles: %s' % (q, ','.join(cacheFiles)))
-'''
 
 # ===================================================
 @shared_task(bind=True, max_retries=0, compression='bzip2')
@@ -693,16 +690,16 @@ def schDo_ZipWeek(self, asofYYMMDD =None):
 from time import sleep
 if __name__ == '__main__':
     thePROG.setLogLevel('debug')
-    # schKickOff_DownloadToday()
-    # exit(0)
+    schKickOff_DownloadToday()
+    exit(0)
 
-    # readArchivedDays('SZ300913', ['20201221', '20201222'])
-    # readArchivedH5t('SinaMF1m_20201222.h5t', 'SZ300913_MF1m20201222.json')
+    readArchivedDays('SZ300913', ['20201221', '20201222'])
+    readArchivedH5t('SinaMF1m_20201222.h5t', 'SZ300913_MF1m20201222.json')
 
     listAllSymbols()
     # schKickOff_DownloadToday()
     for i in range(20):
-        schChkRes_DownloadToday('20201231')
+        schChkRes_DownloadToday()
         sleep(10)
 
     # nTop = 1000

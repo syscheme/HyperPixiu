@@ -14,7 +14,7 @@ from MarketData import MARKETDATE_EVENT_PREFIX, EVENT_KLINE_1DAY
 
 import h5tar, h5py, pickle, bz2
 from urllib.parse import quote, unquote
-import sys, os, re, glob
+import sys, os, re, glob, stat, shutil
 from datetime import datetime, timedelta
 
 SYMBOL_LIST_HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,open,high,low,close,volume"
@@ -217,16 +217,16 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     if ':' in login : login = login[:login.index(':')]
 
     pubDir = os.path.join(SINA_USERS_ROOT, login, 'hpx_publish')
-    archDir = os.path.join(MAPPED_HOME, 'archived', 'sina')
 
-    # archDir = '/tmp/arch_test' # test hardcode
     # pubDir = '/mnt/s/hpx_publish' # test hardcode
+    # DIR_ARCHED_HOME = '/tmp/arch_test' # test hardcode
 
     try:
-        os.mkdir(os.path.join(archDir, 'snapshots'))
+        os.mkdir(os.path.join(DIR_ARCHED_HOME, 'snapshots'))
+        os.chmod(dirReqs, stat.S_IRWXU | stat.S_IRWXG |stat.S_IROTH )
     except: pass
 
-    thePROG.debug('commitToday() archiving %s_%s dictArgs: %s from %s to %s' % (symbol, asofYYMMDD, str(dictArgs), pubDir, archDir))
+    thePROG.debug('commitToday() archiving %s_%s dictArgs: %s from %s to %s' % (symbol, asofYYMMDD, str(dictArgs), pubDir, DIR_ARCHED_HOME))
 
     # step 1. zip the JSON files
     for fn in fnJsons:
@@ -236,7 +236,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
         evtShort = m.group(1)
 
         try :
-            destpath = os.path.join(archDir, 'Sina%s_%s.h5t' % (evtShort, asofYYMMDD) )
+            destpath = os.path.join(DIR_ARCHED_HOME, 'Sina%s_%s.h5t' % (evtShort, asofYYMMDD) )
             if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
                 thePROG.debug('commitToday() archived %s into %s' %(srcpath, destpath))
                 __rmfile(srcpath)
@@ -247,7 +247,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
 
     # step 2. zip the Tcsv file
     srcpath = os.path.join(pubDir, fnTcsv)
-    destpath = os.path.join(archDir, 'SinaMDay_%s.h5t' % asofYYMMDD )
+    destpath = os.path.join(DIR_ARCHED_HOME, 'SinaMDay_%s.h5t' % asofYYMMDD )
     if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
         thePROG.debug('commitToday() archived %s by[%s] into %s' %(srcpath, login, destpath))
         __rmfile(srcpath)
@@ -256,7 +256,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
 
     # step 3. append the snapshots
     srcpath = os.path.join(pubDir, fnSnapshot)
-    destpath = os.path.join(archDir, 'snapshots', 'SNS_%s.h5' % (symbol) )
+    destpath = os.path.join(DIR_ARCHED_HOME, 'snapshots', 'SNS_%s.h5' % (symbol) )
     gns = []
 
     lastDates = [ x[0] for x in lastDays] if lastDays and len(lastDays)>0 else []
@@ -306,7 +306,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     except Exception as ex:
         thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
 
-    dirReqs = os.path.join(archDir, 'reqs')
+    dirReqs = os.path.join(DIR_ARCHED_HOME, SUBDIR_Reqs)
     fnReq = os.path.join(dirReqs, '%s_%s.tcsv.bz2' % (asofYYMMDD, symbol))
     __rmfile(fnReq)
     thePROG.debug('commitToday() removed %s' % fnReq)
@@ -376,7 +376,7 @@ def schChkRes_DownloadToday(self):
     if not TODAY_YYMMDD:
         TODAY_YYMMDD = (stampNow-timedelta(hours=9)).strftime('%Y%m%d')
     
-    dirReqs = os.path.join(MAPPED_HOME, 'archived', 'sina', 'reqs')
+    dirReqs = os.path.join(DIR_ARCHED_HOME, SUBDIR_Reqs)
     dictDownloadReqs = _loadDownloadReqs(dirReqs)
     if not dictDownloadReqs or not TODAY_YYMMDD or not TODAY_YYMMDD in dictDownloadReqs.keys():
         thePROG.debug('schChkRes_DownloadToday() no active downloadToday[%s]' %TODAY_YYMMDD)
@@ -385,7 +385,7 @@ def schChkRes_DownloadToday(self):
     dictToday = dictDownloadReqs[TODAY_YYMMDD]
     thePROG.debug('schChkRes_DownloadToday() %d active downloadToday[%s]' %(len(dictToday), TODAY_YYMMDD))
 
-    todels = []
+    todels, bDirty = [], False
     cWorking =0
     for k, v in dictToday.items():
         if not v: 
@@ -411,6 +411,7 @@ def schChkRes_DownloadToday(self):
                     if os.stat(os.path.join(DIR_ARCHED_HOME, rfnReq)).st_size >0:
                         task = __issueTask_DownloadToday(dictDownloadReqs, TODAY_YYMMDD, k, rfnReq, k in IDXs_to_COLLECT + ETFs_to_COLLECT)
                         retried = ', retried as %s' % task.id
+                        bDirty = True
                     else:
                         todels.append(k)
                 except:
@@ -423,10 +424,14 @@ def schChkRes_DownloadToday(self):
 
     thePROG.info('schChkRes_DownloadToday() downloadToday[%s] has %d-working and %d-done tasks' %(TODAY_YYMMDD, cWorking, len(todels)))
     if len(todels) >0:
+        bDirty = True
         thePROG.info('schChkRes_DownloadToday() clearing %s keys: %s' % (len(todels), ','.join(todels)))
         for k in todels: del dictToday[k]
         if len(dictToday) <=0:
             thePROG.info('schChkRes_DownloadToday() downloadToday all done')
+    
+    if bDirty :
+        _saveDownloadReqs(dirReqs)
 
 # ===================================================
 @shared_task(bind=True, base=Retryable)
@@ -522,6 +527,8 @@ def schKickOff_DownloadToday(self):
 
     try:
         os.mkdir(dirReqs)
+        os.chmod(dirReqs, stat.S_IRWXU | stat.S_IRWXG |stat.S_IRWXO )
+        shutil.chown(dirReqs, group ='hpx')
     except: pass
 
     dictDownloadReqs = _loadDownloadReqs(dirReqs)
@@ -550,19 +557,21 @@ def schKickOff_DownloadToday(self):
         except: pass
 
         thePROG.debug('schKickOff_DownloadToday() generating request-file %s' % rfnRequest)
-        alllines = prod.readArchivedDays(thePROG, DIR_ARCHED_HOME, symbol, lastYYMMDDs)
+        alllines = prod.readArchivedDays(thePROG, DIR_ARCHED_HOME, symbol, lastYYMMDDs[1:])
         # no tcsv data in the nLastDays doesn't mean it has no trades today:
         # if len(alllines) <= 100:
         #     thePROG.debug('schKickOff_DownloadToday() skip empty request %s size %d' % (rfnRequest, len(alllines))
         #     continue
-
         with bz2.open(fullfnRequest, 'wt', encoding='utf-8') as f:
             f.write(alllines)
+            shutil.chown(fullfnRequest, group ='hpx')
+            os.chmod(fullfnRequest, stat.S_IREAD|stat.S_IWRITE|stat.S_IRGRP|stat.S_IWGRP|stat.S_IROTH )
 
         task = __issueTask_DownloadToday(dictDownloadReqs, TODAY_YYMMDD, symbol, rfnRequest, excludeMoneyFlow)
 
-        cTasks +=1
-        thePROG.info('schKickOff_DownloadToday() issued request[%s] No.%d task Id[%s]' % (rfnRequest, cTasks, taskId))
+        if task:
+            cTasks +=1
+            thePROG.info('schKickOff_DownloadToday() issued request[%s] No.%d task Id[%s]' % (rfnRequest, cTasks, task.id))
 
     thePROG.info('schKickOff_DownloadToday() all %d downloadToday(%s) tasks are fired' % (cTasks, TODAY_YYMMDD))
     _saveDownloadReqs(dirReqs)
@@ -574,7 +583,8 @@ def schDo_pitchArchiedFiles(self):
     listAllSymbols()
 
     nLastDays, lastDays = 7, []
-    TODAY_YYMMDD = datetime.now().strftime('%Y%m%d')
+    yymmddToday = (stampNow-timedelta(hours=9)).strftime('%Y%m%d')
+    yymmddToday = datetime.now().strftime('%Y%m%d')
 
     playback = prod.SinaMux(thePROG)
     httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, IDXs_to_COLLECT[0], nLastDays+3)
@@ -582,7 +592,7 @@ def schDo_pitchArchiedFiles(self):
     yymmddToCache = []
     for i in lastDays:
         yymmdd = i.asof.strftime('%Y%m%d')
-        if yymmdd >= TODAY_YYMMDD:
+        if yymmdd >= yymmddToday:
             continue
         yymmddToCache.append(yymmdd)
         if len(yymmddToCache) >= nLastDays:
@@ -660,8 +670,8 @@ def readArchivedH5t(self, h5tFileName, memberNode):
 # ===================================================
 @shared_task(bind=True, base=Retryable)
 def schDo_ZipWeek(self, asofYYMMDD =None):
-    global MAPPED_HOME
-    DIR_ARCHED_HOME = os.path.join(MAPPED_HOME, 'archived', 'sina')
+    global DIR_ARCHED_HOME
+
     dtInWeek = None
     try :
         if isinstance(asofYYMMDD, str):

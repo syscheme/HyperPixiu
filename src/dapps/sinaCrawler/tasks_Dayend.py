@@ -32,7 +32,7 @@ import h5py
 from datetime import datetime, timedelta
 import shutil
 import paramiko
-from scp import SCPClient # pip install scp
+from scp import SCPClient, SCPException # pip install scp
 
 MAPPED_USER, MAPPED_HOME = getMappedAs()
 WORKDIR_CACHE = '/tmp/sina_cache'
@@ -245,7 +245,7 @@ def __loadArchivedFile(fnArched):
             with SCPClient(sshclient.get_transport()) as scp:
                 thePROG.debug('downloading arch: %s as %s' % (fnArched, offlineFn))
                 scp.get(fnRemote, WORKDIR_CACHE)
-        except FileNotFoundError as ex: # TODO seperatte FileNotFoundError from the exceptions of scp
+        except FileNotFoundError as ex: # TODO separate FileNotFoundError from the exceptions of scp
             thePROG.logexception(ex, 'ssh failed')
         except Exception as ex:
             thePROG.logexception(ex, 'ssh failed')

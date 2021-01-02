@@ -374,7 +374,7 @@ def schChkRes_DownloadToday(self):
 
     stampNow = datetime.now()
     if not TODAY_YYMMDD:
-        TODAY_YYMMDD = stampNow.strftime('%Y%m%d')
+        TODAY_YYMMDD = (stampNow-timedelta(hours=9)).strftime('%Y%m%d')
     
     dirReqs = os.path.join(MAPPED_HOME, 'archived', 'sina', 'reqs')
     dictDownloadReqs = _loadDownloadReqs(dirReqs)
@@ -405,7 +405,7 @@ def schChkRes_DownloadToday(self):
 
             timelive = stampNow - v['issued']
             retried =''
-            if 'PENDING' in tstate and timelive> RETRY_DOWNLOAD_INTERVAL:
+            if ('PENDING' in tstate or 'REVOKED' in tstate) and timelive> RETRY_DOWNLOAD_INTERVAL:
                 try:
                     rfnReq = os.path.join(SUBDIR_Reqs, '%s_%s.tcsv.bz2' % (TODAY_YYMMDD, k))
                     if os.stat(os.path.join(DIR_ARCHED_HOME, rfnReq)).st_size >0:
@@ -421,7 +421,7 @@ def schChkRes_DownloadToday(self):
         except Exception as ex:
             pass
 
-    thePROG.info('schChkRes_DownloadToday() downloadToday has %d-working and %d-done tasks' %(cWorking, len(todels)))
+    thePROG.info('schChkRes_DownloadToday() downloadToday[%s] has %d-working and %d-done tasks' %(TODAY_YYMMDD, cWorking, len(todels)))
     if len(todels) >0:
         thePROG.info('schChkRes_DownloadToday() clearing %s keys: %s' % (len(todels), ','.join(todels)))
         for k in todels: del dictToday[k]
@@ -551,6 +551,11 @@ def schKickOff_DownloadToday(self):
 
         thePROG.debug('schKickOff_DownloadToday() generating request-file %s' % rfnRequest)
         alllines = prod.readArchivedDays(thePROG, DIR_ARCHED_HOME, symbol, lastYYMMDDs)
+        # no tcsv data in the nLastDays doesn't mean it has no trades today:
+        # if len(alllines) <= 100:
+        #     thePROG.debug('schKickOff_DownloadToday() skip empty request %s size %d' % (rfnRequest, len(alllines))
+        #     continue
+
         with bz2.open(fullfnRequest, 'wt', encoding='utf-8') as f:
             f.write(alllines)
 
@@ -654,10 +659,18 @@ def readArchivedH5t(self, h5tFileName, memberNode):
 
 # ===================================================
 @shared_task(bind=True, base=Retryable)
-def schDo_ZipWeek(self):
+def schDo_ZipWeek(self, asofYYMMDD =None):
     global MAPPED_HOME
     DIR_ARCHED_HOME = os.path.join(MAPPED_HOME, 'archived', 'sina')
-    dtInWeek = datetime.now() - timedelta(days=5)
+    dtInWeek = None
+    try :
+        if isinstance(asofYYMMDD, str):
+            dtInWeek = datetime.strptime(asofYYMMDD, '%Y-%m-%d')
+    except:
+        dtInWeek = None
+
+    if not dtInWeek:
+        dtInWeek = datetime.now() - timedelta(days=5)
 
     thePROG.debug('schDo_ZipWeek() start archiving the week of %s under %s' % (dtInWeek.strftime('%Y-%m-%d'), DIR_ARCHED_HOME))
     fn, lst = prod.archiveWeek(DIR_ARCHED_HOME, None, dtInWeek, thePROG)

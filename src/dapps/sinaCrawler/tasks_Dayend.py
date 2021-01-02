@@ -201,17 +201,19 @@ def downloadToday(self, SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False, fnPre
     if fnPrevTcsv:
         fnArched = os.path.join(dirArchived, fnPrevTcsv)
         tcsvArched = __loadArchivedFile(fnArched)
-        if tcsvArched:
-            pbArched = hist.TaggedCsvStream(tcsvArched, program=thePROG)
-            pbArched.setId('ArchDays.%s' % os.path.basename(fnArched))
-            pbArched.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
-            pbArched.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
-            pbArched.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
-            pbArched.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
+        if not tcsvArched: # tcsvArched is necessary if fnPrevTcsv is specified
+            return None
 
-            pbArched.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-            pbArched.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-            pbArched.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+        pbArched = hist.TaggedCsvStream(tcsvArched, program=thePROG)
+        pbArched.setId('ArchDays.%s' % os.path.basename(fnArched))
+        pbArched.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
+        pbArched.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
+        pbArched.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
+        pbArched.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
+
+        pbArched.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+        pbArched.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+        pbArched.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
 
     result = __downloadSymbol(SYMBOL, todayYYMMDD, excludeMoneyFlow, pbArched)
 
@@ -243,14 +245,20 @@ def __loadArchivedFile(fnArched):
             with SCPClient(sshclient.get_transport()) as scp:
                 thePROG.debug('downloading arch: %s as %s' % (fnArched, offlineFn))
                 scp.get(fnRemote, WORKDIR_CACHE)
+        except FileNotFoundError as ex: # TODO seperatte FileNotFoundError from the exceptions of scp
+            thePROG.logexception(ex, 'ssh failed')
         except Exception as ex:
             thePROG.logexception(ex, 'ssh failed')
+            # TODO: raise Retryable
 
         if sshclient: sshclient.close()
         sshclient = None
     else:
-        shutil.copyfile(fnArched, offlineFn)
-        thePROG.debug('copied arch: %s as %s' % (fnArched, offlineFn))
+        try:
+            shutil.copyfile(fnArched, offlineFn)
+            thePROG.debug('copied arch: %s as %s' % (fnArched, offlineFn))
+        except FileNotFoundError:
+            return None
 
     strm =None
     try:

@@ -8,11 +8,11 @@ from MarketData import *
 from Perspective import PerspectiveState
 import HistoryData as hist
 from crawler.crawlSina import *
-import h5tar
+import h5tar, h5py, pickle, bz2
 
 from datetime import datetime, timedelta
 from time import sleep
-import os
+import os, copy
 import fnmatch
 
 def defaultNextYield(retryNo) :
@@ -686,3 +686,158 @@ def listAllSymbols(prog, maxRetryAt456=20):
 
     prog.info('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
     return lstSH, lstSZ
+
+
+########################################################################
+def readArchivedDays(prog, dirArchived, symbol, YYYYMMDDs):
+    YYYYMMDDs = copy.copy(YYYYMMDDs)
+    if isinstance(YYYYMMDDs, str):
+        YYYYMMDDs = [YYYYMMDDs]
+
+    YYYYMMDDs.sort()
+
+    all_lines=''
+    readtxn = ''
+    for yymmdd in YYYYMMDDs:
+        fnArch = os.path.join(dirArchived, 'SinaMDay_%s.h5t' % yymmdd)
+        memName = '%s_day%s.tcsv' %(symbol, yymmdd)
+        try :
+            lines = ''
+            lines = h5tar.read_utf8(fnArch, memName)
+            if lines and len(lines) >0 :
+                all_lines += '\n' + lines
+            readtxn += '%s(%dB)@%s, ' % (memName, len(lines), fnArch)
+        except:
+            prog.error('readArchivedDays() failed to read %s from %s' % (memName, fnArch))
+
+    prog.info('readArchivedDays() read %s' % readtxn) 
+    return all_lines # take celery's compression instead of return bz2.compress(all_lines.encode('utf8'))
+
+########################################################################
+def sinaWeekOf(dtInWeek=None):
+    '''
+    dtInWeek = 2020-12-21(Mon) ~ 2020-12-27(Sun) all lead to the week Monday2020-12-21 ~ Sunday2020-12-27
+    '''
+    if not dtInWeek:
+        dtInWeek = datetime.now()
+
+    year, weekNo, wday = dtInWeek.isocalendar()
+    monday = (dtInWeek - timedelta(days = (wday +6) %7)).replace(hour=0,minute=0,second=0,microsecond=0)
+    friday = monday + timedelta(days = 6) - timedelta(microseconds=1)
+    
+    YYYYMMDDs = [ (monday + timedelta(days=i, hours=1)).strftime('%Y%m%d') for i in range(7) ]
+    return year, weekNo, YYYYMMDDs
+
+def archiveWeek(dirArchived, symbols, dtInWeek=None, prog=None):
+    year, weekNo, YYYYMMDDs = sinaWeekOf(dtInWeek)
+    fnOut = os.path.join(dirArchived, 'Sina%04dW%02d_%s-%s.h5t' % (year, weekNo, YYYYMMDDs[0][4:], YYYYMMDDs[4][4:]))
+
+    if symbols and not isinstance(symbols, list):
+        symbols =[symbols]
+    
+    if not symbols or len(symbols) <=0:
+        # populate all symbols from SinaMDay_%s.h5t
+        symbols = []
+        for yymmdd in YYYYMMDDs:
+            fnMDay = os.path.join(dirArchived, 'SinaMDay_%s.h5t' % yymmdd)
+            try :
+                mlst = h5tar.list_utf8(fnMDay)
+                for m in mlst:
+                    s = m['name'].split('_')[0]
+                    if not s in symbols: symbols.append(s)
+            except: pass
+
+    if prog: prog.debug('archiveWeek() determined week of %s is %s, archiving %d symbols into %s' % (dtInWeek, ','.join(YYYYMMDDs), len(symbols), fnOut))
+
+    slist=[]
+    for symbol in symbols: 
+        linesMday=''
+        readtxn = []
+        evt1ds, json1ds, jsonName1ds = ['MF1d', 'KL1d'], [None, None], [None, None]
+        for yymmdd in YYYYMMDDs:
+            fnMDay = os.path.join(dirArchived, 'SinaMDay_%s.h5t' % yymmdd)
+            memName = '%s_day%s.tcsv' %(symbol, yymmdd)
+            try :
+                lines = ''
+                lines = h5tar.read_utf8(fnMDay, memName)
+                if lines and len(lines) >0 :
+                    linesMday += '\n' + lines
+                readtxn.append('%s(%dB)@%s' % (memName, len(lines), fnMDay))
+            except:
+                if prog: prog.error('archiveWeek() failed to read %s from %s' % (memName, fnMDay))
+
+            for i in range(len(evt1ds)):
+                if json1ds[i]: continue # we take the eariest of 1d
+                fn = os.path.join(dirArchived, 'Sina%s_%s.h5t' % (evt1ds[i], yymmdd))
+                memName = '%s_%s%s.json' %(symbol, evt1ds[i], yymmdd)
+                try :
+                    lines = ''
+                    lines = h5tar.read_utf8(fn, memName)
+                    if lines and len(lines) >0 :
+                        json1ds[i] = lines
+                        jsonName1ds[i] = memName
+                        readtxn.append('%s(%dB)@%s' % (memName, len(lines), fn))
+                except:
+                    if prog: prog.error('archiveWeek() failed to read %s from %s' % (memName, fn))
+
+        # write the week into fnOut
+        if linesMday and len(linesMday) >0:
+            h5tar.write_utf8(fnOut, '%s_%04dW%02d.tcsv' % (symbol, year, weekNo), linesMday, createmode='a')
+
+        for i in range(len(evt1ds)):
+            if not json1ds[i] or len(json1ds[i]) <=0: continue
+            h5tar.write_utf8(fnOut, '%s/%s' % (evt1ds[i], jsonName1ds[i]), json1ds[i], createmode='a')
+
+        if prog: prog.debug('archiveWeek() %s archived %s' % (fnOut, ','.join(readtxn)))
+        slist.append(symbol)
+
+    return fnOut, slist
+
+########################################################################
+def determineLastDays(prog, nLastDays =7, todayYYMMDD= None):
+    lastYYMMDDs = []
+    if not todayYYMMDD:
+        todayYYMMDD = datetime.now().strftime('%Y%m%d')
+
+    symbol = 'SH000001'  # 上证指数
+    playback = SinaMux(prog)
+
+    lastDays = []
+    httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, 'SH000001', nLastDays+3)
+    lastDays.reverse()
+    for i in lastDays:
+        yymmdd = i.asof.strftime('%Y%m%d')
+        if yymmdd > todayYYMMDD:
+            continue
+        lastYYMMDDs.append(yymmdd)
+        if len(lastYYMMDDs) >= nLastDays:
+            break
+    
+    prog.debug('determineLastDays() last %d trade-days are %s according to %s' % (nLastDays, ','.join(lastYYMMDDs), symbol))
+    return lastYYMMDDs
+
+####################################
+from time import sleep
+if __name__ == '__main__':
+    from Application import Program
+
+    prog = Program(name='test', argvs=[])
+    prog._heartbeatInterval =-1
+    prog.setLogLevel('debug')
+
+    dirArched = '/mnt/e/AShareSample/hpx_archived/sina'
+    symbol = 'SZ002008'
+
+    dtInWeek = datetime(year=2020, month=12, day=21) # a Monday
+    dtInWeek = datetime(year=2020, month=12, day=26) # a Satday
+    dtInWeek = datetime(year=2020, month=12, day=27) # a Sunday
+    # archiveWeek(dirArched, [symbol, 'SH510050'], dtInWeek, prog)
+    archiveWeek(dirArched, None, dtInWeek, prog)
+
+    alllines = readArchivedDays(prog, dirArched, symbol, ['20201221', '20201222'])
+    # print(alllines)
+
+    dirTickets = '/mnt/e/AShareSample/hpx_archived/tickets'
+    with bz2.open(os.path.join(dirTickets, 'Tickets_%s.tcsv.bz2' % symbol), 'wt', encoding='utf-8') as f:
+        f.write(alllines)
+

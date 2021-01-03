@@ -825,12 +825,13 @@ def sinaWeekOf(dtInWeek=None):
     YYYYMMDDs = [ (monday + timedelta(days=i, hours=1)).strftime('%Y%m%d') for i in range(7) ]
     return year, weekNo, YYYYMMDDs
 
+# ----------------------------------------------------------------------
 def archiveWeek(dirArchived, symbols, dtInWeek=None, prog=None):
     year, weekNo, YYYYMMDDs = sinaWeekOf(dtInWeek)
     fnOut = os.path.join(dirArchived, 'Sina%04dW%02d_%s-%s.h5t' % (year, weekNo, YYYYMMDDs[0][4:], YYYYMMDDs[4][4:]))
 
     if symbols and not isinstance(symbols, list):
-        symbols =[symbols]
+        symbols = symbols.split(',')
     
     if not symbols or len(symbols) <=0:
         # populate all symbols from SinaMDay_%s.h5t

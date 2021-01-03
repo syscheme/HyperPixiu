@@ -141,6 +141,8 @@ def __publishFiles(srcfiles) :
 
             if bn in pubed:
                 __rmfile(fn)
+        except FileNotFoundError:
+            thePROG.warn('publishing ignore not exist file %s' % fn)
         except Exception as ex:
             thePROG.logexception(ex, 'publishFile[%s]' % fn)
             raise RetryableError(100, 'failed to publish: %s' % fn)

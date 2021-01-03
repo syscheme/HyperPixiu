@@ -219,7 +219,9 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     ~{HOME}
     |-- archived -> ../archived
     `-- hpx_template -> /home/wkspaces/hpx_template
+    2021-01-03 10:05:03,683: DEBUG/ForkPoolWorker-1] commitToday() archived /mnt/data/hpwkspace/users/hpx/hpx_publish/SZ300422_day20201228.tcsv by[hpx] into /mnt/data/hpwkspace/users/master/archived/sina/SinaMDay_20201228.h5t
     '''
+
 
     if not symbol:
         thePROG.error('commitToday() invalid dictArgs: %s' % str(dictArgs))
@@ -238,86 +240,96 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
         os.chmod(dirReqs, stat.S_IRWXU | stat.S_IRWXG |stat.S_IROTH )
     except: pass
 
-    thePROG.debug('commitToday() archiving %s_%s dictArgs: %s from %s to %s' % (symbol, asofYYMMDD, str(dictArgs), pubDir, DIR_ARCHED_HOME))
-
-    # step 1. zip the JSON files
-    for fn in fnJsons:
-        srcpath = os.path.join(pubDir, fn)
-        m = re.match(r'%s_([A-Za-z0-9]*)%s.json' %(symbol, asofYYMMDD), os.path.basename(srcpath))
-        if not m : continue
-        evtShort = m.group(1)
-
-        try :
-            destpath = os.path.join(DIR_ARCHED_HOME, 'Sina%s_%s.h5t' % (evtShort, asofYYMMDD) )
-            if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
-                thePROG.debug('commitToday() archived %s into %s' %(srcpath, destpath))
-                __rmfile(srcpath)
-            else:
-                thePROG.error('commitToday() failed to archived %s into %s' %(srcpath, destpath))
-        except Exception as ex:
-            thePROG.logexception(ex, 'commitToday() archiving[%s->%s] error' % (srcpath, destpath))
-
-    # step 2. zip the Tcsv file
-    srcpath = os.path.join(pubDir, fnTcsv)
-    destpath = os.path.join(DIR_ARCHED_HOME, 'SinaMDay_%s.h5t' % asofYYMMDD )
-    if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
-        thePROG.debug('commitToday() archived %s by[%s] into %s' %(srcpath, login, destpath))
-        __rmfile(srcpath)
+    if TODAY_YYMMDD and asofYYMMDD < TODAY_YYMMDD:
+        # this symbol must be frozen today
+        thePROG.warn('commitToday() archiving %s_%s sounds not open, dictArgs: %s, cleaning %s' % (symbol, asofYYMMDD, str(dictArgs), pubDir))
+        for fn in fnJsons + [fnTcsv, fnSnapshot]:
+            srcpath = os.path.join(pubDir, fn)
+            __rmfile(srcpath)
+        asofYYMMDD = TODAY_YYMMDD # to clear the req of today
     else:
-        thePROG.error('commitToday() failed to archived %s by[%s] into %s' %(srcpath, login, destpath))
 
-    # step 3. append the snapshots
-    srcpath = os.path.join(pubDir, fnSnapshot)
-    destpath = os.path.join(DIR_ARCHED_HOME, 'snapshots', 'SNS_%s.h5' % (symbol) )
-    gns = []
+        thePROG.debug('commitToday() archiving %s_%s dictArgs: %s from %s to %s' % (symbol, asofYYMMDD, str(dictArgs), pubDir, DIR_ARCHED_HOME))
 
-    lastDates = [ x[0] for x in lastDays] if lastDays and len(lastDays)>0 else []
-    try :
-        with h5py.File(destpath, 'a') as h5w:
-            # step 3.1, copy the new SNS into the dest h5f
-            with h5py.File(srcpath, 'r') as h5r:
-                for gn in h5r.keys():
-                    if not symbol in gn: continue
-                    g = h5r[gn]
-                    if not 'desc' in g.attrs.keys() or not 'pickled market state' in g.attrs['desc'] : continue
-                    gdesc = g.attrs['desc']
+        # step 1. zip the JSON files
+        for fn in fnJsons:
+            srcpath = os.path.join(pubDir, fn)
+            m = re.match(r'%s_([A-Za-z0-9]*)%s.json' %(symbol, asofYYMMDD), os.path.basename(srcpath))
+            if not m : continue
+            evtShort = m.group(1)
 
-                    if gn in h5w.keys(): del h5w[gn]
-                    # Note that this is not a copy of the dataset! Like hard links in a UNIX file system, objects in an HDF5 file can be stored in multiple groups
-                    # So, h5w[gn] = g doesn't work because across different files
-                    # go = h5w.create_group(gn)
-                    h5r.copy(g.name, h5w) # note the destGroup is the parent where the group want to copy under-to
-                    go = h5w[gn]
-                    gns.append(gn)
-                    # m1, m2 = list(g.keys()), list(go.keys())
-                    # a1, a2 = list(g.attrs.keys()), list(go.attrs.keys())
+            try :
+                destpath = os.path.join(DIR_ARCHED_HOME, 'Sina%s_%s.h5t' % (evtShort, asofYYMMDD) )
+                if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
+                    thePROG.debug('commitToday() archived %s into %s' %(srcpath, destpath))
+                    __rmfile(srcpath)
+                else:
+                    thePROG.error('commitToday() failed to archived %s into %s' %(srcpath, destpath))
+            except Exception as ex:
+                thePROG.logexception(ex, 'commitToday() archiving[%s->%s] error' % (srcpath, destpath))
 
-            # step 3.2, determine the grainRate_X based on lastDays
-            if len(lastDates) >0:
-                start, end = '%sT000000' % lastDays[-1][0], '%sT235959' % lastDays[0][0]
-                for k in h5w.keys() :
-                    if not symbol +'@' in k : continue
-                    strAsOf = k[1 + k.index('@'):]
-                    if strAsOf < start or strAsOf > end: continue
-                    go = h5w[k]
-                    if not 'price' in go.attrs.keys() or float(go.attrs['price']) <=0.0:
-                        continue
+        # step 2. zip the Tcsv file
+        srcpath = os.path.join(pubDir, fnTcsv)
+        destpath = os.path.join(DIR_ARCHED_HOME, 'SinaMDay_%s.h5t' % asofYYMMDD )
+        if h5tar.tar_utf8(destpath, srcpath, baseNameAsKey=True) :
+            thePROG.debug('commitToday() archived %s by[%s] into %s' %(srcpath, login, destpath))
+            __rmfile(srcpath)
+        else:
+            thePROG.error('commitToday() failed to archived %s by[%s] into %s' %(srcpath, login, destpath))
 
-                    try :
-                        strYYMMDD = strAsOf[:strAsOf.index('T'):] if 'T' in strAsOf else strAsOf
-                        nDaysAgo = lastDates.index(strYYMMDD)
-                        if nDaysAgo <0: continue
+        # step 3. append the snapshots
+        srcpath = os.path.join(pubDir, fnSnapshot)
+        destpath = os.path.join(DIR_ARCHED_HOME, 'snapshots', 'SNS_%s.h5' % (symbol) )
+        gns = []
 
-                        grk, grv = 'grainRate_%d' % nDaysAgo, lastDays[nDaysAgo][4] / go.attrs['price'] -1
-                        go.attrs[grk] = grv
-                    except Exception as ex:
-                        thePROG.warn('commitToday() failed to determine grainRate for: %s' % k)
-                    
-        thePROG.debug('commitToday() added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
-        __rmfile(srcpath)
-    except Exception as ex:
-        thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
+        lastDates = [ x[0] for x in lastDays] if lastDays and len(lastDays)>0 else []
+        try :
+            with h5py.File(destpath, 'a') as h5w:
+                # step 3.1, copy the new SNS into the dest h5f
+                with h5py.File(srcpath, 'r') as h5r:
+                    for gn in h5r.keys():
+                        if not symbol in gn: continue
+                        g = h5r[gn]
+                        if not 'desc' in g.attrs.keys() or not 'pickled market state' in g.attrs['desc'] : continue
+                        gdesc = g.attrs['desc']
 
+                        if gn in h5w.keys(): del h5w[gn]
+                        # Note that this is not a copy of the dataset! Like hard links in a UNIX file system, objects in an HDF5 file can be stored in multiple groups
+                        # So, h5w[gn] = g doesn't work because across different files
+                        # go = h5w.create_group(gn)
+                        h5r.copy(g.name, h5w) # note the destGroup is the parent where the group want to copy under-to
+                        go = h5w[gn]
+                        gns.append(gn)
+                        # m1, m2 = list(g.keys()), list(go.keys())
+                        # a1, a2 = list(g.attrs.keys()), list(go.attrs.keys())
+
+                # step 3.2, determine the grainRate_X based on lastDays
+                if len(lastDates) >0:
+                    start, end = '%sT000000' % lastDays[-1][0], '%sT235959' % lastDays[0][0]
+                    for k in h5w.keys() :
+                        if not symbol +'@' in k : continue
+                        strAsOf = k[1 + k.index('@'):]
+                        if strAsOf < start or strAsOf > end: continue
+                        go = h5w[k]
+                        if not 'price' in go.attrs.keys() or float(go.attrs['price']) <=0.0:
+                            continue
+
+                        try :
+                            strYYMMDD = strAsOf[:strAsOf.index('T'):] if 'T' in strAsOf else strAsOf
+                            nDaysAgo = lastDates.index(strYYMMDD)
+                            if nDaysAgo <0: continue
+
+                            grk, grv = 'grainRate_%d' % nDaysAgo, lastDays[nDaysAgo][4] / go.attrs['price'] -1
+                            go.attrs[grk] = grv
+                        except Exception as ex:
+                            thePROG.warn('commitToday() failed to determine grainRate for: %s' % k)
+                        
+            thePROG.debug('commitToday() added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
+            __rmfile(srcpath)
+        except Exception as ex:
+            thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
+
+    # step 4, delete the request file and record
     dirReqs = os.path.join(DIR_ARCHED_HOME, SUBDIR_Reqs)
     # fnReq = os.path.join(dirReqs, '%s_%s.tcsv.bz2' % (asofYYMMDD, symbol))
     # __rmfile(fnReq)
@@ -325,21 +337,18 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
 
     dictDownloadReqs = _loadDownloadReqs(dirReqs)
     if asofYYMMDD in dictDownloadReqs.keys():
-        if symbol in dictDownloadReqs[asofYYMMDD]:
-            reqNode = dictDownloadReqs[asofYYMMDD][symbol]
+        dictToday = dictDownloadReqs[asofYYMMDD]
+        if symbol in dictToday.keys():
+            reqNode = dictToday[symbol]
             stampNow = datetime.now()
             taskId, stampIssued, tn = reqNode['taskId'], reqNode['stampIssued'], reqNode['taskFn']
             reqNode['stampCommitted'] = stampNow
             __rmfile(tn)
             thePROG.info('commitToday() dictDownloadReqs[%s][%s] task[%s] took %s by[%s], deleted %s' % (asofYYMMDD, symbol, taskId, stampNow - stampIssued, login, tn))
         
-        nleft = len(dictDownloadReqs[asofYYMMDD])
-        if nleft<=0:
-            del dictDownloadReqs[asofYYMMDD]
-            thePROG.info('commitToday() all dictDownloadReqs[%s] done, removed' % (asofYYMMDD))
-        else:
-            c = sum([1 if not v['stampCommitted'] else 0 for v in dictDownloadReqs[asofYYMMDD].values() ])
-            thePROG.debug('commitToday() dictDownloadReqs[%s] has %d/%d onging' % (asofYYMMDD, c, nleft))
+        nleft = len(dictToday)
+        c = sum([1 if not v['stampCommitted'] else 0 for v in dictToday.values() ])
+        thePROG.debug('commitToday() dictDownloadReqs[%s] has %d/%d onging' % (asofYYMMDD, c, nleft))
         
         _saveDownloadReqs(dirReqs)
 
@@ -507,8 +516,14 @@ def __refreshBatch_DownloadToday(dirReqs, TODAY_YYMMDD):
         newissued.append(symbol)
         if len(newissued) >= cTasksToAdd: break
 
-    if len(newissued) >0 : bDirty = True
     thePROG.info('__refreshBatch_DownloadToday() fired %d/%d new requests: %s' % (len(newissued), len(taskfiles), ','.join(newissued)))
+    if len(newissued) >0 : 
+        bDirty = True
+    elif len(dictToday) <=0:
+        del dictDownloadReqs[TODAY_YYMMDD]
+        bDirty = True
+        thePROG.info('__refreshBatch_DownloadToday() all DownloadReqs[%s] done, removed' % (TODAY_YYMMDD))
+
     if bDirty:
         _saveDownloadReqs(dirReqs)
 

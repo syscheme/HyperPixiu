@@ -13,6 +13,7 @@ import h5tar, h5py, pickle, bz2
 from datetime import datetime, timedelta
 from time import sleep
 import os, copy
+from io import StringIO
 import fnmatch
 
 def defaultNextYield(retryNo) :
@@ -714,6 +715,88 @@ def readArchivedDays(prog, dirArchived, symbol, YYYYMMDDs):
     return all_lines # take celery's compression instead of return bz2.compress(all_lines.encode('utf8'))
 
 ########################################################################
+def populateMuxFromArchivedDir(prog, dirArchived, symbol, dtStart = None):
+
+    mux = hist.PlaybackMux(program=prog) # the result to return
+
+    wkStart, yymmddStart = '', ''
+    if dtStart:
+        year, weekNo, YYYYMMDDs = sinaWeekOf(dtStart)
+        wkStart = 'Sina%04dW%02d_' % (year, weekNo)
+        yymmddStart = dtStart.strftime('%Y%m%d')
+
+    allfiles = hist.listAllFiles(dirArchived)
+    fnSinaDays, fnSinaWeeks = [], []
+    for fn in allfiles:
+        bn = os.path.basename(fn)
+        if fnmatch.fnmatch(bn, 'SinaDay_*.h5t') and bn >= 'SinaDay_%s' %yymmddStart :
+            fnSinaDays.append(fn)
+            continue
+
+        if fnmatch.fnmatch(bn, 'Sina*W*_*-*.h5t'):
+            fnSinaWeeks.append(fn)
+            continue
+
+    fnSinaWeeks.sort()
+    fnSinaDays.sort()
+    allfiles =[]
+
+    for fn in fnSinaWeeks:
+        bn = os.path.basename(fn)
+        mw = re.match(r'Sina([0-9]*)W([0-9]*)_([0-9]*)-([0-9]*).h5t', bn)
+        if not mw : continue
+
+        yymmdd = '%s%s' % (mw.group(1), mw.group(3))
+        if yymmdd > yymmddStart : 
+            idxFnD = 0
+            for fnD in fnSinaDays :
+                bnD = os.path.basename(fnD)
+                m = re.match(r'SinaDay_([0-9]*).h5t', bnD)
+                if m and m.group(1) >= yymmdd: break
+
+                idxFnD += 1 
+                if not m or m.group(1) < yymmddStart: continue
+
+                memName = '%s_day%s.tcsv' %(symbol, m.group(1))
+                lines = h5tar.read_utf8(fnD, memName)
+                if len(lines) <=0: continue
+                pb = hist.TaggedCsvStream(StringIO(lines), program=prog)
+                pb.setId('%s@%s' % (symbol, bnD))
+                pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
+                pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
+                pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
+                pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
+
+                pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+                pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+                pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+                mux.addStream(pb)
+            
+            if idxFnD >0:
+                del fnSinaDays[: idxFnD]
+
+        wmem = '%s_%sW%s.tcsv' %(symbol, mw.group(1), mw.group(2))
+        lines = h5tar.read_utf8(fn, wmem)
+        if len(lines) <=0: continue
+        pb = hist.TaggedCsvStream(StringIO(lines), program=prog)
+        pb.setId('%s@%s' % (symbol, bn))
+        pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
+        pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
+        pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
+        pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
+
+        pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+        pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+        pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+        mux.addStream(pb)
+
+        yymmddStart = '%s%s' % (mw.group(1), mw.group(4))
+
+    subStrmIds = mux.subStreamIds
+    if prog: prog.info('populateArchivedDir() populated read %d substrms: %s' % (len(subStrmIds), ','.join(subStrmIds)))
+    return mux
+
+########################################################################
 def sinaWeekOf(dtInWeek=None):
     '''
     dtInWeek = 2020-12-21(Mon) ~ 2020-12-27(Sun) all lead to the week Monday2020-12-21 ~ Sunday2020-12-27
@@ -827,6 +910,14 @@ if __name__ == '__main__':
 
     dirArched = '/mnt/e/AShareSample/hpx_archived/sina'
     symbol = 'SZ002008'
+
+    mux = populateMuxFromArchivedDir(prog, dirArched, symbol, dtStart = None)
+    try :
+        while True:
+            ev = next(mux)
+            if ev: print(ev.desc)
+    except: pass
+    exit(0)
 
     dtInWeek = datetime(year=2020, month=12, day=21) # a Monday
     dtInWeek = datetime(year=2020, month=12, day=26) # a Satday

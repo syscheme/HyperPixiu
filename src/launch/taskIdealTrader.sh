@@ -1,14 +1,19 @@
 #!/bin/bash
 
 #CONFIGS
-SYMBOL_LIST=$(cat /mnt/e/AShareSample/myInterest.txt)
+if [ -e ~/hpx_conf/hpx_settings.sh ]; then source ~/hpx_conf/hpx_settings.sh; fi
+
+if [ -z "${CONF_DIR}" ]; then CONF_DIR="$(realpath ~/hpx_conf)"; fi
+if [ -z "${TOPDIR_HP}" ]; then TOPDIR_HP="$(realpath ~/wkspaces/HyperPixiu)" ; fi
+
+SYMBOL_LIST=$(cat ${CONF_DIR}/myInterest.txt)
 # SYMBOL_LIST=$(cat /mnt/e/AShareSample/300top50.txt)
 # SYMBOL_LIST=$(cat /mnt/e/AShareSample/500top50.txt)
 
 # CSVDIR="/mnt/e/csvset2006plus"
 CSVDIR="/mnt/e/csvset2006plus/myInterest" # in the case if there is duplicated csv in 300top50 or 500top50
 
-PROJPATH="/root/wkspaces/HP_advisor"
+TOPDIR_HP="/root/wkspaces/HP_advisor"
 
 #RUNTIME VARS
 # FILEIN_LIST=$(find ${CSVDIR} -name 'S*.csv*')
@@ -17,7 +22,7 @@ STAMP=$(date +%m%dT%H%M%S)
 THISFILE=$(realpath $0)
 LOCKFILE="/tmp/$(basename $0).lockfile"
 
-cd ${PROJPATH}
+cd ${TOPDIR_HP}
 
 SED_STATEMENT="s/^[ \t]*\\\"source\\\".*:.*/      \\\"source\\\":\\\"$(echo "${CSVDIR}" | sed 's/\//\\\//g')\\\", \/\/ updated by ideal ${STAMP}/g"
 sed -i "${SED_STATEMENT}" ./conf/Ideal.json
@@ -57,7 +62,7 @@ for SYMB in ${SYMBOL_LIST}; do
 
     # ok, got the token here
     echo "generating ideal trade of ${SYMB} according ${CSVDIR}..."
-    cd ${PROJPATH}
+    cd ${TOPDIR_HP}
     SYMBOL=${SYMB} nice ./run.sh ./src/launch/sim_offline.py -f ./conf/Ideal.json |tee ${LOGFILE}
 
 done

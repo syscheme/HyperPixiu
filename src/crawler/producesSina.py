@@ -88,6 +88,15 @@ class SinaMux(hist.PlaybackMux) :
         
         return pb, edseq
 
+    def importJsonSequence(self, jContent, symbol, evtype, dtStart =None, dtEnd=None):
+        pb, dataseq = self.__jsonStrToPlayback(jContent, symbol, evtype, dtStart =dtStart, dtEnd =dtEnd)
+        if not pb : return None
+
+        pb.setId('json:%s.%s' % (symbol, evtype))
+        self.addStream(pb)
+        self.info('added substrm[%s] into mux' % (pb.id))
+        return pb.id
+
     def __jsonToPlayback(self, jsonFstream, symbol, evtype, dtStart =None, dtEnd=None):
 
         content = jsonFstream.read().decode()

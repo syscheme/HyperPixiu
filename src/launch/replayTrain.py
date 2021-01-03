@@ -2572,7 +2572,6 @@ class ReplayTrainer(BaseApplication):
         return model
 
 ########################################################################
-@shared_task # (name='sina.basic.add')
 if __name__ == '__main__':
 
     exportNonTrainable = False

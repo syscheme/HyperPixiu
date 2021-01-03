@@ -3,8 +3,10 @@
 from __future__ import absolute_import, unicode_literals
 from celery import shared_task
 
-from MarketData import MARKETDATE_EVENT_PREFIX
+from MarketData import MARKETDATE_EVENT_PREFIX, EVENT_KLINE_1DAY
+from crawler.producesSina import SinaMux
 import h5tar, h5py, pickle, bz2
+from urllib.parse import quote, unquote
 
 from dapps.sinaMaster.worker import thePROG
 
@@ -100,6 +102,7 @@ def __rmfile(fn) :
     except:
         pass
 
+# ===================================================
 @shared_task(bind=True, base=Retryable)
 def listAllSymbols(self):
 
@@ -147,8 +150,11 @@ def listAllSymbols(self):
             except Exception as ex:
                 pass
 
-        with bz2.open(fnCachedLst, 'wb') as f:
-            f.write(pickle.dumps(lstSHZ))
+        try:
+            with bz2.open(fnCachedLst, 'wb') as f:
+                f.write(pickle.dumps(lstSHZ))
+        except :
+            pass
 
         try:
             lstArch = os.path.join(MAPPED_HOME, 'hpx_archived', 'sina', 'lstSHZ_%s.csv.bz2' % datetime.now().strftime('%Y%m%d'))
@@ -169,7 +175,7 @@ def listAllSymbols(self):
 
     # return csvNoneST, csvSTs
 
-# def commitToday(self, login, symbol, asofYYMMDD, fnJsons, fnSnapshot, fnTcsv) :
+# ===================================================
 @shared_task(bind=True, base=Retryable)
 def commitToday(self, dictArgs) : # urgly at the parameter list
     '''
@@ -298,11 +304,13 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
     except Exception as ex:
         thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
 
+# ===================================================
 @shared_task(bind=True, base=Retryable)
 def topActives(self, topNum = 500):
     lstTops = listAllSymbols() [:topNum]
     return lstTops
 
+# ===================================================
 __asyncResult_downloadToday = {}
 
 @shared_task(bind=True, ignore_result=True)
@@ -332,20 +340,21 @@ def schOn_Every5min(self):
         if len(__asyncResult_downloadToday) <=0:
             thePROG.info('schOn_Every5min() downloadToday all done')
 
+# ===================================================
 @shared_task(bind=True, base=Retryable)
-def schOn_TradeDayClose(self):
+def schDo_kickoffDownloadToday(self):
     global __asyncResult_downloadToday
     __asyncResult_downloadToday = {}
     for s in IDXs_to_COLLECT + ETFs_to_COLLECT:
         if s in __asyncResult_downloadToday.keys():
             continue
 
-        thePROG.debug('schOn_TradeDayClose() adding subtask to download ETF[%s]' % s)
+        thePROG.debug('schDo_kickoffDownloadToday() adding subtask to download ETF[%s]' % s)
         wflow = CTDayend.downloadToday.s(s, excludeMoneyFlow=True) | commitToday.s()
         __asyncResult_downloadToday[s] = wflow()
 
     lstSHZ = listAllSymbols()
-    thePROG.info('schOn_TradeDayClose() listAllSymbols got %d symbols' %len(lstSHZ))
+    thePROG.info('schDo_kickoffDownloadToday() listAllSymbols got %d symbols' %len(lstSHZ))
     if len(lstSHZ) <=2000:
         raise RetryableError(401, 'incompleted symbol list')
 
@@ -355,18 +364,110 @@ def schOn_TradeDayClose(self):
         if symbol in __asyncResult_downloadToday.keys():
             continue
 
-        thePROG.debug('schOn_TradeDayClose() adding subtask to download %s %s' % (symbol, i['name']))
+        thePROG.debug('schDo_kickoffDownloadToday() adding subtask to download %s %s' % (symbol, i['name']))
         wflow = CTDayend.downloadToday.s(symbol) | commitToday.s()
         __asyncResult_downloadToday[symbol] = wflow()
 
+# ===================================================
+@shared_task(bind=True, base=Retryable)
+def schDo_pitchArchiedFiles(self):
+
+    listAllSymbols()
+
+    nLastDays, lastDays = 7, []
+    todayYYMMDD = datetime.now().strftime('%Y%m%d')
+
+    playback = SinaMux(thePROG)
+    httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, IDXs_to_COLLECT[0], nLastDays+3)
+    lastDays.reverse()
+    yymmddToCache = []
+    for i in lastDays:
+        yymmdd = i.asof.strftime('%Y%m%d')
+        if yymmdd >= todayYYMMDD:
+            continue
+        yymmddToCache.append(yymmdd)
+        if len(yymmddToCache) >= nLastDays:
+            break
+    
+    if len(yymmddToCache) <=0:
+        return
+
+    from dapps.sinaMaster.worker import worker as wkr
+    crawlers = wkr.control.ping(timeout=2.0, queue='crawler')
+    crawlers = [ list(c.keys())[0] for c in crawlers ]
+    cacheFiles = [ 'SinaMF1m_%s.h5t' %i for i in yymmddToCache]
+
+    for c in crawlers:
+        q = c.split('@')[0]
+        if not q or len(q) <=0: continue
+        r = CTDayend.fetchArchivedFiles.apply_async(args=[cacheFiles], queue=q)
+        thePROG.info('schDo_pitchArchiedFiles() called crawler[%s].fetchArchivedFiles: %s' % (q, ','.join(cacheFiles)))
+
+# ===================================================
+@shared_task(bind=True, max_retries=0, compression='bzip2')
+def readArchivedDays(self, symbol, YYYYMMDDs):
+    if isinstance(YYYYMMDDs, str):
+        YYYYMMDDs = [YYYYMMDDs]
+
+    YYYYMMDDs.sort()
+
+    all_lines=''
+    readtxn = ''
+    for yymmdd in YYYYMMDDs:
+        fnArch = os.path.join(MAPPED_HOME, 'archived', 'sina', 'SinaMDay_%s.h5t' % yymmdd)
+        # fnArch = '/mnt/e/AShareSample/arch/SinaMDay_%s.h5t' % yymmdd
+        memName = '%s_day%s.tcsv' %(symbol, yymmdd)
+        try :
+            lines = ''
+            lines = h5tar.read_utf8(fnArch, memName)
+            if lines and len(lines) >0 :
+                all_lines += '\n' + lines
+            readtxn += '%s(%dB)@%s, ' % (memName, len(lines), fnArch)
+        except:
+            thePROG.error('readArchivedDays() failed to read %s from %s' % (memName, fnArch))
+
+    thePROG.info('readArchivedDays() read %s' % readtxn) 
+    return all_lines # take celery's compression instead of return bz2.compress(all_lines.encode('utf8'))
+
+# ===================================================
+@shared_task(bind=True, base=Retryable)
+def readArchivedH5t(self, h5tFileName, memberNode):
+    if '.h5t' != h5tFileName[-4:]: h5tFileName+='.h5t'
+    pathname = os.path.join(MAPPED_HOME, 'archived', 'sina', h5tFileName)
+    pathname = '/tmp/sina_cache/' + h5tFileName
+
+    k = h5tar.quote(memberNode)
+    ret = None
+    try :
+        with h5py.File(pathname, 'r') as h5r:
+            if k in h5r.keys():
+                ret = h5r[k][()].tobytes()
+
+            if h5tar.GNAME_TEXT_utf8 in h5r.keys():
+                g = h5r[h5tar.GNAME_TEXT_utf8]
+                if k in g.keys():
+                    ret = g[k][()].tobytes()
+
+    except Exception as ex:
+        thePROG.logexception(ex, 'readArchivedH5t() %s[%s]'% (h5tFileName, memberNode), ex)
+
+    if ret and len(ret) > 0:
+        #typical compress-rate 1/8: ret = bz2.decompress(ret).decode('utf8')
+        thePROG.info('readArchivedH5t() read %s[%s] %dB'% (h5tFileName, memberNode, len(ret)))
+    else :
+        thePROG.error('readArchivedH5t() read %s[%s] failed: %s'% (h5tFileName, memberNode, ret))
+    return ret
 
 ####################################
 from time import sleep
 if __name__ == '__main__':
     thePROG.setLogLevel('debug')
+    # schDo_pitchArchiedFiles()
+    readArchivedDays('SZ300913', ['20201221', '20201222'])
+    readArchivedH5t('SinaMF1m_20201222.h5t', 'SZ300913_MF1m20201222.json')
 
     listAllSymbols()
-    # schOn_TradeDayClose()
+    # schDo_kickoffDownloadToday()
     for i in range(20):
         schOn_Every5min()
         sleep(10)

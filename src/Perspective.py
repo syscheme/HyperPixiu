@@ -473,14 +473,18 @@ class Perspective(MarketData):
             return ev, stk
 
         overwritable = not latestevd.exchange or ('_k2x' in latestevd.exchange or '_t2k' in latestevd.exchange)
-        if latestevd.exchange and (not ev.data.exchange or len(ev.data.exchange) <=0) :
-            overwritable = False
+        if ev.type == etOfStack:
+            if latestevd.exchange and (not ev.data.exchange or len(ev.data.exchange) <=0) :
+                overwritable = False
 
-        if EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] and ev.data.datetime == latestevd.datetime and ev.data.volume > latestevd.volume :
-            # SINA KL-data was found has such a bug as below: the later polls got bigger volume, so treat the later larger volume as correct data
-            # evmdKL5m,SH510050,AShare,2020-06-19,13:30:00,2.914,2.915,2.914,2.915,570200.0
-            # evmdKL5m,SH510050,AShare,2020-06-19,13:30:00,2.914,2.918,2.914,2.918,4575100.0
-            # evmdKL5m,SH510050,AShare,2020-06-19,13:30:00,2.914,2.918,2.914,2.918,4575100.0
+            if EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] and ev.data.datetime == latestevd.datetime and ev.data.volume > latestevd.volume :
+                # SINA KL-data was found has such a bug as below: the later polls got bigger volume, so treat the later larger volume as correct data
+                # evmdKL5m,SH510050,AShare,2020-06-19,13:30:00,2.914,2.915,2.914,2.915,570200.0
+                # evmdKL5m,SH510050,AShare,2020-06-19,13:30:00,2.914,2.918,2.914,2.918,4575100.0
+                # evmdKL5m,SH510050,AShare,2020-06-19,13:30:00,2.914,2.918,2.914,2.918,4575100.0
+                overwritable = True
+        else:
+            # this must be an extending, such as MF to fill KLex
             overwritable = True
 
         if not overwritable:
@@ -996,13 +1000,13 @@ class Formatter_base2dImg(PerspectiveFormatter):
 
     def doFormat(self, symbol=None) :
 
-        C6SECHMA_16xx = OrderedDict({
+        EXP_SECHEMA = OrderedDict({
             EVENT_KLINE_1MIN     : -1,
             EVENT_KLINE_5MIN     : -1,
             EVENT_KLINE_1DAY     : -1,
         })
 
-        seqdict = self.mstate.export(symbol, lstsWished=C6SECHMA_16xx)  # = self.export6C(symbol, lstsWished=C6SECHMA_16x16)
+        seqdict = self.mstate.export(symbol, lstsWished=EXP_SECHEMA)  # = self.export6C(symbol, lstsWished=EXP_SECHEMA)
         if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
             return None
 
@@ -1060,7 +1064,11 @@ class Formatter_base2dImg(PerspectiveFormatter):
                     img6C[startRow + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
         '''
 
-        return self.covertImg6CTo3C(img6C, dtAsOf) # return img6C
+        img3C = self.expand6Cto3C_Y(img6C)
+        if self._imgPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
+            self.saveImg(img3C, dtAsOf=dtAsOf)
+
+        return img3C
 
     def datetimeTo6C(dt) :
         return [
@@ -1072,28 +1080,25 @@ class Formatter_base2dImg(PerspectiveFormatter):
             NORMALIZED_FLOAT_UNAVAIL
             ]
 
-    def covertImg6CTo3C(self, img6C, dtAsOf, expandX =False) :
-        img3C = self.__6CTo3C_expandX(img6C) if expandX else self.__6CTo3C_expandY(img6C)
+    def saveImg(self, img3C, imgPathName='', dtAsOf=None) :
 
-        if self._imgPathPrefix:
-            ftime = img6C[0][0]
-            yy, mon, day, minute = int(ftime[4] * 100), 1+ int(ftime[0] * 12), int(ftime[1] * 31), int(ftime[3] * 24*60)
-            bmpstamp = dtAsOf.strftime('%Y%m%dT%H%M')
-            width = 320
-            lenX, lenY = len(img3C[0]), len(img3C)
-            # if  bmpstamp != self.__bmpstamp  and 0 == minute % 60 :
-            if self._dem >0 and 0 == minute % self._dem :
-                imgarray = np.uint8(np.array(img3C)*255)
-                bmp = Image.fromarray(imgarray)
-                if width > lenX:
-                    bmp = bmp.resize((width, int(width *1.0/lenX *lenY)), Image.NEAREST)
-                # bmp.convert('RGB')
-                bmp.save('%s%s_%s.png' % (self._imgPathPrefix, self.id, bmpstamp))
-                self.__bmpstamp = bmpstamp
+        if not imgPathName:
+            if dtAsOf:
+                imgPathName = '%s%s_%s.png' % (self._imgPathPrefix if self._imgPathPrefix else '', self.id, dtAsOf.strftime('%Y%m%dT%H%M'))
+            else:
+                imgPathName = '%s%s.png' % (self._imgPathPrefix if self._imgPathPrefix else '', self.id)
+            
+        width = 320
+        lenX, lenY = len(img3C[0]), len(img3C)
+        imgarray = np.uint8(np.array(img3C)*255)
+        bmp = Image.fromarray(imgarray)
+        if width > lenX:
+            bmp = bmp.resize((width, int(width *1.0/lenX *lenY)), Image.NEAREST)
+        # bmp.convert('RGB')
+        bmp.save(imgPathName)
+        return imgPathName
 
-        return img3C
-
-    def __6CTo3C_expandX(self, img6C) :
+    def expand6Cto3C_X(self, img6C) :
         lenX, lenY = len(img6C[0]), len(img6C)
         img3C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX*2)] for y in range(lenY) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
         for y in range(lenY):
@@ -1102,7 +1107,7 @@ class Formatter_base2dImg(PerspectiveFormatter):
 
         return img3C
 
-    def __6CTo3C_expandY(self, img6C) :
+    def expand6Cto3C_Y(self, img6C) :
         lenX, lenY = len(img6C[0]), len(img6C)
         img3C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX)] for y in range(lenY*2) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
         for y in range(lenY):
@@ -1112,22 +1117,22 @@ class Formatter_base2dImg(PerspectiveFormatter):
         return img3C
 
 ########################################################################
-class Formatter_2dImg16x32(Formatter_base2dImg):
+class Formatter_2dImg32x36(Formatter_base2dImg):
 
     def __init__(self, imgDir=None, dem=60):
         '''Constructor'''
-        super(Formatter_2dImg16x32, self).__init__(imgDir, dem)
+        super(Formatter_2dImg32x36, self).__init__(imgDir, dem)
 
     def doFormat(self, symbol=None) :
         X_LEN, Y_LEN = 32, 16
-        C6SECHMA_16x32R = OrderedDict({
+        EXP_SECHEMA = OrderedDict({
             'asof'               : 1,
             EVENT_KLINE_1MIN     : 32,
             EVENT_KLINE_5MIN     : 240,
             EVENT_KLINE_1DAY     : 240,
         })
 
-        seqdict = self.mstate.export(symbol, lstsWished=C6SECHMA_16x32R)  # = self.export6C(symbol, lstsWished=C6SECHMA_16x16)
+        seqdict = self.mstate.export(symbol, lstsWished=EXP_SECHEMA)  # = self.export6C(symbol, lstsWished=EXP_SECHEMA)
         if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
             return None
 
@@ -1136,31 +1141,33 @@ class Formatter_2dImg16x32(Formatter_base2dImg):
         baseline_Price, baseline_Volume= stk[0].close, stk[0].volume
 
         # TODO: draw the imagex
-        img6C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(X_LEN)] for y in range(Y_LEN)] # DONOT take [ [[0.0]*6] *16] *16
+        img3C = []
 
-        startRow =0
         # parition 0: pixel[0,0] as the datetime, X_LEN* 2rows -1 KL1min to cover half an hour
         rows =1
         stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
         if len(stk) <=0: return None
 
         dtAsOf = stk[0].asof
-        img6C[startRow][0] = Formatter_base2dImg.datetimeTo6C(dtAsOf)
         todayYYMMDD = dtAsOf.strftime('%Y%m%d')
-
-        # seq6C_offset =C6SECHMA_16x32R['asof']
-        for i in range(1, min(1+ len(stk), X_LEN*rows)): 
-             kl = stk[i-1]
+        rows6C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
+ 
+        for i in range(0, min(len(stk), X_LEN*rows)): 
+             kl = stk[i]
              if kl.asof.strftime('%Y%m%d') != todayYYMMDD: continue # represent only today's
              x, y = int(i %X_LEN), int(i /X_LEN)
-             img6C[startRow + y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
-        startRow +=rows
+             rows6C[y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+        img3C += self.expand6Cto3C_Y(rows6C)
+        # break line takes current date-time
+        br1 = [ dtAsOf.hour/24.0, dtAsOf.minute/60.0, dtAsOf.weekday() / 7.0]
+        img3C.append([br1] * X_LEN)
         
         # parition 1: X_LEN *15rows KL5min to cover a week
         stk, bV = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48
 
         # parition 1.1.: X_LEN *3rows today's KL5min
         rows =2
+        rows6C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
         for i in range(0, min(len(stk), X_LEN*rows)): 
              kl = stk[i]
              if kl.asof.strftime('%Y%m%d') != todayYYMMDD:
@@ -1168,27 +1175,34 @@ class Formatter_2dImg16x32(Formatter_base2dImg):
                  if i>0: del stk[:i]
                  break
              x, y = int(i %X_LEN), int(i /X_LEN)
-             img6C[startRow + y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
-        startRow +=rows
+             rows6C[y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+        img3C += self.expand6Cto3C_Y(rows6C)
 
         # parition 1.2.: X_LEN *12rows to cover 4 days before today
         rows =6
+        rows6C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
         for i in range(0, min(len(stk), X_LEN*rows)): 
              kl = stk[i]
              x, y = int(i %X_LEN), int(i /X_LEN)
-             img6C[startRow + y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
-        startRow +=rows
+             rows6C[y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+        img3C += self.expand6Cto3C_Y(rows6C)
+        # break line takes current date-time
+        br1 = [ dtAsOf.weekday() / 7.0, (dtAsOf.month-1) / 12.0, dtAsOf.day / 31.0]
+        img3C.append([br1] * X_LEN)
 
         # parition 3: X_LEN*15 KL1day to cover near a year
-        rows =8
         stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
-        # seq6C_offset =C6SECHMA_16x32R['asof'] + C6SECHMA_16x32R[EVENT_KLINE_1MIN] + C6SECHMA_16x32R[EVENT_KLINE_5MIN]
+        rows =8
+        rows6C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
         for i in range(0, min(len(stk), X_LEN*rows)): 
              x, y = int(i %X_LEN), int(i /X_LEN)
-             img6C[startRow + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
-        startRow +=rows
+             rows6C[y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+        img3C += self.expand6Cto3C_Y(rows6C)
 
-        return self.covertImg6CTo3C(img6C, dtAsOf) # return img6C
+        if self._imgPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
+            self.saveImg(img3C, dtAsOf=dtAsOf)
+
+        return img3C
 
 ########################################################################
 class Formatter_2dImgSnail16(Formatter_base2dImg):
@@ -1246,7 +1260,7 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
         if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
             raise ValueError('%s could not attach marketState of %s' %(self.__class__.__name__, str(self.mstate)))
 
-        C6SECHMA_16x16 = OrderedDict({
+        EXP_SECHEMA = OrderedDict({
             'asof'               : 1,
             EVENT_KLINE_1MIN     : 16,
             EVENT_KLINE_5MIN     : 240,
@@ -1256,7 +1270,7 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
             # EVENT_MONEYFLOW_1DAY : 48, # 48days
         })
 
-        seqdict = self.mstate.export(symbol, lstsWished=C6SECHMA_16x16)  # = self.export6C(symbol, lstsWished=C6SECHMA_16x16)
+        seqdict = self.mstate.export(symbol, lstsWished=EXP_SECHEMA)  # = self.export6C(symbol, lstsWished=EXP_SECHEMA)
         if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
             return None
 
@@ -1304,27 +1318,31 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
         x, y = Formatter_2dImgSnail16.COORDS16x16[0]
         img6C[partition*16 + y][x] = seq6C[0]
 
-        seq6C_offset =C6SECHMA_16x16['asof'] + C6SECHMA_16x16[EVENT_KLINE_1MIN] + C6SECHMA_16x16[EVENT_KLINE_5MIN] + C6SECHMA_16x16[EVENT_KLINE_1DAY] # pointer to where EVENT_MONEYFLOW_1MIN is
+        seq6C_offset =EXP_SECHEMA['asof'] + EXP_SECHEMA[EVENT_KLINE_1MIN] + EXP_SECHEMA[EVENT_KLINE_5MIN] + EXP_SECHEMA[EVENT_KLINE_1DAY] # pointer to where EVENT_MONEYFLOW_1MIN is
         snail_loc = 0
-        for i in range(C6SECHMA_16x16[EVENT_MONEYFLOW_1MIN]): 
+        for i in range(EXP_SECHEMA[EVENT_MONEYFLOW_1MIN]): 
              x, y = Formatter_2dImgSnail16.COORDS16x16[snail_loc + i]
              img6C[partition*16 + y][x] = seq6C[seq6C_offset]
              seq6C_offset +=1
 
-        snail_loc += C6SECHMA_16x16[EVENT_MONEYFLOW_1MIN]
-        for i in range(C6SECHMA_16x16[EVENT_MONEYFLOW_5MIN]): 
+        snail_loc += EXP_SECHEMA[EVENT_MONEYFLOW_1MIN]
+        for i in range(EXP_SECHEMA[EVENT_MONEYFLOW_5MIN]): 
              x, y = Formatter_2dImgSnail16.COORDS16x16[snail_loc + i]
              img6C[partition*16 + y][x] = seq6C[seq6C_offset]
              seq6C_offset +=1
 
-        snail_loc += C6SECHMA_16x16[EVENT_MONEYFLOW_5MIN]
-        for i in range(C6SECHMA_16x16[EVENT_MONEYFLOW_1DAY]): 
+        snail_loc += EXP_SECHEMA[EVENT_MONEYFLOW_5MIN]
+        for i in range(EXP_SECHEMA[EVENT_MONEYFLOW_1DAY]): 
              x, y = Formatter_2dImgSnail16.COORDS16x16[snail_loc + i]
              img6C[partition*16 + y][x] = seq6C[seq6C_offset]
              seq6C_offset +=1
         '''
 
-        return self.covertImg6CTo3C(img6C, dtAsOf, expandX =True) # return img3C
+        img3C = self.expand6Cto3C_X(img6C)
+        if self._imgPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
+            self.saveImg(img3C, dtAsOf=dtAsOf)
+
+        return img3C
 
     # @abstractmethod
     # def engorged(self, symbol=None) :

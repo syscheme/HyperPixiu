@@ -241,7 +241,9 @@ class TestHistoryData(unittest.TestCase):
             nnfloats[0] = datetime2float(marketstate.getAsOf(s))
             price, asofP = marketstate.latestPrice(s)
             nnfloats[1] = price
-            nnfloats += marketstate.exportF1548(s)
+            # nnfloats += marketstate.exportF1548(s)
+            fmtr = psp.Formatter_F1548()
+            market_state = self._marketState.format(fmtr, s)
 
             if 0 == c %chunk_size:
                 X.resize(X.shape[0]+chunk_size, axis=0)

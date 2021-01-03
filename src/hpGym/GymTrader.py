@@ -9,7 +9,7 @@ from Account import Account, OrderData, Account_AShare
 from Application import MetaObj, BOOL_STRVAL_TRUE
 from Trader import MetaTrader, BaseTrader
 from Simulator import BackTestApp, RECCATE_ESPSUMMARY
-from Perspective import PerspectiveState, EXPORT_SIGNATURE
+from Perspective import PerspectiveState, EXPORT_SIGNATURE, Formatter_F1548
 from MarketData import EVENT_TICK, EVENT_KLINE_PREFIX, EXPORT_FLOATS_DIMS, NORMALIZE_ID
 from HistoryData import listAllFiles
 
@@ -448,7 +448,10 @@ class GymTrader(BaseTrader):
     #------------------------------------------------
 
     def makeupGymObservation(self):
-        market_state = self._marketState.exportF1548(self._tradeSymbol)
+        # market_state = self._marketState.exportF1548(self._tradeSymbol)
+        fmtr = Formatter_F1548()
+        market_state = self._marketState.format(fmtr, self._tradeSymbol)
+
         return np.array(market_state).astype(GymTrader.NN_FLOAT)
 
     def makeupGymObservation_0(self):
@@ -487,7 +490,9 @@ class GymTrader(BaseTrader):
         account_state = np.concatenate([stateCapital + statePOS], axis=0)
 
         # part 2. build up the market_state
-        market_state = self._marketState.exportF1548(self._tradeSymbol)
+        # market_state = self._marketState.exportF1548(self._tradeSymbol)
+        fmtr = Formatter_F1548()
+        market_state = self._marketState.format(fmtr, self._tradeSymbol)
 
         # TODO: more observations in the future could be:
         #  - money flow

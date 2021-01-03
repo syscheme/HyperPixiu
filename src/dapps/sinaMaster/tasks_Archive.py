@@ -279,11 +279,36 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
 
         # step 3. append the snapshots
         srcpath = os.path.join(pubDir, fnSnapshot)
+        destpath = os.path.join(DIR_ARCHED_HOME, 'SNS_%s.h5' % asofYYMMDD)
+        try :
+            gns = []
+            with h5py.File(destpath, 'a') as h5w:
+                # step 3.1, copy the new SNS into the dest h5f
+                with h5py.File(srcpath, 'r') as h5r:
+                    for gn in h5r.keys():
+                        if not symbol in gn: continue
+                        g = h5r[gn]
+                        if not 'desc' in g.attrs.keys() or not 'pickled market state' in g.attrs['desc'] : continue
+                        gdesc = g.attrs['desc']
+
+                        if gn in h5w.keys(): del h5w[gn]
+                        # Note that this is not a copy of the dataset! Like hard links in a UNIX file system, objects in an HDF5 file can be stored in multiple groups
+                        # So, h5w[gn] = g doesn't work because across different files
+                        # go = h5w.create_group(gn)
+                        h5r.copy(g.name, h5w) # note the destGroup is the parent where the group want to copy under-to
+                        go = h5w[gn]
+                        gns.append(gn)
+
+            thePROG.debug('commitToday() added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
+        except Exception as ex:
+            thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
+
+        '''
         destpath = os.path.join(DIR_ARCHED_HOME, 'snapshots', 'SNS_%s.h5' % (symbol) )
-        gns = []
 
         lastDates = [ x[0] for x in lastDays] if lastDays and len(lastDays)>0 else []
         try :
+            gns = []
             with h5py.File(destpath, 'a') as h5w:
                 # step 3.1, copy the new SNS into the dest h5f
                 with h5py.File(srcpath, 'r') as h5r:
@@ -325,9 +350,11 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
                             thePROG.warn('commitToday() failed to determine grainRate for: %s' % k)
                         
             thePROG.debug('commitToday() added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
-            __rmfile(srcpath)
         except Exception as ex:
             thePROG.logexception(ex, 'commitToday() snapshot[%s->%s] error' % (srcpath, destpath))
+        '''
+
+        __rmfile(srcpath)
 
     # step 4, delete the request file and record
     dirReqs = os.path.join(DIR_ARCHED_HOME, SUBDIR_Reqs)

@@ -350,7 +350,7 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False, playback
 
     psptMarketState = PerspectiveState(SYMBOL)
 
-    stampOfState, momentsToSample = None, ['10:00:00', '10:30:00', '11:00:00', '11:30:00', '13:30:00', '14:30:00', '15:00:00']
+    stampOfState, momentsToSample = None, ['15:00:00'] # ['10:00:00', '10:30:00', '11:00:00', '11:30:00', '13:30:00', '14:30:00', '15:00:00']
     snapshot = {}
     snapshoth5fn = os.path.join(WORKDIR_CACHE, '%s_sns%s.h5' % (SYMBOL, todayYYMMDD))
 

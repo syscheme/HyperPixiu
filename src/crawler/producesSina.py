@@ -717,7 +717,8 @@ def readArchivedDays(prog, dirArchived, symbol, YYYYMMDDs):
 ########################################################################
 def populateMuxFromArchivedDir(prog, dirArchived, symbol, dtStart = None):
 
-    mux = hist.PlaybackMux(program=prog) # the result to return
+    mux = SinaMux(program=prog) # the result to return
+    mux.setId(dirArchived)
 
     wkStart, yymmddStart = '', ''
     if dtStart:
@@ -740,6 +741,7 @@ def populateMuxFromArchivedDir(prog, dirArchived, symbol, dtStart = None):
     fnSinaWeeks.sort()
     fnSinaDays.sort()
     allfiles =[]
+    ev1dIncluded = []
 
     for fn in fnSinaWeeks:
         bn = os.path.basename(fn)
@@ -789,6 +791,18 @@ def populateMuxFromArchivedDir(prog, dirArchived, symbol, dtStart = None):
         pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
         pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
         mux.addStream(pb)
+
+        if len(ev1dIncluded) <2:
+            mlst = h5tar.list_utf8(fn)
+            for wmem in mlst:
+                wmem = wmem['name']
+                if not symbol in wmem: continue
+                evt = MARKETDATE_EVENT_PREFIX + wmem.split('/')[0]
+                if not evt in [EVENT_KLINE_1DAY, EVENT_MONEYFLOW_1DAY] or evt in ev1dIncluded: continue
+                lines = h5tar.read_utf8(fn, wmem)
+                if len(lines) <=0: continue
+                mux.importJsonSequence(lines, symbol, evt)
+                ev1dIncluded.append(evt)
 
         yymmddStart = '%s%s' % (mw.group(1), mw.group(4))
 

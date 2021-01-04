@@ -441,16 +441,16 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False, playback
 
     cachedJsons = playback.cachedFiles
     thePROG.info('cached %s, generated %s and snapshots:%s, publishing' % (','.join(cachedJsons), fnTcsv, ','.join(savedSns)))
+    thePROG.removeApp(rec)
+    rec.close() # del rec
+    rec = None
+
     dirNameLen = len(WORKDIR_CACHE) +1
     pubDir, bns = __publishFiles([snapshoth5fn, fnTcsv] + playback.cachedFiles)
 
     # map to the arguments of sinaMaster.commitToday()
     if snapshoth5fn and len(snapshoth5fn) >dirNameLen:
         snapshoth5fn = snapshoth5fn[dirNameLen:]
-
-    thePROG.removeApp(rec)
-    rec.close() # del rec
-    rec = None
 
     return {
         'symbol': SYMBOL,

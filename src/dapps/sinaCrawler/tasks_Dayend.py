@@ -448,6 +448,10 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False, playback
     if snapshoth5fn and len(snapshoth5fn) >dirNameLen:
         snapshoth5fn = snapshoth5fn[dirNameLen:]
 
+    thePROG.removeApp(rec)
+    rec.close() # del rec
+    rec = None
+
     return {
         'symbol': SYMBOL,
         'login': MAPPED_USER,
@@ -475,5 +479,7 @@ if __name__ == '__main__':
     thePROG.setLogLevel('debug')
 
     # downloadToday('SH510300', excludeMoneyFlow=True)
-    downloadToday('SZ002008', fnPrevTcsv ='reqs/20201225_SZ159919.tcsv.bz2')
+    # downloadToday('SZ002008', fnPrevTcsv ='reqs/20201225_SZ159919.tcsv.bz2')
+    for s in ['SZ002008', 'SZ002009', 'SH510050', 'SH510500', 'SH510300']:
+        downloadToday(s, fnPrevTcsv =None) # 'reqs/20201225_SZ159919.tcsv.bz2')
     # fetchArchivedFiles(['SinaMF1m_20201222.h5t', 'SinaMF1m_20201221.h5t'])

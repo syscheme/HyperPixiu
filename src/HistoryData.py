@@ -191,7 +191,8 @@ class TaggedCsvRecorder(Recorder):
         self.__hdlrFile.setFormatter(logging.Formatter('%(message)s')) # only the message itself with NO stamp and so on
         self.__fakedcsv.addHandler(self.__hdlrFile)
 
-    def __del__ (self):
+    def close(self): # is supposed to be def __del__(self):  but donot know why it doesn't get called
+        # print("__del__")
         if self.__hdlrFile:
             self.__hdlrFile.flush()
             self.__hdlrFile.close()

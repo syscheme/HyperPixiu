@@ -145,6 +145,8 @@ def __publishFiles(srcfiles) :
             thePROG.warn('publishing ignore not exist file %s' % fn)
         except Exception as ex:
             thePROG.logexception(ex, 'publishFile[%s]' % fn)
+            if sshclient: sshclient.close()
+            sshclient = None
             raise RetryableError(100, 'failed to publish: %s' % fn)
 
     if sshclient: sshclient.close()

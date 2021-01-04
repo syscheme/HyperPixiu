@@ -191,6 +191,16 @@ class TaggedCsvRecorder(Recorder):
         self.__hdlrFile.setFormatter(logging.Formatter('%(message)s')) # only the message itself with NO stamp and so on
         self.__fakedcsv.addHandler(self.__hdlrFile)
 
+    def __del__ (self):
+        if self.__hdlrFile:
+            self.__hdlrFile.flush()
+            self.__hdlrFile.close()
+        self.__hdlrFile = None
+
+        # if self.__fakedcsv:
+        #     self.__fakedcsv.close()
+        self.__fakedcsv =None
+
     def __rotating_namer(self, name):
         return name + ".bz2"
 

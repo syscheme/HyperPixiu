@@ -145,6 +145,8 @@ def __publishFiles(srcfiles) :
             thePROG.warn('publishing ignore not exist file %s' % fn)
         except Exception as ex:
             thePROG.logexception(ex, 'publishFile[%s]' % fn)
+            if sshclient: sshclient.close()
+            sshclient = None
             raise RetryableError(100, 'failed to publish: %s' % fn)
 
     if sshclient: sshclient.close()
@@ -439,6 +441,10 @@ def __downloadSymbol(SYMBOL, todayYYMMDD =None, excludeMoneyFlow=False, playback
 
     cachedJsons = playback.cachedFiles
     thePROG.info('cached %s, generated %s and snapshots:%s, publishing' % (','.join(cachedJsons), fnTcsv, ','.join(savedSns)))
+    thePROG.removeApp(rec)
+    rec.close() # del rec
+    rec = None
+
     dirNameLen = len(WORKDIR_CACHE) +1
     pubDir, bns = __publishFiles([snapshoth5fn, fnTcsv] + playback.cachedFiles)
 
@@ -473,5 +479,7 @@ if __name__ == '__main__':
     thePROG.setLogLevel('debug')
 
     # downloadToday('SH510300', excludeMoneyFlow=True)
-    downloadToday('SZ002008', fnPrevTcsv ='reqs/20201225_SZ159919.tcsv.bz2')
+    # downloadToday('SZ002008', fnPrevTcsv ='reqs/20201225_SZ159919.tcsv.bz2')
+    for s in ['SZ002008', 'SZ002009', 'SH510050', 'SH510500', 'SH510300']:
+        downloadToday(s, fnPrevTcsv =None) # 'reqs/20201225_SZ159919.tcsv.bz2')
     # fetchArchivedFiles(['SinaMF1m_20201222.h5t', 'SinaMF1m_20201221.h5t'])

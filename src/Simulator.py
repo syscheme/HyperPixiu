@@ -261,9 +261,10 @@ class BackTestApp(MetaTrader):
             self.info(line)
 
         strReport += '\n'
-        with codecs.open('%s/%s_summary.txt' %(self._initTrader.outdir, self.episodeId), "w","utf-8") as rptfile:
+        fnReport = '%s/%s_summary.txt' %(self._initTrader.outdir, self.episodeId)
+        with codecs.open(fnReport, "w","utf-8") as rptfile:
             rptfile.write(strReport)
-            self.info('doAppStep() episode[%s/%s] summary report generated' %(self.episodeId, self._episodes))
+            self.info('doAppStep() episode[%s/%s] summary report generated as %s' %(self.episodeId, self._episodes, fnReport))
 
         # prepare for the next episode
         self._episodeNo +=1
@@ -325,6 +326,13 @@ class BackTestApp(MetaTrader):
     # 数据回放结果计算相关
 
     def OnEpisodeDone(self, reachedEnd=True):
+
+        if self._account:
+            self._account.onDayClose()
+
+        if self._recorder : # to flush the pending line in the recorder if there are any
+            for i in range(20):
+                self._recorder.doAppStep()
 
         additionAttrs = {
             'openDays' : len(self._account.dailyResultDict),
@@ -1810,7 +1818,8 @@ class OfflineSimulator(BackTestApp):
 
         # get some additional reward when survived for one more day
         self._dataEnd_date = asOf
-        self._dataEnd_closeprice, _ = self.wkTrader.marketState.latestPrice(symbol)
+        latestPrice, _ = self.wkTrader.marketState.latestPrice(symbol)
+        if latestPrice >0.0: self._dataEnd_closeprice = latestPrice
 
         if not self._dataBegin_date:
             self._dataBegin_date = self._dataEnd_date
@@ -1898,7 +1907,8 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self.__sampleFrmSize  = SAMPLES_PER_H5FRAME
         self.__sampleFrm = [None]  * self.__sampleFrmSize
         self.__sampleIdx, self.__frameNo = 0, 0
-        self.__lastestDir, self.__lastmstate, self.__continuousSamplesToIgnore  = OrderData.DIRECTION_NONE, None, 0
+        self.__lastestDir, self.__lastmstate  = OrderData.DIRECTION_NONE, None
+        self.__momentsToSample = ['10:00:00', '11:00:00', '13:30:00', '14:30:00', '15:00:00']
         self.__fmtId = 'UKNOWN'
 
     def doAppInit(self): # return True if succ
@@ -1924,7 +1934,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         tokens = (d.vtSymbol.split('.'))
         symbol = tokens[0]
         self.wkTrader._dtData = d.asof
-        
+
         # see if need to perform the next order pre-determined
         dirToExec = OrderData.DIRECTION_NONE
         action = [0] * len(ADVICE_DIRECTIONS)
@@ -1966,16 +1976,14 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         # if bFullState:
         prevDir = self.__lastestDir # backup for logging
-        if self.__continuousSamplesToIgnore <=0 or dirToExec != self.__lastestDir :
-            self.__continuousSamplesToIgnore = int (1.0/ self._samplingRate -1)
-
+        if (len(self.__momentsToSample) >0 and d.asof.strftime('%H:%M:%S') in self.__momentsToSample) or dirToExec != self.__lastestDir :
             if dirToExec != self.__lastestDir and self.__lastmstate: # the (state, dir) piror to dir-change sounds important to save
                 self.__pushStateAction(self.__lastmstate, self.__lastestDir)
 
             self.__pushStateAction(self._mstate, dirToExec)
             self.__lastestDir, self.__lastmstate = dirToExec, None
         else :
-            self.__lastmstate, self.__continuousSamplesToIgnore = self._mstate, self.__continuousSamplesToIgnore -1
+            self.__lastmstate = self._mstate
 
         if prevDir != dirToExec:
             self.info('OnEvent(%s) changedir %s->%s upon mstate: %s' % (ev.desc, prevDir, dirToExec, self._marketState.descOf(self._tradeSymbol)))
@@ -1990,7 +1998,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
     def OnEpisodeDone(self, reachedEnd=True):
         super(IdealTrader_Tplus1, self).OnEpisodeDone(reachedEnd)
-        if self.__sampleIdx >0 and not None in self.__sampleFrm :
+        if self.__sampleIdx >0: # and not None in self.__sampleFrm :
             self.__saveFrame(self.__sampleFrm[:self.__sampleIdx])
 
     # to replace BackTest's doAppStep
@@ -2056,9 +2064,10 @@ class IdealTrader_Tplus1(OfflineSimulator):
             self.info(line)
 
         strReport += '\n'
-        with codecs.open(os.path.join(self.wkTrader.outdir, 'summary_%s.txt' % self._tradeSymbol), "w","utf-8") as rptfile:
+        fnReport = os.path.join(self.wkTrader.outdir, 'summary_%s.txt' % self._tradeSymbol)
+        with codecs.open(fnReport, "w","utf-8") as rptfile:
             rptfile.write(strReport)
-            self.debug('doAppStep() episode[%s] summary report generated' %(self.episodeId))
+            self.debug('doAppStep() episode[%s] summary report generated as %s' %(self.episodeId, fnReport))
 
         # prepare for the next episode
         self._episodeNo +=1

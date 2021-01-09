@@ -59,7 +59,7 @@ if __name__ == '__main__':
     revents = None
 
     # determine the Playback instance
-    #TEST-CODE: evMdSource = '/mnt/e/AShareSample/hpx_archived/sina'
+    # evMdSource = '/mnt/e/AShareSample/hpx_archived/sina' #TEST-CODE
     evMdSource = Program.fixupPath(evMdSource)
     basename = os.path.basename(evMdSource)
     if os.path.isdir(evMdSource) :
@@ -104,7 +104,7 @@ if __name__ == '__main__':
         #     revs += [EVENT_TICK, EVENT_KLINE_1MIN]
         # revents.subscribe(revs)
 
-    #TEST-CODE: ideal ='T+1'
+    # ideal ='T+1' #TEST-CODE
 
     if 'T+1' == ideal :
         tdrWraper = p.createApp(IdealTrader_Tplus1, configNode ='trader', trader=tdrCore, histdata=histReader) # ideal trader to generator ReplayFrames

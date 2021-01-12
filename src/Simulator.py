@@ -1907,7 +1907,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self.__sampleFrmSize  = SAMPLES_PER_H5FRAME
         self.__sampleFrm = [None]  * self.__sampleFrmSize
         self.__sampleIdx, self.__frameNo = 0, 0
-        self.__lastestDir, self.__lastmstate  = OrderData.DIRECTION_NONE, None
+        self.__lastestDir, self.__lastFloatsState  = OrderData.DIRECTION_NONE, None
         self.__momentsToSample = ['10:00:00', '11:00:00', '13:30:00', '14:30:00', '15:00:00']
 
     def doAppInit(self): # return True if succ
@@ -1968,21 +1968,22 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 evAdv.setData(nextAdvice)
                 super(IdealTrader_Tplus1, self).OnEvent(evAdv) # to perform the real handling
 
-        # fmtr = Formatter_2dImg32x20('/mnt/e/bmp/%s.' % symbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
-        self._mstate = self._marketState.format(self.__fmtr, self._tradeSymbol) # self._mstate = self._marketState.exportF1548(self._tradeSymbol)
-
-        if not self._mstate: return
-
         # if bFullState:
         prevDir = self.__lastestDir # backup for logging
         if (len(self.__momentsToSample) >0 and d.asof.strftime('%H:%M:%S') in self.__momentsToSample) or dirToExec != self.__lastestDir :
-            if dirToExec != self.__lastestDir and self.__lastmstate: # the (state, dir) piror to dir-change sounds important to save
-                self.__pushStateAction(self.__lastmstate, self.__lastestDir)
 
-            self.__pushStateAction(self._mstate, dirToExec)
-            self.__lastestDir, self.__lastmstate = dirToExec, None
-        else :
-            self.__lastmstate = self._mstate
+            # fmtr = Formatter_2dImg32x20('/mnt/e/bmp/%s.' % symbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
+            floatsState = self._marketState.format(self.__fmtr, self._tradeSymbol) # floatsState = self._marketState.exportF1548(self._tradeSymbol)
+            if not floatsState: return
+
+            if dirToExec != self.__lastestDir and self.__lastFloatsState: # the (state, dir) piror to dir-change sounds important to save
+                self.__pushStateAction(self.__lastFloatsState, self.__lastestDir)
+
+            self.__pushStateAction(floatsState, dirToExec)
+            self.__lastestDir, self.__lastFloatsState = dirToExec, None
+            
+        elif 0 == (d.asof.minute %5):
+            self.__lastFloatsState = self._marketState.format(self.__fmtr, self._tradeSymbol)
 
         if prevDir != dirToExec:
             self.info('OnEvent(%s) changedir %s->%s upon mstate: %s' % (ev.desc, prevDir, dirToExec, self._marketState.descOf(self._tradeSymbol)))

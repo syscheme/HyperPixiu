@@ -1968,7 +1968,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 evAdv.setData(nextAdvice)
                 super(IdealTrader_Tplus1, self).OnEvent(evAdv) # to perform the real handling
 
-        fmtr = Formatter_F1548() # = Formatter_2dImg32x36('/mnt/e/bmp/%s.' % symbol, dem=5)  = Formatter_2dImgSnail16() = Formatter_F1548()
+        fmtr = Formatter_2dImg32x36('/mnt/e/bmp/%s.' % symbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
         self._mstate = self._marketState.format(fmtr, self._tradeSymbol) # self._mstate = self._marketState.exportF1548(self._tradeSymbol)
         self.__fmtId = fmtr.id
 

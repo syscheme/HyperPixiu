@@ -213,6 +213,7 @@ class TickData(MarketData):
         ev.setData(tk)
         return ev
 
+    """
     @abstractmethod
     def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
@@ -246,6 +247,7 @@ class TickData(MarketData):
             ret[6] = FUNC_floatNormalize(self.open, baseline_Price)
 
         return ret
+    """
 
 ########################################################################
 class KLineData(MarketData):
@@ -650,16 +652,21 @@ class MarketState(MetaObj):
 
 
 ########################################################################
+NORMALIZED_FLOAT_UNAVAIL =0.0
+
 class Formatter(MetaObj):
     '''
     '''
-    def __init__(self):
+    def __init__(self, channels =6, valueUnavail =NORMALIZED_FLOAT_UNAVAIL):
         '''Constructor'''
         super(Formatter, self).__init__()
         self.__mstate = None
         self._id = self.__class__.__name__
         if 'Formatter_' == self._id[:10] :
             self._id = self._id[10:]
+
+        self._channels = int(channels)
+        self._valueUnavail = valueUnavail
     
     @property
     def mstate(self) : return self.__mstate
@@ -688,5 +695,91 @@ class Formatter(MetaObj):
     @abstractmethod
     def doFormat(self, symbol=None) :
         raise NotImplementedError
+
+    def __md2floats_KLineEx(self, klineEx, baseline_Price, baseline_Volume) :
+        '''
+        @return float[] for neural network computing
+        '''
+        # the floats, prioirty first, recommented to be multiple of 4
+        return [
+            # 1st-4
+            floatNormalize_LOG10(klineEx.close, baseline_Price),
+            floatNormalize_LOG10(klineEx.volume, baseline_Volume),
+            floatNormalize_LOG10(klineEx.high, baseline_Price),
+            floatNormalize_LOG10(klineEx.low, baseline_Price),
+            # 2nd-4
+            floatNormalize(0.5 + klineEx.ratioNet),                         # priority-H2
+            floatNormalize(0.5 + klineEx.ratioR0),                          # priority-H3
+            floatNormalize(0.5 + klineEx.ratioR3cate),                      # likely r3=ratioNet-ratioR0
+            floatNormalize_LOG10(klineEx.open, baseline_Price),
+        ]
+        #TODO: other optional dims
+
+    def __md2floats_KLineData(self, kline, baseline_Price, baseline_Volume) :
+        '''
+        @return float[] with dim =6 for neural network computing
+        '''
+        return [
+            floatNormalize_LOG10(self.close, baseline_Price, 1.5),
+            floatNormalize(20*(self.high / self.close -1)),
+            floatNormalize(20*(self.close / self.low -1)),
+            floatNormalize_LOG10(self.volume, baseline_Volume, 1.5),
+            floatNormalize(20*(self.open / self.close -1) +0.5),
+            0.0
+        ]
+
+    def __md2floats_TcikData(self, tickData, baseline_Price, baseline_Volume) :
+        '''
+        @return float[] for neural network computing
+        '''
+        #TODO： has the folllowing be normalized into [0.0, 1.0] ???
+        leanAsks = self.__calculateLean(X=[(x- self.price) \
+            for x in [self.a1P, self.a1P, self.a1P, self.a1P, self.a1P]],
+            Y=[self.a1V, self.a1V, self.a1V, self.a1V, self.a1V])
+
+        leanBids = self.__calculateLean(X=[(x- self.price) \
+            for x in [self.b1P, self.b1P, self.b1P, self.b1P, self.b1P] ],
+            Y=[self.b1V, self.b1V, self.b1V, self.b1V, self.b1V])
+
+        return [
+            floatNormalize_LOG10(self.price, baseline_Price),
+            floatNormalize_LOG10(self.volume, baseline_Volume),
+            float(leanAsks), 
+            float(leanBids)
+            ]
+
+    def __md2floats_MoneyflowData(self, mfdata, baseline_Price, baseline_Volume) :
+        '''
+        @return float[] for neural network computing
+        '''
+        # the floats, prioirty first
+        return [
+            floatNormalize_LOG10(baseline_Price*baseline_Volume, abs(mfdata.netamount)), # priority-H1, TODO: indeed the ratio of turnover would be more worthy here. It supposed can be calculated from netamount, ratioNet and netMarketCap
+            floatNormalize(0.5 + mfdata.ratioNet),                          # priority-H2
+            floatNormalize(0.5 + mfdata.ratioR0),                          # priority-H3
+            floatNormalize(0.5 + mfdata.ratioR3cate),                          # likely r3=ratioNet-ratioR0
+            floatNormalize_LOG10(mfdata.price, baseline_Price), # optional because usually this has been presented via KLine/Ticks
+        ]
+
+    def _complementChannels(self, data) :
+        if not data or not isinstance(data, list):
+            return [self._valueUnavail] * self._channels
+        
+        return data[ :self._channels] if len(data) >= self._channels else data +[ self._valueUnavail ]* (self._channels -len(data))
+    
+    def marketDataTofloatXC(self, marketData, baseline_Price=1.0, baseline_Volume =1.0, valueUnavail = NORMALIZED_FLOAT_UNAVAIL) :
+        data = None
+
+        if baseline_Price <=0: baseline_Price=1.0
+        if baseline_Volume <=0: baseline_Volume=1.0
+
+        if isinstance(marketData, KLineData): 
+            data = self.__md2floats_KLineData(marketData, baseline_Price, baseline_Volume)
+        elif isinstance(marketData, TickData): 
+            data = self.__md2floats_TcikData(marketData, baseline_Price, baseline_Volume)
+        elif isinstance(marketData, MoneyflowData): 
+            data = self.__md2floats_MoneyflowData(marketData, baseline_Price, baseline_Volume)
+
+        return self._complementChannels(data)
 
 

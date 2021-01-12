@@ -661,18 +661,20 @@ class Formatter(MetaObj):
         '''Constructor'''
         super(Formatter, self).__init__()
         self.__mstate = None
-        self._id = self.__class__.__name__
-        if 'Formatter_' == self._id[:10] :
-            self._id = self._id[10:]
-
         self._channels = int(channels)
         self._valueUnavail = valueUnavail
+
+        self.__id = self.__class__.__name__
+        if 'Formatter_' == self.__id[:10] :
+            self.__id = self.__id[10:]
+
+        self.__id += 'C%d' % self._channels
     
     @property
     def mstate(self) : return self.__mstate
 
     @property
-    def id(self) : return self._id
+    def id(self) : return self.__id
 
     def attach(self, marketState):
         self.__mstate = marketState

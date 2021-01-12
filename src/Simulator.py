@@ -1909,7 +1909,6 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self.__sampleIdx, self.__frameNo = 0, 0
         self.__lastestDir, self.__lastmstate  = OrderData.DIRECTION_NONE, None
         self.__momentsToSample = ['10:00:00', '11:00:00', '13:30:00', '14:30:00', '15:00:00']
-        self.__fmtId = 'UKNOWN'
 
     def doAppInit(self): # return True if succ
         if not super(IdealTrader_Tplus1, self).doAppInit() :
@@ -1919,6 +1918,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
             self._recorder.registerCategory(EVENT_ADVICE, params= {'columns' : AdviceData.COLUMNS})
 
         self._tradeSymbol = self.wkTrader.objectives[0] # idealTrader only cover a single symbol from the objectives
+        self.__fmtr = Formatter_2dImg32x20('/mnt/e/bmp/%s.' % self._tradeSymbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
         self._episodes =1 # idealTrader only run one loop
         return True
     
@@ -1968,9 +1968,8 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 evAdv.setData(nextAdvice)
                 super(IdealTrader_Tplus1, self).OnEvent(evAdv) # to perform the real handling
 
-        fmtr = Formatter_2dImg32x36('/mnt/e/bmp/%s.' % symbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
-        self._mstate = self._marketState.format(fmtr, self._tradeSymbol) # self._mstate = self._marketState.exportF1548(self._tradeSymbol)
-        self.__fmtId = fmtr.id
+        # fmtr = Formatter_2dImg32x20('/mnt/e/bmp/%s.' % symbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
+        self._mstate = self._marketState.format(self.__fmtr, self._tradeSymbol) # self._mstate = self._marketState.exportF1548(self._tradeSymbol)
 
         if not self._mstate: return
 
@@ -2104,7 +2103,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         col_state  = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype('float16')
         col_action = np.concatenate(metrix[:, 1]).reshape(lenF, actionshape)
 
-        fn_frame = os.path.join(self.wkTrader.outdir, 'RFrm%s_%s.h5' % (self.__fmtId, self._tradeSymbol) )
+        fn_frame = os.path.join(self.wkTrader.outdir, 'RFrm%s_%s.h5' % (self.__fmtr.id, self._tradeSymbol) )
         
         h5args =copy.copy(hist.H5DSET_DEFAULT_ARGS)
         if self._h5compression and len(self._h5compression)>0:
@@ -2115,13 +2114,14 @@ class IdealTrader_Tplus1(OfflineSimulator):
             self.__frameNo += 1
 
             g = h5file.create_group(frameId)
+            g.attrs['formatId'] = self.__fmtr.id
             g.attrs['state'] = 'state'
             g.attrs['action'] = 'action'
             g.attrs[u'default'] = 'state'
             g.attrs['size'] = col_state.shape[0]
             g.attrs['signature'] = EXPORT_SIGNATURE
 
-            title = '%s replay-frame %s %s of %s by %s, shapes[state:%s, action:%s]' % (self._generateReplayFrames, self.__fmtId, frameId, self._tradeSymbol, self.ident, stateshape, actionshape )
+            title = '%s replay-frame %s %s of %s by %s, shapes[state:%s, action:%s]' % (self._generateReplayFrames, self.__fmtr.id, frameId, self._tradeSymbol, self.ident, stateshape, actionshape )
             g.create_dataset(u'title',      data= title)
 
             st = g.create_dataset('state',  data= col_state, **h5args)
@@ -2129,7 +2129,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
             ac = g.create_dataset('action', data= col_action, **h5args)
             ac.attrs['dim'] = col_action.shape[1]
             
-        self.info('saved %s %s len[%s] into file %s with sig[%s]' % (self.__fmtId, frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
+        self.info('saved %s %s len[%s] into file %s with sig[%s]' % (self.__fmtr.id, frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
 
     def __scanEventsSequence(self, evseq) :
 
@@ -2385,7 +2385,7 @@ class ShortSwingScanner(OfflineSimulator):
         self.__sampleFrm = [None]  * self.__sampleFrmSize
         self.__sampleIdx, self.__frameNo = 0, 0
 
-        self.__fmtr = Formatter_2dImg32x36(self.outdir) # = Formatter_2dImg32x36('/mnt/e/bmp/%s.' % symbol, dem=5)  = Formatter_2dImgSnail16() = Formatter_F1548()
+        self.__fmtr = Formatter_2dImg32x20(self.outdir) # = Formatter_2dImg32x20('/mnt/e/bmp/%s.' % symbol, dem=5)  = Formatter_2dImgSnail16() = Formatter_F1548()
 
     @property
     def stateOfMoments(self) : return self.__stateOfMoments

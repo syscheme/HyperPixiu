@@ -186,7 +186,7 @@ class KLineEx(KLineData):
         #TODO: other optional dims
 
         channels = int(channels)
-        return ret[:channels] if len(ret) >= channels else ret +[0.0]* (channels -len(ret))
+        return ret[:channels] if len(ret) >= channels else ret +[NORMALIZED_FLOAT_UNAVAIL]* (channels -len(ret))
 
 ########################################################################
 class Perspective(MarketData):
@@ -331,8 +331,10 @@ class Perspective(MarketData):
             if latestAsOf and latestAsOf > stk.top.asof:
                 continue
 
-            latestAsOf = stk.top.asof
-            ret = stk.top.price if isinstance(stk.top, TickData) else stk.top.close
+            v = stk.top.price if isinstance(stk.top, TickData) else stk.top.close
+            if v and v >0.0:
+                ret = v
+                latestAsOf = stk.top.asof
 
         if latestAsOf is None:
             latestAsOf = DT_EPOCH
@@ -1077,7 +1079,7 @@ class Formatter_base2dImg(PerspectiveFormatter):
             dt.weekday() / 7.0, # normalize to [0.0,1.0]
             (dt.hour *60 +dt.minute) / (24 *60.0), # normalize to [0.0,1.0]
             (dt.year %100)/100.0, 
-            1.0
+            NORMALIZED_FLOAT_UNAVAIL
             ]
 
     def saveImg(self, img3C, imgPathName='', dtAsOf=None) :
@@ -1140,30 +1142,33 @@ class Formatter_2dImg32x36(Formatter_base2dImg):
         if len(stk) <=0: return None
         baseline_Price, baseline_Volume= stk[0].close, stk[0].volume
 
-        # TODO: draw the imagex
-        img3C = []
+        dtAsOf, img3C = None, []
 
         # parition 0: pixel[0,0] as the datetime, X_LEN* 2rows -1 KL1min to cover half an hour
         rows =1
         stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
-        if len(stk) <=0: return None
+        if not dtAsOf and len(stk) >0:
+            dtAsOf = stk[0].asof
+            todayYYMMDD = dtAsOf.strftime('%Y%m%d')
 
-        dtAsOf = stk[0].asof
-        todayYYMMDD = dtAsOf.strftime('%Y%m%d')
         rows6C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
- 
         for i in range(0, min(len(stk), X_LEN*rows)): 
              kl = stk[i]
              if kl.asof.strftime('%Y%m%d') != todayYYMMDD: continue # represent only today's
              x, y = int(i %X_LEN), int(i /X_LEN)
              rows6C[y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+
         img3C += self.expand6Cto3C_Y(rows6C)
-        # break line takes current date-time
-        br1 = [ dtAsOf.hour/24.0, dtAsOf.minute/60.0, dtAsOf.weekday() / 7.0]
-        img3C.append([br1] * X_LEN)
         
         # parition 1: X_LEN *15rows KL5min to cover a week
         stk, bV = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48
+        if not dtAsOf and len(stk) >0:
+            dtAsOf = stk[0].asof
+            todayYYMMDD = dtAsOf.strftime('%Y%m%d')
+
+        # break line takes current date-time
+        br1 = [ dtAsOf.hour/24.0, dtAsOf.minute/60.0, dtAsOf.weekday() / 7.0] if dtAsOf else [Formatter_base2dImg.BMP_COLOR_BG_FLOAT] *3
+        img3C.append([br1] * X_LEN)
 
         # parition 1.1.: X_LEN *3rows today's KL5min
         rows =2
@@ -1186,12 +1191,19 @@ class Formatter_2dImg32x36(Formatter_base2dImg):
              x, y = int(i %X_LEN), int(i /X_LEN)
              rows6C[y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
         img3C += self.expand6Cto3C_Y(rows6C)
-        # break line takes current date-time
-        br1 = [ dtAsOf.weekday() / 7.0, (dtAsOf.month-1) / 12.0, dtAsOf.day / 31.0]
-        img3C.append([br1] * X_LEN)
 
         # parition 3: X_LEN*15 KL1day to cover near a year
         stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
+        if not dtAsOf and len(stk) >0:
+            dtAsOf = stk[0].asof
+            todayYYMMDD = dtAsOf.strftime('%Y%m%d')
+
+        if not dtAsOf : return None # KL1d is minimal required
+
+        # break line takes current date-time
+        br2 = [ dtAsOf.weekday() / 7.0, (dtAsOf.month-1) / 12.0, dtAsOf.day / 31.0] if dtAsOf else [Formatter_base2dImg.BMP_COLOR_BG_FLOAT] *3
+        img3C.append([br2] * X_LEN)
+
         rows =8
         rows6C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
         for i in range(0, min(len(stk), X_LEN*rows)): 

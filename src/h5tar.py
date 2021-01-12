@@ -1,3 +1,4 @@
+# #! /usr/bin/env python
 # encoding: UTF-8
 
 '''
@@ -28,7 +29,7 @@ def tar_utf8(fn_h5tar, fn_members, createmode='a', baseNameAsKey=False) :
             except:
                 continue
 
-            print('tar_utf8() adding %s\tsize:%s' % (m, filesize))
+            print('tar_utf8() %s adding %s\tsize:%s' % (fn_h5tar, m, filesize))
             if '.bz2' == m[-4:]:
                 with open(m, 'rb') as mf:
                     compressed = mf.read()
@@ -60,7 +61,7 @@ def untar_utf8(fn_h5tar, fn_members =None) :
 
     with h5py.File(fn_h5tar, 'r') as h5file:
         if not GNAME_TEXT_utf8 in h5file.keys() :
-            print('no group[utf8_bz2] in %s', fn_h5tar)
+            print('no group[utf8_bz2] in %s' % fn_h5tar)
             return
 
         g = h5file[GNAME_TEXT_utf8]
@@ -91,7 +92,7 @@ def list_utf8(fn_h5tar, fn_members =None) :
 
     with h5py.File(fn_h5tar, 'r') as h5file:
         if not GNAME_TEXT_utf8 in h5file.keys() :
-            print('no group[utf8_bz2] in %s', fn_h5tar)
+            print('no group[utf8_bz2] in %s' % fn_h5tar)
             return
 
         g = h5file[GNAME_TEXT_utf8]
@@ -108,7 +109,7 @@ def read_utf8(fn_h5tar, fn_member) :
         g = h5file[GNAME_TEXT_utf8]
         m = quote(fn_member).replace('/','%2F')
         if not m in g.keys():
-            print('member[%s] not found' % m)
+            print('member[%s] not found in %s' % (m, fn_h5tar))
             return ''
 
         compressed =g[m][()].tobytes() # compressed = g[m].value.tobytes()
@@ -116,6 +117,32 @@ def read_utf8(fn_h5tar, fn_member) :
         return all_lines
 
     return ''
+
+def write_utf8(fn_h5tar, memberName, text, createmode='a') :
+
+    createmode = createmode if 'a'==createmode else 'w'
+    with h5py.File(fn_h5tar, createmode) as h5file:
+        g = h5file.create_group(GNAME_TEXT_utf8) if not GNAME_TEXT_utf8 in h5file.keys() else h5file[GNAME_TEXT_utf8]
+        g.attrs['desc']         = 'text member files via utf-8 encoding and bzip2 compression'
+
+        tsize = len(text)
+        print('tar_utf8() %s adding %s  text-size:%s' % (fn_h5tar, memberName, tsize))
+        compressed = bz2.compress(text.encode('utf8'))
+        zsize = len(compressed)
+        npbytes = np.frombuffer(compressed, dtype=np.uint8)
+        k = memberName
+        while len(k) >0 and ('/' == k[0] or '.' == k[0]):
+            k=k[1:]
+        k = quote(k).replace('/','%2F')
+            
+        if k in g.keys():
+            del g[k]
+
+        sub = g.create_dataset(k, data=npbytes)
+        sub.attrs['size'] = tsize
+        sub.attrs['csize'] = len(compressed)
+        return zsize, tsize
+
 
 ########################################################################
 if __name__ == '__main__':

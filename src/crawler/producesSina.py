@@ -8,11 +8,12 @@ from MarketData import *
 from Perspective import PerspectiveState
 import HistoryData as hist
 from crawler.crawlSina import *
-import h5tar
+import h5tar, h5py, pickle, bz2
 
 from datetime import datetime, timedelta
 from time import sleep
-import os
+import os, copy
+from io import StringIO
 import fnmatch
 
 def defaultNextYield(retryNo) :
@@ -686,3 +687,380 @@ def listAllSymbols(prog, maxRetryAt456=20):
 
     prog.info('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
     return lstSH, lstSZ
+
+
+########################################################################
+def readArchivedDays(prog, dirArchived, symbol, YYYYMMDDs):
+    YYYYMMDDs = copy.copy(YYYYMMDDs)
+    if isinstance(YYYYMMDDs, str):
+        YYYYMMDDs = [YYYYMMDDs]
+
+    YYYYMMDDs.sort()
+
+    all_lines=''
+    readtxn = ''
+    for yymmdd in YYYYMMDDs:
+        fnArch = os.path.join(dirArchived, 'SinaMDay_%s.h5t' % yymmdd)
+        memName = '%s_day%s.tcsv' %(symbol, yymmdd)
+        try :
+            lines = ''
+            lines = h5tar.read_utf8(fnArch, memName)
+            if lines and len(lines) >0 :
+                all_lines += '\n' + lines
+            readtxn += '%s(%dB)@%s, ' % (memName, len(lines), fnArch)
+        except:
+            prog.error('readArchivedDays() failed to read %s from %s' % (memName, fnArch))
+
+    prog.info('readArchivedDays() read %s' % readtxn) 
+    return all_lines # take celery's compression instead of return bz2.compress(all_lines.encode('utf8'))
+
+########################################################################
+def populateMuxFromArchivedDir(prog, dirArchived, symbol, dtStart = None):
+
+    mux = SinaMux(program=prog) # the result to return
+    mux.setId(dirArchived)
+
+    wkStart, yymmddStart = '', ''
+    if dtStart:
+        year, weekNo, YYYYMMDDs = sinaWeekOf(dtStart)
+        wkStart = 'Sina%04dW%02d_' % (year, weekNo)
+        yymmddStart = dtStart.strftime('%Y%m%d')
+
+    allfiles = hist.listAllFiles(dirArchived)
+    fnSinaDays, fnSinaWeeks = [], []
+    for fn in allfiles:
+        bn = os.path.basename(fn)
+        if fnmatch.fnmatch(bn, 'SinaDay_*.h5t') and bn >= 'SinaDay_%s' %yymmddStart :
+            fnSinaDays.append(fn)
+            continue
+
+        if fnmatch.fnmatch(bn, 'Sina*W*_*-*.h5t'):
+            fnSinaWeeks.append(fn)
+            continue
+
+    fnSinaWeeks.sort()
+    fnSinaDays.sort()
+    allfiles =[]
+    ev1dIncluded = []
+
+    for fn in fnSinaWeeks:
+        bn = os.path.basename(fn)
+        mw = re.match(r'Sina([0-9]*)W([0-9]*)_([0-9]*)-([0-9]*).h5t', bn)
+        if not mw : continue
+
+        yymmdd = '%s%s' % (mw.group(1), mw.group(3))
+        if yymmdd > yymmddStart : 
+            idxFnD = 0
+            for fnD in fnSinaDays :
+                bnD = os.path.basename(fnD)
+                m = re.match(r'SinaDay_([0-9]*).h5t', bnD)
+                if m and m.group(1) >= yymmdd: break
+
+                idxFnD += 1 
+                if not m or m.group(1) < yymmddStart: continue
+
+                memName = '%s_day%s.tcsv' %(symbol, m.group(1))
+                lines = h5tar.read_utf8(fnD, memName)
+                if len(lines) <=0: continue
+                pb = hist.TaggedCsvStream(StringIO(lines), program=prog)
+                pb.setId('%s@%s' % (symbol, bnD))
+                pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
+                pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
+                pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
+                pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
+
+                pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+                pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+                pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+                mux.addStream(pb)
+            
+            if idxFnD >0:
+                del fnSinaDays[: idxFnD]
+
+        wmem = '%s_%sW%s.tcsv' %(symbol, mw.group(1), mw.group(2))
+        lines = h5tar.read_utf8(fn, wmem)
+        if len(lines) <=0: continue
+        pb = hist.TaggedCsvStream(StringIO(lines), program=prog)
+        pb.setId('%s@%s' % (symbol, bn))
+        pb.registerConverter(EVENT_TICK,       TickData.hatch,  TickData.COLUMNS)
+        pb.registerConverter(EVENT_KLINE_1MIN, KLineData.hatch, KLineData.COLUMNS)
+        pb.registerConverter(EVENT_KLINE_5MIN, KLineData.hatch, KLineData.COLUMNS)
+        pb.registerConverter(EVENT_KLINE_1DAY, KLineData.hatch, KLineData.COLUMNS)
+
+        pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+        pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+        pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+        mux.addStream(pb)
+
+        if len(ev1dIncluded) <2:
+            mlst = h5tar.list_utf8(fn)
+            for wmem in mlst:
+                wmem = wmem['name']
+                if not symbol in wmem: continue
+                evt = MARKETDATE_EVENT_PREFIX + wmem.split('/')[0]
+                if not evt in [EVENT_KLINE_1DAY, EVENT_MONEYFLOW_1DAY] or evt in ev1dIncluded: continue
+                lines = h5tar.read_utf8(fn, wmem)
+                if len(lines) <=0: continue
+                mux.importJsonSequence(lines, symbol, evt)
+                ev1dIncluded.append(evt)
+
+        yymmddStart = '%s%s' % (mw.group(1), mw.group(4))
+
+    subStrmIds = mux.subStreamIds
+    if prog: prog.info('populateArchivedDir() populated read %d substrms: %s' % (len(subStrmIds), ','.join(subStrmIds)))
+    return mux
+
+########################################################################
+def sinaWeekOf(dtInWeek=None):
+    '''
+    dtInWeek = 2020-12-21(Mon) ~ 2020-12-27(Sun) all lead to the week Monday2020-12-21 ~ Sunday2020-12-27
+    '''
+    if not dtInWeek:
+        dtInWeek = datetime.now()
+
+    year, weekNo, wday = dtInWeek.isocalendar()
+    monday = (dtInWeek - timedelta(days = (wday +6) %7)).replace(hour=0,minute=0,second=0,microsecond=0)
+    friday = monday + timedelta(days = 6) - timedelta(microseconds=1)
+    
+    YYYYMMDDs = [ (monday + timedelta(days=i, hours=1)).strftime('%Y%m%d') for i in range(7) ]
+    return year, weekNo, YYYYMMDDs
+
+# ----------------------------------------------------------------------
+def archiveWeek(dirArchived, symbols, dtInWeek=None, prog=None):
+    year, weekNo, YYYYMMDDs = sinaWeekOf(dtInWeek)
+    fnOut = os.path.join(dirArchived, 'Sina%04dW%02d_%s-%s.h5t' % (year, weekNo, YYYYMMDDs[0][4:], YYYYMMDDs[4][4:]))
+
+    if symbols and not isinstance(symbols, list):
+        symbols = symbols.split(',')
+    
+    if not symbols or len(symbols) <=0:
+        # populate all symbols from SinaMDay_%s.h5t
+        symbols = []
+        for yymmdd in YYYYMMDDs:
+            fnMDay = os.path.join(dirArchived, 'SinaMDay_%s.h5t' % yymmdd)
+            try :
+                mlst = h5tar.list_utf8(fnMDay)
+                for m in mlst:
+                    s = m['name'].split('_')[0]
+                    if not s in symbols: symbols.append(s)
+            except: pass
+
+    if prog: prog.debug('archiveWeek() determined week of %s is %s, archiving %d symbols into %s' % (dtInWeek, ','.join(YYYYMMDDs), len(symbols), fnOut))
+
+    slist=[]
+    for symbol in symbols: 
+        linesMday=''
+        readtxn = []
+        evt1ds, json1ds, jsonName1ds = ['MF1d', 'KL1d'], [None, None], [None, None]
+        for yymmdd in YYYYMMDDs:
+            fnMDay = os.path.join(dirArchived, 'SinaMDay_%s.h5t' % yymmdd)
+            memName = '%s_day%s.tcsv' %(symbol, yymmdd)
+            try :
+                lines = ''
+                lines = h5tar.read_utf8(fnMDay, memName)
+                if lines and len(lines) >0 :
+                    linesMday += '\n' + lines
+                readtxn.append('%s(%dB)@%s' % (memName, len(lines), fnMDay))
+            except:
+                if prog: prog.error('archiveWeek() failed to read %s from %s' % (memName, fnMDay))
+
+            for i in range(len(evt1ds)):
+                if json1ds[i]: continue # we take the eariest of 1d
+                fn = os.path.join(dirArchived, 'Sina%s_%s.h5t' % (evt1ds[i], yymmdd))
+                memName = '%s_%s%s.json' %(symbol, evt1ds[i], yymmdd)
+                try :
+                    lines = ''
+                    lines = h5tar.read_utf8(fn, memName)
+                    if lines and len(lines) >0 :
+                        json1ds[i] = lines
+                        jsonName1ds[i] = memName
+                        readtxn.append('%s(%dB)@%s' % (memName, len(lines), fn))
+                except:
+                    if prog: prog.error('archiveWeek() failed to read %s from %s' % (memName, fn))
+
+        # write the week into fnOut
+        if linesMday and len(linesMday) >0:
+            h5tar.write_utf8(fnOut, '%s_%04dW%02d.tcsv' % (symbol, year, weekNo), linesMday, createmode='a')
+
+        for i in range(len(evt1ds)):
+            if not json1ds[i] or len(json1ds[i]) <=0: continue
+            h5tar.write_utf8(fnOut, '%s/%s' % (evt1ds[i], jsonName1ds[i]), json1ds[i], createmode='a')
+
+        if prog: prog.debug('archiveWeek() %s archived %s' % (fnOut, ','.join(readtxn)))
+        slist.append(symbol)
+
+    return fnOut, slist
+
+########################################################################
+def determineLastDays(prog, nLastDays =7, todayYYMMDD= None):
+    lastYYMMDDs = []
+    if not todayYYMMDD:
+        todayYYMMDD = datetime.now().strftime('%Y%m%d')
+
+    symbol = 'SH000001'  # 上证指数
+    playback = SinaMux(prog)
+
+    lastDays = []
+    httperr, _, lastDays = playback.loadOnline(EVENT_KLINE_1DAY, 'SH000001', nLastDays+3)
+    lastDays.reverse()
+    for i in lastDays:
+        yymmdd = i.asof.strftime('%Y%m%d')
+        if yymmdd > todayYYMMDD:
+            continue
+        lastYYMMDDs.append(yymmdd)
+        if len(lastYYMMDDs) >= nLastDays:
+            break
+    
+    prog.debug('determineLastDays() last %d trade-days are %s according to %s' % (nLastDays, ','.join(lastYYMMDDs), symbol))
+    return lastYYMMDDs
+
+########################################################################
+def balanceSamples(filepathRFrm, compress=True) :
+    '''
+    read a frame from H5 file
+    '''
+    dsargs={}
+    if compress :
+        dsargs['compression'] = 'lzf' # 'gzip' for HDFExplorer
+
+    print("balancing samples in %s to %sb" % (filepathRFrm, filepathRFrm))
+    with h5py.File(filepathRFrm+'b', 'w') as h5out:
+        frmId=0
+        frmState=None
+        frmAction=None
+        frmInName=''
+        subtotal = np.asarray([0]*3)
+
+        with h5py.File(filepathRFrm, 'r') as h5f:
+            framesInHd5 = []
+            for name in h5f.keys() :
+                if RFGROUP_PREFIX == name[:len(RFGROUP_PREFIX)] or RFGROUP_PREFIX2 == name[:len(RFGROUP_PREFIX2)] :
+                    framesInHd5.append(name)
+
+            framesInHd5.sort()
+            print("found frames in %s: %s" % (filepathRFrm, ','.join(framesInHd5)))
+
+            for frmInName in framesInHd5 :
+                print("reading frmIn[%s] from %s" % (frmInName, filepathRFrm))
+                frm = h5f[frmInName]
+                if frmState is None:
+                    frmState = np.array(list(frm['state']))
+                    frmAction = np.array(list(frm['action']))
+                    lenBefore =0
+                    lenAfter = len(frmState)
+                else :
+                    lenBefore = len(frmState)
+                    a = np.array(list(frm['state']))
+                    frmState = np.concatenate((frmState, a), axis=0)
+                    a = np.array(list(frm['action']))
+                    frmAction= np.concatenate((frmAction, a), axis=0)
+                    lenAfter = len(frmState)
+
+                npActions = frmAction[lenBefore:]
+                AD = np.where(npActions >=0.99) # to match 1 because action is float read from RFrames
+                kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
+                kImax = max(kI)
+                idxMax = kI.index(kImax)
+                cToReduce = kImax - int(1.2*(sum(kI) -kImax))
+                if cToReduce >0:
+                    print("frmIn[%s] actCounts[%s,%s,%s]->evicting %d samples of max-act[%d]" % (frmInName, kI[0],kI[1],kI[2], cToReduce, idxMax))
+                    idxItems = np.where(AD[1] ==idxMax)[0].tolist()
+                    random.shuffle(idxItems)
+                    del idxItems[cToReduce:]
+                    idxToDel = [lenBefore +i for i in idxItems]
+                    frmAction = np.delete(frmAction, idxToDel, axis=0)
+                    frmState = np.delete(frmState, idxToDel, axis=0)
+
+                # update the stat now
+                AD = np.where(frmAction >=0.99) # to match 1 because action is float read from RFrames
+                kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
+                print("frmIn[%s] processed, pending %s actCounts[%s,%s,%s]" % (frmInName, len(frmState), kI[0],kI[1],kI[2]))
+
+                if len(frmState) >= OUTFRM_SIZE:
+                    col_state = frmState[:OUTFRM_SIZE]
+                    col_action = frmAction[:OUTFRM_SIZE]
+                    frmState  = frmState[OUTFRM_SIZE:]
+                    frmAction = frmAction[OUTFRM_SIZE:]
+
+                    AD = np.where(col_action >=0.99)
+                    kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
+                    subtotal += np.asarray(kIout)
+                    # AD = np.where(frmAction >=0.99)
+                    # kI = [np.count_nonzero(AD[1] ==i) for i in range(3)]
+
+                    frmName ='%s%s' % (RFGROUP_PREFIX, frmId)
+                    g = h5out.create_group(frmName)
+                    g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
+                    frmId +=1
+                    g.attrs['state'] = 'state'
+                    g.attrs['action'] = 'action'
+                    g.attrs[u'default'] = 'state'
+                    g.attrs['size'] = col_state.shape[0]
+                    g.attrs['signature'] = EXPORT_SIGNATURE
+
+                    st = g.create_dataset('state', data= col_state, **dsargs)
+                    st.attrs['dim'] = col_state.shape[1]
+                    ac = g.create_dataset('action', data= col_action, **dsargs)
+                    ac.attrs['dim'] = col_action.shape[1]
+                    print("outfrm[%s] actCounts[%s,%s,%s] saved, pending %s" % (frmName, kIout[0],kIout[1],kIout[2], len(frmState)))
+
+            # the last frame
+            if len(frmState) >= 0:
+                col_state = frmState
+                col_action = frmAction
+                AD = np.where(col_action >=0.99)
+                kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
+                subtotal += np.asarray(kIout)
+                
+                frmName ='%s%s' % (RFGROUP_PREFIX, frmId)
+                frmId +=1
+                g = h5out.create_group(frmName)
+                g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
+                g.attrs['state'] = 'state'
+                g.attrs['action'] = 'action'
+                g.attrs[u'default'] = 'state'
+                g.attrs['size'] = col_state.shape[0]
+                g.attrs['signature'] = EXPORT_SIGNATURE
+
+                st = g.create_dataset('state', data= col_state, **dsargs)
+                st.attrs['dim'] = col_state.shape[1]
+                ac = g.create_dataset('action', data= col_action, **dsargs)
+                ac.attrs['dim'] = col_action.shape[1]
+
+                print("lastfrm[%s] actCounts[%s,%s,%s] saved, size %s" % (frmName, kIout[0],kIout[1],kIout[2], len(col_action)))
+
+            print("balanced %s to %sb: %s->%d frameOut, actSubtotal%s" % (filepathRFrm, filepathRFrm, frmInName, frmId, list(subtotal)))
+
+####################################
+from time import sleep
+if __name__ == '__main__':
+    from Application import Program
+
+    prog = Program(name='test', argvs=[])
+    prog._heartbeatInterval =-1
+    prog.setLogLevel('debug')
+
+    dirArched = '/mnt/e/AShareSample/hpx_archived/sina'
+    symbol = 'SZ002008'
+
+    mux = populateMuxFromArchivedDir(prog, dirArched, symbol, dtStart = None)
+    try :
+        while True:
+            ev = next(mux)
+            if ev: print(ev.desc)
+    except: pass
+    exit(0)
+
+    dtInWeek = datetime(year=2020, month=12, day=21) # a Monday
+    dtInWeek = datetime(year=2020, month=12, day=26) # a Satday
+    dtInWeek = datetime(year=2020, month=12, day=27) # a Sunday
+    # archiveWeek(dirArched, [symbol, 'SH510050'], dtInWeek, prog)
+    archiveWeek(dirArched, None, dtInWeek, prog)
+
+    alllines = readArchivedDays(prog, dirArched, symbol, ['20201221', '20201222'])
+    # print(alllines)
+
+    dirTickets = '/mnt/e/AShareSample/hpx_archived/tickets'
+    with bz2.open(os.path.join(dirTickets, 'Tickets_%s.tcsv.bz2' % symbol), 'wt', encoding='utf-8') as f:
+        f.write(alllines)
+

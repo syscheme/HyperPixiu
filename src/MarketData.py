@@ -14,7 +14,6 @@ from PIL import Image
 MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 EXPORT_FLOATS_DIMS = 4 # take the minimal dim=4
 PRICE_DISPLAY_ROUND_DECIMALS = 3 
-NORMALIZED_FLOAT_UNAVAIL =0.0
 
 BASE_LOG10x2 = math.log(10) *2
 
@@ -248,33 +247,6 @@ class TickData(MarketData):
 
         return ret
 
-    @abstractmethod
-    def floatXC(self, baseline_Price=1.0, baseline_Volume =1.0, channels=6) :
-        '''
-        @return float[] for neural network computing
-        '''
-        if baseline_Price <=0: baseline_Price=1.0
-        if baseline_Volume <=0: baseline_Volume=1.0
-
-        #TODO： has the folllowing be normalized into [0.0, 1.0] ???
-        leanAsks = self.__calculateLean(X=[(x- self.price) \
-            for x in [self.a1P, self.a1P, self.a1P, self.a1P, self.a1P]],
-            Y=[self.a1V, self.a1V, self.a1V, self.a1V, self.a1V])
-
-        leanBids = self.__calculateLean(X=[(x- self.price) \
-            for x in [self.b1P, self.b1P, self.b1P, self.b1P, self.b1P] ],
-            Y=[self.b1V, self.b1V, self.b1V, self.b1V, self.b1V])
-
-        # the basic dims=6
-        ret = [
-            floatNormalize_LOG10(self.price, baseline_Price),
-            floatNormalize_LOG10(self.volume, baseline_Volume),
-            float(leanAsks), 
-            float(leanBids)]
-
-        channels = int(channels)
-        return ret[:channels] if len(ret) >= channels else ret +[NORMALIZED_FLOAT_UNAVAIL]* (channels -len(ret))
-
 ########################################################################
 class KLineData(MarketData):
     '''K线数据'''
@@ -372,27 +344,6 @@ class KLineData(MarketData):
 
         return ret
 
-    @abstractmethod
-    def floatXC(self, baseline_Price=1.0, baseline_Volume =1.0, channels=6) :
-        '''
-        @return float[] with dim =6 for neural network computing
-        '''
-        if baseline_Price <=0: baseline_Price=1.0
-        if baseline_Volume <=0: baseline_Volume=1.0
-
-        # the 6-dims floats
-        ret = [
-            floatNormalize_LOG10(self.close, baseline_Price, 1.5),
-            floatNormalize(20*(self.high / self.close -1)),
-            floatNormalize(20*(self.close / self.low -1)),
-            floatNormalize_LOG10(self.volume, baseline_Volume, 1.5),
-            floatNormalize(20*(self.open / self.close -1) +0.5),
-            0.0
-        ]
-
-        channels = int(channels)
-        return ret[:channels] if len(ret) >= channels else ret +[NORMALIZED_FLOAT_UNAVAIL]* (channels -len(ret))
-
 ########################################################################
 class MoneyflowData(MarketData):
     '''资金流数据'''
@@ -440,26 +391,6 @@ class MoneyflowData(MarketData):
         ev = Event(evType)
         ev.setData(md)
         return ev
-
-    def floatXC(self, baseline_Price=1.0, baseline_Volume =1.0, channels=6) :
-        '''
-        @return float[] for neural network computing
-        '''
-        if baseline_Price <=0: baseline_Price=1.0
-        if baseline_Volume <=0: baseline_Volume=1.0
-
-        # the floats, prioirty first
-        ret = [
-            floatNormalize_LOG10(baseline_Price*baseline_Volume, abs(self.netamount)), # priority-H1, TODO: indeed the ratio of turnover would be more worthy here. It supposed can be calculated from netamount, ratioNet and netMarketCap
-            floatNormalize(0.5 + self.ratioNet),                          # priority-H2
-            floatNormalize(0.5 + self.ratioR0),                          # priority-H3
-            floatNormalize(0.5 + self.ratioR3cate),                          # likely r3=ratioNet-ratioR0
-            floatNormalize_LOG10(self.price, baseline_Price), # optional because usually this has been presented via KLine/Ticks
-        ]
-        #TODO: other optional dims
-
-        channels = int(channels)
-        return ret[:channels] if len(ret) >= channels else ret +[NORMALIZED_FLOAT_UNAVAIL]* (channels -len(ret))
 
     @abstractmethod
     def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :

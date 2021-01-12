@@ -175,13 +175,18 @@ class KLineEx(KLineData):
         if baseline_Price <=0: baseline_Price=1.0
         if baseline_Volume <=0: baseline_Volume=1.0
 
-        # the floats, prioirty first
+        # the floats, prioirty first, recommented to be multiple of 4
         ret = [
+            # 1st-4
             floatNormalize_LOG10(self.close, baseline_Price),
             floatNormalize_LOG10(self.volume, baseline_Volume),
-            floatNormalize(0.5 + self.ratioNet),                          # priority-H2
+            floatNormalize_LOG10(self.high, baseline_Price),
+            floatNormalize_LOG10(self.low, baseline_Price),
+            # 2nd-4
+            floatNormalize(0.5 + self.ratioNet),                         # priority-H2
             floatNormalize(0.5 + self.ratioR0),                          # priority-H3
-            floatNormalize(0.5 + self.ratioR3cate),                          # likely r3=ratioNet-ratioR0
+            floatNormalize(0.5 + self.ratioR3cate),                      # likely r3=ratioNet-ratioR0
+            floatNormalize_LOG10(self.open, baseline_Price),
         ]
         #TODO: other optional dims
 
@@ -531,21 +536,22 @@ class Perspective(MarketData):
         itemsize = sum([self._stacks[et].evictSize for et in self.eventTypes])
         return (itemsize +1) * EXPORT_FLOATS_DIMS
 
+    '''
     @property
     def _S1548I4(self):
-        '''@return an array_like data as float4C, maybe [] or numpy.array
+        '''@return an array_like data, maybe [] or numpy.array
         '''
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
-            return [0.0] * self.fullFloatSize # float4C not available
+            return [0.0] * self.fullFloatSize
         
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
         return self.__exportS1548I4(baseline_Price=klbaseline.close, baseline_Volume=klbaseline.volume)
     
     def floatsD4(self, lstsWished= { 'asof':1, EVENT_KLINE_1DAY:20 } ) :
-        '''@return an array_like data as float4C, maybe [] or numpy.array
+        '''@return an array_like data , maybe [] or numpy.array
         '''
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
-            return None # float4C not available
+            return None
 
         klbaseline = self._stacks[EVENT_KLINE_1DAY].top
         baseline_Price, baseline_Volume =klbaseline.close, klbaseline.volume
@@ -584,6 +590,7 @@ class Perspective(MarketData):
 
         return result
 
+    '''
     def export(self, lstsWished= { EVENT_KLINE_1DAY:20 } ) :
         result = {}
 
@@ -945,15 +952,20 @@ class PerspectiveState(MarketState):
 
 
 ########################################################################
+BMP_COLOR_BG_FLOAT       =1.0
+NORMALIZED_FLOAT_UNAVAIL =0.0
+
 class PerspectiveFormatter(Formatter):
     '''
     '''
-    def __init__(self, marketState =None):
+    def __init__(self, marketState =None, channels =6):
         '''Constructor'''
         super(PerspectiveFormatter, self).__init__()
 
         if marketState:
             self.attach(marketState)
+        self._channels = int(channels)
+
 
     def validate(self) :
         if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
@@ -961,21 +973,165 @@ class PerspectiveFormatter(Formatter):
 
         return True
 
+    def __md2floats_KLineEx(self, klineEx, baseline_Price, baseline_Volume) :
+        '''
+        @return float[] for neural network computing
+        '''
+        # the floats, prioirty first, recommented to be multiple of 4
+        return [
+            # 1st-4
+            floatNormalize_LOG10(klineEx.close, baseline_Price),
+            floatNormalize_LOG10(klineEx.volume, baseline_Volume),
+            floatNormalize_LOG10(klineEx.high, baseline_Price),
+            floatNormalize_LOG10(klineEx.low, baseline_Price),
+            # 2nd-4
+            floatNormalize(0.5 + klineEx.ratioNet),                         # priority-H2
+            floatNormalize(0.5 + klineEx.ratioR0),                          # priority-H3
+            floatNormalize(0.5 + klineEx.ratioR3cate),                      # likely r3=ratioNet-ratioR0
+            floatNormalize_LOG10(klineEx.open, baseline_Price),
+        ]
+        #TODO: other optional dims
+
+    def __md2floats_KLineData(self, kline, baseline_Price, baseline_Volume) :
+        '''
+        @return float[] with dim =6 for neural network computing
+        '''
+        return [
+            floatNormalize_LOG10(self.close, baseline_Price, 1.5),
+            floatNormalize(20*(self.high / self.close -1)),
+            floatNormalize(20*(self.close / self.low -1)),
+            floatNormalize_LOG10(self.volume, baseline_Volume, 1.5),
+            floatNormalize(20*(self.open / self.close -1) +0.5),
+            0.0
+        ]
+
+    def __md2floats_TcikData(self, tickData, baseline_Price, baseline_Volume) :
+        '''
+        @return float[] for neural network computing
+        '''
+        #TODO： has the folllowing be normalized into [0.0, 1.0] ???
+        leanAsks = self.__calculateLean(X=[(x- self.price) \
+            for x in [self.a1P, self.a1P, self.a1P, self.a1P, self.a1P]],
+            Y=[self.a1V, self.a1V, self.a1V, self.a1V, self.a1V])
+
+        leanBids = self.__calculateLean(X=[(x- self.price) \
+            for x in [self.b1P, self.b1P, self.b1P, self.b1P, self.b1P] ],
+            Y=[self.b1V, self.b1V, self.b1V, self.b1V, self.b1V])
+
+        return [
+            floatNormalize_LOG10(self.price, baseline_Price),
+            floatNormalize_LOG10(self.volume, baseline_Volume),
+            float(leanAsks), 
+            float(leanBids)
+            ]
+
+    def __md2floats_MoneyflowData(self, mfdata, baseline_Price, baseline_Volume) :
+        '''
+        @return float[] for neural network computing
+        '''
+        # the floats, prioirty first
+        return [
+            floatNormalize_LOG10(baseline_Price*baseline_Volume, abs(mfdata.netamount)), # priority-H1, TODO: indeed the ratio of turnover would be more worthy here. It supposed can be calculated from netamount, ratioNet and netMarketCap
+            floatNormalize(0.5 + mfdata.ratioNet),                          # priority-H2
+            floatNormalize(0.5 + mfdata.ratioR0),                          # priority-H3
+            floatNormalize(0.5 + mfdata.ratioR3cate),                          # likely r3=ratioNet-ratioR0
+            floatNormalize_LOG10(mfdata.price, baseline_Price), # optional because usually this has been presented via KLine/Ticks
+        ]
+
+    def marketDataTofloatXC(self, marketData, baseline_Price=1.0, baseline_Volume =1.0) :
+        ret = None
+
+        if baseline_Price <=0: baseline_Price=1.0
+        if baseline_Volume <=0: baseline_Volume=1.0
+
+        if isinstance(marketData, KLineEx): 
+            ret = self.__md2floats_KLineEx(marketData, baseline_Price, baseline_Volume)
+        elif isinstance(marketData, KLineData): 
+            ret = self.__md2floats_KLineData(marketData, baseline_Price, baseline_Volume)
+        elif isinstance(marketData, TickData): 
+            ret = self.__md2floats_TcikData(marketData, baseline_Price, baseline_Volume)
+        elif isinstance(marketData, MoneyflowData): 
+            ret = self.__md2floats_MoneyflowData(marketData, baseline_Price, baseline_Volume)
+
+        if not ret or not isinstance(ret, list):
+            return [NORMALIZED_FLOAT_UNAVAIL] * self._channels
+
+        return ret[ :self._channels] if len(ret) >= self._channels else ret +[NORMALIZED_FLOAT_UNAVAIL]* (self._channels -len(ret))
+
 ########################################################################
 class Formatter_F1548(PerspectiveFormatter):
-    F4SECHMA_1548 = OrderedDict({
-        'asof':              1,
-        EVENT_KLINE_1MIN :  30,
-        EVENT_KLINE_5MIN :  96,
-        EVENT_KLINE_1DAY : 260,
-    })
-
     def __init__(self):
         '''Constructor'''
-        super(Formatter_F1548, self).__init__()
+        super(Formatter_F1548, self).__init__(channels =4)
 
     def doFormat(self, symbol=None) :
+        F4SECHMA_1548 = OrderedDict({
+            'asof':              1,
+            EVENT_KLINE_1MIN :  30,
+            EVENT_KLINE_5MIN :  96,
+            EVENT_KLINE_1DAY : 260,
+        })
 
+        seqdict = self.mstate.export(symbol, lstsWished=F4SECHMA_1548)  # = self.export6C(symbol, lstsWished=EXP_SECHEMA)
+        if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
+            return None
+
+        stk = seqdict[EVENT_KLINE_1DAY]
+        if len(stk) <=0: return None
+        baseline_Price, baseline_Volume= stk[0].close, stk[0].volume
+
+        result = []
+        # parition 0: first item is dtAsOf
+        dtAsOf, todayYYMMDD = None, ""
+        stk = seqdict[EVENT_KLINE_1MIN]
+        if len(stk) >0: 
+            dtAsOf = stk[0].asof
+        else:
+            stk = seqdict[EVENT_KLINE_5MIN]
+            if len(stk) >0: 
+                dtAsOf = stk[0].asof
+
+        if not dtAsOf: return None
+        todayYYMMDD = dtAsOf.strftime('%Y%m%d')
+
+        result = [ # self._channels = 4
+            dtAsOf.month,
+            dtAsOf.day,
+            dtAsOf.weekday(),
+            dtAsOf.hour *60 +dtAsOf.minute
+        ]
+
+        # parition 1: EVENT_KLINE_1MIN
+        stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
+        for i in range(min(len(stk), F4SECHMA_1548[EVENT_KLINE_1MIN])): 
+             kl = stk[i]
+             result += self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
+
+        if len(stk) < F4SECHMA_1548[EVENT_KLINE_1MIN]:
+            result += [NORMALIZED_FLOAT_UNAVAIL] * self._channels * (F4SECHMA_1548[EVENT_KLINE_1MIN] - len(stk))
+
+        # parition 2: EVENT_KLINE_5MIN
+        stk, bV = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48
+        for i in range(min(len(stk), F4SECHMA_1548[EVENT_KLINE_5MIN])): 
+             kl = stk[i]
+             result += self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
+
+        if len(stk) < F4SECHMA_1548[EVENT_KLINE_5MIN]:
+            result += [NORMALIZED_FLOAT_UNAVAIL] * self._channels * (F4SECHMA_1548[EVENT_KLINE_5MIN] - len(stk))
+
+        # parition 3: EVENT_KLINE_1DAY
+        stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
+        for i in range(min(len(stk), F4SECHMA_1548[EVENT_KLINE_1DAY])): 
+             kl = stk[i]
+             result += self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
+
+        if len(stk) < F4SECHMA_1548[EVENT_KLINE_1DAY]:
+            result += [NORMALIZED_FLOAT_UNAVAIL] * self._channels * (F4SECHMA_1548[EVENT_KLINE_1DAY] - len(stk))
+
+        return result
+
+        '''
+        # -----------------------------------------------
         if symbol and symbol in self.mstate._dictPerspective.keys():
             ret = self.mstate._dictPerspective[symbol].floatsD4(self.__class__.F4SECHMA_1548)
         else : 
@@ -986,14 +1142,13 @@ class Formatter_F1548(PerspectiveFormatter):
             return ret
 
         raise ValueError('%s.format() unexpected ret' % self.__class__.__name__)
+        '''
 
 ########################################################################
 class Formatter_base2dImg(PerspectiveFormatter):
     '''
     '''
-    BMP_COLOR_BG_FLOAT=1.0
-
-    def __init__(self, imgPathPrefix=None, dem=60):
+    def __init__(self, imgPathPrefix=None, dem=60, channels =6):
         '''Constructor'''
         super(Formatter_base2dImg, self).__init__()
         self._imgPathPrefix = imgPathPrefix
@@ -1033,7 +1188,7 @@ class Formatter_base2dImg(PerspectiveFormatter):
             for y in range(0,4):
                 i = (x-1) *4 + y
                 if i < len(stk) :
-                    img6C[startRow + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+                    img6C[startRow + y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
 
         # parition 1: data[0:16,4:6] fillin 16x6 K5min up to a week
         startRow =5
@@ -1042,7 +1197,7 @@ class Formatter_base2dImg(PerspectiveFormatter):
             for y in range(0, 6):
                 i = x *6 + y
                 if i < len(stk) :
-                    img6C[startRow + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+                    img6C[startRow + y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
         
         # parition 2: data[0:16,10:15] fillin 16x5 K1Day up to 16 week or 1/3yr
         startRow =12
@@ -1051,7 +1206,7 @@ class Formatter_base2dImg(PerspectiveFormatter):
             for y in range(0, 5):
                 i = x *5 + y
                 if i < len(stk) :
-                    img6C[startRow + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+                    img6C[startRow + y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
 
         # parition 3x: TODO KL1w
         '''
@@ -1063,7 +1218,7 @@ class Formatter_base2dImg(PerspectiveFormatter):
             for y in range(0, 10):
                 i = x *5 + y + 16*5
                 if i < len(stk) :
-                    img6C[startRow + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+                    img6C[startRow + y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
         '''
 
         img3C = self.expand6Cto3C_Y(img6C)
@@ -1156,7 +1311,7 @@ class Formatter_2dImg32x36(Formatter_base2dImg):
              kl = stk[i]
              if kl.asof.strftime('%Y%m%d') != todayYYMMDD: continue # represent only today's
              x, y = int(i %X_LEN), int(i /X_LEN)
-             rows6C[y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+             rows6C[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
 
         img3C += self.expand6Cto3C_Y(rows6C)
         
@@ -1180,7 +1335,7 @@ class Formatter_2dImg32x36(Formatter_base2dImg):
                  if i>0: del stk[:i]
                  break
              x, y = int(i %X_LEN), int(i /X_LEN)
-             rows6C[y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+             rows6C[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
         img3C += self.expand6Cto3C_Y(rows6C)
 
         # parition 1.2.: X_LEN *12rows to cover 4 days before today
@@ -1189,7 +1344,7 @@ class Formatter_2dImg32x36(Formatter_base2dImg):
         for i in range(0, min(len(stk), X_LEN*rows)): 
              kl = stk[i]
              x, y = int(i %X_LEN), int(i /X_LEN)
-             rows6C[y][x] = kl.floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+             rows6C[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
         img3C += self.expand6Cto3C_Y(rows6C)
 
         # parition 3: X_LEN*15 KL1day to cover near a year
@@ -1208,7 +1363,7 @@ class Formatter_2dImg32x36(Formatter_base2dImg):
         rows6C = [ [ [Formatter_base2dImg.BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
         for i in range(0, min(len(stk), X_LEN*rows)): 
              x, y = int(i %X_LEN), int(i /X_LEN)
-             rows6C[y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+             rows6C[y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
         img3C += self.expand6Cto3C_Y(rows6C)
 
         if self._imgPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
@@ -1301,7 +1456,7 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
         datalen = min(len(stk), 16)
         for i in range(datalen): 
              x, y = Formatter_2dImgSnail16.COORDS16x16[i]
-             img6C[y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+             img6C[y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
         
         stk, bV = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48
         if not dtAsOf and len(stk) >0 : dtAsOf = stk[0].asof
@@ -1309,7 +1464,7 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
         datalen = min(len(stk), len(Formatter_2dImgSnail16.COORDS16x16) -16)
         for i in range(datalen): 
              x, y = Formatter_2dImgSnail16.COORDS16x16[16 +i]
-             img6C[y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+             img6C[y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
 
         # parition 1: the central 1x1 is current datetime, the outter are 255KL1d covers a year
         if not dtAsOf: return None
@@ -1321,7 +1476,7 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
         stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
         for i in range(min(len(stk), len(Formatter_2dImgSnail16.COORDS16x16) -1)): 
              x, y = Formatter_2dImgSnail16.COORDS16x16[1+i]
-             img6C[partition*16 + y][x] = stk[i].floatXC(baseline_Price=baseline_Price, baseline_Volume= bV, channels=6)
+             img6C[partition*16 + y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
 
         '''
         # parition 2 MF: the central 4x4 MF1m, the outter: 48*4MF5m cover 4days, 48 MF1d cover 48days

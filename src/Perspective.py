@@ -719,6 +719,7 @@ class Perspective(MarketData):
     #     if symbol and symbol in self._dictPerspective.keys():
     #         return self._dictPerspective[symbol].engorged
 
+    """
     @property
     def TickFloats(self) :
         if self._stacks[EVENT_KLINE_1DAY].size <=0:
@@ -767,6 +768,7 @@ class Perspective(MarketData):
                     result += v
 
         return result
+    """
 
     def __data2export(self, mdata, fields) :
         fdata = []
@@ -1240,13 +1242,15 @@ class Formatter_base2dImg(PerspectiveFormatter):
 ########################################################################
 class Formatter_2dImg32x20(Formatter_base2dImg):
     
-    X_LEN, Y_LEN = 32, 20
+    @staticmethod
+    def shape(): return (32, 20)
 
     def __init__(self, imgDir=None, dem=60, channels=8):
         '''Constructor'''
         super(Formatter_2dImg32x20, self).__init__(imgDir, dem, channels=channels)
 
     def doFormat(self, symbol=None) :
+        X_LEN, Y_LEN = Formatter_2dImg32x20.shape()
         EXP_SECHEMA = OrderedDict({
             'asof'               : 1,
             EVENT_KLINE_1MIN     : 32,
@@ -1277,10 +1281,10 @@ class Formatter_2dImg32x20(Formatter_base2dImg):
 
         imgResult = []
 
-        # parition 0: pixel[0,0] as the datetime, self.__class__.X_LEN-2 KL1min to cover half an hour
+        # parition 0: pixel[0,0] as the datetime, X_LEN-2 KL1min to cover half an hour
         rows =1
         stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
-        rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(self.__class__.X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
+        rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
         for y in range(0, rows):
             for x in [0]:
                 rows6C[y][x][0] = 0
@@ -1290,7 +1294,7 @@ class Formatter_2dImg32x20(Formatter_base2dImg):
                 rows6C[y][x][4] = (dtAsOf.month-1) / 12.0
                 rows6C[y][x][5] = dtAsOf.day / 31.0
 
-                rows6C[y][self.__class__.X_LEN -1 -x] = rows6C[y][x]
+                rows6C[y][X_LEN -1 -x] = rows6C[y][x]
 
         klPerRow =30
         for i in range(0, min(len(stk), klPerRow *rows)): 
@@ -1301,18 +1305,18 @@ class Formatter_2dImg32x20(Formatter_base2dImg):
 
         imgResult += rows6C # imgResult += self.expand6Cto3C_Y(rows6C)
         
-        # parition 1: self.__class__.X_LEN *15rows KL5min to cover a week
+        # parition 1: X_LEN *15rows KL5min to cover a week
         stk, bV = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48
         # break line takes current date-time
         # br1 = [ dtAsOf.hour/24.0, dtAsOf.minute/60.0, dtAsOf.weekday() / 7.0] if dtAsOf else [BMP_COLOR_BG_FLOAT] *(self._channels -3)
-        # img3C.append([br1] * self.__class__.X_LEN)
+        # img3C.append([br1] * X_LEN)
 
-        # parition 1.1.: self.__class__.X_LEN *2rows today's 48 KL5min in the center
+        # parition 1.1.: X_LEN *2rows today's 48 KL5min in the center
         rows =2
         klPerRow =24
-        rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(self.__class__.X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
+        rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
         for y in range(0, rows):
-            for x in range(int((self.__class__.X_LEN -klPerRow)/2)):
+            for x in range(int((X_LEN -klPerRow)/2)):
                 rows6C[y][x][0] = dtAsOf.minute/60.0
                 rows6C[y][x][1] = dtAsOf.hour/24.0
                 rows6C[y][x][2] = 0
@@ -1320,7 +1324,7 @@ class Formatter_2dImg32x20(Formatter_base2dImg):
                 rows6C[y][x][4] = (dtAsOf.month-1) / 12.0
                 rows6C[y][x][5] = dtAsOf.day / 31.0
 
-                rows6C[y][self.__class__.X_LEN -1 -x] = rows6C[y][x]
+                rows6C[y][X_LEN -1 -x] = rows6C[y][x]
 
         for i in range(0, min(len(stk), klPerRow*rows)): 
              kl = stk[i]
@@ -1328,40 +1332,40 @@ class Formatter_2dImg32x20(Formatter_base2dImg):
                   # split today's out of the days before
                  if i>0: del stk[:i]
                  break
-             x, y = int(i %klPerRow) +int((self.__class__.X_LEN -klPerRow)/2), int(i /klPerRow)
+             x, y = int(i %klPerRow) +int((X_LEN -klPerRow)/2), int(i /klPerRow)
              rows6C[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
         imgResult += rows6C # img3C += self.expand6Cto3C_Y(rows6C)
 
-        # parition 1.2.: self.__class__.X_LEN *12rows to cover 4 days before today
+        # parition 1.2.: X_LEN *12rows to cover 4 days before today
         rows =6
         klPerRow =32
-        rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(self.__class__.X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
+        rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
         for i in range(0, min(len(stk), klPerRow*rows)): 
              kl = stk[i]
              x, y = int(i %klPerRow), int(i /klPerRow)
              rows6C[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
         imgResult += rows6C # img3C += self.expand6Cto3C_Y(rows6C)
 
-        # parition 3: self.__class__.X_LEN*15 KL1day to cover near a year
+        # parition 3: X_LEN*15 KL1day to cover near a year
         stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
 
         # break line takes current date-time
         br2 = self._complementChannels([ dtAsOf.weekday() / 7.0, (dtAsOf.month-1) / 12.0, dtAsOf.day / 31.0, dtAsOf.hour/24.0, dtAsOf.minute/60.0])
-        imgResult.append([br2] * self.__class__.X_LEN) # img3C.append([br2] * self.__class__.X_LEN)
+        imgResult.append([br2] * X_LEN) # img3C.append([br2] * X_LEN)
 
         rows =8
         klPerRow =32
-        rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(self.__class__.X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
+        rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
         for i in range(0, min(len(stk), klPerRow*rows)): 
              x, y = int(i %klPerRow), int(i /klPerRow)
              rows6C[y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
         imgResult += rows6C # img3C += self.expand6Cto3C_Y(rows6C)
 
-        # the hit expected self.__class__.Y_LEN 
+        # the hit expected Y_LEN 
         rows = len(imgResult)
-        if rows > self.__class__.Y_LEN:
-            del imgResult[self.__class__.Y_LEN:]
-        else : imgResult += [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(self.__class__.X_LEN)] for y in range(self.__class__.Y_LEN - rows)] # DONOT take [ [[0.0]*6] *16] *16
+        if rows > Y_LEN:
+            del imgResult[Y_LEN:]
+        else : imgResult += [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(Y_LEN - rows)] # DONOT take [ [[0.0]*6] *16] *16
 
         if self._imgPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
             img3C = self.expandRGBLayers(imgResult)

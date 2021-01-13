@@ -57,7 +57,7 @@ FN_SUFIX_WEIGHTS_H5 = '_weights.h5'
 ########################################################################
 class BaseModel(object) :
 
-    GPUs = BaseModel.__get_available_gpus()
+    GPUs = BaseModel.list_GPUs()
     COMPILE_ARGS ={
     'loss':'categorical_crossentropy', 
     # 'optimizer': sgd,
@@ -65,8 +65,8 @@ class BaseModel(object) :
     }
 
     
-    @static_method
-    def __get_available_gpus() :
+    @staticmethod
+    def list_GPUs() :
         from tensorflow.python.client import device_lib
         local_device_protos = device_lib.list_local_devices()
         return [{'name':x.name, 'detail':x.physical_device_desc } for x in local_device_protos if x.device_type == 'GPU']

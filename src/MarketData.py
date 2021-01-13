@@ -103,6 +103,7 @@ class MarketData(EventData):
                 
         return self.datetime
 
+    """
     @abstractmethod
     def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
@@ -116,6 +117,7 @@ class MarketData(EventData):
         @return float[] with dim = 6 for neural network computing
         '''
         raise NotImplementedError
+    """
 
     def dumps(self) :
         raise NotImplementedError
@@ -322,6 +324,7 @@ class KLineData(MarketData):
         ev.setData(kl)
         return ev
 
+    """
     @abstractmethod
     def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
@@ -345,6 +348,7 @@ class KLineData(MarketData):
             ret[5] = FUNC_floatNormalize(self.openInterest, baseline_Price)
 
         return ret
+    """
 
 ########################################################################
 class MoneyflowData(MarketData):
@@ -394,12 +398,14 @@ class MoneyflowData(MarketData):
         ev.setData(md)
         return ev
 
+    """
     @abstractmethod
     def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim =4 for neural network computing
         '''
         return self.floatXC(baseline_Price, baseline_Volume, 4)
+    """
 
 ########################################################################
 class TickToKLineMerger(object):

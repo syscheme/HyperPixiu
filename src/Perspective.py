@@ -1234,7 +1234,8 @@ class Formatter_base2dImg(PerspectiveFormatter):
                 v = img[y][x]
                 for i in range(scaleY):
                     for j in range(scaleX):
-                        pixel = v[(j*3 +i)*3:(j*3 +i +1)*3 ]
+                        coffset = 3* (i*scaleX +j)
+                        pixel = v[coffset : coffset+3]
                         if len(pixel) <3: pixel += [BMP_COLOR_BG_FLOAT] * (3-len(pixel))
                         imgRGB[i *lenY +y][j*lenX +x] = pixel
 

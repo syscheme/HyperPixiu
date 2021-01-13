@@ -1231,29 +1231,30 @@ class Formatter_base2dImg(PerspectiveFormatter):
         imgRGB = [ [ [BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX* scaleX)] for y in range(lenY* scaleY) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
         for y in range(lenY):
             for x in range(lenX) :
+                v = img[y][x]
                 for i in range(scaleY):
                     for j in range(scaleX):
-                        pixel = img[y][x][(i*3 +j)*3:(i*3 +j +1)*3 ]
+                        pixel = v[(j*3 +i)*3:(j*3 +i +1)*3 ]
                         if len(pixel) <3: pixel += [BMP_COLOR_BG_FLOAT] * (3-len(pixel))
-                        imgRGB[i * lenY +y][j*lenX +x] = pixel
+                        imgRGB[i *lenY +y][j*lenX +x] = pixel
 
         return imgRGB
 
 ########################################################################
-class Formatter_2dImg32x20(Formatter_base2dImg):
+class Formatter_2dImg32x18(Formatter_base2dImg):
     
     @staticmethod
-    def shape(): return (32, 20)
+    def shape(): return (32, 18)
 
     def __init__(self, imgDir=None, dem=60, channels=8):
         '''Constructor'''
-        super(Formatter_2dImg32x20, self).__init__(imgDir, dem, channels=channels)
+        super(Formatter_2dImg32x18, self).__init__(imgDir, dem, channels=channels)
 
     def doFormat(self, symbol=None) :
-        X_LEN, Y_LEN = Formatter_2dImg32x20.shape()
+        X_LEN, Y_LEN = Formatter_2dImg32x18.shape()
         EXP_SECHEMA = OrderedDict({
             'asof'               : 1,
-            EVENT_KLINE_1MIN     : 32,
+            EVENT_KLINE_1MIN     : 60,
             EVENT_KLINE_5MIN     : 240,
             EVENT_KLINE_1DAY     : 240,
         })
@@ -1282,7 +1283,7 @@ class Formatter_2dImg32x20(Formatter_base2dImg):
         imgResult = []
 
         # parition 0: pixel[0,0] as the datetime, X_LEN-2 KL1min to cover half an hour
-        rows =1
+        rows =2
         stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
         rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
         for y in range(0, rows):
@@ -1346,20 +1347,22 @@ class Formatter_2dImg32x20(Formatter_base2dImg):
              rows6C[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
         imgResult += rows6C # img3C += self.expand6Cto3C_Y(rows6C)
 
-        # parition 3: X_LEN*15 KL1day to cover near a year
+        # parition 3: X_LEN*5 KL1day to cover near a year
         stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
 
         # break line takes current date-time
         br2 = self._complementChannels([ dtAsOf.weekday() / 7.0, (dtAsOf.month-1) / 12.0, dtAsOf.day / 31.0, dtAsOf.hour/24.0, dtAsOf.minute/60.0])
         imgResult.append([br2] * X_LEN) # img3C.append([br2] * X_LEN)
 
-        rows =8
+        rows =7 # to =5 when KL1week involves, leave 2rows to KL1week
         klPerRow =32
         rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
         for i in range(0, min(len(stk), klPerRow*rows)): 
              x, y = int(i %klPerRow), int(i /klPerRow)
              rows6C[y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
         imgResult += rows6C # img3C += self.expand6Cto3C_Y(rows6C)
+
+        # TODO parition 4: X_LEN*2 KL1week to cover near a year
 
         # the hit expected Y_LEN 
         rows = len(imgResult)

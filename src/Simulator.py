@@ -1918,7 +1918,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
             self._recorder.registerCategory(EVENT_ADVICE, params= {'columns' : AdviceData.COLUMNS})
 
         self._tradeSymbol = self.wkTrader.objectives[0] # idealTrader only cover a single symbol from the objectives
-        self.__fmtr = Formatter_2dImg32x20('/mnt/e/bmp/%s.' % self._tradeSymbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
+        self.__fmtr = Formatter_2dImg32x18('/mnt/e/bmp/%s.' % self._tradeSymbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
         self._episodes =1 # idealTrader only run one loop
         return True
     
@@ -1972,7 +1972,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         prevDir = self.__lastestDir # backup for logging
         if (len(self.__momentsToSample) >0 and d.asof.strftime('%H:%M:%S') in self.__momentsToSample) or dirToExec != self.__lastestDir :
 
-            # fmtr = Formatter_2dImg32x20('/mnt/e/bmp/%s.' % symbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
+            # fmtr = Formatter_2dImg32x18('/mnt/e/bmp/%s.' % symbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
             floatsState = self._marketState.format(self.__fmtr, self._tradeSymbol) # floatsState = self._marketState.exportF1548(self._tradeSymbol)
             if not floatsState: return
 
@@ -2386,7 +2386,7 @@ class ShortSwingScanner(OfflineSimulator):
         self.__sampleFrm = [None]  * self.__sampleFrmSize
         self.__sampleIdx, self.__frameNo = 0, 0
 
-        self.__fmtr = Formatter_2dImg32x20(self.outdir) # = Formatter_2dImg32x20('/mnt/e/bmp/%s.' % symbol, dem=5)  = Formatter_2dImgSnail16() = Formatter_F1548()
+        self.__fmtr = Formatter_2dImg32x18(self.outdir) # = Formatter_2dImg32x18('/mnt/e/bmp/%s.' % symbol, dem=5)  = Formatter_2dImgSnail16() = Formatter_F1548()
 
     @property
     def stateOfMoments(self) : return self.__stateOfMoments

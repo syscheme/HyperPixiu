@@ -23,7 +23,7 @@ from tensorflow.keras.models import model_from_json
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 # from tensorflow.keras import backend
 from tensorflow.keras.layers import Input, Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D, GlobalAveragePooling1D, ZeroPadding1D
-from tensorflow.keras.layers import BatchNormalization, Flatten, add, GlobalAveragePooling2D
+from tensorflow.keras.layers import BatchNormalization, Flatten, add, GlobalAveragePooling2D, Lambda
 from tensorflow.keras import regularizers
 from tensorflow.keras import backend as backend
 from tensorflow.keras.utils import Sequence
@@ -283,15 +283,30 @@ class Model88(BaseModel) :
     '''
     Model88 has a common 88 features at the end
     '''
-    def __init__(self, outputSize, program=None):
+    def __init__(self, outputClasses =3, program=None):
         super(Model88,self).__init__(program)
-        self._outputSize = outputSize
+        self._classesOut = outputClasses
 
-    def appendFeature88(self, layerToAppend, fnWeights)
+    def __feature88toOut(self, flatternLayerToAppend, fnWeights) :
         # unified final layers Dense(VirtualFeature88) then Dense(self._actionSize)
-        x = Dropout(0.3)(layerToAppend) #  x= Dropout(0.5)(x)
+        x = Dropout(0.3)(flatternLayerToAppend) #  x= Dropout(0.5)(x)
         x = Dense(88, name='VirtualFeature88')(x)
-        x = Dense(self._outputSize, activation='softmax')(x)
+        x = Dense(self._classesOut, activation='softmax')(x)
+        return x
+
+    
+
+    def build_XXXX(input_shape, ):
+        '''
+        input_shape: shape tuple otherwise the input shape
+            has to be `(224, 224, 3)` (with `channels_last` data format)
+            or `(3, 224, 224)` (with `channels_first` data format).
+            It should have exactly 3 inputs channels,
+            and width and height should be no smaller than 32.
+        '''
+
+    def create(self, layerIn):
+        layerIn = Input(shapeIn)
 
         self._dnnModel = Model(inputs=layerIn, outputs=x)
         # sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
@@ -305,6 +320,97 @@ class Model88(BaseModel) :
 class Model2DwithC4Expanded(Model88) :
     '''
     2D models with channels expanded by channels=4
+    '''
+
+    def __slice2d(x, idxSlice, channels_per_slice=4): 
+        slice = x[:,:, idxSlice : idxSlice+4]
+        ch2append = channels_per_slice - slice.shape[2] # [0]s to append to fit channel=4
+        if ch2append >0:
+            slide0 = np.zeros(tuple(list(slice.shape[:2]) +[ch2append]))
+            slice = np.concatenate((slice, slice0), axis=2)
+        return slice
+
+    def __slice2d_flow(inputs, shared_layers, idxSlice, channels_per_slice=4):
+        channels = inputs.shape[2]
+        slice_shape = tuple(list(inputs.shape[:2]) +[channels_per_slice])
+        x = Lambda(__slice2d, output_shape=slice_shape, arguments={'idxSlice':idxSlice, 'channels_per_slice':channels_per_slice})(inputs)
+
+        # sample
+        x = shared_layers(x)
+        x =Flatten()(x)
+        x =Dropout(0.3)(x)
+        x =Dense(518)(x)
+        return x
+
+    def buildModel(self, input_shape=(32,16,8)) :
+        channels = input_shape[2]
+        channels_per_slice =4
+        slice_shape = tuple(list(input_shape[:2]) +[channels_per_slice])
+        slices = int(channels / channels_per_slice)
+        if 0 != channels % channels_per_slice: slices +=1
+
+        layerIn = Input(shape=input_shape)
+        shared_layers = buildSharedLayers(slice_shape)
+        
+        x = [None] * slices
+        for i in range(slices):
+            x[i] = __slice2d_flow(layerIn, shared_layers, i, channels_per_slice=channels_per_slice)
+        
+        merge = merge(x, mode='concat') # concatenate([x1,x2,x3])
+
+        o = self.__feature88toOut(merge, fnWeights)
+        model = Model(inputs=layerIn, outputs=o)
+        model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **ReplayTrainer.COMPILE_ARGS)
+        model.summary()
+        return model
+
+    @abstractmethod
+    def buildSharedLayers(self, slice_shape):
+        #TODO: need to define a channel=4 module
+        # refer to:
+        # /usr/local/lib64/python3.6/site-packages/keras_applications/resnet50.py
+        # /usr/local/lib/python3.6/site-packages/tensorflow/contrib/eager/python/examples/resnet50/resnet50.py
+        # def ResNet50(include_top=True, ...
+        return ResNet50(weights=None, classes=1000, input_shape=slice_shape) # dummy code
+
+
+    '''
+    refer to 
+    https://blog.csdn.net/qq_36113741/article/details/105854544
+    a = Input(shape=(32,16,8))
+    x1 = Lambda(__slice2d, output_shape=(32,16,3), arguments={'idxSlice':0, 'channels_per_slice'=3})(a)
+    x2 = Lambda(__slice2d, output_shape=(32,16,3), arguments={'idxSlice':1, 'channels_per_slice'=3})(a)
+    x3 = Lambda(__slice2d, output_shape=(32,16,3), arguments={'idxSlice':2, 'channels_per_slice'=3})(a)
+
+    pretrained = ResNet50(weights=None, classes=1000, input_shape=(32, 16, 3))
+    x1 =pretrained(x1)
+    x1 =Flatten()(x1)
+    x1 =Dense(518)(x1)
+    x1 =BatchNormalization()(x1)
+    x1 =Dropout(0.3)(x1)
+    x1 =Dense(88)(x1)
+
+    x2 =pretrained(x2)
+    x2 =Flatten()(x2)
+    x2 =Dense(518)(x2)
+    x2 =BatchNormalization()(x2)
+    x2 =Dropout(0.3)(x2)
+    x2 =Dense(88)(x2)
+
+    x3 =pretrained(x3)
+    x3 =Flatten()(x3)
+    x3 =Dense(518)(x3)
+    x3 =BatchNormalization()(x3)
+    x3 =Dropout(0.3)(x3)
+    x3 =Dense(88)(x3)
+
+    merge = merge([x1,x2],mode='concat') # concatenate([x1,x2,x3])
+    o = Dense(20, name='VClz512to20.1of2', activation='relu')(merge)
+    o = Dense(3, name='VClz512to20.2of2', activation='softmax')(o)
+    model = Model(inputs=a, outputs=o)
+    model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **ReplayTrainer.COMPILE_ARGS)
+    model.summary()
+    return model
     '''
 
 ########################################################################

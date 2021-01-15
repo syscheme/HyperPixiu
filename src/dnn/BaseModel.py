@@ -5,7 +5,6 @@ A DQN Trainer detached from gymAgent to perform 'offline' training
 It reads the ReplayBuffers, which was output from agentDQN, to train the model. Such a 'offline' trainning would help the online-agent to improve the loss/accurate of the model,
 and can also distribute the training load outside of the online agent
 '''
-
 from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 from HistoryData  import H5DSET_DEFAULT_ARGS
 # ----------------------------
@@ -22,15 +21,7 @@ from tensorflow.keras.optimizers import Adam, SGD
 from tensorflow.keras.models import model_from_json
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 # from tensorflow.keras import backend
-from tensorflow.keras.layers import Input, Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D, GlobalAveragePooling1D, ZeroPadding1D
-from tensorflow.keras.layers import BatchNormalization, Flatten, add, GlobalAveragePooling2D
-from tensorflow.keras import regularizers
-from tensorflow.keras import backend as backend
-from tensorflow.keras.utils import Sequence
-# from keras.layers.merge import add
-
-from tensorflow.keras.applications.resnet50 import ResNet50
-
+from tensorflow.keras import saving
 import tensorflow as tf
 
 import sys, os, platform, random, copy, threading
@@ -51,85 +42,285 @@ GPUs = get_available_gpus()
 if len(GPUs) >1:
     from keras.utils.training_utils import multi_gpu_model
 
-class Hd5DataGenerator(Sequence):
-    def __init__(self, trainer, batch_size):
-        self.trainer = trainer
-        self.batch_size = batch_size
-
-    def __len__(self):
-        return self.trainer.chunksInPool
-
-    def __getitem__(self, index):
-        batch = self.trainer.readDataChunk(index)
-        return batch['state'], batch['action']
-
-    def __iter__(self):
-        for i in range(self.__len__()) :
-            batch = self.trainer.readDataChunk(i)
-            yield batch['state'], batch['action']
+FN_SUFIX_MODEL_JSON = '_model.json'
+FN_SUFIX_WEIGHTS_H5 = '_weights.h5'
 
 ########################################################################
-def exportLayerWeights(theModel, h5fileName, layerNames=[]) :
-    if not theModel or len(h5fileName) <=0 or len(layerNames) <=0:
-        return
+class BaseModel(object) :
 
-    layerExec =[]
-    with h5py.File(h5fileName, 'w') as h5file:
-        for lyname in layerNames:
-            try:
-                layer = theModel.get_layer(name=lyname)
-            except:
-                continue
+    GPUs = BaseModel.list_GPUs()
+    COMPILE_ARGS ={
+    'loss':'categorical_crossentropy', 
+    # 'optimizer': sgd,
+    'metrics':['accuracy']
+    }
 
-            g = h5file.create_group('layer.%s' % lyname)
-            g.attrs['name'] = lyname
-            layerWeights = layer.get_weights()
-            w0 = np.array(layerWeights[0], dtype=float)
-            w1 = np.array(layerWeights[1], dtype=float)
-            wd0 = g.create_dataset('weights.0', data= w0, **H5DSET_DEFAULT_ARGS)
-            wd1 = g.create_dataset('weights.1', data= w1, **H5DSET_DEFAULT_ARGS)
-            layerExec.append(lyname)
-    return layerExec
-
-def importLayerWeights(theModel, h5fileName, layerNames=[]) :
-    if not theModel or len(h5fileName) <=0:
-        return
-
-    # print('importing weights of layers[%s] from file %s' % (','.join(layerNames), h5fileName))
-    layerExec =[]
-    with h5py.File(h5fileName, 'r') as h5file:
-        if len(layerNames) <=0 or '*' in layerNames: # populate the layernames from the h5 file
-            while '*' in layerNames: layerNames.remove('*')
-
-            for lyname in h5file.keys():
-                if lyname.index('layer.') !=0:
-                    continue # mismatched prefix
-
-                lyname = lyname[len('layer.'):]
-                if not lyname in layerNames:
-                    layerNames.append(lyname)
-
-        for lyname in layerNames:
-            try:
-                layer = theModel.get_layer(name=lyname)
-            except:
-                continue
-
-            gName = 'layer.%s' % lyname
-            if not gName in h5file.keys():
-                continue
-
-            g = h5file['layer.%s' % lyname]
-            wd0 = g['weights.0']
-            wd1 = g['weights.1']
-            weights = [wd0, wd1]
-            layer.set_weights(weights)
-            layer.trainable = False
-            # weights = layer.get_weights()
-            layerExec.append(lyname)
     
-    return layerExec
-    # print('loaded weights of layers[%s] from file %s' % (strExeced, h5fileName))
+    @staticmethod
+    def list_GPUs() :
+        from tensorflow.python.client import device_lib
+        local_device_protos = device_lib.list_local_devices()
+        return [{'name':x.name, 'detail':x.physical_device_desc } for x in local_device_protos if x.device_type == 'GPU']
+
+    def __init__(self, program=None):
+        self._dnnModel = None
+        self._program = program
+        self._modelId = 'NA'
+
+    @property
+    def program(self) :
+        return self._program
+
+    @property
+    def model(self) : return self._dnnModel
+
+    def compile(self, compireArgs=None, optimizer=None):
+        if not self._dnnModel: return
+
+        if not compireArgs or isinstance(compireArgs, dict) and len(compireArgs) <=0:
+            compireArgs = BaseModel.COMPILE_ARGS
+        if not optimizer:
+            optimizer = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+
+        self._dnnModel.compile(optimizer=optimizer, **compireArgs)
+        return self.model
+
+    def load_model(filepath, custom_objects=None):
+        if h5py is None:
+            raise ImportError('`load_model` requires h5py')
+
+        with h5py.File(filepath, 'r') as h5f:
+            # step 1. load json model defined in h5f['model_config']
+            if 'model_config' in h5f:
+                self._dnnModel = None
+                model_config = h5f['model_config'].decode('utf-8')
+                self._dnnModel = model_from_json(model_config, custom_objects=custom_objects)
+
+            if not self._dnnModel:
+                return self.model
+
+            # step 2. load weights in h5f['model_weights']
+            model_weights_group = h5f['model_weights']
+            saving.load_weights_from_hdf5_group_by_name(model_weights_group, self._dnnModel.layers)
+            
+            # step 3. by default, disable trainable
+            for layer in self._dnnModel.layers:
+                layer.trainable = False
+
+        return self.model
+
+    def save_model(filepath, saveModel=True, saveWeights=True) :
+        
+        if not self._dnnModel: return False
+
+        with h5py.File(filepath, 'w') as h5f:
+            # step 1. save json model in h5f['model_config']
+            if saveModel:
+                model_json = self._dnnModel.to_json()
+                h5f['model_config'] = model_json.encode('utf-8')
+
+            if saveWeights:
+                if 'model_weights' in h5f.keys():
+                    del h5f['model_weights']
+                
+                g = h5f.create_group('model_weights')
+                saving.load_weights_from_hdf5_group_by_name(g, self._dnnModel.layers)
+
+        return True
+
+    def enable_trainable(prefixies=[], enable=True) :
+        for layer in self._dnnModel.layers:
+            lnTag = layer.name.split(':')[0]
+            if lnTag in prefixies :
+                layer.trainable = enable
+
+    """
+    def loadModelFromJson(self, modelJson, modelId, compireArgs=None, optimizer=None):
+        if len(GPUs) <= 1:
+            self._dnnModel = model_from_json(modelJson)
+        else:
+            # we'll store a copy of the model on *every* GPU and then combine the results from the gradient updates on the CPU
+            with tf.device("/cpu:0"):
+                self._dnnModel = model_from_json(modelJson)
+
+        if not self._dnnModel:
+            return None
+        
+        if isinstance(compireArgs, dict) and len(compireArgs) >0:
+            self.compile(compireArgs=compireArgs, optimizer=optimizer)
+
+        return self._dnnModel
+
+    def loadModelFromJsonFile(self, fnModelJson, modelId =None) :
+        try : 
+            self.debug('loading saved model from %s' % fnModelJson)
+            if not modelId:
+                modelId = os.path.basename(fnModelJson)
+                if FN_SUFIX_MODEL_JSON in modelId:
+                    modelId = modelId[: modelId.index(FN_SUFIX_MODEL_JSON)]
+
+            with open(fnModelJson, 'r') as fj:
+                model_json = fj.read()
+                if self.loadModelFromJson(model_json):
+                    self.info('loadModelFromJsonFile() loaded model[%s] from %s' % (modelId, fnModelJson))
+                    self._modelId = modelId
+                    return self.model
+        except Exception as ex:
+            self.logexception(ex)
+
+        self.error('loadModelFromJsonFile() failed to model from %s' % fnModelJson)
+        return None
+
+    def loadModelWeights(self, fnWeights) :
+        if not self.model :
+            self.error('loadModelWeights() no model ready to load weights from %s' % fnModelJson)
+            return None
+        try :
+            self.debug('loading saved weights from %s' %fnWeights)
+            self._brain.load_weights(fnWeights)
+            self.info('loaded model and weights from %s' % fnWeights)
+        except:
+            self.logexception(ex)
+
+        return self.model
+
+    def loadModelDir(self, dirModel, compireArgs=None, optimizer=None):
+        self.debug('loading saved model from dir %s' % dirModel)
+        for fn in hist.listAllFiles(dirModel):
+            if FN_SUFIX_MODEL_JSON == fn[-len(FN_SUFIX_MODEL_JSON):]:
+                if not self.loadModelFromJsonFile(fn):
+                    return None
+
+        self.compile(compireArgs=compireArgs, optimizer=optimizer)
+
+        self.debug('loading saved model from %s' % dirModel)
+        fnWeights = os.path.join(dirModel, '%s%s' % (self._modeId, FN_SUFIX_WEIGHTS_H5))
+        self.loadModelWeights(fnWeights)
+
+        # TODO fnWeights = os.path.join(dirModel, 'nonTrainables.h5')
+        # try :
+        #     if os.stat(fn_weights):
+        #         self.debug('importing weights of layers[%s] from file %s' % (','.join(self._nonTrainables), fn_weights))
+        #         lns = importLayerWeights(self._brain, fn_weights, self._nonTrainables)
+        #         if len(lns) >0:
+        #             sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+        #             self._brain.compile(optimizer=sgd, **Trainer.COMPILE_ARGS)
+        #             self.info('imported non-trainable weights of layers[%s] from file %s' % (','.join(lns), fn_weights))
+        # except Exception as ex:
+        #     self.logexception(ex)
+
+        return self.model
+
+    def saveModel(self, dirModel, saveModel=True, saveWeights=True):
+        '''
+        json/weights in a single h5
+        https://blog.csdn.net/wanggao_1990/article/details/90446736
+        '''
+        if saveModel:
+            try :
+                os.makedirs(dirModel)
+                fn_model =os.path.join(dirModel, '%s%s' % (self._modelId, FN_SUFIX_MODEL_JSON)) 
+                with open(fn_model, 'w') as mjson:
+                    model_json = self._brain.to_json()
+                    mjson.write(model_json)
+                    self.info('saved model as %s' %fn_model)
+            except :
+                self.logexception(ex)
+
+        if saveWeights:
+            fn_weights = os.path.join(dirModel, '%s%s' % (self._modeId, FN_SUFIX_WEIGHTS_H5))
+            self._brain.save(fn_weights)
+            self.info('%s() saved weights to %s' % fn_weights)
+
+    def exportLayerWeights(theModel, h5fileName, layerNames=[]) :
+        if not theModel or len(h5fileName) <=0 or len(layerNames) <=0:
+            return
+
+        layerExec =[]
+        with h5py.File(h5fileName, 'w') as h5file:
+            for lyname in layerNames:
+                try:
+                    layer = theModel.get_layer(name=lyname)
+                except:
+                    continue
+
+                g = h5file.create_group('layer.%s' % lyname)
+                g.attrs['name'] = lyname
+                layerWeights = layer.get_weights()
+                w0 = np.array(layerWeights[0], dtype=float)
+                w1 = np.array(layerWeights[1], dtype=float)
+                wd0 = g.create_dataset('weights.0', data= w0, **H5DSET_DEFAULT_ARGS)
+                wd1 = g.create_dataset('weights.1', data= w1, **H5DSET_DEFAULT_ARGS)
+                layerExec.append(lyname)
+        return layerExec
+
+    def importLayerWeights(theModel, h5fileName, layerNames=[]) :
+        if not theModel or len(h5fileName) <=0:
+            return
+
+        # print('importing weights of layers[%s] from file %s' % (','.join(layerNames), h5fileName))
+        layerExec =[]
+        with h5py.File(h5fileName, 'r') as h5file:
+            if len(layerNames) <=0 or '*' in layerNames: # populate the layernames from the h5 file
+                while '*' in layerNames: layerNames.remove('*')
+
+                for lyname in h5file.keys():
+                    if lyname.index('layer.') !=0:
+                        continue # mismatched prefix
+
+                    lyname = lyname[len('layer.'):]
+                    if not lyname in layerNames:
+                        layerNames.append(lyname)
+
+            for lyname in layerNames:
+                try:
+                    layer = theModel.get_layer(name=lyname)
+                except:
+                    continue
+
+                gName = 'layer.%s' % lyname
+                if not gName in h5file.keys():
+                    continue
+
+                g = h5file['layer.%s' % lyname]
+                wd0 = g['weights.0']
+                wd1 = g['weights.1']
+                weights = [wd0, wd1]
+                layer.set_weights(weights)
+                layer.trainable = False
+                # weights = layer.get_weights()
+                layerExec.append(lyname)
+        
+        return layerExec
+        # print('loaded weights of layers[%s] from file %s' % (strExeced, h5fileName))
+    """
+    #---logging -----------------------
+    def log(self, level, msg):
+        if not self._program: return
+        self._program.log(level, 'APP['+self.ident +'] ' + msg)
+
+    def debug(self, msg):
+        if not self._program: return
+        self._program.debug('APP['+self.ident +'] ' + msg)
+        
+    def info(self, msg):
+        '''正常输出'''
+        if not self._program: return
+        self._program.info('APP['+self.ident +'] ' + msg)
+
+    def warn(self, msg):
+        '''警告信息'''
+        if not self._program: return
+        self._program.warn('APP['+self.ident +'] ' + msg)
+        
+    def error(self, msg):
+        '''报错输出'''
+        if not self._program: return
+        self._program.error('APP['+self.ident +'] ' + msg)
+
+    def logexception(self, ex, msg=''):
+        '''报错输出+记录异常信息'''
+        self.error('%s %s: %s' % (msg, ex, traceback.format_exc()))
 
 ########################################################################
 class Trainer(BaseApplication):

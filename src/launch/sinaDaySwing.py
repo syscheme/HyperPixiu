@@ -22,10 +22,10 @@ from advisors.dnn import DnnAdvisor_S1548I4A3
 from crawler.producesSina import SinaMux, Sina_Tplus1, SinaSwingScanner
 
 import sys, os, platform, re
+import random
+
 RFGROUP_PREFIX  = 'ReplayFrame:'
 RFGROUP_PREFIX2 = 'RF'
-OUTFRM_SIZE = 8*1024
-import random
 
 ########################################################################
 class SinaDayEnd(SinaSwingScanner):

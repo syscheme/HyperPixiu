@@ -24,7 +24,7 @@ from crawler.producesSina import Sina_Tplus1, SinaSwingScanner
 import sys, os, platform
 RFGROUP_PREFIX  = 'ReplayFrame:'
 RFGROUP_PREFIX2 = 'RF'
-OUTFRM_SIZE = 8*1024
+
 import random
 
 ########################################################################

@@ -2,7 +2,7 @@
 
 from __future__ import division
 
-from Simulator import IdealTrader_Tplus1, ShortSwingScanner
+from Simulator import IdealTrader_Tplus1, ShortSwingScanner, SAMPLES_PER_H5FRAME
 from EventData import Event, EventData
 from MarketData import *
 from Perspective import PerspectiveState
@@ -976,11 +976,11 @@ def balanceSamples(filepathRFrm, compress=True) :
                 kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
                 print("frmIn[%s] processed, pending %s actCounts[%s,%s,%s]" % (frmInName, len(frmState), kI[0],kI[1],kI[2]))
 
-                if len(frmState) >= OUTFRM_SIZE:
-                    col_state = frmState[:OUTFRM_SIZE]
-                    col_action = frmAction[:OUTFRM_SIZE]
-                    frmState  = frmState[OUTFRM_SIZE:]
-                    frmAction = frmAction[OUTFRM_SIZE:]
+                if len(frmState) >= SAMPLES_PER_H5FRAME:
+                    col_state = frmState[:SAMPLES_PER_H5FRAME]
+                    col_action = frmAction[:SAMPLES_PER_H5FRAME]
+                    frmState  = frmState[SAMPLES_PER_H5FRAME:]
+                    frmAction = frmAction[SAMPLES_PER_H5FRAME:]
 
                     AD = np.where(col_action >=0.99)
                     kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]

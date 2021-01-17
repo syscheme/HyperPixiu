@@ -11,10 +11,10 @@ from advisors.dnn import DnnAdvisor_S1548I4A3
 from crawler.producesSina import Sina_Tplus1, SinaSwingScanner, populateMuxFromArchivedDir, balanceSamples
 
 import sys, os, platform
+import random
+
 RFGROUP_PREFIX  = 'ReplayFrame:'
 RFGROUP_PREFIX2 = 'RF'
-OUTFRM_SIZE = 8*1024
-import random
 
 if __name__ == '__main__':
 
@@ -59,11 +59,18 @@ if __name__ == '__main__':
     revents = None
 
     # determine the Playback instance
-    # evMdSource = '/mnt/e/AShareSample/hpx_archived/sina' #TEST-CODE
+    # evMdSource = '/mnt/e/AShareSample/hpx_archived/sina' # TEST-CODE
+    # evMdSource = '/mnt/e/AShareSample/ETF.2013-2019' # TEST-CODE
     evMdSource = Program.fixupPath(evMdSource)
     basename = os.path.basename(evMdSource)
     if os.path.isdir(evMdSource) :
-        histReader = populateMuxFromArchivedDir(p, evMdSource, symbol=SYMBOL)
+        try :
+            os.stat(os.path.join(evMdSource, 'h5tar.py'))
+            histReader = populateMuxFromArchivedDir(p, evMdSource, symbol=SYMBOL)
+        except:
+            # csvPlayback can only cover one symbol
+            p.info('taking CsvPlayback on dir %s for symbol[%s]' % (evMdSource, SYMBOL))
+            histReader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
     elif '.tcsv' in basename :
         p.info('taking TaggedCsvPlayback on %s for symbol[%s]' % (evMdSource, SYMBOL))
         histReader = hist.TaggedCsvPlayback(program=p, symbol=SYMBOL, tcsvFilePath=evMdSource)
@@ -89,10 +96,6 @@ if __name__ == '__main__':
         histReader.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
         histReader.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
         histReader.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
-    else:
-        # csvPlayback can only cover one symbol
-        p.info('taking CsvPlayback on dir %s for symbol[%s]' % (evMdSource, SYMBOL))
-        histReader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
 
     tdrWraper = None
     if 'remote' == advisorType :

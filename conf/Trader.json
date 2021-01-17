@@ -1,12 +1,12 @@
 // configuration of a BackTest
 {
     "logger": {
-        "level": "debug", //40
+        "level": "info", //40
         // "console": "False",
     },
 
     "trader": { // a trader operating an account by depending on advisor and marketEvents
-        "objectives": ["SH600837"], // ["SH510050"],
+        "objectives": ["SH510500"], // ["SH510050"], "SH600837"
 
         "backTest":{
             "startBalance": 100000,
@@ -40,7 +40,7 @@
 
     "marketEvents": { // the source of market events
         // "source": "sina", // as a crawler to get alive event from SINA
-        "source": "/mnt/e/AShareSample/SH600837_evmd_20200905Z.tcsv",  // "/mnt/e/AShareSample/advmd_20200905Z.tar.bz2", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
+        "source": "/mnt/e/AShareSample/ETF",    // "/mnt/e/AShareSample/SH600837_evmd_20200905Z.tcsv",  // "/mnt/e/AShareSample/advmd_20200905Z.tar.bz2", // "/mnt/e/AShareSample/ETF", "e:/AShareSample/ETF"
         // "source": "/mnt/d/workspace.t3600/HyperPixiu/out/tcsvMerger/SZ002008_*.tcsv*", 
         "exchange" : "AShare", // optional for trader, which take that of account normally
     },

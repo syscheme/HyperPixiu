@@ -93,7 +93,7 @@ class BaseModel(object) :
         self._dnnModel.compile(optimizer=optimizer, **compireArgs)
         return self.model
 
-    def load_model(filepath, custom_objects=None):
+    def load_model(self, filepath, custom_objects=None):
         if h5py is None:
             raise ImportError('`load_model` requires h5py')
 
@@ -117,14 +117,14 @@ class BaseModel(object) :
 
         return self.model
 
-    def save_model(filepath, saveModel=True, saveWeights=True) :
+    def save_model(self, filepath, saveModel=True, saveWeights=True) :
         
-        if not self._dnnModel: return False
+        if not self.model: return False
 
         with h5py.File(filepath, 'w') as h5f:
             # step 1. save json model in h5f['model_config']
             if saveModel:
-                model_json = self._dnnModel.to_json()
+                model_json = self.model.to_json()
                 h5f['model_config'] = model_json.encode('utf-8')
 
             if saveWeights:
@@ -132,7 +132,7 @@ class BaseModel(object) :
                     del h5f['model_weights']
                 
                 g = h5f.create_group('model_weights')
-                saving.load_weights_from_hdf5_group_by_name(g, self._dnnModel.layers)
+                saving.load_weights_from_hdf5_group_by_name(g, self.model.layers)
 
         return True
 

@@ -17,7 +17,8 @@ from tensorflow.keras.optimizers import Adam, SGD
 from tensorflow.keras.layers import Input, Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D, GlobalAveragePooling1D, ZeroPadding1D
 from tensorflow.keras.layers import BatchNormalization, Flatten, add, GlobalAveragePooling2D, Lambda, Concatenate
 from tensorflow.keras import regularizers
-# from tensorflow.keras.utils import Sequence
+from tensorflow.keras import regularizers
+from tensorflow.keras.utils import get_source_inputs
 
 from tensorflow.keras.applications.resnet50 import ResNet50
 
@@ -36,10 +37,10 @@ class Model88(BaseModel) :
         self._classesOut = outputClasses
         self._startLR    = kwargs.get('startLR', 0.01)
 
-    def _feature88toOut(self, flatternLayerToAppend) :
+    def _feature88toOut(self, flattern_inputs) :
         # unified final layers Dense(VirtualFeature88) then Dense(self._actionSize)
         lnTag ='F88.'
-        x = Dropout(0.3, name='%sDropout1' %lnTag)(flatternLayerToAppend) #  x= Dropout(0.5)(x)
+        x = Dropout(0.3, name='%sDropout1' %lnTag)(flattern_inputs) #  x= Dropout(0.5)(x)
         x = Dense(88, name='%sDense1' %lnTag)(x)
         x = Dense(self._classesOut,  name='%sDense2' %lnTag, activation='softmax')(x)
         return x
@@ -57,23 +58,22 @@ class Model88(BaseModel) :
         return coreId
 
     @abstractmethod
-    def buildup(self, input_shape):
-        '''
-        input_shape: shape tuple otherwise the input shape
-            has to be `(224, 224, 3)` (with `channels_last` data format)
-            or `(3, 224, 224)` (with `channels_first` data format).
-            It should have exactly 3 inputs channels,
-            and width and height should be no smaller than 32.
-        '''
-        layerIn = Input(shape=input_shape)
-        core_model = self.build_core(input_shape) # layerIn.shape)
+    def buildup(self, input_shape, input_tensor=None):
+        if input_tensor is None:
+            input_tensor = Input(shape=input_shape)
+            inputs = input_tensor
+        else:
+            inputs = get_source_inputs(input_tensor)
+
+        core_model = self.build_core(input_shape, input_tensor) # layerIn.shape)
         core_mId = core_model.name
         self._tagCoreModel(core_model, core_mId)
 
-        x = core_model(layerIn)
+        x = core_model(input_tensor)
         x = self._feature88toOut(x)
+        # x = self._feature88toOut(core_model)
 
-        self._dnnModel = Model(inputs=layerIn, outputs=x)
+        self._dnnModel = Model(inputs=inputs, outputs=x, name=self.modelId)
         # self._dnnModel.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **BaseModel.COMPILE_ARGS)
         # self._dnnModel.summary()
         return self.model
@@ -92,7 +92,7 @@ class Model88(BaseModel) :
                 layer._name = lnTag + layer.name
 
     @abstractmethod
-    def build_core(self, slice_shape):
+    def build_core(self, input_shape, input_tensor): # TODO: input_shape was supposed to get from input_tensor
         raise NotImplementedError
 
     def create(self, layerIn):
@@ -119,12 +119,13 @@ class Model88_Flat(Model88) :
     def modelId(self) :
         return 'M88F.%s' % self.coreId
 
-    def buildup(self, input_shape=(1548, )):
+    def buildup(self, input_shape=(1548, ), input_tensor=None):
         layerIn = Input(shape=input_shape)
         new_shape = (int(input_shape[0]/4), 4)
         x = Reshape(new_shape, input_shape=input_shape)(layerIn)
-        x = super(Model88_Flat, self).buildup(new_shape)(x)
-        self._dnnModel = Model(inputs=layerIn, outputs=x)
+        m = super(Model88_Flat, self).buildup(new_shape, x)
+        x = m(x)
+        self._dnnModel = Model(inputs=get_source_inputs(layerIn), outputs=x)
         return self.model
 
 # --------------------------------
@@ -135,9 +136,14 @@ class Model88_Cnn1Dx4R2(Model88_Flat) :
     def __init__(self, **kwargs):
         super(Model88_Cnn1Dx4R2, self).__init__(**kwargs)
 
-    def build_core(self, input_shape):
-        layerIn = Input(shape=input_shape)
-        x = Conv1D(128, 3, activation='relu')(layerIn)
+    def build_core(self, input_shape, input_tensor):
+        if input_tensor is None:
+            input_tensor = Input(shape=input_shape)
+            inputs = input_tensor
+        else:
+            inputs = get_source_inputs(input_tensor)
+
+        x = Conv1D(128, 3, activation='relu')(input_tensor)
         x = BatchNormalization()(x)
         x = Conv1D(256, 3, activation='relu')(x)
         x = MaxPooling1D(2)(x)
@@ -160,7 +166,7 @@ class Model88_Cnn1Dx4R2(Model88_Flat) :
         x = Dense(512, activation='relu')(x)
         x = BatchNormalization()(x)
 
-        return Model(layerIn, x, name=self.coreId)
+        return Model(inputs, x, name=self.coreId)
 
 # --------------------------------
 class Model88_Cnn1Dx4R3(Model88_Flat) :
@@ -170,9 +176,11 @@ class Model88_Cnn1Dx4R3(Model88_Flat) :
     def __init__(self, **kwargs):
         super(Model88_Cnn1Dx4R3, self).__init__(**kwargs)
 
-    def build_core(self, input_shape):
-        layerIn = Input(shape=input_shape)
-        x = Conv1D(128, 3, activation='relu', inputs=layerIn)
+    def build_core(self, input_shape, input_tensor):
+        if input_tensor is None:
+            input_tensor = Input(shape=input_shape)
+
+        x = Conv1D(128, 3, activation='relu')(input_tensor)
         x = BatchNormalization()(x)
         x = Conv1D(256, 3, activation='relu')(x)
         x = MaxPooling1D(2)(x)
@@ -195,7 +203,7 @@ class Model88_Cnn1Dx4R3(Model88_Flat) :
         x = Dense(512, activation='relu')(x)
         x = BatchNormalization()(x)
 
-        return Model(layerIn, x, name=self.coreId)
+        return Model(input_tensor, x, name=self.coreId)
 
 # --------------------------------
 class Model88_VGG16d1(Model88_Flat) :
@@ -205,14 +213,16 @@ class Model88_VGG16d1(Model88_Flat) :
     def __init__(self, **kwargs):
         super(Model88_VGG16d1, self).__init__(**kwargs)
 
-    def build_core(self, input_shape):
+    def build_core(self, input_shape, input_tensor):
+        if input_tensor is None:
+            input_tensor = Input(shape=input_shape)
+
         weight_decay = 0.0005
 
-        layerIn = Input(shape=input_shape)
         #第一个 卷积层 的卷积核的数目是32 ，卷积核的大小是3*3，stride没写，默认应该是1*1
         #对于stride=1*1,并且padding ='same',这种情况卷积后的图像shape与卷积前相同，本层后shape还是32*32
         # x = Conv1D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
-        x = Conv1D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay))(layerIn)
+        x = Conv1D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay))(input_tensor)
         x = Activation('relu')(x)
         
         #进行一次归一化
@@ -319,7 +329,7 @@ class Model88_VGG16d1(Model88_Flat) :
         x = Activation('relu')(x)
         x = BatchNormalization()(x)
 
-        return Model(layerIn, x, name=self.coreId)
+        return Model(input_tensor, x, name=self.coreId)
 
 # --------------------------------
 class Model88_ResNet34d1(Model88_Flat) :
@@ -329,14 +339,16 @@ class Model88_ResNet34d1(Model88_Flat) :
     def __init__(self, **kwargs):
         super(Model88_ResNet34d1, self).__init__(**kwargs)
 
-    def build_core(self, input_shape):
+    def build_core(self, input_shape, input_tensor):
+        if input_tensor is None:
+            input_tensor = Input(shape=input_shape)
+
         weight_decay = 0.0005
 
-        layerIn = Input(shape=input_shape)
         #第一个 卷积层 的卷积核的数目是32 ，卷积核的大小是3*3，stride没写，默认应该是1*1
         #对于stride=1*1,并且padding ='same',这种情况卷积后的图像shape与卷积前相同，本层后shape还是32*32
         # x = Conv1D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
-        x = Conv1D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay), inputs=layerIn)
+        x = Conv1D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay))(input_tensor)
         #conv1
         x= self._resBlk_basic(x, nb_filter=64, kernel_size=3, padding='valid')
         x= MaxPooling1D(2)(x)
@@ -368,7 +380,7 @@ class Model88_ResNet34d1(Model88_Flat) :
         x = GlobalAveragePooling1D()(x)
         x = Flatten()(x)
 
-        return Model(layerIn, x, name=self.coreId)
+        return Model(input_tensor, x, name=self.coreId)
 
     def _resBlk_basic(self, x, nb_filter, kernel_size, padding='same', regularizer=None, name=None):
         if name is not None:
@@ -445,15 +457,15 @@ class Model2D_Sliced(Model88) :
         x =Dense(518, name='%sF518' %lnTag)(x)
         return x
 
-    def buildup(self, input_shape=(32,32,8)) :
+    def buildup(self, input_shape=(32,32,8), input_tensor=None):
+        layerIn = Input(shape=input_shape)
+
         channels = input_shape[2]
         slice_shape = tuple(list(input_shape[:2]) +[self.__channels_per_slice])
         slices = int(channels / self.__channels_per_slice)
         if 0 != channels % self.__channels_per_slice: slices +=1
 
-        layerIn = Input(shape=input_shape)
-
-        core_model = self.build_core(slice_shape)
+        core_model = self.build_core(slice_shape, layerIn)
         self.__coreId = core_model.name
         self._tagCoreModel(core_model, self.__coreId)
 
@@ -462,7 +474,7 @@ class Model2D_Sliced(Model88) :
             sliceflows[i] = self.__slice2d_flow(layerIn, input_shape, core_model, i)
         
         # merge the multiple flow-of-slice into a controllable less than F518*2
-        x = Concatenate(axis=1, name='M88S4Con%dS' % slices)(sliceflows) # merge = merge(sliceflows, mode='concat') # concatenate([x1,x2,x3])
+        x = Concatenate(axis=1, name='M88S4ConX%d' % slices)(sliceflows) # merge = merge(sliceflows, mode='concat') # concatenate([x1,x2,x3])
 
         dsize = int(math.sqrt(slices))
         if dsize*dsize < slices: dsize +=1
@@ -470,23 +482,26 @@ class Model2D_Sliced(Model88) :
         seq.reverse()
 
         for i in seq:
-            x =Dropout(0.5, name='M88S4M%ddropout' % i)(x)
-            x =Dense(518 *i, name='M88S4M%dF518' % i)(x)
+            x =Dropout(0.5,  name='M88S4M_dropout%d' % i)(x)
+            x =Dense(518 *i, name='M88S4M_F518x%d' % i)(x)
 
         x = self._feature88toOut(x)
-        self._dnnModel = Model(inputs=layerIn, outputs=x, name='%s.%ds' %(self.modelId, slices))
+        self._dnnModel = Model(inputs=layerIn, outputs=x, name='%sx%d' %(self.modelId, slices))
         # self._dnnModel.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **BaseModel.COMPILE_ARGS)
         # self._dnnModel.summary()
         return self.model
 
     @abstractmethod
-    def build_core(self, slice_shape):
+    def build_core(self, slice_shape, input_tensor):
+        # if input_tensor is None:
+        #     input_tensor = Input(shape=input_shape)
+
         #TODO: need to define a channel=4 module
         # refer to:
         # /usr/local/lib64/python3.6/site-packages/keras_applications/resnet50.py
         # /usr/local/lib/python3.6/site-packages/tensorflow/contrib/eager/python/examples/resnet50/resnet50.py
         # def ResNet50(include_top=True, ...
-        core = ResNet50(weights=None, classes=1000, input_shape=slice_shape) # dummy code
+        core = ResNet50(weights=None, classes=1000, input_shape=slice_shape) # , input_tensor=input_tensor) # dummy code
         return core
 
 
@@ -532,7 +547,8 @@ class Model2D_Sliced(Model88) :
 ########################################################################
 if __name__ == '__main__':
     
-    model = Model2D_Sliced()
+    model = Model2D_Sliced() # Model88_Cnn1Dx4R2() # Model2D_Sliced()
     model.buildup()
     model.compile()
     model.summary()
+    model.model.save('/tmp/%s.h5' % model.modelId) # model.save_model('/tmp/%s.h5' % model.modelId)

@@ -59,7 +59,7 @@ class Model88(BaseModel) :
         return coreId
 
     @abstractmethod
-    def buildup(self, input_shape):
+    def buildup(self, input_tensor):
         '''
         @return self.model
         '''
@@ -86,7 +86,7 @@ class Model88(BaseModel) :
         # # self._dnnModel.summary()
         # return self.model
 
-        x = self._buildup_core('%s%s.' % (Model88.CORE_LAYER_PREFIX, self.coreId), input_shape, input_tensor)
+        x = self._buildup_core('%s%s.' % (Model88.CORE_LAYER_PREFIX, self.coreId), input_tensor)
         x = self._feature88toOut(x)
         return x
 
@@ -101,10 +101,11 @@ class Model88(BaseModel) :
         return layer(input_tensor)
 
     @abstractmethod
-    def _buildup_core(self, lnTag, input_shape, input_tensor): # TODO: input_shape was supposed to get from input_tensor
+    def _buildup_core(self, lnTag, input_tensor): 
         '''
         @return output_tensor
         '''
+        input_shape = tuple(input_tensor.shape[1:]) # get rid of the leading dim-batch
         raise NotImplementedError
 
     def create(self, layerIn):
@@ -150,7 +151,7 @@ class Model88_Cnn1Dx4R2(Model88_Flat) :
     def __init__(self, **kwargs):
         super(Model88_Cnn1Dx4R2, self).__init__(**kwargs)
 
-    def _buildup_core(self, lnTag, input_shape, input_tensor):
+    def _buildup_core(self, lnTag, input_tensor):
 
         # x = Conv1D(128, 3, activation='relu')(input_tensor)
         x = self._tagged_chain(lnTag, input_tensor, Conv1D(128, 3, activation='relu'))
@@ -187,7 +188,7 @@ class Model88_Cnn1Dx4R3(Model88_Flat) :
     def __init__(self, **kwargs):
         super(Model88_Cnn1Dx4R3, self).__init__(**kwargs)
 
-    def _buildup_core(self, lnTag, input_shape, input_tensor):
+    def _buildup_core(self, lnTag, input_tensor):
         x = self._tagged_chain(lnTag, input_tensor, Conv1D(128, 3, activation='relu'))
         x = self._tagged_chain(lnTag, x, BatchNormalization())
         x = self._tagged_chain(lnTag, x, Conv1D(256, 3, activation='relu'))
@@ -221,7 +222,7 @@ class Model88_VGG16d1(Model88_Flat) :
     def __init__(self, **kwargs):
         super(Model88_VGG16d1, self).__init__(**kwargs)
 
-    def _buildup_core(self, lnTag, input_shape, input_tensor):
+    def _buildup_core(self, lnTag, input_tensor):
         weight_decay = 0.0005
 
         #第一个 卷积层 的卷积核的数目是32 ，卷积核的大小是3*3，stride没写，默认应该是1*1
@@ -344,7 +345,7 @@ class Model88_ResNet34d1(Model88_Flat) :
     def __init__(self, **kwargs):
         super(Model88_ResNet34d1, self).__init__(**kwargs)
 
-    def _buildup_core(self, lnTag, input_shape, input_tensor):
+    def _buildup_core(self, lnTag, input_tensor):
 
         weight_decay = 0.0005
 
@@ -431,7 +432,8 @@ class Model2D_Sliced(Model88) :
         self.__channels_per_slice =4
         self.__features_per_slice =518
         self.__coreId = "NA"
-        self.__subModels = {}
+        self.__model_core = None
+        self.__model_suplementals = {}
 
     @property
     def modelId(self) :
@@ -455,14 +457,15 @@ class Model2D_Sliced(Model88) :
             # slice = np.concatenate((slice, slice0s), axis=2)
         return slice
 
-    def __slice2d_flow(self, inputs, input_shape, core_model, idxSlice):
+    def __slice2d_flow(self, input_tensor, core_model, idxSlice):
+        input_shape = tuple(input_tensor.shape[1:]) # get rid of the leading dim-batch
         channels = input_shape[2]
         slice_shape = tuple(list(input_shape[:2]) +[self.__channels_per_slice])
-        # x = Lambda(lambda x: x[:, :, :, idxSlice*self.__channels_per_slice : (idxSlice+1)*self.__channels_per_slice], output_shape=slice_shape)(inputs)
-        x = Lambda(Model2D_Sliced.__slice2d, output_shape=slice_shape, arguments={'idxSlice':idxSlice, 'channels_per_slice': self.__channels_per_slice})(inputs)
-        ch2append = self.__channels_per_slice - x.shape[3]
-        if ch2append >0:
-            x = ZeroPadding2D(padding=(0, 0, ch2append))(x)
+        # x = Lambda(lambda x: x[:, :, :, idxSlice*self.__channels_per_slice : (idxSlice+1)*self.__channels_per_slice], output_shape=slice_shape)(input_tensor)
+        x = Lambda(Model2D_Sliced.__slice2d, output_shape=slice_shape, arguments={'idxSlice':idxSlice, 'channels_per_slice': self.__channels_per_slice})(input_tensor)
+        # ch2append = self.__channels_per_slice - x.shape[3]
+        # if ch2append >0:
+        #  NOT WORK   x = ZeroPadding2D(padding=(0, 0, ch2append))(x)
 
         # common layers to self.__features_per_slice
         lnTag = 'M88S%dflow%s.' % (self.__channels_per_slice, idxSlice)
@@ -474,37 +477,82 @@ class Model2D_Sliced(Model88) :
         lf=Dense(self.__features_per_slice, name='%sF%d' % (lnTag, self.__features_per_slice))
         x =lf(x)
         m = Model(inputs=flowCloseIn, outputs=x, name='%sC' %lf.name)
-        self.__subModels[m.name] =m
+        self.__model_suplementals[m.name] =m
 
         return m(tensor_flowClose)
 
-    def buildup(self, input_shape=(32,32,4)):
+    def __slice2d_flow2(self, lnTag, input_tensor, core_model):
+        # common layers to self.__features_per_slice
+        tensor_flowClose = core_model(input_tensor)
+
+        flowCloseIn = Input(tuple(tensor_flowClose.shape[1:]))
+        x =Flatten(name='%sflatten' %lnTag)(flowCloseIn)
+        x =Dropout(0.3, name='%sdropout' %lnTag)(x)
+        lf=Dense(self.__features_per_slice, name='%sF%d' % (lnTag, self.__features_per_slice))
+        x =lf(x)
+        m = Model(inputs=flowCloseIn, outputs=x, name='%sC' %lf.name)
+        self.__model_suplementals[m.name] =m
+
+        return m(tensor_flowClose)
+
+    def buildup(self, input_shape=(32, 32, 8)):
         layerIn = Input(shape=input_shape)
 
         channels = input_shape[2]
         slice_shape = tuple(list(input_shape[:2]) +[self.__channels_per_slice])
-        slices = int(channels / self.__channels_per_slice)
-        if 0 != channels % self.__channels_per_slice: slices +=1
+        slice_count = int(channels / self.__channels_per_slice)
+        if 0 != channels % self.__channels_per_slice: slice_count +=1
 
-        core_model = self._buildup_core(slice_shape, layerIn)
-        self.__coreId = core_model.name
+        slices = [None] * slice_count
+        for i in range(slice_count) :
+            slices[i] = Lambda(Model2D_Sliced.__slice2d, output_shape = slice_shape, arguments={'idxSlice':i, 'channels_per_slice': self.__channels_per_slice})(layerIn)
+
+        self.__model_core = self._buildup_core(slices[0])
+        self.__coreId = self.__model_core.name
+        # can be called at this moment: self.__model_core.save('/tmp/%s.h5' % self.__coreId)
+        self.__model_core.summary()
+        print(self.__model_core.to_json())
+
         tagCore = '%s%s' % (Model88.CORE_LAYER_PREFIX, self.__coreId)
-        self.__subModels[tagCore] = core_model
-        self.__tagCoreModel(core_model, tagCore)
+        self.__tagCoreModel(self.__model_core, tagCore)
         # x = self._buildup_core('%s%s.' % (Model88.CORE_LAYER_PREFIX, self.coreId), slice_shape, layerIn)
 
-        sliceflows = [None] * slices
-        for i in range(slices):
-            sliceflows[i] = self.__slice2d_flow(layerIn, input_shape, core_model, i)
+        sliceflows = [None] * slice_count
+        for i in range(slice_count):
+            sliceflows[i] = self.__slice2d_flow2('M88S%dflow%s.' % (self.__channels_per_slice, i), slices[i], self.__model_core)
+
+            # # common layers to self.__features_per_slice
+            # lnTag = 'M88S%dflow%s.' % (self.__channels_per_slice, i)
+            # tensor_flowClose = self.__model_core(slices[i])
+            # flowCloseIn = Input(tuple(tensor_flowClose.shape[1:]))
+            # x =Flatten(name='%sflatten' %lnTag)(tensor_flowClose)
+            # x =Dropout(0.3, name='%sdropout' %lnTag)(x)
+            # lf=Dense(self.__features_per_slice, name='%sF%d' % (lnTag, self.__features_per_slice))
+            # x =lf(x)
+            # m = Model(flowCloseIn, outputs=x, name='%sC' %lf.name)
+            # self.__model_suplementals[m.name] =m
+            # sliceflows[i] =m(tensor_flowClose)
+
+        '''
+        for i in range(slice_count):
+            # common layers to self.__features_per_slice
+            lnTag = 'M88S%dflow%s.' % (self.__channels_per_slice, i)
+            tensor_flowClose = self.__model_core(slices[i])
+            x =Flatten(name='%sflatten' %lnTag)(tensor_flowClose)
+            x =Dropout(0.3, name='%sdropout' %lnTag)(x)
+            lf=Dense(self.__features_per_slice, name='%sF%d' % (lnTag, self.__features_per_slice))
+            x =lf(x)
+            sliceflows[i] = x
+        '''
         
         # merge the multiple flow-of-slice into a controllable less than F518*2
-        merged_tensor = sliceflows[0] if 1 ==len(sliceflows) else Concatenate(axis=1, name='M88S4ConX%d' % slices)(sliceflows) # merge = merge(sliceflows, mode='concat') # concatenate([x1,x2,x3])
+        merged_tensor = sliceflows[0] if 1 ==len(sliceflows) else Concatenate(axis=1, name='M88S4ConX%d' % slice_count)(sliceflows) # merge = merge(sliceflows, mode='concat') # concatenate([x1,x2,x3])
         
         closeIn = Input(tuple(merged_tensor.shape[1:]))
         x = closeIn
 
-        dsize = int(math.sqrt(slices))
-        if dsize*dsize < slices: dsize +=1
+        dsize = int(math.sqrt(slice_count))
+        if dsize*dsize < slice_count: dsize +=1
         seq = list(range(dsize))[1:]
         seq.reverse()
 
@@ -513,15 +561,16 @@ class Model2D_Sliced(Model88) :
             x =Dense(self.__features_per_slice *i, name='M88S4M_F%dx%d' % (self.__features_per_slice, i))(x)
 
         x = self._feature88toOut(x)
-        m = Model(inputs=closeIn, outputs=x, name='F88.F%dx%dC' %(self.__features_per_slice, slices))
-        self.__subModels[m.name] =m
+        m = Model(inputs=closeIn, outputs=x, name='F88.F%dx%dC' %(self.__features_per_slice, slice_count))
+        self.__model_suplementals[m.name] =m
 
-        for k, v in self.__subModels.items():
+        for k, v in self.__model_suplementals.items():
             v.summary()
-            v.save('/tmp/%s.h5' % k)
+            print(v.to_json())
+            # v.save('/tmp/%s.h5' % k)
         
         x = m(merged_tensor)
-        self._dnnModel = Model(inputs=layerIn, outputs=x, name='%sx%d' %(self.__features_per_slice, slices))
+        self._dnnModel = Model(inputs=layerIn, outputs=x, name='%sx%d' %(self.__features_per_slice, slice_count))
 
         # self._dnnModel.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **BaseModel.COMPILE_ARGS)
         # self._dnnModel.summary()
@@ -540,24 +589,25 @@ class Model2D_Sliced(Model88) :
             Model88._tagLayer(layer, lnTag)
 
     @abstractmethod
-    def _buildup_core(self, slice_shape, input_tensor):
-        # # a dummy core
-        # x = self._tagged_chain(lnTag, input_tensor, Dense(1000, input_shape =slice_shape))
-        # x = self._tagged_chain(lnTag, x, Flatten())
-        # x = self._tagged_chain(lnTag, x, Dense(518))
-        # # return x
-
-        # # inputs=get_source_inputs(input_tensor)
-        # return Model(inputs=[input_tensor], outputs=x, name=lnTag[:-1])
-
-        core = ResNet50(weights=None, classes=1000, input_shape=slice_shape) # , input_tensor=input_tensor) # dummy code
-        return core
-
+    def _buildup_core(self, input_tensor):
+        '''
+        unlike the Model88_Flat._buildup_core() returns the output_tensor, the sliced 2D models returns a submodel as core from _buildup_core()
+        '''
+        input_tensor = Input(tuple(input_tensor.shape[1:])) # create a brand-new input_tensor by getting rid of the leading dim-batch
+        
+        # a dummy core
         x = ZeroPadding2D(padding=(3, 3), name='conv1_pad')(input_tensor)
         x = Conv2D(64, (7, 7), strides=(2, 2), padding='valid', kernel_initializer='he_normal', name='conv1')(x)
         x = BatchNormalization(axis=3, name='bn_conv1')(x)
 
-        return Model(inputs=[input_tensor], outputs=x, name='basesliced')
+        # return Model(inputs=get_source_inputs(input_tensor), outputs=x, name='basesliced')
+        return Model(input_tensor, outputs=x, name='basesliced')
+
+        # # inputs=get_source_inputs(input_tensor)
+        # return Model(inputs=[input_tensor], outputs=x, name=lnTag[:-1])
+        # core = ResNet50(weights=None, classes=1000, input_shape=input_shape) # , input_tensor=input_tensor) # dummy code
+        # return core
+
 
 # --------------------------------
 class Model2D_ResNet50(Model2D_Sliced) :
@@ -568,7 +618,11 @@ class Model2D_ResNet50(Model2D_Sliced) :
         super(Model2D_ResNet50, self).__init__(outputClasses = outputClasses, **kwargs)
 
     # def ResNet50(input_tensor=None, input_shape=None, pooling=None, classes=1000, **kwargs):
-    def _buildup_core(self, slice_shape, input_tensor):
+    def _buildup_core(self, input_tensor):
+        '''
+        unlike the Model88_Flat._buildup_core() returns the output_tensor, the sliced 2D models returns a submodel as core from _buildup_core()
+        '''
+        input_tensor = Input(tuple(input_tensor.shape[1:])) # create a brand-new input_tensor by getting rid of the leading dim-batch
 
         bn_axis = 3
         classes = 1000
@@ -607,7 +661,7 @@ class Model2D_ResNet50(Model2D_Sliced) :
         # Ensure that the model takes into account
         # any potential predecessors of `input_tensor`.
         # Create model.
-        model = Model([input_tensor], x, name='resnet50') # model = Model(get_source_inputs(input_tensor), x, name='resnet50')
+        model = Model(input_tensor, x, name='resnet50') # model = Model(get_source_inputs(input_tensor), x, name='resnet50')
 
         '''
         # Load weights.
@@ -727,7 +781,7 @@ class Model2D_ResNet50(Model2D_Sliced) :
 ########################################################################
 if __name__ == '__main__':
     
-    model = Model2D_ResNet50() # Model2D_ResNet50, Model2D_Sliced(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2(), Model2D_Sliced()
+    model = Model2D_ResNet50() # Model2D_ResNet50, Model2D_Sliced(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
     model.buildup()
     model.compile()
     model.summary()

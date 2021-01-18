@@ -16,17 +16,12 @@ import copy, pickle
 
 EVENT_Perspective  = MARKETDATE_EVENT_PREFIX + 'Persp'   # 错误回报事件
 
-DEFAULT_KLDEPTH_TICK = 0
-# DEFAULT_KLDEPTH_TICK = 120
-DEFAULT_KLDEPTH_1min = 32
-DEFAULT_KLDEPTH_5min = 240 # 96
-DEFAULT_KLDEPTH_1day = 260
+DEFAULT_KLDEPTH_TICK = 0 #  = 120
+DEFAULT_KLDEPTH_1min = 60 # 1-hr
+DEFAULT_KLDEPTH_5min = 240 # covers a week
+DEFAULT_KLDEPTH_1day = 260 # about a year
 
 EXPORT_SIGNATURE= '%dT%dM%dF%dD.%s:200109T17' % (DEFAULT_KLDEPTH_TICK, DEFAULT_KLDEPTH_1min, DEFAULT_KLDEPTH_5min, DEFAULT_KLDEPTH_1day, NORMALIZE_ID)
-
-DEFAULT_MFDEPTH_1min = 60  # 1-hr
-DEFAULT_MFDEPTH_5min = 48  # a 4-hr day
-DEFAULT_MFDEPTH_1day = 120 # about half a year
 
 ########################################################################
 class EvictableStack(object):
@@ -211,7 +206,7 @@ class Perspective(MarketData):
     KLVOLS_TO_EXP = 'volume'
 
     #----------------------------------------------------------------------
-    def __init__(self, exchange, symbol=None, KLDepth_1min=DEFAULT_KLDEPTH_1min, KLDepth_5min=DEFAULT_KLDEPTH_5min, KLDepth_1day=DEFAULT_KLDEPTH_1day, tickDepth=DEFAULT_KLDEPTH_TICK, MFDepth_1min=DEFAULT_MFDEPTH_1min, MFDepth_5min=DEFAULT_MFDEPTH_5min, MFDepth_1day =DEFAULT_MFDEPTH_1day, **kwargs) :
+    def __init__(self, exchange, symbol=None, KLDepth_1min=DEFAULT_KLDEPTH_1min, KLDepth_5min=DEFAULT_KLDEPTH_5min, KLDepth_1day=DEFAULT_KLDEPTH_1day, tickDepth=DEFAULT_KLDEPTH_TICK, **kwargs) :
         '''Constructor'''
         super(Perspective, self).__init__(exchange, symbol)
 
@@ -221,9 +216,9 @@ class Perspective(MarketData):
             EVENT_KLINE_5MIN: EvictableStack(KLDepth_5min, KLineEx(self.exchange, self.symbol)),
             EVENT_KLINE_1DAY: EvictableStack(KLDepth_1day, KLineEx(self.exchange, self.symbol)),
 
-            # EVENT_MONEYFLOW_1MIN: EvictableStack(MFDepth_1min, MoneyflowData(self.exchange, self.symbol)),
-            # EVENT_MONEYFLOW_5MIN: EvictableStack(MFDepth_5min, MoneyflowData(self.exchange, self.symbol)),
-            # EVENT_MONEYFLOW_1DAY: EvictableStack(MFDepth_1day, MoneyflowData(self.exchange, self.symbol)),
+            # EVENT_MONEYFLOW_1MIN: EvictableStack(KLDepth_1min, MoneyflowData(self.exchange, self.symbol)),
+            # EVENT_MONEYFLOW_5MIN: EvictableStack(KLDepth_5min, MoneyflowData(self.exchange, self.symbol)),
+            # EVENT_MONEYFLOW_1DAY: EvictableStack(KLDepth_1day, MoneyflowData(self.exchange, self.symbol)),
         }
 
         self.__stampLast = None
@@ -250,11 +245,14 @@ class Perspective(MarketData):
 
     @property
     def desc(self) :
-        str = '%s>' % chopMarketEVStr(self.focus)
-        stack = self._stacks[self.focus]
-        if stack.size >0:
-            str += '%s ' % stack.top.desc
-        else: str += 'NIL '
+        if not self.focus or len(self.focus) <0:
+            str = 'None>NIL '
+        else:
+            str = '%s>' % chopMarketEVStr(self.focus)
+            stack = self._stacks[self.focus]
+            if stack.size >0:
+                str += '%s ' % stack.top.desc
+            else: str += 'NIL '
 
         for i in self.eventTypes :
             str += '%sX%d/%d,' % (chopMarketEVStr(i), self._stacks[i].size, self._stacks[i].evictSize)
@@ -1287,15 +1285,11 @@ class Formatter_2dImg32x18(Formatter_base2dImg):
         rows =2
         stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
         rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
+        dtCell = [ dtAsOf.minute/60.0, dtAsOf.hour/24.0, dtAsOf.weekday() / 7.0, dtAsOf.day / 31.0 ] * int ((self._channels +3)/4)
+        if len(dtCell) > self._channels: del dtCell[self._channels:]
         for y in range(0, rows):
             for x in [0]:
-                rows6C[y][x][0] = 0
-                rows6C[y][x][1] = dtAsOf.minute/60.0
-                rows6C[y][x][2] = dtAsOf.hour/24.0
-                rows6C[y][x][3] = dtAsOf.weekday() / 7.0
-                rows6C[y][x][4] = (dtAsOf.month-1) / 12.0
-                rows6C[y][x][5] = dtAsOf.day / 31.0
-
+                rows6C[y][x] = copy.copy(dtCell)
                 rows6C[y][X_LEN -1 -x] = rows6C[y][x]
 
         klPerRow =30
@@ -1317,15 +1311,12 @@ class Formatter_2dImg32x18(Formatter_base2dImg):
         rows =2
         klPerRow =24
         rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
+        dtCell = [ dtAsOf.weekday() / 7.0, dtAsOf.hour/24.0, dtAsOf.minute/60.0,  dtAsOf.day / 31.0 ] * int ((self._channels +3)/4)
+        if len(dtCell) > self._channels: del dtCell[self._channels:]
+
         for y in range(0, rows):
             for x in range(int((X_LEN -klPerRow)/2)):
-                rows6C[y][x][0] = dtAsOf.minute/60.0
-                rows6C[y][x][1] = dtAsOf.hour/24.0
-                rows6C[y][x][2] = 0
-                rows6C[y][x][3] = dtAsOf.weekday() / 7.0
-                rows6C[y][x][4] = (dtAsOf.month-1) / 12.0
-                rows6C[y][x][5] = dtAsOf.day / 31.0
-
+                rows6C[y][x] =copy.copy(dtCell)
                 rows6C[y][X_LEN -1 -x] = rows6C[y][x]
 
         for i in range(0, min(len(stk), klPerRow*rows)): 
@@ -1352,8 +1343,9 @@ class Formatter_2dImg32x18(Formatter_base2dImg):
         stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
 
         # break line takes current date-time
-        br2 = self._complementChannels([ dtAsOf.weekday() / 7.0, (dtAsOf.month-1) / 12.0, dtAsOf.day / 31.0, dtAsOf.hour/24.0, dtAsOf.minute/60.0])
-        imgResult.append([br2] * X_LEN) # img3C.append([br2] * X_LEN)
+        dtCell = [ dtAsOf.day / 31.0, (dtAsOf.month-1) / 12.0, dtAsOf.weekday() / 7.0, dtAsOf.hour/24.0 ] * int ((self._channels +3)/4)
+        if len(dtCell) > self._channels: del dtCell[self._channels:]
+        imgResult.append([copy.copy(dtCell)] * X_LEN) # img3C.append([br2] * X_LEN)
 
         rows =7 # to =5 when KL1week involves, leave 2rows to KL1week
         klPerRow =32

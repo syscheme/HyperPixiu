@@ -633,7 +633,7 @@ class CsvPlayback(Playback):
         self._dtEndOfDay = None
 
         # filter the csv files
-        self.debug('search dir %s for csv files' % self._folder)
+        self.debug('searching dir %s for csv files' % self._folder)
         prev = ""
         files = listAllFiles(self._folder)
         files = [os.path.realpath(fn) for fn in files]

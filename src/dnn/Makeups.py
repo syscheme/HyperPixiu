@@ -78,18 +78,23 @@ class Model88(BaseModel) :
         # self._dnnModel.summary()
         return self.model
 
+    def _tagLayer(layer, lnTag) :
+        if '.' != lnTag[-1]: lnTag +='.'
+
+        if layer and layer.name[:len(lnTag)] != lnTag:
+            layer._name = lnTag + layer.name
+
     def _tagCoreModel(self, core_model, core_mId) :
         # add the prefix tag
         lnTag = core_mId
         if not lnTag or len(lnTag) <=0: lnTag= Model88.CORE_LAYER_PREFIX
         if Model88.CORE_LAYER_PREFIX != lnTag[:len(Model88.CORE_LAYER_PREFIX)]:
             lnTag = '%s%s' % (Model88.CORE_LAYER_PREFIX, lnTag)
-        if '.' != lnTag[-1]:
-            lnTag +='.'
+        
+        if '.' != lnTag[-1]: lnTag +='.'
 
         for layer in core_model.layers:
-            if layer.name[:len(lnTag)] != lnTag:
-                layer._name = lnTag + layer.name
+            Model88._tagLayer(layer, lnTag)
 
     @abstractmethod
     def build_core(self, input_shape, input_tensor): # TODO: input_shape was supposed to get from input_tensor
@@ -137,13 +142,18 @@ class Model88_Cnn1Dx4R2(Model88_Flat) :
         super(Model88_Cnn1Dx4R2, self).__init__(**kwargs)
 
     def build_core(self, input_shape, input_tensor):
+        lnTag = '%s%s.' % (Model88.CORE_LAYER_PREFIX, self.coreId)
         if input_tensor is None:
             input_tensor = Input(shape=input_shape)
             inputs = input_tensor
         else:
             inputs = get_source_inputs(input_tensor)
 
-        x = Conv1D(128, 3, activation='relu')(input_tensor)
+        # x = Conv1D(128, 3, activation='relu')(input_tensor)
+        l = Conv1D(128, 3, activation='relu')
+        Model88._tagLayer(l, lnTag)
+        x = l(input_tensor)
+
         x = BatchNormalization()(x)
         x = Conv1D(256, 3, activation='relu')(x)
         x = MaxPooling1D(2)(x)
@@ -474,16 +484,19 @@ class Model2D_Sliced(Model88) :
             sliceflows[i] = self.__slice2d_flow(layerIn, input_shape, core_model, i)
         
         # merge the multiple flow-of-slice into a controllable less than F518*2
-        x = Concatenate(axis=1, name='M88S4ConX%d' % slices)(sliceflows) # merge = merge(sliceflows, mode='concat') # concatenate([x1,x2,x3])
+        if len(sliceflows) >1:
+            x = Concatenate(axis=1, name='M88S4ConX%d' % slices)(sliceflows) # merge = merge(sliceflows, mode='concat') # concatenate([x1,x2,x3])
 
-        dsize = int(math.sqrt(slices))
-        if dsize*dsize < slices: dsize +=1
-        seq = list(range(dsize))[1:]
-        seq.reverse()
+            dsize = int(math.sqrt(slices))
+            if dsize*dsize < slices: dsize +=1
+            seq = list(range(dsize))[1:]
+            seq.reverse()
 
-        for i in seq:
-            x =Dropout(0.5,  name='M88S4M_dropout%d' % i)(x)
-            x =Dense(518 *i, name='M88S4M_F518x%d' % i)(x)
+            for i in seq:
+                x =Dropout(0.5,  name='M88S4M_dropout%d' % i)(x)
+                x =Dense(518 *i, name='M88S4M_F518x%d' % i)(x)
+
+        else: x = sliceflows[0]
 
         x = self._feature88toOut(x)
         self._dnnModel = Model(inputs=layerIn, outputs=x, name='%sx%d' %(self.modelId, slices))
@@ -547,7 +560,7 @@ class Model2D_Sliced(Model88) :
 ########################################################################
 if __name__ == '__main__':
     
-    model = Model2D_Sliced() # Model88_Cnn1Dx4R2() # Model2D_Sliced()
+    model = Model88_Cnn1Dx4R2() # Model88_Cnn1Dx4R2() # Model2D_Sliced()
     model.buildup()
     model.compile()
     model.summary()

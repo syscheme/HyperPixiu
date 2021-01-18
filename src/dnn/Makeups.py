@@ -14,9 +14,9 @@ from dnn.BaseModel  import BaseModel
 
 from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.optimizers import Adam, SGD
-from tensorflow.keras.layers import Input, Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D, GlobalAveragePooling1D, ZeroPadding1D
-from tensorflow.keras.layers import BatchNormalization, Flatten, add, GlobalAveragePooling2D, Lambda, Concatenate, ZeroPadding2D
-from tensorflow.keras import regularizers
+from tensorflow.keras.layers import Input, Dense, Activation, Dropout, LSTM, Reshape, Lambda, Concatenate, BatchNormalization, Flatten, add
+from tensorflow.keras.layers import Conv1D, MaxPooling1D, GlobalAveragePooling1D, ZeroPadding1D
+from tensorflow.keras.layers import ZeroPadding2D, GlobalAveragePooling2D, Conv2D, MaxPooling2D
 from tensorflow.keras import regularizers
 from tensorflow.keras.utils import get_source_inputs
 
@@ -421,7 +421,6 @@ class Model88_ResNet34d1(Model88_Flat) :
             x = add([x, inpt])
             return x
 
-
 ########################################################################
 class Model2D_Sliced(Model88) :
     '''
@@ -443,9 +442,9 @@ class Model2D_Sliced(Model88) :
 
     def __slice2d(x, idxSlice, channels_per_slice): 
         slice = x[:, :, :, idxSlice*channels_per_slice : (idxSlice+1)*channels_per_slice]
-        new_shape = (slice.shape[0], slice.shape[1], slice.shape[2], 1) # tuple(list(slice.shape[:3] +[1]))
-        tensor0 = tf.zeros(new_shape)
-        slice = tf.cat((slice, tensor0), axis=-1)
+        # new_shape = (slice.shape[0], slice.shape[1], slice.shape[2], 1) # tuple(list(slice.shape[:3] +[1]))
+        # tensor0 = tf.zeros(new_shape)
+        # slice = tf.cat((slice, tensor0), axis=-1)
 
         ch2append = channels_per_slice - slice.shape[3] # [0]s to append to fit channel=4
 
@@ -479,7 +478,7 @@ class Model2D_Sliced(Model88) :
 
         return m(tensor_flowClose)
 
-    def buildup(self, input_shape=(32,32,3)):
+    def buildup(self, input_shape=(32,32,4)):
         layerIn = Input(shape=input_shape)
 
         channels = input_shape[2]
@@ -510,7 +509,7 @@ class Model2D_Sliced(Model88) :
         seq.reverse()
 
         for i in seq:
-            x =Dropout(0.5,  name='M88S4M_dropout%d' % i)(x)
+            x =Dropout(0.5, name='M88S4M_dropout%d' % i)(x)
             x =Dense(self.__features_per_slice *i, name='M88S4M_F%dx%d' % (self.__features_per_slice, i))(x)
 
         x = self._feature88toOut(x)
@@ -554,12 +553,137 @@ class Model2D_Sliced(Model88) :
         core = ResNet50(weights=None, classes=1000, input_shape=slice_shape) # , input_tensor=input_tensor) # dummy code
         return core
 
-        #TODO: need to define a channel=4 module
-        # refer to:
-        # /usr/local/lib64/python3.6/site-packages/keras_applications/resnet50.py
-        # /usr/local/lib/python3.6/site-packages/tensorflow/contrib/eager/python/examples/resnet50/resnet50.py
-        # def ResNet50(include_top=True, ...
+        x = ZeroPadding2D(padding=(3, 3), name='conv1_pad')(input_tensor)
+        x = Conv2D(64, (7, 7), strides=(2, 2), padding='valid', kernel_initializer='he_normal', name='conv1')(x)
+        x = BatchNormalization(axis=3, name='bn_conv1')(x)
 
+        return Model(inputs=[input_tensor], outputs=x, name='basesliced')
+
+# --------------------------------
+class Model2D_ResNet50(Model2D_Sliced) :
+    '''
+    2D models with channels expanded by channels=4
+    '''
+    def __init__(self, outputClasses =3, **kwargs):
+        super(Model2D_ResNet50, self).__init__(outputClasses = outputClasses, **kwargs)
+
+    # def ResNet50(input_tensor=None, input_shape=None, pooling=None, classes=1000, **kwargs):
+    def _buildup_core(self, slice_shape, input_tensor):
+
+        bn_axis = 3
+        classes = 1000
+        pooling = 'max'
+
+        x = ZeroPadding2D(padding=(3, 3), name='conv1_pad')(input_tensor)
+        x = Conv2D(64, (7, 7), strides=(2, 2), padding='valid', kernel_initializer='he_normal', name='conv1')(x)
+        x = BatchNormalization(axis=bn_axis, name='bn_conv1')(x)
+        x = Activation('relu')(x)
+        x = ZeroPadding2D(padding=(1, 1), name='pool1_pad')(x)
+        x = MaxPooling2D((3, 3), strides=(2, 2))(x)
+
+        x = Model2D_ResNet50.conv_block(x, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1))
+        x = Model2D_ResNet50.identity_block(x, 3, [64, 64, 256], stage=2, block='b')
+        x = Model2D_ResNet50.identity_block(x, 3, [64, 64, 256], stage=2, block='c')
+
+        x = Model2D_ResNet50.conv_block(x, 3, [128, 128, 512], stage=3, block='a')
+        x = Model2D_ResNet50.identity_block(x, 3, [128, 128, 512], stage=3, block='b')
+        x = Model2D_ResNet50.identity_block(x, 3, [128, 128, 512], stage=3, block='c')
+        x = Model2D_ResNet50.identity_block(x, 3, [128, 128, 512], stage=3, block='d')
+
+        x = Model2D_ResNet50.conv_block(x, 3, [256, 256, 1024], stage=4, block='a')
+        x = Model2D_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='b')
+        x = Model2D_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='c')
+        x = Model2D_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='d')
+        x = Model2D_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='e')
+        x = Model2D_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='f')
+
+        x = Model2D_ResNet50.conv_block(x, 3, [512, 512, 2048], stage=5, block='a')
+        x = Model2D_ResNet50.identity_block(x, 3, [512, 512, 2048], stage=5, block='b')
+        x = Model2D_ResNet50.identity_block(x, 3, [512, 512, 2048], stage=5, block='c')
+
+        x = GlobalAveragePooling2D(name='avg_pool')(x)
+        x = Dense(classes, activation='softmax', name='fc1000')(x)
+
+        # Ensure that the model takes into account
+        # any potential predecessors of `input_tensor`.
+        # Create model.
+        model = Model([input_tensor], x, name='resnet50') # model = Model(get_source_inputs(input_tensor), x, name='resnet50')
+
+        '''
+        # Load weights.
+        if weights == 'imagenet':
+            if include_top:
+                weights_path = keras_utils.get_file(
+                    'resnet50_weights_tf_dim_ordering_tf_kernels.h5',
+                    WEIGHTS_PATH,
+                    cache_subdir='models',
+                    md5_hash='a7b3fe01876f51b976af0dea6bc144eb')
+            else:
+                weights_path = keras_utils.get_file(
+                    'resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5',
+                    WEIGHTS_PATH_NO_TOP,
+                    cache_subdir='models',
+                    md5_hash='a268eb855778b3df3c7506639542a6af')
+            model.load_weights(weights_path)
+            if backend.backend() == 'theano':
+                keras_utils.convert_all_kernels_in_model(model)
+        elif weights is not None:
+            model.load_weights(weights)
+        '''
+        return model
+
+    def identity_block(input_tensor, kernel_size, filters, stage, block):
+        """The identity block is the block that has no conv layer at shortcut.
+        # Returns
+            Output tensor for the block.
+        """
+        filters1, filters2, filters3 = filters
+        bn_axis = 3
+
+        conv_name_base = 'res' + str(stage) + block + '_branch'
+        bn_name_base = 'bn' + str(stage) + block + '_branch'
+
+        x = Conv2D(filters1, (1, 1), kernel_initializer='he_normal', name=conv_name_base + '2a')(input_tensor)
+        x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
+        x = Activation('relu')(x)
+
+        x = Conv2D(filters2, kernel_size, padding='same', kernel_initializer='he_normal', name=conv_name_base + '2b')(x)
+        x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
+        x = Activation('relu')(x)
+
+        x = Conv2D(filters3, (1, 1), kernel_initializer='he_normal', name=conv_name_base + '2c')(x)
+        x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
+
+        x = add([x, input_tensor])
+        x = Activation('relu')(x)
+        return x
+
+    def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2)):
+        """A block that has a conv layer at shortcut.
+        """
+        filters1, filters2, filters3 = filters
+        bn_axis = 3
+
+        conv_name_base = 'res' + str(stage) + block + '_branch'
+        bn_name_base = 'bn' + str(stage) + block + '_branch'
+
+        x = Conv2D(filters1, (1, 1), strides=strides, kernel_initializer='he_normal', name=conv_name_base + '2a')(input_tensor)
+        x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
+        x = Activation('relu')(x)
+
+        x = Conv2D(filters2, kernel_size, padding='same', kernel_initializer='he_normal', name=conv_name_base + '2b')(x)
+        x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
+        x = Activation('relu')(x)
+
+        x = Conv2D(filters3, (1, 1), kernel_initializer='he_normal', name=conv_name_base + '2c')(x)
+        x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
+
+        shortcut = Conv2D(filters3, (1, 1), strides=strides, kernel_initializer='he_normal', name=conv_name_base + '1')(input_tensor)
+        shortcut = BatchNormalization(axis=bn_axis, name=bn_name_base + '1')(shortcut)
+
+        x = add([x, shortcut])
+        x = Activation('relu')(x)
+        return x
 
     '''
     refer to 
@@ -603,7 +727,7 @@ class Model2D_Sliced(Model88) :
 ########################################################################
 if __name__ == '__main__':
     
-    model = Model2D_Sliced() # Model88_ResNet34d1() # Model88_Cnn1Dx4R2() # Model2D_Sliced()
+    model = Model2D_ResNet50() # Model2D_ResNet50, Model2D_Sliced(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2(), Model2D_Sliced()
     model.buildup()
     model.compile()
     model.summary()

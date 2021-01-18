@@ -15,13 +15,14 @@ from dnn.BaseModel  import BaseModel
 from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.optimizers import Adam, SGD
 from tensorflow.keras.layers import Input, Dense, Conv1D, Activation, Dropout, LSTM, Reshape, MaxPooling1D, GlobalAveragePooling1D, ZeroPadding1D
-from tensorflow.keras.layers import BatchNormalization, Flatten, add, GlobalAveragePooling2D, Lambda, Concatenate
+from tensorflow.keras.layers import BatchNormalization, Flatten, add, GlobalAveragePooling2D, Lambda, Concatenate, ZeroPadding2D
 from tensorflow.keras import regularizers
 from tensorflow.keras import regularizers
 from tensorflow.keras.utils import get_source_inputs
 
 from tensorflow.keras.applications.resnet50 import ResNet50
 
+import tensorflow as tf
 import numpy as np
 import math
 
@@ -77,7 +78,7 @@ class Model88(BaseModel) :
 
         # core_model = self._buildup_core(input_shape, input_tensor) # layerIn.shape)
         # core_mId = core_model.name
-        # self._tagCoreModel(core_model, core_mId)
+        # self.__tagCoreModel(core_model, core_mId)
         # x = core_model(input_tensor)
         # x = self._feature88toOut(core_model)
         # self._dnnModel = Model(inputs=inputs, outputs=x, name=self.modelId)
@@ -98,18 +99,6 @@ class Model88(BaseModel) :
     def _tagged_chain(self, lnTag, input_tensor, layer) :
         Model88._tagLayer(layer, lnTag)
         return layer(input_tensor)
-
-    def _tagCoreModel(self, core_model, core_mId) :
-        # add the prefix tag
-        lnTag = core_mId
-        if not lnTag or len(lnTag) <=0: lnTag= Model88.CORE_LAYER_PREFIX
-        if Model88.CORE_LAYER_PREFIX != lnTag[:len(Model88.CORE_LAYER_PREFIX)]:
-            lnTag = '%s%s' % (Model88.CORE_LAYER_PREFIX, lnTag)
-        
-        if '.' != lnTag[-1]: lnTag +='.'
-
-        for layer in core_model.layers:
-            Model88._tagLayer(layer, lnTag)
 
     @abstractmethod
     def _buildup_core(self, lnTag, input_shape, input_tensor): # TODO: input_shape was supposed to get from input_tensor
@@ -441,7 +430,9 @@ class Model2D_Sliced(Model88) :
     def __init__(self, outputClasses =3, **kwargs):
         super(Model2D_Sliced, self).__init__(outputClasses = outputClasses, **kwargs)
         self.__channels_per_slice =4
+        self.__features_per_slice =518
         self.__coreId = "NA"
+        self.__subModels = {}
 
     @property
     def modelId(self) :
@@ -452,26 +443,43 @@ class Model2D_Sliced(Model88) :
 
     def __slice2d(x, idxSlice, channels_per_slice): 
         slice = x[:, :, :, idxSlice*channels_per_slice : (idxSlice+1)*channels_per_slice]
+        new_shape = (slice.shape[0], slice.shape[1], slice.shape[2], 1) # tuple(list(slice.shape[:3] +[1]))
+        tensor0 = tf.zeros(new_shape)
+        slice = tf.cat((slice, tensor0), axis=-1)
+
         ch2append = channels_per_slice - slice.shape[3] # [0]s to append to fit channel=4
+
         if ch2append >0:
-            slice0s = np.zeros(tuple(list(slice.shape[:3]) +[ch2append])) # TODO fix this
-            slice = np.concatenate((slice, slice0s), axis=2)
+            slice0s = np.zeros(tuple(list(slice.shape[1:3]) +[ch2append]), dtype='float32') # TODO fix this
+            tensor0s = tf.convert_to_tensor(slice0s)
+            slice += tensor0s
+            # slice = np.concatenate((slice, slice0s), axis=2)
         return slice
 
     def __slice2d_flow(self, inputs, input_shape, core_model, idxSlice):
         channels = input_shape[2]
         slice_shape = tuple(list(input_shape[:2]) +[self.__channels_per_slice])
+        # x = Lambda(lambda x: x[:, :, :, idxSlice*self.__channels_per_slice : (idxSlice+1)*self.__channels_per_slice], output_shape=slice_shape)(inputs)
         x = Lambda(Model2D_Sliced.__slice2d, output_shape=slice_shape, arguments={'idxSlice':idxSlice, 'channels_per_slice': self.__channels_per_slice})(inputs)
+        ch2append = self.__channels_per_slice - x.shape[3]
+        if ch2append >0:
+            x = ZeroPadding2D(padding=(0, 0, ch2append))(x)
 
-        # common layers to feature-518
+        # common layers to self.__features_per_slice
         lnTag = 'M88S%dflow%s.' % (self.__channels_per_slice, idxSlice)
-        x = core_model(x)
-        x =Flatten(name='%sflatten' %lnTag)(x)
-        x =Dropout(0.3, name='%sdropout' %lnTag)(x)
-        x =Dense(518, name='%sF518' %lnTag)(x)
-        return x
+        tensor_flowClose = core_model(x)
 
-    def _buildup_layers(self, input_shape=(32,32,8), input_tensor=None):
+        flowCloseIn = Input(tuple(tensor_flowClose.shape[1:]))
+        x =Flatten(name='%sflatten' %lnTag)(flowCloseIn)
+        x =Dropout(0.3, name='%sdropout' %lnTag)(x)
+        lf=Dense(self.__features_per_slice, name='%sF%d' % (lnTag, self.__features_per_slice))
+        x =lf(x)
+        m = Model(inputs=flowCloseIn, outputs=x, name='%sC' %lf.name)
+        self.__subModels[m.name] =m
+
+        return m(tensor_flowClose)
+
+    def buildup(self, input_shape=(32,32,3)):
         layerIn = Input(shape=input_shape)
 
         channels = input_shape[2]
@@ -479,47 +487,78 @@ class Model2D_Sliced(Model88) :
         slices = int(channels / self.__channels_per_slice)
         if 0 != channels % self.__channels_per_slice: slices +=1
 
-        core_model = self._buildup_core('%s%s.' % (Model88.CORE_LAYER_PREFIX, self.coreId), slice_shape, layerIn)
+        core_model = self._buildup_core(slice_shape, layerIn)
         self.__coreId = core_model.name
-        self._tagCoreModel(core_model, self.__coreId)
+        tagCore = '%s%s' % (Model88.CORE_LAYER_PREFIX, self.__coreId)
+        self.__subModels[tagCore] = core_model
+        self.__tagCoreModel(core_model, tagCore)
+        # x = self._buildup_core('%s%s.' % (Model88.CORE_LAYER_PREFIX, self.coreId), slice_shape, layerIn)
 
         sliceflows = [None] * slices
         for i in range(slices):
             sliceflows[i] = self.__slice2d_flow(layerIn, input_shape, core_model, i)
         
         # merge the multiple flow-of-slice into a controllable less than F518*2
-        if len(sliceflows) >1:
-            x = Concatenate(axis=1, name='M88S4ConX%d' % slices)(sliceflows) # merge = merge(sliceflows, mode='concat') # concatenate([x1,x2,x3])
+        merged_tensor = sliceflows[0] if 1 ==len(sliceflows) else Concatenate(axis=1, name='M88S4ConX%d' % slices)(sliceflows) # merge = merge(sliceflows, mode='concat') # concatenate([x1,x2,x3])
+        
+        closeIn = Input(tuple(merged_tensor.shape[1:]))
+        x = closeIn
 
-            dsize = int(math.sqrt(slices))
-            if dsize*dsize < slices: dsize +=1
-            seq = list(range(dsize))[1:]
-            seq.reverse()
+        dsize = int(math.sqrt(slices))
+        if dsize*dsize < slices: dsize +=1
+        seq = list(range(dsize))[1:]
+        seq.reverse()
 
-            for i in seq:
-                x =Dropout(0.5,  name='M88S4M_dropout%d' % i)(x)
-                x =Dense(518 *i, name='M88S4M_F518x%d' % i)(x)
-
-        else: x = sliceflows[0]
+        for i in seq:
+            x =Dropout(0.5,  name='M88S4M_dropout%d' % i)(x)
+            x =Dense(self.__features_per_slice *i, name='M88S4M_F%dx%d' % (self.__features_per_slice, i))(x)
 
         x = self._feature88toOut(x)
-        self._dnnModel = Model(inputs=layerIn, outputs=x, name='%sx%d' %(self.modelId, slices))
+        m = Model(inputs=closeIn, outputs=x, name='F88.F%dx%dC' %(self.__features_per_slice, slices))
+        self.__subModels[m.name] =m
+
+        for k, v in self.__subModels.items():
+            v.summary()
+            v.save('/tmp/%s.h5' % k)
+        
+        x = m(merged_tensor)
+        self._dnnModel = Model(inputs=layerIn, outputs=x, name='%sx%d' %(self.__features_per_slice, slices))
+
         # self._dnnModel.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **BaseModel.COMPILE_ARGS)
         # self._dnnModel.summary()
         return self.model
 
+    def __tagCoreModel(self, core_model, core_mId) :
+        # add the prefix tag
+        lnTag = core_mId
+        if not lnTag or len(lnTag) <=0: lnTag= Model88.CORE_LAYER_PREFIX
+        if Model88.CORE_LAYER_PREFIX != lnTag[:len(Model88.CORE_LAYER_PREFIX)]:
+            lnTag = '%s%s' % (Model88.CORE_LAYER_PREFIX, lnTag)
+        
+        if '.' != lnTag[-1]: lnTag +='.'
+
+        for layer in core_model.layers:
+            Model88._tagLayer(layer, lnTag)
+
     @abstractmethod
     def _buildup_core(self, slice_shape, input_tensor):
-        # if input_tensor is None:
-        #     input_tensor = Input(shape=input_shape)
+        # # a dummy core
+        # x = self._tagged_chain(lnTag, input_tensor, Dense(1000, input_shape =slice_shape))
+        # x = self._tagged_chain(lnTag, x, Flatten())
+        # x = self._tagged_chain(lnTag, x, Dense(518))
+        # # return x
+
+        # # inputs=get_source_inputs(input_tensor)
+        # return Model(inputs=[input_tensor], outputs=x, name=lnTag[:-1])
+
+        core = ResNet50(weights=None, classes=1000, input_shape=slice_shape) # , input_tensor=input_tensor) # dummy code
+        return core
 
         #TODO: need to define a channel=4 module
         # refer to:
         # /usr/local/lib64/python3.6/site-packages/keras_applications/resnet50.py
         # /usr/local/lib/python3.6/site-packages/tensorflow/contrib/eager/python/examples/resnet50/resnet50.py
         # def ResNet50(include_top=True, ...
-        core = ResNet50(weights=None, classes=1000, input_shape=slice_shape) # , input_tensor=input_tensor) # dummy code
-        return core
 
 
     '''
@@ -564,7 +603,7 @@ class Model2D_Sliced(Model88) :
 ########################################################################
 if __name__ == '__main__':
     
-    model = Model88_ResNet34d1() # Model88_Cnn1Dx4R2() # Model88_Cnn1Dx4R2() # Model2D_Sliced()
+    model = Model2D_Sliced() # Model88_ResNet34d1() # Model88_Cnn1Dx4R2() # Model2D_Sliced()
     model.buildup()
     model.compile()
     model.summary()

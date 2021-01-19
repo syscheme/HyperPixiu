@@ -105,7 +105,7 @@ class Model88(BaseModel) :
         '''
         @return output_tensor
         '''
-        input_shape = tuple(input_tensor.shape[1:]) # get rid of the leading dim-batch
+        input_shape = tuple([ int(x) for x in input_tensor.shape[1:]]) # get rid of the leading dim-batch
         raise NotImplementedError
 
     def create(self, layerIn):
@@ -442,6 +442,8 @@ class Model2D_Sliced(Model88) :
     @property
     def coreId(self) : return self.__coreId
 
+    def get_weights_core(self) : return self.__model_core.get_weights()
+
     def __slice2d(x, idxSlice, channels_per_slice): 
         slice = x[:, :, :, idxSlice*channels_per_slice : (idxSlice+1)*channels_per_slice]
         # new_shape = (slice.shape[0], slice.shape[1], slice.shape[2], 1) # tuple(list(slice.shape[:3] +[1]))
@@ -458,7 +460,7 @@ class Model2D_Sliced(Model88) :
         return slice
 
     def __slice2d_flow(self, input_tensor, core_model, idxSlice):
-        input_shape = tuple(input_tensor.shape[1:]) # get rid of the leading dim-batch
+        input_shape = tuple([ int(x) for x in input_tensor.shape[1:]]) # get rid of the leading dim-batch
         channels = input_shape[2]
         slice_shape = tuple(list(input_shape[:2]) +[self.__channels_per_slice])
         # x = Lambda(lambda x: x[:, :, :, idxSlice*self.__channels_per_slice : (idxSlice+1)*self.__channels_per_slice], output_shape=slice_shape)(input_tensor)
@@ -603,11 +605,21 @@ class Model2D_Sliced(Model88) :
         # return Model(inputs=get_source_inputs(input_tensor), outputs=x, name='basesliced')
         return Model(input_tensor, outputs=x, name='basesliced')
 
-        # # inputs=get_source_inputs(input_tensor)
-        # return Model(inputs=[input_tensor], outputs=x, name=lnTag[:-1])
-        # core = ResNet50(weights=None, classes=1000, input_shape=input_shape) # , input_tensor=input_tensor) # dummy code
-        # return core
+# --------------------------------
+class Model2D_ResNet50Pre(Model2D_Sliced) :
+    '''
+    2D models with channels expanded by channels=4
+    '''
+    def __init__(self, outputClasses =3, **kwargs):
+        super(Model2D_ResNet50Pre, self).__init__(outputClasses = outputClasses, **kwargs)
 
+    # def ResNet50(input_tensor=None, input_shape=None, pooling=None, classes=1000, **kwargs):
+    def _buildup_core(self, input_tensor):
+        '''
+        unlike the Model88_Flat._buildup_core() returns the output_tensor, the sliced 2D models returns a submodel as core from _buildup_core()
+        '''
+        input_shape = tuple([ int(x) for x in input_tensor.shape[1:]])
+        return ResNet50(weights=None, classes=1000, input_shape=input_shape)
 
 # --------------------------------
 class Model2D_ResNet50(Model2D_Sliced) :
@@ -781,8 +793,10 @@ class Model2D_ResNet50(Model2D_Sliced) :
 ########################################################################
 if __name__ == '__main__':
     
-    model = Model2D_ResNet50() # Model2D_ResNet50, Model2D_Sliced(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
+    model = Model2D_ResNet50() # Model2D_ResNet50Pre, Model2D_ResNet50, Model2D_Sliced(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
     model.buildup()
     model.compile()
     model.summary()
+
+    cw = model.get_weights_core()
     model.model.save('/tmp/%s.h5' % model.modelId) # model.save_model('/tmp/%s.h5' % model.modelId)

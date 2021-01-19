@@ -94,15 +94,7 @@ class BaseModel(object) :
         return self.model
 
     def enable_trainable(self, layerNamePattern, enable=True) :
-        layer_names = []
-        for layer in self.model.layers:
-            if not fnmatch.fnmatch(layer.name, layerNamePattern) :
-                continue
-
-            layer.trainable = enable
-            layer_names.append(layer.name)
-        
-        return layer_names
+        return BaseModel.enable_trainable_layers(self.model.layers, layerNamePattern, enable=enable)
 
     def save(self, filepath, saveWeights=True) :
         
@@ -163,8 +155,23 @@ class BaseModel(object) :
 
         return model
 
-    def load_weights_from_hdf5_group(self, group):
-        return BaseModel.load_weights_from_hdf5_group_by_name(group, self.model.layers)
+    def load_weights_from_hdf5_group(self, group, trainable = False):
+        ret = BaseModel.load_weights_from_hdf5_group_by_name(group, self.model.layers)
+        for layer in self.model.layers:
+            layer.trainable = False
+
+        return ret
+
+    def enable_trainable_layers(layers, layerNamePattern, enable=True) :
+        layer_names = []
+        for layer in layers:
+            if not fnmatch.fnmatch(layer.name, layerNamePattern) :
+                continue
+
+            layer.trainable = enable
+            layer_names.append(layer.name)
+        
+        return layer_names
 
     def save_attributes_to_hdf5_group(group, name, data):
         group.attrs[name] = np.asarray(data)

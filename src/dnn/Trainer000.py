@@ -1,286 +1,23 @@
-# encoding: UTF-8
-
-'''
-A DQN Trainer detached from gymAgent to perform 'offline' training
-It reads the ReplayBuffers, which was output from agentDQN, to train the model. Such a 'offline' trainning would help the online-agent to improve the loss/accurate of the model,
-and can also distribute the training load outside of the online agent
-'''
-from __future__ import division
-from abc import abstractmethod
-
-from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
-from HistoryData  import H5DSET_DEFAULT_ARGS
-# ----------------------------
-# INDEPEND FROM HyperPX core classes: from MarketData import EXPORT_FLOATS_DIMS
-EXPORT_FLOATS_DIMS = 4
-DUMMY_BIG_VAL = 999999
-NN_FLOAT = 'float32'
-RFGROUP_PREFIX = 'ReplayFrame:'
-RFGROUP_PREFIX2 = 'RF'
-# ----------------------------
-
-from tensorflow.keras.models import Model, Sequential
-from tensorflow.keras.optimizers import Adam, SGD
-from tensorflow.keras.models import model_from_json
-from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
-from tensorflow.keras import backend as backend # from tensorflow.keras import backend
-# import tensorflow.keras.engine.saving as saving # import keras.engine.saving as saving
-import tensorflow as tf
-
-import sys, os, platform, random, copy, threading
-from datetime import datetime
-from time import sleep
-
-import h5py, tarfile, pickle, fnmatch
-import numpy as np
-
-# GPUs = backend.tensorflow_backend._get_available_gpus()
-def get_available_gpus():
-    from tensorflow.python.client import device_lib
-    local_device_protos = device_lib.list_local_devices()
-    return [{'name':x.name, 'detail':x.physical_device_desc } for x in local_device_protos if x.device_type == 'GPU']
-
-GPUs = get_available_gpus()
-
-if len(GPUs) >1:
-    from keras.utils.training_utils import multi_gpu_model
-
-FN_SUFIX_MODEL_JSON = '_model.json'
-FN_SUFIX_WEIGHTS_H5 = '_weights.h5'
-
 ########################################################################
-class BaseModel(object) :
+class Trainer(BaseApplication):
 
+    DEFAULT_MODEL = 'Cnn1Dx4R2'
     COMPILE_ARGS ={
     'loss':'categorical_crossentropy', 
     # 'optimizer': sgd,
     'metrics':['accuracy']
     }
-
-    def list_GPUs() :
-        from tensorflow.python.client import device_lib
-        local_device_protos = device_lib.list_local_devices()
-        return [{'name':x.name, 'detail':x.physical_device_desc } for x in local_device_protos if x.device_type == 'GPU']
-
-    GPUs = list_GPUs()
-
-    def __init__(self, **kwargs):
-        self._dnnModel = None
-        self._program = kwargs.get('program', None)
-
-    @property
-    def program(self) :
-        return self._program
-
-    @property
-    def modelId(self) :
-        return self._dnnModel.name if self._dnnModel else 'NilModel'
-
-    @property
-    def model(self) : return self._dnnModel
-
-    @property
-    def input_shape(self) :
-        return tuple(self._dnnModel.input_shape[1:]) if self._dnnModel else None
-
-    @property
-    def output_shape(self) :
-        return tuple(self._dnnModel.output_shape[1:]) if self._dnnModel else None
-
-    def summary(self):
-        if self._dnnModel: self._dnnModel.summary()
-
-    def compile(self, compireArgs=None, optimizer=None):
-        if not self._dnnModel: return
-
-        if not compireArgs or isinstance(compireArgs, dict) and len(compireArgs) <=0:
-            compireArgs = BaseModel.COMPILE_ARGS
-        if not optimizer:
-            optimizer = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
-
-        self._dnnModel.compile(optimizer=optimizer, **compireArgs)
-        return self.model
-
-    def enable_trainable(self, layerNamePattern, enable=True) :
-        return BaseModel.enable_trainable_layers(self.model.layers, layerNamePattern, enable=enable)
-
-    def save(self, filepath, saveWeights=True) :
-        
-        if not self.model: return False
-
-        with h5py.File(filepath, 'w') as h5f:
-            # step 1. save json model in h5f['model_config']
-            model_json = self.model.to_json()
-            g = h5f.create_group('model_config')
-            g['model_json'] = model_json.encode('utf-8')
-            g['model_clz'] = self.__class__.__name__.encode('utf-8')
-            g['model_base'] = 'base'.encode('utf-8')
-
-            if saveWeights:
-                g = h5f.create_group('model_weights')
-                BaseModel.save_weights_to_hdf5_group(g, self.model.layers)
-
-        return True
-
-    @staticmethod
-    def load(filepath, custom_objects=None, withWeights=True):
-        if h5py is None:
-            raise ImportError('load() requires h5py')
-
-        model = None
-        with h5py.File(filepath, 'r') as h5f:
-            # step 1. load json model defined in h5f['model_config']
-            if 'model_config' in h5f:
-                gconf = h5f['model_config']
-                if 'model_json' not in gconf:
-                    raise ValueError('model of %s has no model_json to init BaseModel' % filepath)
-
-                model_json = gconf['model_json'][()].decode('utf-8')
-                model_base = gconf['model_base'][()].decode('utf-8') if 'model_base' in gconf else 'base'
-                model_clz  = gconf['model_clz'][()].decode('utf-8') if 'model_clz' in gconf else ''
-                if not model_base in [None, 'base', '', '*']:
-                    raise ValueError('model[%s] of %s is not suitable to load via BaseModel' % (model_clz, filepath))
-
-                m = model_from_json(model_json, custom_objects=custom_objects)
-                
-                if not m:
-                    raise ValueError('failed to build from model_json of %s' % filepath)
-
-                model = BaseModel()
-                model._dnnModel =m
-
-            if not model:
-                return model
-
-            # step 2. load weights in h5f['model_weights']
-            if withWeights and 'model_weights' in h5f:
-                model_weights_group = h5f['model_weights']
-                model.load_weights_from_hdf5_group(model_weights_group)
-            
-            # step 3. by default, disable trainable
-            for layer in model.model.layers:
-                layer.trainable = False
-
-        return model
-
-    def load_weights_from_hdf5_group(self, group, trainable = False):
-        ret = BaseModel.load_weights_from_hdf5_group_by_name(group, self.model.layers)
-        for layer in self.model.layers:
-            layer.trainable = False
-
-        return ret
-
-    def enable_trainable_layers(layers, layerNamePattern, enable=True) :
-        layer_names = []
-        for layer in layers:
-            if not fnmatch.fnmatch(layer.name, layerNamePattern) :
-                continue
-
-            layer.trainable = enable
-            layer_names.append(layer.name)
-        
-        return layer_names
-
-    def save_attributes_to_hdf5_group(group, name, data):
-        group.attrs[name] = np.asarray(data)
-
-    def load_attributes_from_hdf5_group(group, name):
-        if name in group.attrs:
-            data = [n.decode('utf8') for n in group.attrs[name]]
-        else:
-            data = []
-        return data
-
-    def save_weights_to_hdf5_group(group, layers):
-        '''
-        duplicated but simplized from /usr/local/lib/python3.6/...tensorflow/python/keras/engine/hdf5_format.py
-        Saves the weights of a list of layers to a HDF5 group.
-        group: HDF5 group.
-        layers: List of layer instances.
-        '''
-        saved_layer_names=[]
-
-        for layer in layers:
-            weights = layer.get_weights()
-            if not weights or len(weights) <=0:
-                continue
-
-            g = group.create_group(layer.name)
-            pklweights = pickle.dumps(weights)
-            npbytes = np.frombuffer(pklweights, dtype=np.uint8)
-            param_dset = g.create_dataset('pickled_weights', data=npbytes)
-            saved_layer_names.append(layer.name)
-
-        BaseModel.save_attributes_to_hdf5_group(group, 'layer_names', [n.encode('utf8') for n in saved_layer_names])
-        return saved_layer_names
-
-    def load_weights_from_hdf5_group_by_name(group, layers, name_pattern=None):
-        '''
-        duplicated but simplized from /usr/local/lib/python3.6/...tensorflow/python/keras/engine/hdf5_format.py
-        Saves the weights of a list of layers to a HDF5 group.
-        group: HDF5 group.
-        layers: List of layer instances.
-        '''
-
-        loaded_layer_names=[]
-        layer_names = BaseModel.load_attributes_from_hdf5_group(group, 'layer_names')
-
-        for layer in layers:
-            if not layer.trainable or layer.name not in layer_names:
-                continue
-
-            if layer.name not in group.keys() or 'pickled_weights' not in group[layer.name].keys():
-                # this is not a good model file
-                continue
-
-            pklweights = group[layer.name]['pickled_weights'][()].tobytes()
-            weights = pickle.loads(pklweights)
-            layer.set_weights(weights)
-            loaded_layer_names.append(layer.name)
-        
-        return loaded_layer_names
-
-    #---logging -----------------------
-    def log(self, level, msg):
-        if not self._program: return
-        self._program.log(level, 'APP['+self.ident +'] ' + msg)
-
-    def debug(self, msg):
-        if not self._program: return
-        self._program.debug('APP['+self.ident +'] ' + msg)
-        
-    def info(self, msg):
-        '''正常输出'''
-        if not self._program: return
-        self._program.info('APP['+self.ident +'] ' + msg)
-
-    def warn(self, msg):
-        '''警告信息'''
-        if not self._program: return
-        self._program.warn('APP['+self.ident +'] ' + msg)
-        
-    def error(self, msg):
-        '''报错输出'''
-        if not self._program: return
-        self._program.error('APP['+self.ident +'] ' + msg)
-
-    def logexception(self, ex, msg=''):
-        '''报错输出+记录异常信息'''
-        self.error('%s %s: %s' % (msg, ex, traceback.format_exc()))
-
-########################################################################
-class Trainer(BaseApplication):
-
-    def __init__(self, program, datafiles=None, recorder =None, **kwargs):
+    
+    def __init__(self, program, replayFrameFiles=None, model_json=None, initWeights= None, recorder =None, **kwargs):
         super(Trainer, self).__init__(program, **kwargs)
 
-        self.__wkModelId       = None
-        self._fnStartModel     = self.getConfig('startModel', None)
-        self._baseModelClass   = self.getConfig('baseModel', 'base').lower()
-        self._replayFrameFiles = datafiles
+        self._wkModelId      = self.getConfig('brainId', Trainer.DEFAULT_MODEL)
+
+        self._model_json = model_json
+        self._replayFrameFiles =replayFrameFiles
 
         if not self._replayFrameFiles or len(self._replayFrameFiles) <=0: 
-            self._replayFrameFiles = self.getConfig('datafiles', [])
+            self._replayFrameFiles = self.getConfig('replayFrameFiles', [])
             self._replayFrameFiles = [ Program.fixupPath(f) for f in self._replayFrameFiles ]
 
         self._stepMethod          = self.getConfig('stepMethod', None)
@@ -294,9 +31,16 @@ class Trainer(BaseApplication):
         self._lossPctStop         = self.getConfig('lossPctStop', 5)
         self._startLR             = self.getConfig('startLR', 0.01)
         self._evaluateSamples     = self.getConfig('evaluateSamples', 'yes').lower() in BOOL_STRVAL_TRUE
-        self._preBalanced         = self.getConfig('preBalanced',     'no').lower() in BOOL_STRVAL_TRUE
+        self._preBalanced         = self.getConfig('preBalanced',      'no').lower() in BOOL_STRVAL_TRUE
         self._evalAt              = self.getConfig('evalAt', 5) # how often on trains to perform evaluation
-        self._trainables          = self.getConfig('trainableLayers', ['*']) # ['F88.Dense*', 'VClz66from512.2of2']
+
+        # self._nonTrainables       = self.getConfig('nonTrainables',  ['VClz512to20.1of2', 'VClz512to20.2of2']) # non-trainable layers
+        # self._nonTrainables       = [x('') for x in self._nonTrainables] # convert to string list
+        self._nonTrainables = ['VClz66from512.1of2', 'VClz66from512.2of2']
+
+        # self._poolEvictRate       = self.getConfig('poolEvictRate', 0.5)
+        # if self._poolEvictRate>1 or self._poolEvictRate<=0:
+        #     self._poolEvictRate =1
 
         if len(GPUs) > 0 : # adjust some configurations if currently running on GPUs
             self.info('GPUs: %s' % GPUs)
@@ -308,9 +52,9 @@ class Trainer(BaseApplication):
             self._recycleSize     = self.getConfig('GPU/recycles',   self._recycleSize)
             self._startLR         = self.getConfig('GPU/startLR',      self._startLR)
 
-            conf_GpuModels        = self.getConfig('GPU/models',   [])
+            self._models          = self.getConfig('GPU/models',   [])
             gpuType = GPUs[0]['detail'] # TODO: only take the first at the moment
-            for m in conf_GpuModels:
+            for m in self._models:
                 if not m or not 'model' in m.keys() or not m['model'] in gpuType: continue
                 if 'batchSize' in m.keys(): self._batchSize = m['batchSize']
                 if 'batchesPerTrain' in m.keys(): self._batchesPerTrain = m['batchesPerTrain']
@@ -337,8 +81,9 @@ class Trainer(BaseApplication):
         self._frameSeq =[]
 
         self._evalAt =int(self._evalAt)
-        self._frameSize = 0
+        self._stateSize, self._actionSize, self._frameSize = None, None, 0
         self._brain = None
+        self._outDir = os.path.join(self.dataRoot, '%s/P%s/' % (self.program.baseName, self.program.pid))
         self.__lock = threading.Lock()
         self.__thrdsReadAhead = []
         self.__chunksReadAhead = []
@@ -349,6 +94,23 @@ class Trainer(BaseApplication):
 
         self.__latestBthNo=0
         self.__totalAccu, self.__totalEval, self.__totalSamples, self.__stampRound = 0.0, 0, 0, datetime.now()
+
+        self.__knownModels_1D = {
+            'VGG16d1'    : self.__createModel_VGG16d1,
+            'Cnn1Dx4R2'  : self.__createModel_Cnn1Dx4R2,
+            'Cnn1Dx4R3'  : self.__createModel_Cnn1Dx4R3,
+            'ResNet18d1' : self.__createModel_ResNet18d1,
+            'ResNet2Xd1' : self.__createModel_ResNet2Xd1,
+            'ResNet2xR1' : self.__createModel_ResNet2xR1,
+            'ResNet21'   : self.__createModel_ResNet21,
+            'ResNet21R1' : self.__createModel_ResNet21R1,
+            'ResNet34d1' : self.__createModel_ResNet34d1,
+            'ResNet50d1' : self.__createModel_ResNet50d1,
+            }
+
+        self.__knownModels_2D = {
+            'ResNet50d2Ext1' : self.__createModel_ResNet50d2Ext1,
+            }
 
         STEPMETHODS = {
             'LocalGenerator'   : self.doAppStep_local_generator,
@@ -382,41 +144,70 @@ class Trainer(BaseApplication):
         self.__nextFrameName(False) # probe the dims of state/action from the h5 file
         self.__maxChunks = max(int(self._frameSize/self._batchesPerTrain /self._batchSize), 1) # minimal 8K samples to at least cover a frame
 
-        if len(GPUs) <= 1:
-            # CPU mode
-            if self._baseModelClass in [ 'model2d_sliced', 'sliced2d' ]: # lower-ed already
-                self._brain = Model2D_Sliced.load(self._fnStartModel)
-            else :
-                self._brain = BaseModel.load(self._fnStartModel)
-        else:
-            # GPU mode
-            with tf.device("/cpu:0"):
-                if self._baseModelClass in [ 'model2d_sliced', 'sliced2d' ]: # lower-ed already
-                    self._brain = Model2D_Sliced.load(self._fnStartModel)
-                else :
-                    self._brain = BaseModel.load(self._fnStartModel)
+        if self._model_json:
+            if len(GPUs) <= 1:
+                self._brain = model_from_json(self._model_json)
+            else:
+                # we'll store a copy of the model on *every* GPU and then combine the results from the gradient updates on the CPU
+                with tf.device("/cpu:0"):
+                    self._brain = model_from_json(self._model_json)
+
+            if not self._brain:
+                self.error('model_from_json failed')
+                return False
         
+        if not self._brain and self._wkModelId and len(self._wkModelId) >0:
+            wkModelId = '%s.S%sI%sA%s' % (self._wkModelId, self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
+            inDir = os.path.join(self.dataRoot, wkModelId)
+            try : 
+                self.debug('loading saved model from %s' % inDir)
+                with open(os.path.join(inDir, 'model.json'), 'r') as mjson:
+                    model_json = mjson.read()
+                    if len(GPUs) <= 1:
+                        self._brain = model_from_json(model_json)
+                    else:
+                        with tf.device("/cpu:0"):
+                            self._brain = model_from_json(model_json)
+
+                sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+                self._brain.compile(optimizer=sgd, **Trainer.COMPILE_ARGS)
+
+                self._wkModelId = wkModelId
+
+                fn_weights = os.path.join(inDir, 'weights.h5')
+                self.debug('loading saved weights from %s' %fn_weights)
+                self._brain.load_weights(fn_weights)
+                self.info('loaded model and weights from %s' %inDir)
+
+                fn_weights = os.path.join(inDir, 'nonTrainables.h5')
+                try :
+                    if os.stat(fn_weights):
+                        self.debug('importing weights of layers[%s] from file %s' % (','.join(self._nonTrainables), fn_weights))
+                        lns = importLayerWeights(self._brain, fn_weights, self._nonTrainables)
+                        if len(lns) >0:
+                            sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+                            self._brain.compile(optimizer=sgd, **Trainer.COMPILE_ARGS)
+                            self.info('imported non-trainable weights of layers[%s] from file %s' % (','.join(lns), fn_weights))
+                except Exception as ex:
+                    self.logexception(ex)
+
+            except Exception as ex:
+                self.logexception(ex)
+
+        #TESTCODE: 
+        # self.createModel('ResNet50d2Ext1', knownModels = self.__knownModels_2D)
+
         if not self._brain:
-            self.error('failed to load startModel[%s]' % self._fnStartModel)
-            return False
-        
-        sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
-        self._brain.compile(optimizer=sgd)
-        self.__wkModelId = self._brain.modelId
-
-        layernames = []
-        if not self._trainables or len(self._trainables) <=0:
-            layernames += self._brain.enable_trainable('*')
-        else:
-            if isinstance(self._trainables, str): self._trainables=self._trainables.split(',')
-            for pat in self._trainables:
-                layernames += self._brain.enable_trainable(pat)
-
-        if len(layernames) >0:
-            self.info('trainable-layers: %s' % ','.join(layernames))
+            self._brain, self._wkModelId = self.createModel(self._wkModelId, knownModels = self.__knownModels_2D) # = self.createModel(self._wkModelId)
+            self._wkModelId += '.S%sI%sA%s' % (self._stateSize, EXPORT_FLOATS_DIMS, self._actionSize)
 
         try :
-            os.makedirs(self.outdir)
+            os.makedirs(self._outDir)
+            fn_model =os.path.join(self._outDir, '%s.model.json' %self._wkModelId) 
+            with open(fn_model, 'w') as mjson:
+                model_json = self._brain.to_json()
+                mjson.write(model_json)
+                self.info('saved model as %s' %fn_model)
         except :
             pass
 
@@ -424,10 +215,10 @@ class Trainer(BaseApplication):
             self.info('training with m-GPU: %s' % GPUs)
             self._brain = multi_gpu_model(self._brain, gpus=len(GPUs))
 
-        checkpoint = ModelCheckpoint(os.path.join(self.outdir, '%s.best.h5' % self.__wkModelId ), verbose=0, monitor='loss', mode='min', save_best_only=True)
+        checkpoint = ModelCheckpoint(os.path.join(self._outDir, '%s.best.h5' %self._wkModelId ), verbose=0, monitor='loss', mode='min', save_best_only=True)
         self._fitCallbacks = [checkpoint]
         if self._exportTB :
-            cbTensorBoard = TensorBoard(log_dir=os.path.join(self.outdir, 'tb'), histogram_freq=0,  # 按照何等频率（epoch）来计算直方图，0为不计算
+            cbTensorBoard = TensorBoard(log_dir=os.path.join(self._outDir, 'tb'), histogram_freq=0,  # 按照何等频率（epoch）来计算直方图，0为不计算
                     write_graph=True,  # 是否存储网络结构图
                     write_grads=True, # 是否可视化梯度直方图
                     write_images=True) # ,# 是否可视化参数
@@ -462,6 +253,9 @@ class Trainer(BaseApplication):
             raise StopIteration
 
     def doAppStep_keras_batchGenerator(self):
+        # frameSeq= [i for i in range(len(self._framesInHd5))]
+        # random.shuffle(frameSeq)
+        # result = self._brain.fit_generator(generator=self.__gen_readBatchFromFrameEx(frameSeq), workers=2, use_multiprocessing=True, epochs=self._initEpochs, steps_per_epoch=1000, verbose=1, callbacks=self._fitCallbacks)
 
         result, histEpochs = None, []
         self.refreshPool()
@@ -485,7 +279,7 @@ class Trainer(BaseApplication):
         self.refreshPool()
         dataset = tf.data.Dataset.from_generator(generator =self.__gen_readDataFromFrame,
                                                 output_types=(tf.float32, tf.float32),
-                                                output_shapes=((self._brain.input_shape[1],), self._brain.output_shape))
+                                                output_shapes=((self._stateSize,), (self._actionSize,)))
 
         dataset = dataset.batch(self._batchSize).shuffle(100)
         dataset = dataset.apply(tf.data.experimental.copy_to_device("/gpu:0"))
@@ -567,7 +361,7 @@ class Trainer(BaseApplication):
     def __logAndSaveResult(self, resFinal, methodName, notes=''):
         if not notes or len(notes) <0: notes=''
 
-        fn_weights = os.path.join(self.outdir, '%s.weights.h5' %self.__wkModelId)
+        fn_weights = os.path.join(self._outDir, '%s.weights.h5' %self._wkModelId)
         self._brain.save(fn_weights)
 
         self.info('%s() saved weights %s, result[%s] %s' % (methodName, fn_weights, resFinal, notes))
@@ -896,15 +690,17 @@ class Trainer(BaseApplication):
                             actionSize = frm['action'].shape[1]
                             signature =  frm.attrs['signature'] if 'signature' in frm.attrs.keys() else 'n/a'
 
-                            if int(self._brain.input_shape[1]) != stateSize or self._actionSize and int(self._brain.output_shape[1]) != actionSize:
+                            if self._stateSize and self._stateSize != stateSize or self._actionSize and self._actionSize != actionSize:
                                 self._replayFrameFiles.remove(h5fileName)
-                                self.error('file %s eliminated as its dims: %s/state %s/action mismatch working dims %s/state %s/action' % (h5fileName, stateSize, actionSize, int(self._brain.input_shape[1]), int(self._brain.input_shape[1])) )
+                                self.error('file %s eliminated as its dims: %s/state %s/action mismatch working dims %s/state %s/action' % (h5fileName, stateSize, actionSize, self._stateSize, self._actionSize) )
                                 continue
 
                             if self._frameSize < frameSize:
                                 self._frameSize = frameSize
+                            self._stateSize = stateSize
+                            self._actionSize = actionSize
 
-                            self.info('%d ReplayFrames found in %s with signature[%s] dims: %s/state, %s/action' % (len(framesInHd5), h5fileName, signature, int(self._brain.input_shape[1]), int(self._brain.input_shape[1])) )
+                            self.info('%d ReplayFrames found in %s with signature[%s] dims: %s/state, %s/action' % (len(framesInHd5), h5fileName, signature, self._stateSize, self._actionSize) )
 
                     except Exception as ex:
                         self._replayFrameFiles.remove(h5fileName)
@@ -1166,28 +962,56 @@ class Trainer(BaseApplication):
                 self.info('doAppStep_local_generator() %s epochs on recycled %dN+%dR samples took %s, hist: %s' % (strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
                 skippedSaves +=1
     
-    # #----------------------------------------------------------------------
-    # def createModel(self, modelId, knownModels=None):
-    #     if not knownModels:
-    #         knownModels = self.__knownModels_1D
+    #----------------------------------------------------------------------
+    def createModel(self, modelId, knownModels=None):
+        if not knownModels:
+            knownModels = self.__knownModels_1D
 
-    #     if not modelId in knownModels.keys():
-    #         self.warn('unknown modelId[%s], taking % instead' % (modelId, Trainer.DEFAULT_MODEL))
-    #         modelId = Trainer.DEFAULT_MODEL
+        if not modelId in knownModels.keys():
+            self.warn('unknown modelId[%s], taking % instead' % (modelId, Trainer.DEFAULT_MODEL))
+            modelId = Trainer.DEFAULT_MODEL
 
 
-    #     if len(GPUs) <= 1:
-    #         return knownModels[modelId](), modelId
+        if len(GPUs) <= 1:
+            return knownModels[modelId](), modelId
 
-    #     with tf.device("/cpu:0"):
-    #         return knownModels[modelId](), modelId
+        with tf.device("/cpu:0"):
+            return knownModels[modelId](), modelId
 
-    # def exportLayerWeights(self):
-    #     h5fileName = os.path.join(self.outdir, '%s.nonTrainables.h5'% self.__wkModelId)
-    #     self.debug('exporting weights of layers[%s] into file %s' % (','.join(self._nonTrainables), h5fileName))
-    #     lns = exportLayerWeights(self._brain, h5fileName, self._nonTrainables)
-    #     self.info('exported weights of layers[%s] into file %s' % (','.join(lns), h5fileName))
+    def exportLayerWeights(self):
+        h5fileName = os.path.join(self._outDir, '%s.nonTrainables.h5'% self._wkModelId)
+        self.debug('exporting weights of layers[%s] into file %s' % (','.join(self._nonTrainables), h5fileName))
+        lns = exportLayerWeights(self._brain, h5fileName, self._nonTrainables)
+        self.info('exported weights of layers[%s] into file %s' % (','.join(lns), h5fileName))
 
+    #----------------------------------------------------------------------
+    # pretrained 2D models
+    # https://tensorflow.google.cn/api_docs/python/tf/keras/applications/ResNet50?hl=zh-cn
+    def __createModel_ResNet50d2Ext1(self):
+        
+        # pretrained = ResNet50(weights='imagenet', classes=1000)
+        # may lead to URL fetch failure on https://github.com/fchollet/deep-learning-models/releases/download/v0.2/resnet50_weights_tf_dim_ordering_tf_kernels.h5: None -- [Errno 11] Resource temporarily unavailable
+        # take the pre-downloaded offline-weights
+        pretrained = ResNet50(weights=None, classes=1000, input_shape=(32, 32, 3))
+        pretrained.load_weights(Program.fixupPath('/mnt/e/AShareSample/resnet50_weights_tf_dim_ordering_tf_kernels.h5'))
+
+        pretrained.trainable = False # freeze those pretrained weights
+        
+        tuples = self._stateSize/EXPORT_FLOATS_DIMS
+        model = Sequential()
+        #TODO model.add(Reshape((int(tuples), EXPORT_FLOATS_DIMS), input_shape=(self._stateSize,)))
+        model.add(pretrained)
+        model.add(Flatten())
+        model.add(Dense(518))
+        model.add(BatchNormalization())
+        model.add(Dropout(0.3))
+
+        # unified final layers Dense(VClz512to20) then Dense(self._actionSize)
+        model.add(Dense(20, name='VClz512to20.1of2', activation='relu'))
+        model.add(Dense(self._actionSize, name='VClz512to20.2of2', activation='softmax')) # this is not Q func, softmax is prefered
+        model.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **Trainer.COMPILE_ARGS)
+        model.summary()
+        return model
 
 ########################################################################
 if __name__ == '__main__':

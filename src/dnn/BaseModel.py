@@ -31,7 +31,7 @@ import sys, os, platform, random, copy, threading
 from datetime import datetime
 from time import sleep
 
-import h5py, tarfile
+import h5py, tarfile, pickle, fnmatch
 import numpy as np
 
 # GPUs = backend.tensorflow_backend._get_available_gpus()
@@ -93,56 +93,142 @@ class BaseModel(object) :
         self._dnnModel.compile(optimizer=optimizer, **compireArgs)
         return self.model
 
-    def load_model(self, filepath, custom_objects=None):
-        if h5py is None:
-            raise ImportError('`load_model` requires h5py')
+    def enable_trainable(self, layerNamePattern, enable=True) :
+        layer_names = []
+        for layer in self.model.layers:
+            if not fnmatch.fnmatch(layer.name, layerNamePattern) :
+                continue
 
-        with h5py.File(filepath, 'r') as h5f:
-            # step 1. load json model defined in h5f['model_config']
-            if 'model_config' in h5f:
-                self._dnnModel = None
-                model_config = h5f['model_config'].decode('utf-8')
-                self._dnnModel = model_from_json(model_config, custom_objects=custom_objects)
+            layer.trainable = enable
+            layer_names.append(layer.name)
+        
+        return layer_names
 
-            if not self._dnnModel:
-                return self.model
-
-            # step 2. load weights in h5f['model_weights']
-            model_weights_group = h5f['model_weights']
-            saving.load_weights_from_hdf5_group_by_name(model_weights_group, self._dnnModel.layers)
-            
-            # step 3. by default, disable trainable
-            for layer in self._dnnModel.layers:
-                layer.trainable = False
-
-        return self.model
-
-    def save_model(self, filepath, saveModel=True, saveWeights=True) :
+    def save(self, filepath, saveWeights=True) :
         
         if not self.model: return False
 
         with h5py.File(filepath, 'w') as h5f:
             # step 1. save json model in h5f['model_config']
-            if saveModel:
-                model_json = self.model.to_json()
-                h5f['model_config'] = model_json.encode('utf-8')
+            model_json = self.model.to_json()
+            g = h5f.create_group('model_config')
+            g['model_json'] = model_json.encode('utf-8')
+            g['model_clz'] = self.__class__.__name__.encode('utf-8')
+            g['model_base'] = 'base'.encode('utf-8')
 
             if saveWeights:
-                if 'model_weights' in h5f.keys():
-                    del h5f['model_weights']
-                
                 g = h5f.create_group('model_weights')
-                saving.load_weights_from_hdf5_group_by_name(g, self.model.layers)
+                BaseModel.save_weights_to_hdf5_group(g, self.model.layers)
 
         return True
 
-    def enable_trainable(prefixies=[], enable=True) :
-        for layer in self._dnnModel.layers:
-            lnTag = layer.name.split(':')[0]
-            if lnTag in prefixies :
-                layer.trainable = enable
+    @staticmethod
+    def load(filepath, custom_objects=None, withWeights=True):
+        if h5py is None:
+            raise ImportError('load() requires h5py')
+
+        model = None
+        with h5py.File(filepath, 'r') as h5f:
+            # step 1. load json model defined in h5f['model_config']
+            if 'model_config' in h5f:
+                gconf = h5f['model_config']
+                if 'model_json' not in gconf:
+                    raise ValueError('model of %s has no model_json to init BaseModel' % filepath)
+
+                model_json = gconf['model_json'][()].decode('utf-8')
+                model_base = gconf['model_base'][()].decode('utf-8') if 'model_base' in gconf else 'base'
+                model_clz  = gconf['model_clz'][()].decode('utf-8') if 'model_clz' in gconf else ''
+                if not model_base in [None, 'base', '', '*']:
+                    raise ValueError('model[%s] of %s is not suitable to load via BaseModel' % (model_clz, filepath))
+
+                m = model_from_json(model_json, custom_objects=custom_objects)
+                
+                if not m:
+                    raise ValueError('failed to build from model_json of %s' % filepath)
+
+                model = BaseModel()
+                model._dnnModel =m
+
+            if not model:
+                return model
+
+            # step 2. load weights in h5f['model_weights']
+            if withWeights and 'model_weights' in h5f:
+                model_weights_group = h5f['model_weights']
+                model.load_weights_from_hdf5_group(model_weights_group)
+            
+            # step 3. by default, disable trainable
+            for layer in model.model.layers:
+                layer.trainable = False
+
+        return model
+
+    def load_weights_from_hdf5_group(self, group):
+        return BaseModel.load_weights_from_hdf5_group_by_name(group, self.model.layers)
+
+    def save_attributes_to_hdf5_group(group, name, data):
+        group.attrs[name] = np.asarray(data)
+
+    def load_attributes_from_hdf5_group(group, name):
+        if name in group.attrs:
+            data = [n.decode('utf8') for n in group.attrs[name]]
+        else:
+            data = []
+        return data
+
+    def save_weights_to_hdf5_group(group, layers):
+        '''
+        duplicated but simplized from /usr/local/lib/python3.6/...tensorflow/python/keras/engine/hdf5_format.py
+        Saves the weights of a list of layers to a HDF5 group.
+        group: HDF5 group.
+        layers: List of layer instances.
+        '''
+        saved_layer_names=[]
+
+        for layer in layers:
+            weights = layer.get_weights()
+            if not weights or len(weights) <=0:
+                continue
+
+            g = group.create_group(layer.name)
+            pklweights = pickle.dumps(weights)
+            npbytes = np.frombuffer(pklweights, dtype=np.uint8)
+            param_dset = g.create_dataset('pickled_weights', data=npbytes)
+            saved_layer_names.append(layer.name)
+
+        BaseModel.save_attributes_to_hdf5_group(group, 'layer_names', [n.encode('utf8') for n in saved_layer_names])
+        return saved_layer_names
+
+    def load_weights_from_hdf5_group_by_name(group, layers, name_pattern=None):
+        '''
+        duplicated but simplized from /usr/local/lib/python3.6/...tensorflow/python/keras/engine/hdf5_format.py
+        Saves the weights of a list of layers to a HDF5 group.
+        group: HDF5 group.
+        layers: List of layer instances.
+        '''
+
+        loaded_layer_names=[]
+        layer_names = BaseModel.load_attributes_from_hdf5_group(group, 'layer_names')
+
+        for layer in layers:
+            if not layer.trainable or layer.name not in layer_names:
+                continue
+
+            if layer.name not in group.keys() or 'pickled_weights' not in group[layer.name].keys():
+                # this is not a good model file
+                continue
+
+            pklweights = group[layer.name]['pickled_weights'][()].tobytes()
+            weights = pickle.loads(pklweights)
+            layer.set_weights(weights)
+            loaded_layer_names.append(layer.name)
+        
+        return loaded_layer_names
 
     """
+    def load_weights(self, filepath):
+    
+
     def loadModelFromJson(self, modelJson, modelId, compireArgs=None, optimizer=None):
         if len(GPUs) <= 1:
             self._dnnModel = model_from_json(modelJson)

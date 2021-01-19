@@ -12,7 +12,7 @@ from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 from HistoryData  import H5DSET_DEFAULT_ARGS
 from dnn.BaseModel  import BaseModel
 
-from tensorflow.keras.models import Model, Sequential
+from tensorflow.keras.models import model_from_json, Model, Sequential
 from tensorflow.keras.optimizers import Adam, SGD
 from tensorflow.keras.layers import Input, Dense, Activation, Dropout, LSTM, Reshape, Lambda, Concatenate, BatchNormalization, Flatten, add
 from tensorflow.keras.layers import Conv1D, MaxPooling1D, GlobalAveragePooling1D, ZeroPadding1D
@@ -25,6 +25,7 @@ from tensorflow.keras.applications.resnet50 import ResNet50
 import tensorflow as tf
 import numpy as np
 import math
+import h5py, fnmatch
 
 ########################################################################
 class Model88(BaseModel) :
@@ -433,6 +434,7 @@ class Model2D_Sliced(Model88) :
         self.__features_per_slice =518
         self.__coreId = "NA"
         self.__model_core = None
+        self.__json_core = None
         self.__model_suplementals = {}
 
     @property
@@ -483,21 +485,33 @@ class Model2D_Sliced(Model88) :
 
         return m(tensor_flowClose)
 
-    def __slice2d_flow2(self, lnTag, input_tensor, core_model):
+    def __slice2d_flow2(self, submod_name, model_json, custom_objects, input_tensor, core_model):
         # common layers to self.__features_per_slice
+
+        lnTag = submod_name + '.'
         tensor_flowClose = core_model(input_tensor)
 
-        flowCloseIn = Input(tuple(tensor_flowClose.shape[1:]))
-        x =Flatten(name='%sflatten' %lnTag)(flowCloseIn)
-        x =Dropout(0.3, name='%sdropout' %lnTag)(x)
-        lf=Dense(self.__features_per_slice, name='%sF%d' % (lnTag, self.__features_per_slice))
-        x =lf(x)
-        m = Model(inputs=flowCloseIn, outputs=x, name='%sC' %lf.name)
-        self.__model_suplementals[m.name] =m
+        # construct the submodel
+        m = None
+        if model_json :
+            m = model_from_json(model_json, custom_objects=custom_objects)
+            m._name = submod_name
 
+        if not m:
+            flowCloseIn = Input(tuple(tensor_flowClose.shape[1:]))
+            x =Flatten(name='%sflatten' %lnTag)(flowCloseIn)
+            x =Dropout(0.3, name='%sdropout' %lnTag)(x)
+            lf=Dense(self.__features_per_slice, name='%sF%d' % (lnTag, self.__features_per_slice))
+            x =lf(x)
+            m = Model(inputs=flowCloseIn, outputs=x, name=submod_name)
+
+        self.__model_suplementals[m.name] =m
         return m(tensor_flowClose)
 
     def buildup(self, input_shape=(32, 32, 8)):
+        return self.__buildup(None, None, None, input_shape)
+
+    def __buildup(self, jsonCore, jsonSubs, custom_objects, input_shape):
         layerIn = Input(shape=input_shape)
 
         channels = input_shape[2]
@@ -509,19 +523,29 @@ class Model2D_Sliced(Model88) :
         for i in range(slice_count) :
             slices[i] = Lambda(Model2D_Sliced.__slice2d, output_shape = slice_shape, arguments={'idxSlice':i, 'channels_per_slice': self.__channels_per_slice})(layerIn)
 
-        self.__model_core = self._buildup_core(slices[0])
+        if not jsonCore:
+            self.__model_core = self._buildup_core(slices[0])
+            self.__json_core = self.__model_core.to_json()
+        else:
+            self.__model_core = model_from_json(jsonCore, custom_objects=custom_objects)
+            self.__json_core = jsonCore
+        
+        if not self.__model_core:
+            raise ValueError('failed to create model_core')
+
         self.__coreId = self.__model_core.name
         # can be called at this moment: self.__model_core.save('/tmp/%s.h5' % self.__coreId)
         self.__model_core.summary()
-        print(self.__model_core.to_json())
 
-        tagCore = '%s%s' % (Model88.CORE_LAYER_PREFIX, self.__coreId)
-        self.__tagCoreModel(self.__model_core, tagCore)
-        # x = self._buildup_core('%s%s.' % (Model88.CORE_LAYER_PREFIX, self.coreId), slice_shape, layerIn)
+        # tagCore = '%s%s' % (Model88.CORE_LAYER_PREFIX, self.__coreId)
+        # self.__tagCoreModel(self.__model_core, tagCore)
 
         sliceflows = [None] * slice_count
         for i in range(slice_count):
-            sliceflows[i] = self.__slice2d_flow2('M88S%dflow%s.' % (self.__channels_per_slice, i), slices[i], self.__model_core)
+            submod_name = '2D%dS%dflow' % (self.__channels_per_slice, i)
+            model_json = jsonSubs[submod_name] if isinstance(jsonSubs, dict) and submod_name in jsonSubs else None
+
+            sliceflows[i] = self.__slice2d_flow2(submod_name, model_json, custom_objects, slices[i], self.__model_core)
 
             # # common layers to self.__features_per_slice
             # lnTag = 'M88S%dflow%s.' % (self.__channels_per_slice, i)
@@ -550,29 +574,39 @@ class Model2D_Sliced(Model88) :
         # merge the multiple flow-of-slice into a controllable less than F518*2
         merged_tensor = sliceflows[0] if 1 ==len(sliceflows) else Concatenate(axis=1, name='M88S4ConX%d' % slice_count)(sliceflows) # merge = merge(sliceflows, mode='concat') # concatenate([x1,x2,x3])
         
-        closeIn = Input(tuple(merged_tensor.shape[1:]))
-        x = closeIn
+        m = None
+        submod_name = '2D%dS%dF%dX' % (self.__channels_per_slice, self.__features_per_slice, slice_count)
+        model_json = jsonSubs[submod_name] if isinstance(jsonSubs, dict) and submod_name in jsonSubs else None
+        if model_json and len(model_json) >0:
+            m = model_from_json(jsonCore, custom_objects=custom_objects)
+            m._name = submod_name
 
-        dsize = int(math.sqrt(slice_count))
-        if dsize*dsize < slice_count: dsize +=1
-        seq = list(range(dsize))[1:]
-        seq.reverse()
+        if not m:
+            closeIn = Input(tuple(merged_tensor.shape[1:]))
+            x = closeIn
 
-        for i in seq:
-            x =Dropout(0.5, name='M88S4M_dropout%d' % i)(x)
-            x =Dense(self.__features_per_slice *i, name='M88S4M_F%dx%d' % (self.__features_per_slice, i))(x)
+            dsize = int(math.sqrt(slice_count))
+            if dsize*dsize < slice_count: dsize +=1
+            seq = list(range(dsize))[1:]
+            seq.reverse()
 
-        x = self._feature88toOut(x)
-        m = Model(inputs=closeIn, outputs=x, name='F88.F%dx%dC' %(self.__features_per_slice, slice_count))
+            for i in seq:
+                x =Dropout(0.5, name='%s.dropout%d' % (submod_name, i))(x)
+                x =Dense(self.__features_per_slice *i, name='%s.F%dx%d' % (submod_name, self.__features_per_slice, i))(x)
+
+            x = self._feature88toOut(x)
+            m = Model(inputs=closeIn, outputs=x, name=submod_name)
+
         self.__model_suplementals[m.name] =m
 
         for k, v in self.__model_suplementals.items():
             v.summary()
-            print(v.to_json())
+            # print(v.to_json())
             # v.save('/tmp/%s.h5' % k)
         
         x = m(merged_tensor)
-        self._dnnModel = Model(inputs=layerIn, outputs=x, name='%sx%d' %(self.__features_per_slice, slice_count))
+        self.__modelId = 'DNN2D%dS%dF%dX.%s' %(self.__channels_per_slice, self.__features_per_slice, slice_count, self.__coreId)
+        self._dnnModel = Model(inputs=layerIn, outputs=x, name=self.__modelId)
 
         # self._dnnModel.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **BaseModel.COMPILE_ARGS)
         # self._dnnModel.summary()
@@ -604,6 +638,84 @@ class Model2D_Sliced(Model88) :
 
         # return Model(inputs=get_source_inputs(input_tensor), outputs=x, name='basesliced')
         return Model(input_tensor, outputs=x, name='basesliced')
+
+    def save(self, filepath, saveWeights=True) :
+        
+        if not self.model: return False
+
+        with h5py.File(filepath, 'w') as h5f:
+            # step 1. save json model in h5f['model_config']
+            model_json = self.model.to_json()
+            g = h5f.create_group('model_config')
+            g['model_clz'] = self.__class__.__name__.encode('utf-8')
+            g['model_base'] = 'Model2D_Sliced'.encode('utf-8')
+            g['model_core'] = self.__model_core.name.encode('utf-8')
+            g['json_core'] = self.__json_core.encode('utf-8')
+            input_shape = [int(x) for x in list(self.model.input.shape[1:])]
+            g.create_dataset('input_shape', data=np.asarray(input_shape))
+            BaseModel.save_attributes_to_hdf5_group(g, 'json_suplementals', [k.encode('utf-8') for k in self.__model_suplementals.keys()])
+            for k, v in self.__model_suplementals.items() :
+                g['subjson_%s' % k] = v.to_json().encode('utf-8')
+
+            if saveWeights:
+                g = h5f.create_group('model_weights')
+                wg = g.create_group('weights_core')
+                BaseModel.save_weights_to_hdf5_group(wg, self.__model_core.layers)
+
+                wg = g.create_group('weights_suplementals')
+                for k, v in self.__model_suplementals.items() :
+                    subwg = wg.create_group(k)
+                    BaseModel.save_weights_to_hdf5_group(subwg, v.layers)
+
+        return True
+
+    @staticmethod
+    def load(filepath, custom_objects=None, withWeights=True):
+        if h5py is None:
+            raise ImportError('load() requires h5py')
+
+        model = None
+        with h5py.File(filepath, 'r') as h5f:
+            # step 1. load json model defined in h5f['model_config']
+            if 'model_config' in h5f:
+                gconf = h5f['model_config']
+                if 'json_core' not in gconf:
+                    raise ValueError('model of %s has no model_json to init Model2D_Sliced' % filepath)
+
+                model_base = gconf['model_base'][()].decode('utf-8') if 'model_base' in gconf else 'base'
+                model_clz  = gconf['model_clz'][()].decode('utf-8') if 'model_clz' in gconf else ''
+                if not model_base in ['Model2D_Sliced']:
+                    raise ValueError('model[%s] of %s is not suitable to load via Model2D_Sliced' % (model_clz, filepath))
+
+                input_shape = gconf['input_shape'][()]
+                input_shape = tuple(list(input_shape))
+                json_core = gconf['json_core'][()].decode('utf-8')
+                json_sub = {}
+                json_subnames = BaseModel.load_attributes_from_hdf5_group(gconf, 'json_suplementals')
+
+                for n in json_subnames:
+                    json_sub[n] = gconf['subjson_%s' % n][()].decode('utf-8')
+
+                model = Model2D_Sliced()
+                model.__buildup(json_core, json_sub, custom_objects, input_shape)
+
+            if not model:
+                return model
+
+            # step 2. load weights in h5f['model_weights']
+            if withWeights and 'model_weights' in h5f:
+                model_weights_group = h5f['model_weights']
+                model.load_weights_from_hdf5_group(model_weights_group)
+            
+            # step 3. by default, disable trainable
+            for layer in model.model.layers:
+                layer.trainable = False
+
+        return model
+
+    def load_weights_from_hdf5_group(self, group):
+        return BaseModel.load_weights_from_hdf5_group_by_name(group, self.model.layers)
+
 
 # --------------------------------
 class Model2D_ResNet50Pre(Model2D_Sliced) :
@@ -793,15 +905,17 @@ class Model2D_ResNet50(Model2D_Sliced) :
 ########################################################################
 if __name__ == '__main__':
     
-    model = BaseModel.load_model('/tmp/test.h5')
+    # # model = BaseModel.load('/tmp/test.h5')
+    model = Model2D_Sliced.load('/tmp/2dsliced.h5')
     layer_names = model.enable_trainable("F88.Dense*")
     exit(0)
 
-    model = Model88_Cnn1Dx4R2() # Model2D_ResNet50Pre, Model2D_ResNet50, Model2D_Sliced(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
+    model = Model2D_Sliced() # Model2D_ResNet50Pre, Model2D_ResNet50, Model2D_Sliced(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
     model.buildup()
     model.compile()
     model.summary()
-    model.save_model('/tmp/test.h5')
+    # model.save('/tmp/test.h5')
+    model.save('/tmp/2dsliced.h5')
 
     # cw = model.get_weights_core()
     # model.model.save('/tmp/%s.h5' % model.modelId) # model.save_model('/tmp/%s.h5' % model.modelId)
@@ -902,4 +1016,37 @@ model_weights/core.Cnn1Dx4R2.max_pooling1d_3
 model_weights/core.Cnn1Dx4R2.max_pooling1d_4
 model_weights/input_1
 model_weights/reshape
+'''
+
+
+'''
+model_config
+model_config/input_shape
+model_config/json_core
+model_config/model_base
+model_config/model_clz
+model_config/model_core
+model_config/subjson_2D4S0flow
+model_config/subjson_2D4S1flow
+model_config/subjson_2D4S518F2X
+model_weights
+model_weights/weights_core
+model_weights/weights_core/bn_conv1
+model_weights/weights_core/bn_conv1/pickled_weights
+model_weights/weights_core/conv1
+model_weights/weights_core/conv1/pickled_weights
+model_weights/weights_suplementals
+model_weights/weights_suplementals/2D4S0flow
+model_weights/weights_suplementals/2D4S0flow/2D4S0flow.F518
+model_weights/weights_suplementals/2D4S0flow/2D4S0flow.F518/pickled_weights
+model_weights/weights_suplementals/2D4S1flow
+model_weights/weights_suplementals/2D4S1flow/2D4S1flow.F518
+model_weights/weights_suplementals/2D4S1flow/2D4S1flow.F518/pickled_weights
+model_weights/weights_suplementals/2D4S518F2X
+model_weights/weights_suplementals/2D4S518F2X/2D4S518F2X.F518x1
+model_weights/weights_suplementals/2D4S518F2X/2D4S518F2X.F518x1/pickled_weights
+model_weights/weights_suplementals/2D4S518F2X/F88.Dense1
+model_weights/weights_suplementals/2D4S518F2X/F88.Dense1/pickled_weights
+model_weights/weights_suplementals/2D4S518F2X/F88.Dense2
+model_weights/weights_suplementals/2D4S518F2X/F88.Dense2/pickled_weights
 '''

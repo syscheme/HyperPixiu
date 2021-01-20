@@ -132,7 +132,7 @@ class Model88_Flat(Model88) :
         # m = super(Model88_Flat, self)._buildup_layers(new_shape, x)
         # x = m(x)
         x = self._buildup_layers(new_shape, x)
-        self._dnnModel = Model(inputs=get_source_inputs(layerIn), outputs=x)
+        self._dnnModel = Model(inputs=get_source_inputs(layerIn), outputs=x, name= self.modelId)
         return self.model
 
 # --------------------------------
@@ -484,9 +484,13 @@ class Model88_sliced2d(Model88) :
         slice_count = int(channels / self.__channels_per_slice)
         if 0 != channels % self.__channels_per_slice: slice_count +=1
 
+        mNamePrefix = 'S2d%dF%dx%d' %(self.__channels_per_slice, self.__features_per_slice, slice_count)
+
         slices = [None] * slice_count
         for i in range(slice_count) :
-            slices[i] = Lambda(Model88_sliced2d.__slice2d, output_shape = slice_shape, arguments={'idxSlice':i, 'channels_per_slice': self.__channels_per_slice})(layerIn)
+            slices[i] = Lambda(Model88_sliced2d.__slice2d, arguments={'idxSlice':i, 'channels_per_slice': self.__channels_per_slice},
+                                output_shape= slice_shape, name='%s.slice%d' %(mNamePrefix, i),
+                                )(layerIn)
 
         m, json_m = None, None
         if not core_name or core_name not in jsonSubs:
@@ -510,16 +514,16 @@ class Model88_sliced2d(Model88) :
 
         sliceflows = [None] * slice_count
         for i in range(slice_count):
-            submod_name = 'M2D%dS%df%d' % (self.__channels_per_slice, slice_count, i)
+            submod_name = '%sf%d' %(mNamePrefix, i)
             model_json = jsonSubs[submod_name] if isinstance(jsonSubs, dict) and submod_name in jsonSubs else None
 
             sliceflows[i] = self.__slice2d_flow(submod_name, model_json, custom_objects, slices[i], core_m)
 
         # merge the multiple flow-of-slice into a controllable less than F518*2
-        merged_tensor = sliceflows[0] if 1 ==len(sliceflows) else Concatenate(axis=1, name='M88S4ConX%d' % slice_count)(sliceflows) # merge = merge(sliceflows, mode='concat') # concatenate([x1,x2,x3])
+        merged_tensor = sliceflows[0] if 1 ==len(sliceflows) else Concatenate(axis=1, name='%s.concat' %mNamePrefix)(sliceflows) # merge = merge(sliceflows, mode='concat') # concatenate([x1,x2,x3])
         
         m, json_m = None, None
-        submod_name = 'M2D%dS%dF%dX' % (self.__channels_per_slice, self.__features_per_slice, slice_count)
+        submod_name = '%sC88' % mNamePrefix
         model_json = jsonSubs[submod_name] if isinstance(jsonSubs, dict) and submod_name in jsonSubs else None
         if model_json and len(model_json) >0:
             m = model_from_json(model_json, custom_objects=custom_objects)
@@ -549,7 +553,7 @@ class Model88_sliced2d(Model88) :
         #     # v.save('/tmp/%s.h5' % k)
         
         x = m(merged_tensor)
-        self.__modelId = 'DNN2D%dS%dF%dX.%s' %(self.__channels_per_slice, self.__features_per_slice, slice_count, self.__coreId)
+        self.__modelId = '%s.%s' %(mNamePrefix, self.__coreId)
         self._dnnModel = Model(inputs=layerIn, outputs=x, name=self.__modelId)
 
         # self._dnnModel.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **BaseModel.COMPILE_ARGS)

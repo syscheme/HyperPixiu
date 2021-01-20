@@ -187,16 +187,18 @@ class Trainer(BaseApplication):
         self._brain.compile(optimizer=sgd)
         self.__wkModelId = self._brain.modelId
 
-        layernames = []
+        trainableLayers = []
         if not self._trainables or len(self._trainables) <=0:
-            layernames += self._brain.enable_trainable('*')
+            trainableLayers += self._brain.enable_trainable('*')
         else:
             if isinstance(self._trainables, str): self._trainables=self._trainables.split(',')
             for pat in self._trainables:
-                layernames += self._brain.enable_trainable(pat)
+                trainableLayers += self._brain.enable_trainable(pat)
 
-        if len(layernames) >0:
-            self.info('trainable-layers: %s' % ','.join(layernames))
+        trainableLayers = list(set(trainableLayers))
+        trainableLayers.sort()
+        if len(trainableLayers) >0:
+            self.info('trainable-layers: %s' % ','.join(trainableLayers))
 
         try :
             os.makedirs(self.outdir)

@@ -126,13 +126,13 @@ class Model88_Flat(Model88) :
 
     @abstractmethod
     def buildup(self, input_shape=(1548, )) :
-        layerIn = Input(shape=input_shape)
+        tensor_in = Input(shape=input_shape)
         new_shape = (int(input_shape[0]/4), 4)
-        x = Reshape(new_shape, input_shape=input_shape)(layerIn)
+        x = Reshape(new_shape, input_shape=input_shape)(tensor_in)
         # m = super(Model88_Flat, self)._buildup_layers(new_shape, x)
         # x = m(x)
         x = self._buildup_layers(new_shape, x)
-        self._dnnModel = Model(inputs=get_source_inputs(layerIn), outputs=x, name= self.modelId)
+        self._dnnModel = Model(inputs=get_source_inputs(tensor_in), outputs=x, name= self.modelId)
         return self.model
 
 # --------------------------------
@@ -487,8 +487,8 @@ class Model88_sliced2d(Model88) :
         if 0 != channels % self.__channels_per_slice: slice_count +=1
         mNamePrefix = 'S2d%dX%dY%dF%dx%d' %(self._sizeX, self._maxY, self.__channels_per_slice, self.__features_per_slice, slice_count)
 
-        layerIn = Input(shape=input_shape, name='%s.I%s' % (mNamePrefix, 'x'.join([str(x) for x in input_shape])))
-        x = layerIn
+        tensor_in = Input(shape=input_shape, name='%s.I%s' % (mNamePrefix, 'x'.join([str(x) for x in input_shape])))
+        x = tensor_in
 
         if input_shape[0] <self._maxY: # padding Ys at the bottom
             x = ZeroPadding2D(padding=((0, self._maxY - input_shape[0]), 0), name='%s.padY%d' % (mNamePrefix, input_shape[0]))(x)
@@ -528,7 +528,7 @@ class Model88_sliced2d(Model88) :
             sliceflows[i] = self.__slice2d_flow(submod_name, model_json, custom_objects, slices[i], core_m)
 
         # merge the multiple flow-of-slice into a controllable less than F518*2
-        merged_tensor = sliceflows[0] if 1 ==len(sliceflows) else Concatenate(axis=1, name='%s.concat' %mNamePrefix)(sliceflows) # merge = merge(sliceflows, mode='concat') # concatenate([x1,x2,x3])
+        merged_tensor = sliceflows[0] if 1 ==len(sliceflows) else Concatenate(axis=1, name='%s.concat' %mNamePrefix)(sliceflows) # merge = merge(sliceflows, mode='concat')
         
         m, json_m = None, None
         submod_name = '%sC88' % mNamePrefix
@@ -562,7 +562,7 @@ class Model88_sliced2d(Model88) :
         
         x = m(merged_tensor)
         self.__modelId = '%s.%s' %(mNamePrefix, self.__coreId)
-        self._dnnModel = Model(inputs=layerIn, outputs=x, name=self.__modelId)
+        self._dnnModel = Model(inputs=tensor_in, outputs=x, name=self.__modelId)
 
         # self._dnnModel.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **BaseModel.COMPILE_ARGS)
         # self._dnnModel.summary()
@@ -828,6 +828,9 @@ if __name__ == '__main__':
     # # model = BaseModel.load('/tmp/test.h5')
     # model = Model88_sliced2d.load('/tmp/sliced2d.h5')
     # layer_names = model.enable_trainable("*")
+    # layer_names = list(set(layer_names))
+    # layer_names.sort()
+    # print('enabled layers: %s' % ','.join(layer_names))
     # exit(0)
 
     model = ModelS2d_ResNet50() # ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3

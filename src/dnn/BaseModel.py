@@ -177,7 +177,9 @@ class BaseModel(object) :
                 continue
 
             layer.trainable = enable
-            layer_names.append(layer.name)
+            trainable_sz = len(layer.trainable_variables)
+            if trainable_sz >1:
+                layer_names.append('%s(%d)' % (layer.name, int(layer.trainable_variables[1].shape[0])))
         
         return layer_names
 

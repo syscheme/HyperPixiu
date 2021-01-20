@@ -143,14 +143,54 @@ def write_utf8(fn_h5tar, memberName, text, createmode='a') :
         sub.attrs['csize'] = len(compressed)
         return zsize, tsize
 
+# https://www.cnblogs.com/osnosn/p/12574976.html
+def h5visit(f, tab=''):
+    print(tab,'Group:',f.name,'len:%d'%len(f))
+    mysp2=tab[:-1]+ '  |-*'
+    for vv in f.attrs.keys():  # 打印属性
+        print(mysp2, end=' ')
+        print('%s = %s'% (vv,f.attrs[vv]))
+
+    mysp=tab[:-1] + '  |-'
+    for k in f.keys():
+        d = f[k]
+        if isinstance(d,h5py.Group):
+            h5visit(d,mysp)
+            continue
+
+        if not isinstance(d,h5py.Dataset):
+            print('??->',d,'Unkown Object!')
+            continue
+
+        print(mysp, 'Dataset:', d.name, '%s[%d]'%(d.dtype, d.size))
+        mysp1=mysp[:-1]+ '  |-'
+        if d.dtype.names is not None:
+            print(mysp,end=' ')
+            for vv in d.dtype.names:
+                print(vv,end=',')
+            print()
+
+        mysp2=mysp1[:-1]+ '  |-*'
+        for vv in d.attrs.keys():  # 打印属性
+            print(mysp2,end=' ')
+            try:
+                print('%s = %s'% (vv, d.attrs[vv]))
+            except TypeError as e:
+                print('%s = %s'% (vv,e))
+            except:
+                print('%s = ?? Other ERR'% (vv,))
+        
+        #print(d[:12])  # 打印12组数据看看
 
 ########################################################################
 if __name__ == '__main__':
 
-    # tar_utf8('abc.h5t', ['SZ399997_KL5m20200615.json.bz2'])
+    with h5py.File('/tmp/sliced2d.h5', 'r') as f:
+        h5visit(f)
 
+    # tar_utf8('abc.h5t', ['SZ399997_KL5m20200615.json.bz2'])
     if len(sys.argv) <3:
-        print('%s {list|s|create|c|extract|x|add|a|show|s} <tarfilename> [textfile1 [textfile2 ...]]' % os.path.basename(sys.argv[0]))
+        print('%s {list|l|create|c|extract|x|add|a|show|s|visit|v} <tarfilename> [textfile1 [textfile2 ...]]' % os.path.basename(sys.argv[0]))
         exit(0)
 
     cmd = sys.argv[1]
@@ -166,4 +206,7 @@ if __name__ == '__main__':
         untar_utf8(fn_h5tar, fn_members)
     elif 's' == cmd[0] and len(fn_members) >0:
         print(read_utf8(fn_h5tar, fn_members[0]))
+    elif 'v' == cmd[0] and len(fn_members) >0:
+        with h5py.File(fn_h5tar, 'r') as f:
+            h5visit(f)
 

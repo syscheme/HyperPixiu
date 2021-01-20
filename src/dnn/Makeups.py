@@ -425,7 +425,7 @@ class Model88_sliced2d(Model88) :
         self.__features_per_slice =518
         self.__coreId = "NA"
         self.__dictSubModels = {} # self.__dictSubModels[modelName] = {'model.json': json, 'model': model}
-        self.__sizeX = 32
+        self._sizeX, self._maxY = 32, 20
 
     @property
     def modelId(self) :
@@ -478,20 +478,20 @@ class Model88_sliced2d(Model88) :
         return self.__buildup(None, None, None, input_shape)
 
     def __buildup(self, core_name, jsonSubs, custom_objects, input_shape):
-        if self.__sizeX != input_shape[1] or input_shape[0] >32 :
-            raise ValueError('shape%s not allowed, must rows<=32 and columns=32' %input_shape)
+        if self._sizeX != input_shape[1] or input_shape[0] >self._maxY :
+            raise ValueError('shape%s not allowed, must rows<=%d and columns=%d' % (input_shape, self._maxY, self._sizeX))
 
         channels = input_shape[2]
         slice_shape = tuple(list(input_shape[:2]) +[self.__channels_per_slice])
         slice_count = int(channels / self.__channels_per_slice)
         if 0 != channels % self.__channels_per_slice: slice_count +=1
-        mNamePrefix = 'S2d%dX%dF%dx%d' %(self.__channels_per_slice, self.__sizeX, self.__features_per_slice, slice_count)
+        mNamePrefix = 'S2d%dX%dY%dF%dx%d' %(self._sizeX, self._maxY, self.__channels_per_slice, self.__features_per_slice, slice_count)
 
         layerIn = Input(shape=input_shape, name='%s.I%s' % (mNamePrefix, 'x'.join([str(x) for x in input_shape])))
         x = layerIn
 
-        if input_shape[0] <32: # padding Ys at the bottom
-            x = ZeroPadding2D(padding=((0, 32 - input_shape[0]), 0), name='%s.padY%d' % (mNamePrefix, input_shape[0]))(x)
+        if input_shape[0] <self._maxY: # padding Ys at the bottom
+            x = ZeroPadding2D(padding=((0, self._maxY - input_shape[0]), 0), name='%s.padY%d' % (mNamePrefix, input_shape[0]))(x)
             slice_shape = tuple(list(x.shape[1:])[:2] +[self.__channels_per_slice])
 
         slices = [None] * slice_count
@@ -703,6 +703,7 @@ class ModelS2d_ResNet50Pre(Model88_sliced2d) :
     '''
     def __init__(self, outputClasses =3, **kwargs):
         super(ModelS2d_ResNet50Pre, self).__init__(outputClasses = outputClasses, **kwargs)
+        self._maxY = 32
 
     # def ResNet50(input_tensor=None, input_shape=None, pooling=None, classes=1000, **kwargs):
     def _buildup_core(self, input_tensor):
@@ -829,7 +830,7 @@ if __name__ == '__main__':
     # layer_names = model.enable_trainable("*")
     # exit(0)
 
-    model = ModelS2d_ResNet50Pre() # ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
+    model = ModelS2d_ResNet50() # ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
     model.buildup()
     model.compile()
     model.summary()

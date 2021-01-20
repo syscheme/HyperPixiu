@@ -603,13 +603,15 @@ class Model88_sliced2d(Model88) :
             # step 1. save json model in h5f['model_config']
             model_json = self.model.to_json()
             g = h5f.create_group('model_config')
-            g['model_clz'] = self.__class__.__name__.encode('utf-8')
-            g['model_base'] = 'Model88_sliced2d'.encode('utf-8')
+            BaseModel.hdf5g_setAttribute(g, 'model_clz', self.__class__.__name__)
+            BaseModel.hdf5g_setAttribute(g, 'model_base', 'Model88_sliced2d')
+            BaseModel.hdf5g_setAttribute(g, 'model_core', self.__coreId)
+
             input_shape = [int(x) for x in list(self.model.input.shape[1:])]
+            BaseModel.hdf5g_setAttribute(g, 'input_shape_s', '(%s)' % ','.join(['%d'%x for x in input_shape]))
             g.create_dataset('input_shape', data=np.asarray(input_shape))
 
-            g['model_core'] = self.__coreId.encode('utf-8')
-            BaseModel.save_attributes_to_hdf5_group(g, 'json_suplementals', [k.encode('utf-8') for k in self.__dictSubModels.keys()])
+            BaseModel.hdf5g_setAttribute(g, 'json_suplementals', [k.encode('utf-8') for k in self.__dictSubModels.keys()])
             for k, v in self.__dictSubModels.items() :
                 g['subjson_%s' % k] = v['model_json'].encode('utf-8')
 
@@ -635,19 +637,20 @@ class Model88_sliced2d(Model88) :
             # step 1. load json model defined in h5f['model_config']
             if 'model_config' in h5f:
                 gconf = h5f['model_config']
-                if 'model_core' not in gconf:
+
+                core_name = BaseModel.hdf5g_getAttribute(gconf, 'model_core')
+                if not core_name or len(core_name)<0:
                     raise ValueError('model of %s has no model_core to init Model88_sliced2d' % filepath)
 
-                model_base = gconf['model_base'][()].decode('utf-8') if 'model_base' in gconf else 'base'
-                model_clz  = gconf['model_clz'][()].decode('utf-8') if 'model_clz' in gconf else ''
+                model_base = BaseModel.hdf5g_getAttribute(gconf, 'model_base', 'base')
+                model_clz  = BaseModel.hdf5g_getAttribute(gconf, 'model_clz', '')
                 if not model_base in ['Model88_sliced2d']:
                     raise ValueError('model[%s] of %s is not suitable to load via Model88_sliced2d' % (model_clz, filepath))
 
                 input_shape = gconf['input_shape'][()]
                 input_shape = tuple(list(input_shape))
-                core_name  = gconf['model_core'][()].decode('utf-8')
 
-                json_subnames = BaseModel.load_attributes_from_hdf5_group(gconf, 'json_suplementals')
+                json_subnames = BaseModel.hdf5g_getAttribute(gconf, 'json_suplementals')
                 json_sub = {}
 
                 for n in json_subnames:
@@ -826,12 +829,12 @@ class ModelS2d_ResNet50(Model88_sliced2d) :
 if __name__ == '__main__':
     
     # # model = BaseModel.load('/tmp/test.h5')
-    # model = Model88_sliced2d.load('/tmp/sliced2d.h5')
-    # layer_names = model.enable_trainable("*")
-    # layer_names = list(set(layer_names))
-    # layer_names.sort()
-    # print('enabled layers: %s' % ','.join(layer_names))
-    # exit(0)
+    model = Model88_sliced2d.load('/tmp/sliced2d.h5')
+    layer_names = model.enable_trainable("*")
+    layer_names = list(set(layer_names))
+    layer_names.sort()
+    print('enabled layers: %s' % ','.join(layer_names))
+    exit(0)
 
     model = ModelS2d_ResNet50() # ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
     model.buildup()

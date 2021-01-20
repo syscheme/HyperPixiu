@@ -112,9 +112,13 @@ class BaseModel(object) :
             # step 1. save json model in h5f['model_config']
             model_json = self.model.to_json()
             g = h5f.create_group('model_config')
-            g['model_json'] = model_json.encode('utf-8')
-            g['model_clz'] = self.__class__.__name__.encode('utf-8')
-            g['model_base'] = 'base'.encode('utf-8')
+            BaseModel.hdf5g_setAttribute(g, 'model_clz', self.__class__.__name__)
+            BaseModel.hdf5g_setAttribute(g, 'model_base', 'Model88_sliced2d')
+            BaseModel.hdf5g_setAttribute(g, 'model_json', model_json.encode('utf-8'))
+
+            input_shape = [int(x) for x in list(self.model.input.shape[1:])]
+            BaseModel.hdf5g_setAttribute(g, 'input_shape_s', '(%s)' % ','.join(['%d'%x for x in input_shape]))
+            g.create_dataset('input_shape', data=np.asarray(input_shape))
 
             if saveWeights:
                 g = h5f.create_group('model_weights')
@@ -132,14 +136,19 @@ class BaseModel(object) :
             # step 1. load json model defined in h5f['model_config']
             if 'model_config' in h5f:
                 gconf = h5f['model_config']
-                if 'model_json' not in gconf:
-                    raise ValueError('model of %s has no model_json to init BaseModel' % filepath)
+                model_base = BaseModel.hdf5g_getAttribute(gconf, 'model_base', 'base')
+                model_clz  = BaseModel.hdf5g_getAttribute(gconf, 'model_clz', '')
 
-                model_json = gconf['model_json'][()].decode('utf-8')
-                model_base = gconf['model_base'][()].decode('utf-8') if 'model_base' in gconf else 'base'
-                model_clz  = gconf['model_clz'][()].decode('utf-8') if 'model_clz' in gconf else ''
+
                 if not model_base in [None, 'base', '', '*']:
                     raise ValueError('model[%s] of %s is not suitable to load via BaseModel' % (model_clz, filepath))
+
+                input_shape = gconf['input_shape'][()]
+                input_shape = tuple(list(input_shape))
+
+                model_json  = BaseModel.hdf5g_getAttribute(gconf, 'model_json', '')
+                if not model_json or len(model_json) <=0 :
+                    raise ValueError('model of %s has no model_json to init BaseModel' % filepath)
 
                 m = model_from_json(model_json, custom_objects=custom_objects)
                 
@@ -183,14 +192,15 @@ class BaseModel(object) :
         
         return layer_names
 
-    def save_attributes_to_hdf5_group(group, name, data):
-        group.attrs[name] = np.asarray(data)
+    def hdf5g_setAttribute(group, name, data):
+        group.attrs[name] = data.encode('utf-8') if isinstance(data, str) else np.asarray(data)
 
-    def load_attributes_from_hdf5_group(group, name):
+    def hdf5g_getAttribute(group, name, defaultvalue=[]):
+        data = defaultvalue
         if name in group.attrs:
-            data = [n.decode('utf8') for n in group.attrs[name]]
-        else:
-            data = []
+            a = group.attrs[name]
+            data = a.decode('utf-8') if isinstance(a, bytes) else [n.decode('utf8') for n in a]
+
         return data
 
     def save_weights_to_hdf5_group(group, layers):
@@ -213,7 +223,7 @@ class BaseModel(object) :
             param_dset = g.create_dataset('pickled_weights', data=npbytes)
             saved_layer_names.append(layer.name)
 
-        BaseModel.save_attributes_to_hdf5_group(group, 'layer_names', [n.encode('utf8') for n in saved_layer_names])
+        BaseModel.hdf5g_setAttribute(group, 'layer_names', [n.encode('utf8') for n in saved_layer_names])
         return saved_layer_names
 
     def load_weights_from_hdf5_group_by_name(group, layers, name_pattern=None):
@@ -225,7 +235,7 @@ class BaseModel(object) :
         '''
 
         loaded_layer_names=[]
-        layer_names = BaseModel.load_attributes_from_hdf5_group(group, 'layer_names')
+        layer_names = BaseModel.hdf5g_getAttribute(group, 'layer_names')
 
         for layer in layers:
             if not layer.trainable or layer.name not in layer_names:

@@ -11,6 +11,7 @@ from abc import abstractmethod
 from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 from HistoryData  import H5DSET_DEFAULT_ARGS
 from dnn.BaseModel  import BaseModel
+from dnn.Makeups  import BaseModel
 
 from tensorflow.keras.models import model_from_json, Model, Sequential
 from tensorflow.keras.optimizers import Adam, SGD
@@ -414,12 +415,12 @@ class Model88_ResNet34d1(Model88_Flat) :
             return x
 
 ########################################################################
-class Model2D_Sliced(Model88) :
+class Model88_sliced2d(Model88) :
     '''
     2D models with channels expanded by channels=4
     '''
     def __init__(self, outputClasses =3, **kwargs):
-        super(Model2D_Sliced, self).__init__(outputClasses = outputClasses, **kwargs)
+        super(Model88_sliced2d, self).__init__(outputClasses = outputClasses, **kwargs)
         self.__channels_per_slice =4
         self.__features_per_slice =518
         self.__coreId = "NA"
@@ -485,7 +486,7 @@ class Model2D_Sliced(Model88) :
 
         slices = [None] * slice_count
         for i in range(slice_count) :
-            slices[i] = Lambda(Model2D_Sliced.__slice2d, output_shape = slice_shape, arguments={'idxSlice':i, 'channels_per_slice': self.__channels_per_slice})(layerIn)
+            slices[i] = Lambda(Model88_sliced2d.__slice2d, output_shape = slice_shape, arguments={'idxSlice':i, 'channels_per_slice': self.__channels_per_slice})(layerIn)
 
         m, json_m = None, None
         if not core_name or core_name not in jsonSubs:
@@ -591,7 +592,7 @@ class Model2D_Sliced(Model88) :
             model_json = self.model.to_json()
             g = h5f.create_group('model_config')
             g['model_clz'] = self.__class__.__name__.encode('utf-8')
-            g['model_base'] = 'Model2D_Sliced'.encode('utf-8')
+            g['model_base'] = 'Model88_sliced2d'.encode('utf-8')
             input_shape = [int(x) for x in list(self.model.input.shape[1:])]
             g.create_dataset('input_shape', data=np.asarray(input_shape))
 
@@ -623,12 +624,12 @@ class Model2D_Sliced(Model88) :
             if 'model_config' in h5f:
                 gconf = h5f['model_config']
                 if 'model_core' not in gconf:
-                    raise ValueError('model of %s has no model_core to init Model2D_Sliced' % filepath)
+                    raise ValueError('model of %s has no model_core to init Model88_sliced2d' % filepath)
 
                 model_base = gconf['model_base'][()].decode('utf-8') if 'model_base' in gconf else 'base'
                 model_clz  = gconf['model_clz'][()].decode('utf-8') if 'model_clz' in gconf else ''
-                if not model_base in ['Model2D_Sliced']:
-                    raise ValueError('model[%s] of %s is not suitable to load via Model2D_Sliced' % (model_clz, filepath))
+                if not model_base in ['Model88_sliced2d']:
+                    raise ValueError('model[%s] of %s is not suitable to load via Model88_sliced2d' % (model_clz, filepath))
 
                 input_shape = gconf['input_shape'][()]
                 input_shape = tuple(list(input_shape))
@@ -640,7 +641,7 @@ class Model2D_Sliced(Model88) :
                 for n in json_subnames:
                     json_sub[n] = gconf['subjson_%s' % n][()].decode('utf-8')
 
-                model = Model2D_Sliced()
+                model = Model88_sliced2d()
                 model.__buildup(core_name, json_sub, custom_objects, input_shape)
 
             if not model:
@@ -653,7 +654,7 @@ class Model2D_Sliced(Model88) :
                 g_subweights = g_subweights['sub_models'] if 'sub_models' in g_subweights else None
 
             if g_subweights:
-                model.load_weights_from_hdf5_group(g_subweights)
+                laynames = model.load_weights_from_hdf5_group(g_subweights)
 
         return model
 
@@ -684,28 +685,28 @@ class Model2D_Sliced(Model88) :
         return ret
 
 # --------------------------------
-class Model2D_ResNet50Pre(Model2D_Sliced) :
+class ModelS2d_ResNet50Pre(Model88_sliced2d) :
     '''
     2D models with channels expanded by channels=4
     '''
     def __init__(self, outputClasses =3, **kwargs):
-        super(Model2D_ResNet50Pre, self).__init__(outputClasses = outputClasses, **kwargs)
+        super(ModelS2d_ResNet50Pre, self).__init__(outputClasses = outputClasses, **kwargs)
 
     # def ResNet50(input_tensor=None, input_shape=None, pooling=None, classes=1000, **kwargs):
     def _buildup_core(self, input_tensor):
-        '''
+        '''d
         unlike the Model88_Flat._buildup_core() returns the output_tensor, the sliced 2D models returns a submodel as core from _buildup_core()
         '''
         input_shape = tuple([ int(x) for x in input_tensor.shape[1:]])
         return ResNet50(weights=None, classes=1000, input_shape=input_shape)
 
 # --------------------------------
-class Model2D_ResNet50(Model2D_Sliced) :
+class ModelS2d_ResNet50(Model88_sliced2d) :
     '''
     2D models with channels expanded by channels=4
     '''
     def __init__(self, outputClasses =3, **kwargs):
-        super(Model2D_ResNet50, self).__init__(outputClasses = outputClasses, **kwargs)
+        super(ModelS2d_ResNet50, self).__init__(outputClasses = outputClasses, **kwargs)
 
     # def ResNet50(input_tensor=None, input_shape=None, pooling=None, classes=1000, **kwargs):
     def _buildup_core(self, input_tensor):
@@ -725,25 +726,25 @@ class Model2D_ResNet50(Model2D_Sliced) :
         x = ZeroPadding2D(padding=(1, 1), name='pool1_pad')(x)
         x = MaxPooling2D((3, 3), strides=(2, 2))(x)
 
-        x = Model2D_ResNet50.conv_block(x, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1))
-        x = Model2D_ResNet50.identity_block(x, 3, [64, 64, 256], stage=2, block='b')
-        x = Model2D_ResNet50.identity_block(x, 3, [64, 64, 256], stage=2, block='c')
+        x = ModelS2d_ResNet50.conv_block(x, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1))
+        x = ModelS2d_ResNet50.identity_block(x, 3, [64, 64, 256], stage=2, block='b')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [64, 64, 256], stage=2, block='c')
 
-        x = Model2D_ResNet50.conv_block(x, 3, [128, 128, 512], stage=3, block='a')
-        x = Model2D_ResNet50.identity_block(x, 3, [128, 128, 512], stage=3, block='b')
-        x = Model2D_ResNet50.identity_block(x, 3, [128, 128, 512], stage=3, block='c')
-        x = Model2D_ResNet50.identity_block(x, 3, [128, 128, 512], stage=3, block='d')
+        x = ModelS2d_ResNet50.conv_block(x, 3, [128, 128, 512], stage=3, block='a')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [128, 128, 512], stage=3, block='b')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [128, 128, 512], stage=3, block='c')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [128, 128, 512], stage=3, block='d')
 
-        x = Model2D_ResNet50.conv_block(x, 3, [256, 256, 1024], stage=4, block='a')
-        x = Model2D_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='b')
-        x = Model2D_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='c')
-        x = Model2D_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='d')
-        x = Model2D_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='e')
-        x = Model2D_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='f')
+        x = ModelS2d_ResNet50.conv_block(x, 3, [256, 256, 1024], stage=4, block='a')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='b')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='c')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='d')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='e')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='f')
 
-        x = Model2D_ResNet50.conv_block(x, 3, [512, 512, 2048], stage=5, block='a')
-        x = Model2D_ResNet50.identity_block(x, 3, [512, 512, 2048], stage=5, block='b')
-        x = Model2D_ResNet50.identity_block(x, 3, [512, 512, 2048], stage=5, block='c')
+        x = ModelS2d_ResNet50.conv_block(x, 3, [512, 512, 2048], stage=5, block='a')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [512, 512, 2048], stage=5, block='b')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [512, 512, 2048], stage=5, block='c')
 
         x = GlobalAveragePooling2D(name='avg_pool')(x)
         x = Dense(classes, activation='softmax', name='fc1000')(x)
@@ -812,16 +813,16 @@ class Model2D_ResNet50(Model2D_Sliced) :
 if __name__ == '__main__':
     
     # # model = BaseModel.load('/tmp/test.h5')
-    model = Model2D_Sliced.load('/tmp/2dsliced.h5')
-    layer_names = model.enable_trainable("*")
-    exit(0)
+    # model = Model88_sliced2d.load('/tmp/sliced2d.h5')
+    # layer_names = model.enable_trainable("*")
+    # exit(0)
 
-    model = Model2D_Sliced() # Model2D_ResNet50Pre, Model2D_ResNet50, Model2D_Sliced(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
+    model = ModelS2d_ResNet50Pre() # ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
     model.buildup()
     model.compile()
     model.summary()
     # model.save('/tmp/test.h5')
-    model.save('/tmp/2dsliced.h5')
+    model.save('/tmp/sliced2d.h5')
 
     # cw = model.get_weights_core()
     # model.model.save('/tmp/%s.h5' % model.modelId) # model.save_model('/tmp/%s.h5' % model.modelId)

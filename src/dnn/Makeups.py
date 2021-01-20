@@ -424,12 +424,14 @@ class Model88_sliced2d(Model88) :
         self.__channels_per_slice =4
         self.__features_per_slice =518
         self.__coreId = "NA"
+        self.__modelId = None
         self.__dictSubModels = {} # self.__dictSubModels[modelName] = {'model.json': json, 'model': model}
         self._sizeX, self._maxY = 32, 20
 
     @property
     def modelId(self) :
-        return 'M88S%d.%s' % (self.__channels_per_slice, self.coreId)
+        if self.__modelId: return self.__modelId
+        return 'S2d%dX%dY%dF%dxN.%s' %(self._sizeX, self._maxY, self.__channels_per_slice, self.__features_per_slice, self.coreId)
     
     @property
     def coreId(self) : return self.__coreId
@@ -658,6 +660,7 @@ class Model88_sliced2d(Model88) :
 
                 model = Model88_sliced2d()
                 model.__buildup(core_name, json_sub, custom_objects, input_shape)
+                # unnecessary: model.__coreId = core_name
 
             if not model:
                 return model
@@ -669,25 +672,26 @@ class Model88_sliced2d(Model88) :
                 g_subweights = g_subweights['sub_models'] if 'sub_models' in g_subweights else None
 
             if g_subweights:
-                laynames = model.load_weights_from_hdf5_group(g_subweights)
+                loadeds = model._load_weights_from_hdf5g(g_subweights)
 
         return model
 
-    def load_weights_from_hdf5_group(self, group, trainable=False):
+    def _load_weights_from_hdf5g(self, group, trainable=False):
         ret = []
         for k, v in self.__dictSubModels.items() :
             if 'model' not in v or not v['model']: continue
             if k not in group.keys(): continue
             
             m, subwg = v['model'], group[k]
-            names = BaseModel.load_weights_from_hdf5_group_by_name(subwg, m.layers)
+            loadeds = BaseModel._load_weights_from_hdf5g_by_name(subwg, m.layers)
         
             # step 3. by default, disable trainable
             for layer in m.layers:
                 layer.trainable = trainable
 
-            ret += [ '%s/%s' %(k, x) for x in names ]
+            ret += [ '%s/%s' %(k, x) for x in loadeds ]
 
+        ret.sort()
         return ret
 
     def enable_trainable(self, layerNamePattern, enable=True) :
@@ -830,10 +834,11 @@ if __name__ == '__main__':
     
     # # model = BaseModel.load('/tmp/test.h5')
     model = Model88_sliced2d.load('/tmp/sliced2d.h5')
-    layer_names = model.enable_trainable("*")
-    layer_names = list(set(layer_names))
-    layer_names.sort()
-    print('enabled layers: %s' % ','.join(layer_names))
+    trainables = model.enable_trainable("*")
+    trainables = list(set(trainables))
+    trainables.sort()
+    print('enabled trainable on %d layers: %s' % (len(trainables), ','.join(trainables)))
+    model.summary()
     exit(0)
 
     model = ModelS2d_ResNet50() # ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3

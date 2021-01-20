@@ -164,7 +164,7 @@ class BaseModel(object) :
             # step 2. load weights in h5f['model_weights']
             if withWeights and 'model_weights' in h5f:
                 model_weights_group = h5f['model_weights']
-                model.load_weights_from_hdf5_group(model_weights_group)
+                model._load_weights_from_hdf5g(model_weights_group)
             
             # step 3. by default, disable trainable
             for layer in model.model.layers:
@@ -172,8 +172,8 @@ class BaseModel(object) :
 
         return model
 
-    def load_weights_from_hdf5_group(self, group, trainable = False):
-        ret = BaseModel.load_weights_from_hdf5_group_by_name(group, self.model.layers)
+    def _load_weights_from_hdf5g(self, group, trainable = False):
+        ret = BaseModel._load_weights_from_hdf5g_by_name(group, self.model.layers)
         for layer in self.model.layers:
             layer.trainable = False
 
@@ -226,7 +226,7 @@ class BaseModel(object) :
         BaseModel.hdf5g_setAttribute(group, 'layer_names', [n.encode('utf8') for n in saved_layer_names])
         return saved_layer_names
 
-    def load_weights_from_hdf5_group_by_name(group, layers, name_pattern=None):
+    def _load_weights_from_hdf5g_by_name(group, layers, name_pattern=None):
         '''
         duplicated but simplized from /usr/local/lib/python3.6/...tensorflow/python/keras/engine/hdf5_format.py
         Saves the weights of a list of layers to a HDF5 group.
@@ -234,7 +234,7 @@ class BaseModel(object) :
         layers: List of layer instances.
         '''
 
-        loaded_layer_names=[]
+        loadeds=[]
         layer_names = BaseModel.hdf5g_getAttribute(group, 'layer_names')
 
         for layer in layers:
@@ -248,9 +248,9 @@ class BaseModel(object) :
             pklweights = group[layer.name]['pickled_weights'][()].tobytes()
             weights = pickle.loads(pklweights)
             layer.set_weights(weights)
-            loaded_layer_names.append(layer.name)
+            loadeds.append('%s(%d)' %(layer.name, int(weights[1].shape[0])))
         
-        return loaded_layer_names
+        return loadeds
 
     #---logging -----------------------
     def log(self, level, msg):

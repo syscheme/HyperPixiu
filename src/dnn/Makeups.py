@@ -425,6 +425,7 @@ class Model88_sliced2d(Model88) :
         self.__features_per_slice =518
         self.__coreId = "NA"
         self.__dictSubModels = {} # self.__dictSubModels[modelName] = {'model.json': json, 'model': model}
+        self.__sizeX = 32
 
     @property
     def modelId(self) :
@@ -473,24 +474,31 @@ class Model88_sliced2d(Model88) :
         self.__dictSubModels[m.name] = {'model_json': m.to_json(), 'model': m}
         return m(tensor_flowClose)
 
-    def buildup(self, input_shape=(32, 32, 8)):
+    def buildup(self, input_shape=(16, 32, 8)):
         return self.__buildup(None, None, None, input_shape)
 
     def __buildup(self, core_name, jsonSubs, custom_objects, input_shape):
-        layerIn = Input(shape=input_shape)
+        if self.__sizeX != input_shape[1] or input_shape[0] >32 :
+            raise ValueError('shape%s not allowed, must rows<=32 and columns=32' %input_shape)
 
         channels = input_shape[2]
         slice_shape = tuple(list(input_shape[:2]) +[self.__channels_per_slice])
         slice_count = int(channels / self.__channels_per_slice)
         if 0 != channels % self.__channels_per_slice: slice_count +=1
+        mNamePrefix = 'S2d%dX%dF%dx%d' %(self.__channels_per_slice, self.__sizeX, self.__features_per_slice, slice_count)
 
-        mNamePrefix = 'S2d%dF%dx%d' %(self.__channels_per_slice, self.__features_per_slice, slice_count)
+        layerIn = Input(shape=input_shape, name='%s.I%s' % (mNamePrefix, 'x'.join([str(x) for x in input_shape])))
+        x = layerIn
+
+        if input_shape[0] <32: # padding Ys at the bottom
+            x = ZeroPadding2D(padding=((0, 32 - input_shape[0]), 0), name='%s.padY%d' % (mNamePrefix, input_shape[0]))(x)
+            slice_shape = tuple(list(x.shape[1:])[:2] +[self.__channels_per_slice])
 
         slices = [None] * slice_count
         for i in range(slice_count) :
             slices[i] = Lambda(Model88_sliced2d.__slice2d, arguments={'idxSlice':i, 'channels_per_slice': self.__channels_per_slice},
                                 output_shape= slice_shape, name='%s.slice%d' %(mNamePrefix, i),
-                                )(layerIn)
+                                )(x)
 
         m, json_m = None, None
         if not core_name or core_name not in jsonSubs:

@@ -389,7 +389,7 @@ def topActives(self, topNum = 500):
 # RETRY_DOWNLOAD_INTERVAL = timedelta(hours=1)
 RETRY_DOWNLOAD_INTERVAL = timedelta(minutes=30)
 # ===================================================
-@shared_task(bind=True)
+@shared_task(bind=True, ignore_result=True, expires=60)
 def schChkRes_Crawlers(self, asofYYMMDD =None): # asofYYMMDD ='20201231'):
     global MAPPED_HOME, TODAY_YYMMDD
 

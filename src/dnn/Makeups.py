@@ -609,7 +609,7 @@ class Model88_sliced2d(Model88) :
 
         with h5py.File(filepath, 'w') as h5f:
             # step 1. save json model in h5f['model_config']
-            model_json = self.model.to_json()
+            # NEVER here: model_json = self.model.to_json()
             g = h5f.create_group('model_config')
             BaseModel.hdf5g_setAttribute(g, 'model_clz', self.__class__.__name__)
             BaseModel.hdf5g_setAttribute(g, 'model_base', 'Model88_sliced2d')

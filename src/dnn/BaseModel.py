@@ -87,18 +87,30 @@ class BaseModel(object) :
     def output_shape(self) :
         return tuple(self._dnnModel.output_shape[1:]) if self._dnnModel else None
 
-    def summary(self):
-        if self._dnnModel: self._dnnModel.summary()
+    def fit(self, *args, **kwargs):
+        return self.model.fit(*args, **kwargs)
+    
+    def fit_generator(self, *args, **kwargs):
+        return self.model.fit_generator(*args, **kwargs)
+
+    def evaluate(self, *args, **kwargs):
+        return self.model.evaluate(*args, **kwargs)
+
+    def predict(self, *args, **kwargs):
+        return self.model.predict(*args, **kwargs)
+
+    def summary(self, *args, **kwargs):
+        return self.model.summary(*args, **kwargs)
 
     def compile(self, compireArgs=None, optimizer=None):
-        if not self._dnnModel: return
+        if not self.model: return
 
         if not compireArgs or isinstance(compireArgs, dict) and len(compireArgs) <=0:
             compireArgs = BaseModel.COMPILE_ARGS
         if not optimizer:
             optimizer = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
 
-        self._dnnModel.compile(optimizer=optimizer, **compireArgs)
+        self.model.compile(optimizer=optimizer, **compireArgs)
         return self.model
 
     def enable_trainable(self, layerNamePattern, enable=True) :

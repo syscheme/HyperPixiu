@@ -427,11 +427,12 @@ class Model88_sliced2d(Model88) :
         self.__modelId = None
         self.__dictSubModels = {} # self.__dictSubModels[modelName] = {'model.json': json, 'model': model}
         self._sizeX, self._maxY = 32, 20
+        self._sizeY = self._maxY
 
     @property
     def modelId(self) :
         if self.__modelId: return self.__modelId
-        return 'S2d%dX%dY%dF%dxN.%s' %(self._sizeX, self._maxY, self.__channels_per_slice, self.__features_per_slice, self.coreId)
+        return '%sxN.%s' %(self.__fmtNamePrefix(self._sizeY), self.coreId)
     
     @property
     def coreId(self) : return self.__coreId
@@ -476,24 +477,29 @@ class Model88_sliced2d(Model88) :
         self.__dictSubModels[m.name] = {'model_json': m.to_json(), 'model': m}
         return m(tensor_flowClose)
 
-    def buildup(self, input_shape=(16, 32, 8)):
+    def buildup(self, input_shape=(20, 32, 8)):
         return self.__buildup(None, None, None, input_shape)
+
+    def __fmtNamePrefix(self, sizeY):
+        return 'S2d%dX%dY%dF%d' %(self._sizeX, sizeY, self.__channels_per_slice, self.__features_per_slice)
 
     def __buildup(self, core_name, jsonSubs, custom_objects, input_shape):
         if self._sizeX != input_shape[1] or input_shape[0] >self._maxY :
             raise ValueError('shape%s not allowed, must rows<=%d and columns=%d' % (input_shape, self._maxY, self._sizeX))
 
-        channels = input_shape[2]
+        self._sizeY, channels = input_shape[0], input_shape[2]
+
         slice_shape = tuple(list(input_shape[:2]) +[self.__channels_per_slice])
         slice_count = int(channels / self.__channels_per_slice)
         if 0 != channels % self.__channels_per_slice: slice_count +=1
-        mNamePrefix = 'S2d%dX%dY%dF%dx%d' %(self._sizeX, self._maxY, self.__channels_per_slice, self.__features_per_slice, slice_count)
+
+        mNamePrefix = '%sx%d' %(self.__fmtNamePrefix(self._maxY), slice_count)
 
         tensor_in = Input(shape=input_shape, name='%s.I%s' % (mNamePrefix, 'x'.join([str(x) for x in input_shape])))
         x = tensor_in
 
         if input_shape[0] <self._maxY: # padding Ys at the bottom
-            x = ZeroPadding2D(padding=((0, self._maxY - input_shape[0]), 0), name='%s.padY%d' % (mNamePrefix, input_shape[0]))(x)
+            x = ZeroPadding2D(padding=((0, self._maxY - self._sizeY), 0), name='%s.padY%d' % (mNamePrefix, self._sizeY))(x)
             slice_shape = tuple(list(x.shape[1:])[:2] +[self.__channels_per_slice])
 
         slices = [None] * slice_count
@@ -563,7 +569,7 @@ class Model88_sliced2d(Model88) :
         #     # v.save('/tmp/%s.h5' % k)
         
         x = m(merged_tensor)
-        self.__modelId = '%s.%s' %(mNamePrefix, self.__coreId)
+        self.__modelId = '%sx%d.%s' %(self.__fmtNamePrefix(self._sizeY), slice_count, self.__coreId)
         self._dnnModel = Model(inputs=tensor_in, outputs=x, name=self.__modelId)
 
         # self._dnnModel.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **BaseModel.COMPILE_ARGS)
@@ -836,11 +842,11 @@ if __name__ == '__main__':
     # fn_template = '/tmp/test.h5'
     # model = BaseModel.load(fn_template)
     fn_template = '/tmp/sliced2d.h5'
-    model = Model88_sliced2d.load(fn_template)
+    # model = Model88_sliced2d.load(fn_template)
 
     if not model:
         model = ModelS2d_ResNet50() # ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
-        model.buildup()
+        model.buildup(input_shape=(18, 32, 4))
     model.compile()
 
     trainables = model.enable_trainable("*")

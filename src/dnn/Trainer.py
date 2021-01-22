@@ -9,8 +9,9 @@ from __future__ import division
 from abc import abstractmethod
 
 from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
-from HistoryData  import H5DSET_DEFAULT_ARGS
-from dnn.BaseModel  import Model88_sliced2d
+from HistoryData  import H5DSET_DEFAULT_ARGS, listAllFiles
+from dnn.BaseModel import BaseModel
+from dnn.Makeups  import Model88_sliced2d
 
 # ----------------------------
 # INDEPEND FROM HyperPX core classes: from MarketData import EXPORT_FLOATS_DIMS
@@ -54,66 +55,62 @@ FN_SUFIX_WEIGHTS_H5 = '_weights.h5'
 ########################################################################
 class Trainer(BaseApplication):
 
-    def __init__(self, program, datafiles=None, recorder =None, **kwargs):
+    def __init__(self, program, sampleFiles=None, recorder =None, **kwargs):
         super(Trainer, self).__init__(program, **kwargs)
 
         self.__wkModelId       = None
         self._fnStartModel     = self.getConfig('startModel', None)
         self._baseModelClass   = self.getConfig('baseModel', 'base').lower()
-        self._replayFrameFiles = datafiles
+        self._sampleFiles = sampleFiles
 
-        if not self._replayFrameFiles or len(self._replayFrameFiles) <=0: 
-            self._replayFrameFiles = self.getConfig('datafiles', [])
-            self._replayFrameFiles = [ Program.fixupPath(f) for f in self._replayFrameFiles ]
+        if not self._sampleFiles or len(self._sampleFiles) <=0: 
+            self._sampleFiles = self.getConfig('sampleFiles', [])
+            self._sampleFiles = [ Program.fixupPath(f) for f in self._sampleFiles ]
 
-        self._stepMethod          = self.getConfig('stepMethod', None)
-        self._repeatsInFile       = self.getConfig('repeatsInFile', 0)
-        self._exportTB            = self.getConfig('tensorBoard', 'no').lower() in BOOL_STRVAL_TRUE
-        self._batchSize           = self.getConfig('batchSize', 128)
-        self._batchesPerTrain     = self.getConfig('batchesPerTrain', 8)
-        self._recycleSize         = self.getConfig('recycles', 1)
-        self._initEpochs          = self.getConfig('initEpochs', 2)
-        self._lossStop            = self.getConfig('lossStop', 0.24) # 0.24 according to average loss value by： grep 'from eval' /mnt/d/tmp/replayTrain_14276_0106.log |sed 's/.*loss\[\([^]]*\)\].*/\1/g' | awk '{ total += $1; count++ } END { print total/count }'
-        self._lossPctStop         = self.getConfig('lossPctStop', 5)
-        self._startLR             = self.getConfig('startLR', 0.01)
+        self._sampleStateSize     = self.getConfig('sampleStateSize', None)
+        self._sampleActionSize    = self.getConfig('sampleActionSize', None)
         self._evaluateSamples     = self.getConfig('evaluateSamples', 'yes').lower() in BOOL_STRVAL_TRUE
-        self._preBalanced         = self.getConfig('preBalanced',     'no').lower() in BOOL_STRVAL_TRUE
-        self._evalAt              = self.getConfig('evalAt', 5) # how often on trains to perform evaluation
+        self._preBalanced         = self.getConfig('preBalanced',  'no').lower() in BOOL_STRVAL_TRUE
+
         self._trainables          = self.getConfig('trainableLayers', ['*']) # ['F88.Dense*', 'VClz66from512.2of2']
+        self._evalAt              = self.getConfig('evalAt', 5) # how often on trains to perform evaluation
+        self._stepMethod          = self.getConfig('stepMethod', None)
+        self._exportTB            = self.getConfig('tensorBoard', 'no').lower() in BOOL_STRVAL_TRUE
+        self._repeatsInFile       = self.getConfig('repeatsInFile', 0)
+
+        # training config block, default as CPU
+        self._batchSize           = 128
+        self._batchesPerTrain     = 8
+        self._recycleSize         = 1
+        self._initEpochs          = 2
+        self._lossStop            = 0.24 # 0.24 according to average loss value by： grep 'from eval' /mnt/d/tmp/replayTrain_14276_0106.log |sed 's/.*loss\[\([^]]*\)\].*/\1/g' | awk '{ total += $1; count++ } END { print total/count }'
+        self._lossPctStop         = 5
+        self._startLR             = 0.01
+        self.__readTraingConfigBlock(configPrefix ='')
 
         if len(GPUs) > 0 : # adjust some configurations if currently running on GPUs
             self.info('GPUs: %s' % GPUs)
-            self._stepMethod      = self.getConfig('GPU/stepMethod', self._stepMethod)
-            self._exportTB        = self.getConfig('GPU/tensorBoard', 'no').lower() in BOOL_STRVAL_TRUE
-            self._batchSize       = self.getConfig('GPU/batchSize',    self._batchSize)
-            self._batchesPerTrain = self.getConfig('GPU/batchesPerTrain', 64)  # usually 64 is good for a bottom-line model of GTX1050oc/2G
-            self._initEpochs      = self.getConfig('GPU/initEpochs', self._initEpochs)
-            self._recycleSize     = self.getConfig('GPU/recycles',   self._recycleSize)
-            self._startLR         = self.getConfig('GPU/startLR',      self._startLR)
+            conf_GPU        = self.getConfig('GPU',  {})
+            if len(conf_GPU) >0:
+                self.__readTraingConfigBlock(configPrefix ='GPU/')
 
-            conf_GpuModels        = self.getConfig('GPU/models',   [])
-            gpuType = GPUs[0]['detail'] # TODO: only take the first at the moment
-            for m in conf_GpuModels:
-                if not m or not 'model' in m.keys() or not m['model'] in gpuType: continue
-                if 'batchSize' in m.keys(): self._batchSize = m['batchSize']
-                if 'batchesPerTrain' in m.keys(): self._batchesPerTrain = m['batchesPerTrain']
+                gpuModel = GPUs[0]['detail'] # TODO: only take the first at the moment
+                if gpuModel in conf_GPU.keys() :
+                    self.__readTraingConfigBlock(configPrefix ='GPU/%s/' % gpuModel)
 
-        if not self._replayFrameFiles or len(self._replayFrameFiles) <=0: 
-            self._replayFrameFiles =[]
-            replayFrameDir = self.getConfig('replayFrameDir', None)
-            if replayFrameDir:
-                replayFrameDir = Program.fixupPath(replayFrameDir)
-                try :
-                    for rootdir, subdirs, files in os.walk(replayFrameDir, topdown=False):
-                        for name in files:
-                            if self._preBalanced :
-                                if '.h5b' != name[-4:] : continue
-                            elif '.h5' != name[-3:] : 
-                                continue
+        if not self._sampleFiles or len(self._sampleFiles) <=0: 
+            self._sampleFiles =[]
+            dirSamples = self.getConfig('dirSamples', None)
+            if dirSamples:
+                dirSamples = Program.fixupPath(dirSamples)
+                files = listAllFiles(dirSamples)
+                for name in files:
+                    if self._preBalanced :
+                        if '.h5b' != name[-4:] : continue
+                    elif '.h5' != name[-3:] : 
+                        continue
 
-                            self._replayFrameFiles.append(os.path.join(rootdir, name))
-                except:
-                    pass
+                    self._sampleFiles.append(name)
 
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
@@ -147,6 +144,15 @@ class Trainer(BaseApplication):
         self.info('taking method[%s]' % (self._stepMethod))
         self._stepMethod = STEPMETHODS[self._stepMethod]
 
+    def __readTraingConfigBlock(self, configPrefix =''):
+        self._batchSize           = self.getConfig('batchSize', self._batchSize)
+        self._batchesPerTrain     = self.getConfig('batchesPerTrain', self._batchesPerTrain)
+        self._recycleSize         = self.getConfig('recycles', self._recycleSize)
+        self._initEpochs          = self.getConfig('initEpochs', self._initEpochs)
+        self._lossStop            = self.getConfig('lossStop', 0.24) # 0.24 according to average loss value by： grep 'from eval' /mnt/d/tmp/replayTrain_14276_0106.log |sed 's/.*loss\[\([^]]*\)\].*/\1/g' | awk '{ total += $1; count++ } END { print total/count }'
+        self._lossPctStop         = self.getConfig('lossPctStop', self._lossStop)
+        self._startLR             = self.getConfig('startLR', self._startLR)
+
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
     def OnEvent(self, ev): pass
@@ -155,14 +161,18 @@ class Trainer(BaseApplication):
         if not super(Trainer, self).doAppInit() :
             return False
 
-        if not self._replayFrameFiles or len(self._replayFrameFiles) <=0:
-            self.error('no input ReplayFrame files specified')
+        if not self._sampleFiles or len(self._sampleFiles) <=0:
+            self.error('no input sample files specified')
             return False
 
-        self._replayFrameFiles.sort();
-        self.info('ReplayFrame files: %s' % self._replayFrameFiles)
+        self._sampleFiles.sort();
+        self.info('sample files: %s' % self._sampleFiles)
 
-        self.__nextFrameName(False) # probe the dims of state/action from the h5 file
+        h5fn, framen, await_size = self.__nextFrameName(False) # probe the dims of state/action from the h5 file
+        if None in [h5fn, framen] :
+            self.error('doAppInit() quit per nextFrame failed')
+            return False
+
         self.__maxChunks = max(int(self._frameSize/self._batchesPerTrain /self._batchSize), 1) # minimal 8K samples to at least cover a frame
 
         if len(GPUs) <= 1:
@@ -650,11 +660,11 @@ class Trainer(BaseApplication):
             if not self._frameSeq or len(self._frameSeq) <=0:
                 self._frameSeq =[]
 
-                fileList = copy.copy(self._replayFrameFiles)
+                fileList = copy.copy(self._sampleFiles)
                 for h5fileName in fileList :
                     framesInHd5 = []
                     try:
-                        self.debug('loading ReplayFrame file %s' % h5fileName)
+                        self.debug('loading sample file %s' % h5fileName)
                         with h5py.File(h5fileName, 'r') as h5f:
                             framesInHd5 = []
                             for name in h5f.keys() :
@@ -670,7 +680,7 @@ class Trainer(BaseApplication):
                                 del framesInHd5[0]
 
                             if len(framesInHd5) <=1:
-                                self._replayFrameFiles.remove(h5fileName)
+                                self._sampleFiles.remove(h5fileName)
                                 self.error('file %s eliminated as too few ReplayFrames in it' % (h5fileName) )
                                 continue
 
@@ -681,18 +691,21 @@ class Trainer(BaseApplication):
                             actionSize = frm['action'].shape[1]
                             signature =  frm.attrs['signature'] if 'signature' in frm.attrs.keys() else 'n/a'
 
-                            if int(self._brain.input_shape[1]) != stateSize or self._actionSize and int(self._brain.output_shape[1]) != actionSize:
-                                self._replayFrameFiles.remove(h5fileName)
-                                self.error('file %s eliminated as its dims: %s/state %s/action mismatch working dims %s/state %s/action' % (h5fileName, stateSize, actionSize, int(self._brain.input_shape[1]), int(self._brain.input_shape[1])) )
+                            if not self._sampleStateSize:   self._sampleStateSize = stateSize
+                            if not self._sampleActionSize:  self._sampleActionSize = actionSize
+
+                            if self._sampleStateSize != stateSize or self._sampleActionSize != actionSize:
+                                self._sampleFiles.remove(h5fileName)
+                                self.error('file %s eliminated as its dims: %s/state %s/action mismatch working dims %s/state %s/action' % (h5fileName, stateSize, actionSize, self._sampleStateSize, self._sampleActionSize) )
                                 continue
 
                             if self._frameSize < frameSize:
                                 self._frameSize = frameSize
 
-                            self.info('%d ReplayFrames found in %s with signature[%s] dims: %s/state, %s/action' % (len(framesInHd5), h5fileName, signature, int(self._brain.input_shape[1]), int(self._brain.input_shape[1])) )
+                            self.info('%d ReplayFrames found in %s with signature[%s] dims: %s/state, %s/action' % (len(framesInHd5), h5fileName, signature,  self._sampleStateSize, self._sampleActionSize) )
 
                     except Exception as ex:
-                        self._replayFrameFiles.remove(h5fileName)
+                        self._sampleFiles.remove(h5fileName)
                         self.error('file %s elimited per IO exception: %s' % (h5fileName, str(ex)) )
                         continue
 
@@ -702,7 +715,7 @@ class Trainer(BaseApplication):
                         self._frameSeq += seq
 
                 random.shuffle(self._frameSeq)
-                self.info('frame sequence rebuilt: %s frames from %s replay files, %.2f%%ov%s took %s/round' % (len(self._frameSeq), len(self._replayFrameFiles), self.__totalAccu*100.0/(1+self.__totalEval), self.__totalSamples, str(datetime.now() - self.__stampRound)) )
+                self.info('frame sequence rebuilt: %s frames from %s replay files, %.2f%%ov%s took %s/round' % (len(self._frameSeq), len(self._sampleFiles), self.__totalAccu*100.0/(1+self.__totalEval), self.__totalSamples, str(datetime.now() - self.__stampRound)) )
                 self.__totalAccu, self.__totalEval, self.__totalSamples, self.__stampRound = 0.0, 0, 0, datetime.now()
 
             if len(self._frameSeq) >0:
@@ -984,7 +997,7 @@ if __name__ == '__main__':
         sys.argv.remove('-x')
 
     if not '-f' in sys.argv :
-        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/Train.json']
+        sys.argv += ['-f', os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/../conf/Trainer.json']
 
     SYMBOL = '000001' # '000540' '000001'
     sourceCsvDir = None

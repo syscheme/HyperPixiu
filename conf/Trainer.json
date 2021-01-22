@@ -1,0 +1,38 @@
+// configuration of a DQNTrainer
+{
+    "logger": {
+        "level": "debug", //40
+        // "console": "False",
+    },
+
+    "train": {
+        "startModel": "/tmp/S2d32X20Y4F518x2.resnet50.h5",
+        "baseModel": "sliced2d",
+        "dirSamples": "/mnt/e/AShareSample/Formatter_2dImg16x32", // or "sampleFiles": [...],
+        "preBalanced": "false",
+
+        "batchSize": 64,
+        "batchesPerTrain": 32,
+        "poolReuses": 0,
+        "initEpochs": 2,
+        "startLR": 0.002, // start learningRate
+        "gamma": 0.01,
+
+        "GPU": {
+            "batchSize": 128,
+            "batchesPerTrain": 64, // 512x64 for GTX1050/2G, 512x128 for GTX1060/4G
+            "recycles": 2,
+            "initEpochs": 4, // 8 when the model is not well trained, 4 when trained and try to cover larger dataset
+            "startLR": 0.001,
+            // "lossPctStop": 50,
+            "lossStop": 0.15,
+
+            "models": [
+                { "model":"GTX 1650",
+                    "batchSize": 64,
+                    "batchesPerTrain": 64,
+                },
+            ]
+        },
+    },
+}

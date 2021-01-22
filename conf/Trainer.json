@@ -6,18 +6,20 @@
     },
 
     "train": {
-        "startModel": "/tmp/S2d32X20Y4F518x2.resnet50.h5",
+        "startModel": "/mnt/e/AShareSample/S2d32X18Y4F518x1.resnet50.h5",
         "baseModel": "sliced2d",
-        "dirSamples": "/mnt/e/AShareSample/Formatter_2dImg16x32", // or "sampleFiles": [...],
+        "dirSamples": "/mnt/e/AShareSample/RFrm2dImg32x18C8_ETF2013-2020", // or "sampleFiles": [...],
         "preBalanced": "false",
+        "gamma": 0.01,
 
-        "batchSize": 64,
+        "CPU": {
+            "batchSize": 64,
         "batchesPerTrain": 32,
         "poolReuses": 0,
         "initEpochs": 2,
         "startLR": 0.002, // start learningRate
-        "gamma": 0.01,
-
+        },
+        
         "GPU": {
             "batchSize": 128,
             "batchesPerTrain": 64, // 512x64 for GTX1050/2G, 512x128 for GTX1060/4G

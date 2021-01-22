@@ -37,14 +37,7 @@ from time import sleep
 import h5py, tarfile, pickle, fnmatch
 import numpy as np
 
-# GPUs = backend.tensorflow_backend._get_available_gpus()
-def get_available_gpus():
-    from tensorflow.python.client import device_lib
-    local_device_protos = device_lib.list_local_devices()
-    return [{'name':x.name, 'detail':x.physical_device_desc } for x in local_device_protos if x.device_type == 'GPU']
-
-GPUs = get_available_gpus()
-
+GPUs = BaseModel.list_GPUs()
 if len(GPUs) >1:
     from keras.utils.training_utils import multi_gpu_model
 
@@ -61,11 +54,10 @@ class Trainer(BaseApplication):
         self.__wkModelId       = None
         self._fnStartModel     = self.getConfig('startModel', None)
         self._baseModelClass   = self.getConfig('baseModel', 'base').lower()
-        self._sampleFiles = sampleFiles
 
+        self._sampleFiles = sampleFiles
         if not self._sampleFiles or len(self._sampleFiles) <=0: 
             self._sampleFiles = self.getConfig('sampleFiles', [])
-            self._sampleFiles = [ Program.fixupPath(f) for f in self._sampleFiles ]
 
         self._sampleStateSize     = self.getConfig('sampleStateSize', None)
         self._sampleActionSize    = self.getConfig('sampleActionSize', None)
@@ -86,17 +78,29 @@ class Trainer(BaseApplication):
         self._lossStop            = 0.24 # 0.24 according to average loss value by： grep 'from eval' /mnt/d/tmp/replayTrain_14276_0106.log |sed 's/.*loss\[\([^]]*\)\].*/\1/g' | awk '{ total += $1; count++ } END { print total/count }'
         self._lossPctStop         = 5
         self._startLR             = 0.01
-        self.__readTraingConfigBlock(configPrefix ='')
+        
+        self.__readTraingConfigBlock('CPU')
+        processorModel = 'CPU'
+        trainParamConfs = ['CPU']
 
+        # TESTCODE: GPUs = [ {'name': '/device:GPU:0', 'detail': 'device: 0, name: GeForce GTX 1650, pci bus id: 0000:01:00.0, compute capability: 7.5'} ]
         if len(GPUs) > 0 : # adjust some configurations if currently running on GPUs
             self.info('GPUs: %s' % GPUs)
-            conf_GPU        = self.getConfig('GPU',  {})
-            if len(conf_GPU) >0:
-                self.__readTraingConfigBlock(configPrefix ='GPU/')
+            self.__readTraingConfigBlock('GPU')
+            trainParamConfs.append('GPU')
 
-                gpuModel = GPUs[0]['detail'] # TODO: only take the first at the moment
-                if gpuModel in conf_GPU.keys() :
-                    self.__readTraingConfigBlock(configPrefix ='GPU/%s/' % gpuModel)
+            # apply per model configuration
+            processorModel = GPUs[0]['detail']
+            configedModels = self.getConfig('GPU/models', [])
+            matchedModel = ''
+            for m in configedModels:
+                if isinstance(m, dict) and 'model' in m.keys() and len(m['model']) > len(matchedModel):
+                    cfgm = m['model']
+                    if cfgm in processorModel:
+                        matchedModel = cfgm
+                        self.__readTraingConfigBlock(m)
+                        trainParamConfs.append(cfgm)
+        self.info('loaded params from: %s for processor: %s' % ('-> '.join(trainParamConfs), processorModel))
 
         if not self._sampleFiles or len(self._sampleFiles) <=0: 
             self._sampleFiles =[]
@@ -144,14 +148,19 @@ class Trainer(BaseApplication):
         self.info('taking method[%s]' % (self._stepMethod))
         self._stepMethod = STEPMETHODS[self._stepMethod]
 
-    def __readTraingConfigBlock(self, configPrefix =''):
-        self._batchSize           = self.getConfig('batchSize', self._batchSize)
-        self._batchesPerTrain     = self.getConfig('batchesPerTrain', self._batchesPerTrain)
-        self._recycleSize         = self.getConfig('recycles', self._recycleSize)
-        self._initEpochs          = self.getConfig('initEpochs', self._initEpochs)
-        self._lossStop            = self.getConfig('lossStop', 0.24) # 0.24 according to average loss value by： grep 'from eval' /mnt/d/tmp/replayTrain_14276_0106.log |sed 's/.*loss\[\([^]]*\)\].*/\1/g' | awk '{ total += $1; count++ } END { print total/count }'
-        self._lossPctStop         = self.getConfig('lossPctStop', self._lossStop)
-        self._startLR             = self.getConfig('startLR', self._startLR)
+    def __readTraingConfigBlock(self, configNode ='CPU'):
+
+        if isinstance(configNode, str):
+            configNode = self.getConfig(configNode, {})
+        
+        if isinstance(configNode, dict):
+            self._batchSize           = configNode.get('batchSize', self._batchSize)
+            self._batchesPerTrain     = configNode.get('batchesPerTrain', self._batchesPerTrain)
+            self._recycleSize         = configNode.get('recycles', self._recycleSize)
+            self._initEpochs          = configNode.get('initEpochs', self._initEpochs)
+            self._lossStop            = configNode.get('lossStop', self._lossStop) 
+            self._lossPctStop         = configNode.get('lossPctStop', self._lossStop)
+            self._startLR             = configNode.get('startLR', self._startLR)
 
     #----------------------------------------------------------------------
     # impl/overwrite of BaseApplication
@@ -164,6 +173,9 @@ class Trainer(BaseApplication):
         if not self._sampleFiles or len(self._sampleFiles) <=0:
             self.error('no input sample files specified')
             return False
+
+        self._fnStartModel = Program.fixupPath(self._fnStartModel)
+        self._sampleFiles = [ Program.fixupPath(f) for f in self._sampleFiles ]
 
         self._sampleFiles.sort();
         self.info('sample files: %s' % self._sampleFiles)
@@ -183,6 +195,7 @@ class Trainer(BaseApplication):
                 self._brain = BaseModel.load(self._fnStartModel)
         else:
             # GPU mode
+            # we'll store a copy of the model on *every* GPU and then combine the results from the gradient updates on the CPU
             with tf.device("/cpu:0"):
                 if self._baseModelClass in [ 'model2d_sliced', 'sliced2d' ]: # lower-ed already
                     self._brain = Model88_sliced2d.load(self._fnStartModel)
@@ -193,10 +206,6 @@ class Trainer(BaseApplication):
             self.error('failed to load startModel[%s]' % self._fnStartModel)
             return False
         
-        sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
-        self._brain.compile(optimizer=sgd)
-        self.__wkModelId = self._brain.modelId
-
         trainableLayers = []
         if not self._trainables or len(self._trainables) <=0:
             trainableLayers += self._brain.enable_trainable('*')
@@ -209,6 +218,10 @@ class Trainer(BaseApplication):
         trainableLayers.sort()
         if len(trainableLayers) >0:
             self.info('trainable-layers: %s' % ','.join(trainableLayers))
+
+        sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+        self._brain.compile(optimizer=sgd)
+        self.__wkModelId = self._brain.modelId
 
         try :
             os.makedirs(self.outdir)
@@ -362,10 +375,10 @@ class Trainer(BaseApplication):
     def __logAndSaveResult(self, resFinal, methodName, notes=''):
         if not notes or len(notes) <0: notes=''
 
-        fn_weights = os.path.join(self.outdir, '%s.weights.h5' %self.__wkModelId)
-        self._brain.save(fn_weights)
+        fn_trained = os.path.join(self.outdir, '%s_trained.h5' %self.__wkModelId)
+        self._brain.save(fn_trained)
 
-        self.info('%s() saved weights %s, result[%s] %s' % (methodName, fn_weights, resFinal, notes))
+        self.info('%s() saved trained as %s, result[%s] %s' % (methodName, fn_trained, resFinal, notes))
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
@@ -644,7 +657,7 @@ class Trainer(BaseApplication):
             idxItems = np.where(AD[1] ==idxMax)[0].tolist()
             random.shuffle(idxItems)
             del idxItems[cToReduce:]
-            idxToDel = [lenBefore +i for i in idxItems]
+            idxToDel = [int(i) for i in idxItems]
             frameDict['action'] = np.delete(frameDict['action'], idxToDel, axis=0)
             frameDict['state']  = np.delete(frameDict['state'], idxToDel, axis=0)
 

@@ -60,7 +60,7 @@ class BaseModel(object) :
     def list_GPUs() :
         from tensorflow.python.client import device_lib
         local_device_protos = device_lib.list_local_devices()
-        return [{'name':x.name, 'detail':x.physical_device_desc } for x in local_device_protos if x.device_type == 'GPU']
+        return [{'name':x.name, 'detail':x.physical_device_desc } for x in local_device_protos if 'GPU' == x.device_type]
 
     GPUs = list_GPUs()
 
@@ -150,7 +150,6 @@ class BaseModel(object) :
                 gconf = h5f['model_config']
                 model_base = BaseModel.hdf5g_getAttribute(gconf, 'model_base', 'base')
                 model_clz  = BaseModel.hdf5g_getAttribute(gconf, 'model_clz', '')
-
 
                 if not model_base in [None, 'base', '', '*']:
                     raise ValueError('model[%s] of %s is not suitable to load via BaseModel' % (model_clz, filepath))

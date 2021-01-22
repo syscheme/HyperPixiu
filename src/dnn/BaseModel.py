@@ -220,7 +220,7 @@ class BaseModel(object) :
             g = group.create_group(layer.name)
             pklweights = pickle.dumps(weights)
             npbytes = np.frombuffer(pklweights, dtype=np.uint8)
-            param_dset = g.create_dataset('pickled_weights', data=npbytes)
+            param_dset = g.create_dataset('pickled_weights', data=npbytes) # unnecessary: not much to compress compression='gzip' lzf
             saved_layer_names.append(layer.name)
 
         BaseModel.hdf5g_setAttribute(group, 'layer_names', [n.encode('utf8') for n in saved_layer_names])

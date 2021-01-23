@@ -26,6 +26,7 @@ if MAPPED_USER in [ None, 'nobody'] :  MAPPED_USER = 'hpx'
 SUBDIR_Reqs = 'reqs'
 DIR_ARCHED_HOME = os.path.join(MAPPED_HOME, 'archived', 'sina')
 
+'''
 IDXs_to_COLLECT=[ # http://vip.stock.finance.sina.com.cn/mkt/#dpzs
 'SH000001',	# 上证指数
 'SZ399001',	# 深证成指
@@ -49,6 +50,10 @@ ETFs_to_COLLECT=[   # asof 2020-12-08 top actives: http://vip.stock.finance.sina
 'SZ159980','SH515530','SH512580','SH515630','SZ159938','SZ159811','SZ159985','SH515390','SZ159929','SH515580',
 'SH515070','SH510800','SH510600','SH511180','SH515980','SZ159808','SH512510','SH510390','SH510150','SH512730'
 ]
+'''
+
+IDXs_to_COLLECT = prod.listAllIndexs()
+ETFs_to_COLLECT = prod.listAllETFs()
 
 SYMBOLS_WithNoMF = IDXs_to_COLLECT + ETFs_to_COLLECT
 
@@ -595,7 +600,7 @@ def schKickOff_DownloadToday(self):
     lstStocks = [ x['symbol'] for x in lstSHZ ]
 
     cTasks =0
-    for symbol in IDXs_to_COLLECT + ETFs_to_COLLECT + lstStocks:
+    for symbol in ETFs_to_COLLECT + lstStocks + IDXs_to_COLLECT:
         cTasks += 1
         rfnRequest = os.path.join(SUBDIR_Reqs, 'T%s.%04d.%s.tcsv.bz2' % (TODAY_YYMMDD, cTasks, symbol))
         fullfnRequest = os.path.join(DIR_ARCHED_HOME, rfnRequest)

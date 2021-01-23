@@ -687,6 +687,25 @@ def listAllSymbols(prog, maxRetryAt456=20):
     prog.info('SZ-resp(%d) len=%d' %(httperr, len(lstSZ)))
     return lstSH, lstSZ
 
+def __txtfile2list(filename):
+    # populate all strategies under the current vn package
+    filepath = os.path.abspath(os.path.dirname(__file__))
+    filepath = os.path.join(filepath, filename)
+
+    lst =[]
+    with open(filepath, 'r') as f:
+        for line in f.readlines():
+            line = line.strip('\n\r\t ').upper()
+            if line[:2] not in ['SH', 'SZ']: continue
+            lst.append(line) 
+    
+    return lst
+
+def listAllETFs():
+    return __txtfile2list('AllETFs.txt')
+
+def listAllIndexs():
+    return __txtfile2list('AllIndex.txt')
 
 ########################################################################
 def readArchivedDays(prog, dirArchived, symbol, YYYYMMDDs):
@@ -819,6 +838,10 @@ def determineLastDays(prog, nLastDays =7, todayYYMMDD= None):
 ####################################
 from time import sleep
 if __name__ == '__main__':
+
+    # ret = listAllETFs()
+    # ret = listAllIndexs()
+
     from Application import Program
 
     prog = Program(name='test', argvs=[])

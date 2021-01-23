@@ -185,8 +185,8 @@ def h5visit(f, tab=''):
 ########################################################################
 if __name__ == '__main__':
 
-    with h5py.File('/tmp/sliced2d.h5', 'r') as f:
-        h5visit(f)
+    # with h5py.File('/tmp/sliced2d.h5', 'r') as f:
+    #     h5visit(f)
 
     # tar_utf8('abc.h5t', ['SZ399997_KL5m20200615.json.bz2'])
     if len(sys.argv) <3:

@@ -20,6 +20,9 @@ DUMMY_BIG_VAL = 999999
 NN_FLOAT = 'float32'
 RFGROUP_PREFIX = 'ReplayFrame:'
 RFGROUP_PREFIX2 = 'RF'
+
+COLNAME_IN_FRAME_CLASSES = 'action'
+COLNAME_IN_FRAME_SAMPLES = 'state'
 # ----------------------------
 
 from tensorflow.keras.models import Model, Sequential
@@ -59,8 +62,8 @@ class Trainer(BaseApplication):
         if not self._sampleFiles or len(self._sampleFiles) <=0: 
             self._sampleFiles = self.getConfig('sampleFiles', [])
 
-        self._sampleStateSize     = self.getConfig('sampleStateSize', None)
-        self._sampleActionSize    = self.getConfig('sampleActionSize', None)
+        self._sampleDim1          = self.getConfig('sampleDim1', None)
+        self._sampleClassSize     = self.getConfig('sampleClassSize', None)
         self._evaluateSamples     = self.getConfig('evaluateSamples', 'yes').lower() in BOOL_STRVAL_TRUE
         self._preBalanced         = self.getConfig('preBalanced',  'no').lower() in BOOL_STRVAL_TRUE
 
@@ -180,7 +183,7 @@ class Trainer(BaseApplication):
         self._sampleFiles.sort();
         self.info('sample files: %s' % self._sampleFiles)
 
-        h5fn, framen, await_size = self.__nextFrameName(False) # probe the dims of state/action from the h5 file
+        h5fn, framen, await_size = self.__nextFrameName(False) # probe the dims of samples/classes from the h5 file
         if None in [h5fn, framen] :
             self.error('doAppInit() quit per nextFrame failed')
             return False
@@ -400,7 +403,7 @@ class Trainer(BaseApplication):
             frame = self._h5file[frameName]
             for i in range(int(8192/self._batchSize)) :
                 offset = self._batchSize*i
-                yield np.array(list(frame['state'].value)[offset: offset+self._batchSize]), np.array(list(frame['action'].value[offset: offset+self._batchSize]))
+                yield np.array(list(frame[COLNAME_IN_FRAME_SAMPLES].value)[offset: offset+self._batchSize]), np.array(list(frame[COLNAME_IN_FRAME_CLASSES].value[offset: offset+self._batchSize]))
 
             del frameSeq[0]
         raise StopIteration
@@ -408,8 +411,8 @@ class Trainer(BaseApplication):
     def __gen_readDataFromFrame(self) :
         for bth in range(self.chunksInPool) :
             batch = self.readDataChunk(bth)
-            for i in range(len(batch['state'])) :
-                yield batch['state'][i], batch['action'][i]
+            for i in range(len(batch[COLNAME_IN_FRAME_SAMPLES])) :
+                yield batch[COLNAME_IN_FRAME_SAMPLES][i], batch[COLNAME_IN_FRAME_CLASSES][i]
 
     def __fit_gen(self):
 
@@ -417,7 +420,7 @@ class Trainer(BaseApplication):
         random.shuffle(frameSeq)
 
         dataset = tf.data.Dataset.from_tensor_slices(np.array([i for i in range(len(self._framesInHd5))]))
-        dataset = dataset.map(lambda x: self.__readFrame(x)) # list(self._h5file[int(x)]['state'].value), list(self._h5file[int(x)]['action'].value)) # (self.__readFrame)
+        dataset = dataset.map(lambda x: self.__readFrame(x)) # list(self._h5file[int(x)][COLNAME_IN_FRAME_SAMPLES].value), list(self._h5file[int(x)][COLNAME_IN_FRAME_CLASSES].value)) # (self.__readFrame)
         # dataset = dataset.apply(tf.contrib.data.map_and_batch(self.readFrame, batch_size,
         #     num_parallel_batches=4, # cpu cores
         #     drop_remainder=True if is_training else False))
@@ -578,9 +581,9 @@ class Trainer(BaseApplication):
 
         slices = []
         for i in range(cChunks) :
-            bthState  = np.array(frameDict['state'][i*samplesPerChunk: (i+1)*samplesPerChunk])
-            bthAction = np.array(frameDict['action'][i*samplesPerChunk: (i+1)*samplesPerChunk])
-            slices.append((bthState, bthAction))
+            bths_Samples  = np.array(frameDict[COLNAME_IN_FRAME_SAMPLES][i*samplesPerChunk: (i+1)*samplesPerChunk])
+            bths_Classes = np.array(frameDict[COLNAME_IN_FRAME_CLASSES][i*samplesPerChunk: (i+1)*samplesPerChunk])
+            slices.append((bths_Samples, bths_Classes))
 
         return slices
 
@@ -597,16 +600,16 @@ class Trainer(BaseApplication):
 
         datasets = []
         for i in range(cChunks) :
-            bthState  = np.array(frameDict['state'][i*samplesPerChunk: (i+1)*samplesPerChunk])
-            bthAction = np.array(frameDict['action'][i*samplesPerChunk: (i+1)*samplesPerChunk])
-            dataset = tf.data.Dataset.from_tensor_slices((bthState, bthAction))
+            bths_Samples  = np.array(frameDict[COLNAME_IN_FRAME_SAMPLES][i*samplesPerChunk: (i+1)*samplesPerChunk])
+            bths_Classes = np.array(frameDict[COLNAME_IN_FRAME_CLASSES][i*samplesPerChunk: (i+1)*samplesPerChunk])
+            dataset = tf.data.Dataset.from_tensor_slices((bths_Samples, bths_Classes))
             dataset = dataset.batch(self._batchSize)
             datasets.append(dataset)
 
         return datasets
 
     def __frameToBatchs(self, frameDict):
-        COLS = ['state','action']
+        COLS = [COLNAME_IN_FRAME_SAMPLES, COLNAME_IN_FRAME_CLASSES]
         framelen = len(frameDict[COLS[0]])
         
         # to shuffle within the frame
@@ -629,8 +632,8 @@ class Trainer(BaseApplication):
         '''
             balance the samples, usually reduce some action=HOLD, which appears too many
         '''
-        actionchunk = np.array(frameDict['action'])
-        # AD = np.where(actionchunk >=0.99) # to match 1 because action is float read from RFrames
+        chunk_Classes = np.array(frameDict[COLNAME_IN_FRAME_CLASSES])
+        # AD = np.where(chunk_Classes >=0.99) # to match 1 because action is float read from RFrames
         # kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
 
         # cRowToKeep = max(kI[1:]) + sum(kI[1:]) # = max(kI[1:]) *3
@@ -645,10 +648,10 @@ class Trainer(BaseApplication):
         # if cHoldsToDel>0 :
         #     random.shuffle(idxHolds)
         #     del idxHolds[cHoldsToDel:]
-        #     frameDict['action'] = np.delete(frameDict['action'], idxHolds, axis=0)
-        #     frameDict['state']  = np.delete(frameDict['state'],  idxHolds, axis=0)
+        #     frameDict[COLNAME_IN_FRAME_CLASSES] = np.delete(frameDict[COLNAME_IN_FRAME_CLASSES], idxHolds, axis=0)
+        #     frameDict[COLNAME_IN_FRAME_SAMPLES]  = np.delete(frameDict[COLNAME_IN_FRAME_SAMPLES],  idxHolds, axis=0)
 
-        AD = np.where(actionchunk >=0.99) # to match 1 because action is float read from RFrames
+        AD = np.where(chunk_Classes >=0.99) # to match 1 because action is float read from RFrames
         kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
         kImax = max(kI)
         idxMax = kI.index(kImax)
@@ -658,10 +661,10 @@ class Trainer(BaseApplication):
             random.shuffle(idxItems)
             del idxItems[cToReduce:]
             idxToDel = [int(i) for i in idxItems]
-            frameDict['action'] = np.delete(frameDict['action'], idxToDel, axis=0)
-            frameDict['state']  = np.delete(frameDict['state'], idxToDel, axis=0)
+            frameDict[COLNAME_IN_FRAME_CLASSES] = np.delete(frameDict[COLNAME_IN_FRAME_CLASSES], idxToDel, axis=0)
+            frameDict[COLNAME_IN_FRAME_SAMPLES] = np.delete(frameDict[COLNAME_IN_FRAME_SAMPLES], idxToDel, axis=0)
 
-        return len(frameDict['action'])
+        return len(frameDict[COLNAME_IN_FRAME_CLASSES])
 
     def __nextFrameName(self, bPop1stFrameName=False):
         '''
@@ -699,23 +702,23 @@ class Trainer(BaseApplication):
 
                             f1st = framesInHd5[0]
                             frm  = h5f[f1st]
-                            frameSize  = frm['state'].shape[0]
-                            stateSize  = frm['state'].shape[1]
-                            actionSize = frm['action'].shape[1]
+                            frameSize  = frm[COLNAME_IN_FRAME_SAMPLES].shape[0]
+                            stateSize  = frm[COLNAME_IN_FRAME_SAMPLES].shape[1]
+                            actionSize = frm[COLNAME_IN_FRAME_CLASSES].shape[1]
                             signature =  frm.attrs['signature'] if 'signature' in frm.attrs.keys() else 'n/a'
 
-                            if not self._sampleStateSize:   self._sampleStateSize = stateSize
-                            if not self._sampleActionSize:  self._sampleActionSize = actionSize
+                            if not self._sampleDim1:       self._sampleDim1 = stateSize
+                            if not self._sampleClassSize:  self._sampleClassSize = actionSize
 
-                            if self._sampleStateSize != stateSize or self._sampleActionSize != actionSize:
+                            if self._sampleDim1 != stateSize or self._sampleClassSize != actionSize:
                                 self._sampleFiles.remove(h5fileName)
-                                self.error('file %s eliminated as its dims: %s/state %s/action mismatch working dims %s/state %s/action' % (h5fileName, stateSize, actionSize, self._sampleStateSize, self._sampleActionSize) )
+                                self.error('file %s eliminated as its dims: %s/samples %s/classes mismatch working dims %s/samples %s/classes' % (h5fileName, stateSize, actionSize, self._sampleDim1, self._sampleClassSize) )
                                 continue
 
                             if self._frameSize < frameSize:
                                 self._frameSize = frameSize
 
-                            self.info('%d ReplayFrames found in %s with signature[%s] dims: %s/state, %s/action' % (len(framesInHd5), h5fileName, signature,  self._sampleStateSize, self._sampleActionSize) )
+                            self.info('%d ReplayFrames found in %s with signature[%s] dims: %s/samples, %s/classes' % (len(framesInHd5), h5fileName, signature,  self._sampleDim1, self._sampleClassSize) )
 
                     except Exception as ex:
                         self._sampleFiles.remove(h5fileName)
@@ -743,7 +746,7 @@ class Trainer(BaseApplication):
         '''
         read a frame from H5 file
         '''
-        COLS = ['state','action']
+        COLS = [COLNAME_IN_FRAME_SAMPLES, COLNAME_IN_FRAME_CLASSES]
         frameDict ={}
         try :
             # reading the frame from the h5
@@ -868,8 +871,8 @@ class Trainer(BaseApplication):
 
         # build up self.__samplePool
         self.__samplePool = {
-            'state':[],
-            'action':[],
+            COLNAME_IN_FRAME_SAMPLES: [],
+            COLNAME_IN_FRAME_CLASSES: [],
         }
 
         trainId, itrId = 0, 0
@@ -882,32 +885,32 @@ class Trainer(BaseApplication):
         skippedSaves =0
         while True : #TODO temporarily loop for ever: lossMax > self._lossStop or abs(loss-lossMax) > (lossMax * self._lossPctStop/100) :
 
-            statebths, actionbths =[], []
+            bths_Samples, bths_Classes =[], []
             cFresh, cRecycled = 0, 0
-            while len(statebths) < self._batchesPerTrain :
+            while len(bths_Samples) < self._batchesPerTrain :
                 bth, recycled = self.nextDataChunk() #= self.readDataChunk(idxBatchInPool)
                 if recycled:
                     cRecycled += 1
                 else:
                     cFresh += 1
 
-                statebths.append(bth['state'])
-                actionbths.append(bth['action'])
+                bths_Samples.append(bth[COLNAME_IN_FRAME_SAMPLES])
+                bths_Classes.append(bth[COLNAME_IN_FRAME_CLASSES])
 
             #----------------------------------------------------------
             # continue # if only test read-ahead and pool making-up   #
             #----------------------------------------------------------
 
-            cBths = len(statebths)
+            cBths = len(bths_Samples)
             if cBths < self._batchesPerTrain:
                 continue
 
-            statechunk = np.concatenate(tuple(statebths))
-            actionchunk = np.concatenate(tuple(actionbths))
-            statebths, actionbths =[], []
+            chunk_Samples = np.concatenate(tuple(bths_Samples))
+            chunk_Classes = np.concatenate(tuple(bths_Classes))
+            bths_Samples, bths_Classes =[], []
             trainId +=1
 
-            trainSize = statechunk.shape[0]
+            trainSize = chunk_Samples.shape[0]
             self.__totalSamples += trainSize
             
             stampStart = datetime.now()
@@ -920,15 +923,15 @@ class Trainer(BaseApplication):
                 if self._evaluateSamples and len(strEval) <=0 and sampledAhead and (self._evalAt <=0 or self.__totalEval<=0 or 1 == (trainId % self._evalAt)):
                     try :
                         # eval.1 eval on the samples
-                        resEval =  self._brain.evaluate(x=statechunk, y=actionchunk, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
+                        resEval =  self._brain.evaluate(x=chunk_Samples, y=chunk_Classes, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
                         strEval += 'from eval[%.2f%%^%.3f]' % (resEval[1]*100, resEval[0])
                         self.__totalAccu += trainSize * resEval[1]
                         self.__totalEval += trainSize
 
                         # eval.2 action distrib in samples/prediction
-                        AD = np.where(actionchunk ==1)[1]
+                        AD = np.where(chunk_Classes ==1)[1]
                         kI = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(3)] # the actions percentage in sample
-                        predict = self._brain.predict(x=statechunk)
+                        predict = self._brain.predict(x=chunk_Samples)
                         predact = np.zeros(len(predict) *3).reshape(len(predict), 3)
                         for r in range(len(predict)):
                             predact[r][np.argmax(predict[r])] =1
@@ -946,7 +949,7 @@ class Trainer(BaseApplication):
                 try :
                     epochs2run = epochs
                     epochs =0
-                    result = self._brain.fit(x=statechunk, y=actionchunk, epochs=epochs2run, shuffle=True, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
+                    result = self._brain.fit(x=chunk_Samples, y=chunk_Classes, epochs=epochs2run, shuffle=True, batch_size=self._batchSize, verbose=1, callbacks=self._fitCallbacks)
                     lstEpochs.append(epochs2run)
                     loss = result.history["loss"][-1]
                     lossImprove =0.0

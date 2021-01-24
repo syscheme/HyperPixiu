@@ -63,6 +63,7 @@ if __name__ == '__main__':
     # evMdSource = '/mnt/e/AShareSample/ETF.2013-2019' # TEST-CODE
     evMdSource = Program.fixupPath(evMdSource)
     basename = os.path.basename(evMdSource)
+    
     if os.path.isdir(evMdSource) :
         try :
             os.stat(os.path.join(evMdSource, 'h5tar.py'))

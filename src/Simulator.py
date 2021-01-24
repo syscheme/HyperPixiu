@@ -1907,7 +1907,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self.__sampleFrmSize  = SAMPLES_PER_H5FRAME
         self.__sampleFrm = [None]  * self.__sampleFrmSize
         self.__sampleIdx, self.__frameNo = 0, 0
-        self.__lastestDir, self.__lastFloatsState  = OrderData.DIRECTION_NONE, None
+        self.__lastestDir, self.__lastFloatsState  = OrderData.DIRECTION_NONE, {}
         self.__momentsToSample = ['10:00:00', '11:00:00', '13:30:00', '14:30:00', '15:00:00']
 
     def doAppInit(self): # return True if succ
@@ -1975,23 +1975,35 @@ class IdealTrader_Tplus1(OfflineSimulator):
         prevDir = self.__lastestDir # backup for logging
         if (len(self.__momentsToSample) >0 and d.asof.strftime('%H:%M:%S') in self.__momentsToSample) or dirToExec != self.__lastestDir :
 
-            # fmtr = Formatter_2dImg32x18('/mnt/e/bmp/%s.' % symbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
-            floatsState = self._marketState.format(self.__fmtr, self._tradeSymbol) # floatsState = self._marketState.exportF1548(self._tradeSymbol)
-            if not floatsState: return
-
-            if dirToExec != self.__lastestDir and self.__lastFloatsState: # the (state, dir) piror to dir-change sounds important to save
+            if dirToExec != self.__lastestDir and self.__lastFloatsState and len(self.__lastFloatsState) >0: # the (state, dir) piror to dir-change sounds important to save
                 self.__pushStateAction(self.__lastFloatsState, self.__lastestDir)
 
-            self.__pushStateAction(floatsState, dirToExec)
-            self.__lastestDir, self.__lastFloatsState = dirToExec, None
+            if not self.__updateFloatState(): return
+            self.__pushStateAction(self.__lastFloatsState, dirToExec)
+            self.__lastestDir, self.__lastFloatsState = dirToExec, {}
             
         elif 0 == (d.asof.minute %5):
-            self.__lastFloatsState = self._marketState.format(self.__fmtr, self._tradeSymbol)
+            self.__updateFloatState()
 
         if prevDir != dirToExec:
             self.info('OnEvent(%s) changedir %s->%s upon mstate: %s' % (ev.desc, prevDir, dirToExec, self._marketState.descOf(self._tradeSymbol)))
         else:
             self.debug('OnEvent(%s) continue %s upon mstate: %s' % (ev.desc, dirToExec, self._marketState.descOf(self._tradeSymbol)))
+
+    def __updateFloatState(self) :
+        # fmtr = Formatter_2dImg32x18('/mnt/e/bmp/%s.' % symbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
+        fstates = self._marketState.format(self.__fmtr, self._tradeSymbol) # floatsState = self._marketState.exportF1548(self._tradeSymbol)
+        if not fstates: return False
+
+        price, stateAsOf = self._marketState.latestPrice(self._tradeSymbol)
+        self.__lastFloatsState = {
+            'fstates' : fstates,
+            'fdate' : stateAsOf.year * 10000 + stateAsOf.month *100 + stateAsOf.day
+                        + (stateAsOf.hour * 60 + stateAsOf.minute) /80.0/25, # '/80.0/25' instead of the real world's '/60min /25hr' is just to make the result with limited decimals
+            'price' : price
+        }
+
+        return True
 
     def resetEpisode(self) :
         ret = super(IdealTrader_Tplus1, self).resetEpisode()
@@ -2083,19 +2095,34 @@ class IdealTrader_Tplus1(OfflineSimulator):
         
         exit(0) # IdealTrader_Tplus1 is not supposed to run forever, just exit instead of return
 
-    def __pushStateAction(self, mstate, dirAction):
+    def __pushStateAction(self, floatsState, dirAction):
+
+        if not floatsState or not isinstance(floatsState,dict) or 'fstates' not in floatsState:
+            return 
+
+        fstates = floatsState['fstates']
+        if not fstates or (self.__sampleIdx + self.__frameNo) <=0 and all(v == 0.0 for v in fstates): return # skip the leading all[0.0]
 
         action = [0] * len(ADVICE_DIRECTIONS)
         action[ADVICE_DIRECTIONS.index(dirAction)] =1
 
-        if (self.__sampleIdx + self.__frameNo) <=0 and all(v == 0.0 for v in mstate): return # skip the leading all[0.0]
-
         self.__sampleIdx = self.__sampleIdx % self.__sampleFrmSize
         if 0 == self.__sampleIdx and not None in self.__sampleFrm :
             # frame full, output it into a HDF5 file
-            self.__saveFrame(self.__sampleFrm)
+            shiftsz = self.__saveFrame(self.__sampleFrm)
+            if shiftsz >0:
+                # shift the saved samples out and refill to meet size=self.__sampleFrmSize
+                del self.__sampleFrm[ :shiftsz]
+                
+            if shiftsz <self.__sampleFrmSize/2 and len(self.__sampleFrm) >= self.__sampleFrmSize/2 :
+                self.warn('sampleFrmSize[%d] is too small, inc by 100' % self.__sampleFrmSize)
+                self.__sampleFrmSize += 100
 
-        self.__sampleFrm[self.__sampleIdx] = (mstate, action)
+            self.__sampleIdx = len(self.__sampleFrm)
+            if self.__sampleIdx < self.__sampleFrmSize:
+                self.__sampleFrm += [None]  * (self.__sampleFrmSize - self.__sampleIdx)
+                
+        self.__sampleFrm[self.__sampleIdx] = (fstates, action, floatsState['fdate'], floatsState['price'])
         self.__sampleIdx +=1
 
     def __saveFrame(self, rangedFrame):
@@ -2104,8 +2131,18 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         #col_state  = np.concatenate(metrix[:, 0]).reshape(len(rangedFrame), len(rangedFrame[0][0]))
         stateshape, actionshape = np.array(metrix[0][0]).shape, len(rangedFrame[0][1])
-        col_state  = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype('float16')
-        col_action = np.concatenate(metrix[:, 1]).reshape(lenF, actionshape)
+        col_state   = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype('float16')
+        col_action  = np.concatenate(metrix[:, 1]).reshape(lenF, actionshape)
+        col_fdate   = np.asarray(metrix[:, 2])
+        col_price   = np.asarray(metrix[:, 3])
+
+        metrix_gainRates = self.__calculateGainRates(col_fdate, col_price, eval_days =5)
+        lenF = len(metrix_gainRates)
+        self.info('calculated gainRates from %drows to %d, narrowing' % (len(rangedFrame), lenF))
+        if lenF <=0: return 0
+
+        col_state = np.delete(col_state, np.s_[lenF:], 0)
+        col_action = np.delete(col_action, np.s_[lenF:], 0)
 
         fn_frame = os.path.join(self.wkTrader.outdir, 'RFrm%s_%s.h5' % (self.__fmtr.id, self._tradeSymbol) )
         
@@ -2129,11 +2166,66 @@ class IdealTrader_Tplus1(OfflineSimulator):
             g.create_dataset(u'title',      data= title)
 
             st = g.create_dataset('state',  data= col_state, **h5args)
+            st.attrs['shape'] = col_state.shape
             st.attrs['dim'] = col_state.shape[1]
             ac = g.create_dataset('action', data= col_action, **h5args)
+            ac.attrs['shape'] = col_action.shape
             ac.attrs['dim'] = col_action.shape[1]
+            gr = g.create_dataset('gain_rates', data= metrix_gainRates, **h5args)
+            gr.attrs['shape'] = metrix_gainRates.shape
             
-        self.info('saved %s %s len[%s] into file %s with sig[%s]' % (self.__fmtr.id, frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
+        self.info('saved %s %s %s samples into file %s with sig[%s]' % (self.__fmtr.id, frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
+        return lenF
+
+    def __calculateGainRates(self, col_fdate, col_price, eval_days =5) :
+        size = min([len(col_fdate), len(col_price)])
+        df = pd.concat([pd.DataFrame(col_fdate[:size], columns=['fdate']), pd.DataFrame(col_price[:size], columns=['price'])], axis=1)
+        # df = pd.concat([df, pd.DataFrame([int(x) for x in col_fdate], columns=['idate'])], axis=1)
+
+        eval_days_len =1 +eval_days
+        for i in range(eval_days_len):
+            df['grainRate_%d' %i ]=np.nan
+
+        daycloses = []
+        for i in range(size) :
+            date = int(df['fdate'][i])
+            price = df['price'][i]
+            if len(daycloses) >0 and daycloses[-1][0] == date:
+                daycloses[-1][1] = price
+                continue
+
+            # found a new date
+            daycloses.append([date, price])
+            del daycloses[:-1 -eval_days_len]
+            if len(daycloses) <=1: continue
+            last_close = daycloses[-2]
+
+            # scan backward
+            daysBack =-1
+            for j in range(i-1, -1, -1):
+                dateBack = int(df['fdate'][j])
+                if dateBack < daycloses[0][0]:
+                    break
+
+                priceBack = float(df['price'][j])
+                if priceBack < 0.001: priceBack =1.0
+
+                for k in range(len(daycloses)-2 - daysBack, -1, -1):
+                    if daycloses[k][0] == dateBack:
+                        daysBack = len(daycloses) -2 -k
+                        break
+
+                if daysBack < 0 or daysBack > eval_days_len: continue
+                df['grainRate_%d' %daysBack ][j] = last_close[1] / priceBack -1.0
+            
+            # print(df)
+
+        idxmax = df.notna()[::-1].idxmax()
+        # print(idxmax)
+        idx_associated = min(idxmax)
+
+        result = df.values[ :idx_associated, -1 -eval_days: ] if idx_associated >0 else np.array([])
+        return result.astype('float16')
 
     def __scanEventsSequence(self, evseq) :
 

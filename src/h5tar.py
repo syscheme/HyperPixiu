@@ -206,7 +206,7 @@ if __name__ == '__main__':
         untar_utf8(fn_h5tar, fn_members)
     elif 's' == cmd[0] and len(fn_members) >0:
         print(read_utf8(fn_h5tar, fn_members[0]))
-    elif 'v' == cmd[0] and len(fn_members) >0:
+    elif 'v' == cmd[0] and len(fn_h5tar) >0:
         with h5py.File(fn_h5tar, 'r') as f:
             h5visit(f)
 

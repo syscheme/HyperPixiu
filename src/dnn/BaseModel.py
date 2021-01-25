@@ -31,7 +31,7 @@ import sys, os, platform, random, copy, threading
 from datetime import datetime
 from time import sleep
 
-import h5py, tarfile, pickle, fnmatch
+import h5py, tarfile, pickle, fnmatch, shutil
 import numpy as np
 
 # GPUs = backend.tensorflow_backend._get_available_gpus()
@@ -124,7 +124,10 @@ class BaseModel(object) :
         
         if not self.model: return False
 
-        with h5py.File(filepath, 'w') as h5f:
+        # because the saving steps may throw exception, so borrow tmpfile to ensure not damage the previous model until saving gets succ
+        tmpfile = filepath + '.~%d' % self.program.pid if self.program else ''
+
+        with h5py.File(tmpfile, 'w') as h5f:
             # step 1. save json model in h5f['model_config']
             model_json = self.model.to_json()
             g = h5f.create_group('model_config')
@@ -139,6 +142,11 @@ class BaseModel(object) :
             if saveWeights:
                 g = h5f.create_group('model_weights')
                 BaseModel.save_weights_to_hdf5_group(g, self.model.layers)
+
+        try:
+            os.remove(filepath)
+        except: pass
+        shutil.move(tmpfile, filepath)
 
         return True
 

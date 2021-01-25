@@ -1,7 +1,7 @@
 # encoding: UTF-8
 
 '''
-A DQN Trainer detached from gymAgent to perform 'offline' training
+A DQN Trainer_classify detached from gymAgent to perform 'offline' training
 It reads the ReplayBuffers, which was output from agentDQN, to train the model. Such a 'offline' trainning would help the online-agent to improve the loss/accurate of the model,
 and can also distribute the training load outside of the online agent
 '''
@@ -43,10 +43,10 @@ if len(GPUs) >1:
     from keras.utils.training_utils import multi_gpu_model
 
 ########################################################################
-class Trainer(BaseApplication):
+class Trainer_classify(BaseApplication):
 
     def __init__(self, program, sampleFiles=None, recorder =None, **kwargs):
-        super(Trainer, self).__init__(program, **kwargs)
+        super(Trainer_classify, self).__init__(program, **kwargs)
 
         self.__wkModelId       = None
         self._fnStartModel     = self.getConfig('startModel', None)
@@ -56,6 +56,7 @@ class Trainer(BaseApplication):
         if not self._sampleFiles or len(self._sampleFiles) <=0: 
             self._sampleFiles = self.getConfig('sampleFiles', [])
 
+        self._dirSamples          = self.getConfig('dirSamples', None)
         self._colnameSamples      = self.getConfig('samplesName', 'state')
         self._colnameClasses      = self.getConfig('classesName', 'action')
         self._shapeSamples        = self.getConfig('shapeSamples', None)
@@ -100,20 +101,6 @@ class Trainer(BaseApplication):
                         self.__readTraingConfigBlock(m)
                         trainParamConfs.append(cfgm)
         self.info('loaded params from: %s for processor: %s' % ('-> '.join(trainParamConfs), processorModel))
-
-        if not self._sampleFiles or len(self._sampleFiles) <=0: 
-            self._sampleFiles =[]
-            dirSamples = self.getConfig('dirSamples', None)
-            if dirSamples:
-                dirSamples = Program.fixupPath(dirSamples)
-                files = listAllFiles(dirSamples)
-                for name in files:
-                    if self._preBalanced :
-                        if '.h5b' != name[-4:] : continue
-                    elif '.h5' != name[-3:] : 
-                        continue
-
-                    self._sampleFiles.append(name)
 
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]
@@ -166,18 +153,21 @@ class Trainer(BaseApplication):
     def OnEvent(self, ev): pass
 
     def doAppInit(self): # return True if succ
-        if not super(Trainer, self).doAppInit() :
-            return False
-
-        if not self._sampleFiles or len(self._sampleFiles) <=0:
-            self.error('no input sample files specified')
+        if not super(Trainer_classify, self).doAppInit() :
             return False
 
         self._fnStartModel = Program.fixupPath(self._fnStartModel)
         self._sampleFiles = [ Program.fixupPath(f) for f in self._sampleFiles ]
+        if self._dirSamples and len(self._dirSamples) >0:
+            self._dirSamples = Program.fixupPath(self._dirSamples)
 
-        self._sampleFiles.sort();
-        self.info('sample files: %s' % self._sampleFiles)
+        fileList = self.__populateSampleFileList()
+
+        if not fileList or len(fileList) <=0:
+            self.error('no input sample files specified')
+            return False
+
+        self.debug('initial sample files: %s' % fileList)
 
         h5fn, framen, await_size = self.__nextFrameName(False) # probe the dims of samples/classes from the h5 file
         if None in [h5fn, framen] :
@@ -254,7 +244,7 @@ class Trainer(BaseApplication):
             return
 
         self._stepMethod()
-        return super(Trainer, self).doAppStep()
+        return super(Trainer_classify, self).doAppStep()
 
     def doAppStep_local_generator(self):
         if not self._gen:
@@ -662,6 +652,23 @@ class Trainer(BaseApplication):
 
         return len(frameDict[self._colnameClasses])
 
+    def __populateSampleFileList(self) :
+        fileList = copy.copy(self._sampleFiles)
+        if len(fileList) <=0 and self._dirSamples and len(self._dirSamples) >0:
+            fileList =[]
+            files = listAllFiles(self._dirSamples)
+            for name in files:
+                if self._preBalanced :
+                    if '.h5b' != name[-4:] : continue
+                elif '.h5' != name[-3:] : 
+                    continue
+
+                fileList.append(name)
+
+        fileList.sort()
+        self.info('refreshed sample files: %s' % fileList)
+        return fileList
+
     def __nextFrameName(self, bPop1stFrameName=False):
         '''
         get the next (h5fileName, frameName, framesAwait) to read from the H5 file
@@ -671,8 +678,8 @@ class Trainer(BaseApplication):
         with self.__lock:
             if not self._frameSeq or len(self._frameSeq) <=0:
                 self._frameSeq =[]
+                fileList = self.__populateSampleFileList()
 
-                fileList = copy.copy(self._sampleFiles)
                 for h5fileName in fileList :
                     framesInHd5 = []
                     try:
@@ -692,7 +699,7 @@ class Trainer(BaseApplication):
                                 del framesInHd5[0]
 
                             if len(framesInHd5) <=1:
-                                self._sampleFiles.remove(h5fileName)
+                                fileList.remove(h5fileName)
                                 self.error('file %s eliminated as too few ReplayFrames in it' % (h5fileName) )
                                 continue
 
@@ -707,7 +714,7 @@ class Trainer(BaseApplication):
                             if not self._sampleClassSize:  self._sampleClassSize = shape_classes[0]
 
                             if self._shapeSamples != shape_samples or self._sampleClassSize != shape_classes[0]:
-                                self._sampleFiles.remove(h5fileName)
+                                fileList.remove(h5fileName)
                                 self.error('file %s eliminated per mismatched shapes: samples%s %s-classes against known samples[%s:%s] classes[%s:%s]' % (h5fileName, shape_samples, shape_classes[0], self._colnameSamples, self._shapeSamples, self._colnameClasses, self._sampleClassSize) )
                                 continue
 
@@ -717,7 +724,7 @@ class Trainer(BaseApplication):
                             self.info('%d ReplayFrames found in %s with signature[%s] shapes: samples[%s:%s] classes[%s:%s]' % (len(framesInHd5), h5fileName, signature, self._colnameSamples, self._shapeSamples, self._colnameClasses, self._sampleClassSize) )
 
                     except Exception as ex:
-                        self._sampleFiles.remove(h5fileName)
+                        fileList.remove(h5fileName)
                         self.error('file %s elimited per IO exception: %s' % (h5fileName, str(ex)) )
                         continue
 
@@ -727,7 +734,7 @@ class Trainer(BaseApplication):
                         self._frameSeq += seq
 
                 random.shuffle(self._frameSeq)
-                self.info('frame sequence rebuilt: %s frames from %s replay files, %.2f%%ov%s took %s/round' % (len(self._frameSeq), len(self._sampleFiles), self.__totalAccu*100.0/(1+self.__totalEval), self.__totalSamples, str(datetime.now() - self.__stampRound)) )
+                self.info('frame sequence rebuilt: %s frames from %s replay files, %.2f%%ov%s took %s/round' % (len(self._frameSeq), len(fileList), self.__totalAccu*100.0/(1+self.__totalEval), self.__totalSamples, str(datetime.now() - self.__stampRound)) )
                 self.__totalAccu, self.__totalEval, self.__totalSamples, self.__stampRound = 0.0, 0, 0, datetime.now()
 
             if len(self._frameSeq) >0:
@@ -765,9 +772,20 @@ class Trainer(BaseApplication):
         reading H5 only works on CPU and is quite slow, so take a seperate thread to read-ahead
         '''
         stampStart = datetime.now()
-        h5fileName, nextFrameName, awaitSize = self.__nextFrameName(True)
+        frameDict = None
 
-        frameDict = self.readFrame(h5fileName, nextFrameName)
+        while True:
+            try :
+                h5fileName, nextFrameName, awaitSize = self.__nextFrameName(True)
+                if not nextFrameName or len(nextFrameName) <=0:
+                    self.error('readAhead(%s) failed to get nextFrameName' % (thrdSeqId) )
+                    return
+
+                frameDict = self.readFrame(h5fileName, nextFrameName)
+                if frameDict and len(frameDict) >0: break
+            except Exception as ex:
+                thePROG.logexception(ex, 'ssh failed')
+        
         lenFrame= 0
         for v in frameDict.values() :
             lenFrame = len(v)
@@ -982,8 +1000,8 @@ class Trainer(BaseApplication):
     #         knownModels = self.__knownModels_1D
 
     #     if not modelId in knownModels.keys():
-    #         self.warn('unknown modelId[%s], taking % instead' % (modelId, Trainer.DEFAULT_MODEL))
-    #         modelId = Trainer.DEFAULT_MODEL
+    #         self.warn('unknown modelId[%s], taking % instead' % (modelId, Trainer_classify.DEFAULT_MODEL))
+    #         modelId = Trainer_classify.DEFAULT_MODEL
 
 
     #     if len(GPUs) <= 1:
@@ -1038,10 +1056,10 @@ if __name__ == '__main__':
             except :
                 pass
 
-    p.info('all objects registered piror to Trainer: %s' % p.listByType())
+    p.info('all objects registered piror to Trainer_classify: %s' % p.listByType())
     
-    # trainer = p.createApp(Trainer, configNode ='Trainer', replayFrameFiles=os.path.join(sourceCsvDir, 'RFrames_SH510050.h5'))
-    trainer = p.createApp(Trainer, configNode ='train')
+    # trainer = p.createApp(Trainer_classify, configNode ='Trainer_classify', replayFrameFiles=os.path.join(sourceCsvDir, 'RFrames_SH510050.h5'))
+    trainer = p.createApp(Trainer_classify, configNode ='train')
 
     p.start()
 

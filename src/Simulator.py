@@ -2216,9 +2216,16 @@ class IdealTrader_Tplus1(OfflineSimulator):
                         break
 
                 if daysBack < 0 or daysBack > eval_days_len: continue
-                df['grainRate_%d' %daysBack ][j] = last_close[1] / priceBack -1.0
+                gr = last_close[1] / priceBack -1.0
+                # if j >1: gr /= j # dailize the grainrate
+                # gr = (gr + 0.02) *10 # scaling the grainrate to fit in [0,1) : 0 maps -2%, 1 maps +8%
             
+                df['grainRate_%d' %daysBack ][j] = gr
+            
+            # can leave the grainrate original here and move the dailizing and scaling in the Trainning program
             # print(df)
+            # df[df <0] = 0
+            # df[df >1] = 1
 
         idxmax = df.notna()[::-1].idxmax()
         # print(idxmax)

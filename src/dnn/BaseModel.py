@@ -45,9 +45,6 @@ GPUs = get_available_gpus()
 if len(GPUs) >1:
     from keras.utils.training_utils import multi_gpu_model
 
-FN_SUFIX_MODEL_JSON = '_model.json'
-FN_SUFIX_WEIGHTS_H5 = '_weights.h5'
-
 ########################################################################
 class BaseModel(object) :
 

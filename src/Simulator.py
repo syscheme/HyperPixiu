@@ -2132,7 +2132,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         #col_state  = np.concatenate(metrix[:, 0]).reshape(len(rangedFrame), len(rangedFrame[0][0]))
         stateshape, actionshape = np.array(metrix[0][0]).shape, len(rangedFrame[0][1])
         col_state   = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype('float16')
-        col_action  = np.concatenate(metrix[:, 1]).reshape(lenF, actionshape)
+        col_action  = np.concatenate(metrix[:, 1]).reshape(lenF, actionshape).astype('int8')
         col_fdate   = np.asarray(metrix[:, 2])
         col_price   = np.asarray(metrix[:, 3])
 
@@ -2163,7 +2163,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
             g.attrs['signature'] = EXPORT_SIGNATURE
 
             title = '%s replay-frame %s %s of %s by %s, shapes[state:%s, action:%s]' % (self._generateReplayFrames, self.__fmtr.id, frameId, self._tradeSymbol, self.ident, stateshape, actionshape )
-            g.create_dataset(u'title',      data= title)
+            g.attrs['title'] = title
 
             st = g.create_dataset('state',  data= col_state, **h5args)
             st.attrs['shape'] = col_state.shape

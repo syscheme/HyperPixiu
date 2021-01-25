@@ -333,7 +333,7 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
                         # m1, m2 = list(g.keys()), list(go.keys())
                         # a1, a2 = list(g.attrs.keys()), list(go.attrs.keys())
 
-                # step 3.2, determine the grainRate_X based on lastDays
+                # step 3.2, determine the gainRate_X based on lastDays
                 if len(lastDates) >0:
                     start, end = '%sT000000' % lastDays[-1][0], '%sT235959' % lastDays[0][0]
                     for k in h5w.keys() :
@@ -349,10 +349,10 @@ def commitToday(self, dictArgs) : # urgly at the parameter list
                             nDaysAgo = lastDates.index(strYYMMDD)
                             if nDaysAgo <0: continue
 
-                            grk, grv = 'grainRate_%d' % nDaysAgo, lastDays[nDaysAgo][4] / go.attrs['price'] -1
+                            grk, grv = 'gainRate_%d' % nDaysAgo, lastDays[nDaysAgo][4] / go.attrs['price'] -1
                             go.attrs[grk] = grv
                         except Exception as ex:
-                            thePROG.warn('commitToday() failed to determine grainRate for: %s' % k)
+                            thePROG.warn('commitToday() failed to determine gainRate for: %s' % k)
                         
             thePROG.debug('commitToday() added snapshot[%s] of %s into %s' % (','.join(gns), srcpath, destpath))
         except Exception as ex:

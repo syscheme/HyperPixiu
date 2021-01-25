@@ -2184,7 +2184,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         eval_days_len =1 +eval_days
         for i in range(eval_days_len):
-            df['grainRate_%d' %i ]=np.nan
+            df['gainRate_%d' %i ]=np.nan
 
         daycloses = []
         for i in range(size) :
@@ -2217,12 +2217,12 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
                 if daysBack < 0 or daysBack > eval_days_len: continue
                 gr = last_close[1] / priceBack -1.0
-                # if j >1: gr /= j # dailize the grainrate
-                # gr = (gr + 0.02) *10 # scaling the grainrate to fit in [0,1) : 0 maps -2%, 1 maps +8%
+                # if j >1: gr /= j # dailize the gainrate
+                # gr = (gr + 0.02) *10 # scaling the gainrate to fit in [0,1) : 0 maps -2%, 1 maps +8%
             
-                df['grainRate_%d' %daysBack ][j] = gr
+                df['gainRate_%d' %daysBack ][j] = gr
             
-            # can leave the grainrate original here and move the dailizing and scaling in the Trainning program
+            # can leave the gainrate original here and move the dailizing and scaling in the Trainning program
             # print(df)
             # df[df <0] = 0
             # df[df >1] = 1
@@ -2664,7 +2664,7 @@ class ShortSwingScanner(OfflineSimulator):
                 if i >0: dgr /= i
                 dailizedGainRates.append(dgr)
 
-            # sample code on how to classify the grainRates
+            # sample code on how to classify the gainRates
             gainRateL, gainRateS = dailizedGainRates[self._daysLong-1], dailizedGainRates[self._daysShort-1]
             gainClassL, gainClassS= 0, 0
             for redge in ShortSwingScanner.DAILIZED_GAIN_PCTS:
@@ -2724,7 +2724,7 @@ class ShortSwingScanner(OfflineSimulator):
             st = g.create_dataset('state',  data= col_state, **h5args)
             st.attrs['f4schema'] = str(self._f4schema)
             ac = g.create_dataset('gainRates', data= col_gainRates, **h5args)
-            ac.attrs['desc'] = 'grain-rate(%%) in up to %d days, 0-means close-of-today' % col_gainRates.shape[1]
+            ac.attrs['desc'] = 'gain-rate(%%) in up to %d days, 0-means close-of-today' % col_gainRates.shape[1]
             pr = g.create_dataset('ohlc', data= col_ohlc, **h5args)
             pr.attrs['desc'] = 'open-high-low-price so far in the day'
             

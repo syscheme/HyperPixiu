@@ -790,8 +790,8 @@ class PerspectiveGenerator(Iterable):
             EVENT_KLINE_1DAY: None,
         }
 
-    def adaptReader(self, reader, grainedEvent = EVENT_KLINE_1MIN):
-        self._readers[grainedEvent] = reader
+    def adaptReader(self, reader, gained = EVENT_KLINE_1MIN):
+        self._readers[gained] = reader
 
     # -- impl of Iterable --------------------------------------------------------------
     def resetRead(self):

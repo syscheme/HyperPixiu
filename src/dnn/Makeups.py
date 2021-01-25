@@ -608,7 +608,7 @@ class Model88_sliced2d(Model88) :
         if not self.model: return False
 
         # because the saving steps may throw exception, so borrow tmpfile to ensure not damage the previous model until saving gets succ
-        tmpfile = filepath + '.~%d' % self.program.pid if self.program else ''
+        tmpfile = filepath + '.%s' % self.program.pid if self.program else 'tmp'
         with h5py.File(tmpfile, 'w') as h5f:
             # step 1. save json model in h5f['model_config']
             # NEVER here: model_json = self.model.to_json()

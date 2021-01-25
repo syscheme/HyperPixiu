@@ -114,8 +114,8 @@ class Trainer_classify(BaseApplication):
         self.__chunksReadAhead = []
         self.__newChunks =[]
         self.__recycledChunks =[]
-        self.__convertFrame = self.__frameToBatchs
-        self.__filterFrame  = None if self._preBalanced else self.__balanceSamples
+        self._funcConvertFrame = self.__frameToBatchs
+        self._funcFilterFrame  = None if self._preBalanced else self.__balanceSamples
 
         self.__latestBthNo=0
         self.__totalAccu, self.__totalEval, self.__totalSamples, self.__stampRound = 0.0, 0, 0, datetime.now()
@@ -297,7 +297,7 @@ class Trainer_classify(BaseApplication):
 
     def doAppStep_keras_slice2dataset(self):
 
-        self.__convertFrame = self.__frameToSlices
+        self._funcConvertFrame = self.__frameToSlices
         result, histEpochs = None, []
         self.refreshPool()
 
@@ -324,7 +324,7 @@ class Trainer_classify(BaseApplication):
 
     def doAppStep_keras_datasetPool(self):
 
-        self.__convertFrame = self.__frameToDatasets
+        self._funcConvertFrame = self.__frameToDatasets
         result, histEpochs = None, []
         self.refreshPool()
 
@@ -794,8 +794,8 @@ class Trainer_classify(BaseApplication):
         self.debug('readAhead(%s) read %s samples from %s@%s' % (thrdSeqId, lenFrame, nextFrameName, h5fileName) )
         cvnted = frameDict
         try :
-            if self.__convertFrame :
-                cvnted = self.__convertFrame(frameDict)
+            if self._funcConvertFrame :
+                cvnted = self._funcConvertFrame(frameDict)
                 self.debug('readAhead(%s) converted %s samples of %s@%s into %s chunks' % (thrdSeqId, lenFrame, nextFrameName, h5fileName, len(cvnted)) )
         except Exception as ex:
             self.logexception(ex)
@@ -841,14 +841,14 @@ class Trainer_classify(BaseApplication):
             cvnted = frameDict
             nAfterFilter = lenFrame
             try :
-                if self.__filterFrame :
-                    nAfterFilter = self.__filterFrame(frameDict)
+                if self._funcFilterFrame :
+                    nAfterFilter = self._funcFilterFrame(frameDict)
             except Exception as ex:
                 self.logexception(ex)
 
             try :
-                if self.__convertFrame :
-                    cvnted = self.__convertFrame(frameDict)
+                if self._funcConvertFrame :
+                    cvnted = self._funcConvertFrame(frameDict)
             except Exception as ex:
                 self.logexception(ex)
 
@@ -881,7 +881,7 @@ class Trainer_classify(BaseApplication):
 
     def __generator_local(self):
 
-        self.__convertFrame = self.__frameToBatchs
+        self._funcConvertFrame = self.__frameToBatchs
 
         # build up self.__samplePool
         self.__samplePool = {
@@ -994,27 +994,67 @@ class Trainer_classify(BaseApplication):
                 self.info('doAppStep_local_generator() %s epochs on recycled %dN+%dR samples took %s, hist: %s' % (strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
                 skippedSaves +=1
     
-    # #----------------------------------------------------------------------
-    # def createModel(self, modelId, knownModels=None):
-    #     if not knownModels:
-    #         knownModels = self.__knownModels_1D
+'''
+########################################################################
+class Trainer_GainRates(Trainer_classify) :
 
-    #     if not modelId in knownModels.keys():
-    #         self.warn('unknown modelId[%s], taking % instead' % (modelId, Trainer_classify.DEFAULT_MODEL))
-    #         modelId = Trainer_classify.DEFAULT_MODEL
+    def __init__(self, program, **kwargs):
+        super(Trainer_GainRates, self).__init__(program, **kwargs)
 
+        self._colnameSamples      = 'state'
+        self._colnameClasses      = 'gain_rates'
 
-    #     if len(GPUs) <= 1:
-    #         return knownModels[modelId](), modelId
+        # self._confXXXX     = self.getConfig('XXXX', None)
+        self._funcConvertFrame = self.__frameToBatchs
+        self._funcFilterFrame  = None
 
-    #     with tf.device("/cpu:0"):
-    #         return knownModels[modelId](), modelId
+    def classifyGainRateOfFrameToBatchs(self, frameDict):
 
-    # def exportLayerWeights(self):
-    #     h5fileName = os.path.join(self.outdir, '%s.nonTrainables.h5'% self.__wkModelId)
-    #     self.debug('exporting weights of layers[%s] into file %s' % (','.join(self._nonTrainables), h5fileName))
-    #     lns = exportLayerWeights(self._brain, h5fileName, self._nonTrainables)
-    #     self.info('exported weights of layers[%s] into file %s' % (','.join(lns), h5fileName))
+        gainRates = frameDict['gain_rates'].astype('float')
+        days = gainRates.shape[1]
+        gainRates = gainRates[:, :, [0,1,days-1]] # we only interest day0, day1 and dayN
+        # dailize the gain rate, by skipping day0 and day1
+        gainRates[:, :, 2] = gainRates[:, :, 2] /(days-1)
+        
+        # scaling the gain rate to fit in [0,1) : 0 maps -2%, 1 maps +8%
+        SCALE, OFFSET =10, 0.02
+        gainRates = (gainRates + OFFSET) *SCALE
+        gainRates.clip(0.0, 1.0)
+
+        gainClasses = np.zeros(shape=gainRates.shape)
+
+        LC = [ -2.0, 0.5, 2.0, 5.0, 8.0 ] # by %
+        C = np.where(gainRates < 0.001) # class1 <= -2%
+        gainClasses[C] =0
+
+        for i in range(len(LC) -1):
+            L, U = (LC[i]/100.0+ OFFSET) *SCALE, (LC[1 + i]/100.0+ OFFSET) *SCALE
+            C = np.where((gainRates >L) & (gainRates <=U))
+            gainClasses[C] = 1+i
+
+        L = (LC[-1]/100.0+ OFFSET) *SCALE
+        C = np.where(gainRates >L)
+        gainClasses[C] = 1+ len(LC)
+
+        gainClasses = gainClasses.reshape(gainClasses.shape[0], 1, gainClasses.shape[1] *gainClasses.shape[2])[0] # classes in 1-D
+
+        
+        # to shuffle within the frame
+        shuffledIndx =[i for i in range(framelen)]
+        random.shuffle(shuffledIndx)
+
+        bths = []
+        cBth = framelen // self._batchSize
+        for i in range(cBth):
+            batch = {}
+            for col in COLS :
+                # batch[col] = np.array(frameDict[col][self._batchSize*i: self._batchSize*(i+1)]).astype(NN_FLOAT)
+                batch[col] = np.array([frameDict[col][j] for j in shuffledIndx[self._batchSize*i: self._batchSize*(i+1)]]).astype(NN_FLOAT)
+            
+            bths.append(batch)
+
+        return bths
+'''
 
 
 ########################################################################

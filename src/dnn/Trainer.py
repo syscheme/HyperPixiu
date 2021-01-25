@@ -38,7 +38,7 @@ from time import sleep
 import h5py, tarfile, pickle, fnmatch
 import numpy as np
 
-GPUs = BaseModel.list_GPUs()
+CPUs, GPUs = BaseModel.list_processors()
 if len(GPUs) >1:
     from keras.utils.training_utils import multi_gpu_model
 
@@ -76,7 +76,7 @@ class Trainer_classify(BaseApplication):
         self._recycleSize         = 1
         self._initEpochs          = 2
         self._lossStop            = 0.24 # 0.24 according to average loss value by： grep 'from eval' /mnt/d/tmp/replayTrain_14276_0106.log |sed 's/.*loss\[\([^]]*\)\].*/\1/g' | awk '{ total += $1; count++ } END { print total/count }'
-        self._lossPctStop         = 5
+        self._lossDiffStop        = 5 # 5% difference
         self._startLR             = 0.01
         
         self.__readTraingConfigBlock('CPU')
@@ -145,7 +145,7 @@ class Trainer_classify(BaseApplication):
             self._recycleSize         = configNode.get('recycles', self._recycleSize)
             self._initEpochs          = configNode.get('initEpochs', self._initEpochs)
             self._lossStop            = configNode.get('lossStop', self._lossStop) 
-            self._lossPctStop         = configNode.get('lossPctStop', self._lossStop)
+            self._lossDiffStop        = configNode.get('lossDiffStop', self._lossDiffStop)
             self._startLR             = configNode.get('startLR', self._startLR)
 
     #----------------------------------------------------------------------
@@ -897,7 +897,7 @@ class Trainer_classify(BaseApplication):
         lossMax = loss
         idxBatchInPool =int(DUMMY_BIG_VAL)
         skippedSaves =0
-        while True : #TODO temporarily loop for ever: lossMax > self._lossStop or abs(loss-lossMax) > (lossMax * self._lossPctStop/100) :
+        while True : #TODO temporarily loop for ever: lossMax > self._lossStop or abs(loss-lossMax) > (lossMax * self._lossDiffStop/100) :
 
             bths_Samples, bths_Classes =[], []
             cFresh, cRecycled = 0, 0
@@ -970,9 +970,9 @@ class Trainer_classify(BaseApplication):
                     if len(result.history["loss"]) >1 :
                         lossImprove = result.history["loss"][-2] - loss
 
-                    if sampledAhead and loss > self._lossStop and lossImprove > (loss * self._lossPctStop/100) :
+                    if sampledAhead and loss > self._lossStop and lossImprove > (loss * self._lossDiffStop/100) :
                         epochs = epochs2run
-                        if lossImprove > (loss * self._lossPctStop *2 /100) :
+                        if lossImprove > (loss * self._lossDiffStop *2 /100) :
                             epochs += int(epochs2run/2)
 
                     if lossMax>=DUMMY_BIG_VAL-1 or lossMax < loss: lossMax = loss

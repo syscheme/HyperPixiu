@@ -54,12 +54,19 @@ class BaseModel(object) :
     'metrics':['accuracy']
     }
 
-    def list_GPUs() :
+    def list_processors() :
         from tensorflow.python.client import device_lib
         local_device_protos = device_lib.list_local_devices()
-        return [{'name':x.name, 'detail':x.physical_device_desc } for x in local_device_protos if 'GPU' == x.device_type]
+        CPUs, GPUs = [], []
+        for x in local_device_protos :
+            if 'GPU' == x.device_type :
+                GPUs.append({'name':x.name, 'detail':x.physical_device_desc })
+            elif 'CPU' == x.device_type :
+                CPUs.append({'name':x.name, 'detail':x.physical_device_desc })
 
-    GPUs = list_GPUs()
+        return CPUs, GPUs
+
+    CPUs, GPUs = list_processors()
 
     def __init__(self, **kwargs):
         self._dnnModel = None

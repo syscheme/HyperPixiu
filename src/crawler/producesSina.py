@@ -2,7 +2,7 @@
 
 from __future__ import division
 
-from Simulator import IdealTrader_Tplus1, ShortSwingScanner, SAMPLES_PER_H5FRAME
+from Simulator import IdealTrader_Tplus1, SAMPLES_PER_H5FRAME # , ShortSwingScanner
 from EventData import Event, EventData
 from MarketData import *
 from Perspective import PerspectiveState
@@ -625,6 +625,7 @@ class Sina_Tplus1(IdealTrader_Tplus1):
     #  - def OnEpisodeDone(self, reachedEnd=True)
     #  - def doAppStep(self)
 
+"""
 ########################################################################
 class SinaSwingScanner(ShortSwingScanner):
     '''
@@ -650,7 +651,7 @@ class SinaSwingScanner(ShortSwingScanner):
             return False
 
         return True
-
+"""
 
 ########################################################################
 # utility funcs

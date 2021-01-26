@@ -2443,7 +2443,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
                     latestDir = advice.dirString()
                     self.__adviceSeq.append(copy.copy(advice))
 
-
+"""
 ########################################################################
 class ShortSwingScanner(OfflineSimulator):
     '''
@@ -2730,3 +2730,4 @@ class ShortSwingScanner(OfflineSimulator):
             
         self.info('saved %s with %s samples into file %s with sig[%s]' % (frameId, len(col_state), self._h5filename, self.ident))
 
+"""

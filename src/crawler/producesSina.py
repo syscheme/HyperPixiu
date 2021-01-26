@@ -13,6 +13,7 @@ import h5tar, h5py, pickle, bz2
 from datetime import datetime, timedelta
 from time import sleep
 import os, copy
+from io import StringIO
 import fnmatch
 
 def defaultNextYield(retryNo) :
@@ -791,13 +792,40 @@ def archiveWeek(dirArchived, symbols, dtInWeek=None, prog=None):
                 memName = '%s_%s%s.json' %(symbol, evt1ds[i], yymmdd)
                 try :
                     lines = ''
+                    os.stat(fn) # check if file exists
                     lines = h5tar.read_utf8(fn, memName)
-                    if lines and len(lines) >0 :
-                        json1ds[i] = lines
-                        jsonName1ds[i] = memName
-                        readtxn.append('%s(%dB)@%s' % (memName, len(lines), fn))
-                except:
-                    if prog: prog.error('archiveWeek() failed to read %s from %s' % (memName, fn))
+                    if not lines or len(lines) <=0 : continue
+
+                    # # IF save the json directly, can be removed
+                    # json1ds[i] = lines
+                    # jsonName1ds[i] = memName
+                    # # ENDIF
+
+                    memName = '%s/%s_%s%s.csv' % (evt1ds[i], symbol, evt1ds[i], yymmdd)
+                    fcsv = StringIO()
+                    colnames = []
+                    edseq = []
+                    if 'KL1d' == evt1ds[i]:
+                        colnames = KLineData.COLUMNS
+                        edseq    = SinaCrawler.convertToKLineDatas(symbol, lines)
+                    elif 'MF1d' == evt1ds[i]:
+                        colnames = MoneyflowData.COLUMNS
+                        edseq    = SinaCrawler.convertToMoneyFlow(symbol, lines, False)
+                    
+                    if isinstance(colnames, str):
+                        colnames = colnames.split(',')
+
+                    fcsv.write(','.join(colnames) +'\r\n') # the head line
+                    for ed in edseq:
+                        row = ed.__dict__
+                        cols = [str(row[col]) for col in colnames]
+                        fcsv.write(','.join(cols) +'\r\n')
+
+                    strdata = fcsv.getvalue()
+                    h5tar.write_utf8(fnOut, memName, strdata, createmode='a')
+                    readtxn.append('%s(%dB)@%s' % (memName, len(lines), fn))
+                except Exception as ex:
+                    if prog: prog.logexception(ex, 'archiveWeek() failed to read %s from %s' % (memName, fn))
 
         # write the week into fnOut
         if linesMday and len(linesMday) >0:
@@ -852,10 +880,10 @@ if __name__ == '__main__':
     symbol = 'SZ002008'
 
     dtInWeek = datetime(year=2020, month=12, day=21) # a Monday
-    dtInWeek = datetime(year=2020, month=12, day=26) # a Satday
-    dtInWeek = datetime(year=2020, month=12, day=27) # a Sunday
-    # archiveWeek(dirArched, [symbol, 'SH510050'], dtInWeek, prog)
-    archiveWeek(dirArched, None, dtInWeek, prog)
+    # dtInWeek = datetime(year=2020, month=12, day=26) # a Satday
+    # dtInWeek = datetime(year=2020, month=12, day=27) # a Sunday
+    archiveWeek(dirArched, [symbol, 'SH510050'], dtInWeek, prog)
+    # archiveWeek(dirArched, None, dtInWeek, prog)
 
     alllines = readArchivedDays(prog, dirArched, symbol, ['20201221', '20201222'])
     # print(alllines)

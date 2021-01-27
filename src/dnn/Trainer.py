@@ -30,13 +30,14 @@ from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 from tensorflow.keras import backend as backend # from tensorflow.keras import backend
 # import tensorflow.keras.engine.saving as saving # import keras.engine.saving as saving
 import tensorflow as tf
+import numpy as np
 
 import sys, os, platform, random, copy, threading
 from datetime import datetime
 from time import sleep
 
 import h5py, tarfile, pickle, fnmatch
-import numpy as np
+import shutil
 
 CPUs, GPUs = BaseModel.list_processors()
 if len(GPUs) >1:
@@ -364,10 +365,14 @@ class Trainer_classify(BaseApplication):
     def __logAndSaveResult(self, resFinal, methodName, notes=''):
         if not notes or len(notes) <0: notes=''
 
-        fn_trained = os.path.join(self.outdir, '%s_trained%d.h5' %(self.__wkModelId, self.program.pid) )
-        self._brain.save(fn_trained)
-
-        self.info('%s() saved trained as %s, result[%s] %s' % (methodName, fn_trained, resFinal, notes))
+        try:
+            # because the saving steps may throw exceptions and the saved h5 could be damaged/incompleted, so take two steps to keep good one as XXXX_trained-last.h5
+            fn_trained = os.path.join(self.outdir, '%s_trained.%d.h5' %(self.__wkModelId, self.program.pid) )
+            if self._brain.save(fn_trained) :
+                shutil.copyfile(fn_trained, os.path.join(self.outdir, '%s_trained-last.h5' % self.__wkModelId) )
+                self.info('%s() saved trained as %s, result[%s] %s' % (methodName, fn_trained, resFinal, notes))
+        except Exception as ex:
+            self.logexception('%s() save trained', ex)
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------

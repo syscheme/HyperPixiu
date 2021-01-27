@@ -474,9 +474,9 @@ class Trainer_classify(BaseApplication):
             # for i in range(cFramesToRead) :
             #     self.__readAhead(thrdSeqId=i)
             # Approach 2. the readAhead thread that read a list of frames
-            # self.__readAheadChunks(thrdSeqId=-1, cFramesToRead=cFramesToRead)
+            self.__readAheadChunks(thrdSeqId=-1, cFramesToRead=cFramesToRead)
             # Approach 3. the readAhead thread that create subthreads to read a sequence of frames
-            self.__readFramesAhead(thrdSeqId=-1, cFramesToRead=cFramesToRead)
+            # self.__readFramesAhead(thrdSeqId=-1, cFramesToRead=cFramesToRead)
 
         with self.__lock:
             self.__newChunks, self.__samplesFrom = self.__chunksReadAhead, self.__framesReadAhead
@@ -490,10 +490,10 @@ class Trainer_classify(BaseApplication):
             #     thrd.start()
 
             # Approach 2. kickoff a readAhead thread to read a list of frames
-            # thrd = threading.Thread(target=self.__readAheadChunks, kwargs={'thrdSeqId': 0, 'cFramesToRead': cFramesToRead } )
+            thrd = threading.Thread(target=self.__readAheadChunks, kwargs={'thrdSeqId': 0, 'cFramesToRead': cFramesToRead } )
 
             # Approach 3. the readAhead thread that create subthreads to read a sequence of frames
-            thrd = threading.Thread(target=self.__readFramesAhead, kwargs={'thrdSeqId': 0, 'cFramesToRead': cFramesToRead } )
+            # thrd = threading.Thread(target=self.__readFramesAhead, kwargs={'thrdSeqId': 0, 'cFramesToRead': cFramesToRead } )
             self.__thrdsReadAhead[0] =thrd
             thrd.start()
 
@@ -553,8 +553,8 @@ class Trainer_classify(BaseApplication):
 
         if not ret and not self.__chunksReadAhead or len(self.__chunksReadAhead) <=0:
             self.warn('nextDataChunk() no readAhead ready, force to read sync-ly')
-            # self.__readAheadChunks(thrdSeqId=-1, cFramesToRead=self._batchesPerTrain) # cFramesToRead=cFrames)
-            self.__readFramesAhead(thrdSeqId=-1, cFramesToRead=self._batchesPerTrain)
+            self.__readAheadChunks(thrdSeqId=-1, cFramesToRead=self._batchesPerTrain) # cFramesToRead=cFrames)
+            # self.__readFramesAhead(thrdSeqId=-1, cFramesToRead=self._batchesPerTrain)
 
         szRecycled = 0
         with self.__lock:
@@ -570,8 +570,8 @@ class Trainer_classify(BaseApplication):
                 bRecycled = False
             szRecycled = len(self.__recycledChunks)
 
-            # thrd = threading.Thread(target=self.__readAheadChunks, kwargs={'thrdSeqId': 0, 'cFramesToRead': self._batchesPerTrain } ) # kwargs={'thrdSeqId': 0, 'cFramesToRead': cFramesToRead } )
-            thrd = threading.Thread(target=self.__readFramesAhead, kwargs={'thrdSeqId': 0, 'cFramesToRead': self._batchesPerTrain } ) # kwargs={'thrdSeqId': 0, 'cFramesToRead': cFramesToRead } )
+            thrd = threading.Thread(target=self.__readAheadChunks, kwargs={'thrdSeqId': 0, 'cFramesToRead': self._batchesPerTrain } ) # kwargs={'thrdSeqId': 0, 'cFramesToRead': cFramesToRead } )
+            # thrd = threading.Thread(target=self.__readFramesAhead, kwargs={'thrdSeqId': 0, 'cFramesToRead': self._batchesPerTrain } ) # kwargs={'thrdSeqId': 0, 'cFramesToRead': cFramesToRead } )
 
             self.__thrdsReadAhead[0] =thrd
             thrd.start()
@@ -840,7 +840,6 @@ class Trainer_classify(BaseApplication):
     #     self.info('readAhead(%s) prepared %s->%s x%s s/bth from %s took %s, %d frames await' % 
     #         (thrdSeqId, addSize, raSize, self._batchSize, nextFrameName, str(datetime.now() - stampStart), awaitSize))
 
-    """
     def __readAheadChunks(self, thrdSeqId=0, cFramesToRead=1):
         '''
         the background thread to read a number of frames from H5 files
@@ -1030,7 +1029,7 @@ class Trainer_classify(BaseApplication):
             self.logexception(ex)
 
         stampProcessed = datetime.now()
-        self.debug('readAheadChunks(%s) filtered %s from %s samples and converted into %s chunks, took %s + %s' % (thrdSeqId, nAfterFilter, lenFrame, len(cvnted), stampFiltered -stampRead, stampProcessed -stampFiltered) )
+        self.debug('readFramesAhead(%s) filtered %s from %s samples and converted into %s chunks, took %s + %s' % (thrdSeqId, nAfterFilter, lenFrame, len(cvnted), stampFiltered -stampRead, stampProcessed -stampFiltered) )
 
         with self.__lock:
             size =1
@@ -1054,9 +1053,11 @@ class Trainer_classify(BaseApplication):
             if thrdSeqId>=0 and thrdSeqId < len(self.__thrdsReadAhead) :
                 self.__thrdsReadAhead[thrdSeqId] = None
 
-        self.info('readAheadChunks(%s) took %s (%s +%s +%s) to prepare %s->%s x%s s/bth from %d frames:%s; %d frames await' % 
+        self.info('readFramesAhead(%s) took %s (%s +%s +%s) to prepare %s->%s x%s s/bth from %d frames:%s; %d frames await' % 
             (thrdSeqId, str(datetime.now() - stampStart), str(stampRead -stampStart), str(stampFiltered -stampRead), str(stampProcessed -stampFiltered),
             addSize, raSize, self._batchSize, len(strFrames), ','.join(strFrames), awaitSize))
+
+    """
 
     def __generator_local(self):
 

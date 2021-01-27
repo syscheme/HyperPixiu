@@ -36,8 +36,16 @@ import sys, os, platform, random, copy, threading
 from datetime import datetime
 from time import sleep
 
-import h5py, tarfile, pickle, fnmatch
+import tarfile, pickle, fnmatch
 import shutil
+
+import h5py
+H5_OPEN_ARGS={}
+try:
+    # https://docs.h5py.org/en/stable/mpi.html
+    from mpi4py import MPI # on CentOS: yum install openmpi-devel; export CC=/usr/lib64/openmpi/bin/mpicc; pip3 install mpi4py
+    H5_OPEN_ARGS={'driver':'mpio', 'comm': MPI.COMM_WORLD}
+except: pass
 
 CPUs, GPUs = BaseModel.list_processors()
 if len(GPUs) >1:
@@ -70,6 +78,7 @@ class Trainer_classify(BaseApplication):
         self._stepMethod          = self.getConfig('stepMethod', None)
         self._exportTB            = self.getConfig('tensorBoard', 'no').lower() in BOOL_STRVAL_TRUE
         self._repeatsInFile       = self.getConfig('repeatsInFile', 0)
+        self._readAheadThrds      = self.getConfig('readAheads', 3)
 
         # training config block, default as CPU
         self._batchSize           = 128
@@ -447,14 +456,14 @@ class Trainer_classify(BaseApplication):
                 self.warn('refreshPool() readAhead thread is still running, waiting for its completion')
                 thrdBusy.join()
 
-        cChunks=0
+        cFramesToRead=0
         with self.__lock:
             if self._frameSize >0:
-                cChunks = ((self.__maxChunks * self._batchesPerTrain * self._batchSize) + self._frameSize -1) // self._frameSize
-            if cChunks<=0: cChunks =1
-            cChunks =int(cChunks)
+                cFramesToRead = ((self.__maxChunks * self._batchesPerTrain * self._batchSize) + self._frameSize -1) // self._frameSize
+            if cFramesToRead<=0: cFramesToRead =1
+            cFramesToRead =int(cFramesToRead)
 
-            self.__thrdsReadAhead = [None] * cChunks
+            self.__thrdsReadAhead = [None] * cFramesToRead
 
         if not self.__chunksReadAhead or len(self.__chunksReadAhead) <=0:
             self.warn('refreshPool() no readAhead ready, force to read sync-ly')
@@ -462,10 +471,12 @@ class Trainer_classify(BaseApplication):
             # !!!!TODO:
             # !!!!TODO: h5py is thread-unsafe for multithread to read a same h5 file, so group frame-to-read into thread
             # !!!!TODO:
-            # for i in range(cChunks) :
+            # for i in range(cFramesToRead) :
             #     self.__readAhead(thrdSeqId=i)
             # Approach 2. the readAhead thread that read a list of frames
-            self.__readAheadChunks(thrdSeqId=-1, cChunks=cChunks)
+            # self.__readAheadChunks(thrdSeqId=-1, cFramesToRead=cFramesToRead)
+            # Approach 3. the readAhead thread that create subthreads to read a sequence of frames
+            self.__readFramesAhead(thrdSeqId=-1, cFramesToRead=cFramesToRead)
 
         with self.__lock:
             self.__newChunks, self.__samplesFrom = self.__chunksReadAhead, self.__framesReadAhead
@@ -473,18 +484,21 @@ class Trainer_classify(BaseApplication):
             self.debug('refreshPool() pool refreshed from readAhead: %s x(%s bth/c, %s samples/bth), reset readAhead to %d and kicking off new round of read-ahead' % (len(self.__newChunks), self._batchesPerTrain, self._batchSize, len(self.__chunksReadAhead)))
 
             # # Approach 1. kickoff multiple readAhead threads to read one frame each
-            # for i in range(cChunks) :
+            # for i in range(cFramesToRead) :
             #     thrd = threading.Thread(target=self.__readAhead, kwargs={'thrdSeqId': i} )
             #     self.__thrdsReadAhead[i] =thrd
             #     thrd.start()
 
             # Approach 2. kickoff a readAhead thread to read a list of frames
-            thrd = threading.Thread(target=self.__readAheadChunks, kwargs={'thrdSeqId': 0, 'cChunks': cChunks } )
+            # thrd = threading.Thread(target=self.__readAheadChunks, kwargs={'thrdSeqId': 0, 'cFramesToRead': cFramesToRead } )
+
+            # Approach 3. the readAhead thread that create subthreads to read a sequence of frames
+            thrd = threading.Thread(target=self.__readFramesAhead, kwargs={'thrdSeqId': 0, 'cFramesToRead': cFramesToRead } )
             self.__thrdsReadAhead[0] =thrd
             thrd.start()
 
         newsize = self.chunksInPool
-        self.info('refreshPool() pool refreshed from readAhead: %s x(%s bth/c, %s samples/bth) from %s; %s readahead started' % (newsize, self._batchesPerTrain, self._batchSize, ','.join(self.__samplesFrom), cChunks))
+        self.info('refreshPool() pool refreshed from readAhead: %s x(%s bth/c, %s samples/bth) from %s; %s readahead started' % (newsize, self._batchesPerTrain, self._batchSize, ','.join(self.__samplesFrom), cFramesToRead))
         return newsize
 
     def readDataChunk(self, chunkNo):
@@ -539,7 +553,8 @@ class Trainer_classify(BaseApplication):
 
         if not ret and not self.__chunksReadAhead or len(self.__chunksReadAhead) <=0:
             self.warn('nextDataChunk() no readAhead ready, force to read sync-ly')
-            self.__readAheadChunks(thrdSeqId=-1, cChunks=self._batchesPerTrain) # cChunks=cFrames)
+            # self.__readAheadChunks(thrdSeqId=-1, cFramesToRead=self._batchesPerTrain) # cFramesToRead=cFrames)
+            self.__readFramesAhead(thrdSeqId=-1, cFramesToRead=self._batchesPerTrain)
 
         szRecycled = 0
         with self.__lock:
@@ -555,7 +570,9 @@ class Trainer_classify(BaseApplication):
                 bRecycled = False
             szRecycled = len(self.__recycledChunks)
 
-            thrd = threading.Thread(target=self.__readAheadChunks, kwargs={'thrdSeqId': 0, 'cChunks': self._batchesPerTrain } ) # kwargs={'thrdSeqId': 0, 'cChunks': cChunks } )
+            # thrd = threading.Thread(target=self.__readAheadChunks, kwargs={'thrdSeqId': 0, 'cFramesToRead': self._batchesPerTrain } ) # kwargs={'thrdSeqId': 0, 'cFramesToRead': cFramesToRead } )
+            thrd = threading.Thread(target=self.__readFramesAhead, kwargs={'thrdSeqId': 0, 'cFramesToRead': self._batchesPerTrain } ) # kwargs={'thrdSeqId': 0, 'cFramesToRead': cFramesToRead } )
+
             self.__thrdsReadAhead[0] =thrd
             thrd.start()
 
@@ -762,7 +779,7 @@ class Trainer_classify(BaseApplication):
         try :
             # reading the frame from the h5
             self.debug('readAhead() reading %s of %s' % (frameName, h5fileName))
-            with h5py.File(h5fileName, 'r') as h5f:
+            with h5py.File(h5fileName, 'r', **H5_OPEN_ARGS) as h5f:
                 frame = h5f[frameName] # h5f[RFGROUP_PREFIX + frameName]
 
                 for col in COLS :
@@ -774,56 +791,57 @@ class Trainer_classify(BaseApplication):
 
         return frameDict
 
-    def __readAhead(self, thrdSeqId=0):
-        '''
-        the background thread to read A frame from H5 file
-        reading H5 only works on CPU and is quite slow, so take a seperate thread to read-ahead
-        '''
-        stampStart = datetime.now()
-        frameDict = None
+    # def __readAhead(self, thrdSeqId=0):
+    #     '''
+    #     the background thread to read A frame from H5 file
+    #     reading H5 only works on CPU and is quite slow, so take a seperate thread to read-ahead
+    #     '''
+    #     stampStart = datetime.now()
+    #     frameDict = None
 
-        while True:
-            try :
-                h5fileName, nextFrameName, awaitSize = self.__nextFrameName(True)
-                if not nextFrameName or len(nextFrameName) <=0:
-                    self.error('readAhead(%s) failed to get nextFrameName' % (thrdSeqId) )
-                    return
+    #     while True:
+    #         try :
+    #             h5fileName, nextFrameName, awaitSize = self.__nextFrameName(True)
+    #             if not nextFrameName or len(nextFrameName) <=0:
+    #                 self.error('readAhead(%s) failed to get nextFrameName' % (thrdSeqId) )
+    #                 return
 
-                frameDict = self.readFrame(h5fileName, nextFrameName)
-                if frameDict and len(frameDict) >0: break
-            except Exception as ex:
-                thePROG.logexception(ex, 'ssh failed')
+    #             frameDict = self.readFrame(h5fileName, nextFrameName)
+    #             if frameDict and len(frameDict) >0: break
+    #         except Exception as ex:
+    #             thePROG.logexception(ex, 'ssh failed')
         
-        lenFrame= 0
-        for v in frameDict.values() :
-            lenFrame = len(v)
-            break
+    #     lenFrame= 0
+    #     for v in frameDict.values() :
+    #         lenFrame = len(v)
+    #         break
 
-        self.debug('readAhead(%s) read %s samples from %s@%s' % (thrdSeqId, lenFrame, nextFrameName, h5fileName) )
-        cvnted = frameDict
-        try :
-            if self._funcConvertFrame :
-                cvnted = self._funcConvertFrame(frameDict)
-                self.debug('readAhead(%s) converted %s samples of %s@%s into %s chunks' % (thrdSeqId, lenFrame, nextFrameName, h5fileName, len(cvnted)) )
-        except Exception as ex:
-            self.logexception(ex)
+    #     self.debug('readAhead(%s) read %s samples from %s@%s' % (thrdSeqId, lenFrame, nextFrameName, h5fileName) )
+    #     cvnted = frameDict
+    #     try :
+    #         if self._funcConvertFrame :
+    #             cvnted = self._funcConvertFrame(frameDict)
+    #             self.debug('readAhead(%s) converted %s samples of %s@%s into %s chunks' % (thrdSeqId, lenFrame, nextFrameName, h5fileName, len(cvnted)) )
+    #     except Exception as ex:
+    #         self.logexception(ex)
 
-        addSize, raSize=0, 0
-        with self.__lock:
-            self.__thrdsReadAhead[thrdSeqId] = None
+    #     addSize, raSize=0, 0
+    #     with self.__lock:
+    #         self.__thrdsReadAhead[thrdSeqId] = None
 
-            if isinstance(cvnted, list) :
-                self.__chunksReadAhead += cvnted
-                addSize, raSize = len(cvnted), len(self.__chunksReadAhead)
-            else:
-                self.__chunksReadAhead.append(cvnted)
-                addSize, raSize = 1, len(self.__chunksReadAhead)
+    #         if isinstance(cvnted, list) :
+    #             self.__chunksReadAhead += cvnted
+    #             addSize, raSize = len(cvnted), len(self.__chunksReadAhead)
+    #         else:
+    #             self.__chunksReadAhead.append(cvnted)
+    #             addSize, raSize = 1, len(self.__chunksReadAhead)
 
-        frameDict, cvnted = None, None
-        self.info('readAhead(%s) prepared %s->%s x%s s/bth from %s took %s, %d frames await' % 
-            (thrdSeqId, addSize, raSize, self._batchSize, nextFrameName, str(datetime.now() - stampStart), awaitSize))
+    #     frameDict, cvnted = None, None
+    #     self.info('readAhead(%s) prepared %s->%s x%s s/bth from %s took %s, %d frames await' % 
+    #         (thrdSeqId, addSize, raSize, self._batchSize, nextFrameName, str(datetime.now() - stampStart), awaitSize))
 
-    def __readAheadChunks(self, thrdSeqId=0, cChunks=1):
+    """
+    def __readAheadChunks(self, thrdSeqId=0, cFramesToRead=1):
         '''
         the background thread to read a number of frames from H5 files
         reading H5 only works on CPU and is quite slow, so take a seperate thread to read-ahead
@@ -833,9 +851,9 @@ class Trainer_classify(BaseApplication):
         awaitSize =-1
         addSize, raSize=0, 0
 
-        self.debug('readAheadChunks(%s) reading samples for %d chunks x %ds/chunk' % (thrdSeqId, cChunks, self._batchSize) )
+        self.debug('readAheadChunks(%s) reading samples for %d frames x %ds/chunk' % (thrdSeqId, cFramesToRead, self._batchSize) )
 
-        while cChunks >0 :
+        while cFramesToRead >0 :
 
             h5fileName, nextFrameName, awaitSize = self.__nextFrameName(True)
             frameDict = self.readFrame(h5fileName, nextFrameName)
@@ -872,14 +890,161 @@ class Trainer_classify(BaseApplication):
                 if isinstance(cvnted, list) :
                     self.__chunksReadAhead += cvnted
                     size = len(cvnted)
-                    cChunks -= size
+                    cFramesToRead -= size
                 else:
                     self.__chunksReadAhead.append(cvnted)
-                    cChunks -= 1
+                    cFramesToRead -= 1
 
                 addSize += size
 
             frameDict, cvnted = None, None
+
+        with self.__lock:
+            raSize = len(self.__chunksReadAhead)
+            self.__framesReadAhead = strFrames
+            random.shuffle(self.__chunksReadAhead)
+
+            if thrdSeqId>=0 and thrdSeqId < len(self.__thrdsReadAhead) :
+                self.__thrdsReadAhead[thrdSeqId] = None
+
+        self.info('readAheadChunks(%s) took %s (%s +%s +%s) to prepare %s->%s x%s s/bth from %d frames:%s; %d frames await' % 
+            (thrdSeqId, str(datetime.now() - stampStart), str(stampRead -stampStart), str(stampFiltered -stampRead), str(stampProcessed -stampFiltered),
+            addSize, raSize, self._batchSize, len(strFrames), ','.join(strFrames), awaitSize))
+
+    """
+    
+    def __readFramesAhead(self, thrdSeqId =0, cFramesToRead=1):
+        '''
+        the background thread to read a number of frames from H5 files
+        reading H5 only works on CPU and is quite slow, so take a seperate thread to read-ahead
+        '''
+        stampStart = datetime.now()
+        strFrames =[]
+        awaitSize =-1
+        addSize, raSize=0, 0
+
+        self.debug('readFramesAhead(%s) reading samples for %d frames x %ds/chunk' % (thrdSeqId, cFramesToRead, self._batchSize) )
+        if cFramesToRead <1:
+            cFramesToRead =1
+        groupOfFrames = {} # dict filename to framenames
+        for i in range(cFramesToRead):
+            h5fileName, nextFrameName, awaitSize = self.__nextFrameName(True)
+            if h5fileName not in groupOfFrames:
+                groupOfFrames[h5fileName] =[]
+            groupOfFrames[h5fileName].append(nextFrameName)
+        
+        self._readAheadThrds = 3
+        framesByThreads = [ [] for i in range( min(len(groupOfFrames.keys()), self._readAheadThrds) ) ] # DO NOT: [ [] ] * min(len(groupOfFrames.keys()), self._readAheadThrds)
+        seqIdx = [x for x in range(len(framesByThreads))]
+
+        for k, v in groupOfFrames.items():
+            top = seqIdx[0]
+            framesByThreads[top] += [(k, i) for i in v]
+            seqIdx.sort(key=lambda x: len(framesByThreads[x]))
+
+        while len(framesByThreads) >0 and len(framesByThreads[0]) <=0:
+            del framesByThreads[0]
+
+        lkReadResult = threading.Lock()
+        readResult = {}
+        threads = [ None ] * len(framesByThreads)
+        # --------------------------------
+        # the sub-thread to read a sequnce of frame
+        def thrd_readFrameSeq(thrdId, frameSeq):
+            frmNames =['%s@%s' %(r, f) for f, r in frameSeq]
+            self.debug('readFramesAhead() subthrd[%s] starts reading %d frames: %s' % (thrdId, len(frmNames), ','.join(frmNames)))
+            
+            frmNames =[]
+            for filename, framename in frameSeq:
+                frmName = '%s@%s'% (framename, os.path.basename(filename))
+                sampleFrame = None
+                try :
+                    sampleFrame = self.readFrame(filename, framename)
+                except Exception as ex:
+                    pass
+
+                if not sampleFrame or len(sampleFrame) <=0:
+                    continue
+                
+                with lkReadResult:
+                    readResult[frmName] = sampleFrame
+                    self.debug('readFramesAhead() subthrd[%s] committed %s into readResult, result-size %d' % (thrdId, frmName, len(readResult)))
+                    frmNames.append(frmName)
+            
+            # finished, then unregister self from threads:
+            with lkReadResult:
+                if thrdId>=0:
+                    threads[thrdId] = None
+                self.info('readFramesAhead() subthrd[%s] done, read %d frames: %s' % (thrdId, len(frmNames), ','.join(frmNames)))
+
+        # kick of up to self._readAheadThrds threads, each to read a sequence of frames by affiniting filenames
+        for i in range(len(framesByThreads)) :
+            thrd = threading.Thread(target=thrd_readFrameSeq, kwargs={'thrdId': i, 'frameSeq': framesByThreads[i]} )
+            threads[i] =thrd
+            thrd.start()
+
+        # wait for all sub-threads get completed
+        while True:
+            thrdBusy = None
+            with lkReadResult:
+                for i in range(len(threads)):
+                    if threads[i] and threads[i].is_alive():
+                        thrdBusy = threads[i]
+                        break
+                    threads[i] =None
+        
+            if not thrdBusy: break
+                
+            self.info('readFramesAhead() waiting for busy-thread[%s]' %thrdBusy )
+            thrdBusy.join()
+        
+        # when reach here, all the sub threads of reading have completed, and frames are collected in readResult
+        # concate the readResult into a large chunk frameDict
+        stampRead = datetime.now()
+        self.info('readFramesAhead() all %d/%d subthrd done, collected %d frames, took %s' % (len(framesByThreads), self._readAheadThrds, len(readResult), (stampRead - stampStart)))
+
+        frameDict = {}
+        for fn, frm in readResult.items():
+            strFrames.append(fn)
+            for k, v in frm.items() :
+                if k not in frameDict :
+                    frameDict[k] = v
+                else:
+                    frameDict[k] = np.append(frameDict[k], v, axis=0)
+        readResult = None
+
+        lenFrame = len(frameDict[self._colnameClasses])
+        nAfterFilter = lenFrame
+        cvnted = frameDict
+        try :
+            if self._funcFilterFrame :
+                nAfterFilter = self._funcFilterFrame(frameDict)
+        except Exception as ex:
+            self.logexception(ex)
+
+        stampFiltered = datetime.now()
+        try :
+            if self._funcConvertFrame :
+                cvnted = self._funcConvertFrame(frameDict)
+        except Exception as ex:
+            self.logexception(ex)
+
+        stampProcessed = datetime.now()
+        self.debug('readAheadChunks(%s) filtered %s from %s samples and converted into %s chunks, took %s + %s' % (thrdSeqId, nAfterFilter, lenFrame, len(cvnted), stampFiltered -stampRead, stampProcessed -stampFiltered) )
+
+        with self.__lock:
+            size =1
+            if isinstance(cvnted, list) :
+                self.__chunksReadAhead += cvnted
+                size = len(cvnted)
+                cFramesToRead -= size
+            else:
+                self.__chunksReadAhead.append(cvnted)
+                cFramesToRead -= 1
+
+            addSize += size
+
+        frameDict, cvnted = None, None
 
         with self.__lock:
             raSize = len(self.__chunksReadAhead)

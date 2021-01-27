@@ -172,12 +172,12 @@ class KLineEx(KLineData):
 
         # the floats, prioirty first, recommented to be multiple of 4
         ret = [
-            # 1st-4
+            # 1st-4C
             floatNormalize_LOG10(self.close, baseline_Price),
             floatNormalize_LOG10(self.volume, baseline_Volume),
             floatNormalize_LOG10(self.high, baseline_Price),
             floatNormalize_LOG10(self.low, baseline_Price),
-            # 2nd-4
+            # 2nd-4C
             floatNormalize(0.5 + self.ratioNet),                         # priority-H2
             floatNormalize(0.5 + self.ratioR0),                          # priority-H3
             floatNormalize(0.5 + self.ratioR3cate),                      # likely r3=ratioNet-ratioR0

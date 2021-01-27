@@ -1061,7 +1061,7 @@ class Trainer_classify(BaseApplication):
 
     def __generator_local(self):
 
-        self._funcConvertFrame = self.__frameToBatchs
+        # DONOT self._funcConvertFrame = self.__frameToBatchs
 
         # build up self.__samplePool
         self.__samplePool = {
@@ -1174,7 +1174,6 @@ class Trainer_classify(BaseApplication):
                 self.info('doAppStep_local_generator() %s epochs on recycled %dN+%dR samples took %s, hist: %s' % (strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
                 skippedSaves +=1
     
-'''
 ########################################################################
 class Trainer_GainRates(Trainer_classify) :
 
@@ -1184,58 +1183,52 @@ class Trainer_GainRates(Trainer_classify) :
         self._colnameSamples      = 'state'
         self._colnameClasses      = 'gain_rates'
 
-        # self._confXXXX     = self.getConfig('XXXX', None)
-        self._funcConvertFrame = self.__frameToBatchs
+        #TODO: self._confXXXX     = self.getConfig('XXXX', None)
+
+        self._funcConvertFrame = self.classifyGainRateOfFrameToBatchs
         self._funcFilterFrame  = None
 
     def classifyGainRateOfFrameToBatchs(self, frameDict):
 
-        gainRates = frameDict['gain_rates'].astype('float')
+        gainRates = np.array(frameDict[self._colnameClasses]).astype(NN_FLOAT) #  'gain_rates' is a list here
         days = gainRates.shape[1]
-        gainRates = gainRates[:, :, [0,1,days-1]] # we only interest day0, day1 and dayN
+        gainRates = gainRates[:, [0,1,days-1]] # we only interest day0, day1 and dayN
         # dailize the gain rate, by skipping day0 and day1
-        gainRates[:, :, 2] = gainRates[:, :, 2] /(days-1)
+        gainRates[:, 2] = gainRates[:, 2] /(days-1)
         
-        # scaling the gain rate to fit in [0,1) : 0 maps -2%, 1 maps +8%
-        SCALE, OFFSET =10, 0.02
-        gainRates = (gainRates + OFFSET) *SCALE
-        gainRates.clip(0.0, 1.0)
+        # # scaling the gain rate to fit in [0,1) : 0 maps -2%, 1 maps +8%
+        # SCALE, OFFSET =10, 0.02
+        # gainRates = (gainRates + OFFSET) *SCALE
+        # gainRates.clip(0.0, 1.0)
 
-        gainClasses = np.zeros(shape=gainRates.shape)
+        LC = [-100, -2.0, 0.5, 2.0, 5.0, 8.0, 100 ] # by %, -100 means -INF, +100= +INF
+        gainClasses = np.zeros(shape=(gainRates.shape[0], 3 + (len(LC) -1) *2)).astype('int8') # 3classes for day0: <1%, 1~5%, >5%
+        C = np.where(gainRates[:, 0] <= 0.01)
+        gainClasses[C, 0] =1
 
-        LC = [ -2.0, 0.5, 2.0, 5.0, 8.0 ] # by %
-        C = np.where(gainRates < 0.001) # class1 <= -2%
-        gainClasses[C] =0
+        C = np.where((gainRates[:, 0] > 0.01) & (gainRates[:, 0] <=0.05))
+        gainClasses[C, 1] =1
+
+        C = np.where(gainRates[:, 0] > 0.05)
+        gainClasses[C, 2] =1
 
         for i in range(len(LC) -1):
-            L, U = (LC[i]/100.0+ OFFSET) *SCALE, (LC[1 + i]/100.0+ OFFSET) *SCALE
-            C = np.where((gainRates >L) & (gainRates <=U))
-            gainClasses[C] = 1+i
+            for j in [1, 2]:
+                C = np.where((gainRates[:, j] > LC[i]/100.0) & (gainRates[:, j] <= LC[i+1]/100.0))
+                gainClasses[C, 3 + (j-1)*(len(LC)-1) +i] =1
 
-        L = (LC[-1]/100.0+ OFFSET) *SCALE
-        C = np.where(gainRates >L)
-        gainClasses[C] = 1+ len(LC)
-
-        gainClasses = gainClasses.reshape(gainClasses.shape[0], 1, gainClasses.shape[1] *gainClasses.shape[2])[0] # classes in 1-D
-
-        
-        # to shuffle within the frame
-        shuffledIndx =[i for i in range(framelen)]
-        random.shuffle(shuffledIndx)
-
+        samples = np.array(frameDict[self._colnameSamples]).astype(NN_FLOAT)
         bths = []
-        cBth = framelen // self._batchSize
+        cBth = gainClasses.shape[0] // self._batchSize
         for i in range(cBth):
-            batch = {}
-            for col in COLS :
-                # batch[col] = np.array(frameDict[col][self._batchSize*i: self._batchSize*(i+1)]).astype(NN_FLOAT)
-                batch[col] = np.array([frameDict[col][j] for j in shuffledIndx[self._batchSize*i: self._batchSize*(i+1)]]).astype(NN_FLOAT)
-            
+            batch = {
+                self._colnameSamples : samples[i*self._batchSize : (i+1) *self._batchSize,],
+                self._colnameClasses : gainClasses[i*self._batchSize : (i+1) *self._batchSize,]
+            }
+
             bths.append(batch)
 
         return bths
-'''
-
 
 ########################################################################
 if __name__ == '__main__':
@@ -1279,7 +1272,7 @@ if __name__ == '__main__':
     p.info('all objects registered piror to Trainer_classify: %s' % p.listByType())
     
     # trainer = p.createApp(Trainer_classify, configNode ='Trainer_classify', replayFrameFiles=os.path.join(sourceCsvDir, 'RFrames_SH510050.h5'))
-    trainer = p.createApp(Trainer_classify, configNode ='train')
+    trainer = p.createApp(Trainer_classify, configNode ='train') # Trainer_GainRates
 
     p.start()
 

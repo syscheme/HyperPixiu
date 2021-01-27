@@ -19,7 +19,7 @@
             "batchesPerTrain": 32,
             "poolReuses": 0,
             "initEpochs": 2,
-            "startLR": 0.002, // start learningRate
+            "startLR": 0.005, // start learningRate
             // "lossDiffStop": 5, // loss reduce 5% difference to quit current epoch
             "lossStop": 0.25, // "lossStop": 0.1, --- loss value less than 0.1 to quit current epoch
         },
@@ -27,14 +27,14 @@
         "GPU": {
             "batchSize": 128,
             "batchesPerTrain": 64, // 512x64 for GTX1050/2G, 512x128 for GTX1060/4G
-            "recycles": 2,
-            "initEpochs": 6, // 8 when the model is not well trained, 4 when trained and try to cover larger dataset
+            "recycles": 1, // takes system memory instead of VRAM
+            "initEpochs": 8, // 8 when the model is not well trained, 4 when trained and try to cover larger dataset
             "startLR": 0.01,
 
             "models": [
                 { 
                     "model":"GTX 1650",
-                    "batchSize": 200, // float32 can reach 100, float16 can more than 200
+                    "batchSize": 400, // float32 can reach 100x64, float16 can reach 400x64
                     "batchesPerTrain": 64,
                 },
             ]

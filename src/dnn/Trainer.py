@@ -459,6 +459,9 @@ class Trainer_classify(BaseApplication):
         if not self.__chunksReadAhead or len(self.__chunksReadAhead) <=0:
             self.warn('refreshPool() no readAhead ready, force to read sync-ly')
             # # Approach 1. multiple readAhead threads to read one frame each
+            # !!!!TODO:
+            # !!!!TODO: h5py is thread-unsafe for multithread to read a same h5 file, so group frame-to-read into thread
+            # !!!!TODO:
             # for i in range(cChunks) :
             #     self.__readAhead(thrdSeqId=i)
             # Approach 2. the readAhead thread that read a list of frames
@@ -643,7 +646,7 @@ class Trainer_classify(BaseApplication):
         #     frameDict[self._colnameSamples]  = np.delete(frameDict[self._colnameSamples],  idxHolds, axis=0)
 
         AD = np.where(chunk_Classes >=0.99) # to match 1 because action is float read from RFrames
-        kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
+        kI = [np.count_nonzero(AD[1] ==i) for i in range(self._sampleClassSize)] # counts of each actions in frame
         kImax = max(kI)
         idxMax = kI.index(kImax)
         cToReduce = kImax - int(1.6*(sum(kI) -kImax))
@@ -841,8 +844,11 @@ class Trainer_classify(BaseApplication):
                 lenFrame = len(v)
                 break
 
-            self.debug('readAheadChunks(%s) read %s samples from %s@%s' % (thrdSeqId, lenFrame, nextFrameName, h5fileName) )
+            stampRead = datetime.now()
+            self.debug('readAheadChunks(%s) read %s samples from %s@%s, took %s' % (thrdSeqId, lenFrame, nextFrameName, h5fileName, stampRead-stampStart) )
             strFrames.append('%s@%s' % (nextFrameName, os.path.basename(h5fileName)))
+            # unnecssary: the following steps of filtering and converting should go to a separated thread to employ CPU cores
+            # because readAheadChunks(-1) took 0:02:00.194678 (0:02:00.178583 +0:00:00.000999 +0:00:00.015096) to prepare 65->65 x400 s/bth from 19 frames: ...
             cvnted = frameDict
             nAfterFilter = lenFrame
             try :
@@ -851,13 +857,15 @@ class Trainer_classify(BaseApplication):
             except Exception as ex:
                 self.logexception(ex)
 
+            stampFiltered = datetime.now()
             try :
                 if self._funcConvertFrame :
                     cvnted = self._funcConvertFrame(frameDict)
             except Exception as ex:
                 self.logexception(ex)
 
-            self.debug('readAheadChunks(%s) filtered %s from %s samples and converted into %s chunks' % (thrdSeqId, nAfterFilter, lenFrame, len(cvnted)) )
+            stampProcessed = datetime.now()
+            self.debug('readAheadChunks(%s) filtered %s from %s samples and converted into %s chunks, took %s + %s' % (thrdSeqId, nAfterFilter, lenFrame, len(cvnted), stampFiltered -stampRead, stampProcessed -stampFiltered) )
 
             with self.__lock:
                 size =1
@@ -881,8 +889,9 @@ class Trainer_classify(BaseApplication):
             if thrdSeqId>=0 and thrdSeqId < len(self.__thrdsReadAhead) :
                 self.__thrdsReadAhead[thrdSeqId] = None
 
-        self.info('readAheadChunks(%s) took %s to prepare %s->%s x%s s/bth from %d frames:%s; %d frames await' % 
-            (thrdSeqId, str(datetime.now() - stampStart), addSize, raSize, self._batchSize, len(strFrames), ','.join(strFrames), awaitSize))
+        self.info('readAheadChunks(%s) took %s (%s +%s +%s) to prepare %s->%s x%s s/bth from %d frames:%s; %d frames await' % 
+            (thrdSeqId, str(datetime.now() - stampStart), str(stampRead -stampStart), str(stampFiltered -stampRead), str(stampProcessed -stampFiltered),
+            addSize, raSize, self._batchSize, len(strFrames), ','.join(strFrames), awaitSize))
 
     def __generator_local(self):
 
@@ -949,13 +958,13 @@ class Trainer_classify(BaseApplication):
 
                         # eval.2 action distrib in samples/prediction
                         AD = np.where(chunk_Classes ==1)[1]
-                        kI = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(3)] # the actions percentage in sample
+                        kI = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(self._sampleClassSize)] # the actions percentage in sample
                         predict = self._brain.predict(x=chunk_Samples)
-                        predact = np.zeros(len(predict) *3).reshape(len(predict), 3)
+                        predact = np.zeros(len(predict) * self._sampleClassSize).reshape(len(predict), self._sampleClassSize)
                         for r in range(len(predict)):
                             predact[r][np.argmax(predict[r])] =1
                         AD = np.where(predact ==1)[1]
-                        kP = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(3)] # the actions percentage in predictions
+                        kP = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(self._sampleClassSize)] # the actions percentage in predictions
                         strEval += 'A%s%%->Prd%s%%' % ('+'.join(kI), '+'.join(kP))
                         
                         # eval.3 duration taken

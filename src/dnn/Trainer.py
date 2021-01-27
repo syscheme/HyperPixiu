@@ -17,7 +17,7 @@ from dnn.Makeups  import Model88_sliced2d
 # INDEPEND FROM HyperPX core classes: from MarketData import EXPORT_FLOATS_DIMS
 EXPORT_FLOATS_DIMS = 4
 DUMMY_BIG_VAL = 999999
-NN_FLOAT = 'float32'
+NN_FLOAT = 'float16' # float32(single-preccision) -3.4e+38 ~ 3.4e+38, float16(half~) 5.96e-8 ~ 6.55e+4, float64(double-preccision)
 RFGROUP_PREFIX = 'ReplayFrame:'
 RFGROUP_PREFIX2 = 'RF'
 
@@ -364,7 +364,7 @@ class Trainer_classify(BaseApplication):
     def __logAndSaveResult(self, resFinal, methodName, notes=''):
         if not notes or len(notes) <0: notes=''
 
-        fn_trained = os.path.join(self.outdir, '%s_trained.h5' %self.__wkModelId)
+        fn_trained = os.path.join(self.outdir, '%s_trained%d.h5' %(self.__wkModelId, self.program.pid) )
         self._brain.save(fn_trained)
 
         self.info('%s() saved trained as %s, result[%s] %s' % (methodName, fn_trained, resFinal, notes))

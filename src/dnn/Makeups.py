@@ -608,8 +608,8 @@ class Model88_sliced2d(Model88) :
         if not self.model: return False
 
         # because the saving steps may throw exception, so borrow tmpfile to ensure not damage the previous model until saving gets succ
-        tmpfile = filepath + '.%s' % self.program.pid if self.program else 'tmp'
-        with h5py.File(tmpfile, 'w') as h5f:
+        # tmpfile = filepath + '.%s' % (self.program.pid if self.program else 'tmp')
+        with h5py.File(filepath, 'w') as h5f:
             # step 1. save json model in h5f['model_config']
             # NEVER here: model_json = self.model.to_json()
             g = h5f.create_group('model_config')
@@ -635,10 +635,10 @@ class Model88_sliced2d(Model88) :
                     subwg = g.create_group(k)
                     BaseModel.save_weights_to_hdf5_group(subwg, v['model'].layers)
 
-        try:
-            os.remove(filepath)
-        except: pass
-        shutil.move(tmpfile, filepath)
+        # try:
+        #     os.remove(filepath)
+        # except: pass
+        # NOT good at Win/Aconda: shutil.move(tmpfile, filepath)
 
         return True
 

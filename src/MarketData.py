@@ -674,14 +674,14 @@ class Formatter(MetaObj):
         if 'Formatter_' == self.__id[:10] :
             self.__id = self.__id[10:]
 
-        self.__id += 'C%d' % self._channels
+        # channels maybe adjusted in the child class, so leave the assembling at property id(), NO self.__id += 'C%d' % self._channels
     
     @property
     def mstate(self) : return self.__mstate
 
     @property
-    def id(self) : return self.__id
-
+    def id(self) : return '%sC%d' % (self.__id, self._channels)
+    
     def attach(self, marketState):
         self.__mstate = marketState
 

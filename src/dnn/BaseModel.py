@@ -14,7 +14,6 @@ from HistoryData  import H5DSET_DEFAULT_ARGS
 # INDEPEND FROM HyperPX core classes: from MarketData import EXPORT_FLOATS_DIMS
 EXPORT_FLOATS_DIMS = 4
 DUMMY_BIG_VAL = 999999
-NN_FLOAT = 'float32'
 RFGROUP_PREFIX = 'ReplayFrame:'
 RFGROUP_PREFIX2 = 'RF'
 # ----------------------------
@@ -125,8 +124,7 @@ class BaseModel(object) :
         if not self.model: return False
 
         # because the saving steps may throw exception, so borrow tmpfile to ensure not damage the previous model until saving gets succ
-        tmpfile = filepath + '.%s' % self.program.pid if self.program else 'tmp'
-
+        # tmpfile = filepath + '.%s' % (self.program.pid if self.program else 'tmp')
         with h5py.File(tmpfile, 'w') as h5f:
             # step 1. save json model in h5f['model_config']
             model_json = self.model.to_json()
@@ -143,10 +141,10 @@ class BaseModel(object) :
                 g = h5f.create_group('model_weights')
                 BaseModel.save_weights_to_hdf5_group(g, self.model.layers)
 
-        try:
-            os.remove(filepath)
-        except: pass
-        shutil.move(tmpfile, filepath)
+        # try:
+        #     os.remove(filepath)
+        # except: pass
+        # NOT good at Win/Aconda: shutil.move(tmpfile, filepath)
 
         return True
 

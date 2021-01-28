@@ -10,14 +10,13 @@ from abc import abstractmethod
 
 from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 from HistoryData  import H5DSET_DEFAULT_ARGS, listAllFiles
-from dnn.BaseModel import BaseModel
+from dnn.BaseModel import BaseModel, NN_FLOAT
 from dnn.Makeups  import Model88_sliced2d
 
 # ----------------------------
 # INDEPEND FROM HyperPX core classes: from MarketData import EXPORT_FLOATS_DIMS
 EXPORT_FLOATS_DIMS = 4
 DUMMY_BIG_VAL = 999999
-NN_FLOAT = 'float16' # float32(single-preccision) -3.4e+38 ~ 3.4e+38, float16(half~) 5.96e-8 ~ 6.55e+4, float64(double-preccision)
 RFGROUP_PREFIX = 'ReplayFrame:'
 RFGROUP_PREFIX2 = 'RF'
 
@@ -110,7 +109,10 @@ class Trainer_classify(BaseApplication):
                         matchedModel = cfgm
                         self.__readTraingConfigBlock(m)
                         trainParamConfs.append(cfgm)
-        self.info('loaded params from: %s for processor: %s' % ('-> '.join(trainParamConfs), processorModel))
+                        
+        if 'float32' != NN_FLOAT:
+            backend.set_floatx(NN_FLOAT)
+        self.info('loaded params from: %s for %s and processor: %s' % ('-> '.join(trainParamConfs), NN_FLOAT, processorModel))
 
         self.__samplePool = [] # may consist of a number of replay-frames (n < frames-of-h5) for random sampling
         self._fitCallbacks =[]

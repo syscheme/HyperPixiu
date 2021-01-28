@@ -8,10 +8,10 @@ and can also distribute the training load outside of the online agent
 from __future__ import division
 from abc import abstractmethod
 
-from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
-from HistoryData  import H5DSET_DEFAULT_ARGS
-from dnn.BaseModel  import BaseModel
-from dnn.Makeups  import BaseModel
+from Application   import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
+from HistoryData   import H5DSET_DEFAULT_ARGS
+from dnn.BaseModel import BaseModel, NN_FLOAT
+from dnn.Makeups   import BaseModel
 
 from tensorflow.keras.models import model_from_json, Model, Sequential
 from tensorflow.keras.optimizers import Adam, SGD
@@ -495,7 +495,7 @@ class Model88_sliced2d(Model88) :
 
         mNamePrefix = '%sx%d' %(self.__fmtNamePrefix(self._maxY), slice_count)
 
-        tensor_in = Input(shape=input_shape, name='%s.I%s' % (mNamePrefix, 'x'.join([str(x) for x in input_shape])))
+        tensor_in = Input(shape=input_shape, name='%s.I%s' % (mNamePrefix, 'x'.join([str(x) for x in input_shape])), dtype=NN_FLOAT)
         x = tensor_in
 
         if input_shape[0] <self._maxY: # padding Ys at the bottom
@@ -837,6 +837,9 @@ class ModelS2d_ResNet50(Model88_sliced2d) :
 
 ########################################################################
 if __name__ == '__main__':
+    
+    from tensorflow.keras import backend as backend # from tensorflow.keras import backend
+    if 'float32' != NN_FLOAT: backend.set_floatx(NN_FLOAT)
     
     model = None
     # fn_template = '/tmp/test.h5'

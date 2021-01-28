@@ -12,6 +12,8 @@ from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 from HistoryData  import H5DSET_DEFAULT_ARGS
 # ----------------------------
 # INDEPEND FROM HyperPX core classes: from MarketData import EXPORT_FLOATS_DIMS
+NN_FLOAT = 'float16' # float32(single-preccision) -3.4e+38 ~ 3.4e+38, float16(half~) 5.96e-8 ~ 6.55e+4, float64(double-preccision)
+
 EXPORT_FLOATS_DIMS = 4
 DUMMY_BIG_VAL = 999999
 RFGROUP_PREFIX = 'ReplayFrame:'

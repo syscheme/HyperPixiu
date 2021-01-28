@@ -2131,8 +2131,8 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         #col_state  = np.concatenate(metrix[:, 0]).reshape(len(rangedFrame), len(rangedFrame[0][0]))
         stateshape, actionshape = np.array(metrix[0][0]).shape, len(rangedFrame[0][1])
-        col_state   = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype('float16')
-        col_action  = np.concatenate(metrix[:, 1]).reshape(lenF, actionshape).astype('int8')
+        col_state   = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype(hist.SAMPLE_FLOAT)
+        col_action  = np.concatenate(metrix[:, 1]).reshape(lenF, actionshape).astype(hist.CLASSIFY_INT)
         col_fdate   = np.asarray(metrix[:, 2])
         col_price   = np.asarray(metrix[:, 3])
 
@@ -2232,7 +2232,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         idx_associated = min(idxmax)
 
         result = df.values[ :idx_associated, -1 -eval_days: ] if idx_associated >0 else np.array([])
-        return result.astype('float16')
+        return result.astype(hist.SAMPLE_FLOAT)
 
     def __scanEventsSequence(self, evseq) :
 
@@ -2690,10 +2690,10 @@ class ShortSwingScanner(OfflineSimulator):
         lenF    = len(rangedFrame)
 
         stateshape = np.array(metrix[0][0]).shape
-        col_state  = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype('float16')
+        col_state  = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype(hist.SAMPLE_FLOAT)
 
-        col_gainRates  = np.concatenate(metrix[:, 1]).reshape(lenF, *np.array(metrix[0][1]).shape).astype('float16')
-        col_ohlc       = np.concatenate(metrix[:, 2]).reshape(lenF, *np.array(metrix[0][2]).shape).astype('float16')  # col_price = metrix[:, 2].astype('float16')
+        col_gainRates  = np.concatenate(metrix[:, 1]).reshape(lenF, *np.array(metrix[0][1]).shape).astype(hist.SAMPLE_FLOAT)
+        col_ohlc       = np.concatenate(metrix[:, 2]).reshape(lenF, *np.array(metrix[0][2]).shape).astype(hist.SAMPLE_FLOAT)  # col_price = metrix[:, 2].astype(hist.SAMPLE_FLOAT)
 
         normalizedId = 'FclzD4X%dR%dBy%s' %(col_state.shape[1], self._daysLong, chopMarketEVStr(self._byEvent))
 

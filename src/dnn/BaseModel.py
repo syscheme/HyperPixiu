@@ -12,7 +12,8 @@ from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 from HistoryData  import H5DSET_DEFAULT_ARGS
 # ----------------------------
 # INDEPEND FROM HyperPX core classes: from MarketData import EXPORT_FLOATS_DIMS
-NN_FLOAT = 'float16' # float32(single-preccision) -3.4e+38 ~ 3.4e+38, float16(half~) 5.96e-8 ~ 6.55e+4, float64(double-preccision)
+BACKEND_FLOAT = 'float32' # float32(single-preccision) -3.4e+38 ~ 3.4e+38, float16(half~) 5.96e-8 ~ 6.55e+4, float64(double-preccision)
+INPUT_FLOAT = 'float32'
 
 EXPORT_FLOATS_DIMS = 4
 DUMMY_BIG_VAL = 999999
@@ -24,7 +25,6 @@ from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.optimizers import Adam, SGD
 from tensorflow.keras.models import model_from_json
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
-from tensorflow.keras import backend as backend # from tensorflow.keras import backend
 # import tensorflow.keras.engine.saving as saving # import keras.engine.saving as saving
 import tensorflow as tf
 
@@ -45,6 +45,11 @@ GPUs = get_available_gpus()
 
 if len(GPUs) >1:
     from keras.utils.training_utils import multi_gpu_model
+
+if 'float32' != BACKEND_FLOAT and not (len(GPUs) >1 and 'Windows' in platform.platform()): # non-float32 excludes Anaconda-on-Win for GPU
+    from tensorflow.keras import backend as backend # from tensorflow.keras import backend
+    backend.set_floatx(BACKEND_FLOAT)
+    print('backend set to %s' % BACKEND_FLOAT)
 
 ########################################################################
 class BaseModel(object) :
@@ -249,7 +254,6 @@ class BaseModel(object) :
         group: HDF5 group.
         layers: List of layer instances.
         '''
-
         loadeds=[]
         layer_names = BaseModel.hdf5g_getAttribute(group, 'layer_names')
 

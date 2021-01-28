@@ -28,6 +28,10 @@ else:
 import bz2
 import numpy as np
 
+SAMPLE_FLOAT = 'float16' # note: SAMPLE_FLOAT MUST compatible with but not equal to BaseModel.INPUT_FLOATS
+# float32(single-preccision) -3.4e+38 ~ 3.4e+38, float16(half~) 5.96e-8 ~ 6.55e+4, float64(double-preccision)
+CLASSIFY_INT = 'int8'
+
 EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
 H5DSET_DEFAULT_ARGS={ 'compression': 'lzf' } # note lzf is good at speed, but HDFExplorer doesn't support it. Change it to gzip if want to view
 
@@ -1441,4 +1445,36 @@ class Zipper(BaseApplication):
     def _push(self, filename) :
         self._queue.put(filename)
 
+def classifyGainRates(self, gain_rates) :
+    '''
+    @param gain_rates: a 2d metrix: [[gr_day0, gr_day1, gr_day2 ... gr_dayN], ...]
+    @return np.array of gain-classes
+    '''
+    gainRates = np.array(gain_rates).astype(SAMPLE_FLOAT) #  'gain_rates' is a list here
+    days = gainRates.shape[1]
+    gainRates = gainRates[:, [0,1,days-1]] # we only interest day0, day1 and dayN
+    # dailize the gain rate, by skipping day0 and day1
+    gainRates[:, 2] = gainRates[:, 2] /(days-1)
+    
+    # # scaling the gain rate to fit in [0,1) : 0 maps -2%, 1 maps +8%
+    # SCALE, OFFSET =10, 0.02
+    # gainRates = (gainRates + OFFSET) *SCALE
+    # gainRates.clip(0.0, 1.0)
 
+    LC = [-100, -2.0, 0.5, 2.0, 5.0, 8.0, 100 ] # by %, -100 means -INF, +100= +INF
+    gainClasses = np.zeros(shape=(gainRates.shape[0], 3 + (len(LC) -1) *2)).astype(CLASSIFY_INT) # 3classes for day0: <1%, 1~5%, >5%
+    C = np.where(gainRates[:, 0] <= 0.01)
+    gainClasses[C, 0] =1
+
+    C = np.where((gainRates[:, 0] > 0.01) & (gainRates[:, 0] <=0.05))
+    gainClasses[C, 1] =1
+
+    C = np.where(gainRates[:, 0] > 0.05)
+    gainClasses[C, 2] =1
+
+    for i in range(len(LC) -1):
+        for j in [1, 2]:
+            C = np.where((gainRates[:, j] > LC[i]/100.0) & (gainRates[:, j] <= LC[i+1]/100.0))
+            gainClasses[C, 3 + (j-1)*(len(LC)-1) +i] =1
+    
+    return gainClasses

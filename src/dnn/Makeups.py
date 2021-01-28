@@ -10,7 +10,7 @@ from abc import abstractmethod
 
 from Application   import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 from HistoryData   import H5DSET_DEFAULT_ARGS
-from dnn.BaseModel import BaseModel, NN_FLOAT
+from dnn.BaseModel import BaseModel, INPUT_FLOAT, BACKEND_FLOAT
 from dnn.Makeups   import BaseModel
 
 from tensorflow.keras.models import model_from_json, Model, Sequential
@@ -73,7 +73,7 @@ class Model88(BaseModel) :
         @return output_tensor NOT the model
         '''
         if input_tensor is None:
-            input_tensor = Input(shape=input_shape)
+            input_tensor = Input(shape=input_shape, dtype=INPUT_FLOAT)
             inputs = input_tensor
         else:
             inputs = get_source_inputs(input_tensor)
@@ -448,7 +448,7 @@ class Model88_sliced2d(Model88) :
         ch2append = channels_per_slice - slice.shape[3] # [0]s to append to fit channel=4
 
         if ch2append >0:
-            slice0s = np.zeros(tuple(list(slice.shape[1:3]) +[ch2append]), dtype='float32') # TODO fix this
+            slice0s = np.zeros(tuple(list(slice.shape[1:3]) +[ch2append]), dtype=INPUT_FLOAT) # TODO fix this
             tensor0s = tf.convert_to_tensor(slice0s)
             slice += tensor0s
             # slice = np.concatenate((slice, slice0s), axis=2)
@@ -467,7 +467,7 @@ class Model88_sliced2d(Model88) :
             m._name = submod_name
 
         if not m:
-            flowCloseIn = Input(tuple(tensor_flowClose.shape[1:]))
+            flowCloseIn = Input(tuple(tensor_flowClose.shape[1:]), dtype=INPUT_FLOAT)
             x =Flatten(name='%sflatten' %lnTag)(flowCloseIn)
             x =Dropout(0.3, name='%sdropout' %lnTag)(x)
             lf=Dense(self.__features_per_slice, name='%sF%d' % (lnTag, self.__features_per_slice))
@@ -495,7 +495,7 @@ class Model88_sliced2d(Model88) :
 
         mNamePrefix = '%sx%d' %(self.__fmtNamePrefix(self._maxY), slice_count)
 
-        tensor_in = Input(shape=input_shape, name='%s.I%s' % (mNamePrefix, 'x'.join([str(x) for x in input_shape])), dtype=NN_FLOAT)
+        tensor_in = Input(shape=input_shape, name='%s.I%s' % (mNamePrefix, 'x'.join([str(x) for x in input_shape])), dtype=INPUT_FLOAT)
         x = tensor_in
 
         if input_shape[0] <self._maxY: # padding Ys at the bottom
@@ -505,7 +505,7 @@ class Model88_sliced2d(Model88) :
         slices = [None] * slice_count
         for i in range(slice_count) :
             slices[i] = Lambda(Model88_sliced2d.__slice2d, arguments={'idxSlice':i, 'channels_per_slice': self.__channels_per_slice},
-                                output_shape= slice_shape, name='%s.slice%d' %(mNamePrefix, i),
+                                output_shape= slice_shape, name='%s.slice%d' %(mNamePrefix, i)
                                 )(x)
 
         m, json_m = None, None
@@ -546,7 +546,7 @@ class Model88_sliced2d(Model88) :
             m._name = submod_name
 
         if not m:
-            closeIn = Input(tuple(merged_tensor.shape[1:]))
+            closeIn = Input(tuple(merged_tensor.shape[1:]), dtype=BACKEND_FLOAT)
             x = closeIn
 
             dsize = int(math.sqrt(slice_count))
@@ -724,7 +724,7 @@ class ModelS2d_ResNet50Pre(Model88_sliced2d) :
         unlike the Model88_Flat._buildup_core() returns the output_tensor, the sliced 2D models returns a submodel as core from _buildup_core()
         '''
         input_shape = tuple([ int(x) for x in input_tensor.shape[1:]])
-        return ResNet50(weights=None, classes=1000, input_shape=input_shape)
+        return ResNet50(weights=None, classes=1000, input_shape=input_shape) #, dtype=INPUT_FLOAT
 
 # --------------------------------
 class ModelS2d_ResNet50(Model88_sliced2d) :
@@ -739,7 +739,7 @@ class ModelS2d_ResNet50(Model88_sliced2d) :
         '''
         unlike the Model88_Flat._buildup_core() returns the output_tensor, the sliced 2D models returns a submodel as core from _buildup_core()
         '''
-        input_tensor = Input(tuple(input_tensor.shape[1:])) # create a brand-new input_tensor by getting rid of the leading dim-batch
+        input_tensor = Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
 
         bn_axis = 3
         classes = 1000
@@ -838,9 +838,6 @@ class ModelS2d_ResNet50(Model88_sliced2d) :
 ########################################################################
 if __name__ == '__main__':
     
-    from tensorflow.keras import backend as backend # from tensorflow.keras import backend
-    if 'float32' != NN_FLOAT: backend.set_floatx(NN_FLOAT)
-    
     model = None
     # fn_template = '/tmp/test.h5'
     # model = BaseModel.load(fn_template)
@@ -859,7 +856,9 @@ if __name__ == '__main__':
 
     model.summary()
     # cw = model.get_weights_core()
-    model.save('/tmp/%s.h5' % model.modelId)
+    fn_save='/tmp/%s.B%sI%s.h5' % (model.modelId, BACKEND_FLOAT[5:], INPUT_FLOAT[5:])
+    model.save(fn_save)
+    print('saved model: %s' % fn_save)
 
 '''
 TO browse the hd5 file:

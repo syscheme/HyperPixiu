@@ -42,7 +42,7 @@ class Model88(BaseModel) :
 
     def _feature88toOut(self, flattern_inputs) :
         # unified final layers Dense(VirtualFeature88) then Dense(self._actionSize)
-        lnTag ='F88.'
+        lnTag ='F88.' if 3 == self._classesOut else 'F88o%d.' % self._classesOut
         x = self._tagged_chain(lnTag, flattern_inputs, Dropout(0.3, name='%sDropout1' %lnTag)) #  x= Dropout(0.5))
         x = self._tagged_chain(lnTag, x, Dense(88, name='%sDense1' %lnTag))
         x = self._tagged_chain(lnTag, x, Dense(self._classesOut,  name='%sDense2' %lnTag, activation='softmax'))
@@ -432,7 +432,7 @@ class Model88_sliced2d(Model88) :
     @property
     def modelId(self) :
         if self.__modelId: return self.__modelId
-        return '%sxN.%s' %(self.__fmtNamePrefix(self._sizeY), self.coreId)
+        return '%sxN.o%d.%s' %(self.__fmtNamePrefix(self._sizeY), self._classesOut, self.coreId)
     
     @property
     def coreId(self) : return self.__coreId
@@ -540,6 +540,8 @@ class Model88_sliced2d(Model88) :
         
         m, json_m = None, None
         submod_name = '%sC88' % mNamePrefix
+        if 3 != self._classesOut : submod_name +='o%d' % self._classesOut
+
         model_json = jsonSubs[submod_name] if isinstance(jsonSubs, dict) and submod_name in jsonSubs else None
         if model_json and len(model_json) >0:
             m = model_from_json(model_json, custom_objects=custom_objects)
@@ -569,7 +571,7 @@ class Model88_sliced2d(Model88) :
         #     # v.save('/tmp/%s.h5' % k)
         
         x = m(merged_tensor)
-        self.__modelId = '%sx%d.%s' %(self.__fmtNamePrefix(self._sizeY), slice_count, self.__coreId)
+        self.__modelId = '%sx%do%d.%s' %(self.__fmtNamePrefix(self._sizeY), slice_count, self._classesOut, self.__coreId)
         self._dnnModel = Model(inputs=tensor_in, outputs=x, name=self.__modelId)
 
         # self._dnnModel.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **BaseModel.COMPILE_ARGS)
@@ -845,7 +847,7 @@ if __name__ == '__main__':
     # model = Model88_sliced2d.load(fn_template)
 
     if not model:
-        model = ModelS2d_ResNet50() # ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
+        model = ModelS2d_ResNet50(outputClasses =8) # ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
         model.buildup(input_shape=(18, 32, 4))
     model.compile()
 

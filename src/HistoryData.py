@@ -1452,29 +1452,72 @@ def classifyGainRates(self, gain_rates) :
     '''
     gainRates = np.array(gain_rates).astype(SAMPLE_FLOAT) #  'gain_rates' is a list here
     days = gainRates.shape[1]
-    gainRates = gainRates[:, [0,1,days-1]] # we only interest day0, day1 and dayN
+    daysOfcol2 =2 # = days-1
+    gainRates = gainRates[:, [0,1, daysOfcol2]] # we only interest day0, day1 and dayN
     # dailize the gain rate, by skipping day0 and day1
-    gainRates[:, 2] = gainRates[:, 2] /(days-1)
+    if daysOfcol2 >1:
+        gainRates[:, 2] = gainRates[:, 2] /daysOfcol2
     
     # # scaling the gain rate to fit in [0,1) : 0 maps -2%, 1 maps +8%
     # SCALE, OFFSET =10, 0.02
     # gainRates = (gainRates + OFFSET) *SCALE
-    # gainRates.clip(0.0, 1.0)
+    # gainRates.clip(0.0, 1.0)``
 
     LC = [-100, -2.0, 0.5, 2.0, 5.0, 8.0, 100 ] # by %, -100 means -INF, +100= +INF
     gainClasses = np.zeros(shape=(gainRates.shape[0], 3 + (len(LC) -1) *2)).astype(CLASSIFY_INT) # 3classes for day0: <1%, 1~5%, >5%
-    C = np.where(gainRates[:, 0] <= 0.01)
-    gainClasses[C, 0] =1
-
-    C = np.where((gainRates[:, 0] > 0.01) & (gainRates[:, 0] <=0.05))
-    gainClasses[C, 1] =1
-
-    C = np.where(gainRates[:, 0] > 0.05)
-    gainClasses[C, 2] =1
-
     for i in range(len(LC) -1):
         for j in [1, 2]:
             C = np.where((gainRates[:, j] > LC[i]/100.0) & (gainRates[:, j] <= LC[i+1]/100.0))
             gainClasses[C, 3 + (j-1)*(len(LC)-1) +i] =1
-    
+
+    # class-0. day0 gr<=1%
+    C = np.where(gainRates[:, 0] <= 0.01)
+    gainClasses[C, 0] =1
+    # class-1. day0 1%< gr <=5%
+    C = np.where((gainRates[:, 0] > 0.01) & (gainRates[:, 0] <=0.05))
+    gainClasses[C, 1] =1
+    # class-2. day0 gr >5%
+    C = np.where(gainRates[:, 0] > 0.05)
+    gainClasses[C, 2] =1
+
+    return gainClasses
+
+def classifyGainRates_8c(self, gain_rates) :
+    '''
+    @param gain_rates: a 2d metrix: [[gr_day0, gr_day1, gr_day2 ... gr_dayN], ...]
+    @return np.array of gain-classes
+    '''
+    gainRates = np.array(gain_rates).astype(SAMPLE_FLOAT) #  'gain_rates' is a list here
+    days = gainRates.shape[1]
+    daysOfcol2 =2 # = days-1
+    gainRates = gainRates[:, [0, 1, daysOfcol2]] # we only interest day0, day1 and dayN
+
+    gainClasses = np.zeros(shape=(gainRates.shape[0], 8)).astype(CLASSIFY_INT) # 3classes for day0: <1%, 1~5%, >5%
+    # class-0. day0 gr<=1%
+    C = np.where(gainRates[:, 0] <= 0.01)
+    gainClasses[C, 0] =1
+    # class-1. day0 1%< gr <=5%
+    C = np.where((gainRates[:, 0] > 0.01) & (gainRates[:, 0] <=0.05))
+    gainClasses[C, 1] =1
+    # class-2. day0 gr >5%
+    C = np.where(gainRates[:, 0] > 0.05)
+    gainClasses[C, 2] =1
+
+    # class-3. day1 gr<=1%
+    C = np.where(gainRates[:, 1] <= 0.01)
+    gainClasses[C, 3] =1
+    # class-4. day1 1%< gr <=5%
+    C = np.where((gainRates[:, 1] > 0.01) & (gainRates[:, 0] <=0.05))
+    gainClasses[C, 4] =1
+    # class-5. day1 gr >5%
+    C = np.where(gainRates[:, 1] > 0.05)
+    gainClasses[C, 5] =1
+
+    # class-6. dayN gr<=gr-of-day1
+    C = np.where(gainRates[:, 2] <= gainRates[:, 1])
+    gainClasses[C, 6] =1
+    # class-7. dayN gr > gr-of-day1
+    C = np.where(gainRates[:, 2] > gainRates[:, 1])
+    gainClasses[C, 7] =1
+
     return gainClasses

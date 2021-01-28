@@ -9,7 +9,7 @@ from __future__ import division
 from abc import abstractmethod
 
 from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
-from HistoryData  import H5DSET_DEFAULT_ARGS, listAllFiles, classifyGainRates
+from HistoryData  import H5DSET_DEFAULT_ARGS, listAllFiles, classifyGainRates_8c
 from dnn.BaseModel import BaseModel, BACKEND_FLOAT
 from dnn.Makeups  import Model88_sliced2d
 from HistoryData  import SAMPLE_FLOAT # note: SAMPLE_FLOAT MUST compatible with but not equal to BaseModel.INPUT_FLOATS
@@ -1190,7 +1190,7 @@ class Trainer_GainRates(Trainer_classify) :
 
     def classifyGainRateOfFrameToBatchs(self, frameDict):
 
-        gainClasses = classifyGainRates(frameDict[self._colnameClasses])
+        gainClasses = classifyGainRates_8c(frameDict[self._colnameClasses])
         samples = np.array(frameDict[self._colnameSamples]).astype(SAMPLE_FLOAT)
         bths = []
         cBth = gainClasses.shape[0] // self._batchSize

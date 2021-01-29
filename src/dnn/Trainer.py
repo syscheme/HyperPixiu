@@ -9,7 +9,7 @@ from __future__ import division
 from abc import abstractmethod
 
 from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
-from HistoryData  import H5DSET_DEFAULT_ARGS, listAllFiles, classifyGainRates_8c
+from HistoryData  import H5DSET_DEFAULT_ARGS, listAllFiles, classifyGainRates_screeningTplus1
 from dnn.BaseModel import BaseModel, BACKEND_FLOAT
 from dnn.Makeups  import Model88_sliced2d
 from HistoryData  import SAMPLE_FLOAT # note: SAMPLE_FLOAT MUST compatible with but not equal to BaseModel.INPUT_FLOATS
@@ -456,8 +456,11 @@ class Trainer_classify(BaseApplication):
                 self.warn('refreshPool() readAhead thread is still running, waiting for its completion')
                 thrdBusy.join()
 
-        cFramesToRead=0
+        cFramesToRead, pendingAhead=0, 0
         with self.__lock:
+            if self.__chunksReadAhead:
+                pendingAhead = len(self.__chunksReadAhead)
+
             if self._frameSize >0:
                 cFramesToRead = ((self.__maxChunks * self._batchesPerTrain * self._batchSize) + self._frameSize -1) // self._frameSize
             if cFramesToRead<=0: cFramesToRead =1
@@ -465,7 +468,7 @@ class Trainer_classify(BaseApplication):
 
             self.__thrdsReadAhead = [None] * cFramesToRead
 
-        if not self.__chunksReadAhead or len(self.__chunksReadAhead) <=0:
+        if pendingAhead <=0:
             self.warn('refreshPool() no readAhead ready, force to read sync-ly')
             # # Approach 1. multiple readAhead threads to read one frame each
             # !!!!TODO:
@@ -851,11 +854,23 @@ class Trainer_classify(BaseApplication):
         addSize, raSize=0, 0
 
         self.debug('readAheadChunks(%s) reading samples for %d frames x %ds/chunk' % (thrdSeqId, cFramesToRead, self._batchSize) )
-
-        while cFramesToRead >0 :
-
+        
+        # because h5py only can read one file at same time, sort the frames-to-read by grouping them by filenames
+        groupOfFrames = {} # dict filename to framenames
+        for i in range(cFramesToRead):
             h5fileName, nextFrameName, awaitSize = self.__nextFrameName(True)
+            if h5fileName not in groupOfFrames:
+                groupOfFrames[h5fileName] =[]
+            groupOfFrames[h5fileName].append(nextFrameName)
+
+        frameSeqToRead = []
+        for k, v in groupOfFrames.items():
+            v.sort()
+            frameSeqToRead += [(k, i) for i in v]
+
+        for h5fileName, nextFrameName in frameSeqToRead :
             frameDict = self.readFrame(h5fileName, nextFrameName)
+
             lenFrame= 0
             for v in frameDict.values() :
                 lenFrame = len(v)
@@ -898,6 +913,7 @@ class Trainer_classify(BaseApplication):
 
             frameDict, cvnted = None, None
 
+        # finally random.shuffle all samples read
         with self.__lock:
             raSize = len(self.__chunksReadAhead)
             self.__framesReadAhead = strFrames
@@ -933,20 +949,20 @@ class Trainer_classify(BaseApplication):
             groupOfFrames[h5fileName].append(nextFrameName)
         
         self._readAheadThrds = 3
-        framesByThreads = [ [] for i in range( min(len(groupOfFrames.keys()), self._readAheadThrds) ) ] # DO NOT: [ [] ] * min(len(groupOfFrames.keys()), self._readAheadThrds)
-        seqIdx = [x for x in range(len(framesByThreads))]
+        frameSeqToRead = [ [] for i in range( min(len(groupOfFrames.keys()), self._readAheadThrds) ) ] # DO NOT: [ [] ] * min(len(groupOfFrames.keys()), self._readAheadThrds)
+        seqIdx = [x for x in range(len(frameSeqToRead))]
 
         for k, v in groupOfFrames.items():
             top = seqIdx[0]
-            framesByThreads[top] += [(k, i) for i in v]
-            seqIdx.sort(key=lambda x: len(framesByThreads[x]))
+            frameSeqToRead[top] += [(k, i) for i in v]
+            seqIdx.sort(key=lambda x: len(frameSeqToRead[x]))
 
-        while len(framesByThreads) >0 and len(framesByThreads[0]) <=0:
-            del framesByThreads[0]
+        while len(frameSeqToRead) >0 and len(frameSeqToRead[0]) <=0:
+            del frameSeqToRead[0]
 
         lkReadResult = threading.Lock()
         readResult = {}
-        threads = [ None ] * len(framesByThreads)
+        threads = [ None ] * len(frameSeqToRead)
         # --------------------------------
         # the sub-thread to read a sequnce of frame
         def thrd_readFrameSeq(thrdId, frameSeq):
@@ -977,8 +993,8 @@ class Trainer_classify(BaseApplication):
                 self.info('readFramesAhead() subthrd[%s] done, read %d frames: %s' % (thrdId, len(frmNames), ','.join(frmNames)))
 
         # kick of up to self._readAheadThrds threads, each to read a sequence of frames by affiniting filenames
-        for i in range(len(framesByThreads)) :
-            thrd = threading.Thread(target=thrd_readFrameSeq, kwargs={'thrdId': i, 'frameSeq': framesByThreads[i]} )
+        for i in range(len(frameSeqToRead)) :
+            thrd = threading.Thread(target=thrd_readFrameSeq, kwargs={'thrdId': i, 'frameSeq': frameSeqToRead[i]} )
             threads[i] =thrd
             thrd.start()
 
@@ -1000,7 +1016,7 @@ class Trainer_classify(BaseApplication):
         # when reach here, all the sub threads of reading have completed, and frames are collected in readResult
         # concate the readResult into a large chunk frameDict
         stampRead = datetime.now()
-        self.info('readFramesAhead() all %d/%d subthrd done, collected %d frames, took %s' % (len(framesByThreads), self._readAheadThrds, len(readResult), (stampRead - stampStart)))
+        self.info('readFramesAhead() all %d/%d subthrd done, collected %d frames, took %s' % (len(frameSeqToRead), self._readAheadThrds, len(readResult), (stampRead - stampStart)))
 
         frameDict = {}
         for fn, frm in readResult.items():
@@ -1185,12 +1201,12 @@ class Trainer_GainRates(Trainer_classify) :
 
         #TODO: self._confXXXX     = self.getConfig('XXXX', None)
 
-        self._funcConvertFrame = self.classifyGainRateOfFrameToBatchs
+        self._funcConvertFrame = self.classifyTplus1GainRateOfFrame
         self._funcFilterFrame  = None
 
-    def classifyGainRateOfFrameToBatchs(self, frameDict):
+    def classifyTplus1GainRateOfFrame(self, frameDict):
 
-        gainClasses = classifyGainRates_8c(frameDict[self._colnameClasses])
+        gainClasses = classifyGainRates_screeningTplus1(frameDict[self._colnameClasses])
         samples = np.array(frameDict[self._colnameSamples]).astype(SAMPLE_FLOAT)
         bths = []
         cBth = gainClasses.shape[0] // self._batchSize

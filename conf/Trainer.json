@@ -6,7 +6,9 @@
     },
 
     "train": {
-        "startModel": "/mnt/e/AShareSample/S2d32X18Y4F518x1.resnet50.h5",
+        // "startModel": "/mnt/e/AShareSample/S2d32X18Y4F518x1.resnet50.float16.h5", 
+        "startModel": "/mnt/e/AShareSample/S2d32X18Y4F518x1o3.resnet50.h5",
+        // "startModel": "/mnt/e/tmp/S2d32X18Y4F518x1.resnet50.I16B32.h5",
         "baseModel": "sliced2d",
         // "trainableLayers": ["*"], // trainable layers, '*' means all, i.e. ['F88.Dense*', 'VClz66from512.2of2']
 
@@ -28,13 +30,13 @@
             "batchSize": 128,
             "batchesPerTrain": 64, // 512x64 for GTX1050/2G, 512x128 for GTX1060/4G
             "recycles": 1, // takes system memory instead of VRAM
-            "initEpochs": 8, // 8 when the model is not well trained, 4 when trained and try to cover larger dataset
+            "initEpochs": 6, // 8 when the model is not well trained, 4 when trained and try to cover larger dataset
             "startLR": 0.01,
 
             "models": [
                 { 
                     "model":"GTX 1650",
-                    "batchSize": 400, // float32 can reach 100x64, float16 can reach 400x64
+                    "batchSize": 500, // float32 can reach 100x64, float16 can reach 500x64
                     "batchesPerTrain": 64,
                 },
             ]

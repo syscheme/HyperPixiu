@@ -1482,42 +1482,44 @@ def classifyGainRates(self, gain_rates) :
 
     return gainClasses
 
-def classifyGainRates_8c(self, gain_rates) :
+def classifyGainRates_screeningTplus1(self, gain_rates) : # just for screening after day-close
     '''
     @param gain_rates: a 2d metrix: [[gr_day0, gr_day1, gr_day2 ... gr_dayN], ...]
     @return np.array of gain-classes
     '''
     gainRates = np.array(gain_rates).astype(SAMPLE_FLOAT) #  'gain_rates' is a list here
     days = gainRates.shape[1]
-    daysOfcol2 =2 # = days-1
-    gainRates = gainRates[:, [0, 1, daysOfcol2]] # we only interest day0, day1 and dayN
+    gainRates = gainRates[:, [0, 1, 2]] # we only interest day1 and day2
 
-    gainClasses = np.zeros(shape=(gainRates.shape[0], 8)).astype(CLASSIFY_INT) # 3classes for day0: <1%, 1~5%, >5%
-    # class-0. day0 gr<=1%
-    C = np.where(gainRates[:, 0] <= 0.01)
+    gainClasses = np.zeros(shape=(gainRates.shape[0], 8)).astype(CLASSIFY_INT)
+    
+    # attr-0~2: no profit cases that should eliminate or sell
+    # attr-0. day1 gr<=-0.05%
+    C = np.where(gainRates[:, 1] <= -0.005)
     gainClasses[C, 0] =1
-    # class-1. day0 1%< gr <=5%
-    C = np.where((gainRates[:, 0] > 0.01) & (gainRates[:, 0] <=0.05))
+    # attr-1. day2 <day1
+    C = np.where(gainRates[:, 2] < gainRates[:, 1])
     gainClasses[C, 1] =1
-    # class-2. day0 gr >5%
-    C = np.where(gainRates[:, 0] > 0.05)
+    # attr-2. day2 <=1%
+    C = np.where(gainRates[:, 2] <= 0.01)
     gainClasses[C, 2] =1
 
-    # class-3. day1 gr<=1%
-    C = np.where(gainRates[:, 1] <= 0.01)
+    # class-3~6: maybe good to buy tomorrow
+    # class-3: 1% < day2 <=3% 
+    C = np.where((gainRates[:, 2] > 0.01) & (gainRates[:, 2] <=0.03))
     gainClasses[C, 3] =1
-    # class-4. day1 1%< gr <=5%
-    C = np.where((gainRates[:, 1] > 0.01) & (gainRates[:, 0] <=0.05))
+    # class-4. 3%< day2 <=5%
+    C = np.where((gainRates[:, 2] > 0.03) & (gainRates[:, 2] <=0.05))
     gainClasses[C, 4] =1
-    # class-5. day1 gr >5%
-    C = np.where(gainRates[:, 1] > 0.05)
+    # class-5. 5%< day2 <=8%
+    C = np.where((gainRates[:, 2] > 0.05) & (gainRates[:, 2] <=0.08))
     gainClasses[C, 5] =1
-
-    # class-6. dayN gr<=gr-of-day1
-    C = np.where(gainRates[:, 2] <= gainRates[:, 1])
+    # class-6. day2 >8%
+    C = np.where(gainRates[:, 2] > 0.08)
     gainClasses[C, 6] =1
-    # class-7. dayN gr > gr-of-day1
-    C = np.where(gainRates[:, 2] > gainRates[:, 1])
+
+    # attr-7: optional about today for in-day-trade
+    C = np.where((gainRates[:, 0] >=0.01) & ((gainRates[:, 0] + gainRates[:, 1]) >0.03))
     gainClasses[C, 7] =1
 
     return gainClasses

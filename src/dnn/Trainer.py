@@ -79,6 +79,11 @@ class Trainer_classify(BaseApplication):
         self._repeatsInFile       = self.getConfig('repeatsInFile', 0)
         self._readAheadThrds      = self.getConfig('readAheads', 3)
 
+        # convert self._trainables from [ConfigJSONScalar(string)] to [ string ]
+        if len(self._trainables) >0 and not isinstance(self._trainables[0], str):
+            self._trainables = [ x('$$$$') for x in self._trainables ]
+            while '$$$$' in self._trainables: self._trainables.remove('$$$$')
+
         # training config block, default as CPU
         self._batchSize           = 128
         self._batchesPerTrain     = 8
@@ -215,9 +220,12 @@ class Trainer_classify(BaseApplication):
 
         trainableLayers = list(set(trainableLayers))
         trainableLayers.sort()
-        if len(trainableLayers) >0:
-            self.info('trainable-layers: %s' % ','.join(trainableLayers))
+        if len(trainableLayers) <= 0:
+            self.error('quit due to no trainable-layers by %s' % ','.join(self._trainables))
+            self._brain.summary()
+            return False
 
+        self.info('trainable-layers: %s' % ','.join(trainableLayers))
         sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
         self._brain.compile(optimizer=sgd)
         self.__wkModelId = self._brain.modelId

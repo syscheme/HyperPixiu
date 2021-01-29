@@ -707,7 +707,12 @@ class Model88_sliced2d(Model88) :
         ret = []
         for k, v in self.__dictSubModels.items() :
             if 'model' not in v or not v['model']: continue
-            names = BaseModel.enable_trainable_layers(v['model'].layers, layerNamePattern, enable=enable)
+            patt = layerNamePattern
+            if fnmatch.fnmatch(k, patt) or fnmatch.fnmatch(k +'.', patt):
+                # layerNamePattern matched the sub-model name, the entire sub-model trainable
+                patt = '*'
+
+            names = BaseModel.enable_trainable_layers(v['model'].layers, patt, enable=enable)
             ret += [ '%s/%s' %(k, x) for x in names ]
         return ret
 

@@ -193,6 +193,18 @@ class BaseModel(object) :
 
         return model
 
+    def load_weights(self, filepath):
+        
+        lynames=[]
+        if not self.model: return lynames
+        with h5py.File(filepath, 'r') as h5f:
+            if 'model_weights' not in h5f: return lynames
+
+            g_subweights = h5f['model_weights']
+            lynames = model._load_weights_from_hdf5g(g_subweights)
+        
+        return lynames
+    
     def _load_weights_from_hdf5g(self, group, trainable = False):
         ret = BaseModel._load_weights_from_hdf5g_by_name(group, self.model.layers)
         for layer in self.model.layers:

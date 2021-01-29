@@ -684,6 +684,21 @@ class Model88_sliced2d(Model88) :
 
         return model
 
+    def load_weights(self, filepath):
+        
+        lynames=[]
+        if not self.model: return lynames
+        with h5py.File(filepath, 'r') as h5f:
+            if 'model_weights' not in h5f: return lynames
+
+            g_subweights = h5f['model_weights']
+            if 'sub_models' not in g_subweights : return lynames
+            g_subweights = g_subweights['sub_models']
+
+            lynames = model._load_weights_from_hdf5g(g_subweights)
+        
+        return lynames
+    
     def _load_weights_from_hdf5g(self, group, trainable=False):
         ret = []
         for k, v in self.__dictSubModels.items() :
@@ -848,18 +863,22 @@ if __name__ == '__main__':
     model = None
     # fn_template = '/tmp/test.h5'
     # model = BaseModel.load(fn_template)
-    fn_template = '/tmp/sliced2d.h5'
-    # model = Model88_sliced2d.load(fn_template)
+    fn_template = '/tmp/S2d32X18Y4F518x1o8.basesliced.B32I32.h5' # '/tmp/sliced2d.h5'
+    model = Model88_sliced2d.load(fn_template)
 
     if not model:
-        model = ModelS2d_ResNet50(outputClasses =8) # ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
+        model = Model88_sliced2d(outputClasses =8) # ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
         model.buildup(input_shape=(18, 32, 4))
     model.compile()
 
-    trainables = model.enable_trainable("*")
+    trainables = model.enable_trainable("basesliced*")
     trainables = list(set(trainables))
     trainables.sort()
     print('enabled trainable on %d layers: %s' % (len(trainables), '\n'.join(trainables)))
+
+    fn_other = '/tmp/S2d32X18Y4F518x1o8.basesliced.B32I32.h5'
+    applied = model.load_weights(fn_other)
+    print('applied weights of %s on %d layers: %s' % (fn_other, len(trainables), '\n'.join(applied)))
 
     model.summary()
     # cw = model.get_weights_core()

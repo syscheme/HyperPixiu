@@ -1445,7 +1445,7 @@ class Zipper(BaseApplication):
     def _push(self, filename) :
         self._queue.put(filename)
 
-def classifyGainRates(self, gain_rates) :
+def classifyGainRates(gain_rates) :
     '''
     @param gain_rates: a 2d metrix: [[gr_day0, gr_day1, gr_day2 ... gr_dayN], ...]
     @return np.array of gain-classes
@@ -1482,18 +1482,18 @@ def classifyGainRates(self, gain_rates) :
 
     return gainClasses
 
-def classifyGainRates_screeningTplus1(self, gain_rates) : # just for screening after day-close
+def classifyGainRates_screeningTplus1(gain_rates) : # just for screening after day-close
     '''
     @param gain_rates: a 2d metrix: [[gr_day0, gr_day1, gr_day2 ... gr_dayN], ...]
     @return np.array of gain-classes
     '''
     gainRates = np.array(gain_rates).astype(SAMPLE_FLOAT) #  'gain_rates' is a list here
     days = gainRates.shape[1]
-    gainRates = gainRates[:, [0, 1, 2]] # we only interest day1 and day2
+    gainRates = gainRates[:, [0, 1, 2]] # we only interest day0, day1 and day2
 
-    gainClasses = np.zeros(shape=(gainRates.shape[0], 8)).astype(CLASSIFY_INT)
+    gainClasses = np.zeros(shape=(gainRates.shape[0], 8)).astype(CLASSIFY_INT) # reserved for 8 classes/attrs
     
-    # attr-0~2: no profit cases that should eliminate or sell
+    # attr-0~2: no profit cases that should eliminate or sell positions
     # attr-0. day1 gr<=-0.05%
     C = np.where(gainRates[:, 1] <= -0.005)
     gainClasses[C, 0] =1

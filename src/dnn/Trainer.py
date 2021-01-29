@@ -564,7 +564,7 @@ class Trainer_classify(BaseApplication):
 
         if not ret and not self.__chunksReadAhead or len(self.__chunksReadAhead) <=0:
             self.warn('nextDataChunk() no readAhead ready, force to read sync-ly')
-            self.__readAheadChunks(thrdSeqId=-1, cFramesToRead=self._batchesPerTrain) # cFramesToRead=cFrames)
+            self.__readAheadChunks(thrdSeqId=-1, cFramesToRead=cFrames) # cFramesToRead=cFrames)
             # self.__readFramesAhead(thrdSeqId=-1, cFramesToRead=self._batchesPerTrain)
 
         szRecycled = 0
@@ -581,7 +581,7 @@ class Trainer_classify(BaseApplication):
                 bRecycled = False
             szRecycled = len(self.__recycledChunks)
 
-            thrd = threading.Thread(target=self.__readAheadChunks, kwargs={'thrdSeqId': 0, 'cFramesToRead': self._batchesPerTrain } ) # kwargs={'thrdSeqId': 0, 'cFramesToRead': cFramesToRead } )
+            thrd = threading.Thread(target=self.__readAheadChunks, kwargs={'thrdSeqId': 0, 'cFramesToRead': cFrames } ) # kwargs={'thrdSeqId': 0, 'cFramesToRead': cFramesToRead } )
             # thrd = threading.Thread(target=self.__readFramesAhead, kwargs={'thrdSeqId': 0, 'cFramesToRead': self._batchesPerTrain } ) # kwargs={'thrdSeqId': 0, 'cFramesToRead': cFramesToRead } )
 
             self.__thrdsReadAhead[0] =thrd
@@ -1269,8 +1269,8 @@ if __name__ == '__main__':
 
     p.info('all objects registered piror to Trainer_classify: %s' % p.listByType())
     
-    # trainer = p.createApp(Trainer_classify, configNode ='Trainer_classify', replayFrameFiles=os.path.join(sourceCsvDir, 'RFrames_SH510050.h5'))
-    trainer = p.createApp(Trainer_classify, configNode ='train') # Trainer_GainRates
+    # trainer = p.createApp(Trainer_classify, configNode ='train') # for 3 actions
+    trainer = p.createApp(Trainer_GainRates, configNode ='train') # for 8 gain-rates
 
     p.start()
 

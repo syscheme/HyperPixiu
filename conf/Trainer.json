@@ -7,17 +7,17 @@
 
     "train": {
         // "startModel": "/mnt/e/AShareSample/S2d32X18Y4F518x1.resnet50.float16.h5", 
-        "startModel": "/mnt/e/AShareSample/S2d32X18Y4F518x1o3.resnet50.h5",
-        // "startModel": "/mnt/e/tmp/S2d32X18Y4F518x1.resnet50.I16B32.h5",
+        // "startModel": "/mnt/e/AShareSample/S2d32X18Y4F518x1o3.resnet50.h5", // for 3-action
+        "startModel": "/mnt/e/AShareSample/GR8_S2d32X18Y4F518x1o8.resnet50.B32I32.h5", // for 3 gain-rates
         "baseModel": "sliced2d",
-        // "trainableLayers": ["*"], // trainable layers, '*' means all, i.e. ['F88.Dense*', 'VClz66from512.2of2']
+        "trainableLayers": ["S2d32X20Y4F518x1f0.*", "S2d32X20Y4F518x1C88*"], // trainable layers, '*' means all, i.e. ['F88.Dense*', 'VClz66from512.2of2']
 
         "dirSamples": "/mnt/e/AShareSample/RFrm2dImg32x18C8_ETF2013-2020", // or "sampleFiles": [...],
         "preBalanced": "false",
         "gamma": 0.01,
 
         "CPU": {
-            "batchSize": 64,
+            "batchSize": 10,
             "batchesPerTrain": 32,
             "poolReuses": 0,
             "initEpochs": 2,

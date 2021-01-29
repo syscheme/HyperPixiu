@@ -2177,7 +2177,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self.info('saved %s %s %s samples into file %s with sig[%s]' % (self.__fmtr.id, frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
         return lenF
 
-    def __calculateGainRates(self, col_fdate, col_price, eval_days =5) :
+    def __calculateGainRates(self, col_fdate, col_price, eval_days =4) : # eval_days=4 calc day0~day4, about a week
         size = min([len(col_fdate), len(col_price)])
         df = pd.concat([pd.DataFrame(col_fdate[:size], columns=['fdate']), pd.DataFrame(col_price[:size], columns=['price'])], axis=1)
         # df = pd.concat([df, pd.DataFrame([int(x) for x in col_fdate], columns=['idate'])], axis=1)

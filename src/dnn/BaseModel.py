@@ -142,6 +142,10 @@ class BaseModel(object) :
             BaseModel.hdf5g_setAttribute(g, 'input_shape_s', '(%s)' % ','.join(['%d'%x for x in input_shape]))
             g.create_dataset('input_shape', data=np.asarray(input_shape))
 
+            output_shape = [int(x) for x in list(self.model.output.shape[1:])]
+            BaseModel.hdf5g_setAttribute(g, 'output_shape_s', '(%s)' % ','.join(['%d'%x for x in output_shape]))
+            g.create_dataset('output_shape', data=np.asarray(output_shape))
+
             if saveWeights:
                 g = h5f.create_group('model_weights')
                 BaseModel.save_weights_to_hdf5_group(g, self.model.layers)
@@ -167,6 +171,9 @@ class BaseModel(object) :
                 input_shape = gconf['input_shape'][()]
                 input_shape = tuple(list(input_shape))
 
+                output_shape = gconf['output_shape'][()] if 'output_shape' in gconf else None
+                if output_shape : output_shape = tuple(list(output_shape))
+
                 model_json  = BaseModel.hdf5g_getAttribute(gconf, 'model_json', '')
                 if not model_json or len(model_json) <=0 :
                     raise ValueError('model of %s has no model_json to init BaseModel' % filepath)
@@ -177,6 +184,7 @@ class BaseModel(object) :
                     raise ValueError('failed to build from model_json of %s' % filepath)
 
                 model = BaseModel()
+                if output_shape : model._classesOut = output_shape[0]
                 model._dnnModel =m
 
             if not model:

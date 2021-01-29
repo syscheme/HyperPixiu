@@ -42,10 +42,12 @@ class Model88(BaseModel) :
 
     def _feature88toOut(self, flattern_inputs) :
         # unified final layers Dense(VirtualFeature88) then Dense(self._actionSize)
-        lnTag ='F88.' if 3 == self._classesOut else 'F88o%d.' % self._classesOut
+        lnTag ='F88.' 
+        if 3 != self._classesOut:
+            lnTag = 'F88o%d.' % self._classesOut
         x = self._tagged_chain(lnTag, flattern_inputs, Dropout(0.3, name='%sDropout1' %lnTag)) #  x= Dropout(0.5))
         x = self._tagged_chain(lnTag, x, Dense(88, name='%sDense1' %lnTag))
-        x = self._tagged_chain(lnTag, x, Dense(self._classesOut,  name='%sDense2' %lnTag, activation='softmax'))
+        x = self._tagged_chain(lnTag, x, Dense(self._classesOut,  name='%sout' % lnTag, activation='softmax'))
         return x
 
     @property
@@ -621,6 +623,10 @@ class Model88_sliced2d(Model88) :
             BaseModel.hdf5g_setAttribute(g, 'input_shape_s', '(%s)' % ','.join(['%d'%x for x in input_shape]))
             g.create_dataset('input_shape', data=np.asarray(input_shape))
 
+            output_shape = [int(x) for x in list(self.model.output.shape[1:])]
+            BaseModel.hdf5g_setAttribute(g, 'output_shape_s', '(%s)' % ','.join(['%d'%x for x in output_shape]))
+            g.create_dataset('output_shape', data=np.asarray(output_shape))
+
             BaseModel.hdf5g_setAttribute(g, 'json_suplementals', [k.encode('utf-8') for k in self.__dictSubModels.keys()])
             for k, v in self.__dictSubModels.items() :
                 g['subjson_%s' % k] = v['model_json'].encode('utf-8')
@@ -660,6 +666,9 @@ class Model88_sliced2d(Model88) :
                 input_shape = gconf['input_shape'][()]
                 input_shape = tuple(list(input_shape))
 
+                output_shape = gconf['output_shape'][()] if 'output_shape' in gconf else None
+                if output_shape : output_shape = tuple(list(output_shape))
+
                 json_subnames = BaseModel.hdf5g_getAttribute(gconf, 'json_suplementals')
                 json_sub = {}
 
@@ -667,6 +676,7 @@ class Model88_sliced2d(Model88) :
                     json_sub[n] = gconf['subjson_%s' % n][()].decode('utf-8')
 
                 model = Model88_sliced2d()
+                if output_shape: model._classesOut = output_shape[0]
                 model.__buildup(core_name, json_sub, custom_objects, input_shape)
                 # unnecessary: model.__coreId = core_name
 
@@ -860,26 +870,30 @@ class ModelS2d_ResNet50(Model88_sliced2d) :
 ########################################################################
 if __name__ == '__main__':
     
-    model = None
+    model, fn_template, fn_weightsFrom = None, None, None
     # fn_template = '/tmp/test.h5'
     # model = BaseModel.load(fn_template)
-    fn_template = '/tmp/S2d32X18Y4F518x1o8.basesliced.B32I32.h5' # '/tmp/sliced2d.h5'
-    model = Model88_sliced2d.load(fn_template)
+    fn_template = '/tmp/S2d32X18Y4F518x1o8.resnet50.B32I32-NULL.h5' # '/tmp/sliced2d.h5'
+    fn_weightsFrom = '/mnt/e/AShareSample/S2d32X18Y4F518x1o3.resnet50.h5'
+    
+    if fn_template and len(fn_template) >0:
+        # model = BaseModel.load(fn_template)
+        model = Model88_sliced2d.load(fn_template)
 
     if not model:
-        model = Model88_sliced2d(outputClasses =8) # ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
+        model = ModelS2d_ResNet50(outputClasses =8) # ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
         model.buildup(input_shape=(18, 32, 4))
-    model.compile()
 
-    trainables = model.enable_trainable("basesliced*")
+    trainables = model.enable_trainable("*")
     trainables = list(set(trainables))
     trainables.sort()
     print('enabled trainable on %d layers: %s' % (len(trainables), '\n'.join(trainables)))
 
-    fn_other = '/tmp/S2d32X18Y4F518x1o8.basesliced.B32I32.h5'
-    applied = model.load_weights(fn_other)
-    print('applied weights of %s on %d layers: %s' % (fn_other, len(trainables), '\n'.join(applied)))
+    if fn_template and len(fn_template) >0 and fn_weightsFrom and len(fn_weightsFrom) >0:
+        applied = model.load_weights(fn_weightsFrom)
+        print('applied weights of %s onto %d layers: %s' % (fn_weightsFrom, len(trainables), '\n'.join(applied)))
 
+    model.compile()
     model.summary()
     # cw = model.get_weights_core()
     fn_save='/tmp/%s.B%sI%s.h5' % (model.modelId, BACKEND_FLOAT[5:], INPUT_FLOAT[5:])

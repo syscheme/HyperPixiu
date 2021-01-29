@@ -229,6 +229,7 @@ class Trainer_classify(BaseApplication):
         sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
         self._brain.compile(optimizer=sgd)
         self.__wkModelId = self._brain.modelId
+        self._brain.summary()
 
         try :
             os.makedirs(self.outdir)

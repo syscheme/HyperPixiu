@@ -21,6 +21,7 @@ from tensorflow.keras.layers import ZeroPadding2D, GlobalAveragePooling2D, Conv2
 from tensorflow.keras import regularizers
 from tensorflow.keras.utils import get_source_inputs
 
+# from tensorflow.keras.backend import count_params
 from tensorflow.keras.applications.resnet50 import ResNet50
 
 import tensorflow as tf
@@ -893,8 +894,16 @@ if __name__ == '__main__':
         applied = model.load_weights(fn_weightsFrom)
         print('applied weights of %s onto %d layers: %s' % (fn_weightsFrom, len(trainables), '\n'.join(applied)))
 
+    model.enable_trainable("S2d32X20Y4F518x1f0.*")
+    model.enable_trainable("S2d32X20Y4F518x1C88*")
     model.compile()
     model.summary()
+    # trainable_count = count_params(model.trainable_weights)
+    # tw = tf.trainable_weights()
+    # print('trainable %d vars: %s' % (len(tv), tw))
+    # tw = model.model.trainable_weights
+    # print('trainable %d weights: %s' % (count_params(tw), tw))
+
     # cw = model.get_weights_core()
     fn_save='/tmp/%s.B%sI%s.h5' % (model.modelId, BACKEND_FLOAT[5:], INPUT_FLOAT[5:])
     model.save(fn_save)

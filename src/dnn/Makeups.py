@@ -36,19 +36,28 @@ class Model88(BaseModel) :
     '''
     CORE_LAYER_PREFIX = 'core.'
 
-    def __init__(self, outputClasses =3, **kwargs):
+    def __init__(self, outputClasses =3, outputName=None, **kwargs):
         super(Model88,self).__init__(**kwargs)
         self._classesOut = outputClasses
+        self._outputName = outputName
         self._startLR    = kwargs.get('startLR', 0.01)
 
     def _feature88toOut(self, flattern_inputs) :
         # unified final layers Dense(VirtualFeature88) then Dense(self._actionSize)
-        lnTag ='F88.' 
+        lnTag ='F88' 
         if 3 != self._classesOut:
-            lnTag = 'F88o%d.' % self._classesOut
-        x = self._tagged_chain(lnTag, flattern_inputs, Dropout(0.3, name='%sDropout1' %lnTag)) #  x= Dropout(0.5))
-        x = self._tagged_chain(lnTag, x, Dense(88, name='%sDense1' %lnTag))
-        x = self._tagged_chain(lnTag, x, Dense(self._classesOut,  name='%sout' % lnTag, activation='softmax'))
+            lnTag += 'o%d' % self._classesOut
+        if self._outputName:
+            lnTag += '%s' % self._outputName
+
+        if '.' != lnTag[-1]: lnTag+= '.'
+
+        x = self._tagged_chain(lnTag, flattern_inputs, Dense(888, name='%sD888_1' %lnTag))
+        x = self._tagged_chain(lnTag, x, Dropout(0.5, name='%sDropout1' %lnTag)) #  x= Dropout(0.5))
+        x = self._tagged_chain(lnTag, x, Dense(888, name='%sD888_2' %lnTag))
+        x = self._tagged_chain(lnTag, x, Dropout(0.5, name='%sDropout2' %lnTag)) #  x= Dropout(0.5))
+        x = self._tagged_chain(lnTag, x, Dense(88, name='%sD88' %lnTag))
+        x = self._tagged_chain(lnTag, x, Dense(self._classesOut, name='%so%d' % (lnTag, self._classesOut), activation='softmax'))
         return x
 
     @property
@@ -64,7 +73,7 @@ class Model88(BaseModel) :
         return coreId
 
     @abstractmethod
-    def buildup(self, input_tensor):
+    def buildup(self, input_shape, input_name=None):
         '''
         @return self.model
         '''
@@ -128,7 +137,7 @@ class Model88_Flat(Model88) :
         return 'M88F.%s' % self.coreId
 
     @abstractmethod
-    def buildup(self, input_shape=(1548, )) :
+    def buildup(self, input_shape=(1548, ), input_name='state1d') :
         tensor_in = Input(shape=input_shape)
         new_shape = (int(input_shape[0]/4), 4)
         x = Reshape(new_shape, input_shape=input_shape)(tensor_in)
@@ -480,13 +489,14 @@ class Model88_sliced2d(Model88) :
         self.__dictSubModels[m.name] = {'model_json': m.to_json(), 'model': m}
         return m(tensor_flowClose)
 
-    def buildup(self, input_shape=(20, 32, 8)):
-        return self.__buildup(None, None, None, input_shape)
+    def buildup(self, input_shape=(20, 32, 8), input_name='state'):
+        input_name = '%s%s' % (input_name, 'x'.join([str(x) for x in input_shape]))
+        return self.__buildup(None, None, None, input_shape, input_name)
 
     def __fmtNamePrefix(self, sizeY):
         return 'S2d%dX%dY%dF%d' %(self._sizeX, sizeY, self.__channels_per_slice, self.__features_per_slice)
 
-    def __buildup(self, core_name, jsonSubs, custom_objects, input_shape):
+    def __buildup(self, core_name, jsonSubs, custom_objects, input_shape, input_name):
         if self._sizeX != input_shape[1] or input_shape[0] >self._maxY :
             raise ValueError('shape%s not allowed, must rows<=%d and columns=%d' % (input_shape, self._maxY, self._sizeX))
 
@@ -497,8 +507,7 @@ class Model88_sliced2d(Model88) :
         if 0 != channels % self.__channels_per_slice: slice_count +=1
 
         mNamePrefix = '%sx%d' %(self.__fmtNamePrefix(self._maxY), slice_count)
-
-        tensor_in = Input(shape=input_shape, name='%s.I%s' % (mNamePrefix, 'x'.join([str(x) for x in input_shape])), dtype=INPUT_FLOAT)
+        tensor_in = Input(shape=input_shape, name='%s.%s' % (mNamePrefix, input_name), dtype=INPUT_FLOAT)
         x = tensor_in
 
         if input_shape[0] <self._maxY: # padding Ys at the bottom
@@ -874,8 +883,8 @@ if __name__ == '__main__':
     model, fn_template, fn_weightsFrom = None, None, None
     # fn_template = '/tmp/test.h5'
     # model = BaseModel.load(fn_template)
-    fn_template = '/tmp/S2d32X18Y4F518x1o8.resnet50.B32I32-NULL.h5' # '/tmp/sliced2d.h5'
-    fn_weightsFrom = '/mnt/e/AShareSample/S2d32X18Y4F518x1o3.resnet50.h5'
+    # fn_template = '/tmp/S2d32X18Y4F518x1o8.resnet50.B32I32-NULL.h5' # '/tmp/sliced2d.h5'
+    # fn_weightsFrom = '/mnt/e/AShareSample/S2d32X18Y4F518x1o3.resnet50.h5'
     
     if fn_template and len(fn_template) >0:
         # model = BaseModel.load(fn_template)
@@ -894,8 +903,8 @@ if __name__ == '__main__':
         applied = model.load_weights(fn_weightsFrom)
         print('applied weights of %s onto %d layers: %s' % (fn_weightsFrom, len(trainables), '\n'.join(applied)))
 
-    model.enable_trainable("S2d32X20Y4F518x1f0.*")
-    model.enable_trainable("S2d32X20Y4F518x1C88*")
+    # model.enable_trainable("S2d32X20Y4F518x1f0.*")
+    # model.enable_trainable("S2d32X20Y4F518x1C88*")
     model.compile()
     model.summary()
     # trainable_count = count_params(model.trainable_weights)

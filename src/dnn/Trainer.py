@@ -9,10 +9,9 @@ from __future__ import division
 from abc import abstractmethod
 
 from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
-from HistoryData  import H5DSET_DEFAULT_ARGS, listAllFiles, classifyGainRates_screeningTplus1
+import HistoryData as hist
 from dnn.BaseModel import BaseModel, BACKEND_FLOAT
 from dnn.Makeups  import Model88_sliced2d
-from HistoryData  import SAMPLE_FLOAT # note: SAMPLE_FLOAT MUST compatible with but not equal to BaseModel.INPUT_FLOATS
 
 # ----------------------------
 # INDEPEND FROM HyperPX core classes: from MarketData import EXPORT_FLOATS_DIMS
@@ -644,8 +643,8 @@ class Trainer_classify(BaseApplication):
         for i in range(cBth):
             batch = {}
             for col in COLS :
-                # batch[col] = np.array(frameDict[col][self._batchSize*i: self._batchSize*(i+1)]).astype(SAMPLE_FLOAT)
-                batch[col] = np.array([frameDict[col][j] for j in shuffledIndx[self._batchSize*i: self._batchSize*(i+1)]]).astype(SAMPLE_FLOAT)
+                # batch[col] = np.array(frameDict[col][self._batchSize*i: self._batchSize*(i+1)]).astype(hist.SAMPLE_FLOAT)
+                batch[col] = np.array([frameDict[col][j] for j in shuffledIndx[self._batchSize*i: self._batchSize*(i+1)]]).astype(hist.SAMPLE_FLOAT)
             
             bths.append(batch)
 
@@ -693,7 +692,7 @@ class Trainer_classify(BaseApplication):
         fileList = copy.copy(self._sampleFiles)
         if len(fileList) <=0 and self._dirSamples and len(self._dirSamples) >0:
             fileList =[]
-            files = listAllFiles(self._dirSamples)
+            files = hist.listAllFiles(self._dirSamples)
             for name in files:
                 if self._preBalanced :
                     if '.h5b' != name[-4:] : continue
@@ -1202,7 +1201,7 @@ class Trainer_classify(BaseApplication):
 ########################################################################
 class Trainer_GainRates(Trainer_classify) :
 
-    def __init__(self, program, **kwargs):
+    def __init__(self, program, grClassifier=None, **kwargs):
         super(Trainer_GainRates, self).__init__(program, **kwargs)
 
         self._colnameSamples      = 'state'
@@ -1212,11 +1211,12 @@ class Trainer_GainRates(Trainer_classify) :
 
         self._funcConvertFrame = self.classifyTplus1GainRateOfFrame
         self._funcFilterFrame  = None
+        self._funcGRClassifier = grClassifier if grClassifier else hist.classifyGainRates_screeningTplus1
 
     def classifyTplus1GainRateOfFrame(self, frameDict):
 
-        gainClasses = classifyGainRates_screeningTplus1(frameDict[self._colnameClasses])
-        samples = np.array(frameDict[self._colnameSamples]).astype(SAMPLE_FLOAT)
+        gainClasses = self._funcGRClassifier(frameDict[self._colnameClasses])
+        samples = np.array(frameDict[self._colnameSamples]).astype(hist.SAMPLE_FLOAT)
         bths = []
         cBth = gainClasses.shape[0] // self._batchSize
         for i in range(cBth):
@@ -1271,7 +1271,7 @@ if __name__ == '__main__':
     p.info('all objects registered piror to Trainer_classify: %s' % p.listByType())
     
     # trainer = p.createApp(Trainer_classify, configNode ='train') # for 3 actions
-    trainer = p.createApp(Trainer_GainRates, configNode ='train') # for 8 gain-rates
+    trainer = p.createApp(Trainer_GainRates, grClassifier=hist.classifyGainRates_level6, configNode ='train') # for 8 gain-rates
 
     p.start()
 

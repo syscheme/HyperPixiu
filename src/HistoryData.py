@@ -1445,7 +1445,7 @@ class Zipper(BaseApplication):
     def _push(self, filename) :
         self._queue.put(filename)
 
-def classifyGainRates(gain_rates) :
+def classifyGainRates_level6(gain_rates, interestDays=[0,1,2,4]) : # [0,1,2,4] to measure day0,day1,day2,day4 within a week, interestDays=[0,1,2,-1]) :
     '''
     @param gain_rates: a 2d metrix: [[gr_day0, gr_day1, gr_day2 ... gr_dayN], ...]
     @return np.array of gain-classes
@@ -1453,32 +1453,25 @@ def classifyGainRates(gain_rates) :
     gainRates = np.array(gain_rates).astype(SAMPLE_FLOAT) #  'gain_rates' is a list here
     days = gainRates.shape[1]
     daysOfcol2 =2 # = days-1
-    gainRates = gainRates[:, [0,1, daysOfcol2]] # we only interest day0, day1 and dayN
+    gainRates = gainRates[:, interestDays] # = gainRates[0,1, daysOfcol2]] # we only interest day0, day1 and dayN
     # dailize the gain rate, by skipping day0 and day1
-    if daysOfcol2 >1:
-        gainRates[:, 2] = gainRates[:, 2] /daysOfcol2
+    for i in range(len(interestDays)):
+        if interestDays[i] < 0: interestDays[i] += days # covert last(-1) to real index
+        if interestDays[i] > 1:
+            gainRates[:, i] = gainRates[:, i] /daysOfcol2
     
     # # scaling the gain rate to fit in [0,1) : 0 maps -2%, 1 maps +8%
     # SCALE, OFFSET =10, 0.02
     # gainRates = (gainRates + OFFSET) *SCALE
     # gainRates.clip(0.0, 1.0)``
 
-    LC = [-100, -2.0, 0.5, 2.0, 5.0, 8.0, 100 ] # by %, -100 means -INF, +100= +INF
-    gainClasses = np.zeros(shape=(gainRates.shape[0], 3 + (len(LC) -1) *2)).astype(CLASSIFY_INT) # 3classes for day0: <1%, 1~5%, >5%
+    LC = [-1000, -2.0, 0.5, 1.0, 3.0, 5.0, 100 ] # by %, -1000 means -INF, +1000= +INF
+    gainClasses = np.zeros(shape=(gainRates.shape[0], (len(LC) -1) *len(interestDays))).astype(CLASSIFY_INT) # 3classes for day0: <1%, 1~5%, >5%
     for i in range(len(LC) -1):
-        for j in [1, 2]:
+        for j in range(len(interestDays)):
+            d = interestDays[j]
             C = np.where((gainRates[:, j] > LC[i]/100.0) & (gainRates[:, j] <= LC[i+1]/100.0))
-            gainClasses[C, 3 + (j-1)*(len(LC)-1) +i] =1
-
-    # class-0. day0 gr<=1%
-    C = np.where(gainRates[:, 0] <= 0.01)
-    gainClasses[C, 0] =1
-    # class-1. day0 1%< gr <=5%
-    C = np.where((gainRates[:, 0] > 0.01) & (gainRates[:, 0] <=0.05))
-    gainClasses[C, 1] =1
-    # class-2. day0 gr >5%
-    C = np.where(gainRates[:, 0] > 0.05)
-    gainClasses[C, 2] =1
+            gainClasses[C, j*(len(LC)-1) +i] =1
 
     return gainClasses
 

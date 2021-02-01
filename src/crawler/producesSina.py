@@ -773,7 +773,11 @@ def archiveWeek(dirArchived, symbols, dtInWeek=None, prog=None):
     for symbol in symbols: 
         linesMday=''
         readtxn = []
-        evt1ds, json1ds, jsonName1ds = ['MF1d', 'KL1d'], [None, None], [None, None]
+
+        evt1ds = ['MF1d', 'KL1d']
+        json1ds, jsonName1ds = [None, None], [None, None]
+        csv1ds, csvName1ds = [None, None], [None, None]
+
         for yymmdd in YYYYMMDDs:
             fnMDay = os.path.join(dirArchived, 'SinaMDay_%s.h5t' % yymmdd)
             memName = '%s_day%s.tcsv' %(symbol, yymmdd)
@@ -796,34 +800,10 @@ def archiveWeek(dirArchived, symbols, dtInWeek=None, prog=None):
                     lines = h5tar.read_utf8(fn, memName)
                     if not lines or len(lines) <=0 : continue
 
-                    # # IF save the json directly, can be removed
-                    # json1ds[i] = lines
-                    # jsonName1ds[i] = memName
-                    # # ENDIF
-
-                    memName = '%s/%s_%s%s.csv' % (evt1ds[i], symbol, evt1ds[i], yymmdd)
-                    fcsv = StringIO()
-                    colnames = []
-                    edseq = []
-                    if 'KL1d' == evt1ds[i]:
-                        colnames = KLineData.COLUMNS
-                        edseq    = SinaCrawler.convertToKLineDatas(symbol, lines)
-                    elif 'MF1d' == evt1ds[i]:
-                        colnames = MoneyflowData.COLUMNS
-                        edseq    = SinaCrawler.convertToMoneyFlow(symbol, lines, False)
-                    
-                    if isinstance(colnames, str):
-                        colnames = colnames.split(',')
-
-                    fcsv.write(','.join(colnames) +'\r\n') # the head line
-                    for ed in edseq:
-                        row = ed.__dict__
-                        cols = [str(row[col]) for col in colnames]
-                        fcsv.write(','.join(cols) +'\r\n')
-
-                    strdata = fcsv.getvalue()
-                    h5tar.write_utf8(fnOut, memName, strdata, createmode='a')
+                    json1ds[i] = lines
+                    jsonName1ds[i] = memName
                     readtxn.append('%s(%dB)@%s' % (memName, len(lines), fn))
+
                 except Exception as ex:
                     if prog: prog.logexception(ex, 'archiveWeek() failed to read %s from %s' % (memName, fn))
 
@@ -833,7 +813,31 @@ def archiveWeek(dirArchived, symbols, dtInWeek=None, prog=None):
 
         for i in range(len(evt1ds)):
             if not json1ds[i] or len(json1ds[i]) <=0: continue
-            h5tar.write_utf8(fnOut, '%s/%s' % (evt1ds[i], jsonName1ds[i]), json1ds[i], createmode='a')
+            # h5tar.write_utf8(fnOut, '%s/%s' % (evt1ds[i], jsonName1ds[i]), json1ds[i], createmode='a')
+
+            memName = '%s/%s.csv' % (evt1ds[i], jsonName1ds[i][:-4]) # replace the file extname
+            colnames = []
+            edseq = []
+            if 'KL1d' == evt1ds[i]:
+                colnames = KLineData.COLUMNS
+                edseq    = SinaCrawler.convertToKLineDatas(symbol, json1ds[i])
+            elif 'MF1d' == evt1ds[i]:
+                colnames = MoneyflowData.COLUMNS
+                edseq    = SinaCrawler.convertToMoneyFlow(symbol, json1ds[i], False)
+            
+            if isinstance(colnames, str):
+                colnames = colnames.split(',')
+
+            fcsv = StringIO()
+            fcsv.write(','.join(colnames) +'\r\n') # the head line
+            for ed in edseq:
+                row = ed.__dict__
+                cols = [str(row[col]) for col in colnames]
+                fcsv.write(','.join(cols) +'\r\n')
+
+            strdata = fcsv.getvalue()
+            h5tar.write_utf8(fnOut, memName, strdata, createmode='a')
+            readtxn.append('convert[%s]to %s(%d)' % (jsonName1ds[i], memName, len(strdata)))
 
         if prog: prog.debug('archiveWeek() %s archived %s' % (fnOut, ','.join(readtxn)))
         slist.append(symbol)

@@ -201,7 +201,7 @@ class BaseModel(object) :
 
         return model
 
-    def load_weights(self, filepath):
+    def load_weights(self, filepath, import_weight=1.0):
         
         lynames=[]
         if not self.model: return lynames
@@ -209,12 +209,12 @@ class BaseModel(object) :
             if 'model_weights' not in h5f: return lynames
 
             g_subweights = h5f['model_weights']
-            lynames = model._load_weights_from_hdf5g(g_subweights)
+            lynames = model._load_weights_from_hdf5g(g_subweights, import_weight=import_weight)
         
         return lynames
     
-    def _load_weights_from_hdf5g(self, group, trainable = False):
-        ret = BaseModel._load_weights_from_hdf5g_by_name(group, self.model.layers)
+    def _load_weights_from_hdf5g(self, group, trainable = False, import_weight=1.0):
+        ret = BaseModel._load_weights_from_hdf5g_by_name(group, self.model.layers, import_weight)
         for layer in self.model.layers:
             layer.trainable = False
 
@@ -267,13 +267,18 @@ class BaseModel(object) :
         BaseModel.hdf5g_setAttribute(group, 'layer_names', [n.encode('utf8') for n in saved_layer_names])
         return saved_layer_names
 
-    def _load_weights_from_hdf5g_by_name(group, layers, name_pattern=None):
+    def _load_weights_from_hdf5g_by_name(group, layers, name_pattern=None, import_weight=1.0):
         '''
         duplicated but simplized from /usr/local/lib/python3.6/...tensorflow/python/keras/engine/hdf5_format.py
         Saves the weights of a list of layers to a HDF5 group.
         group: HDF5 group.
         layers: List of layer instances.
+        import_weight: (0, 1.0] how much to apply the weights onto the existing layer, each result weight would be (weight_from_h5 * import_weight + weight_of_current* (1 -import_weight))
         '''
+        if import_weight<0.0: import_weight =0.0
+        elif import_weight >1.0: import_weight =1.0
+        w_keep = 1.0 - import_weight
+
         loadeds=[]
         layer_names = BaseModel.hdf5g_getAttribute(group, 'layer_names')
 
@@ -286,9 +291,17 @@ class BaseModel(object) :
                 continue
 
             pklweights = group[layer.name]['pickled_weights'][()].tobytes()
-            weights = pickle.loads(pklweights)
-            layer.set_weights(weights)
-            loadeds.append('%s(%d)' %(layer.name, int(weights[1].shape[0])))
+            weights_to_import = pickle.loads(pklweights)
+
+            weights_to_merge = [layer.get_weights(), weights_to_import]
+            weightsResult = []
+
+            for t in zip(*weights_to_merge):
+                # weightsResult.append( [numpy.array(item).mean(axis=0) for item in zip(*t)])
+                weightsResult.append( np.array([np.array(item[0]*w_keep + item[1]*import_weight) for item in zip(*t)]) )
+            layer.set_weights(weightsResult)
+
+            loadeds.append('%s(%d)x%s' %(layer.name, int(weights_to_import[1].shape[0]), import_weight))
         
         return loadeds
 

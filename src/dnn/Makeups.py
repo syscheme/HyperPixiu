@@ -729,14 +729,14 @@ class Model88_sliced2d(Model88) :
         
         return lynames
     
-    def _load_weights_from_hdf5g(self, group, trainable=False):
+    def _load_weights_from_hdf5g(self, group, trainable=False, import_weight=1.0):
         ret = []
         for k, v in self.__dictSubModels.items() :
             if 'model' not in v or not v['model']: continue
             if k not in group.keys(): continue
             
             m, subwg = v['model'], group[k]
-            loadeds = BaseModel._load_weights_from_hdf5g_by_name(subwg, m.layers)
+            loadeds = BaseModel._load_weights_from_hdf5g_by_name(subwg, m.layers, import_weight)
         
             # step 3. by default, disable trainable
             for layer in m.layers:
@@ -893,7 +893,7 @@ if __name__ == '__main__':
     model, fn_template, fn_weightsFrom = None, None, None
     # fn_template = '/tmp/test.h5'
     # model = BaseModel.load(fn_template)
-    # fn_template = '/tmp/state18x32x4Y4F518x1To24gr6L.resnet50.B32I32.h5' # '/tmp/sliced2d.h5'
+    fn_template = '/tmp/state18x32x4Y4F518x1To24gr6L.resnet50.B32I32.h5' # '/tmp/sliced2d.h5'
     # fn_weightsFrom = '/mnt/d/temp/S2d32X18Y4F518x1o3.resnet50_trained-last.h5'
     
     if fn_template and len(fn_template) >0:

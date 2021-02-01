@@ -173,7 +173,10 @@ class Trainer_classify(BaseApplication):
         self._fnStartModel = Program.fixupPath(self._fnStartModel)
         self._sampleFiles = [ Program.fixupPath(f) for f in self._sampleFiles ]
         if self._dirSamples and len(self._dirSamples) >0:
-            self._dirSamples = Program.fixupPath(self._dirSamples)
+            if isinstance(self._dirSamples, str) :
+                self._dirSamples = [ {'path': Program.fixupPath(self._dirSamples), 'lastFrames': -1} ]
+            else: # should be a list of {'path', 'lastFrames'}
+                self._dirSamples = [ {'path': Program.fixupPath(x['path']), 'lastFrames': int(x['lastFrames']) if 'lastFrames' in x else -1 } for x in self._dirSamples]
 
         fileList = self.__populateSampleFileList()
 
@@ -689,19 +692,22 @@ class Trainer_classify(BaseApplication):
         return len(frameDict[self._colnameClasses])
 
     def __populateSampleFileList(self) :
-        fileList = copy.copy(self._sampleFiles)
+        fileList = [ (x, -1) for x in self._sampleFiles]
         if len(fileList) <=0 and self._dirSamples and len(self._dirSamples) >0:
             fileList =[]
-            files = hist.listAllFiles(self._dirSamples)
-            for name in files:
-                if self._preBalanced :
-                    if '.h5b' != name[-4:] : continue
-                elif '.h5' != name[-3:] : 
-                    continue
 
-                fileList.append(name)
+            for d in self._dirSamples:
+                dirPath, lastFrames = d['path'], d['lastFrames']
+                files = hist.listAllFiles(dirPath)
+                for name in files:
+                    if self._preBalanced :
+                        if '.h5b' != name[-4:] : continue
+                    elif '.h5' != name[-3:] : 
+                        continue
 
-        fileList.sort()
+                    fileList.append((name, lastFrames))
+
+        fileList = list(set(fileList))
         self.info('refreshed sample files: %s' % fileList)
         return fileList
 
@@ -716,7 +722,7 @@ class Trainer_classify(BaseApplication):
                 self._frameSeq =[]
                 fileList = self.__populateSampleFileList()
 
-                for h5fileName in fileList :
+                for h5fileName, lastFrames in fileList :
                     framesInHd5 = []
                     try:
                         self.debug('loading sample file %s' % h5fileName)
@@ -726,15 +732,18 @@ class Trainer_classify(BaseApplication):
                                 if RFGROUP_PREFIX == name[:len(RFGROUP_PREFIX)] or RFGROUP_PREFIX2 == name[:len(RFGROUP_PREFIX2)] :
                                     framesInHd5.append(name)
 
-                            # I'd like to skip frame-0 as it most-likly includes many zero-samples
-                            if not self._preBalanced and len(framesInHd5)>3:
-                                del framesInHd5[0:3] # 3frames is about 4mon
-                                # del framesInHd5[-1]
-                            
-                            if len(framesInHd5)>6:
-                                del framesInHd5[0]
+                            if lastFrames >0:
+                                del framesInHd5[: -lastFrames]
+                            else:
+                                # I'd like to skip frame-0 as it most-likly includes many zero-samples
+                                if not self._preBalanced and len(framesInHd5)>3:
+                                    del framesInHd5[0:3] # 3frames is about 4mon
+                                    # del framesInHd5[-1]
+                                
+                                if len(framesInHd5)>6:
+                                    del framesInHd5[0]
 
-                            if len(framesInHd5) <=1:
+                            if len(framesInHd5) <1 or (lastFrames<=0 and len(framesInHd5) <=1):
                                 fileList.remove(h5fileName)
                                 self.error('file %s eliminated as too few ReplayFrames in it' % (h5fileName) )
                                 continue
@@ -750,7 +759,7 @@ class Trainer_classify(BaseApplication):
                             if not self._sampleClassSize:  self._sampleClassSize = shape_classes[0]
 
                             if self._shapeSamples != shape_samples or self._sampleClassSize != shape_classes[0]:
-                                fileList.remove(h5fileName)
+                                fileList.remove((h5fileName, lastFrames))
                                 self.error('file %s eliminated per mismatched shapes: samples%s %s-classes against known samples[%s:%s] classes[%s:%s]' % (h5fileName, shape_samples, shape_classes[0], self._colnameSamples, self._shapeSamples, self._colnameClasses, self._sampleClassSize) )
                                 continue
 
@@ -760,7 +769,7 @@ class Trainer_classify(BaseApplication):
                             self.info('%d ReplayFrames found in %s with signature[%s] shapes: samples[%s:%s] classes[%s:%s]' % (len(framesInHd5), h5fileName, signature, self._colnameSamples, self._shapeSamples, self._colnameClasses, self._sampleClassSize) )
 
                     except Exception as ex:
-                        fileList.remove(h5fileName)
+                        fileList.remove((h5fileName, lastFrames))
                         self.error('file %s elimited per IO exception: %s' % (h5fileName, str(ex)) )
                         continue
 
@@ -1270,8 +1279,9 @@ if __name__ == '__main__':
 
     p.info('all objects registered piror to Trainer_classify: %s' % p.listByType())
     
-    # trainer = p.createApp(Trainer_classify, configNode ='train') # for 3 actions
-    trainer = p.createApp(Trainer_GainRates, grClassifier=hist.classifyGainRates_level6, configNode ='train') # for 8 gain-rates
+    trainer = p.createApp(Trainer_classify, configNode ='train') # for 3 actions
+    # trainer = p.createApp(Trainer_GainRates, grClassifier=hist.classifyGainRates_level6, configNode ='train') # for 8 gain-rates
+    # trainer = p.createApp(Trainer_GainRates, grClassifier=None, configNode ='train') # for 8 gain-rates
 
     p.start()
 

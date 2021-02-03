@@ -913,7 +913,7 @@ def archiveWeek(dirArchived, symbols, dtInWeek=None, prog=None):
             if not json1ds[i] or len(json1ds[i]) <=0: continue
             # h5tar.write_utf8(fnOut, '%s/%s' % (evt1ds[i], jsonName1ds[i]), json1ds[i], createmode='a')
 
-            memName = '%s/%s.csv' % (evt1ds[i], jsonName1ds[i][:-4]) # replace the file extname
+            memName = '%s/%s.csv' % (evt1ds[i], jsonName1ds[i][:-5]) # replace the file extname
             colnames = []
             edseq = []
             if 'KL1d' == evt1ds[i]:

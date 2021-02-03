@@ -486,7 +486,7 @@ class Model88_sliced2d(Model88) :
             flowCloseIn = Input(tuple(tensor_flowClose.shape[1:]), dtype=INPUT_FLOAT)
             x =Flatten(name='%sflatten' %lnTag)(flowCloseIn)
             x=Dense(self.__features_per_slice, name='%sF%d_1' % (lnTag, self.__features_per_slice))(x)
-            x =Dropout(0.3, name='%sdropout' %lnTag)(x)
+            x =Dropout(0.5, name='%sdropout' %lnTag)(x)
             x=Dense(self.__features_per_slice, name='%sF%d_2' % (lnTag, self.__features_per_slice))(x)
             m = Model(inputs=flowCloseIn, outputs=x, name=submod_name)
 
@@ -512,7 +512,7 @@ class Model88_sliced2d(Model88) :
 
         mNamePrefix = '%sx%d' %(self._fmtNamePrefix, slice_count)
         tensor_in = Input(shape=self._input_shape, name='%s.input' % (mNamePrefix), dtype=INPUT_FLOAT)
-        x = tensor_in
+        x =Dropout(0.5, name='%s.indropout' % mNamePrefix)(tensor_in)
 
         if self._input_shape[0] <self._maxY: # padding Ys at the bottom
             x = ZeroPadding2D(padding=((0, self._maxY - self._sizeY), 0), name='%s.padY%d' % (mNamePrefix, self._sizeY))(x)
@@ -783,6 +783,7 @@ class ModelS2d_ResNet50Pre(Model88_sliced2d) :
 class ModelS2d_ResNet50(Model88_sliced2d) :
     '''
     2D models with channels expanded by channels=4
+    additional autodecoder ref: https://github.com/Alvinhech/resnet-autoencoder/blob/master/autoencoder4.py
     '''
     def __init__(self, **kwargs):
         super(ModelS2d_ResNet50, self).__init__(**kwargs)
@@ -894,8 +895,8 @@ if __name__ == '__main__':
     model, fn_template, fn_weightsFrom = None, None, None
     # fn_template = '/tmp/test.h5'
     # model = BaseModel.load(fn_template)
-    fn_template = '/tmp/state18x32x4Y4F518x1To8gr8A.resnet50.B32I32.h5' # '/tmp/sliced2d.h5'
-    fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/state18x32x4Y4F518x1To3action.resnet50_trained_ETF0131.h5'
+    # fn_template = '/tmp/state18x32x4Y4F518x1To8gr8A.resnet50.B32I32.h5' # '/tmp/sliced2d.h5'
+    # fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/state18x32x4Y4F518x1To3action.resnet50_trained_ETF0131.h5'
     
     if fn_template and len(fn_template) >0:
         # model = BaseModel.load(fn_template)
@@ -917,7 +918,7 @@ if __name__ == '__main__':
         print('applied weights of %s onto %d layers: %s' % (fn_weightsFrom, len(trainables), '\n'.join(applied)))
 
     model.enable_trainable("state18x32x4Y4F518x1f0.*")
-    model.enable_trainable("state18x32x4Y4F518x1C88o24gr*")
+    model.enable_trainable("state18x32x4Y4F518x1C88*")
     model.compile()
     model.summary()
     # trainable_count = count_params(model.trainable_weights)

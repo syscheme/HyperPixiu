@@ -147,6 +147,7 @@ class Trainer_classify(BaseApplication):
         
         self.info('taking method[%s]' % (self._stepMethod))
         self._stepMethod = STEPMETHODS[self._stepMethod]
+        self.__rateBalanced =1.0
 
     def __readTraingConfigBlock(self, configNode ='CPU'):
 
@@ -512,7 +513,7 @@ class Trainer_classify(BaseApplication):
             thrd.start()
 
         newsize = self.chunksInPool
-        self.info('refreshPool() pool refreshed from readAhead: %s x(%s bth/c, %s samples/bth) from %s; %s readahead started' % (newsize, self._batchesPerTrain, self._batchSize, ','.join(self.__samplesFrom), cFramesToRead))
+        self.info('refreshPool() pool refreshed from readAhead: %s x(%s bth/c, %s samples/bth) from %dframes:%s; %s readahead started' % (newsize, self._batchesPerTrain, self._batchSize, len(self.__samplesFrom), ','.join(self.__samplesFrom), cFramesToRead))
         return newsize
 
     def readDataChunk(self, chunkNo):
@@ -559,14 +560,17 @@ class Trainer_classify(BaseApplication):
         cFrames=0
         with self.__lock:
             if self._frameSize >0:
-                cFrames = (self.__maxChunks * self._batchesPerTrain * self._batchSize) // self._frameSize
-            if cFrames<=0: cFrames =1
+                nSamplesExpected = self.__maxChunks * self._batchesPerTrain * self._batchSize
+                cFrames = (nSamplesExpected / max(0.5, self.__rateBalanced) ) // self._frameSize
+                if cFrames * self._frameSize < nSamplesExpected : cFrames +=1
+
             cFrames = int(cFrames)
+            if cFrames<=0: cFrames =1
 
             self.__thrdsReadAhead = [None] * cFrames
 
         if not ret and not self.__chunksReadAhead or len(self.__chunksReadAhead) <=0:
-            self.warn('nextDataChunk() no readAhead ready, force to read %dframes sync-ly' % cFrames)
+            self.warn('nextDataChunk() no readAhead ready, force to read a%ss x%d frames sync-ly' % (self._frameSize, cFrames))
             self.__readAheadChunks(thrdSeqId=-1, cFramesToRead=cFrames) # cFramesToRead=cFrames)
             # self.__readFramesAhead(thrdSeqId=-1, cFramesToRead=self._batchesPerTrain)
 
@@ -575,7 +579,7 @@ class Trainer_classify(BaseApplication):
             self.__newChunks, self.__samplesFrom = self.__chunksReadAhead, self.__framesReadAhead
             self.__chunksReadAhead, self.__framesReadAhead = [], []
             newsize = len(self.__newChunks)
-            self.debug('nextDataChunk() pool refreshed from readAhead: %s x(%s bth/c, %s samples/bth), reset readAhead to %d and kicking off new round of read-ahead' % (newsize, self._batchesPerTrain, self._batchSize, len(self.__chunksReadAhead)))
+            self.debug('nextDataChunk() pool refreshed from readAhead: %s x(%s bth/c, %s samples/bth) Rbal[%s], reset readAhead to %d and kicking off new round of read-ahead' % (newsize, self._batchesPerTrain, self._batchSize, self.__rateBalanced, len(self.__chunksReadAhead)))
             
             if not ret and self.__newChunks and newsize >0:
                 ret = self.__newChunks[0]
@@ -590,7 +594,7 @@ class Trainer_classify(BaseApplication):
             self.__thrdsReadAhead[0] =thrd
             thrd.start()
 
-        self.info('nextDataChunk() pool refreshed: %s x(%s samples/bth) from %s; started reading %s+ chunks ahead, recycled-size:%s' % (newsize, self._batchSize, ','.join(self.__samplesFrom), self._batchesPerTrain, szRecycled))
+        self.info('nextDataChunk() pool refreshed: %s x(%s samples/bth) Rbal[%.3f] from %dframes: %s; started reading %s+ chunks ahead, recycled-size:%s' % (newsize, self._batchSize, self.__rateBalanced, len(self.__samplesFrom), ','.join(self.__samplesFrom), self._batchesPerTrain, szRecycled))
         return ret, bRecycled
 
     def __frameToSlices(self, frameDict):
@@ -885,6 +889,7 @@ class Trainer_classify(BaseApplication):
             v.sort()
             frameSeqToRead += [(k, i) for i in v]
 
+        nTotal, nTotalRead =0, 0
         for h5fileName, nextFrameName in frameSeqToRead :
             frameDict = self.readFrame(h5fileName, nextFrameName)
 
@@ -903,6 +908,7 @@ class Trainer_classify(BaseApplication):
             try :
                 if self._funcFilterFrame :
                     nAfterFilter = self._funcFilterFrame(frameDict)
+                            
             except Exception as ex:
                 self.logexception(ex)
 
@@ -915,6 +921,8 @@ class Trainer_classify(BaseApplication):
 
             stampProcessed = datetime.now()
             self.debug('readAheadChunks(%s) filtered %s from %s samples and converted into %s chunks, took %s + %s' % (thrdSeqId, nAfterFilter, lenFrame, len(cvnted), stampFiltered -stampRead, stampProcessed -stampFiltered) )
+            nTotal += nAfterFilter
+            nTotalRead += lenFrame
 
             with self.__lock:
                 size =1
@@ -925,13 +933,14 @@ class Trainer_classify(BaseApplication):
                 else:
                     self.__chunksReadAhead.append(cvnted)
                     cFramesToRead -= 1
-
+                
                 addSize += size
 
             frameDict, cvnted = None, None
 
         # finally random.shuffle all samples read
         with self.__lock:
+            self.__rateBalanced = (float(nTotal) /nTotalRead) if nTotal>0 and nTotalRead >nTotal else 1.0
             raSize = len(self.__chunksReadAhead)
             self.__framesReadAhead = strFrames
             random.shuffle(self.__chunksReadAhead)

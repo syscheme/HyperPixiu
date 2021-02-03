@@ -43,7 +43,8 @@ class Model88(BaseModel) :
         self._input_shape = input_shape
         self._input_name  = input_name
     
-        self._startLR    = kwargs.get('startLR', 0.01)
+        self._startLR        = kwargs.get('startLR', 0.01)
+        self._output_as_attr = kwargs.get('output_as_attr', False)
 
     def _feature88toOut(self, flattern_inputs) :
         # unified final layers Dense(VirtualFeature88) then Dense(self._actionSize)
@@ -60,7 +61,7 @@ class Model88(BaseModel) :
         x = self._tagged_chain(lnTag, x, Dense(888, name='%sD888_2' %lnTag))
         x = self._tagged_chain(lnTag, x, Dropout(0.5, name='%sDropout2' %lnTag)) #  x= Dropout(0.5))
         x = self._tagged_chain(lnTag, x, Dense(88, name='%sD88' %lnTag))
-        x = self._tagged_chain(lnTag, x, Dense(self._output_class_num, name='%so%d' % (lnTag, self._output_class_num), activation='softmax'))
+        x = self._tagged_chain(lnTag, x, Dense(self._output_class_num, name='%so%d' % (lnTag, self._output_class_num), activation='relu' if self._output_as_attr else 'softmax')) # classifying must take softmax
         return x
 
     @property
@@ -893,16 +894,17 @@ if __name__ == '__main__':
     model, fn_template, fn_weightsFrom = None, None, None
     # fn_template = '/tmp/test.h5'
     # model = BaseModel.load(fn_template)
-    # fn_template = '/tmp/state18x32x4Y4F518x1To24gr6L.resnet50.B32I32.h5' # '/tmp/sliced2d.h5'
-    # fn_weightsFrom = '/mnt/d/temp/S2d32X18Y4F518x1o3.resnet50_trained-last.h5'
+    fn_template = '/tmp/state18x32x4Y4F518x1To8gr8A.resnet50.B32I32.h5' # '/tmp/sliced2d.h5'
+    fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/state18x32x4Y4F518x1To3action.resnet50_trained_ETF0131.h5'
     
     if fn_template and len(fn_template) >0:
         # model = BaseModel.load(fn_template)
         model = Model88_sliced2d.load(fn_template)
 
     if not model:
-        # model = ModelS2d_ResNet50(input_shape=(18, 32, 4), output_class_num=24, output_name='gr6L') # ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
-        model = ModelS2d_ResNet50(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
+        # model = ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
+        # model = ModelS2d_ResNet50(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
+        model = ModelS2d_ResNet50(input_shape=(18, 32, 4), output_class_num=8, output_name='gr8A', output_as_attr=True)
         model.buildup()
 
     if model and fn_weightsFrom and len(fn_weightsFrom) >0:

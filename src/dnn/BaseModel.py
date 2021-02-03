@@ -45,6 +45,16 @@ GPUs = get_available_gpus()
 
 if len(GPUs) >1:
     from keras.utils.training_utils import multi_gpu_model
+    # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    # os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+
+if len(GPUs) >0: # didn't help on RTX 2080 tf 14.0+ cuda10.1
+    from tensorflow.keras import backend as backend # from tensorflow.keras import backend
+    os.environ['CUDA_VISIBLE_DEVICES'] = '/gpu:0'
+    config = tf.ConfigProto()
+    # config.gpu_options.allow_growth = True
+    config.gpu_options.per_process_gpu_memory_fraction = 0.9
+    backend.set_session(tf.Session(config=config))
 
 if 'float32' != BACKEND_FLOAT and not (len(GPUs) >1 and 'Windows' in platform.platform()): # non-float32 excludes Anaconda-on-Win for GPU
     from tensorflow.keras import backend as backend # from tensorflow.keras import backend
@@ -241,6 +251,12 @@ class BaseModel(object) :
         if name in group.attrs:
             a = group.attrs[name]
             data = a.decode('utf-8') if isinstance(a, bytes) else [n.decode('utf8') for n in a]
+            # if isinstance(a, str) : data = a 
+            # elif isinstance(a, bytes) : data = a.decode('utf-8')
+            # elif isinstance(a, list) :
+            #     for n in a:
+            #         if isinstance(n, str) : data.append(n)
+            #         elif isinstance(n, bytes) : data.append(n.decode('utf8'))
 
         return data
 

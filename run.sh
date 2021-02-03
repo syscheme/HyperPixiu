@@ -31,6 +31,9 @@ export PYTHONPATH=${TOPDIR}:${TOPDIR}/src
 export PYTHONIOENCODING=UTF-8
 export PYTHONUNBUFFERED=1
 
+# to avoid GPU errors on some tensoflow version
+export TF_FORCE_GPU_ALLOW_GROWTH=true
+
 shift
 ${PYTHON} ${PROGRAM} $*
 

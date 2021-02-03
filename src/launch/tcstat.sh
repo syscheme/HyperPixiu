@@ -1,7 +1,8 @@
 #!/bin/bash
 
-CONF="replayTrain_U16TfGpu.json"
-PID=$(ps aux|grep 'replayTrain'|grep ${CONF}|awk '{print $2;}')
+CONF="Trainer.json"
+# PID=$(ps aux|grep 'Trainer'|grep ${CONF}|awk '{print $2;}')
+PID=$(ps aux|grep 'Trainer'|grep python | awk '{print $2;}')
 
 if [ "$1" == "-w" ]; then
     nvidia-smi|head -10
@@ -12,4 +13,4 @@ if [ -z ${PID} ]; then
     exit 1
 fi
 
-grep 'rebuilt\|saved' /tmp/replayTrain_${PID}_*.log
+grep 'rebuilt\|saved.*from eval' /tmp/Trainer_${PID}_*.log|tail -8

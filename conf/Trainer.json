@@ -8,13 +8,18 @@
     "train": {
         // "startModel": "/mnt/e/AShareSample/S2d32X18Y4F518x1.resnet50.float16.h5", 
         // "startModel": "/mnt/e/AShareSample/state18x32x4Y4F518x1To8gr8A.resnet50.start.h5", // for 8 gain-rates
-        // "startModel": "/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_trained.h5", // for 3 actions
-        "startModel": "/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_trained_ETF0131.h5", // for 3 actions
+        "startModel": "/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_trained.h5", // for 3 actions
+        // "startModel": "/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_trained_ETF0131.h5", // for 3 actions
         "baseModel": "sliced2d",
         //"trainableLayers": ["state18x32x4Y4F518x1f0.*", "state18x32x4Y4F518x1C88*"], // trainable layers, '*' means all, i.e. ['F88.Dense*', 'VClz66from512.2of2']
         "dirSamples": [ // or "sampleFiles": [...],
             { 
                 "path":"/mnt/e/AShareSample/RFrm2dImg32x18/ETF2013-2020",
+                "lastFrames": -1, // -1 means all frames in each RFrame h5 files
+            },
+
+            { 
+                "path":"/mnt/e/AShareSample/RFrm2dImg32x18/topAct500.2013-2019",
                 "lastFrames": -1, // -1 means all frames in each RFrame h5 files
             },
         ],
@@ -41,8 +46,15 @@
             "models": [
                 { 
                     "model":"GTX 1650",
-                    "batchSize": 500, // float32 can reach 100x64, float16 can reach 2000x64 for state18x32x4Y4to3act
+                    "batchSize": 500, // float32 can reach 100x64, float16 can reach 1000x64 for state18x32x4Y4to3act
                     "batchesPerTrain": 64,
+                },
+
+                { 
+                    "model":"RTX 2080",
+                    "batchSize": 1400, 
+                    "batchesPerTrain": 64,
+                    "initEpochs": 7,
                 },
             ]
         },

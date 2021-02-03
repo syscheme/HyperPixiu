@@ -566,7 +566,7 @@ class Trainer_classify(BaseApplication):
             self.__thrdsReadAhead = [None] * cFrames
 
         if not ret and not self.__chunksReadAhead or len(self.__chunksReadAhead) <=0:
-            self.warn('nextDataChunk() no readAhead ready, force to read sync-ly')
+            self.warn('nextDataChunk() no readAhead ready, force to read %dframes sync-ly' % cFrames)
             self.__readAheadChunks(thrdSeqId=-1, cFramesToRead=cFrames) # cFramesToRead=cFrames)
             # self.__readFramesAhead(thrdSeqId=-1, cFramesToRead=self._batchesPerTrain)
 
@@ -1116,6 +1116,8 @@ class Trainer_classify(BaseApplication):
             cFresh, cRecycled = 0, 0
             while len(bths_Samples) < self._batchesPerTrain :
                 bth, recycled = self.nextDataChunk() #= self.readDataChunk(idxBatchInPool)
+                # LIKELY it is because of GPU failure when this happen, so DONOT skip to find the problem at training begining: 
+                # if not bth or self._colnameSamples not in bth or self._colnameClasses not in bth : continue
                 if recycled:
                     cRecycled += 1
                 else:

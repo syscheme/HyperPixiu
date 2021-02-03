@@ -1497,19 +1497,29 @@ def classifyGainRates_screeningTplus1(gain_rates) : # just for screening after d
     C = np.where(gainRates[:, 2] <= 0.01)
     gainClasses[C, 2] =1
 
-    # class-3~6: maybe good to buy tomorrow
-    # class-3: 1% < day2 <=3% 
-    C = np.where((gainRates[:, 2] > 0.01) & (gainRates[:, 2] <=0.03))
-    gainClasses[C, 3] =1
-    # class-4. 3%< day2 <=5%
-    C = np.where((gainRates[:, 2] > 0.03) & (gainRates[:, 2] <=0.05))
-    gainClasses[C, 4] =1
-    # class-5. 5%< day2 <=8%
-    C = np.where((gainRates[:, 2] > 0.05) & (gainRates[:, 2] <=0.08))
-    gainClasses[C, 5] =1
-    # class-6. day2 >8%
-    C = np.where(gainRates[:, 2] > 0.08)
-    gainClasses[C, 6] =1
+    # # class-3~6: maybe good to buy tomorrow
+    # # class-3: 1% < day2 <=3% 
+    # C = np.where((gainRates[:, 2] > 0.01) & (gainRates[:, 2] <=0.03))
+    # gainClasses[C, 3] =1
+    # # class-4. 3%< day2 <=5%
+    # C = np.where((gainRates[:, 2] > 0.03) & (gainRates[:, 2] <=0.05))
+    # gainClasses[C, 4] =1
+    # # class-5. 5%< day2 <=8%
+    # C = np.where((gainRates[:, 2] > 0.05) & (gainRates[:, 2] <=0.08))
+    # gainClasses[C, 5] =1
+    # # class-6. day2 >8%
+    # C = np.where(gainRates[:, 2] > 0.08)
+    # gainClasses[C, 6] =1
+    
+    # # version2
+    # C = np.where((gainRates[:, 1] > 0.01) & (gainRates[:, 1] <=0.03))
+    # gainClasses[C, 3] =1
+    # C = np.where((gainRates[:, 1] > 0.03))
+    # gainClasses[C, 4] =1
+    # C = np.where((gainRates[:, 2] > 0.02) & (gainRates[:, 2] <=0.05))
+    # gainClasses[C, 5] =1
+    # C = np.where(gainRates[:, 2] > 0.05)
+    # gainClasses[C, 6] =1
 
     # attr-7: optional about today for in-day-trade
     C = np.where((gainRates[:, 0] >=0.01) & ((gainRates[:, 0] + gainRates[:, 1]) >0.03))

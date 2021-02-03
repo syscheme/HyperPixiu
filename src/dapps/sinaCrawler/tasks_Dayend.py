@@ -24,7 +24,7 @@ from Perspective import *
 from MarketData import *
 from EventData import Event
 import HistoryData as hist
-from crawler.producesSina import SinaMux, Sina_Tplus1, SinaSwingScanner
+from crawler.producesSina import SinaMux, Sina_Tplus1
 import crawler.crawlSina as sina
 
 import sys, os, re, io

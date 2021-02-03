@@ -651,7 +651,6 @@ class SinaSwingScanner(ShortSwingScanner):
 
         return True
 
-
 ########################################################################
 # utility funcs
 def listAllSymbols(prog, maxRetryAt456=20):
@@ -748,12 +747,13 @@ def sinaWeekOf(dtInWeek=None):
     YYYYMMDDs = [ (monday + timedelta(days=i, hours=1)).strftime('%Y%m%d') for i in range(7) ]
     return year, weekNo, YYYYMMDDs
 
+# ----------------------------------------------------------------------
 def archiveWeek(dirArchived, symbols, dtInWeek=None, prog=None):
     year, weekNo, YYYYMMDDs = sinaWeekOf(dtInWeek)
     fnOut = os.path.join(dirArchived, 'Sina%04dW%02d_%s-%s.h5t' % (year, weekNo, YYYYMMDDs[0][4:], YYYYMMDDs[4][4:]))
 
     if symbols and not isinstance(symbols, list):
-        symbols =[symbols]
+        symbols = symbols.split(',')
     
     if not symbols or len(symbols) <=0:
         # populate all symbols from SinaMDay_%s.h5t
@@ -815,7 +815,7 @@ def archiveWeek(dirArchived, symbols, dtInWeek=None, prog=None):
             if not json1ds[i] or len(json1ds[i]) <=0: continue
             # h5tar.write_utf8(fnOut, '%s/%s' % (evt1ds[i], jsonName1ds[i]), json1ds[i], createmode='a')
 
-            memName = '%s/%s.csv' % (evt1ds[i], jsonName1ds[i][:-4]) # replace the file extname
+            memName = '%s/%s.csv' % (evt1ds[i], jsonName1ds[i][:-5]) # replace the file extname
             colnames = []
             edseq = []
             if 'KL1d' == evt1ds[i]:

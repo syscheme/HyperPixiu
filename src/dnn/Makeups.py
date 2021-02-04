@@ -889,6 +889,57 @@ class ModelS2d_ResNet50(Model88_sliced2d) :
         x = Activation('relu')(x)
         return x
 
+# --------------------------------
+class ModelS2d_VGG16r1(Model88_sliced2d) :
+    '''
+    2D models with channels expanded by channels=4
+    additional autodecoder ref: https://github.com/Alvinhech/resnet-autoencoder/blob/master/autoencoder4.py
+    '''
+    def __init__(self, **kwargs):
+        super(ModelS2d_VGG16r1, self).__init__(**kwargs)
+
+    # def ResNet50(input_tensor=None, input_shape=None, pooling=None, classes=1000, **kwargs):
+    def _buildup_core(self, input_tensor):
+        '''
+        unlike the Model88_Flat._buildup_core() returns the output_tensor, the sliced 2D models returns a submodel as core from _buildup_core()
+        '''
+        input_tensor = Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
+        x = input_tensor
+
+        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [64, 64],        1) # Block 1
+        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [128, 128],      2) # Block 2
+        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [256, 256, 256], 3) # Block 3
+        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [512, 512, 512], 4) # Block 4
+        #???? WHY: x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [512, 512, 512], 5) # Block 5
+        # if include_top:
+        #     # Classification block
+        #     x = layers.Flatten(name='flatten')(x)
+        #     x = layers.Dense(4096, activation='relu', name='fc1')(x)
+        #     x = layers.Dense(4096, activation='relu', name='fc2')(x)
+        #     x = layers.Dense(classes, activation='softmax', name='fc1000')(x)
+        # else:
+        #     if pooling == 'avg':
+        #         x = layers.GlobalAveragePooling2D()(x)
+        #     elif pooling == 'max':
+        #         x = layers.GlobalMaxPooling2D()(x)
+        x = GlobalAveragePooling2D()(x)
+
+        # create model
+        model = Model(input_tensor, x, name='vgg16r1')
+        return model
+
+    def conv_block(input_tensor, kernel_shape, pool_shape, lst_filters, blkId):
+        """The identity block is the block that has no conv layer at shortcut.
+        # Returns
+            Output tensor for the block.
+        """
+        x = input_tensor
+        for i in range(len(lst_filters)):
+            x = Conv2D(lst_filters[i], kernel_shape, activation='relu', padding='same', name='block%s_conv%d' % (blkId, 1+i))(x)
+        
+        x = MaxPooling2D(pool_shape, strides=pool_shape, name='block%s_pool' % blkId)(x)
+        return x
+
 ########################################################################
 if __name__ == '__main__':
     
@@ -905,7 +956,7 @@ if __name__ == '__main__':
     if not model:
         # model = ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
         # model = ModelS2d_ResNet50(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
-        model = ModelS2d_ResNet50(input_shape=(18, 32, 4), output_class_num=8, output_name='gr8A', output_as_attr=True)
+        model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=8, output_name='gr8A', output_as_attr=True)
         model.buildup()
 
     if model and fn_weightsFrom and len(fn_weightsFrom) >0:

@@ -965,6 +965,7 @@ def determineLastDays(prog, nLastDays =7, todayYYMMDD= None):
     prog.debug('determineLastDays() last %d trade-days are %s according to %s' % (nLastDays, ','.join(lastYYMMDDs), symbol))
     return lastYYMMDDs
 
+"""
 ########################################################################
 def balanceSamples(filepathRFrm, compress=True) :
     '''
@@ -1081,6 +1082,7 @@ def balanceSamples(filepathRFrm, compress=True) :
                 print("lastfrm[%s] actCounts[%s,%s,%s] saved, size %s" % (frmName, kIout[0],kIout[1],kIout[2], len(col_action)))
 
             print("balanced %s to %sb: %s->%d frameOut, actSubtotal%s" % (filepathRFrm, filepathRFrm, frmInName, frmId, list(subtotal)))
+"""
 
 ####################################
 from time import sleep

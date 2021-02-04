@@ -20,7 +20,7 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 from abc import ABC, abstractmethod
 
-import sys, re
+import sys, re, random
 if sys.version_info <(3,):
     from Queue import Queue, Empty
 else:
@@ -1511,18 +1511,53 @@ def classifyGainRates_screeningTplus1(gain_rates) : # just for screening after d
     # C = np.where(gainRates[:, 2] > 0.08)
     # gainClasses[C, 6] =1
     
-    # # version2
-    # C = np.where((gainRates[:, 1] > 0.01) & (gainRates[:, 1] <=0.03))
-    # gainClasses[C, 3] =1
-    # C = np.where((gainRates[:, 1] > 0.03))
-    # gainClasses[C, 4] =1
-    # C = np.where((gainRates[:, 2] > 0.02) & (gainRates[:, 2] <=0.05))
-    # gainClasses[C, 5] =1
-    # C = np.where(gainRates[:, 2] > 0.05)
-    # gainClasses[C, 6] =1
+    # version2, simplized
+    C = np.where((gainRates[:, 1] > 0.01) & (gainRates[:, 1] <=0.03))
+    gainClasses[C, 3] =1
+    C = np.where((gainRates[:, 1] > 0.03))
+    gainClasses[C, 4] =1
+    C = np.where((gainRates[:, 2] > 0.02) & (gainRates[:, 2] <=0.05))
+    gainClasses[C, 5] =1
+    C = np.where(gainRates[:, 2] > 0.05)
+    gainClasses[C, 6] =1
 
     # attr-7: optional about today for in-day-trade
     C = np.where((gainRates[:, 0] >=0.01) & ((gainRates[:, 0] + gainRates[:, 1]) >0.03))
     gainClasses[C, 7] =1
 
     return gainClasses
+
+########################################################################
+def balanceSamples(frameDict, nameSample, nameClassifyBy, maxOverMin =-1.0):
+    '''
+        balance the samples, usually reduce some action=HOLD, which appears too many
+    '''
+    chunk_Classes = np.array(frameDict[nameClassifyBy])
+
+    AD = np.where(chunk_Classes >=0.99) # to match 1 because action is float read from RFrames
+    kI = [np.count_nonzero(AD[1] ==i) for i in range(chunk_Classes.shape[1])] # counts of each actions in frame
+    idxToDel = []
+    if maxOverMin >0.0:
+        kImax = int(min(kI) *(1 + maxOverMin))
+        for i in range(len(kI)):
+            cToReduce = kI[i] -kImax
+            if cToReduce <=0: continue
+            
+            idxItems = np.where(AD[1] ==i)[0].tolist()
+            random.shuffle(idxItems)
+            del idxItems[cToReduce:]
+            idxToDel += [int(x) for x in idxItems] 
+    else:
+        kImax = max(kI)
+        idxMax = kI.index(kImax)
+        cToReduce = kImax - int(1.6*(sum(kI) -kImax))
+        if cToReduce >0:
+            idxItems = np.where(AD[1] ==idxMax)[0].tolist()
+            random.shuffle(idxItems)
+            del idxItems[cToReduce:]
+            idxToDel = [int(i) for i in idxItems]
+
+    if len(idxToDel) >0:
+        frameDict[nameClassifyBy] = np.delete(frameDict[nameClassifyBy], idxToDel, axis=0)
+        frameDict[nameSample] = np.delete(frameDict[nameSample], idxToDel, axis=0)
+    return len(frameDict[nameClassifyBy])

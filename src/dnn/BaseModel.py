@@ -14,6 +14,8 @@ from HistoryData  import H5DSET_DEFAULT_ARGS
 # INDEPEND FROM HyperPX core classes: from MarketData import EXPORT_FLOATS_DIMS
 BACKEND_FLOAT = 'float32' # float32(single-preccision) -3.4e+38 ~ 3.4e+38, float16(half~) 5.96e-8 ~ 6.55e+4, float64(double-preccision)
 INPUT_FLOAT = 'float32'
+# BACKEND_FLOAT = 'float16'
+# INPUT_FLOAT = 'float16'
 
 EXPORT_FLOATS_DIMS = 4
 DUMMY_BIG_VAL = 999999
@@ -35,31 +37,21 @@ from time import sleep
 import h5py, tarfile, pickle, fnmatch
 import numpy as np
 
-# GPUs = backend.tensorflow_backend._get_available_gpus()
-def get_available_gpus():
-    from tensorflow.python.client import device_lib
-    local_device_protos = device_lib.list_local_devices()
-    return [{'name':x.name, 'detail':x.physical_device_desc } for x in local_device_protos if x.device_type == 'GPU']
+# # GPUs = backend.tensorflow_backend._get_available_gpus()
+# def get_available_gpus():
+#     from tensorflow.python.client import device_lib
+#     local_device_protos = device_lib.list_local_devices()
+#     return [{'name':x.name, 'detail':x.physical_device_desc } for x in local_device_protos if x.device_type == 'GPU']
 
-GPUs = get_available_gpus()
+# GPUs = get_available_gpus()
 
-if len(GPUs) >1:
-    from keras.utils.training_utils import multi_gpu_model
-    # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    # os.environ['CUDA_VISIBLE_DEVICES'] = "0"
-
-if len(GPUs) >0: # didn't help on RTX 2080 tf 14.0+ cuda10.1
-    from tensorflow.keras import backend as backend # from tensorflow.keras import backend
-    os.environ['CUDA_VISIBLE_DEVICES'] = '/gpu:0'
-    config = tf.ConfigProto()
-    # config.gpu_options.allow_growth = True
-    config.gpu_options.per_process_gpu_memory_fraction = 0.9
-    backend.set_session(tf.Session(config=config))
-
-if 'float32' != BACKEND_FLOAT and not (len(GPUs) >1 and 'Windows' in platform.platform()): # non-float32 excludes Anaconda-on-Win for GPU
-    from tensorflow.keras import backend as backend # from tensorflow.keras import backend
-    backend.set_floatx(BACKEND_FLOAT)
-    print('backend set to %s' % BACKEND_FLOAT)
+# if len(GPUs) >0: # didn't help on RTX 2080 tf 14.0+ cuda10.1
+#     from tensorflow.keras import backend as backend # from tensorflow.keras import backend
+#     os.environ['CUDA_VISIBLE_DEVICES'] = '/gpu:0'
+#     config = tf.ConfigProto()
+#     # config.gpu_options.allow_growth = True
+#     config.gpu_options.per_process_gpu_memory_fraction = 0.9
+#     backend.set_session(tf.Session(config=config))
 
 ########################################################################
 class BaseModel(object) :
@@ -87,6 +79,19 @@ class BaseModel(object) :
     def __init__(self, **kwargs):
         self._dnnModel = None
         self._program = kwargs.get('program', None)
+
+        if len(BaseModel.GPUs) >1:
+            from keras.utils.training_utils import multi_gpu_model
+            # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+            # os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+
+        if 'float32' != BACKEND_FLOAT : # and not (len(BaseModel.GPUs) >0 and 'Windows' in platform.platform()): # non-float32 excludes Anaconda-on-Win for GPU
+            from tensorflow.keras import backend as backend # from tensorflow.keras import backend
+            backend.set_floatx(BACKEND_FLOAT)
+            backend.set_epsilon(1e-4)
+            if self._program:
+                self._program.warn('backend set to %s, epsilon[1e-4]' % (BACKEND_FLOAT))
+            else: print('backend set to %s, epsilon[1e-4]' % (BACKEND_FLOAT))
 
     @property
     def program(self) :

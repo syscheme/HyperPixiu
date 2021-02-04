@@ -45,9 +45,7 @@ try:
     H5_OPEN_ARGS={'driver':'mpio', 'comm': MPI.COMM_WORLD}
 except: pass
 
-CPUs, GPUs = BaseModel.list_processors()
-if len(GPUs) >1:
-    from keras.utils.training_utils import multi_gpu_model
+# CPUs, GPUs = BaseModel.list_processors()
 
 ########################################################################
 class Trainer_classify(BaseApplication):
@@ -96,7 +94,7 @@ class Trainer_classify(BaseApplication):
         processorModel = 'CPU'
         trainParamConfs = ['CPU']
 
-        # TESTCODE: GPUs = [ {'name': '/device:GPU:0', 'detail': 'device: 0, name: GeForce GTX 1650, pci bus id: 0000:01:00.0, compute capability: 7.5'} ]
+        GPUs = BaseModel.GPUs # TESTCODE: GPUs = [ {'name': '/device:GPU:0', 'detail': 'device: 0, name: GeForce GTX 1650, pci bus id: 0000:01:00.0, compute capability: 7.5'} ]
         if len(GPUs) > 0 : # adjust some configurations if currently running on GPUs
             self.info('GPUs: %s' % GPUs)
             self.__readTraingConfigBlock('GPU')
@@ -193,6 +191,7 @@ class Trainer_classify(BaseApplication):
             return False
 
         self.__maxChunks = max(int(self._frameSize/self._batchesPerTrain /self._batchSize), 1) # minimal 8K samples to at least cover a frame
+        GPUs = BaseModel.GPUs
 
         if len(GPUs) <= 1:
             # CPU mode

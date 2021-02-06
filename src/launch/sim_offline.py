@@ -17,124 +17,174 @@ RFGROUP_PREFIX  = 'ReplayFrame:'
 RFGROUP_PREFIX2 = 'RF'
 
 ########################################################################
-def balanceH5ByActions(filepathRFrm, compress=True, maxOverMin=1.0, samplesPerFrame=2*1024) :
-    '''
-    read a frame from H5 file
-    '''
-    EXPORT_SIGNATURE= 'balanced by 3-action with framesize[%s], maxOverMin[%s] @%s' % (samplesPerFrame, maxOverMin, datetime.now().strftime('%Y-%m-%dT%H:%M:%S'))
+def concateH5Samples(filenameOut, filenameIns, compress=True, balancing=False, maxOverMin=1.0, samplesPerFrame=4*1024, skipFirsts=0) :
+    if isinstance(filenameIns, str):
+        filenameIns = filenameIns.split(',')
+
+    if not filenameOut and len(filenameIns)>0:
+        filenameOut = filenameIns[0]
+        if balancing:
+            filenameOut += 'b' if '.h5' == filenameOut[-3:] else '.h5b'
+        else:
+            filenameOut += '_cat.h5'
+
+    EXPORT_SIGNATURE= 'concated'
     dsargs={}
     if compress :
         dsargs['compression'] = 'lzf' # 'gzip' for HDFExplorer
 
-    print("balancing samples in %s to %sb" % (filepathRFrm, filepathRFrm))
-    with h5py.File(filepathRFrm+'b', 'w') as h5out:
-        frmId=0
-        frmState=None
-        frmAction=None
-        frmInName=''
-        subtotal = np.asarray([0]*3)
+    listFnIn = []
+    for pathname in filenameIns:
+        try :
+            if os.path.isdir(pathname):
+                for fn2 in hist.listAllFiles(pathname, fileOnly=True) :
+                    if '.h5b' != fn2[-4:] and '.h5' != fn2[-3:] : continue
+                    if balancing and '.h5' != fn2[-3:] : continue
+                    listFnIn.append(fn2)
+            elif os.path.isfile(pathname):
+                if '.h5b' != fn2[-4:] and '.h5' != fn2[-3:] : continue
+                if balancing and '.h5' != fn2[-3:] : continue
+                listFnIn.append(pathname)
+        except :
+            pass
+    
+    listFnIn = list(set(listFnIn))
+    print("concat h5 files balancing[%s] into %s: %s" % (filenameOut, balancing, ','.join(listFnIn)))
+    with h5py.File(filenameOut, 'w') as h5out:
+        frmId, frmState, frmAction=0, None, None
+        fnIns = []
 
-        with h5py.File(filepathRFrm, 'r') as h5f:
-            framesInHd5 = []
-            for name in h5f.keys() :
-                if RFGROUP_PREFIX == name[:len(RFGROUP_PREFIX)] or RFGROUP_PREFIX2 == name[:len(RFGROUP_PREFIX2)] :
+        for fn in listFnIn:
+            with h5py.File(fn, 'r') as h5f:
+                framesInHd5 = []
+                frmId_Ins = []
+                for name in h5f.keys() :
+                    if RFGROUP_PREFIX != name[:len(RFGROUP_PREFIX)] and RFGROUP_PREFIX2 != name[:len(RFGROUP_PREFIX2)] :
+                        continue
                     framesInHd5.append(name)
 
-            framesInHd5.sort()
-            print("found frames in %s: %s" % (filepathRFrm, ','.join(framesInHd5)))
+                framesInHd5.sort()
+                print("found frames in %s: %s" % (fn, ','.join(framesInHd5)))
+                if skipFirsts>0:
+                    del framesInHd5[:skipFirsts]
+                
+                for name in framesInHd5:
+                    frmId_Ins.append(name)
+                    frm = h5f[name]
+                    if frmState is None:
+                        lenBefore =0
+                        frmState  = np.array(list(frm['state']))
+                        frmAction = np.array(list(frm['action']))
+                    else :
+                        lenBefore = len(frmState)
+                        frmState  = np.concatenate((frmState,  list(frm['state'])), axis=0)
+                        frmAction = np.concatenate((frmAction, list(frm['action'])), axis=0)
 
-            for frmInName in framesInHd5 :
-                print("reading frmIn[%s] from %s" % (frmInName, filepathRFrm))
-                frm = h5f[frmInName]
-                if frmState is None:
-                    lenBefore =0
-                    frmState  = np.array(list(frm['state']))
-                    frmAction = np.array(list(frm['action']))
-                else :
-                    lenBefore = len(frmState)
-                    np.concatenate((frmState, list(frm['state'])), axis=0)
-                    frmState  = np.concatenate((frmState,  list(frm['state'])), axis=0)
-                    frmAction = np.concatenate((frmAction, list(frm['action'])), axis=0)
+                    lenAfter = len(frmState)
+                    if lenAfter != len(frmAction):
+                        print("ERROR: sizeof frmState(%d)/frmAction(%d) doesn't match" % (lenAfter, len(frmAction)))
+                        exit(2)
 
-                lenAfter = len(frmState)
-                frameDict = {
-                    'state':  frmState,
-                    'action': frmAction
-                }
+                    if balancing:
+                        frameDict = {
+                            'state':  frmState,
+                            'action': frmAction
+                        }
 
-                hist.balanceSamples(frameDict, 'state', 'action', maxOverMin=maxOverMin)
-                frmState, frmAction = frameDict['state'], frameDict['action']
+                        hist.balanceSamples(frameDict, 'state', 'action', maxOverMin=maxOverMin)
+                        frmState, frmAction = frameDict['state'], frameDict['action']
 
-                if len(frmState) >= samplesPerFrame:
-                    col_state = frmState[:samplesPerFrame]
-                    col_action = frmAction[:samplesPerFrame]
-                    frmState  = frmState[samplesPerFrame:]
-                    frmAction = frmAction[samplesPerFrame:]
+                    if len(frmState) >= samplesPerFrame:
+                        col_state = frmState[:samplesPerFrame]
+                        col_action = frmAction[:samplesPerFrame]
+                        frmState  = frmState[samplesPerFrame:]
+                        frmAction = frmAction[samplesPerFrame:]
 
-                    AD = np.where(col_action >=0.99)
-                    kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
-                    subtotal += np.asarray(kIout)
-                    # AD = np.where(frmAction >=0.99)
-                    # kI = [np.count_nonzero(AD[1] ==i) for i in range(3)]
+                        balstr = ''
+                        if balancing:
+                            AD = np.where(col_action >=0.99)
+                            kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
+                            balstr = ' balanced classes[%s]' % ','.join([str(x) for x in kIout])
 
-                    frmName ='%s%03d' % (RFGROUP_PREFIX2, frmId)
-                    g = h5out.create_group(frmName)
-                    g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
-                    frmId +=1
-                    g.attrs['state'] = 'state'
-                    g.attrs['action'] = 'action'
-                    g.attrs[u'default'] = 'state'
-                    g.attrs['size'] = col_state.shape[0]
-                    g.attrs['signature'] = EXPORT_SIGNATURE
+                        frmName ='%s%06d' % (RFGROUP_PREFIX2, frmId)
+                        g = h5out.create_group(frmName)
+                        g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
+                        frmId +=1
+                        g.attrs['state'] = 'state'
+                        g.attrs['action'] = 'action'
+                        g.attrs[u'default'] = 'state'
+                        g.attrs['size'] = col_state.shape[0]
+                        g.attrs['signature'] = EXPORT_SIGNATURE
 
-                    st = g.create_dataset('state', data= col_state, **dsargs)
-                    st.attrs['dim'] = col_state.shape[1]
-                    ac = g.create_dataset('action', data= col_action, **dsargs)
-                    ac.attrs['dim'] = col_action.shape[1]
-                    print("outfrm[%s] actCounts[%s,%s,%s] saved, pending %s" % (frmName, kIout[0], kIout[1], kIout[2], len(frmState)))
+                        st = g.create_dataset('state', data= col_state, **dsargs)
+                        st.attrs['dim'] = col_state.shape[1]
+                        ac = g.create_dataset('action', data= col_action, **dsargs)
+                        ac.attrs['dim'] = col_action.shape[1]
+                        print("outfrm[%s] %d samples saved,%s pending %s" % (frmName, len(col_state), balstr, len(frmState)))
 
-            # the last frame
-            if len(frmState) >= 0:
-                col_state = frmState
-                col_action = frmAction
+            if len(frmId_Ins) >0:
+                fnIns.append('%s(%d)' % (fn, len(frmId_Ins)))
+
+        if not frmState is None and len(frmState) >= 0:
+            col_state = frmState
+            col_action = frmAction
+
+            balstr = ''
+            if balancing:
                 AD = np.where(col_action >=0.99)
                 kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
-                subtotal += np.asarray(kIout)
-                
-                frmName ='%s%03d' % (RFGROUP_PREFIX2, frmId)
-                g = h5out.create_group(frmName)
-                g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
-                frmId +=1
-                g.attrs['state'] = 'state'
-                g.attrs['action'] = 'action'
-                g.attrs[u'default'] = 'state'
-                g.attrs['size'] = col_state.shape[0]
-                g.attrs['signature'] = EXPORT_SIGNATURE
+                balstr = ' balanced classes[%s]' % ','.join([str(x) for x in kIout])
 
-                st = g.create_dataset('state', data= col_state, **dsargs)
-                st.attrs['dim'] = col_state.shape[1]
-                ac = g.create_dataset('action', data= col_action, **dsargs)
-                ac.attrs['dim'] = col_action.shape[1]
+            frmName ='%s%06d' % (RFGROUP_PREFIX2, frmId)
+            g = h5out.create_group(frmName)
+            g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
+            frmId +=1
+            g.attrs['state'] = 'state'
+            g.attrs['action'] = 'action'
+            g.attrs[u'default'] = 'state'
+            g.attrs['size'] = col_state.shape[0]
+            g.attrs['signature'] = EXPORT_SIGNATURE
 
-                print("lastfrm[%s] actCounts[%s,%s,%s] saved, size %s" % (frmName, kIout[0],kIout[1],kIout[2], len(col_action)))
+            st = g.create_dataset('state', data= col_state, **dsargs)
+            st.attrs['dim'] = col_state.shape[1]
+            ac = g.create_dataset('action', data= col_action, **dsargs)
+            ac.attrs['dim'] = col_action.shape[1]
+            print("outfrm[%s] last %d samples saved %s" % (frmName, len(col_state), balstr ))
 
-            print("balanced %s to %sb: %s->%d frameOut, actSubtotal%s" % (filepathRFrm, filepathRFrm, frmInName, frmId, list(subtotal)))
-
+    print("concated into file %s: %s" % (filenameOut, ','.join(fnIns) ))
 
 ########################################################################
 if __name__ == '__main__':
 
     # sys.argv += ['-z', '-b', '/mnt/e/h5_to_h5b/RFrmD4M1X5_SZ159949.h5']
 
-    # balanceH5ByActions('/mnt/e/AShareSample/RFrm2dImg32x18/ETF2013-2020/RFrm2dImg32x18C8_SH510050.h5')
-    if '-b' in sys.argv :
-        idx = sys.argv.index('-b') +1
-        if idx >0 and idx < len(sys.argv):
-            h5fn = sys.argv[idx]
-            compress = '-z' in sys.argv
-            balanceH5ByActions(h5fn, compress)
-            quit()
+    # concateH5Samples('/mnt/e/tmp.h5', '/mnt/e/AShareSample/RFrm2dImg32x18C8_ETF2013-2020/', compress=False, skipFirsts=1)
+    # sys.argv = [sys.argv[0]] + '-c -z -o /tmp/abc.h5b /mnt/e/AShareSample/RFrm2dImg32x18C8_ETF2013-2020/'.split(' ')
+    if '-c' in sys.argv :
+        idx = sys.argv.index('-c')
+        outfn, balancing, compress, skips = None, False, False, 0
+        if '-b' in sys.argv :
+            balancing = True
+            idx = max(idx, sys.argv.index('-b'))
 
+        if '-s' in sys.argv :
+            skips = 1
+            idx = max(idx, sys.argv.index('-s'))
+
+        if '-z' in sys.argv :
+            compress = True
+            idx = max(idx, sys.argv.index('-z'))
+
+        if '-o' in sys.argv :
+            i = sys.argv.index('-o')
+            idx = max(idx, i)
+            if i >0 and i < len(sys.argv) -1:
+                outfn = sys.argv[i+1]
+                idx = max(idx, i+1)
+
+        concateH5Samples(filenameOut=outfn, filenameIns=sys.argv[idx+1:], compress=compress, balancing=balancing, skipFirsts=skips)
+        quit()
+        
     if not '-f' in sys.argv :
         sys.argv += ['-f', os.path.realpath(os.path.dirname(os.path.abspath(__file__))+ '/../../conf') + '/Trader.json']
 

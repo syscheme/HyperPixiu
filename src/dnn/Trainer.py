@@ -637,6 +637,9 @@ class Trainer_classify(BaseApplication):
         return datasets
 
     def __frameToBatchs(self, frameDict):
+        if self._colnameSamples not in frameDict or self._colnameClasses not in frameDict:
+            return []
+
         COLS = [self._colnameSamples, self._colnameClasses]
         framelen = len(frameDict[COLS[0]])
         

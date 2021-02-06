@@ -49,7 +49,8 @@ def concateH5Samples(filenameOut, filenameIns, compress=True, balancing=False, m
             pass
     
     listFnIn = list(set(listFnIn))
-    print("concat h5 files balancing[%s] into %s: %s" % (filenameOut, balancing, ','.join(listFnIn)))
+    listFnIn.sort()
+    print("concat h5 files w/ balancing[%s] into %s: %s" % (balancing, filenameOut, ','.join(listFnIn)))
     with h5py.File(filenameOut, 'w') as h5out:
         frmId, frmState, frmAction=0, None, None
         fnIns = []
@@ -64,9 +65,9 @@ def concateH5Samples(filenameOut, filenameIns, compress=True, balancing=False, m
                     framesInHd5.append(name)
 
                 framesInHd5.sort()
-                print("found frames in %s: %s" % (fn, ','.join(framesInHd5)))
                 if skipFirsts>0:
                     del framesInHd5[:skipFirsts]
+                print("taking frames in %s: %s" % (fn, ','.join(framesInHd5)))
                 
                 for name in framesInHd5:
                     frmId_Ins.append(name)

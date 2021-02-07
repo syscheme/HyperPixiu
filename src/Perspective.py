@@ -1263,7 +1263,7 @@ class Formatter_2dImg32x18(Formatter_base2dImg):
             return None
 
         stk = seqdict[EVENT_KLINE_1DAY]
-        if len(stk) <=0: return None
+        if len(stk) <32: return None # 32-latest-days are minimallly required for evaluating
         baseline_Price, baseline_Volume= stk[0].close, stk[0].volume
 
         # determine dtAsOf

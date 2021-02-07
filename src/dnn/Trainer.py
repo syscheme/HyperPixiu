@@ -11,7 +11,7 @@ from abc import abstractmethod
 from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 import HistoryData as hist
 from dnn.BaseModel import BaseModel, BACKEND_FLOAT
-from dnn.Makeups  import Model88_sliced2d
+from dnn.Makeups  import Model88_sliced2d, ModelS2d_VGG16r1, ModelS2d_AutoEncoder
 
 # ----------------------------
 # INDEPEND FROM HyperPX core classes: from MarketData import EXPORT_FLOATS_DIMS
@@ -50,7 +50,7 @@ except: pass
 ########################################################################
 class Trainer_classify(BaseApplication):
 
-    def __init__(self, program, sampleFiles=None, recorder =None, **kwargs):
+    def __init__(self, program, sampleFiles=None, recorder =None, brain=None, **kwargs):
         super(Trainer_classify, self).__init__(program, **kwargs)
 
         self.__wkModelId       = None
@@ -120,7 +120,7 @@ class Trainer_classify(BaseApplication):
 
         self._evalAt =int(self._evalAt)
         self._frameSize = 0
-        self._brain = None
+        self._brain = brain # = None
         self.__lock = threading.Lock()
         self.__thrdsReadAhead = []
         self.__chunksReadAhead = []
@@ -193,43 +193,47 @@ class Trainer_classify(BaseApplication):
         self.__maxChunks = max(int(self._frameSize/self._batchesPerTrain /self._batchSize), 1) # minimal 8K samples to at least cover a frame
         GPUs = BaseModel.GPUs
 
-        if len(GPUs) <= 1:
-            # CPU mode
-            if self._baseModelClass in [ 'model2d_sliced', 'sliced2d' ]: # lower-ed already
-                self._brain = Model88_sliced2d.load(self._fnStartModel)
-            else :
-                self._brain = BaseModel.load(self._fnStartModel)
-        else:
-            # GPU mode
-            # we'll store a copy of the model on *every* GPU and then combine the results from the gradient updates on the CPU
-            with tf.device("/cpu:0"):
+        if self._brain :
+            self.info('taking preloaded brain[%s]' % self._brain.modelId)
+        else :
+            if len(GPUs) <= 1:
+                # CPU mode
                 if self._baseModelClass in [ 'model2d_sliced', 'sliced2d' ]: # lower-ed already
                     self._brain = Model88_sliced2d.load(self._fnStartModel)
                 else :
                     self._brain = BaseModel.load(self._fnStartModel)
+            else:
+                # GPU mode
+                # we'll store a copy of the model on *every* GPU and then combine the results from the gradient updates on the CPU
+                with tf.device("/cpu:0"):
+                    if self._baseModelClass in [ 'model2d_sliced', 'sliced2d' ]: # lower-ed already
+                        self._brain = Model88_sliced2d.load(self._fnStartModel)
+                    else :
+                        self._brain = BaseModel.load(self._fnStartModel)
         
-        if not self._brain:
-            self.error('failed to load startModel[%s]' % self._fnStartModel)
-            return False
-        
-        trainableLayers = []
-        if not self._trainables or len(self._trainables) <=0:
-            trainableLayers += self._brain.enable_trainable('*')
-        else:
-            if isinstance(self._trainables, str): self._trainables=self._trainables.split(',')
-            for pat in self._trainables:
-                trainableLayers += self._brain.enable_trainable(pat)
+            if not self._brain:
+                self.error('failed to load startModel[%s]' % self._fnStartModel)
+                return False
+            
+            trainableLayers = []
+            if not self._trainables or len(self._trainables) <=0:
+                trainableLayers += self._brain.enable_trainable('*')
+            else:
+                if isinstance(self._trainables, str): self._trainables=self._trainables.split(',')
+                for pat in self._trainables:
+                    trainableLayers += self._brain.enable_trainable(pat)
 
-        trainableLayers = list(set(trainableLayers))
-        trainableLayers.sort()
-        if len(trainableLayers) <= 0:
-            self.error('quit due to no trainable-layers by %s' % ','.join(self._trainables))
-            self._brain.summary()
-            return False
+            trainableLayers = list(set(trainableLayers))
+            trainableLayers.sort()
+            if len(trainableLayers) <= 0:
+                self.error('quit due to no trainable-layers by %s' % ','.join(self._trainables))
+                self._brain.summary()
+                return False
 
-        self.info('trainable-layers: %s' % ','.join(trainableLayers))
-        sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
-        self._brain.compile(optimizer=sgd)
+            self.info('trainable-layers: %s' % ','.join(trainableLayers))
+            sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+            self._brain.compile(optimizer=sgd)
+
         self.__wkModelId = self._brain.modelId
         self._brain.summary()
 
@@ -1129,8 +1133,10 @@ class Trainer_classify(BaseApplication):
                     try :
                         # eval.1 eval on the samples
                         resEval =  self._brain.evaluate(x=chunk_Samples, y=chunk_Classes, batch_size=self._batchSize, verbose=1) #, callbacks=self._fitCallbacks)
-                        strEval += 'from eval[%.2f%%^%.3f]' % (resEval[1]*100, resEval[0])
-                        self.__totalAccu += trainSize * resEval[1]
+                        if isinstance(resEval, list) and len(resEval) >1:
+                            strEval += 'from eval[%.2f%%^%.3f]' % (resEval[1]*100, resEval[0])
+                            self.__totalAccu += trainSize * resEval[1]
+                        else: strEval += 'from loss[%s]' % resEval
                         self.__totalEval += trainSize
 
                         # eval.2 action distrib in samples/prediction
@@ -1185,6 +1191,52 @@ class Trainer_classify(BaseApplication):
                 self.info('doAppStep_local_generator() %s epochs on recycled %dN+%dR samples took %s, hist: %s' % (strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
                 skippedSaves +=1
     
+########################################################################
+class Trainer_AutoEncoder(Trainer_classify) :
+
+    def __init__(self, program, **kwargs):
+        super(Trainer_AutoEncoder, self).__init__(program, **kwargs)
+
+        self._colnameSamples      = 'state'
+        self._colnameClasses      = self._colnameSamples
+
+        #TODO: self._confXXXX     = self.getConfig('XXXX', None)
+
+        self._funcConvertFrame = self.autoenc_samples
+        self._funcFilterFrame  = None
+
+    def doAppInit(self): # return True if succ
+        if not super(Trainer_AutoEncoder, self).doAppInit() :
+            return False
+
+        self._brain = ModelS2d_AutoEncoder(self._brain)
+        # self._brain.compile(optimizer='adadelta', loss='binary_crossentropy')
+        self._brain.compile(optimizer='adam', loss='binary_crossentropy')
+        self._brain.summary()
+        return True
+
+    def autoenc_samples(self, frameDict):
+        samples = np.array(frameDict[self._colnameSamples]).astype(hist.SAMPLE_FLOAT)
+        bths = []
+        cBth = samples.shape[0] // self._batchSize
+        padingY = self._brain.maxY - samples.shape[1]
+        if padingY > 0 :
+            s = list(samples.shape)
+            s[1] = padingY
+            z = np.zeros(s)
+            samples = np.concatenate((samples, z), axis=1)
+
+        for i in range(cBth):
+            bth_samples = samples[i*self._batchSize : (i+1) *self._batchSize,]
+            batch = {
+                self._colnameSamples : bth_samples,
+                self._colnameClasses : bth_samples
+            }
+
+            bths.append(batch)
+
+        return bths
+
 ########################################################################
 class Trainer_GainRates(Trainer_classify) :
 
@@ -1257,9 +1309,13 @@ if __name__ == '__main__':
 
     p.info('all objects registered piror to Trainer_classify: %s' % p.listByType())
     
-    trainer = p.createApp(Trainer_classify, configNode ='train') # for 3 actions
+    # trainer = p.createApp(Trainer_classify, configNode ='train') # for 3 actions
     # trainer = p.createApp(Trainer_GainRates, grClassifier=hist.classifyGainRates_level6, configNode ='train') # for 8 gain-rates
     # trainer = p.createApp(Trainer_GainRates, grClassifier=None, configNode ='train') # for 8 gain-rates
+
+    model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
+    model.buildup()
+    trainer = p.createApp(Trainer_AutoEncoder, configNode ='train', brain=model)
 
     p.start()
 

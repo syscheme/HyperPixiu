@@ -11,7 +11,6 @@ from abc import abstractmethod
 from Application   import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 from HistoryData   import H5DSET_DEFAULT_ARGS
 from dnn.BaseModel import BaseModel, INPUT_FLOAT, BACKEND_FLOAT
-from dnn.Makeups   import BaseModel
 
 from tensorflow.keras.models import model_from_json, Model, Sequential
 from tensorflow.keras.optimizers import Adam, SGD
@@ -784,6 +783,8 @@ class ModelS2d_ResNet50(Model88_sliced2d) :
     '''
     2D models with channels expanded by channels=4
     additional autodecoder ref: https://github.com/Alvinhech/resnet-autoencoder/blob/master/autoencoder4.py
+    https://blog.csdn.net/qq_42995327/article/details/110219613
+    https://blog.csdn.net/nijiayan123/article/details/79416764?utm_medium=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.control&depth_1-utm_source=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.control
     '''
     def __init__(self, **kwargs):
         super(ModelS2d_ResNet50, self).__init__(**kwargs)
@@ -897,6 +898,7 @@ class ModelS2d_VGG16r1(Model88_sliced2d) :
     '''
     def __init__(self, **kwargs):
         super(ModelS2d_VGG16r1, self).__init__(**kwargs)
+        self._encoder, self._decoder = None, None
 
     # def ResNet50(input_tensor=None, input_shape=None, pooling=None, classes=1000, **kwargs):
     def _buildup_core(self, input_tensor):
@@ -905,8 +907,13 @@ class ModelS2d_VGG16r1(Model88_sliced2d) :
         '''
         input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
         x = input_tensor
+        xencoded, xdecoded = None, None
 
         x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [64, 64],        1) # Block 1
+        xencoded             = x
+        iencoded             = Input(xencoded.shape[1:])
+        xdecoded             = ModelS2d_VGG16r1.deconv_block(iencoded, (3, 3), (2, 2), [64, 64],        1) # Block 1
+
         x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [128, 128],      2) # Block 2
         x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [256, 256, 256], 3) # Block 3
         x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [512, 512, 512], 4) # Block 4
@@ -926,6 +933,13 @@ class ModelS2d_VGG16r1(Model88_sliced2d) :
 
         # create model
         model = Model(input_tensor, x, name='vgg16r1')
+
+        if None not in [xencoded, xdecoded]:
+            self._encoder = Model(input_tensor, xencoded, name='enc_%s' % model.name)
+            if xdecoded.shape[-1] != input_tensor.shape[-1] :
+                xdecoded = layers.Conv2DTranspose(int(input_tensor.shape[-1]), (3,3), activation='relu', padding='same', name='deconvShape')(xdecoded)
+            self._decoder = Model(iencoded, xdecoded, name='dec_%s' % model.name)
+
         return model
 
     def conv_block(input_tensor, kernel_shape, pool_shape, lst_filters, blkId):
@@ -940,18 +954,54 @@ class ModelS2d_VGG16r1(Model88_sliced2d) :
         x = layers.MaxPooling2D(pool_shape, strides=pool_shape, name='block%s_pool' % blkId)(x)
         return x
 
-    # def deconv_block(input_tensor, kernel_shape, pool_shape, lst_filters, blkId):
-    #     """The identity block is the block that has no conv layer at shortcut.
-    #     # Returns
-    #         Output tensor for the block.
-    #     """
-    #     x = input_tensor
-    #     x = layers.MaxPooling2D(pool_shape, strides=pool_shape, name='block%s_pool' % blkId)(x)
-    #     for i in range(len(lst_filters)):
-    #         x = layers.Conv2D(lst_filters[i], kernel_shape, activation='relu', padding='same', name='block%s_conv%d' % (blkId, 1+i))(x)
+    def deconv_block(input_tensor, kernel_shape, pool_shape, lst_filters, blkId):
+        """The identity block is the block that has no conv layer at shortcut.
+        # Returns
+            Output tensor for the block.
+        """
+        x = input_tensor
+        x = layers.UpSampling2D(pool_shape, name='block%s_depool' % blkId)(x)
+        for i in range(len(lst_filters)):
+            x = layers.Conv2DTranspose(lst_filters[i], kernel_shape, activation='relu', padding='same', name='block%s_deconv%d' % (blkId, 1+i))(x)
         
-    #     x = layers.MaxPooling2D(pool_shape, strides=pool_shape, name='block%s_pool' % blkId)(x)
-    #     return x
+        return x
+
+# --------------------------------
+class ModelS2d_AutoEncoder(Model) :
+    def __init__(self, mS2d, **kwargs) :
+        super(ModelS2d_AutoEncoder, self).__init__(**kwargs)
+        self._nested = mS2d
+        self.__autoencoder = None
+
+        if None not in [self._nested._encoder, self._nested._decoder ]:
+            inp = Input(self._nested._encoder.input_shape[1:]) # TODO: should perform slicing on true input
+            encoded = self._nested._encoder(inp)
+            decoded = self._nested._decoder(encoded)
+            self.__autoencoder = Model(inp, decoded)
+            self.__autoencoder.compile(optimizer='adadelta', loss='binary_crossentropy')
+
+    @property
+    def maxY(self): return self._nested._maxY
+
+    def call(self, x) :
+        if self.__autoencoder:
+            # if x.shape[0] < self._maxY: # padding Ys at the bottom
+            #     x = ZeroPadding2D(padding=((0, self._maxY - self._sizeY), 0), name='autopadY')(x)
+            return self.__autoencoder(x)
+
+        return None # throw exception?
+
+    def fit(self, *args, **kwargs):
+        return self.__autoencoder.fit(*args, **kwargs)
+
+    def evaluate(self, *args, **kwargs):
+        return self.__autoencoder.evaluate(*args, **kwargs)
+
+    def summary(self, *args, **kwargs):
+        return self.__autoencoder.summary(*args, **kwargs)
+
+    def save(self, *args, **kwargs):
+        return self._nested.save(*args, **kwargs)
 
 ########################################################################
 if __name__ == '__main__':
@@ -968,8 +1018,8 @@ if __name__ == '__main__':
 
     if not model:
         # model = ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
-        # model = ModelS2d_ResNet50(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
-        model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=8, output_name='gr8A', output_as_attr=True)
+        model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
+        # model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=8, output_name='gr8A', output_as_attr=True)
         model.buildup()
 
     if model and fn_weightsFrom and len(fn_weightsFrom) >0:
@@ -985,6 +1035,9 @@ if __name__ == '__main__':
     model.enable_trainable("state18x32x4Y4F518x1C88*")
     model.compile()
     model.summary()
+
+    # autoenc = ModelS2d_AutoEncoder(model)
+
     # trainable_count = count_params(model.trainable_weights)
     # tw = tf.trainable_weights()
     # print('trainable %d vars: %s' % (len(tv), tw))

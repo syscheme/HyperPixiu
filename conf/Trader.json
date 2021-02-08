@@ -32,7 +32,10 @@
 
     "advisor": {
         "id" : "blah",
-        "type": "redis", // "dnn.S1548I4A3",
+        // "type": "redis", 
+        "type": "dnn_sliced2d", // "dnn" will lookfor "modelPath"
+        "modelPath": "/mnt/d/AShareSample/models/state18x32x4Y4F518x1To3action.resnet50_trained-last.h5",
+
         "brainId" : "Cnn1Dx4R2", // "ResNet21", "Cnn1Dx4R2",
         // "processor" : "cpu",
         "objectives": ["SH510050", "SH600837", "SH603993", "SH510500","SZ159949"],

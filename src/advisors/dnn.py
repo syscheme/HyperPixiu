@@ -6,18 +6,21 @@ from __future__ import division
 
 from EventData    import EventData, datetime2float, EVENT_NAME_PREFIX
 from MarketData   import *
-from Perspective  import PerspectiveState, Formatter_F1548
+from Perspective  import PerspectiveState, Formatter_F1548, Formatter_2dImg32x18, Formatter_2dImgSnail16
 from Application  import BaseApplication, BOOL_STRVAL_TRUE
 from TradeAdvisor import *
 from Trader       import MetaTrader, BaseTrader
 from Account      import OrderData
+from dnn.Makeups  import Model88, Model88_sliced2d
+import HistoryData as hist
 
 import tensorflow as tf
+import numpy as np
 from tensorflow.keras.models import model_from_json
-import h5py
+import os, h5py
 
+"""
 NN_FLOAT = 'float32'
-
 def _loadBrain(app, brainDir) :
     ''' load the previous saved brain
     @param brainDir must be given, in which there are model.json definition and weights.h5 parameters
@@ -97,9 +100,9 @@ class DnnAdvisor_S1548I4A3(TradeAdvisor):
         self._processor = self.getConfig('processor', None)
         self._brain     = None
 
-    @property
-    def ident(self) :
-        return 'S1548I4A3.%s.%s' % (self._brainId, self._id) if self._brainId else super(DnnAdvisor_S1548I4A3,self).ident
+    # @property
+    # def ident(self) :
+    #     return 'S1548I4A3.%s.%s' % (self._brainId, self._id) if self._brainId else super(DnnAdvisor_S1548I4A3,self).ident
 
     def generateAdviceOnMarketEvent(self, ev, lastAdv=None):
         '''processing an incoming MarketEvent and generate an advice
@@ -176,7 +179,7 @@ class DnnAdvisor_S1548I4A3(TradeAdvisor):
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------
-
+"""
 ########################################################################
 class DnnAdvisor(TradeAdvisor):
     '''
@@ -186,28 +189,39 @@ class DnnAdvisor(TradeAdvisor):
     ITEM_FLOATS = EXPORT_FLOATS_DIMS
     ACTION_DIMS = len(ADVICE_DIRECTIONS) # =3
 
+    FORMATTERS ={
+        '2dImg32x18': Formatter_2dImg32x18,
+        'F1548': Formatter_F1548,
+        '2dImgSnail16': Formatter_2dImgSnail16,
+    }
+
     def __init__(self, program, **kwargs) :
-        self._brainId = None
+        self._brain, self.__id, self._fnModel = None, None, None
         super(DnnAdvisor, self).__init__(program, **kwargs)
 
-        self._fnModel        = self.getConfig('model', None)
-        self._stateFormatId  = self.getConfig('stateFormat', "DDDD")
         self._processor = self.getConfig('processor', None)
-        self._brain   = None
-        self.__id     = None
+        self._type      = self.getConfig('type', "dnn_sliced2d")
+        self._fnModel  = self.getConfig('modelPath', None)
 
-    @property
-    def ident(self) :
-        if not self.__id:
-            if self._brainId : id = self._brain.modelId
-            else:
-                id = os.path.basename(self._fnModel)
-                if '.h5' == id[-3:] : id = id[:-3]
-                if '.json' == id[-5:] : id = id[:-5]
+        defaultFormatId  = list(DnnAdvisor.FORMATTERS.keys())[0]
+        stateFormatId = self.getConfig('stateFormat', defaultFormatId)
+        fmtClass = DnnAdvisor.FORMATTERS[stateFormatId] if stateFormatId in DnnAdvisor.FORMATTERS.keys() else DnnAdvisor.FORMATTERS[DnnAdvisor.FORMATTERS.keys()]
+        self.__fmtr = fmtClass()
+        
+    # @property
+    # def ident(self) :
+    #     if self.__id: return self.__id
 
-            self.__id = 'dnn.%s' % id
+    #     id = None
+    #     if self._brain : id = self._brain.modelId
+    #     elif self._fnModel and len(self._fnModel)>0:
+    #         id = os.path.basename(self._fnModel)
+    #         if '.h5' == id[-3:] : id = id[:-3]
+    #         if '.json' == id[-5:] : id = id[:-5]
 
-        return self.__id
+    #         id = 'dnn.%s' % id
+
+    #     return id if id else 'DnnAdvisor'
 
     def generateAdviceOnMarketEvent(self, ev, lastAdv=None):
         '''processing an incoming MarketEvent and generate an advice
@@ -234,13 +248,12 @@ class DnnAdvisor(TradeAdvisor):
                 return None
 
         # floatstate = self._marketState.exportF1548(symbol)
-        fmtr = Formatter_F1548()
-        floatstate = self._marketState.format(fmtr, symbol)
-        if all(v == 0.0 for v in floatstate):
+        floatstate = self._marketState.format(self.__fmtr, symbol)
+        if not floatstate:
             self.debug('generateAdviceOnMarketEvent() rack of marketState on %s' % ev.desc)
             return None # skip advising pirior to plenty state data
 
-        floatstate = np.array(floatstate).astype(NN_FLOAT).reshape(1, DnnAdvisor_S1548I4A3.STATE_DIMS)
+        floatstate = np.array([floatstate]).astype(hist.SAMPLE_FLOAT)
         act_values = self._brain.predict(floatstate)
         # action = [0.0] * DnnAdvisor_S1548I4A3.ACTION_DIMS
         # idxAct = np.argmax(act_values[0])
@@ -255,7 +268,6 @@ class DnnAdvisor(TradeAdvisor):
     # impl/overwrite of BaseApplication
     def doAppInit(self): # return True if succ
 
-        brainDir = '%s%s.S1548I4A3/' % (self.dataRoot, self._brainId)
         if self._processor and len(self._processor) >1: # if specified to run on a given processor
             from tensorflow.python.client import device_lib
             local_device_protos = device_lib.list_local_devices()
@@ -271,16 +283,20 @@ class DnnAdvisor(TradeAdvisor):
             if devname:
                 devname = devname[len('/device:'):]
                 with tf.device('/%s' % devname) :
-                    self._brain = _loadBrain(self, brainDir)
+                    self._brain = Model88_sliced2d.load(self._fnModel) if 'dnn_sliced2d' == conf_type \
+                        else Model88.load(self._fnModel)
 
         if not self._brain:
-            self._brain = _loadBrain(self, brainDir)
+            self._brain = Model88_sliced2d.load(self._fnModel) if 'dnn_sliced2d' == self._type \
+                else Model88.load(self._fnModel)
 
         if not self._brain:
             self.error('doAppInit() failed to load brain[%s]' %self._brainId)
             return False
 
-        return super(DnnAdvisor_S1548I4A3, self).doAppInit()
+        self.__fmtr._channels = self._brain._input_shape[2]
+
+        return super(DnnAdvisor, self).doAppInit()
 
     # end of BaseApplication routine
     #----------------------------------------------------------------------

@@ -2730,4 +2730,4 @@ class ShortSwingScanner(OfflineSimulator):
             
         self.info('saved %s with %s samples into file %s with sig[%s]' % (frameId, len(col_state), self._h5filename, self.ident))
 
-"""
+ """

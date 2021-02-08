@@ -8,7 +8,7 @@ from Account import Account_AShare
 from Application import *
 import HistoryData as hist
 from crawler.producesSina import Sina_Tplus1, populateMuxFromArchivedDir
-#TODO from advisors.dnn import DnnAdvisor_S1548I4A3
+from advisors.dnn import DnnAdvisor
 
 import sys, os, platform
 import random
@@ -272,14 +272,14 @@ if __name__ == '__main__':
         tdrWraper = p.createApp(IdealTrader_Tplus1, configNode ='trader', trader=tdrCore, histdata=histReader) # ideal trader to generator ReplayFrames
     elif 'SinaT+1' == ideal :
         tdrWraper = p.createApp(Sina_Tplus1, configNode ='trader', trader=tdrCore, symbol='SZ000001', dirOfflineData='/mnt/e/AShareSample/SinaWeek.20200629')
-    # else :
-    #     p.info('all objects registered piror to local Advisor: %s' % p.listByType())
-    #     advisor = p.createApp(DnnAdvisor_S1548I4A3, configNode ='advisor', objectives=objectives, recorder=rec)
-    #     advisor._enableMStateSS = False # MUST!!!
-    #     advisor._exchange = tdrCore.account.exchange
+    else :
+        p.info('all objects registered piror to local Advisor: %s' % p.listByType())
+        advisor = p.createApp(DnnAdvisor, configNode ='advisor', objectives=objectives, recorder=rec)
+        advisor._enableMStateSS = False # MUST!!!
+        advisor._exchange = tdrCore.account.exchange
 
-    #     p.info('all objects registered piror to simulator: %s' % p.listByType())
-    #     tdrWraper = p.createApp(OfflineSimulator, configNode ='trader', trader=tdrCore, histdata=histReader) # the simulator with brain loaded to verify training result
+        p.info('all objects registered piror to simulator: %s' % p.listByType())
+        tdrWraper = p.createApp(OfflineSimulator, configNode ='trader', trader=tdrCore, histdata=histReader) # the simulator with brain loaded to verify training result
 
     tdrWraper.setRecorder(rec)
 

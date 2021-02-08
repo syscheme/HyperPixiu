@@ -895,6 +895,7 @@ class ModelS2d_ResNet50(Model88_sliced2d) :
 class ModelS2d_VGG16r1(Model88_sliced2d) :
     '''
     2D models with channels expanded by channels=4
+    /usr/local/lib64/python3.6/site-packages/keras_applications/vgg16.py
     additional autodecoder ref: https://github.com/Alvinhech/resnet-autoencoder/blob/master/autoencoder4.py
     '''
     def __init__(self, **kwargs):
@@ -910,15 +911,16 @@ class ModelS2d_VGG16r1(Model88_sliced2d) :
         x = input_tensor
         xencoded, xdecoded = None, None
 
-        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [64, 64],        1) # Block 1
+        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (1, 1), [64, 64],        1) # Block 1
         xencoded             = x
         iencoded             = Input(xencoded.shape[1:])
         xdecoded             = ModelS2d_VGG16r1.deconv_block(iencoded, (3, 3), (2, 2), [64, 64],        1) # Block 1
 
-        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [128, 128],      2) # Block 2
+        # original vgg16 starts from (224,224,3) so that allow pooling at each block, we start from 32x20 here so less pooling here
+        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (1, 1), [128, 128],      2) # Block 2
         x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [256, 256, 256], 3) # Block 3
         x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [512, 512, 512], 4) # Block 4
-        #???? WHY: x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [512, 512, 512], 5) # Block 5
+        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (1, 1), [512, 512, 512], 5) # Block 5
         # if include_top:
         #     # Classification block
         #     x = layers.Flatten(name='flatten')(x)
@@ -952,7 +954,8 @@ class ModelS2d_VGG16r1(Model88_sliced2d) :
         for i in range(len(lst_filters)):
             x = Conv2D(lst_filters[i], kernel_shape, activation='relu', padding='same', name='block%s_conv%d' % (blkId, 1+i))(x)
         
-        x = MaxPooling2D(pool_shape, strides=pool_shape, name='block%s_pool' % blkId)(x)
+        if max(pool_shape) >1:
+            x = MaxPooling2D(pool_shape, strides=pool_shape, name='block%s_pool' % blkId)(x)
         return x
 
     def deconv_block(input_tensor, kernel_shape, pool_shape, lst_filters, blkId):
@@ -1002,7 +1005,7 @@ class ModelS2d_AutoEncoder(Model) :
         return self.__autoencoder.summary(*args, **kwargs)
 
     def save(self, *args, **kwargs):
-        return self._nested.save(*args, **kwargs)
+        return self.__autoencoder.save(*args, **kwargs) # return self._nested.save(*args, **kwargs)
 
 ########################################################################
 if __name__ == '__main__':

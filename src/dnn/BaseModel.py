@@ -315,6 +315,8 @@ class BaseModel(object) :
             weights_to_import = pickle.loads(pklweights)
 
             weights_to_merge = [layer.get_weights(), weights_to_import]
+            if weights_to_merge[0][0].shape != weights_to_merge[1][0].shape:
+                continue # shape didn't match although same naming
             weightsResult = []
 
             for t in zip(*weights_to_merge):

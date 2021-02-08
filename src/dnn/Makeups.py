@@ -715,7 +715,7 @@ class Model88_sliced2d(Model88) :
 
         return model
 
-    def load_weights(self, filepath):
+    def load_weights(self, filepath, submodel_remap={}):
         
         lynames=[]
         if not self.model: return lynames
@@ -726,14 +726,15 @@ class Model88_sliced2d(Model88) :
             if 'sub_models' not in g_subweights : return lynames
             g_subweights = g_subweights['sub_models']
 
-            lynames = model._load_weights_from_hdf5g(g_subweights)
+            lynames = model._load_weights_from_hdf5g(g_subweights, submodel_remap=submodel_remap)
         
         return lynames
     
-    def _load_weights_from_hdf5g(self, group, trainable=False, import_weight=1.0):
+    def _load_weights_from_hdf5g(self, group, trainable=False, import_weight=1.0, submodel_remap={}):
         ret = []
         for k, v in self.__dictSubModels.items() :
             if 'model' not in v or not v['model']: continue
+            if k in submodel_remap.keys(): k =submodel_remap[k]
             if k not in group.keys(): continue
             
             m, subwg = v['model'], group[k]
@@ -891,6 +892,71 @@ class ModelS2d_ResNet50(Model88_sliced2d) :
         x = Activation('relu')(x)
         return x
 
+    def deconv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2)):
+        x = input_tensor
+        for i in range(len(filters)):
+            x = layers.Conv2DTranspose(filters[i], kernel_shape, activation='relu', padding='same', name='block%s_deconv%d' % (blkId, 1+i))(x)
+        
+        return x
+
+# --------------------------------
+class ModelS2d_ResNet50r1(ModelS2d_ResNet50) :
+    '''
+    2D models with channels expanded by channels=4
+    additional autodecoder ref: https://github.com/Alvinhech/resnet-autoencoder/blob/master/autoencoder4.py
+    https://blog.csdn.net/qq_42995327/article/details/110219613
+    https://blog.csdn.net/nijiayan123/article/details/79416764?utm_medium=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.control&depth_1-utm_source=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.control
+    '''
+    def __init__(self, **kwargs):
+        super(ModelS2d_ResNet50r1, self).__init__(**kwargs)
+
+    # def ResNet50(input_tensor=None, input_shape=None, pooling=None, classes=1000, **kwargs):
+    def _buildup_core(self, input_tensor):
+        input_tensor = Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
+
+        bn_axis = 3
+        classes = 1000
+        pooling = 'max'
+
+        x = ZeroPadding2D(padding=(2, 2), name='conv1_pad')(input_tensor)
+        # unlike the original ResNet50 takes 224x224, kernal 7x7 is too big for the sample here, change to (2,2)
+        x = Conv2D(64, (7, 7), strides=(1, 1), padding='valid', kernel_initializer='he_normal', name='conv1')(x)
+        x = BatchNormalization(axis=bn_axis, name='bn_conv1')(x)
+        x = Activation('relu')(x)
+        x = ZeroPadding2D(padding=(1, 1), name='pool1_pad')(x)
+        x = MaxPooling2D((2, 2), strides=(1, 1))(x)
+
+        # the flowing are all strides=(1, 1)
+        x = ModelS2d_ResNet50.conv_block(x, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1))
+        x = ModelS2d_ResNet50.identity_block(x, 3, [64, 64, 256], stage=2, block='b')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [64, 64, 256], stage=2, block='c')
+
+        x = ModelS2d_ResNet50.conv_block(x, 3, [128, 128, 512], stage=3, block='a')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [128, 128, 512], stage=3, block='b')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [128, 128, 512], stage=3, block='c')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [128, 128, 512], stage=3, block='d')
+
+        x = ModelS2d_ResNet50.conv_block(x, 3, [256, 256, 1024], stage=4, block='a')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='b')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='c')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='d')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='e')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='f')
+
+        x = ModelS2d_ResNet50.conv_block(x, 3, [512, 512, 2048], stage=5, block='a')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [512, 512, 2048], stage=5, block='b')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [512, 512, 2048], stage=5, block='c')
+
+        x = GlobalAveragePooling2D(name='avg_pool')(x)
+        x = Dense(classes, activation='softmax', name='fc1000')(x)
+
+        # Ensure that the model takes into account
+        # any potential predecessors of `input_tensor`.
+        # Create model.
+        model = Model(input_tensor, x, name='resnet50r1') # model = Model(get_source_inputs(input_tensor), x, name='resnet50')
+
+        return model
+
 # --------------------------------
 class ModelS2d_VGG16r1(Model88_sliced2d) :
     '''
@@ -919,8 +985,8 @@ class ModelS2d_VGG16r1(Model88_sliced2d) :
         # original vgg16 starts from (224,224,3) so that allow pooling at each block, we start from 32x20 here so less pooling here
         x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (1, 1), [128, 128],      2) # Block 2
         x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [256, 256, 256], 3) # Block 3
-        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [512, 512, 512], 4) # Block 4
-        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (1, 1), [512, 512, 512], 5) # Block 5
+        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [256, 256, 256], 4) # Block 4, reduced from origin (2, 2), [512, 512, 512]
+        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (1, 1), [128, 128, 128], 5) # Block 5, reduced from origin (2, 2), [512, 512, 512]
         # if include_top:
         #     # Classification block
         #     x = layers.Flatten(name='flatten')(x)
@@ -1013,8 +1079,8 @@ if __name__ == '__main__':
     model, fn_template, fn_weightsFrom = None, None, None
     # fn_template = '/tmp/test.h5'
     # model = BaseModel.load(fn_template)
-    # fn_template = '/tmp/state18x32x4Y4F518x1To8gr8A.resnet50.B32I32.h5' # '/tmp/sliced2d.h5'
-    # fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/state18x32x4Y4F518x1To3action.resnet50_trained_ETF0131.h5'
+    # fn_template = '/tmp/state18x32x4Y4F518x1To3action.resnet50r1.B32I32_init.h5' # '/tmp/sliced2d.h5'
+    fn_weightsFrom = '/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_trained-gpu1.20210208.h5'
     
     if fn_template and len(fn_template) >0:
         # model = BaseModel.load(fn_template)
@@ -1022,7 +1088,7 @@ if __name__ == '__main__':
 
     if not model:
         # model = ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
-        model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
+        model = ModelS2d_ResNet50r1(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
         # model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=8, output_name='gr8A', output_as_attr=True)
         model.buildup()
 
@@ -1032,7 +1098,7 @@ if __name__ == '__main__':
         trainables.sort()
         print('enabled trainable on %d layers: %s' % (len(trainables), '\n'.join(trainables)))
 
-        applied = model.load_weights(fn_weightsFrom)
+        applied = model.load_weights(fn_weightsFrom, submodel_remap={'resnet50r1':'resnet50',})
         print('applied weights of %s onto %d layers: %s' % (fn_weightsFrom, len(trainables), '\n'.join(applied)))
 
     model.enable_trainable("state18x32x4Y4F518x1f0.*")

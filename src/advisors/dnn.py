@@ -11,13 +11,13 @@ from Application  import BaseApplication, BOOL_STRVAL_TRUE
 from TradeAdvisor import *
 from Trader       import MetaTrader, BaseTrader
 from Account      import OrderData
-from dnn.Makeups  import Model88, Model88_sliced2d
 import HistoryData as hist
+from dnn.Makeups  import Model88, Model88_sliced2d
 
 import tensorflow as tf
 import numpy as np
-from tensorflow.keras.models import model_from_json
 import os, h5py
+
 
 """
 NN_FLOAT = 'float32'

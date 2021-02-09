@@ -625,6 +625,15 @@ class CsvPlayback(Playback):
         # klinedata.datetime = klinedata.datetime.replace(hour=23, minute=59, second=59)
         ev.setData(klinedata)
         self.enquePending(ev)
+        if self._merger1DayTo1Week :
+            self._merger1DayTo1Week.pushKLine1d(klinedata)
+
+    def _cbMergedKLine1Week(self, klinedata):
+        if not klinedata: return
+        ev = Event(EVENT_KLINE_1WEEK)
+        # klinedata.datetime = klinedata.datetime.replace(hour=23, minute=59, second=59)
+        ev.setData(klinedata)
+        self.enquePending(ev)
 
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):
@@ -634,6 +643,7 @@ class CsvPlayback(Playback):
         self.__reader =None
         self._merger1minTo5min = KlineToXminMerger(self._cbMergedKLine5min, xmin=5)
         self._merger5minTo1Day = KlineToXminMerger(self._cbMergedKLine1Day, xmin=60*24-10)
+        self._merger1DayTo1Week = Kline1dTo1Week(self._cbMergedKLine1Week)
         self._dtEndOfDay = None
 
         # filter the csv files

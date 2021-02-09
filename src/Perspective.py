@@ -105,6 +105,7 @@ class KLineEx(KLineData):
         EVENT_MONEYFLOW_1MIN: EVENT_KLINE_1MIN,
         EVENT_MONEYFLOW_5MIN: EVENT_KLINE_5MIN,
         EVENT_MONEYFLOW_1DAY: EVENT_KLINE_1DAY,
+        EVENT_MONEYFLOW_1WEEK: EVENT_KLINE_1WEEK,
     }
 
     #the columns or data-fields that wish to be saved, their name must match the member var in the EventData

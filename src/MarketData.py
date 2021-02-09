@@ -56,6 +56,7 @@ EVENT_KLINE_30MIN   = EVENT_KLINE_PREFIX      + '30m'
 EVENT_KLINE_1HOUR   = EVENT_KLINE_PREFIX      + '1h'
 EVENT_KLINE_4HOUR   = EVENT_KLINE_PREFIX      + '4h'
 EVENT_KLINE_1DAY    = EVENT_KLINE_PREFIX      + '1d'
+EVENT_KLINE_1WEEK   = EVENT_KLINE_PREFIX      + '1w'
 
 EVENT_T2KLINE_1MIN  = MARKETDATE_EVENT_PREFIX + 'T2K1m'
 
@@ -65,6 +66,7 @@ EVENT_MONEYFLOW_PREFIX  = MARKETDATE_EVENT_PREFIX + 'MF'
 EVENT_MONEYFLOW_1MIN    = EVENT_MONEYFLOW_PREFIX + '1m'
 EVENT_MONEYFLOW_5MIN    = EVENT_MONEYFLOW_PREFIX + '5m'
 EVENT_MONEYFLOW_1DAY    = EVENT_MONEYFLOW_PREFIX + '1d'
+EVENT_MONEYFLOW_1WEEK   = EVENT_MONEYFLOW_PREFIX + '1w'
 
 ########################################################################
 class MarketData(EventData):
@@ -537,6 +539,66 @@ class KlineToXminMerger(object):
         # 清空老K线缓存对象
         self._klineIn = kline
         return None
+
+########################################################################
+class Kline1dTo1Week(object):
+    '''
+    K线合成器 KL1d to KL1w
+    '''
+
+    #----------------------------------------------------------------------
+    def __init__(self, onKLine1Week) :
+        '''Constructor'''
+        self._klineWk = None
+        self._klineIn = None        # 上一Input缓存对象
+        self._cbKL1Week = onKLine1Week  # 回调函数
+
+    #----------------------------------------------------------------------
+    def pushKLine1d(self, kline):
+        asofDay = kline.asof.replace(hour=23, minute=59, second=59)
+        if self._klineWk :
+            year, weekNo, wday = self._klineWk.datetime.isocalendar()
+            satday_end = (self._klineWk.datetime + timedelta(days = 6 - (wday +6) %7)).replace(hour=23,minute=59,second=59,microsecond=999999)
+            # satday_end = monday + timedelta(days = 7) - timedelta(microseconds=1) # 以sunday 0:00:00 作为K线的时间戳
+
+            if asofDay > satday_end :
+                self._klineWk.date = satday_end.strftime('%Y-%m-%d')
+                self._klineWk.time = satday_end.strftime('%H:%M:%S.%f')
+                return self._flush_week()
+
+        # 初始化新K线数据
+        if not self._klineWk:
+            # 创建新的K线对象
+            self._klineWk = KLineData(kline.exchange if '_k2x' in kline.exchange else kline.exchange + '_k2x', kline.symbol)
+            self._klineWk.open = kline.open
+            self._klineWk.high = kline.high
+            self._klineWk.low = kline.low
+            self._klineWk.datetime = asofDay
+            self._klineWk.date = self._klineWk.datetime.strftime('%Y-%m-%d')
+            self._klineWk.time = self._klineWk.datetime.strftime('%H:%M:%S')
+        else:                                   
+            # 累加更新老K线数据
+            self._klineWk.high = max(self._klineWk.high, kline.high)
+            self._klineWk.low = min(self._klineWk.low, kline.low)
+
+        # 通用部分
+        self._klineWk.close = kline.close        
+        self._klineWk.openInterest = kline.openInterest
+        self._klineWk.volume += int(kline.volume)                
+
+        # 清空老K线缓存对象
+        self._klineIn = kline
+        return None
+
+    def _flush_week(self):
+        klineOut = self._klineWk
+        if self._cbKL1Week :
+            self._cbKL1Week(klineOut)
+        
+        # 清空老K线缓存对象
+        self._klineWk = None
+        return klineOut
+
 
 ########################################################################
 class DataToEvent(object):

@@ -824,11 +824,12 @@ def populateMuxFromArchivedDir(prog, dirArchived, symbol, dtStart = None):
                 if '.json' == wmem[-5:] :
                     mux.importJsonSequence(lines, symbol, evt)
                     ev1dIncluded.append(evt)
-                # TODO: elif '.csv' == wmem[-4:] :
-                #     pb = CsvStream(StringIO(lines), symbol, evt)
-                #     pb.setId('csv:%s.%s' % (symbol, evtype))
-                #     mux.addStream(pb)
-                #     ev1dIncluded.append(evt)
+                elif '.csv' == wmem[-4:] :
+                    pb = CsvStream(symbol, StringIO(lines), MoneyflowData.COLUMNS if EVENT_MONEYFLOW_PREFIX in evt else KLineData.COLUMNS, evtype =evt, program=prog)
+                    pb.setId('csv:%s.%s' % (symbol, evtype))
+                    mux.addStream(pb)
+                    
+                    ev1dIncluded.append(evt)
 
         yymmddStart = '%s%s' % (mw.group(1), mw.group(4))
 

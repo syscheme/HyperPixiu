@@ -217,7 +217,7 @@ if __name__ == '__main__':
     revents = None
 
     # determine the Playback instance
-    # evMdSource = '/mnt/e/AShareSample/hpx_archived/sina' # TEST-CODE
+    # evMdSource = '/mnt/e/AShareSample/Sina2021W' # TEST-CODE
     # evMdSource = '/mnt/e/AShareSample/ETF.2013-2019' # TEST-CODE
     evMdSource = Program.fixupPath(evMdSource)
     basename = os.path.basename(evMdSource)

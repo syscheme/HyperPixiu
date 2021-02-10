@@ -589,6 +589,90 @@ class PlaybackApp(BaseApplication):
 
 
 ########################################################################
+class CsvStream(Playback) :
+
+    #----------------------------------------------------------------------
+    def __init__(self, symbol, stream, fields, evtype =None, startDate =Playback.DUMMY_DATE_START, endDate=Playback.DUMMY_DATE_END, **kwargs) :
+
+        super(CsvStream, self).__init__(symbol, startDate, endDate, **kwargs)
+
+        self._evtype = evtype if evtype else EVENT_KLINE_1MIN
+        self.__csvToKLEvent = KLineData.hatch # DictToKLine(self._category, symbol)
+
+        fieldnames = fields.split(',') if isinstance(fields, str) else fields
+        self.__strmFileIn = csv.DictReader(stream, fieldnames, lineterminator='\n')
+
+    # -- Impl of Playback --------------------------------------------------------------
+    def resetRead(self):
+        super(CsvStream, self).resetRead()
+        return not self.__strmFileIn is None
+
+    def readNext(self):
+        '''
+        @return True if busy at this step
+        '''
+        try :
+            ev = self.popPending(block = False, timeout = 0.1)
+            if ev: return ev
+        except Exception:
+            pass
+
+        row, ev = None, None
+        while not row:
+            if not self.__strmFileIn:
+                self._iterableEnd = True
+                return None
+
+            try :
+                row = next(self.__strmFileIn, None) # self.__strmFileIn.readline()
+            except Exception as ex:
+                row = None
+
+            if not row:
+                self.__strmFileIn.close()
+                self.__strmFileIn = None
+                continue
+
+        if not row or len(row) <=0 or not self.__csvToKLEvent :
+            return ev
+
+        try :
+            # print('line: %s' % (line))
+            row = {
+                'evType': self._evtype,
+                'exchange': self._exchange,
+                'symbol' : self._symbol,
+                **row }
+
+            ev = self.__csvToKLEvent(**row) # self.__csvToKLEvent.convert(row, self._exchange, self._symbol)
+            # if ev:
+            #     evdMH = self._testAndGenerateMarketHourEvent(ev)
+            #     if  self._merger1minTo5min :
+            #         self._merger1minTo5min.pushKLineEvent(ev)
+
+            #     if evdMH :
+            #         if self._dtEndOfDay and self._dtEndOfDay < evdMH.asof :
+            #             if  self._merger1minTo5min :
+            #                 self._merger1minTo5min.flush()
+            #             if  self._merger5minTo1Day :
+            #                 self._merger5minTo1Day.flush()
+            #             self._dtEndOfDay = None
+
+            #         if not self._dtEndOfDay :
+            #             self._dtEndOfDay = evdMH.asof.replace(hour=23,minute=59,second=59)
+
+            #     # because the generated is always as of the previous event, so always deliver those pendings in queue first
+            #     if self.pendingSize >0 :
+            #         evout = self.popPending()
+            #         self.enquePending(ev)
+            #         return evout
+
+        except Exception as ex:
+            self.logexception(ex)
+
+        return ev
+
+#----------------------------------------------------------------------
 class CsvPlayback(Playback):
     DIGITS=set('0123456789')
 
@@ -600,7 +684,7 @@ class CsvPlayback(Playback):
         self._fields = fields
 
         self.__csvfiles =[]
-        self.__csvToKL1m = KLineData.hatch # DictToKLine(self._category, symbol)
+        self.__csvToKLEvent = KLineData.hatch # DictToKLine(self._category, symbol)
 
         self._merger1minTo5min = None
         self._merger5minTo1Day = None
@@ -636,6 +720,37 @@ class CsvPlayback(Playback):
         self.enquePending(ev)
 
     # -- Impl of Playback --------------------------------------------------------------
+    def openFileStream(self):
+        while not self.__reader:
+            if not self.__csvfiles or len(self.__csvfiles) <=0:
+                self._iterableEnd = True
+                return None
+
+            fn = self.__csvfiles[0]
+            del(self.__csvfiles[0])
+
+            self.info('openning input file %s' % (fn))
+            extname = fn.split('.')[-1]
+            streamIn = None
+            if extname == 'bz2':
+                streamIn = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
+            else:
+                streamIn = open(fn, 'rt')
+
+            if not streamIn:
+                self.warn('failed to open input file %s' % (fn))
+                break
+
+            dtStart, dtEnd = self.datetimeRange
+            self.__reader = CsvStream(self._symbol, streamIn, self._fieldnames, evtype =self._category, startDate =dtStart, endDate=dtEnd, program=self.program)
+
+            # self.__reader = csv.DictReader(streamIn, self._fieldnames, lineterminator='\n') if 'csv' in fn else streamIn
+            # if not self.__reader:
+            #     self.warn('failed to open input file %s' % (fn))
+            #     break
+        
+        return self.__reader
+
     def resetRead(self):
         super(CsvPlayback, self).resetRead()
 
@@ -688,28 +803,6 @@ class CsvPlayback(Playback):
         self.info('associated file list: %s' % self.__csvfiles)
         return len(self.__csvfiles) >0
 
-    def openReader(self):
-        while not self.__reader:
-            if not self.__csvfiles or len(self.__csvfiles) <=0:
-                self._iterableEnd = True
-                return None
-
-            fn = self.__csvfiles[0]
-            del(self.__csvfiles[0])
-
-            self.info('openning input file %s' % (fn))
-            extname = fn.split('.')[-1]
-            if extname == 'bz2':
-                self._streamIn = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
-            else:
-                self._streamIn = open(fn, 'rt')
-
-            self.__reader = csv.DictReader(self._streamIn, self._fieldnames, lineterminator='\n') if 'csv' in fn else self._streamIn
-            if not self.__reader:
-                self.warn('failed to open input file %s' % (fn))
-        
-        return self.__reader
-
     def readNext(self):
         '''
         @return True if busy at this step
@@ -720,56 +813,49 @@ class CsvPlayback(Playback):
         except Exception:
             pass
 
-        row = None
-        while not row:
-            self.openReader()
+        ev = None
+        while not ev:
+            self.openFileStream()
 
             if not self.__reader:
                 self._iterableEnd = True
                 return None
 
-            # if not self._fieldnames or len(self._fieldnames) <=0:
-            #     self._fieldnames = self.__reader.headers()
-
             try :
-                row = next(self.__reader, None)
+                ev = next(self.__reader, None)
             except Exception as ex:
-                row = None
+                ev = None
 
-            if not row:
+            if not ev:
                 # self.error(traceback.format_exc())
+                if self.__reader :
+                    try:
+                        self.__reader.close()
+                    except AttributeError: pass
                 self.__reader = None
-                self._streamIn.close()
 
-        ev = None
         try :
-            if row and self.__csvToKL1m:
-                # print('line: %s' % (line))
-                row = {'evType': EVENT_KLINE_1MIN,
-                        'exchange': self._exchange, 'symbol':self._symbol,
-                       **row }
-                ev = self.__csvToKL1m(**row) # self.__csvToKL1m.convert(row, self._exchange, self._symbol)
-                if ev:
-                    evdMH = self._testAndGenerateMarketHourEvent(ev)
-                    if  self._merger1minTo5min :
-                        self._merger1minTo5min.pushKLineEvent(ev)
+            if ev:
+                evdMH = self._testAndGenerateMarketHourEvent(ev)
+                if  self._merger1minTo5min :
+                    self._merger1minTo5min.pushKLineEvent(ev)
 
-                    if evdMH :
-                        if self._dtEndOfDay and self._dtEndOfDay < evdMH.asof :
-                            if  self._merger1minTo5min :
-                                self._merger1minTo5min.flush()
-                            if  self._merger5minTo1Day :
-                                self._merger5minTo1Day.flush()
-                            self._dtEndOfDay = None
+                if evdMH :
+                    if self._dtEndOfDay and self._dtEndOfDay < evdMH.asof :
+                        if  self._merger1minTo5min :
+                            self._merger1minTo5min.flush()
+                        if  self._merger5minTo1Day :
+                            self._merger5minTo1Day.flush()
+                        self._dtEndOfDay = None
 
-                        if not self._dtEndOfDay :
-                            self._dtEndOfDay = evdMH.asof.replace(hour=23,minute=59,second=59)
+                    if not self._dtEndOfDay :
+                        self._dtEndOfDay = evdMH.asof.replace(hour=23,minute=59,second=59)
 
-                    # because the generated is always as of the previous event, so always deliver those pendings in queue first
-                    if self.pendingSize >0 :
-                        evout = self.popPending()
-                        self.enquePending(ev)
-                        return evout
+                # because the generated is always as of the previous event, so always deliver those pendings in queue first
+                if self.pendingSize >0 :
+                    evout = self.popPending()
+                    self.enquePending(ev)
+                    return evout
 
         except Exception as ex:
             self.logexception(ex)

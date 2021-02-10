@@ -813,7 +813,7 @@ def populateMuxFromArchivedDir(prog, dirArchived, symbol, dtStart = None):
         mux.addStream(pb)
 
         if len(ev1dIncluded) <2:
-            mlst = h5tar.list_utf8(fn)
+            mlst = h5tar.list_utf8(fn) # this mem-name listing is unnecessary as the member name is certain
             for wmem in mlst:
                 wmem = wmem['name']
                 if not symbol in wmem: continue
@@ -821,8 +821,14 @@ def populateMuxFromArchivedDir(prog, dirArchived, symbol, dtStart = None):
                 if not evt in [EVENT_KLINE_1DAY, EVENT_MONEYFLOW_1DAY] or evt in ev1dIncluded: continue
                 lines = h5tar.read_utf8(fn, wmem)
                 if len(lines) <=0: continue
-                mux.importJsonSequence(lines, symbol, evt)
-                ev1dIncluded.append(evt)
+                if '.json' == wmem[-5:] :
+                    mux.importJsonSequence(lines, symbol, evt)
+                    ev1dIncluded.append(evt)
+                # TODO: elif '.csv' == wmem[-4:] :
+                #     pb = CsvStream(StringIO(lines), symbol, evt)
+                #     pb.setId('csv:%s.%s' % (symbol, evtype))
+                #     mux.addStream(pb)
+                #     ev1dIncluded.append(evt)
 
         yymmddStart = '%s%s' % (mw.group(1), mw.group(4))
 

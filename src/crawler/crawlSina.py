@@ -680,7 +680,7 @@ class SinaCrawler(MarketCrawler):
         return httperr, tickseq
 
     #------------------------------------------------    
-    def convertToMoneyFlow(symbol, text, byMinutes=False):
+    def convertToMoneyFlow(symbol, text, byMinutes=False, maxEvents=260):
         '''
         will call cortResp.send(csvline) when the result comes
         ({r0_in:"0.0000",r0_out:"0.0000",r0:"0.0000",r1_in:"3851639.0000",r1_out:"4794409.0000",r1:"9333936.0000",r2_in:"8667212.0000",r2_out:"10001938.0000",r2:"18924494.0000",r3_in:"7037186.0000",r3_out:"7239931.2400",r3:"15039741.2400",curr_capital:"9098",name:"朗科智能",trade:"24.4200",changeratio:"0.000819672",volume:"1783866.0000",turnover:"196.083",r0x_ratio:"0",netamount:"-2480241.2400"})
@@ -703,7 +703,7 @@ class SinaCrawler(MarketCrawler):
                 return mfseq
             text = text[pbeg:pend] + '}]'
 
-        if len(text)>80*1024: # maximal 80KB is enough to cover 1Yr
+        if maxEvents >0 and len(text)>80*1024: # maximal 80KB is enough to cover 1Yr
             # EOM = text[text.find('}'):]
             text = text[:80*1024]
             pend = text.rfind('},{')
@@ -725,7 +725,7 @@ class SinaCrawler(MarketCrawler):
             mfdata.datetime     = datetime.strptime(mf['opendate'], '%Y-%m-%d').replace(hour=15, minute=0, second=0, microsecond=0)
             if byMinutes:
                 mfdata.datetime = datetime.strptime(mf['opendate'] + ' ' + mf['ticktime'], '%Y-%m-%d %H:%M:%S')
-            elif len(mfseq) >260 :
+            elif maxEvents >0 and len(mfseq) >maxEvents :
                 break
             mfdata.date = mfdata.datetime.strftime('%Y-%m-%d')
             mfdata.time = mfdata.datetime.strftime('%H:%M:%S')

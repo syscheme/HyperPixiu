@@ -1091,9 +1091,42 @@ def balanceSamples(filepathRFrm, compress=True) :
             print("balanced %s to %sb: %s->%d frameOut, actSubtotal%s" % (filepathRFrm, filepathRFrm, frmInName, frmId, list(subtotal)))
 """
 
+# ----------------------------------------------------------------------
+def convertJsonTarToCsvH5t(jsonTarfn, csvh5, evtype):
+
+    colnames = MoneyflowData.COLUMNS
+    if isinstance(colnames, str) :
+        colnames = colnames.split(',')
+
+    tar = tarfile.open(jsonTarfn)
+    for member in tar.getmembers():
+        basename = os.path.basename(member.name)
+        if not basename.split('.')[-1] in ['json']: 
+            continue
+
+        basename = basename.split('.')[0]
+        symbol = basename.split('_')[0]
+        memName = '%s.csv' % basename # replace the file extname
+
+        with tar.extractfile(member) as f:
+            content = f.read().decode()
+            edseq   = SinaCrawler.convertToMoneyFlow(symbol, content, False, maxEvents=-1)
+
+            fcsv = StringIO()
+            fcsv.write(','.join(colnames) +'\r\n') # the head line
+            for ed in edseq:
+                row = ed.__dict__
+                cols = [str(row[col]) for col in colnames]
+                fcsv.write(','.join(cols) +'\r\n')
+
+            h5tar.write_utf8(csvh5, memName, fcsv.getvalue(), createmode='a')
+
 ####################################
 from time import sleep
 if __name__ == '__main__':
+
+    # convertJsonTarToCsvH5t('/mnt/i/ETF-u20hp01.haswell/SinaMF1d_20200620.tar.bz2', '/mnt/e/AShareSample/SinaMF1d_20200620.h5t', EVENT_MONEYFLOW_1DAY)
+    convertJsonTarToCsvH5t(sys.argv[1], sys.argv[2], EVENT_MONEYFLOW_1DAY)
 
     # ret = listAllETFs()
     # ret = listAllIndexs()

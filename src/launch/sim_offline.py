@@ -223,7 +223,8 @@ if __name__ == '__main__':
     # evMdSource = '/mnt/e/AShareSample/ETF.2013-2019' # TEST-CODE
     evMdSource = Program.fixupPath(evMdSource)
     basename = os.path.basename(evMdSource)
-    MF1d_toAdd = ['/mnt/e/AShareSample/SinaMF1d_20200620.h5t', '/mnt/e/AShareSample/Sina2021W/Sina2021W01_0104-0108.h5t']
+    MF1d_toAdd = []
+    # MF1d_toAdd = ['/mnt/e/AShareSample/SinaMF1d_20200620.h5t', '/mnt/e/AShareSample/Sina2021W/Sina2021W01_0104-0108.h5t']
     # MF1d_toAdd = ['/mnt/e/AShareSample/Sina2021W/Sina2021W01_0104-0108.h5t']
     
     if os.path.isdir(evMdSource) :
@@ -234,6 +235,12 @@ if __name__ == '__main__':
             # csvPlayback can only cover one symbol
             p.info('taking CsvPlayback on dir %s for symbol[%s]' % (evMdSource, SYMBOL))
             histReader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
+            if not MF1d_toAdd or len(MF1d_toAdd) <=0:
+                try :
+                    fnMF1d = os.path.realpath(os.path.join(evMdSource, 'SinaMF1d.h5t'))
+                    os.stat(fnMF1d)
+                    MF1d_toAdd = [ fnMF1d ]
+                except: pass
 
             for mf in MF1d_toAdd:
                 try :

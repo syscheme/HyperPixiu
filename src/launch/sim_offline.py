@@ -9,8 +9,10 @@ from Application import *
 import HistoryData as hist
 from crawler.producesSina import Sina_Tplus1, populateMuxFromArchivedDir
 from advisors.dnn import DnnAdvisor
+import h5tar
 
-import sys, os, platform
+import sys, os, platform, re
+from io import StringIO
 import random
 
 RFGROUP_PREFIX  = 'ReplayFrame:'
@@ -221,6 +223,8 @@ if __name__ == '__main__':
     # evMdSource = '/mnt/e/AShareSample/ETF.2013-2019' # TEST-CODE
     evMdSource = Program.fixupPath(evMdSource)
     basename = os.path.basename(evMdSource)
+    MF1d_toAdd = ['/mnt/e/AShareSample/SinaMF1d_20200620.h5t', '/mnt/e/AShareSample/Sina2021W/Sina2021W01_0104-0108.h5t']
+    # MF1d_toAdd = ['/mnt/e/AShareSample/Sina2021W/Sina2021W01_0104-0108.h5t']
     
     if os.path.isdir(evMdSource) :
         try :
@@ -230,6 +234,47 @@ if __name__ == '__main__':
             # csvPlayback can only cover one symbol
             p.info('taking CsvPlayback on dir %s for symbol[%s]' % (evMdSource, SYMBOL))
             histReader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')
+
+            for mf in MF1d_toAdd:
+                try :
+                    os.stat(mf)
+                except: continue
+
+                bn = os.path.basename(mf)
+                pb = None
+                if 'SinaMF1d_' in bn and 'h5t' == bn.split('.')[-1]:
+                    memfn = bn.split('.')[0].split('_')[-1]
+                    memfn = '%s_MF1d%s.csv' % (SYMBOL, memfn)
+                    lines = h5tar.read_utf8(mf, memfn)
+                    if len(lines) <=0: continue
+
+                    pb = hist.CsvStream(SYMBOL, StringIO(lines), MoneyflowData.COLUMNS, evtype=EVENT_MONEYFLOW_1DAY, program=p)
+                    pb.setId('%s@%s' % (memfn, mf))
+                else:
+                    m = re.match(r'Sina([0-9]*)W[0-9]*_([0-9]*)-([0-9]*).h5t', bn)
+                    if not m: continue
+                    mlst = h5tar.list_utf8(mf)
+                    memfn = None
+                    for mem in mlst:
+                        if 'MF1d' in mem['name'] and SYMBOL in mem['name']:
+                            memfn = mem['name']
+                            break
+                    if not memfn: continue
+                    lines = h5tar.read_utf8(mf, memfn)
+                    if len(lines) <=0: continue
+
+                    pb = hist.CsvStream(SYMBOL, StringIO(lines), MoneyflowData.COLUMNS, evtype=EVENT_MONEYFLOW_1DAY, program=p)
+                    pb.setId('%s@%s' % (memfn, mf))
+                
+                if not pb: continue
+                if not isinstance(histReader, hist.PlaybackMux):
+                    mux = hist.PlaybackMux(program=p)
+                    mux.addStream(histReader)
+                    histReader = mux
+
+                histReader.addStream(pb)
+                p.info('mux-ed MF1d[%s' % (pb.id))
+
     elif '.tcsv' in basename :
         p.info('taking TaggedCsvPlayback on %s for symbol[%s]' % (evMdSource, SYMBOL))
         histReader = hist.TaggedCsvPlayback(program=p, symbol=SYMBOL, tcsvFilePath=evMdSource)

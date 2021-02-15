@@ -181,7 +181,7 @@ class TickData(MarketData):
         return lean
 
     @abstractmethod
-    def hatch(symbol, exchange=None, **kwargs) :
+    def hatch(symbol, evType =EVENT_TICK, exchange=None, **kwargs) :
         tk = TickData(exchange, symbol)
         # 成交数据
         tk.price, tk.volume = float(kwargs['price']), float(kwargs['volume'])

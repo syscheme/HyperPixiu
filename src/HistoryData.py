@@ -597,10 +597,15 @@ class CsvStream(Playback) :
         super(CsvStream, self).__init__(symbol, startDate, endDate, **kwargs)
 
         self._evtype = evtype if evtype else EVENT_KLINE_1MIN
-        self.__csvToKLEvent = KLineData.hatch # DictToKLine(self._category, symbol)
+        if EVENT_KLINE_PREFIX in evtype:
+            self._funcCsvToEvent = KLineData.hatch # DictToKLine(self._category, symbol)
+        elif EVENT_MONEYFLOW_PREFIX in evtype:
+            self._funcCsvToEvent = MoneyflowData.hatch
+        elif EVENT_TICK == evtype:
+            self._funcCsvToEvent = TickData.hatch
 
-        fieldnames = fields.split(',') if isinstance(fields, str) else fields
-        self.__strmFileIn = csv.DictReader(stream, fieldnames, lineterminator='\n')
+        self.__fieldnames = fields.split(',') if isinstance(fields, str) else fields
+        self.__strmFileIn = csv.DictReader(stream, self.__fieldnames, lineterminator='\n')
 
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):
@@ -633,7 +638,11 @@ class CsvStream(Playback) :
                 self.__strmFileIn = None
                 continue
 
-        if not row or len(row) <=0 or not self.__csvToKLEvent :
+            if len(self.__fieldnames) >0 and self.__fieldnames[0] in row.keys() and row[self.__fieldnames[0]] == self.__fieldnames[0] : # skip the csv header line
+                row = None
+                continue
+
+        if not row or len(row) <=0 or not self._funcCsvToEvent :
             return ev
 
         try :
@@ -644,7 +653,7 @@ class CsvStream(Playback) :
                 'symbol' : self._symbol,
                 **row }
 
-            ev = self.__csvToKLEvent(**row) # self.__csvToKLEvent.convert(row, self._exchange, self._symbol)
+            ev = self._funcCsvToEvent(**row) # self._funcCsvToEvent.convert(row, self._exchange, self._symbol)
             # if ev:
             #     evdMH = self._testAndGenerateMarketHourEvent(ev)
             #     if  self._merger1minTo5min :
@@ -684,7 +693,7 @@ class CsvPlayback(Playback):
         self._fields = fields
 
         self.__csvfiles =[]
-        self.__csvToKLEvent = KLineData.hatch # DictToKLine(self._category, symbol)
+        self._funcCsvToEvent = KLineData.hatch # DictToKLine(self._category, symbol)
 
         self._merger1minTo5min = None
         self._merger5minTo1Day = None

@@ -468,6 +468,12 @@ class Perspective(MarketData):
         latestevd = stk.top
         self.__focusLast = etOfStack
 
+        # align the datetime
+        if EVENT_KLINE_PREFIX == etOfStack[: len(EVENT_KLINE_PREFIX)]:
+            ev.data.datetime = ev.data.datetime.replace(second=0, microsecond=0)
+            if EVENT_KLINE_1DAY == etOfStack:
+                ev.data.datetime = ev.data.datetime.replace(hour=23, minute=59, second=59)
+
         if not latestevd or not latestevd.datetime or ev.data.datetime > latestevd.datetime :
             if EVENT_TICK == etOfStack:
                 newed = ev.data
@@ -479,7 +485,9 @@ class Perspective(MarketData):
             return ev, stk
 
         overwritable = not latestevd.exchange or ('_k2x' in latestevd.exchange or '_t2k' in latestevd.exchange)
-        if ev.type == etOfStack:
+        if isinstance(latestevd, KLineEx) :
+            overwritable = ev.type not in latestevd.src
+        elif ev.type == etOfStack:
             if latestevd.exchange and (not ev.data.exchange or len(ev.data.exchange) <=0) :
                 overwritable = False
 
@@ -497,18 +505,17 @@ class Perspective(MarketData):
             return None, stk # not overwritable
 
         for i in range(stk.size) :
-            if ev.data.datetime > stk[i].datetime :
+            if ev.data.datetime < stk[i].datetime :
                 continue
 
             if EVENT_TICK == etOfStack:
-                if ev.data.datetime == stkdata.datetime :
+                if ev.data.datetime == stk[i].datetime :
                     stk[i] = ev.data
                 else:
                     stk.insert(i, ev.data)
 
-            stkdata = stk[i]
-            if ev.data.datetime == stkdata.datetime :
-                stkdata.setEvent(ev)
+            if ev.data.datetime == stk[i].datetime :
+                stk[i].setEvent(ev)
             else :
                 stkdata = KLineEx(ev.data.exchange, ev.data.symbol)
                 stkdata.setEvent(ev)
@@ -599,7 +606,14 @@ class Perspective(MarketData):
             if not k in self.eventTypes :
                 continue
 
-            result[k] = self._stacks[k].exportList
+            lst = self._stacks[k].exportList
+            if len(lst) >0 and isinstance(lst[0], KLineEx): # ensure the primary source of KLineEx has been filled
+                nlst=[]
+                for i in lst:
+                    if k not in i.src: continue
+                    nlst.append(i)
+                lst = nlst
+            result[k] = lst
             if v>0 and v > len(result[k]):
                 del result[k][v:]
 

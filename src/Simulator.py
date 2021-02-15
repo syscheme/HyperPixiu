@@ -1922,7 +1922,9 @@ class IdealTrader_Tplus1(OfflineSimulator):
         if isinstance(self._wkHistData, hist.CsvPlayback) and self.__fmtr._channels >4:
             self.warn('doAppInit() enforced formatter[%s] channels=4 from %s as the histData is CsvPlayback' % (self.__fmtr.id, self.__fmtr._channels))
             self.__fmtr._channels =4
+        
         self._episodes =1 # idealTrader only run one loop
+        self.info('doAppInit() formatter[%s] for histdata %s[%s] %d episodes' % (self.__fmtr.id, type(self._wkHistData), self._wkHistData.id, self._episodes))
         return True
     
     # to replace OfflineSimulator's OnEvent with some TradeAdvisor logic and execute the advice as order directly
@@ -2731,3 +2733,4 @@ class ShortSwingScanner(OfflineSimulator):
         self.info('saved %s with %s samples into file %s with sig[%s]' % (frameId, len(col_state), self._h5filename, self.ident))
 
  """
+ 

@@ -44,8 +44,8 @@ def concateH5Samples(filenameOut, filenameIns, compress=True, balancing=False, m
                     if balancing and '.h5' != fn2[-3:] : continue
                     listFnIn.append(fn2)
             elif os.path.isfile(pathname):
-                if '.h5b' != fn2[-4:] and '.h5' != fn2[-3:] : continue
-                if balancing and '.h5' != fn2[-3:] : continue
+                if '.h5b' != pathname[-4:] and '.h5' != pathname[-3:] : continue
+                if balancing and '.h5' != pathname[-3:] : continue
                 listFnIn.append(pathname)
         except :
             pass
@@ -161,7 +161,8 @@ if __name__ == '__main__':
 
     # sys.argv += ['-z', '-b', '/mnt/e/h5_to_h5b/RFrmD4M1X5_SZ159949.h5']
 
-    # concateH5Samples('/mnt/e/tmp.h5', '/mnt/e/AShareSample/RFrm2dImg32x18C8_ETF2013-2020/', compress=False, skipFirsts=1)
+    # concateH5Samples('/mnt/e/tmp.h5', './out/sim_offline/Tdr.P28655/RFrm2dImg32x18C8_SZ002008.h5', compress=True, skipFirsts=0)
+    # exit(0)
     # sys.argv = [sys.argv[0]] + '-c -z -o /tmp/abc.h5b /mnt/e/AShareSample/RFrm2dImg32x18C8_ETF2013-2020/'.split(' ')
     if '-c' in sys.argv :
         idx = sys.argv.index('-c')

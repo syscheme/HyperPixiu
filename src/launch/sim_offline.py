@@ -281,7 +281,7 @@ if __name__ == '__main__':
                     histReader = mux
 
                 histReader.addStream(pb)
-                p.info('mux-ed MF1d[%s' % (pb.id))
+                p.info('mux-ed MF1d[%s]' % (pb.id))
 
     elif '.tcsv' in basename :
         p.info('taking TaggedCsvPlayback on %s for symbol[%s]' % (evMdSource, SYMBOL))

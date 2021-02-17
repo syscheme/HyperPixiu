@@ -369,6 +369,7 @@ class MoneyflowData(MarketData):
         self.ratioNet    = EventData.EMPTY_FLOAT   # 净流入率
         self.ratioR0     = EventData.EMPTY_FLOAT   # 主力流入率
         self.ratioR3cate = EventData.EMPTY_FLOAT   # 散户流入率（分钟资金流时）或 行业净流入率（日资金流时）
+        #TODO: self.ratioTurnover = EventData.EMPTY_FLOAT # 换手率，Sina只存在MF1d里
 
     @property
     def desc(self) :

@@ -1108,18 +1108,21 @@ def convertJsonTarToCsvH5t(jsonTarfn, csvh5, evtype):
         symbol = basename.split('_')[0]
         memName = '%s.csv' % basename # replace the file extname
 
-        with tar.extractfile(member) as f:
-            content = f.read().decode()
-            edseq   = SinaCrawler.convertToMoneyFlow(symbol, content, False, maxEvents=-1)
+        try :
+            with tar.extractfile(member) as f:
+                content = f.read().decode('utf-8')
+                edseq   = SinaCrawler.convertToMoneyFlow(symbol, content, False, maxEvents=-1)
 
-            fcsv = StringIO()
-            fcsv.write(','.join(colnames) +'\r\n') # the head line
-            for ed in edseq:
-                row = ed.__dict__
-                cols = [str(row[col]) for col in colnames]
-                fcsv.write(','.join(cols) +'\r\n')
+                fcsv = StringIO()
+                fcsv.write(','.join(colnames) +'\r\n') # the head line
+                for ed in edseq:
+                    row = ed.__dict__
+                    cols = [str(row[col]) for col in colnames]
+                    fcsv.write(','.join(cols) +'\r\n')
 
-            h5tar.write_utf8(csvh5, memName, fcsv.getvalue(), createmode='a')
+                h5tar.write_utf8(csvh5, memName, fcsv.getvalue(), createmode='a')
+        except Exception as ex:
+            print('convertJsonTarToCsvH5t() converting %s caught: %s' %(member.name, ex))
 
 ####################################
 from time import sleep

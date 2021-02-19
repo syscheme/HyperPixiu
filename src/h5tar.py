@@ -10,9 +10,11 @@ import os, sys
 import h5py, bz2
 import numpy as np
 from urllib.parse import quote, unquote
+import shutil
 
 GNAME_TEXT_utf8 = 'utf8_bz2'
 
+########################################################################
 def tar_utf8(fn_h5tar, fn_members, createmode='a', baseNameAsKey=False) :
 
     createmode = createmode if 'a'==createmode else 'w'
@@ -57,6 +59,7 @@ def tar_utf8(fn_h5tar, fn_members, createmode='a', baseNameAsKey=False) :
 
     return ret
 
+# ----------------------------------------------------------------------
 def untar_utf8(fn_h5tar, fn_members =None) :
 
     with h5py.File(fn_h5tar, 'r') as h5file:
@@ -86,6 +89,7 @@ def untar_utf8(fn_h5tar, fn_members =None) :
             with open(ofn, 'w') as mf:
                 mf.write(all_lines)
 
+# ----------------------------------------------------------------------
 def list_utf8(fn_h5tar, fn_members =None) :
 
     ret = []
@@ -100,6 +104,7 @@ def list_utf8(fn_h5tar, fn_members =None) :
             ret.append({'name':unquote(i), 'csize': g[i].attrs['csize'], 'size': g[i].attrs['size']})
         return ret
 
+# ----------------------------------------------------------------------
 def read_utf8(fn_h5tar, fn_member) :
     with h5py.File(fn_h5tar, 'r') as h5file:
         if not GNAME_TEXT_utf8 in h5file.keys() :
@@ -118,6 +123,7 @@ def read_utf8(fn_h5tar, fn_member) :
 
     return ''
 
+# ----------------------------------------------------------------------
 def write_utf8(fn_h5tar, memberName, text, createmode='a') :
 
     createmode = createmode if 'a'==createmode else 'w'
@@ -143,6 +149,26 @@ def write_utf8(fn_h5tar, memberName, text, createmode='a') :
         sub.attrs['csize'] = len(compressed)
         return zsize, tsize
 
+# ----------------------------------------------------------------------
+def h5shrink(fn_h5) :
+    ogns, gns = [], []
+    with h5py.File(fn_h5, 'r') as h5in:
+        with h5py.File(fn_h5 + "~", 'w') as h5out:
+            ogns = list(h5in.keys()) 
+            for gn in ogns:
+                g = h5in[gn]
+                h5in.copy(g.name, h5out) # note the destGroup is the parent where the group want to copy under-to
+                # go = h5out[gn]
+                gns.append(gn)
+    
+    print('%s refreshed %d groups' % (fn_h5, len(gns)))
+    # try:
+    if len(gns) >0 and len(gns) == len(ogns) :
+        os.remove(fn_h5)
+        shutil.move(fn_h5 + "~", fn_h5)
+    # except: pass
+
+# ----------------------------------------------------------------------
 # https://www.cnblogs.com/osnosn/p/12574976.html
 def h5visit(f, tab=''):
     print(tab,'Group:',f.name,'len:%d'%len(f))
@@ -184,26 +210,31 @@ def h5visit(f, tab=''):
 
 ########################################################################
 if __name__ == '__main__':
-
+    # h5shrink('/tmp/SinaKL5m_20210210-2.h5t')
     # tar_utf8('abc.h5t', ['SZ399997_KL5m20200615.json.bz2'])
+
     if len(sys.argv) <3:
-        print('%s {list|l|create|c|extract|x|add|a|show|s|visit|v} <tarfilename> [textfile1 [textfile2 ...]]' % os.path.basename(sys.argv[0]))
+        print('%s {list|l|create|c|extract|x|add|a|show|s|visit|v|shrink|k} <tarfilename> [textfile1 [textfile2 ...]]' % os.path.basename(sys.argv[0]))
         exit(0)
 
     cmd = sys.argv[1]
     fn_h5tar = sys.argv[2]
     fn_members= sys.argv[3:]
 
-    if 'l' == cmd[0]:
+    if cmd in ['list', 'l']:
         lst = list_utf8(fn_h5tar)
         print('members:\n\t%s' % '\n\t'.join([ '%s\t%s/%s' % (i['name'], i['csize'], i['size']) for i in lst]) )
-    elif ('c' == cmd[0] or 'a' == cmd[0]) and len(fn_members) >0:
+    elif cmd in ['create', 'c', 'add', 'a'] and len(fn_members) >0:
         tar_utf8(fn_h5tar, fn_members, cmd[0])
-    elif 'x' in cmd:
+    elif cmd in ['extract', 'x']:
         untar_utf8(fn_h5tar, fn_members)
-    elif 's' == cmd[0] and len(fn_members) >0:
+    elif cmd in ['show', 's'] and len(fn_members) >0:
         print(read_utf8(fn_h5tar, fn_members[0]))
-    elif 'v' == cmd[0] and len(fn_h5tar) >0:
+    elif cmd in ['visit', 'v'] and len(fn_h5tar) >0:
         with h5py.File(fn_h5tar, 'r') as f:
             h5visit(f)
+    elif cmd in ['shrink', 'k'] and len(fn_h5tar) >0:
+        h5shrink(fn_h5tar)
+    else:
+        print('%s illegal subcommand %s' % (os.path.basename(sys.argv[0]), cmd))
 

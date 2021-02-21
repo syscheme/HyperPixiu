@@ -2,6 +2,10 @@
 
 '''
 BackTest reports
+the plotting of backtrader is a good project:
+https://www.backtrader.com/docu/plotting/plotting/
+https://github.com/mementum/backtrader/tree/master/backtrader/plot
+
 '''
 from __future__ import division
 

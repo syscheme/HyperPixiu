@@ -1907,7 +1907,8 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self.__sampleFrmSize  = SAMPLES_PER_H5FRAME
         self.__sampleFrm = [None]  * self.__sampleFrmSize
         self.__sampleIdx, self.__frameNo = 0, 0
-        self.__lastestDir, self.__lastFloatsState  = OrderData.DIRECTION_NONE, {}
+        self.__lastestDir, self.__lastFloatsState, self.__lastFStateAsOf = OrderData.DIRECTION_NONE, {}, None
+        self.__flushAtMinuteEnd = False
         self.__momentsToSample = ['10:00:00', '11:00:00', '13:30:00', '14:30:00', '15:00:00']
 
     def doAppInit(self): # return True if succ
@@ -1975,37 +1976,84 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         # if bFullState:
         prevDir = self.__lastestDir # backup for logging
-        if (len(self.__momentsToSample) >0 and d.asof.strftime('%H:%M:%S') in self.__momentsToSample) or dirToExec != self.__lastestDir :
+        if 0 == (d.asof.minute %5) or dirToExec != self.__lastestDir or self.__flushAtMinuteEnd:
+            if self.__lastFStateAsOf and self.__lastFStateAsOf > d.asof:
+                return
 
-            if dirToExec != self.__lastestDir and self.__lastFloatsState and len(self.__lastFloatsState) >0: # the (state, dir) piror to dir-change sounds important to save
-                self.__pushStateAction(self.__lastFloatsState, self.__lastestDir)
+            fstates = self._marketState.format(self.__fmtr, self._tradeSymbol) # floatsState = self._marketState.exportF1548(self._tradeSymbol)
+            if not fstates: return
 
-            if not self.__updateFloatState(): return
-            self.__pushStateAction(self.__lastFloatsState, dirToExec)
-            self.__lastestDir, self.__lastFloatsState = dirToExec, {}
+            if self.__flushAtMinuteEnd or dirToExec != self.__lastestDir \
+                    or (self.__lastFStateAsOf and self.__lastFStateAsOf.replace(second=59, microsecond=999999) < d.asof and self.__lastFStateAsOf.strftime('%H:%M:%S') in self.__momentsToSample) :
+                self.__flushAtMinuteEnd = False
+                try : 
+                self._commitStateAction(self.__lastFloatsState, self.__lastestDir)
+                except Exception as ex:
+                    self.logexpection(ex, '_commitStateAction')
+
+            price, stateAsOf = self._marketState.latestPrice(self._tradeSymbol)
+            self.__lastFloatsState = {
+                'fstates' : fstates,
+                'fdate' : stateAsOf.year * 10000 + stateAsOf.month *100 + stateAsOf.day
+                            + (stateAsOf.hour * 60 + stateAsOf.minute) /80.0/25, # '/80.0/25' instead of the real world's '/60min /25hr' is just to make the result with limited decimals
+                'price' : price,
+            }
+
+            self.__lastFStateAsOf = d.asof.replace(microsecond=0)
+            if dirToExec != self.__lastestDir :
+                self.__flushAtMinuteEnd = True 
+            self.__lastestDir = dirToExec
+
+        #     if not self.__updateFloatState(d.asof): return
+
+        # if dirToExec != self.__lastestDir or len(self.__momentsToSample) <=0:
+        #     self._commitStateAction(self.__lastFloatsState, dirToExec)
+        #     self.__lastestDir = dirToExec
+        # elif d.asof.strftime('%H:%M:00') in self.__momentsToSample :
+        #     self._commitStateAction(self.__lastFloatsState, dirToExec)
+        #     self.__lastestDir = dirToExec
+
+        #-------------------
+        # if (len(self.__momentsToSample) >0 and d.asof.strftime('%H:%M:%S') in self.__momentsToSample) or dirToExec != self.__lastestDir :
+
+        #     if dirToExec != self.__lastestDir and self.__lastFloatsState and len(self.__lastFloatsState) >0: # the (state, dir) piror to dir-change sounds important to save
+        #         self._commitStateAction(self.__lastFloatsState, self.__lastestDir)
+
+        #     if not self.__updateFloatState(): return
+        #     self._commitStateAction(self.__lastFloatsState, dirToExec)
+        #     self.__lastestDir, self.__lastFloatsState = dirToExec, {}
             
-        elif 0 == (d.asof.minute %5):
-            self.__updateFloatState()
+        # elif 0 == (d.asof.minute %5):
+        #     self.__updateFloatState()
 
         if prevDir != dirToExec:
             self.info('OnEvent(%s) changedir %s->%s upon mstate: %s' % (ev.desc, prevDir, dirToExec, self._marketState.descOf(self._tradeSymbol)))
         else:
             self.debug('OnEvent(%s) continue %s upon mstate: %s' % (ev.desc, dirToExec, self._marketState.descOf(self._tradeSymbol)))
 
-    def __updateFloatState(self) :
-        # fmtr = Formatter_2dImg32x18('/mnt/e/bmp/%s.' % symbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
-        fstates = self._marketState.format(self.__fmtr, self._tradeSymbol) # floatsState = self._marketState.exportF1548(self._tradeSymbol)
-        if not fstates: return False
+    # def __updateFloatState(self, dirToExec, dtFor) :
+    #     # fmtr = Formatter_2dImg32x18('/mnt/e/bmp/%s.' % symbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
+    #     if self.__lastFStateAsOf and dtFor and self.__lastFStateAsOf > dtFor:
+    #         return None
 
-        price, stateAsOf = self._marketState.latestPrice(self._tradeSymbol)
-        self.__lastFloatsState = {
-            'fstates' : fstates,
-            'fdate' : stateAsOf.year * 10000 + stateAsOf.month *100 + stateAsOf.day
-                        + (stateAsOf.hour * 60 + stateAsOf.minute) /80.0/25, # '/80.0/25' instead of the real world's '/60min /25hr' is just to make the result with limited decimals
-            'price' : price
-        }
+    #     fstates = self._marketState.format(self.__fmtr, self._tradeSymbol) # floatsState = self._marketState.exportF1548(self._tradeSymbol)
+    #     if not fstates: return False
 
-        return True
+    #     if self.__lastFStateAsOf and self.__lastFStateAsOf < dtFor :
+    #         self._commitStateAction(self.__lastFloatsState, self.__lastestDir)
+
+    #     price, stateAsOf = self._marketState.latestPrice(self._tradeSymbol)
+    #     self.__lastFloatsState = {
+    #         'fstates' : fstates,
+    #         'fdate' : stateAsOf.year * 10000 + stateAsOf.month *100 + stateAsOf.day
+    #                     + (stateAsOf.hour * 60 + stateAsOf.minute) /80.0/25, # '/80.0/25' instead of the real world's '/60min /25hr' is just to make the result with limited decimals
+    #         'price' : price,
+    #         'datetime' : stateAsOf 
+    #     }
+
+    #     self.__lastFStateAsOf = stateAsOf
+    #     self.__lastestDir = dirToExec
+    #     return True
 
     def resetEpisode(self) :
         ret = super(IdealTrader_Tplus1, self).resetEpisode()
@@ -2097,9 +2145,9 @@ class IdealTrader_Tplus1(OfflineSimulator):
         
         exit(0) # IdealTrader_Tplus1 is not supposed to run forever, just exit instead of return
 
-    def __pushStateAction(self, floatsState, dirAction):
+    def _commitStateAction(self, floatsState, dirAction):
 
-        if not floatsState or not isinstance(floatsState,dict) or 'fstates' not in floatsState:
+        if not floatsState or not isinstance(floatsState, dict) or 'fstates' not in floatsState:
             return 
 
         fstates = floatsState['fstates']
@@ -2107,6 +2155,8 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         action = [0] * len(ADVICE_DIRECTIONS)
         action[ADVICE_DIRECTIONS.index(dirAction)] =1
+
+        dtState = self.__fmtr.readDateTime(fstates)
 
         self.__sampleIdx = self.__sampleIdx % self.__sampleFrmSize
         if 0 == self.__sampleIdx and not None in self.__sampleFrm :
@@ -2125,6 +2175,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 self.__sampleFrm += [None]  * (self.__sampleFrmSize - self.__sampleIdx)
                 
         self.__sampleFrm[self.__sampleIdx] = (fstates, action, floatsState['fdate'], floatsState['price'])
+        self.debug('committed state-to-%s as of %s to confirm known[%s] at offset %d' % (dirAction, dtState.strftime('%m-%dT%H:%M:%S'), self.__lastFStateAsOf, self.__sampleIdx))
         self.__sampleIdx +=1
 
     def __saveFrame(self, rangedFrame):
@@ -2326,6 +2377,10 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
             evd = ev.data
             T = evd.datetime
+            try :
+                aclz = type(self.account.account)
+                if not aclz.duringTradeHours(T) : continue
+            except: pass
 
             price = evd.price if EVENT_TICK == ev.type else evd.close
             # order = OrderData(self._account)

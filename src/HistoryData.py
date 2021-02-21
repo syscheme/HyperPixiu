@@ -634,7 +634,9 @@ class CsvStream(Playback) :
                 row = None
 
             if not row:
-                self.__strmFileIn.close()
+                try :
+                    self.__strmFileIn.close()
+                except: pass
                 self.__strmFileIn = None
                 continue
 

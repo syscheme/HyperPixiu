@@ -174,15 +174,15 @@ class KLineEx(KLineData):
         # the floats, prioirty first, recommented to be multiple of 4
         ret = [
             # 1st-4C
-            floatNormalize_LOG10(self.close, baseline_Price),
-            floatNormalize_LOG10(self.volume, baseline_Volume),
-            floatNormalize_LOG10(self.high, baseline_Price),
-            floatNormalize_LOG10(self.low, baseline_Price),
+            floatNormalize_LOG8(self.close, baseline_Price),
+            floatNormalize_LOG8(self.volume, baseline_Volume),
+            floatNormalize_LOG8(self.high, baseline_Price),
+            floatNormalize_LOG8(self.low, baseline_Price),
             # 2nd-4C
             floatNormalize(0.5 + self.ratioNet),                         # priority-H2
             floatNormalize(0.5 + self.ratioR0),                          # priority-H3
             floatNormalize(0.5 + self.ratioR3cate),                      # likely r3=ratioNet-ratioR0
-            floatNormalize_LOG10(self.open, baseline_Price),
+            floatNormalize_LOG8(self.open, baseline_Price),
         ]
         #TODO: other optional dims
 
@@ -607,7 +607,7 @@ class Perspective(MarketData):
                 continue
 
             lst = self._stacks[k].exportList
-            if len(lst) >0 and isinstance(lst[0], KLineEx): # ensure the primary source of KLineEx has been filled
+            if len(lst) >0 and isinstance(lst[0], KLineEx): # ensure the KLineEx has been filled by its primary source
                 nlst=[]
                 for i in lst:
                     if k not in i.src: continue
@@ -705,8 +705,8 @@ class Perspective(MarketData):
 
         for kl in listKL:
             klf = [
-                floatNormalize_LOG10(kl.close, basePrice, 1.5),
-                floatNormalize_LOG10(kl.volume, bV, 1.5),
+                floatNormalize_LOG8(kl.close, basePrice, 1.5),
+                floatNormalize_LOG8(kl.volume, bV, 1.5),
                 floatNormalize(minsPerDay*(kl.high / kl.close -1)),
                 floatNormalize(minsPerDay*(kl.close / kl.low -1)),
                 0.0, 0.0
@@ -992,15 +992,15 @@ class PerspectiveFormatter(Formatter):
         # the floats, prioirty first, recommented to be multiple of 4
         return [
             # 1st-4
-            floatNormalize_LOG10(klineEx.close, baseline_Price),
-            floatNormalize_LOG10(klineEx.volume, baseline_Volume),
-            floatNormalize_LOG10(klineEx.high, baseline_Price),
-            floatNormalize_LOG10(klineEx.low, baseline_Price),
+            floatNormalize_LOG_PRICE(klineEx.close, baseline_Price),
+            floatNormalize_LOG8(klineEx.volume, baseline_Volume),
+            floatNormalize_LOG_PRICE(klineEx.high, baseline_Price),
+            floatNormalize_LOG_PRICE(klineEx.low, baseline_Price),
             # 2nd-4
             floatNormalize(0.5 + klineEx.ratioNet),                         # priority-H2
             floatNormalize(0.5 + klineEx.ratioR0),                          # priority-H3
             floatNormalize(0.5 + klineEx.ratioR3cate),                      # likely r3=ratioNet-ratioR0
-            floatNormalize_LOG10(klineEx.open, baseline_Price),
+            floatNormalize_LOG_PRICE(klineEx.open, baseline_Price),
         ]
         #TODO: other optional dims
 
@@ -1296,7 +1296,7 @@ class Formatter_2dImg32x18(Formatter_base2dImg):
 
         imgResult = []
 
-        # parition 0: pixel[0,0] as the datetime, X_LEN-2 KL1min to cover half an hour
+        # parition 0: pixel[,0] and [,31] as the datetime, X_LEN-2 KL1min x2rows to cover an hour
         rows =2
         stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
         rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
@@ -1344,7 +1344,7 @@ class Formatter_2dImg32x18(Formatter_base2dImg):
              rows6C[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
         imgResult += rows6C # img3C += self.expand6Cto3C_Y(rows6C)
 
-        # parition 1.2.: X_LEN *12rows to cover 4 days before today
+        # parition 1.2.: X_LEN *6rows to cover addtional 4 days before today
         rows =6
         klPerRow =32
         rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
@@ -1383,6 +1383,12 @@ class Formatter_2dImg32x18(Formatter_base2dImg):
             self.saveImg(img3C, dtAsOf=dtAsOf)
 
         return imgResult
+
+    def readDateTime(self, imgResult) :
+        dt0, dtBr = imgResult[0][0], imgResult[10][0]
+        month, day, hour, minute = int(dtBr[1]*12 +1.2), int(dtBr[0]*31 +0.2), int(dt0[1]*24 +0.2), int(dt0[0]*60 +0.2)
+        dt = datetime(year=2030, month=month, day=day, hour=hour, minute=minute, second=0, microsecond=0)
+        return dt
 
     def doFormat0(self, symbol=None) :
         X_LEN, Y_LEN = 32, 16

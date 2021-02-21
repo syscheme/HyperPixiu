@@ -15,7 +15,9 @@ MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 EXPORT_FLOATS_DIMS = 4 # take the minimal dim=4
 PRICE_DISPLAY_ROUND_DECIMALS = 3 
 
-BASE_LOG10x2 = math.log(10) *2
+BASE_LOG8x2 = math.log(8) *2
+BASE_LOG_PRICEx2 = math.log(2) *2
+BASE_LOG5x2 = math.log(5) *2
 
 def chopMarketEVStr(eventType):
     return eventType[len(MARKETDATE_EVENT_PREFIX):]
@@ -24,10 +26,22 @@ def floatNormalize(v):
     if v <0: return 0.0
     return v if v<1.0 else 1.0
 
-def floatNormalize_LOG10(v, base=1.0, scale=1.0):
+def floatNormalize_LOG8(v, base=1.0, scale=1.0):
     v = float(v/base)
-    if v < 0.0001 : return 0.0
-    v = math.log(v) / BASE_LOG10x2 *scale +0.5 # 0.1x lead to 0 and 10x lead to 1
+    if v < 0.001 : return 0.0
+    v = math.log(v) / BASE_LOG8x2 *scale +0.5 # 0.1x lead to 0 and 10x lead to 1
+    return floatNormalize(v)
+
+def floatNormalize_LOG_PRICE(v, base=1.0, scale=1.0):
+    v = float(v/base)
+    if v < 0.001 : return 0.0
+    v = math.log(v) / BASE_LOG_PRICEx2 *scale +0.5 # 0.63x lead to 0 and 1.6x lead to 1
+    return floatNormalize(v)
+
+def floatNormalize_LOG5(v, base=1.0, scale=1.0):
+    v = float(v/base)
+    if v < 0.001 : return 0.0
+    v = math.log(v) / BASE_LOG5x2 *scale +0.5 # 0.2x lead to 0 and 5x lead to 1
     return floatNormalize(v)
 
 def floatNormalize_PriceChange(newPrice, basePrice=1.0):
@@ -35,7 +49,7 @@ def floatNormalize_PriceChange(newPrice, basePrice=1.0):
     (v -1) *5.0 + 0.5 # -20% leads to 0, and +20% leads to 1
 
 def floatNormalize_VolumeChange(newVolume, baseVolume=1.0):
-    return floatNormalize_LOG10(newVolume, baseVolume)
+    return floatNormalize_LOG8(newVolume, baseVolume)
 
 def floatNormalize_M1X5(var, base=1.0):
     return (float(var/base) -1) *5.0 + 0.5
@@ -369,7 +383,7 @@ class MoneyflowData(MarketData):
         self.ratioNet    = EventData.EMPTY_FLOAT   # 净流入率
         self.ratioR0     = EventData.EMPTY_FLOAT   # 主力流入率
         self.ratioR3cate = EventData.EMPTY_FLOAT   # 散户流入率（分钟资金流时）或 行业净流入率（日资金流时）
-        #TODO: self.ratioTurnover = EventData.EMPTY_FLOAT # 换手率，Sina只存在MF1d里
+        #TODO self.ratioTurnover = EventData.EMPTY_FLOAT # 换手率，Sina只存在MF1d里
 
     @property
     def desc(self) :
@@ -774,15 +788,15 @@ class Formatter(MetaObj):
         # the floats, prioirty first, recommented to be multiple of 4
         return [
             # 1st-4
-            floatNormalize_LOG10(klineEx.close, baseline_Price),
-            floatNormalize_LOG10(klineEx.volume, baseline_Volume),
-            floatNormalize_LOG10(klineEx.high, baseline_Price),
-            floatNormalize_LOG10(klineEx.low, baseline_Price),
+            floatNormalize_LOG8(klineEx.close, baseline_Price),
+            floatNormalize_LOG8(klineEx.volume, baseline_Volume),
+            floatNormalize_LOG8(klineEx.high, baseline_Price),
+            floatNormalize_LOG8(klineEx.low, baseline_Price),
             # 2nd-4
             floatNormalize(0.5 + klineEx.ratioNet),                         # priority-H2
             floatNormalize(0.5 + klineEx.ratioR0),                          # priority-H3
             floatNormalize(0.5 + klineEx.ratioR3cate),                      # likely r3=ratioNet-ratioR0
-            floatNormalize_LOG10(klineEx.open, baseline_Price),
+            floatNormalize_LOG8(klineEx.open, baseline_Price),
         ]
         #TODO: other optional dims
 
@@ -791,10 +805,10 @@ class Formatter(MetaObj):
         @return float[] with dim =6 for neural network computing
         '''
         return [
-            floatNormalize_LOG10(self.close, baseline_Price, 1.5),
+            floatNormalize_LOG8(self.close, baseline_Price, 1.5),
             floatNormalize(20*(self.high / self.close -1)),
             floatNormalize(20*(self.close / self.low -1)),
-            floatNormalize_LOG10(self.volume, baseline_Volume, 1.5),
+            floatNormalize_LOG8(self.volume, baseline_Volume, 1.5),
             floatNormalize(20*(self.open / self.close -1) +0.5),
             0.0
         ]
@@ -813,8 +827,8 @@ class Formatter(MetaObj):
             Y=[self.b1V, self.b1V, self.b1V, self.b1V, self.b1V])
 
         return [
-            floatNormalize_LOG10(self.price, baseline_Price),
-            floatNormalize_LOG10(self.volume, baseline_Volume),
+            floatNormalize_LOG8(self.price, baseline_Price),
+            floatNormalize_LOG8(self.volume, baseline_Volume),
             float(leanAsks), 
             float(leanBids)
             ]
@@ -825,11 +839,11 @@ class Formatter(MetaObj):
         '''
         # the floats, prioirty first
         return [
-            floatNormalize_LOG10(baseline_Price*baseline_Volume, abs(mfdata.netamount)), # priority-H1, TODO: indeed the ratio of turnover would be more worthy here. It supposed can be calculated from netamount, ratioNet and netMarketCap
+            floatNormalize_LOG8(baseline_Price*baseline_Volume, abs(mfdata.netamount)), # priority-H1, TODO: indeed the ratio of turnover would be more worthy here. It supposed can be calculated from netamount, ratioNet and netMarketCap
             floatNormalize(0.5 + mfdata.ratioNet),                          # priority-H2
             floatNormalize(0.5 + mfdata.ratioR0),                          # priority-H3
             floatNormalize(0.5 + mfdata.ratioR3cate),                          # likely r3=ratioNet-ratioR0
-            floatNormalize_LOG10(mfdata.price, baseline_Price), # optional because usually this has been presented via KLine/Ticks
+            floatNormalize_LOG8(mfdata.price, baseline_Price), # optional because usually this has been presented via KLine/Ticks
         ]
 
     def _complementChannels(self, data) :

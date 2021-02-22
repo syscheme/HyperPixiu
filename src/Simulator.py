@@ -1977,15 +1977,24 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         # if bFullState:
         prevDir = self.__lastestDir # backup for logging
-        if 0 == (d.asof.minute %5) or dirToExec != self.__lastestDir or self.__flushAtMinuteEnd:
+        
+        # determine whether need to sampling
+        bHitMoment = True if self.__lastFStateAsOf and self.__lastFStateAsOf.replace(second=59, microsecond=999999) < d.asof and self.__lastFStateAsOf.strftime('%H:%M:%S') in self.__momentsToSample else False
+        bSamplingNeeded = (bHitMoment or dirToExec != self.__lastestDir or self.__flushAtMinuteEnd)
+        
+        if not bSamplingNeeded:
+            if OrderData.DIRECTION_NONE != self.__lastestDir:
+                bSamplingNeeded = (0 == (d.asof.minute %3))     # LONG/SHORT take 30% to sampling
+            else: bSamplingNeeded = (0 == (d.asof.minute %10))  # NONE take 10% to sampling
+
+        if bSamplingNeeded:
             if self.__lastFStateAsOf and self.__lastFStateAsOf > d.asof:
                 return
 
             fstates = self._marketState.format(self.__fmtr, self._tradeSymbol) # floatsState = self._marketState.exportF1548(self._tradeSymbol)
             if not fstates: return
 
-            if self.__flushAtMinuteEnd or dirToExec != self.__lastestDir \
-                    or (self.__lastFStateAsOf and self.__lastFStateAsOf.replace(second=59, microsecond=999999) < d.asof and self.__lastFStateAsOf.strftime('%H:%M:%S') in self.__momentsToSample) :
+            if self.__flushAtMinuteEnd or dirToExec != self.__lastestDir or bHitMoment:
                 self.__flushAtMinuteEnd = False
                 try : 
                     self._commitStateAction(self.__lastFloatsState, self.__lastestDir)
@@ -2008,7 +2017,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         if prevDir != dirToExec:
             self.info('OnEvent(%s) changedir %s->%s upon mstate: %s' % (ev.desc, prevDir, dirToExec, self._marketState.descOf(self._tradeSymbol)))
         else:
-            self.debug('OnEvent(%s) continue %s upon mstate: %s' % (ev.desc, dirToExec, self._marketState.descOf(self._tradeSymbol)))
+            self.debug('OnEvent(%s) continue %s upon mstate: %s, sampling[%s]' % (ev.desc, dirToExec, self._marketState.descOf(self._tradeSymbol), bSamplingNeeded))
 
     def resetEpisode(self) :
         ret = super(IdealTrader_Tplus1, self).resetEpisode()

@@ -1979,13 +1979,20 @@ class IdealTrader_Tplus1(OfflineSimulator):
         prevDir = self.__lastestDir # backup for logging
         
         # determine whether need to sampling
-        bHitMoment = True if self.__lastFStateAsOf and self.__lastFStateAsOf.replace(second=59, microsecond=999999) < d.asof and self.__lastFStateAsOf.strftime('%H:%M:%S') in self.__momentsToSample else False
+        bHitMoment = True if self.__lastFStateAsOf and self.__lastFStateAsOf.strftime('%H:%M:%S') in self.__momentsToSample else False
         bSamplingNeeded = (bHitMoment or dirToExec != self.__lastestDir or self.__flushAtMinuteEnd)
-        
-        if not bSamplingNeeded:
-            if OrderData.DIRECTION_NONE != self.__lastestDir:
-                bSamplingNeeded = (0 == (d.asof.minute %3))     # LONG/SHORT take 30% to sampling
-            else: bSamplingNeeded = (0 == (d.asof.minute %10))  # NONE take 10% to sampling
+
+        SAMPLING_EVERY={
+            OrderData.DIRECTION_NONE : 12, 
+            OrderData.DIRECTION_LONG : 3, 
+            OrderData.DIRECTION_SHORT : 8, 
+        }
+
+        if not bSamplingNeeded and self.__lastestDir in SAMPLING_EVERY and SAMPLING_EVERY[self.__lastestDir] >1:
+            if 0 == (d.asof.minute %SAMPLING_EVERY[self.__lastestDir]):
+                bSamplingNeeded = True
+                if self.__lastFStateAsOf and not self.__flushAtMinuteEnd:
+                    self.__flushAtMinuteEnd = True
 
         if bSamplingNeeded:
             if self.__lastFStateAsOf and self.__lastFStateAsOf > d.asof:
@@ -1994,12 +2001,17 @@ class IdealTrader_Tplus1(OfflineSimulator):
             fstates = self._marketState.format(self.__fmtr, self._tradeSymbol) # floatsState = self._marketState.exportF1548(self._tradeSymbol)
             if not fstates: return
 
-            if self.__flushAtMinuteEnd or dirToExec != self.__lastestDir or bHitMoment:
-                self.__flushAtMinuteEnd = False
+            bMinuteChanged = True if self.__lastFStateAsOf and self.__lastFStateAsOf.replace(second=59, microsecond=999999) < d.asof else False
+            
+            if bMinuteChanged and self.__flushAtMinuteEnd: # or bHitMoment):
                 try : 
                     self._commitStateAction(self.__lastFloatsState, self.__lastestDir)
+                    self.__lastFStateAsOf = None
                 except Exception as ex:
                     self.logexception(ex, '_commitStateAction')
+
+            if not self.__lastFStateAsOf:
+                self.__flushAtMinuteEnd = False
 
             price, stateAsOf = self._marketState.latestPrice(self._tradeSymbol)
             self.__lastFloatsState = {
@@ -2139,7 +2151,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 self.__sampleFrm += [None]  * (self.__sampleFrmSize - self.__sampleIdx)
                 
         self.__sampleFrm[self.__sampleIdx] = (fstates, action, floatsState['fdate'], floatsState['price'])
-        self.debug('committed state-to-%s as of %s to confirm known[%s] at offset %d' % (dirAction, dtState.strftime('%m-%dT%H:%M:%S'), self.__lastFStateAsOf, self.__sampleIdx))
+        self.info('committed state-to-%s as of %s to confirm known[%s] at offset %d' % (dirAction, dtState.strftime('%m-%dT%H:%M:%S'), self.__lastFStateAsOf, self.__sampleIdx))
         self.__sampleIdx +=1
 
     def __saveFrame(self, rangedFrame):

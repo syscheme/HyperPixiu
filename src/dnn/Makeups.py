@@ -917,12 +917,12 @@ class ModelS2d_ResNet50r1(ModelS2d_ResNet50) :
         classes = 1000
         pooling = 'max'
 
-        x = layers.ZeroPadding2D(padding=(2, 2), name='conv1_pad')(input_tensor)
-        # unlike the original ResNet50 takes 224x224, kernal 7x7 is too big for the sample here, change to (2,2)
-        x = layers.Conv2D(64, (7, 7), strides=(1, 1), padding='valid', kernel_initializer='he_normal', name='conv1')(x)
+        x = layers.ZeroPadding2D(padding=(3, 3), name='conv1_pad')(input_tensor)
+        x = layers.Conv2D(64, (7, 7), strides=(2, 2), padding='valid', kernel_initializer='he_normal', name='conv1')(x) # MUST strides=(2, 2) here
         x = layers.BatchNormalization(axis=bn_axis, name='bn_conv1')(x)
         x = layers.Activation('relu')(x)
         x = layers.ZeroPadding2D(padding=(1, 1), name='pool1_pad')(x)
+        # unlike the original ResNet50 takes 224x224, kernal 7x7 is too big for the sample here, change to (2,2)
         x = layers.MaxPooling2D((2, 2), strides=(1, 1))(x)
 
         # the flowing are all strides=(1, 1)
@@ -1087,7 +1087,7 @@ if __name__ == '__main__':
 
     if not model:
         # model = ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
-        model = ModelS2d_ResNet50(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
+        model = ModelS2d_ResNet50r1(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
         # model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=8, output_name='gr8A', output_as_attr=True)
         model.buildup()
 

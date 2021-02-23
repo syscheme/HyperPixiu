@@ -6,33 +6,41 @@
     },
 
     "train": {
-        "startModel": "/mnt/e/AShareSample/state18x32x4Y4F518x1To8gr8A.vgg16r1.B32I32.h5", 
+        // "startModel": "/mnt/e/AShareSample/state18x32x4Y4F518x1To8gr8A.vgg16r1.B32I32.h5", 
         // "startModel": "/mnt/e/AShareSample/state18x32x4Y4F518x1To8gr8A.resnet50.h5", // for 8 gain-rates
-        // "startModel": "/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_trained.h5", // for 3 actions
+        // "startModel": "/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_SH6000.h5", // for 3 actions
+        "startModel": "/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50r1.h5", // for 3 actions
         // "startModel": "/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_trained_ETF0131.h5", // for 3 actions
+        // "startModel": "/mnt/e/AShareSample/state18x32x8Y4F518x2To3action.resnet50r1.h5", 
 
         "baseModel": "sliced2d",
-        //"trainableLayers": ["state18x32x4Y4F518x1f0.*", "state18x32x4Y4F518x1C88*"], // trainable layers, '*' means all, i.e. ['F88.Dense*', 'VClz66from512.2of2']
-        "dirSamples": [ // or "sampleFiles": [...],
-            { 
-                "path":"/mnt/e/AShareSample/RFrm2dImg32x18/ETF2013-2020",
-                "lastFrames": -1, // -1 means all frames in each RFrame h5 files
+        // "trainableLayers": ["state18x32x8Y4F518x2f*", "state18x32x8Y4F518x2C88*"], // trainable layers, '*' means all, i.e. ['F88.Dense*', 'VClz66from512.2of2']
+        "samples": [ // or "sampleFiles": [...],
+            // { 
+            //     // "path":"/mnt/e/AShareSample/RFrm2dImg32x18C4/ETF2013-2020",
+            //     "path":"/mnt/e/AShareSample/RFrm2dImg32x18C8",
+            //     "lastFrames": -1, // -1 means all frames in each RFrame h5 files
+            // },
+
+            {
+                "path":"/mnt/h/RFrm2dImg32x18_toC4.bal20210223.h5b",
+                "lastFrames": -1, 
             },
 
             // { 
-            //     "path":"/mnt/e/AShareSample/RFrm2dImg32x18/topAct500.2013-2019",
+            //     "path":"/mnt/e/AShareSample/RFrm2dImg32x18C4/topAct500.2013-2019",
             //     "lastFrames": 20, // -1 means all frames in each RFrame h5 files
             // },
         ],
-        "preBalanced": "false",
+        "preBalanced": "true", // "false",
         "gamma": 0.01,
 
         "CPU": {
             "batchSize": 20,
             "batchesPerTrain": 32,
-            "poolReuses": 0,
-            "initEpochs": 2,
-            "startLR": 0.005, // start learningRate
+            "recycles": 1,
+            "initEpochs": 8,
+            "startLR": 0.02, // start learningRate
             // "lossDiffStop": 5, // loss reduce 5% difference to quit current epoch
             "lossStop": 0.25, // "lossStop": 0.1, --- loss value less than 0.1 to quit current epoch
         },
@@ -40,14 +48,14 @@
         "GPU": {
             "batchSize": 128,
             "batchesPerTrain": 64, // 512x64 for GTX1050/2G, 512x128 for GTX1060/4G
-            "recycles": 1, // takes system memory instead of VRAM
-            "initEpochs": 6, // 8 when the model is not well trained, 4 when trained and try to cover larger dataset
-            "startLR": 0.01,
+            "recycles": 2, // takes system memory instead of VRAM
+            "initEpochs": 12, // 8 when the model is not well trained, 4 when trained and try to cover larger dataset
+            "startLR": 0.02,
 
             "models": [
                 { 
                     "model":"GTX 1650",
-                    "batchSize": 500, // float32 can reach 100x64, float16 can reach 1000x64 for state18x32x4Y4F518x1To3action.resnet50.h5
+                    "batchSize": 200, // float32 can reach 100x64, float16 can reach 1000x64 for state18x32x4Y4F518x1To3action.resnet50.h5
                     "batchesPerTrain": 64,
                 },
 

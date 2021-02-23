@@ -511,7 +511,7 @@ class Model88_sliced2d(Model88) :
 
         mNamePrefix = '%sx%d' %(self._fmtNamePrefix, slice_count)
         tensor_in = layers.Input(shape=self._input_shape, name='%s.input' % (mNamePrefix), dtype=INPUT_FLOAT)
-        x =layers.Dropout(0.5, name='%s.indropout' % mNamePrefix)(tensor_in)
+        x = tensor_in # NEVER put Dropout here instantly after Input: x =layers.Dropout(0.5, name='%s.indropout' % mNamePrefix)(tensor_in)
 
         if self._input_shape[0] <self._maxY: # padding Ys at the bottom
             x = layers.ZeroPadding2D(padding=((0, self._maxY - self._sizeY), 0), name='%s.padY%d' % (mNamePrefix, self._sizeY))(x)
@@ -978,7 +978,7 @@ class ModelS2d_VGG16r1(Model88_sliced2d) :
 
         x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (1, 1), [64, 64],        1) # Block 1
         xencoded             = x
-        iencoded             = Input(xencoded.shape[1:])
+        iencoded             = layers.Input(xencoded.shape[1:])
         xdecoded             = ModelS2d_VGG16r1.deconv_block(iencoded, (3, 3), (2, 2), [64, 64],        1) # Block 1
 
         # original vgg16 starts from (224,224,3) so that allow pooling at each block, we start from 32x20 here so less pooling here
@@ -1087,7 +1087,7 @@ if __name__ == '__main__':
 
     if not model:
         # model = ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
-        model = ModelS2d_ResNet50r1(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
+        model = ModelS2d_ResNet50(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
         # model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=8, output_name='gr8A', output_as_attr=True)
         model.buildup()
 

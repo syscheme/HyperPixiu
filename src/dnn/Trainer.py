@@ -61,7 +61,7 @@ class Trainer_classify(BaseApplication):
         if not self._sampleFiles or len(self._sampleFiles) <=0: 
             self._sampleFiles = self.getConfig('sampleFiles', [])
 
-        self._dirSamples          = self.getConfig('dirSamples', None)
+        self._sampleLocs          = self.getConfig('samples', None)
         self._colnameSamples      = self.getConfig('samplesName', 'state')
         self._colnameClasses      = self.getConfig('classesName', 'action')
         self._shapeSamples        = self.getConfig('shapeSamples', None)
@@ -171,11 +171,11 @@ class Trainer_classify(BaseApplication):
 
         self._fnStartModel = Program.fixupPath(self._fnStartModel)
         self._sampleFiles = [ Program.fixupPath(f) for f in self._sampleFiles ]
-        if self._dirSamples and len(self._dirSamples) >0:
-            if isinstance(self._dirSamples, str) :
-                self._dirSamples = [ {'path': Program.fixupPath(self._dirSamples), 'lastFrames': -1} ]
+        if self._sampleLocs and len(self._sampleLocs) >0:
+            if isinstance(self._sampleLocs, str) :
+                self._sampleLocs = [ {'path': Program.fixupPath(self._sampleLocs), 'lastFrames': -1} ]
             else: # should be a list of {'path', 'lastFrames'}
-                self._dirSamples = [ {'path': Program.fixupPath(x['path']), 'lastFrames': int(x['lastFrames']) if 'lastFrames' in x else -1 } for x in self._dirSamples]
+                self._sampleLocs = [ {'path': Program.fixupPath(x['path']), 'lastFrames': int(x['lastFrames']) if 'lastFrames' in x else -1 } for x in self._sampleLocs]
 
         fileList = self.__populateSampleFileList()
 
@@ -668,19 +668,24 @@ class Trainer_classify(BaseApplication):
 
     def __populateSampleFileList(self) :
         fileList = [ (x, -1) for x in self._sampleFiles]
-        if len(fileList) <=0 and self._dirSamples and len(self._dirSamples) >0:
+        if len(fileList) <=0 and self._sampleLocs and len(self._sampleLocs) >0:
             fileList =[]
 
-            for d in self._dirSamples:
+            for d in self._sampleLocs:
                 dirPath, lastFrames = d['path'], d['lastFrames']
-                files = hist.listAllFiles(dirPath)
-                for name in files:
-                    if self._preBalanced :
-                        if '.h5b' != name[-4:] : continue
-                    elif '.h5' != name[-3:] : 
-                        continue
+                if os.path.isfile(dirPath): 
+                    fileList.append((dirPath, lastFrames))
+                    continue
+                
+                if os.path.isdir(dirPath):
+                    files = hist.listAllFiles(dirPath)
+                    for name in files:
+                        if self._preBalanced :
+                            if '.h5b' != name[-4:] : continue
+                        elif '.h5' != name[-3:] : 
+                            continue
 
-                    fileList.append((name, lastFrames))
+                        fileList.append((name, lastFrames))
 
         fileList = list(set(fileList))
         self.info('refreshed sample files: %s' % fileList)
@@ -1309,13 +1314,13 @@ if __name__ == '__main__':
 
     p.info('all objects registered piror to Trainer_classify: %s' % p.listByType())
     
-    # trainer = p.createApp(Trainer_classify, configNode ='train') # for 3 actions
+    trainer = p.createApp(Trainer_classify, configNode ='train') # for 3 actions
     # trainer = p.createApp(Trainer_GainRates, grClassifier=hist.classifyGainRates_level6, configNode ='train') # for 8 gain-rates
     # trainer = p.createApp(Trainer_GainRates, grClassifier=None, configNode ='train') # for 8 gain-rates
 
-    model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
-    model.buildup()
-    trainer = p.createApp(Trainer_AutoEncoder, configNode ='train', brain=model)
+    # model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
+    # model.buildup()
+    # trainer = p.createApp(Trainer_AutoEncoder, configNode ='train', brain=model)
 
     p.start()
 

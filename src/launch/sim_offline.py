@@ -62,21 +62,6 @@ def concateH5Samples(filenameOut, filenameIns, compress=True, balancing=False, m
             AD = np.where(col_action >=0.99)
             kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
 
-            nonlocal stateChannels
-            if stateChannels >0 and stateChannels < col_state.shape[-1] : 
-                # buildup the shape
-                shapelen = len(col_state.shape)
-                if 5 == shapelen:
-                    col_state = col_state[:,:,:,:,:stateChannels]
-                elif 4 == shapelen:
-                    col_state = col_state[:,:,:,:stateChannels]
-                elif 3 == shapelen:
-                    col_state = [ x[:,:stateChannels] for x in col_state ]
-                elif 2 == shapelen:
-                    col_state = [ x[:stateChannels] for x in col_state ]
-
-            else: stateChannels = col_state.shape[-1]
-
             frmName ='%s%06d' % (RFGROUP_PREFIX2, frmId)
             g = h5out.create_group(frmName)
             g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
@@ -109,14 +94,34 @@ def concateH5Samples(filenameOut, filenameIns, compress=True, balancing=False, m
                 for name in framesInHd5:
                     frm = h5f[name]
                     frmId_Ins.append('%s(%d),' %(name, len(frm['state'])))
+                    col_state  = np.array(list(frm['state']))
+                    col_action = np.array(list(frm['action']))
+
+                    if stateChannels <=0 : 
+                        stateChannels = col_state.shape[-1]
+                    elif stateChannels > col_state.shape[-1] :
+                        print("%s skipped %s as its state-chs %d less than requested %s" % (fn, name, col_state.shape[-1], stateChannels))
+                        continue
+                    elif stateChannels >0 and stateChannels < col_state.shape[-1] :
+                        # buildup the shape
+                        shapelen = len(col_state.shape)
+                        if 5 == shapelen:
+                            col_state = col_state[:,:,:,:,:stateChannels]
+                        elif 4 == shapelen:
+                            col_state = col_state[:,:,:,:stateChannels]
+                        elif 3 == shapelen:
+                            col_state = [ x[:,:stateChannels] for x in col_state ]
+                        elif 2 == shapelen:
+                            col_state = [ x[:stateChannels] for x in col_state ]
+
                     if frmState is None:
                         lenBefore =0
-                        frmState  = np.array(list(frm['state']))
-                        frmAction = np.array(list(frm['action']))
+                        frmState  = col_state
+                        frmAction = col_action
                     else :
                         lenBefore = len(frmState)
-                        frmState  = np.concatenate((frmState,  list(frm['state'])), axis=0)
-                        frmAction = np.concatenate((frmAction, list(frm['action'])), axis=0)
+                        frmState  = np.concatenate((frmState,  col_state), axis=0)
+                        frmAction = np.concatenate((frmAction, col_action), axis=0)
 
                     lenAfter = len(frmState)
                     if lenAfter != len(frmAction):
@@ -203,7 +208,7 @@ if __name__ == '__main__':
     # sys.argv += ['-z', '-b', '/mnt/e/h5_to_h5b/RFrmD4M1X5_SZ159949.h5']
 
     # concateH5Samples('/mnt/e/tmp.h5', '/tmp/RFrm2dImg32x18C8_SH600019.h5', balancing=True, compress=True, skipFirsts=0) # , stateChannels=4)
-    # concateH5Samples('/mnt/e/tmp2.h5', '/mnt/e/tmp.h5', compress=True, skipFirsts=0)
+    # concateH5Samples('/mnt/e/tmp2.h5', '/mnt/d/wkspaces/HyperPixiu/out/SH60000/RFrm2dImg32x18C8_SH600006.h5', compress=True, skipFirsts=0) # , stateChannels=6)
     # exit(0)
     # sys.argv = [sys.argv[0]] + '-c -l 6 -o /mnt/h/RFrm2dImg32x18C8_0222trial/RFrm2dImg32x18C8_0222trial_C4.h5b -b -z /mnt/h/RFrm2dImg32x18C8_0222trial/RFrm2dImg32x18C8_SH600276.h5'.split(' ')
     if '-c' in sys.argv :

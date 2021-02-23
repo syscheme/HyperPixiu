@@ -67,13 +67,13 @@ def concateH5Samples(filenameOut, filenameIns, compress=True, balancing=False, m
                 # buildup the shape
                 shapelen = len(col_state.shape)
                 if 5 == shapelen:
-                    col_state = col_state[:,:,:,:,:4]
+                    col_state = col_state[:,:,:,:,:stateChannels]
                 elif 4 == shapelen:
-                    col_state = col_state[:,:,:,:4]
+                    col_state = col_state[:,:,:,:stateChannels]
                 elif 3 == shapelen:
-                    col_state = [ x[:,:4] for x in col_state ]
+                    col_state = [ x[:,:stateChannels] for x in col_state ]
                 elif 2 == shapelen:
-                    col_state = [ x[:4] for x in col_state ]
+                    col_state = [ x[:stateChannels] for x in col_state ]
 
             else: stateChannels = col_state.shape[-1]
 
@@ -203,12 +203,12 @@ if __name__ == '__main__':
     # sys.argv += ['-z', '-b', '/mnt/e/h5_to_h5b/RFrmD4M1X5_SZ159949.h5']
 
     # concateH5Samples('/mnt/e/tmp.h5', '/tmp/RFrm2dImg32x18C8_SH600019.h5', balancing=True, compress=True, skipFirsts=0) # , stateChannels=4)
-    concateH5Samples('/mnt/e/tmp2.h5', '/mnt/e/tmp.h5', compress=True, skipFirsts=0)
-    exit(0)
-    # sys.argv = [sys.argv[0]] + '-c -z -o /tmp/abc.h5b /mnt/e/AShareSample/RFrm2dImg32x18C8_ETF2013-2020/'.split(' ')
+    # concateH5Samples('/mnt/e/tmp2.h5', '/mnt/e/tmp.h5', compress=True, skipFirsts=0)
+    # exit(0)
+    # sys.argv = [sys.argv[0]] + '-c -l 6 -o /mnt/h/RFrm2dImg32x18C8_0222trial/RFrm2dImg32x18C8_0222trial_C4.h5b -b -z /mnt/h/RFrm2dImg32x18C8_0222trial/RFrm2dImg32x18C8_SH600276.h5'.split(' ')
     if '-c' in sys.argv :
         idx = sys.argv.index('-c')
-        outfn, balancing, compress, skips = None, False, False, 0
+        outfn, balancing, compress, skips, statechs = None, False, False, 0, -1
         if '-b' in sys.argv :
             balancing = True
             idx = max(idx, sys.argv.index('-b'))
@@ -221,6 +221,13 @@ if __name__ == '__main__':
             compress = True
             idx = max(idx, sys.argv.index('-z'))
 
+        if '-l' in sys.argv :
+            i = sys.argv.index('-l')
+            idx = max(idx, i)
+            if i >0 and i < len(sys.argv) -1:
+                statechs = int(sys.argv[i+1])
+                idx = max(idx, i+1)
+
         if '-o' in sys.argv :
             i = sys.argv.index('-o')
             idx = max(idx, i)
@@ -228,7 +235,7 @@ if __name__ == '__main__':
                 outfn = sys.argv[i+1]
                 idx = max(idx, i+1)
 
-        concateH5Samples(filenameOut=outfn, filenameIns=sys.argv[idx+1:], compress=compress, balancing=balancing, skipFirsts=skips)
+        concateH5Samples(filenameOut=outfn, filenameIns=sys.argv[idx+1:], compress=compress, balancing=balancing, skipFirsts=skips, stateChannels=statechs)
         quit()
         
     if not '-f' in sys.argv :

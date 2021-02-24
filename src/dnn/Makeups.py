@@ -899,7 +899,7 @@ class ModelS2d_ResNet50(Model88_sliced2d) :
         return x
 
 # --------------------------------
-class ModelS2d_ResNet50r1(ModelS2d_ResNet50) :
+class ModelS2d_ResNet50r1(ModelS2d_ResNet50) : # NOTE of 20210223: instable to train
     '''
     2D models with channels expanded by channels=4
     additional autodecoder ref: https://github.com/Alvinhech/resnet-autoencoder/blob/master/autoencoder4.py
@@ -1087,7 +1087,7 @@ if __name__ == '__main__':
 
     if not model:
         # model = ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
-        model = ModelS2d_ResNet50r1(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
+        model = ModelS2d_ResNet50(input_shape=(18, 32, 4), output_class_num=3, output_name='action') # forget ModelS2d_ResNet50r1
         # model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=8, output_name='gr8A', output_as_attr=True)
         model.buildup()
 

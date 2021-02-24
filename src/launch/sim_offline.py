@@ -19,7 +19,7 @@ RFGROUP_PREFIX  = 'ReplayFrame:'
 RFGROUP_PREFIX2 = 'RF'
 
 ########################################################################
-def concateH5Samples(filenameOut, filenameIns, compress=True, balancing=False, maxOverMin=1.0, samplesPerFrame=4*1024, skipFirsts=0, stateChannels=-1) :
+def concateH5Samples(filenameOut, filenameIns, compress=True, balancing=False, maxOverMin=1.0, samplesPerFrame=2*1024, skipFirsts=0, stateChannels=-1) :
     if isinstance(filenameIns, str):
         filenameIns = filenameIns.split(',')
 

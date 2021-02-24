@@ -735,7 +735,7 @@ def readArchivedDays(prog, dirArchived, symbol, YYYYMMDDs):
     return all_lines # take celery's compression instead of return bz2.compress(all_lines.encode('utf8'))
 
 ########################################################################
-def populateMuxFromArchivedDir(prog, dirArchived, symbol, dtStart = None):
+def populateMuxFromWeekDir(prog, dirArchived, symbol, dtStart = None):
 
     mux = SinaMux(program=prog) # the result to return
     mux.setId(dirArchived)
@@ -810,10 +810,13 @@ def populateMuxFromArchivedDir(prog, dirArchived, symbol, dtStart = None):
         pb.registerConverter(EVENT_MONEYFLOW_1MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
         pb.registerConverter(EVENT_MONEYFLOW_5MIN, MoneyflowData.hatch, MoneyflowData.COLUMNS)
         pb.registerConverter(EVENT_MONEYFLOW_1DAY, MoneyflowData.hatch, MoneyflowData.COLUMNS)
+
+        if not mux.subStreamIds or len(mux.subStreamIds) <=0:
+            mux._setDateRange(yymmdd + 'T000000')
         mux.addStream(pb)
 
         if len(ev1dIncluded) <2:
-            mlst = h5tar.list_utf8(fn) # this mem-name listing is unnecessary as the member name is certain
+            mlst = h5tar.list_utf8(fn) # this mem-name listing is a bit stupid but MF1d/KL1d may have days-not-open
             for wmem in mlst:
                 wmem = wmem['name']
                 if not symbol in wmem: continue
@@ -825,11 +828,13 @@ def populateMuxFromArchivedDir(prog, dirArchived, symbol, dtStart = None):
                     mux.importJsonSequence(lines, symbol, evt)
                     ev1dIncluded.append(evt)
                 elif '.csv' == wmem[-4:] :
-                    pb = CsvStream(symbol, StringIO(lines), MoneyflowData.COLUMNS if EVENT_MONEYFLOW_PREFIX in evt else KLineData.COLUMNS, evtype =evt, program=prog)
-                    pb.setId('csv:%s.%s' % (symbol, evtype))
+                    pb = hist.CsvStream(symbol, StringIO(lines), MoneyflowData.COLUMNS if EVENT_MONEYFLOW_PREFIX in evt else KLineData.COLUMNS, evtype =evt, program=prog)
+                    pb.setId('csv:%s.%s' % (symbol, evt))
                     mux.addStream(pb)
                     
                     ev1dIncluded.append(evt)
+
+                if len(ev1dIncluded) >=2: break
 
         yymmddStart = '%s%s' % (mw.group(1), mw.group(4))
 
@@ -1143,7 +1148,7 @@ if __name__ == '__main__':
     dirArched = '/mnt/e/AShareSample/hpx_archived/sina'
     symbol = 'SZ002008'
 
-    mux = populateMuxFromArchivedDir(prog, dirArched, symbol, dtStart = None)
+    mux = populateMuxFromWeekDir(prog, dirArched, symbol, dtStart = None)
     try :
         while True:
             ev = next(mux)

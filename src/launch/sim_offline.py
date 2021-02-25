@@ -137,7 +137,7 @@ def concateH5Samples(filenameOut, filenameIns, compress=True, balancing=False, m
                         hist.balanceSamples(frameDict, 'state', 'action', maxOverMin=maxOverMin)
                         frmState, frmAction = frameDict['state'], frameDict['action']
 
-                    if len(frmState) >= samplesPerFrame:
+                    while len(frmState) >= samplesPerFrame :
                         col_state = frmState[:samplesPerFrame]
                         col_action = frmAction[:samplesPerFrame]
                         frmState  = frmState[samplesPerFrame:]
@@ -148,57 +148,8 @@ def concateH5Samples(filenameOut, filenameIns, compress=True, balancing=False, m
                         frmId +=1
                         frmId_Ins =[]
 
-                        # balstr = ''
-                        # if balancing:
-                        #     AD = np.where(col_action >=0.99)
-                        #     kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
-                        #     balstr = ' balanced classes[%s]' % ','.join([str(x) for x in kIout])
-
-                        # frmName ='%s%06d' % (RFGROUP_PREFIX2, frmId)
-                        # g = h5out.create_group(frmName)
-                        # g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
-                        # frmId +=1
-                        # g.attrs['state'] = 'state'
-                        # g.attrs['action'] = 'action'
-                        # g.attrs[u'default'] = 'state'
-                        # g.attrs['size'] = col_state.shape[0]
-                        # g.attrs['signature'] = EXPORT_SIGNATURE
-
-                        # st = g.create_dataset('state', data= col_state, **dsargs)
-                        # st.attrs['dim'] = col_state.shape[1]
-                        # ac = g.create_dataset('action', data= col_action, **dsargs)
-                        # ac.attrs['dim'] = col_action.shape[1]
-                        # print("outfrm[%s] %d samples saved,%s pending %s" % (frmName, len(col_state), balstr, len(frmState)))
-
-            # if len(frmId_Ins) >0:
-            #     fnIns.append('%s(%d)' % (fn, len(frmId_Ins)))
-
         if not frmState is None and len(frmState) >= 0:
             print("%s, %d-state-chs last frm, read from: %s" % (_saveFrameToFile(h5out, frmState, frmAction, frmId), stateChannels, ''.join(frmId_Ins)))
-
-            # col_state = frmState
-            # col_action = frmAction
-            # balstr = ''
-            # if balancing:
-            #     AD = np.where(col_action >=0.99)
-            #     kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
-            #     balstr = ' balanced classes[%s]' % ','.join([str(x) for x in kIout])
-
-            # frmName ='%s%06d' % (RFGROUP_PREFIX2, frmId)
-            # g = h5out.create_group(frmName)
-            # g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
-            # frmId +=1
-            # g.attrs['state'] = 'state'
-            # g.attrs['action'] = 'action'
-            # g.attrs[u'default'] = 'state'
-            # g.attrs['size'] = col_state.shape[0]
-            # g.attrs['signature'] = EXPORT_SIGNATURE
-
-            # st = g.create_dataset('state', data= col_state, **dsargs)
-            # st.attrs['dim'] = col_state.shape[1]
-            # ac = g.create_dataset('action', data= col_action, **dsargs)
-            # ac.attrs['dim'] = col_action.shape[1]
-            # print("outfrm[%s] last %d samples saved %s" % (frmName, len(col_state), balstr ))
 
     print("concated into file %s" % (filenameOut ))
 

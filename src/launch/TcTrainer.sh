@@ -3,8 +3,9 @@
 # usually put the following in crontab -e:
 # */10 * * * * ~/wkspaces/HyperPixiu/src/launch/TcTrainer.sh 2>&1 | tee -a /tmp/TcTrainer.log &
 
-MODEL="state18x32x4Y4F518x1To3action.resnet50"
-CONF="Trainer_RTX2080.json"
+# MODEL="state18x32x4Y4F518x1To3action.resnet50"
+MODEL="state18x32x8Y4F518x2To3action.resnet50"
+CONF="Trainer_gpu.json"
 
 PROJLOC=~/wkspaces/HyperPixiu
 DATASRC="/mnt/e/AShareSample/"
@@ -42,8 +43,9 @@ if ! [ -e ${FN_BEST} ] ; then
 elif ! [ -e ${FN_LAST} ] ; then 
     echo "no new ${FN_LAST} generated"
 else
-    echo "best generated, patching ${FN_LAST} to ${DATASRC}/${MODEL}.h5"
-    cp -vf ${FN_LAST} ${DATASRC}/${MODEL}.h5
+    echo "best generated, patching ${FN_LAST} to ${DATASRC}/models/${MODEL}_training.h5"
+    mkdir -vp ${DATASRC}/models
+    cp -vf ${FN_LAST} ${DATASRC}/models/${MODEL}_training.h5
 
     echo "packaging ${MODEL} into /tmp/${MODEL}.tar.bz2"
     

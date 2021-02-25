@@ -7,7 +7,7 @@ from Simulator import *
 from Account import Account_AShare
 from Application import *
 import HistoryData as hist
-from crawler.producesSina import Sina_Tplus1, populateMuxFromArchivedDir
+from crawler.producesSina import Sina_Tplus1, populateMuxFromWeekDir
 from advisors.dnn import DnnAdvisor
 import h5tar
 
@@ -236,8 +236,8 @@ if __name__ == '__main__':
     if os.path.isdir(evMdSource) :
         try :
             os.stat(os.path.join(evMdSource, 'h5tar.py'))
-            histReader = populateMuxFromArchivedDir(p, evMdSource, symbol=SYMBOL)
-        except:
+            histReader = populateMuxFromWeekDir(p, evMdSource, symbol=SYMBOL)
+        except Exception as ex:
             # csvPlayback can only cover one symbol
             p.info('taking CsvPlayback on dir %s for symbol[%s]' % (evMdSource, SYMBOL))
             histReader = hist.CsvPlayback(program=p, symbol=SYMBOL, folder=evMdSource, fields='date,time,open,high,low,close,volume,ammount')

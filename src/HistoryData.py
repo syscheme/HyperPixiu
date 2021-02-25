@@ -461,8 +461,22 @@ class Playback(Iterable):
         self._exchange = exchange if exchange else ''
         self._dbNamePrefix = Recorder.DEFAULT_DBPrefix
         
-        self._startDate = startDate if startDate else Playback.DUMMY_DATE_START
-        self._endDate   = endDate if endDate else Playback.DUMMY_DATE_END
+        self._startDate, self._endDate = Playback.DUMMY_DATE_START, Playback.DUMMY_DATE_END
+
+        self._setDateRange(startDate, endDate)
+
+        self._dictCategory = {} # eventType/category to { columeNames: [], coverter: func() }
+        self.setId('%s.%s.%s-%s' %(self._symbol, self._category, self._startDate, self._endDate) )
+
+    @property
+    def datetimeRange(self) : return self.__dtStart, self.__dtEnd
+
+    @property
+    def categories(self) : return self._dictCategory
+
+    def _setDateRange(self, startDate=None, endDate=None) :
+        if startDate: self._startDate = startDate
+        if endDate:   self._endDate   = endDate
         self.__dtStart, self.__dtEnd = None, None
         try :
             self.__dtStart = datetime.strptime(self._startDate, '%Y%m%dT%H%M%S')
@@ -476,14 +490,6 @@ class Playback(Iterable):
         except:
             pass
 
-        self._dictCategory = {} # eventType/category to { columeNames: [], coverter: func() }
-        self.setId('%s.%s.%s-%s' %(self._symbol, self._category, self._startDate, self._endDate) )
-
-    @property
-    def datetimeRange(self) : return self.__dtStart, self.__dtEnd
-
-    @property
-    def categories(self) : return self._dictCategory
 
     # -- impl of Iterable --------------------------------------------------------------
     def resetRead(self):

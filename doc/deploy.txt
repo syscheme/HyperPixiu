@@ -11,7 +11,7 @@ cat > ~/.pip/pip.conf
   trusted-host =  mirrors.aliyun.com
   index-url = https://mirrors.aliyun.com/pypi/simple
 
-apt install -y cron htop tree lsof git nano
+apt install -y cron htop tree lsof git nano at
 
 pip3 install json-cfg websocket websocket-client pathlib matplotlib requests demjson filelock h5py &
 pip3 list|grep tensorflow

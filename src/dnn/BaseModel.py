@@ -150,7 +150,7 @@ class BaseModel(object) :
             model_json = self.model.to_json()
             g = h5f.create_group('model_config')
             BaseModel.hdf5g_setAttribute(g, 'model_clz', self.__class__.__name__)
-            BaseModel.hdf5g_setAttribute(g, 'model_base', 'Model88_sliced2d')
+            BaseModel.hdf5g_setAttribute(g, 'model_base', 'Model88_sliced')
             BaseModel.hdf5g_setAttribute(g, 'model_json', model_json.encode('utf-8'))
 
             input_shape = [int(x) for x in list(self.model.input.shape[1:])]

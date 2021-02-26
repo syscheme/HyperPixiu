@@ -11,7 +11,7 @@ from abc import abstractmethod
 from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 import HistoryData as hist
 from dnn.BaseModel import BaseModel, BACKEND_FLOAT
-from dnn.Makeups  import Model88_sliced2d, ModelS2d_VGG16r1, ModelS2d_AutoEncoder
+from dnn.Makeups  import Model88_sliced, ModelS2d_VGG16r1, ModelS2d_AutoEncoder
 
 # ----------------------------
 # INDEPEND FROM HyperPX core classes: from MarketData import EXPORT_FLOATS_DIMS
@@ -199,7 +199,7 @@ class Trainer_classify(BaseApplication):
             if len(GPUs) <= 1:
                 # CPU mode
                 if self._baseModelClass in [ 'model2d_sliced', 'sliced2d' ]: # lower-ed already
-                    self._brain = Model88_sliced2d.load(self._fnStartModel)
+                    self._brain = Model88_sliced.load(self._fnStartModel)
                 else :
                     self._brain = BaseModel.load(self._fnStartModel)
             else:
@@ -207,7 +207,7 @@ class Trainer_classify(BaseApplication):
                 # we'll store a copy of the model on *every* GPU and then combine the results from the gradient updates on the CPU
                 with tf.device("/cpu:0"):
                     if self._baseModelClass in [ 'model2d_sliced', 'sliced2d' ]: # lower-ed already
-                        self._brain = Model88_sliced2d.load(self._fnStartModel)
+                        self._brain = Model88_sliced.load(self._fnStartModel)
                     else :
                         self._brain = BaseModel.load(self._fnStartModel)
         
@@ -1316,7 +1316,7 @@ if __name__ == '__main__':
     
     trainer = p.createApp(Trainer_classify, configNode ='train') # for 3 actions
     # trainer = p.createApp(Trainer_GainRates, grClassifier=hist.classifyGainRates_level6, configNode ='train') # for 8 gain-rates
-    # trainer = p.createApp(Trainer_GainRates, grClassifier=None, configNode ='train') # for 8 gain-rates
+    trainer = p.createApp(Trainer_GainRates, grClassifier=None, configNode ='train') # for 8 gain-rates
 
     # model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
     # model.buildup()

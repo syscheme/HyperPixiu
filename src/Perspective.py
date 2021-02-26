@@ -21,6 +21,8 @@ DEFAULT_KLDEPTH_1min = 60 # 1-hr
 DEFAULT_KLDEPTH_5min = 240 # covers a week
 DEFAULT_KLDEPTH_1day = 260 # about a year
 
+FORMATTER_KL1d_MIN = 32 # 32-latest-days are minimallly required to generate 'format' for evaluating
+
 EXPORT_SIGNATURE= '%dT%dM%dF%dD.%s:200109T17' % (DEFAULT_KLDEPTH_TICK, DEFAULT_KLDEPTH_1min, DEFAULT_KLDEPTH_5min, DEFAULT_KLDEPTH_1day, NORMALIZE_ID)
 
 ########################################################################
@@ -969,6 +971,7 @@ class PerspectiveState(MarketState):
 
 
 ########################################################################
+BMP_COLOR_BG_FLOAT       =1.0
 class PerspectiveFormatter(Formatter):
     '''
     '''
@@ -1013,6 +1016,17 @@ class PerspectiveFormatter(Formatter):
         if baseline_Volume <=0: baseline_Volume=1.0
         ret = self.__md2floats_KLineEx(marketData, baseline_Price, baseline_Volume)
         return self._complementChannels(ret)
+
+    def saveBMP(self, img3C, imgPathName) :
+        width = 320
+        lenX, lenY = len(img3C[0]), len(img3C)
+        imgarray = np.uint8(np.array(img3C)*255)
+        bmp = Image.fromarray(imgarray)
+        if width > lenX:
+            bmp = bmp.resize((width, int(width *1.0/lenX *lenY)), Image.NEAREST)
+        # bmp.convert('RGB')
+        bmp.save(imgPathName)
+        return imgPathName
 
 ########################################################################
 class Formatter_F1548(PerspectiveFormatter):
@@ -1101,15 +1115,137 @@ class Formatter_F1548(PerspectiveFormatter):
         '''
 
 ########################################################################
-BMP_COLOR_BG_FLOAT       =1.0
+class Formatter_1d(PerspectiveFormatter):
+    X_LEN = 518
 
+    EXP_SECHEMA = OrderedDict({
+        'asof':              1,
+        EVENT_KLINE_1MIN :  60,
+        EVENT_KLINE_5MIN :  240,
+        EVENT_KLINE_1DAY :  240,
+    })
+
+    XOFFSETS = {
+        EVENT_KLINE_1MIN :  0,
+        'aof0'           :  60,
+        EVENT_KLINE_5MIN :  61,
+        'aof1'           :  301, # = 61 + 240,
+        EVENT_KLINE_1DAY :  302,
+    }
+
+    def __init__(self, bmpPathPrefix=None, dem=60, channels=8):
+        '''Constructor'''
+        super(Formatter_1d, self).__init__(channels=channels)
+        self._bmpPathPrefix = bmpPathPrefix
+        self._dem = dem
+        if self._dem <=0: self._dem=60
+
+    def doFormat(self, symbol=None) :
+        seqdict = self.mstate.export(symbol, lstsWished=Formatter_1d.EXP_SECHEMA)
+        if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
+            return None
+
+        stk = seqdict[EVENT_KLINE_1DAY]
+        if len(stk) <FORMATTER_KL1d_MIN: return None
+        baseline_Price, baseline_Volume= stk[0].close, stk[0].volume
+
+        # determine dtAsOf
+        dtAsOf =None
+        stk = seqdict[EVENT_KLINE_1MIN]
+        if len(stk) >0: 
+            dtAsOf = stk[0].asof
+        else:
+            stk = seqdict[EVENT_KLINE_5MIN]
+            if len(stk) >0: 
+                dtAsOf = stk[0].asof
+
+        if not dtAsOf: return None
+        todayYYMMDD = dtAsOf.strftime('%Y%m%d')
+
+        result = [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(Formatter_1d.X_LEN) ] # DONOT take [ [[0.0]*6] *16] *16
+
+        # part 0: EVENT_KLINE_1MIN
+        stk, bV, roffset = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240, Formatter_1d.XOFFSETS[EVENT_KLINE_1MIN]
+        for i in range(0, min(len(stk), Formatter_1d.EXP_SECHEMA[EVENT_KLINE_1MIN])): 
+             kl = stk[i]
+             if kl.asof.strftime('%Y%m%d') != todayYYMMDD: continue # represent only today's
+             result[roffset +i] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
+
+        # part 1: aof0
+        roffset = Formatter_1d.XOFFSETS['aof0']
+        result[roffset] = [ dtAsOf.minute/60.0, dtAsOf.hour/24.0, dtAsOf.weekday() / 7.0, dtAsOf.day / 31.0 ] * int ((self._channels +3)/4)
+
+        # part 2: EVENT_KLINE_5MIN
+        stk, bV, roffset = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48, Formatter_1d.XOFFSETS[EVENT_KLINE_5MIN]
+        # 2.1 today's 48 KL5min
+        for i in range(0, min(len(stk), 48)): 
+             kl = stk[i]
+             if kl.asof.strftime('%Y%m%d') != todayYYMMDD: 
+                 if i>0: del stk[:i]
+                 break
+
+             result[roffset +i] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
+
+        # 2.2 KL5min of prev 4days
+        for i in range(0, min(len(stk), 48*4)): 
+             kl = stk[i]
+             result[roffset +48 +i] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
+
+        # part 3: aof1
+        roffset = Formatter_1d.XOFFSETS['aof1']
+        result[roffset] = [ dtAsOf.day / 31.0, (dtAsOf.month-1) / 12.0, dtAsOf.weekday() / 7.0, dtAsOf.hour/24.0 ] * int ((self._channels +3)/4)
+
+        # part 4: EVENT_KLINE_1DAY
+        stk, bV, roffset = seqdict[EVENT_KLINE_1DAY], baseline_Volume, Formatter_1d.XOFFSETS[EVENT_KLINE_1DAY]
+        for i in range(0, min(len(stk), Formatter_1d.EXP_SECHEMA[EVENT_KLINE_1DAY])): 
+             kl = stk[i]
+             result[roffset +i] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
+
+        # export BMP for auditing
+        if self._bmpPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
+            img3C = self.expandRGBLayers(result)
+            imgPathName = '%s%s_%s.png' % (self._bmpPathPrefix if self._bmpPathPrefix else '', self.id, dtAsOf.strftime('%Y%m%dT%H%M'))
+            self.saveBMP(img3C, imgPathName)
+
+        return result
+
+    def readDateTime(self, imgResult) :
+        dt0, dt1 = imgResult[Formatter_1d.XOFFSETS['aof0']], imgResult[Formatter_1d.XOFFSETS['aof1']]
+        month, day, hour, minute = int(dt1[1]*12 +1.2), int(dt1[0]*31 +0.2), int(dt0[1]*24 +0.2), int(dt0[0]*60 +0.2)
+        dt = datetime(year=2030, month=month, day=day, hour=hour, minute=minute, second=0, microsecond=0)
+        return dt
+
+    def expandRGBLayers(self, img1d) :
+        channels, len1d = len(img1d[0]), len(img1d)
+        scaleX = int((channels+2)/3)
+        X = int(math.sqrt(len1d))
+        Y = X
+        if X <1: X=1
+        while (X * Y) < len1d: Y+=1
+
+        imgRGB = [ [ [BMP_COLOR_BG_FLOAT for k in range(3) ] for x in range(X* scaleX + scaleX-1) ] for y in range(Y) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
+        pixelEdge = [ 1.0 -BMP_COLOR_BG_FLOAT ] *3
+        for y in range(Y):
+            for x in range(scaleX -1) :
+                imgRGB[y][(1+x) *X] = pixelEdge
+
+            for x in range(X) :
+                offset = y * X + x
+                if offset >= len1d: continue
+                for i in range(scaleX):
+                    pixel = img1d[offset][i*3 : (i+1)*3]
+                    if len(pixel) < 3: pixel += [BMP_COLOR_BG_FLOAT] * (3-len(pixel))
+                    imgRGB[y][i *X +x + i] = pixel
+        return imgRGB
+
+########################################################################
 class Formatter_base2dImg(PerspectiveFormatter):
     '''
     '''
-    def __init__(self, imgPathPrefix=None, dem=60, channels=6):
+    def __init__(self, bmpPathPrefix=None, dem=60, channels=6):
         '''Constructor'''
         super(Formatter_base2dImg, self).__init__(channels=channels)
-        self._imgPathPrefix = imgPathPrefix
+        self._bmpPathPrefix = bmpPathPrefix
         self._dem = dem
         if self._dem <=0: self._dem=60
 
@@ -1180,8 +1316,8 @@ class Formatter_base2dImg(PerspectiveFormatter):
         '''
 
         img3C = self.expand6Cto3C_Y(img6C)
-        if self._imgPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
-            self.saveImg(img3C, dtAsOf=dtAsOf)
+        if self._bmpPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
+            self.saveBMP(img3C, dtAsOf=dtAsOf)
 
         return img3C
 
@@ -1194,24 +1330,6 @@ class Formatter_base2dImg(PerspectiveFormatter):
             (dt.year %100)/100.0, 
             NORMALIZED_FLOAT_UNAVAIL
             ]
-
-    def saveImg(self, img3C, imgPathName='', dtAsOf=None) :
-
-        if not imgPathName:
-            if dtAsOf:
-                imgPathName = '%s%s_%s.png' % (self._imgPathPrefix if self._imgPathPrefix else '', self.id, dtAsOf.strftime('%Y%m%dT%H%M'))
-            else:
-                imgPathName = '%s%s.png' % (self._imgPathPrefix if self._imgPathPrefix else '', self.id)
-            
-        width = 320
-        lenX, lenY = len(img3C[0]), len(img3C)
-        imgarray = np.uint8(np.array(img3C)*255)
-        bmp = Image.fromarray(imgarray)
-        if width > lenX:
-            bmp = bmp.resize((width, int(width *1.0/lenX *lenY)), Image.NEAREST)
-        # bmp.convert('RGB')
-        bmp.save(imgPathName)
-        return imgPathName
 
     def expand6Cto3C_X(self, img6C) :
         lenX, lenY = len(img6C[0]), len(img6C)
@@ -1278,7 +1396,7 @@ class Formatter_2dImg32x18(Formatter_base2dImg):
             return None
 
         stk = seqdict[EVENT_KLINE_1DAY]
-        if len(stk) <32: return None # 32-latest-days are minimallly required for evaluating
+        if len(stk) <FORMATTER_KL1d_MIN: return None # 32-latest-days are minimallly required for evaluating
         baseline_Price, baseline_Volume= stk[0].close, stk[0].volume
 
         # determine dtAsOf
@@ -1372,15 +1490,16 @@ class Formatter_2dImg32x18(Formatter_base2dImg):
 
         # TODO parition 4: X_LEN*2 KL1week to cover near a year
 
-        # the hit expected Y_LEN 
+        # if exceed the expected Y_LEN 
         rows = len(imgResult)
         if rows > Y_LEN:
             del imgResult[Y_LEN:]
         else : imgResult += [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(Y_LEN - rows)] # DONOT take [ [[0.0]*6] *16] *16
 
-        if self._imgPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
+        if self._bmpPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
             img3C = self.expandRGBLayers(imgResult)
-            self.saveImg(img3C, dtAsOf=dtAsOf)
+            imgPathName = '%s%s_%s.png' % (self._bmpPathPrefix if self._bmpPathPrefix else '', self.id, dtAsOf.strftime('%Y%m%dT%H%M'))
+            self.saveBMP(img3C, imgPathName)
 
         return imgResult
 
@@ -1476,8 +1595,9 @@ class Formatter_2dImg32x18(Formatter_base2dImg):
              rows6C[y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
         img3C += self.expand6Cto3C_Y(rows6C)
 
-        if self._imgPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
-            self.saveImg(img3C, dtAsOf=dtAsOf)
+        if self._bmpPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
+            imgPathName = '%s%s_%s.png' % (self._bmpPathPrefix if self._bmpPathPrefix else '', self.id, dtAsOf.strftime('%Y%m%dT%H%M'))
+            self.saveBMP(img3C, imgPathName)
 
         return img3C
 
@@ -1616,8 +1736,9 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
         '''
 
         img3C = self.expand6Cto3C_X(img6C)
-        if self._imgPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
-            self.saveImg(img3C, dtAsOf=dtAsOf)
+        if self._bmpPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
+            imgPathName = '%s%s_%s.png' % (self._bmpPathPrefix if self._bmpPathPrefix else '', self.id, dtAsOf.strftime('%Y%m%dT%H%M'))
+            self.saveBMP(img3C, imgPathName)
 
         return img3C
 

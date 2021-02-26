@@ -12,7 +12,7 @@ from TradeAdvisor import *
 from Trader       import MetaTrader, BaseTrader
 from Account      import OrderData
 import HistoryData as hist
-from dnn.Makeups  import Model88, Model88_sliced2d
+from dnn.Makeups  import Model88, Model88_sliced
 
 import tensorflow as tf
 import numpy as np
@@ -283,11 +283,11 @@ class DnnAdvisor(TradeAdvisor):
             if devname:
                 devname = devname[len('/device:'):]
                 with tf.device('/%s' % devname) :
-                    self._brain = Model88_sliced2d.load(self._fnModel) if 'dnn_sliced2d' == conf_type \
+                    self._brain = Model88_sliced.load(self._fnModel) if 'dnn_sliced2d' == conf_type \
                         else Model88.load(self._fnModel)
 
         if not self._brain:
-            self._brain = Model88_sliced2d.load(self._fnModel) if 'dnn_sliced2d' == self._type \
+            self._brain = Model88_sliced.load(self._fnModel) if 'dnn_sliced2d' == self._type \
                 else Model88.load(self._fnModel)
 
         if not self._brain:

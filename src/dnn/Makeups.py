@@ -776,6 +776,7 @@ class Model88_sliced(Model88) :
         return ret
 
 ########################################################################
+"""
 class Model88_sliced2d(Model88) :
     '''
     2D models with channels expanded by channels=4
@@ -1108,6 +1109,7 @@ class Model88_sliced2d(Model88) :
             ret += [ '%s/%s' %(k, x) for x in names ]
         return ret
 
+"""
 # --------------------------------
 class ModelS2d_ResNet50Pre(Model88_sliced) :
     '''
@@ -1247,7 +1249,7 @@ class ModelS2d_ResNet50(Model88_sliced) :
         return x
 
 # --------------------------------
-class ModelS2d_VGG16r1(Model88_sliced2d) :
+class ModelS2d_VGG16r1(Model88_sliced) :
     '''
     2D models with channels expanded by channels=4
     /usr/local/lib64/python3.6/site-packages/keras_applications/vgg16.py
@@ -1361,6 +1363,8 @@ class ModelS2d_AutoEncoder(Model) :
 
     def save(self, *args, **kwargs):
         return self.__autoencoder.save(*args, **kwargs) # return self._nested.save(*args, **kwargs)
+
+########################################################################
 
 ########################################################################
 if __name__ == '__main__':

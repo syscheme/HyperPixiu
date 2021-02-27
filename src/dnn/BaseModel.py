@@ -56,12 +56,6 @@ import numpy as np
 ########################################################################
 class BaseModel(object) :
 
-    COMPILE_ARGS ={
-    'loss':'categorical_crossentropy', 
-    # 'optimizer': sgd,
-    'metrics':['accuracy']
-    }
-
     def list_processors() :
         from tensorflow.python.client import device_lib
         local_device_protos = device_lib.list_local_devices()
@@ -79,6 +73,7 @@ class BaseModel(object) :
     def __init__(self, **kwargs):
         self._dnnModel = None
         self._program = kwargs.get('program', None)
+        self._startLR = kwargs.get('startLR', 0.01)
 
         if len(BaseModel.GPUs) >1:
             from keras.utils.training_utils import multi_gpu_model
@@ -92,6 +87,13 @@ class BaseModel(object) :
             if self._program:
                 self._program.warn('backend set to %s, epsilon[1e-4]' % (BACKEND_FLOAT))
             else: print('backend set to %s, epsilon[1e-4]' % (BACKEND_FLOAT))
+
+        self._defaultOptimizer = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+        self._defaultCompileArgs = {
+                                    'loss':'categorical_crossentropy', 
+                                    # 'optimizer': sgd,
+                                    'metrics':['accuracy']
+                                    }
 
     @property
     def program(self) :
@@ -131,9 +133,9 @@ class BaseModel(object) :
         if not self.model: return
 
         if not compireArgs or isinstance(compireArgs, dict) and len(compireArgs) <=0:
-            compireArgs = BaseModel.COMPILE_ARGS
+            compireArgs = self._defaultCompileArgs
         if not optimizer:
-            optimizer = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+            optimizer = self._defaultOptimizer
 
         self.model.compile(optimizer=optimizer, **compireArgs)
         return self.model

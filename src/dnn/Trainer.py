@@ -198,7 +198,7 @@ class Trainer_classify(BaseApplication):
         else :
             if len(GPUs) <= 1:
                 # CPU mode
-                if self._baseModelClass in [ 'model2d_sliced', 'sliced2d' ]: # lower-ed already
+                if self._baseModelClass in [ 'sliced', 'sliced2d' ]: # lower-ed already
                     self._brain = Model88_sliced.load(self._fnStartModel)
                 else :
                     self._brain = BaseModel.load(self._fnStartModel)
@@ -206,7 +206,7 @@ class Trainer_classify(BaseApplication):
                 # GPU mode
                 # we'll store a copy of the model on *every* GPU and then combine the results from the gradient updates on the CPU
                 with tf.device("/cpu:0"):
-                    if self._baseModelClass in [ 'model2d_sliced', 'sliced2d' ]: # lower-ed already
+                    if self._baseModelClass in [ 'sliced', 'sliced2d' ]: # lower-ed already
                         self._brain = Model88_sliced.load(self._fnStartModel)
                     else :
                         self._brain = BaseModel.load(self._fnStartModel)
@@ -231,8 +231,8 @@ class Trainer_classify(BaseApplication):
                 return False
 
             self.info('trainable-layers: %s' % ','.join(trainableLayers))
-            sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
-            self._brain.compile(optimizer=sgd)
+            self._brain._startLR = self._startLR
+            self._brain.compile()
 
         self.__wkModelId = self._brain.modelId
         self._brain.summary()

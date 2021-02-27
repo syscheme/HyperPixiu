@@ -1920,7 +1920,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
             self._recorder.registerCategory(EVENT_ADVICE, params= {'columns' : AdviceData.COLUMNS})
 
         self._tradeSymbol = self.wkTrader.objectives[0] # idealTrader only cover a single symbol from the objectives
-        self.__fmtr = Formatter_2dImg32x18() # ('/mnt/e/bmp/%s.' % self._tradeSymbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
+        self.__fmtr = Formatter_1d518() # Formatter_2dImg32x18() # ('/mnt/e/bmp/%s.' % self._tradeSymbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
         if isinstance(self._wkHistData, hist.CsvPlayback) and self.__fmtr._channels >4:
             self.warn('doAppInit() enforced formatter[%s] channels=4 from %s as the histData is CsvPlayback' % (self.__fmtr.id, self.__fmtr._channels))
             self.__fmtr._channels =4

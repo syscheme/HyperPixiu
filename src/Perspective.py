@@ -1115,7 +1115,7 @@ class Formatter_F1548(PerspectiveFormatter):
         '''
 
 ########################################################################
-class Formatter_1d(PerspectiveFormatter):
+class Formatter_1d518(PerspectiveFormatter):
     X_LEN = 518
 
     EXP_SECHEMA = OrderedDict({
@@ -1135,13 +1135,13 @@ class Formatter_1d(PerspectiveFormatter):
 
     def __init__(self, bmpPathPrefix=None, dem=60, channels=8):
         '''Constructor'''
-        super(Formatter_1d, self).__init__(channels=channels)
+        super(Formatter_1d518, self).__init__(channels=channels)
         self._bmpPathPrefix = bmpPathPrefix
         self._dem = dem
         if self._dem <=0: self._dem=60
 
     def doFormat(self, symbol=None) :
-        seqdict = self.mstate.export(symbol, lstsWished=Formatter_1d.EXP_SECHEMA)
+        seqdict = self.mstate.export(symbol, lstsWished=Formatter_1d518.EXP_SECHEMA)
         if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
             return None
 
@@ -1162,21 +1162,21 @@ class Formatter_1d(PerspectiveFormatter):
         if not dtAsOf: return None
         todayYYMMDD = dtAsOf.strftime('%Y%m%d')
 
-        result = [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(Formatter_1d.X_LEN) ] # DONOT take [ [[0.0]*6] *16] *16
+        result = [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(Formatter_1d518.X_LEN) ] # DONOT take [ [[0.0]*6] *16] *16
 
         # part 0: EVENT_KLINE_1MIN
-        stk, bV, roffset = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240, Formatter_1d.XOFFSETS[EVENT_KLINE_1MIN]
-        for i in range(0, min(len(stk), Formatter_1d.EXP_SECHEMA[EVENT_KLINE_1MIN])): 
+        stk, bV, roffset = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240, Formatter_1d518.XOFFSETS[EVENT_KLINE_1MIN]
+        for i in range(0, min(len(stk), Formatter_1d518.EXP_SECHEMA[EVENT_KLINE_1MIN])): 
              kl = stk[i]
              if kl.asof.strftime('%Y%m%d') != todayYYMMDD: continue # represent only today's
              result[roffset +i] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
 
         # part 1: aof0
-        roffset = Formatter_1d.XOFFSETS['aof0']
+        roffset = Formatter_1d518.XOFFSETS['aof0']
         result[roffset] = [ dtAsOf.minute/60.0, dtAsOf.hour/24.0, dtAsOf.weekday() / 7.0, dtAsOf.day / 31.0 ] * int ((self._channels +3)/4)
 
         # part 2: EVENT_KLINE_5MIN
-        stk, bV, roffset = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48, Formatter_1d.XOFFSETS[EVENT_KLINE_5MIN]
+        stk, bV, roffset = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48, Formatter_1d518.XOFFSETS[EVENT_KLINE_5MIN]
         # 2.1 today's 48 KL5min
         for i in range(0, min(len(stk), 48)): 
              kl = stk[i]
@@ -1192,12 +1192,12 @@ class Formatter_1d(PerspectiveFormatter):
              result[roffset +48 +i] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
 
         # part 3: aof1
-        roffset = Formatter_1d.XOFFSETS['aof1']
+        roffset = Formatter_1d518.XOFFSETS['aof1']
         result[roffset] = [ dtAsOf.day / 31.0, (dtAsOf.month-1) / 12.0, dtAsOf.weekday() / 7.0, dtAsOf.hour/24.0 ] * int ((self._channels +3)/4)
 
         # part 4: EVENT_KLINE_1DAY
-        stk, bV, roffset = seqdict[EVENT_KLINE_1DAY], baseline_Volume, Formatter_1d.XOFFSETS[EVENT_KLINE_1DAY]
-        for i in range(0, min(len(stk), Formatter_1d.EXP_SECHEMA[EVENT_KLINE_1DAY])): 
+        stk, bV, roffset = seqdict[EVENT_KLINE_1DAY], baseline_Volume, Formatter_1d518.XOFFSETS[EVENT_KLINE_1DAY]
+        for i in range(0, min(len(stk), Formatter_1d518.EXP_SECHEMA[EVENT_KLINE_1DAY])): 
              kl = stk[i]
              result[roffset +i] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
 
@@ -1210,7 +1210,7 @@ class Formatter_1d(PerspectiveFormatter):
         return result
 
     def readDateTime(self, imgResult) :
-        dt0, dt1 = imgResult[Formatter_1d.XOFFSETS['aof0']], imgResult[Formatter_1d.XOFFSETS['aof1']]
+        dt0, dt1 = imgResult[Formatter_1d518.XOFFSETS['aof0']], imgResult[Formatter_1d518.XOFFSETS['aof1']]
         month, day, hour, minute = int(dt1[1]*12 +1.2), int(dt1[0]*31 +0.2), int(dt0[1]*24 +0.2), int(dt0[0]*60 +0.2)
         dt = datetime(year=2030, month=month, day=day, hour=hour, minute=minute, second=0, microsecond=0)
         return dt

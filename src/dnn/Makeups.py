@@ -1365,6 +1365,159 @@ class ModelS2d_AutoEncoder(Model) :
         return self.__autoencoder.save(*args, **kwargs) # return self._nested.save(*args, **kwargs)
 
 ########################################################################
+class ModelS1d_Cnn1DR2(Model88_sliced) :
+    '''
+    Model88 has a common 88 features at the end
+    '''
+    def __init__(self, **kwargs):
+        super(ModelS1d_Cnn1DR2, self).__init__(**kwargs)
+        self._dimMax = tuple([518])
+
+    def _buildup_core(self, input_tensor):
+
+        corename = 'cnn1dr2'
+        input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
+        x = input_tensor
+        xencoded, xdecoded = None, None
+        
+        x = self._tagged_chain(corename, x, layers.Conv1D(128, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.BatchNormalization())
+        x = self._tagged_chain(corename, x, layers.Conv1D(256, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(corename, x, layers.Conv1D(512, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.Conv1D(256, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.BatchNormalization())
+        x = self._tagged_chain(corename, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(corename, x, layers.Dropout(0.3))
+        x = self._tagged_chain(corename, x, layers.Conv1D(256, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.BatchNormalization())
+        x = self._tagged_chain(corename, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(corename, x, layers.Conv1D(128, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.BatchNormalization())
+        x = self._tagged_chain(corename, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(corename, x, layers.Conv1D(128, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.BatchNormalization())
+        x = self._tagged_chain(corename, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(corename, x, layers.Conv1D(100, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.GlobalAveragePooling1D())
+        x = self._tagged_chain(corename, x, layers.Dense(512, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.BatchNormalization())
+
+        xencoded = x
+        # Create model.
+        model = Model(input_tensor, x, name=corename) 
+        return model
+
+# --------------------------------
+class ModelS1d_VGG16(Model88_sliced) :
+    '''
+    additional autodecoder ref: https://github.com/Alvinhech/resnet-autoencoder/blob/master/autoencoder4.py
+    '''
+    def __init__(self, **kwargs):
+        super(ModelS1d_VGG16, self).__init__(**kwargs)
+        self._encoder, self._decoder = None, None
+
+    def _buildup_core(self, input_tensor):
+
+        input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
+        x = input_tensor
+        xencoded, xdecoded = None, None
+
+        x = ModelS1d_VGG16.conv_block(x, (3, 3), (1, 1), [64, 64],        1) # Block 1
+        xencoded             = x
+        iencoded             = layers.Input(xencoded.shape[1:])
+        xdecoded             = ModelS1d_VGG16.deconv_block(iencoded, (3, 3), (2, 2), [64, 64],        1) # Block 1
+
+        # original vgg16 starts from (224,224,3) so that allow pooling at each block, we start from 32x20 here so less pooling here
+        x = ModelS1d_VGG16.conv_block(x, 3, 1, [128, 128],      2) # Block 2
+        x = ModelS1d_VGG16.conv_block(x, 3, 2, [256, 256, 256], 3) # Block 3
+        x = ModelS1d_VGG16.conv_block(x, 3, 2, [256, 256, 256], 4) # Block 4, reduced from origin (2, 2), [512, 512, 512]
+        x = ModelS1d_VGG16.conv_block(x, 3, 1, [128, 128, 128], 5) # Block 5, reduced from origin (2, 2), [512, 512, 512]
+        # if include_top:
+        #     # Classification block
+        #     x = layers.layers.Flatten(name='flatten')(x)
+        #     x = layers.layers.Dense(4096, activation='relu', name='fc1')(x)
+        #     x = layers.layers.Dense(4096, activation='relu', name='fc2')(x)
+        #     x = layers.layers.Dense(classes, activation='softmax', name='fc1000')(x)
+        # else:
+        #     if pooling == 'avg':
+        #         x = layers.layers.GlobalAveragePooling2D()(x)
+        #     elif pooling == 'max':
+        #         x = layers.GlobalMaxPooling2D()(x)
+        x = layers.GlobalAveragePooling1D()(x)
+
+        # create model
+        model = Model(input_tensor, x, name='vgg16r1')
+
+        if None not in [xencoded, xdecoded]:
+            self._encoder = Model(input_tensor, xencoded, name='enc_%s' % model.name)
+            if xdecoded.shape[-1] != input_tensor.shape[-1] :
+                xdecoded = layers.Conv2DTranspose(int(input_tensor.shape[-1]), (3,3), activation='relu', padding='same', name='deconvShape')(xdecoded)
+            self._decoder = Model(iencoded, xdecoded, name='dec_%s' % model.name)
+
+        return model
+
+    def conv_block(input_tensor, kernel_size, pool_size, lst_filters, blkId):
+        """The identity block is the block that has no conv layer at shortcut.
+        # Returns
+            Output tensor for the block.
+        """
+        x = input_tensor
+        for i in range(len(lst_filters)):
+            x = layers.Conv1D(lst_filters[i], kernel_size, activation='relu', padding='same', name='block%s_conv%d' % (blkId, 1+i))(x)
+        
+        if pool_size >1:
+            x = layers.MaxPooling1D(pool_size, stride=pool_size, name='block%s_pool' % blkId)(x)
+        return x
+
+    def deconv_block(input_tensor, kernel_shape, pool_shape, lst_filters, blkId):
+        """The identity block is the block that has no conv layer at shortcut.
+        # Returns
+            Output tensor for the block.
+        """
+        x = input_tensor
+        x = layers.UpSampling2D(pool_shape, name='block%s_depool' % blkId)(x)
+        for i in range(len(lst_filters)):
+            x = layers.Conv2DTranspose(lst_filters[i], kernel_shape, activation='relu', padding='same', name='block%s_deconv%d' % (blkId, 1+i))(x)
+        
+        return x
+
+# --------------------------------
+class ModelS1d_AutoEncoder(Model) :
+    def __init__(self, mS2d, **kwargs) :
+        super(ModelS1d_AutoEncoder, self).__init__(**kwargs)
+        self._nested = mS2d
+        self.__autoencoder = None
+
+        if None not in [self._nested._encoder, self._nested._decoder ]:
+            inp = Input(self._nested._encoder.input_shape[1:]) # TODO: should perform slicing on true input
+            encoded = self._nested._encoder(inp)
+            decoded = self._nested._decoder(encoded)
+            self.__autoencoder = Model(inp, decoded)
+            self.__autoencoder.compile(optimizer='adadelta', loss='binary_crossentropy')
+
+    @property
+    def maxY(self): return self._nested._maxY
+
+    def call(self, x) :
+        if self.__autoencoder:
+            # if x.shape[0] < self._maxY: # padding Ys at the bottom
+            #     x = ZeroPadding2D(padding=((0, self._maxY - self._sizeY), 0), name='autopadY')(x)
+            return self.__autoencoder(x)
+
+        return None # throw exception?
+
+    def fit(self, *args, **kwargs):
+        return self.__autoencoder.fit(*args, **kwargs)
+
+    def evaluate(self, *args, **kwargs):
+        return self.__autoencoder.evaluate(*args, **kwargs)
+
+    def summary(self, *args, **kwargs):
+        return self.__autoencoder.summary(*args, **kwargs)
+
+    def save(self, *args, **kwargs):
+        return self.__autoencoder.save(*args, **kwargs) # return self._nested.save(*args, **kwargs)
 
 ########################################################################
 if __name__ == '__main__':
@@ -1373,7 +1526,7 @@ if __name__ == '__main__':
     # fn_template = '/tmp/test.h5'
     # model = BaseModel.load(fn_template)
     # fn_template = '/tmp/state18x32x4Y4F518x1To3action.resnet50r1.B32I32_init.h5' # '/tmp/sliced2d.h5'
-    fn_weightsFrom = '/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_trained-gpu1.20210208.h5'
+    # fn_weightsFrom = '/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_trained-gpu1.20210208.h5'
     
     if fn_template and len(fn_template) >0:
         # model = BaseModel.load(fn_template)
@@ -1385,7 +1538,7 @@ if __name__ == '__main__':
         # model = ModelS2d_VGG16r1(input_shape=(18, 32, 8), output_class_num=8, output_name='gr8A', output_as_attr=True)
         
         # model = ModelS2d_ResNet50(input_shape=(18, 32, 8), output_class_num=8, output_name='gr8attr', output_as_attr=True)
-        model = ModelS2d_ResNet50(input_shape=(18, 32, 8), output_class_num=8, output_name='gr8attr', output_as_attr=True)
+        model = ModelS1d_Cnn1DR2(input_shape=(518, 8), output_class_num=8, output_name='gr8attr', output_as_attr=True)
         
         model.buildup()
 

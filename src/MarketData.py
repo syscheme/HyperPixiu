@@ -22,27 +22,30 @@ BASE_LOG5x2 = math.log(5) *2
 def chopMarketEVStr(eventType):
     return eventType[len(MARKETDATE_EVENT_PREFIX):]
 
-def floatNormalize(v):
+def floatNormalize01(v, enlargeMiddle =True): # to normalize float in range [0, 1]
+    if enlargeMiddle:
+        if v > 0.5005   : v += 0.05
+        elif v < 0.4995 : v -= 0.05
+
     if v <0: return 0.0
-    return v if v<1.0 else 1.0
+    return v if v < 1.0 else 1.0
 
 def floatNormalize_LOG8(v, base=1.0, scale=1.0):
     v = float(v/base)
     if v < 0.001 : return 0.0
     v = math.log(v) / BASE_LOG8x2 *scale +0.5 # 0.1x lead to 0 and 10x lead to 1
-    return floatNormalize(v)
+    return floatNormalize01(v)
 
 def floatNormalize_LOG_PRICE(v, base=1.0, scale=1.0):
     v = float(v/base)
-    if v < 0.001 : return 0.0
     v = math.log(v) / BASE_LOG_PRICEx2 *scale +0.5 # 0.63x lead to 0 and 1.6x lead to 1
-    return floatNormalize(v)
+    return floatNormalize01(v)
 
 def floatNormalize_LOG5(v, base=1.0, scale=1.0):
     v = float(v/base)
     if v < 0.001 : return 0.0
     v = math.log(v) / BASE_LOG5x2 *scale +0.5 # 0.2x lead to 0 and 5x lead to 1
-    return floatNormalize(v)
+    return floatNormalize01(v)
 
 def floatNormalize_PriceChange(newPrice, basePrice=1.0):
     v = float(newPrice/basePrice)
@@ -793,9 +796,9 @@ class Formatter(MetaObj):
             floatNormalize_LOG8(klineEx.high, baseline_Price),
             floatNormalize_LOG8(klineEx.low, baseline_Price),
             # 2nd-4
-            floatNormalize(0.5 + klineEx.ratioNet),                         # priority-H2
-            floatNormalize(0.5 + klineEx.ratioR0),                          # priority-H3
-            floatNormalize(0.5 + klineEx.ratioR3cate),                      # likely r3=ratioNet-ratioR0
+            floatNormalize01(0.5 + klineEx.ratioNet),                         # priority-H2
+            floatNormalize01(0.5 + klineEx.ratioR0),                          # priority-H3
+            floatNormalize01(0.5 + klineEx.ratioR3cate),                      # likely r3=ratioNet-ratioR0
             floatNormalize_LOG8(klineEx.open, baseline_Price),
         ]
         #TODO: other optional dims
@@ -806,10 +809,10 @@ class Formatter(MetaObj):
         '''
         return [
             floatNormalize_LOG8(self.close, baseline_Price, 1.5),
-            floatNormalize(20*(self.high / self.close -1)),
-            floatNormalize(20*(self.close / self.low -1)),
+            floatNormalize01(20*(self.high / self.close -1)),
+            floatNormalize01(20*(self.close / self.low -1)),
             floatNormalize_LOG8(self.volume, baseline_Volume, 1.5),
-            floatNormalize(20*(self.open / self.close -1) +0.5),
+            floatNormalize01(20*(self.open / self.close -1) +0.5),
             0.0
         ]
 
@@ -840,9 +843,9 @@ class Formatter(MetaObj):
         # the floats, prioirty first
         return [
             floatNormalize_LOG8(baseline_Price*baseline_Volume, abs(mfdata.netamount)), # priority-H1, TODO: indeed the ratio of turnover would be more worthy here. It supposed can be calculated from netamount, ratioNet and netMarketCap
-            floatNormalize(0.5 + mfdata.ratioNet),                          # priority-H2
-            floatNormalize(0.5 + mfdata.ratioR0),                          # priority-H3
-            floatNormalize(0.5 + mfdata.ratioR3cate),                          # likely r3=ratioNet-ratioR0
+            floatNormalize01(0.5 + mfdata.ratioNet),                          # priority-H2
+            floatNormalize01(0.5 + mfdata.ratioR0),                          # priority-H3
+            floatNormalize01(0.5 + mfdata.ratioR3cate),                          # likely r3=ratioNet-ratioR0
             floatNormalize_LOG8(mfdata.price, baseline_Price), # optional because usually this has been presented via KLine/Ticks
         ]
 

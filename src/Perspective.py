@@ -181,9 +181,9 @@ class KLineEx(KLineData):
             floatNormalize_LOG8(self.high, baseline_Price),
             floatNormalize_LOG8(self.low, baseline_Price),
             # 2nd-4C
-            floatNormalize(0.5 + self.ratioNet),                         # priority-H2
-            floatNormalize(0.5 + self.ratioR0),                          # priority-H3
-            floatNormalize(0.5 + self.ratioR3cate),                      # likely r3=ratioNet-ratioR0
+            floatNormalize01(0.5 + self.ratioNet),                         # priority-H2
+            floatNormalize01(0.5 + self.ratioR0),                          # priority-H3
+            floatNormalize01(0.5 + self.ratioR3cate),                      # likely r3=ratioNet-ratioR0
             floatNormalize_LOG8(self.open, baseline_Price),
         ]
         #TODO: other optional dims
@@ -709,8 +709,8 @@ class Perspective(MarketData):
             klf = [
                 floatNormalize_LOG8(kl.close, basePrice, 1.5),
                 floatNormalize_LOG8(kl.volume, bV, 1.5),
-                floatNormalize(minsPerDay*(kl.high / kl.close -1)),
-                floatNormalize(minsPerDay*(kl.close / kl.low -1)),
+                floatNormalize01(minsPerDay*(kl.high / kl.close -1)),
+                floatNormalize01(minsPerDay*(kl.close / kl.low -1)),
                 0.0, 0.0
             ]
 
@@ -721,9 +721,9 @@ class Perspective(MarketData):
             if len(listMF)>0 and listMF[0].asof == kl.asof:
                 mf = listMF[0]
                 if minsPerDay >1:
-                    klf[4],klf[5] = floatNormalize(0.5 + 10*mf.ratioNet), floatNormalize(0.5 + 10*mf.ratioR0) # in-day KLs
+                    klf[4],klf[5] = floatNormalize01(0.5 + 10*mf.ratioNet), floatNormalize01(0.5 + 10*mf.ratioR0) # in-day KLs
                 else:
-                    klf[4],klf[5] = floatNormalize(0.5 + 10*mf.ratioNet), minsPerDay*(kl.open / kl.high -1)
+                    klf[4],klf[5] = floatNormalize01(0.5 + 10*mf.ratioNet), minsPerDay*(kl.open / kl.high -1)
             
             result.append(klf)
         return result
@@ -1000,9 +1000,9 @@ class PerspectiveFormatter(Formatter):
             floatNormalize_LOG_PRICE(klineEx.high, baseline_Price),
             floatNormalize_LOG_PRICE(klineEx.low, baseline_Price),
             # 2nd-4
-            floatNormalize(0.5 + klineEx.ratioNet),                         # priority-H2
-            floatNormalize(0.5 + klineEx.ratioR0),                          # priority-H3
-            floatNormalize(0.5 + klineEx.ratioR3cate),                      # likely r3=ratioNet-ratioR0
+            floatNormalize01(0.5 + klineEx.ratioNet),                         # priority-H2
+            floatNormalize01(0.5 + klineEx.ratioR0),                          # priority-H3
+            floatNormalize01(0.5 + klineEx.ratioR3cate),                      # likely r3=ratioNet-ratioR0
             floatNormalize_LOG_PRICE(klineEx.open, baseline_Price),
         ]
         #TODO: other optional dims

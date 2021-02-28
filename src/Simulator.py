@@ -211,7 +211,7 @@ class BackTestApp(MetaTrader):
         
         # step 3.2 subscribe the market events
         self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
-        self.subscribeEvents([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY])
+        self.subscribeEvents([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_5MIN, EVENT_MONEYFLOW_1DAY])
 
         self.resetEpisode()
         _quitEpisode = False

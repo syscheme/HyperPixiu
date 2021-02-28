@@ -290,7 +290,7 @@ class BaseModel(object) :
         BaseModel.hdf5g_setAttribute(group, 'layer_names', [n.encode('utf8') for n in saved_layer_names])
         return saved_layer_names
 
-    def _load_weights_from_hdf5g_by_name(group, layers, name_pattern=None, import_weight=1.0):
+    def _load_weights_from_hdf5g_by_name(group, layers, name_pattern=None, import_weight=1.0, prefix_remap=[]):
         '''
         duplicated but simplized from /usr/local/lib/python3.6/...tensorflow/python/keras/engine/hdf5_format.py
         Saves the weights of a list of layers to a HDF5 group.
@@ -306,14 +306,19 @@ class BaseModel(object) :
         layer_names = BaseModel.hdf5g_getAttribute(group, 'layer_names')
 
         for layer in layers:
-            if not layer.trainable or layer.name not in layer_names:
+            ln2load = layer.name
+            for rem in prefix_remap:
+                if len(rem) >1 and ln2load[:len(rem[0])] == rem[0] :
+                    ln2load = rem[1] + ln2load[len(rem[0]):]
+
+            if not layer.trainable or ln2load not in layer_names:
                 continue
 
-            if layer.name not in group.keys() or 'pickled_weights' not in group[layer.name].keys():
+            if ln2load not in group.keys() or 'pickled_weights' not in group[ln2load].keys():
                 # this is not a good model file
                 continue
 
-            pklweights = group[layer.name]['pickled_weights'][()].tobytes()
+            pklweights = group[ln2load]['pickled_weights'][()].tobytes()
             weights_to_import = pickle.loads(pklweights)
 
             weights_to_merge = [layer.get_weights(), weights_to_import]

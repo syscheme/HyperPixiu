@@ -11,7 +11,7 @@ from abc import abstractmethod
 from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 import HistoryData as hist
 from dnn.BaseModel import BaseModel, BACKEND_FLOAT
-from dnn.Makeups  import Model88_sliced, ModelS2d_VGG16r1, ModelS2d_AutoEncoder
+from dnn.Makeups  import Model88_sliced, ModelS2d_VGG16r1, AUTOENC_TAG
 
 # ----------------------------
 # INDEPEND FROM HyperPX core classes: from MarketData import EXPORT_FLOATS_DIMS
@@ -215,6 +215,7 @@ class Trainer_classify(BaseApplication):
                 self.error('failed to load startModel[%s]' % self._fnStartModel)
                 return False
             
+            self.info('loaded model from %s, taking startLR[%s] initEpochs[%s] ' % (self._fnStartModel, self._startLR, self._initEpochs) )
             trainableLayers = []
             if not self._trainables or len(self._trainables) <=0:
                 trainableLayers += self._brain.enable_trainable('*')
@@ -230,8 +231,8 @@ class Trainer_classify(BaseApplication):
                 self._brain.summary()
                 return False
 
-            self.info('trainable-layers: %s' % ','.join(trainableLayers))
             self._brain._startLR = self._startLR
+            self.info('trainable-layers: %s' % (','.join(trainableLayers)) )
             self._brain.compile()
 
         self.__wkModelId = self._brain.modelId
@@ -1145,15 +1146,16 @@ class Trainer_classify(BaseApplication):
                         self.__totalEval += trainSize
 
                         # eval.2 action distrib in samples/prediction
-                        AD = np.where(chunk_Classes ==1)[1]
-                        kI = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(self._sampleClassSize)] # the actions percentage in sample
-                        predict = self._brain.predict(x=chunk_Samples)
-                        predact = np.zeros(len(predict) * self._sampleClassSize).reshape(len(predict), self._sampleClassSize)
-                        for r in range(len(predict)):
-                            predact[r][np.argmax(predict[r])] =1
-                        AD = np.where(predact ==1)[1]
-                        kP = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(self._sampleClassSize)] # the actions percentage in predictions
-                        strEval += 'A%s%%->Prd%s%%' % ('+'.join(kI), '+'.join(kP))
+                        if AUTOENC_TAG not in self._brain.modelId:
+                            AD = np.where(chunk_Classes ==1)[1]
+                            kI = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(self._sampleClassSize)] # the actions percentage in sample
+                            predict = self._brain.predict(x=chunk_Samples)
+                            predact = np.zeros(len(predict) * self._sampleClassSize).reshape(len(predict), self._sampleClassSize)
+                            for r in range(len(predict)):
+                                predact[r][np.argmax(predict[r])] =1
+                            AD = np.where(predact ==1)[1]
+                            kP = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(self._sampleClassSize)] # the actions percentage in predictions
+                            strEval += 'A%s%%->Prd%s%%' % ('+'.join(kI), '+'.join(kP))
                         
                         # eval.3 duration taken
                         strEval += '/%s, ' % (datetime.now() -stampStart)
@@ -1196,52 +1198,6 @@ class Trainer_classify(BaseApplication):
                 self.info('doAppStep_local_generator() %s epochs on recycled %dN+%dR samples took %s, hist: %s' % (strEpochs, cFresh, cRecycled, (datetime.now() -stampStart), ', '.join(histEpochs)) )
                 skippedSaves +=1
     
-########################################################################
-class Trainer_AutoEncoder(Trainer_classify) :
-
-    def __init__(self, program, **kwargs):
-        super(Trainer_AutoEncoder, self).__init__(program, **kwargs)
-
-        self._colnameSamples      = 'state'
-        self._colnameClasses      = self._colnameSamples
-
-        #TODO: self._confXXXX     = self.getConfig('XXXX', None)
-
-        self._funcConvertFrame = self.autoenc_samples
-        self._funcFilterFrame  = None
-
-    def doAppInit(self): # return True if succ
-        if not super(Trainer_AutoEncoder, self).doAppInit() :
-            return False
-
-        self._brain = ModelS2d_AutoEncoder(self._brain)
-        # self._brain.compile(optimizer='adadelta', loss='binary_crossentropy')
-        self._brain.compile(optimizer='adam', loss='binary_crossentropy')
-        self._brain.summary()
-        return True
-
-    def autoenc_samples(self, frameDict):
-        samples = np.array(frameDict[self._colnameSamples]).astype(hist.SAMPLE_FLOAT)
-        bths = []
-        cBth = samples.shape[0] // self._batchSize
-        padingY = self._brain.maxY - samples.shape[1]
-        if padingY > 0 :
-            s = list(samples.shape)
-            s[1] = padingY
-            z = np.zeros(s)
-            samples = np.concatenate((samples, z), axis=1)
-
-        for i in range(cBth):
-            bth_samples = samples[i*self._batchSize : (i+1) *self._batchSize,]
-            batch = {
-                self._colnameSamples : bth_samples,
-                self._colnameClasses : bth_samples
-            }
-
-            bths.append(batch)
-
-        return bths
-
 ########################################################################
 class Trainer_GainRates(Trainer_classify) :
 
@@ -1316,7 +1272,7 @@ if __name__ == '__main__':
     
     trainer = p.createApp(Trainer_classify, configNode ='train') # for 3 actions
     # trainer = p.createApp(Trainer_GainRates, grClassifier=hist.classifyGainRates_level6, configNode ='train') # for 8 gain-rates
-    trainer = p.createApp(Trainer_GainRates, grClassifier=None, configNode ='train') # for 8 gain-rates
+    # trainer = p.createApp(Trainer_GainRates, grClassifier=None, configNode ='train') # for 8 gain-rates
 
     # model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
     # model.buildup()

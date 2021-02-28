@@ -28,6 +28,8 @@ import numpy as np
 import math
 import h5py, fnmatch, os
 
+AUTOENC_TAG = '_autoenc_'
+
 ########################################################################
 class Model88(BaseModel) :
     '''
@@ -735,7 +737,7 @@ class Model88_sliced(Model88) :
                 model = Model88_sliced(input_shape=input_shape, input_name=input_name, output_name=output_name, output_class_num=output_shape[0])
                 if dims_max: model._dimMax = dims_max
 
-                if model_name and '_autoenc_' in model_name:
+                if model_name and AUTOENC_TAG in model_name:
                      model.__buildup_autoenc(model_name, json_sub, custom_objects)
                 else:
                     model.__buildup(core_name, json_sub, custom_objects)
@@ -772,13 +774,15 @@ class Model88_sliced(Model88) :
     
     def _load_weights_from_hdf5g(self, group, trainable=False, import_weight=1.0, submodel_remap={}):
         ret = []
+        subs=list(group.keys())
         for k, v in self.__dictSubModels.items() :
             if 'model' not in v or not v['model']: continue
-            if k in submodel_remap.keys(): k =submodel_remap[k]
-            if k not in group.keys(): continue
+            kn = k
+            if kn in submodel_remap.keys(): kn =submodel_remap[kn]
+            if kn not in group.keys(): continue
             
-            m, subwg = v['model'], group[k]
-            loadeds = BaseModel._load_weights_from_hdf5g_by_name(subwg, m.layers, import_weight)
+            m, subwg = v['model'], group[kn]
+            loadeds = BaseModel._load_weights_from_hdf5g_by_name(subwg, m.layers, import_weight, prefix_remap=[('%s.'%k, '%s.'%kn)])
         
             # step 3. by default, disable trainable
             for layer in m.layers:
@@ -810,10 +814,10 @@ class Model88_sliced(Model88) :
         
         tensor_in, slices = self._slicedInput()
         enc_name, dec_name = None, None
-        if model_name and '_autoenc_' in model_name:
-            loc = model_name.index('_autoenc_')
+        if model_name and AUTOENC_TAG in model_name:
+            loc = model_name.index(AUTOENC_TAG)
             enc_name = model_name[:loc]
-            dec_name = model_name[loc+len('_autoenc_'):]
+            dec_name = model_name[loc+len(AUTOENC_TAG):]
 
         class AutoEnc(Model) :
             def __init__(self, *args, **kwargs) :
@@ -874,7 +878,7 @@ class Model88_sliced(Model88) :
         if len(slices) >1:
             decoded = layers.Concatenate(axis=-1)([decoded] + slices[1:])
 
-        self.__modelId = '%s_autoenc_%s' % (encoder.name, decoder.name)
+        self.__modelId = '%s%s%s' % (encoder.name, AUTOENC_TAG, decoder.name)
         self._dnnModel = AutoEnc(tensor_in, decoded, name=self.__modelId)
 
         self._defaultCompileArgs = {**self._defaultCompileArgs, 'loss':'mse'}
@@ -1100,79 +1104,44 @@ class ModelS2d_VGG16r1(Model88_sliced) :
         
         return x
 
-# --------------------------------
-class ModelS2d_AutoEncoder(Model) :
-    def __init__(self, mS2d, **kwargs) :
-        super(ModelS2d_AutoEncoder, self).__init__(**kwargs)
-        self._nested = mS2d
-        self.__autoencoder = None
-
-        if None not in [self._nested._encoder, self._nested._decoder ]:
-            inp = Input(self._nested._encoder.input_shape[1:]) # TODO: should perform slicing on true input
-            encoded = self._nested._encoder(inp)
-            decoded = self._nested._decoder(encoded)
-            self.__autoencoder = Model(inp, decoded)
-            self.__autoencoder.compile(optimizer='adadelta', loss='binary_crossentropy')
-
-    @property
-    def maxY(self): return self._nested._maxY
-
-    def call(self, x) :
-        if self.__autoencoder:
-            # if x.shape[0] < self._maxY: # padding Ys at the bottom
-            #     x = ZeroPadding2D(padding=((0, self._maxY - self._sizeY), 0), name='autopadY')(x)
-            return self.__autoencoder(x)
-
-        return None # throw exception?
-
-    def fit(self, *args, **kwargs):
-        return self.__autoencoder.fit(*args, **kwargs)
-
-    def evaluate(self, *args, **kwargs):
-        return self.__autoencoder.evaluate(*args, **kwargs)
-
-    def summary(self, *args, **kwargs):
-        return self.__autoencoder.summary(*args, **kwargs)
-
-    def save(self, *args, **kwargs):
-        return self.__autoencoder.save(*args, **kwargs) # return self._nested.save(*args, **kwargs)
-
 ########################################################################
-class ModelS1d_Foo(Model88_sliced) :
+class ModelS1d_Basic(Model88_sliced) :
     '''
     Model88 has a common 88 features at the end
     '''
     def __init__(self, **kwargs):
-        super(ModelS1d_Foo, self).__init__(**kwargs)
+        super(ModelS1d_Basic, self).__init__(**kwargs)
         self._dimMax = tuple([518])
 
     def _buildup_core(self, input_tensor):
 
-        corename = 'foo1d'
+        corename = 'basic1d'
         input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
         x = input_tensor
         
-        x = self._tagged_chain(corename, x, layers.Dense(1, activation='relu')) # (518,1)
-        x = self._tagged_chain(corename, x, layers.Flatten()) # (518)
-        x = self._tagged_chain(corename, x, layers.Dense(64,  activation='relu')) # (64)
-        x = self._tagged_chain(corename, x, layers.Dense(64,  activation='relu')) # (64)
-        x = self._tagged_chain(corename, x, layers.Dense(10,  activation='relu')) # (10)
+        x = self._tagged_chain(corename, x, layers.Dense(4, activation='relu')) # (518,2)
+        x = self._tagged_chain(corename, x, layers.Flatten()) # (518*2)
+        x = self._tagged_chain(corename, x, layers.Dropout(0.3))
+        x = self._tagged_chain(corename, x, layers.Dense(518,  activation='relu')) # (64)
+        x = self._tagged_chain(corename, x, layers.Dropout(0.3))
+        x = self._tagged_chain(corename, x, layers.Dense(518,  activation='relu')) # (64)
+        x = self._tagged_chain(corename, x, layers.Dropout(0.3))
 
-        x = self._tagged_chain(corename, x, layers.Dense(2,  activation='relu')) # 2d features
+        x = self._tagged_chain(corename, x, layers.Dense(518,  activation='relu')) # (64)
 
         # Create model.
         model = Model(input_tensor, x, name=corename) 
         return model
 
     def _buildup_decoder(self, input_tensor):
-        decname = 'defoo1d'
+        decname = 'debasic1d'
         input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
         x = input_tensor
-        x = self._tagged_chain(decname, x, layers.Dense(10,  activation='relu'))   # (10)
-        x = self._tagged_chain(decname, x, layers.Dense(64,  activation='relu'))   # (64)
-        x = self._tagged_chain(decname, x, layers.Dense(64,  activation='relu'))   # (64)
-        x = self._tagged_chain(decname, x, layers.Dense(518,  activation='relu'))  # (518)
-        x = self._tagged_chain(decname, x, layers.Reshape((518, 1))) # (518,1)
+        x = self._tagged_chain(decname, x, layers.Dense(518,  activation='relu')) # (518)
+        x = self._tagged_chain(decname, x, layers.Dense(518,  activation='relu')) # (518)
+        x = self._tagged_chain(decname, x, layers.Dense(518,  activation='relu')) # (518)
+        x = self._tagged_chain(decname, x, layers.Dense(518*4,  activation='relu'))  # (518*4)
+        x = self._tagged_chain(decname, x, layers.Reshape((518, 4))) # (518,1)
         x = self._tagged_chain(decname, x, layers.Dense(4, activation='relu')) # (518,4)
 
         return Model(input_tensor, x, name=decname) 
@@ -1284,8 +1253,9 @@ if __name__ == '__main__':
     # fn_template = '/tmp/test.h5'
     # model = BaseModel.load(fn_template)
     # fn_template = '/tmp/state18x32x4Y4F518x1To3action.resnet50r1.B32I32_init.h5' # '/tmp/sliced2d.h5'
-    fn_template = '/tmp/foo1d_autoenc_defoo1d.B32I32.h5'
+    # fn_template = '/tmp/foo1d_autoenc_defoo1d.B32I32.h5'
     # fn_weightsFrom = '/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_trained-gpu1.20210208.h5'
+    fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/foo1d2_autoenc_defoo1d2_trained-last.h5'
     
     if fn_template and len(fn_template) >0:
         # model = BaseModel.load(fn_template)
@@ -1298,9 +1268,9 @@ if __name__ == '__main__':
         
         # model = ModelS2d_ResNet50(input_shape=(18, 32, 8), output_class_num=8, output_name='gr8attr', output_as_attr=True)
 
-        model = ModelS1d_Foo(input_shape=(518, 8), output_class_num=8, output_name='gr8attr', output_as_attr=True)
+        model = ModelS1d_Basic(input_shape=(518, 8), output_class_num=8, output_name='gr8attr', output_as_attr=True)
         
-        autoenc = model.buildup_autoenc() # model.buildup()
+        model.buildup_autoenc() # model.buildup()
 
     if model and fn_weightsFrom and len(fn_weightsFrom) >0:
         trainables = model.enable_trainable("*")
@@ -1315,8 +1285,6 @@ if __name__ == '__main__':
     model.enable_trainable("state18x32x4Y4F518x1C88*")
     model.compile()
     model.summary()
-
-    # autoenc = ModelS2d_AutoEncoder(model)
 
     # trainable_count = count_params(model.trainable_weights)
     # tw = tf.trainable_weights()

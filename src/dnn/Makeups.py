@@ -1142,7 +1142,7 @@ class ModelS1d_Basic(Model88_sliced) :
         x = self._tagged_chain(decname, x, layers.Dense(518,  activation='relu')) # (518)
         x = self._tagged_chain(decname, x, layers.Dense(518*4,  activation='relu'))  # (518*4)
         x = self._tagged_chain(decname, x, layers.Reshape((518, 4))) # (518,1)
-        x = self._tagged_chain(decname, x, layers.Dense(4, activation='relu')) # (518,4)
+        x = self._tagged_chain(decname, x, layers.Dense(4, activation='tanh')) # (518,4)
 
         return Model(input_tensor, x, name=decname) 
 
@@ -1255,7 +1255,7 @@ if __name__ == '__main__':
     # fn_template = '/tmp/state18x32x4Y4F518x1To3action.resnet50r1.B32I32_init.h5' # '/tmp/sliced2d.h5'
     # fn_template = '/tmp/foo1d_autoenc_defoo1d.B32I32.h5'
     # fn_weightsFrom = '/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_trained-gpu1.20210208.h5'
-    fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/foo1d2_autoenc_defoo1d2_trained-last.h5'
+    fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/basic1d_autoenc_debasic1d_trained-last.h5'
     
     if fn_template and len(fn_template) >0:
         # model = BaseModel.load(fn_template)

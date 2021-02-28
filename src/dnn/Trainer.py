@@ -1146,10 +1146,13 @@ class Trainer_classify(BaseApplication):
                         self.__totalEval += trainSize
 
                         # eval.2 action distrib in samples/prediction
-                        if AUTOENC_TAG not in self._brain.modelId:
+                        if AUTOENC_TAG in self._brain.modelId:
+                            # predict = self._brain.predict(x=chunk_Samples)
+                            pass
+                        else:
+                            predict = self._brain.predict(x=chunk_Samples)
                             AD = np.where(chunk_Classes ==1)[1]
                             kI = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(self._sampleClassSize)] # the actions percentage in sample
-                            predict = self._brain.predict(x=chunk_Samples)
                             predact = np.zeros(len(predict) * self._sampleClassSize).reshape(len(predict), self._sampleClassSize)
                             for r in range(len(predict)):
                                 predact[r][np.argmax(predict[r])] =1

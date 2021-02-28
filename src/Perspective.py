@@ -1117,6 +1117,7 @@ class Formatter_F1548(PerspectiveFormatter):
 ########################################################################
 class Formatter_1d518(PerspectiveFormatter):
     X_LEN = 518
+    FLOAT_NaN = 0.0
 
     EXP_SECHEMA = OrderedDict({
         'asof':              1,
@@ -1162,7 +1163,7 @@ class Formatter_1d518(PerspectiveFormatter):
         if not dtAsOf: return None
         todayYYMMDD = dtAsOf.strftime('%Y%m%d')
 
-        result = [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(Formatter_1d518.X_LEN) ] # DONOT take [ [[0.0]*6] *16] *16
+        result = [ [Formatter_1d518.FLOAT_NaN for k in range(self._channels)] for x in range(Formatter_1d518.X_LEN) ] # DONOT take [ [[0.0]*6] *16] *16
 
         # part 0: EVENT_KLINE_1MIN
         stk, bV, roffset = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240, Formatter_1d518.XOFFSETS[EVENT_KLINE_1MIN]
@@ -1223,8 +1224,8 @@ class Formatter_1d518(PerspectiveFormatter):
         if X <1: X=1
         while (X * Y) < len1d: Y+=1
 
-        imgRGB = [ [ [BMP_COLOR_BG_FLOAT for k in range(3) ] for x in range(X* scaleX + scaleX-1) ] for y in range(Y) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
-        pixelEdge = [ 1.0 -BMP_COLOR_BG_FLOAT ] *3
+        imgRGB = [ [ [ Formatter_1d518.FLOAT_NaN for k in range(3) ] for x in range(X* scaleX + scaleX-1) ] for y in range(Y) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
+        pixelEdge = [ 1.0 -Formatter_1d518.FLOAT_NaN ] *3
         for y in range(Y):
             for x in range(scaleX -1) :
                 imgRGB[y][(1+x) *X] = pixelEdge
@@ -1234,8 +1235,9 @@ class Formatter_1d518(PerspectiveFormatter):
                 if offset >= len1d: continue
                 for i in range(scaleX):
                     pixel = img1d[offset][i*3 : (i+1)*3]
-                    if len(pixel) < 3: pixel += [BMP_COLOR_BG_FLOAT] * (3-len(pixel))
+                    if len(pixel) < 3: pixel += [ Formatter_1d518.FLOAT_NaN ] * (3-len(pixel))
                     imgRGB[y][i *X +x + i] = pixel
+                    
         return imgRGB
 
 ########################################################################

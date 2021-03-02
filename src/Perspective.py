@@ -971,7 +971,8 @@ class PerspectiveState(MarketState):
 
 
 ########################################################################
-BMP_COLOR_BG_FLOAT       =1.0
+BMP_COLOR_BG_FLOAT  = 0.0
+
 class PerspectiveFormatter(Formatter):
     '''
     '''
@@ -1244,6 +1245,8 @@ class Formatter_1d518(PerspectiveFormatter):
 class Formatter_base2dImg(PerspectiveFormatter):
     '''
     '''
+    FLOAT_NaN = 0.0
+
     def __init__(self, bmpPathPrefix=None, dem=60, channels=6):
         '''Constructor'''
         super(Formatter_base2dImg, self).__init__(channels=channels)
@@ -1361,8 +1364,16 @@ class Formatter_base2dImg(PerspectiveFormatter):
             scaleY =s
         else: scaleX =1
 
-        imgRGB = [ [ [BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX* scaleX)] for y in range(lenY* scaleY) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
+        imgRGB = [ [ [BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX* scaleX + scaleX-1)] for y in range(lenY* scaleY  + scaleY-1) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
+        pixelEdge = [ 1.0 -BMP_COLOR_BG_FLOAT ] *3
+        
+        for y in range(scaleY -1) : # the edge lines
+            imgRGB[(1+y)*lenY] = [ pixelEdge ] * (lenX* scaleX + scaleX-1)
+
         for y in range(lenY):
+            for x in range(scaleX -1) : # the edge lines
+                imgRGB[y][(1+x) *lenX] = pixelEdge
+
             for x in range(lenX) :
                 v = img[y][x]
                 for i in range(scaleY):
@@ -1370,7 +1381,7 @@ class Formatter_base2dImg(PerspectiveFormatter):
                         coffset = 3* (i*scaleX +j)
                         pixel = v[coffset : coffset+3]
                         if len(pixel) <3: pixel += [BMP_COLOR_BG_FLOAT] * (3-len(pixel))
-                        imgRGB[i *lenY +y][j*lenX +x] = pixel
+                        imgRGB[i *lenY +y +i][j*lenX +x +j] = pixel
 
         return imgRGB
 

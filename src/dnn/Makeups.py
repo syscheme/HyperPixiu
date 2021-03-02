@@ -1,0 +1,1465 @@
+# encoding: UTF-8
+
+'''
+A DQN Trainer detached from gymAgent to perform 'offline' training
+It reads the ReplayBuffers, which was output from agentDQN, to train the model. Such a 'offline' trainning would help the online-agent to improve the loss/accurate of the model,
+and can also distribute the training load outside of the online agent
+'''
+from __future__ import division
+from abc import abstractmethod
+
+from Application   import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
+from HistoryData   import H5DSET_DEFAULT_ARGS
+from dnn.BaseModel import BaseModel, INPUT_FLOAT, BACKEND_FLOAT
+
+from tensorflow.keras.models import model_from_json, Model, Sequential
+from tensorflow.keras.optimizers import Adam, SGD
+import tensorflow.keras.layers as layers # import layers.Input, layers.Dense, layers.Activation, layers.Dropout, layers.Reshape, layers.Lambda, layers.Concatenate, layers.BatchNormalization, layers.Flatten, add
+# from tensorflow.keras.layers import layers.Conv1D, layers.MaxPooling1D, layers.GlobalAveragePooling1D, layers.ZeroPadding1D
+# from tensorflow.keras.layers import layers.ZeroPadding2D, layers.GlobalAveragePooling2D, layers.Conv2D, layers.MaxPooling2D
+from tensorflow.keras import regularizers
+from tensorflow.keras.utils import get_source_inputs
+
+# from tensorflow.keras.backend import count_params
+from tensorflow.keras.applications.resnet50 import ResNet50
+
+import tensorflow as tf
+import numpy as np
+import math
+import h5py, fnmatch, os
+
+AUTOENC_TAG = '_autoenc_'
+
+########################################################################
+class Model88(BaseModel) :
+    '''
+    Model88 has a common 88 features at the end
+    '''
+    CORE_LAYER_PREFIX = 'core.'
+
+    def __init__(self, input_shape, input_name='state', output_class_num=3, output_name='action', **kwargs):
+        super(Model88, self).__init__(**kwargs)
+        self._output_class_num = output_class_num
+        self._output_name = output_name
+        self._input_shape = input_shape
+        self._input_name  = input_name
+    
+        self._output_as_attr = kwargs.get('output_as_attr', False)
+
+    def _feature88toOut(self, flattern_inputs) :
+        # unified final layers layers.Dense(VirtualFeature88) then layers.Dense(self._actionSize)
+        lnTag ='F88' 
+        if 3 != self._output_class_num:
+            lnTag += 'o%d' % self._output_class_num
+        if self._output_name:
+            lnTag += '%s' % self._output_name
+
+        if '.' != lnTag[-1]: lnTag+= '.'
+
+        x = self._tagged_chain(lnTag, flattern_inputs, layers.Dense(888, name='%sD888_1' %lnTag))
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.5, name='%sDropout1' %lnTag)) #  x= layers.Dropout(0.5))
+        x = self._tagged_chain(lnTag, x, layers.Dense(888, name='%sD888_2' %lnTag))
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.5, name='%sDropout2' %lnTag)) #  x= layers.Dropout(0.5))
+        x = self._tagged_chain(lnTag, x, layers.Dense(88, name='%sD88' %lnTag))
+        x = self._tagged_chain(lnTag, x, layers.Dense(self._output_class_num, name='%so%d' % (lnTag, self._output_class_num), activation='relu' if self._output_as_attr else 'softmax')) # classifying must take softmax
+        return x
+
+    @property
+    def modelId(self) :
+        return 'M88.%s' % self.coreId
+
+    @property
+    def coreId(self) :
+        coreId = self.__class__.__name__
+        if 'Model88_' in coreId:
+            coreId = coreId[coreId.index('Model88_') + len('Model88_') :]
+        
+        return coreId
+
+    @abstractmethod
+    def buildup(self):
+        '''
+        @return self.model
+        '''
+        raise NotImplementedError
+
+    @abstractmethod
+    def _buildup_layers(self, input_shape, input_tensor=None):
+        '''
+        @return output_tensor NOT the model
+        '''
+        if input_tensor is None:
+            input_tensor = layers.Input(shape=input_shape, dtype=INPUT_FLOAT)
+            inputs = input_tensor
+        else:
+            inputs = get_source_inputs(input_tensor)
+
+        x = self._buildup_core('%s%s.' % (Model88.CORE_LAYER_PREFIX, self.coreId), input_tensor)
+        x = self._feature88toOut(x)
+        return x
+
+    def _tagLayer(layer, lnTag) :
+        if '.' != lnTag[-1]: lnTag +='.'
+
+        if layer and layer.name[:len(lnTag)] != lnTag:
+            layer._name = lnTag + layer.name
+
+    def _tagged_chain(self, lnTag, input_tensor, layer) :
+        Model88._tagLayer(layer, lnTag)
+        return layer(input_tensor)
+
+    @abstractmethod
+    def _buildup_core(self, lnTag, input_tensor): 
+        '''
+        @return output_tensor
+        '''
+        input_shape = tuple([ int(x) for x in input_tensor.shape[1:]]) # get rid of the leading dim-batch
+        raise NotImplementedError
+
+    def create(self, layerIn):
+        layerIn = layers.Input(shapeIn)
+
+        self._dnnModel = Model(inputs=layerIn, outputs=x)
+        # sgd = SGD(lr=self._startLR, decay=1e-6, momentum=0.9, nesterov=True)
+        # model.compile(optimizer=sgd, **BaseModel.COMPILE_ARGS)
+
+        # TODO apply non-trainable feature88 weights
+
+        return self.model
+
+########################################################################
+# the old 1548 flat models
+class Model88_Flat(Model88) :
+    '''
+    the basic 1548 flat models
+    '''
+    def __init__(self, **kwargs):
+        super(Model88_Flat, self).__init__(input_shape=(1548, ), input_name='state1d', output_class_num =3, **kwargs)
+
+    @property
+    def modelId(self) :
+        return 'state%dF88to%d%s.%s' % (self._input_shape[0], self._output_class_num, self.coreId)
+
+    @abstractmethod
+    def buildup(self) :
+        tensor_in = layers.Input(shape=self._input_shape)
+        new_shape = (int(self._input_shape[0]/4), 4)
+        x = layers.Reshape(new_shape, input_shape=self._input_shape)(tensor_in)
+        # m = super(Model88_Flat, self)._buildup_layers(new_shape, x)
+        # x = m(x)
+        x = self._buildup_layers(new_shape, x)
+        self._dnnModel = Model(inputs=get_source_inputs(tensor_in), outputs=x, name= self.modelId)
+        return self.model
+
+# --------------------------------
+class Model88_Cnn1Dx4R2(Model88_Flat) :
+    '''
+    Model88 has a common 88 features at the end
+    '''
+    def __init__(self, **kwargs):
+        super(Model88_Cnn1Dx4R2, self).__init__(**kwargs)
+
+    def _buildup_core(self, lnTag, input_tensor):
+
+        # x = layers.Conv1D(128, 3, activation='relu')(input_tensor)
+        x = self._tagged_chain(lnTag, input_tensor, layers.Conv1D(128, 3, activation='relu'))
+
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(256, 3, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(512, 3, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(256, 3, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.3))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(256, 3, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(128, 3, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(128, 3, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(100, 3, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.GlobalAveragePooling1D())
+        x = self._tagged_chain(lnTag, x, layers.Dense(512, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+
+        return x  # return Model(input_tensor, x, name='%s%s' % (Model88.CORE_LAYER_PREFIX, self.coreId))
+
+# --------------------------------
+class Model88_Cnn1Dx4R3(Model88_Flat) :
+    '''
+    Model88 has a common 88 features at the end
+    '''
+    def __init__(self, **kwargs):
+        super(Model88_Cnn1Dx4R3, self).__init__(**kwargs)
+
+    def _buildup_core(self, lnTag, input_tensor):
+        x = self._tagged_chain(lnTag, input_tensor, layers.Conv1D(128, 3, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(256, 3, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(512, 3, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(256, 3, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.3))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(256, 3, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(128, 3, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(128, 3, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(100, 3, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.GlobalAveragePooling1D())
+        x = self._tagged_chain(lnTag, x, layers.Dense(512, activation='relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        
+        return x  # return Model(input_tensor, x, name='%s%s' % (Model88.CORE_LAYER_PREFIX, self.coreId))
+
+# --------------------------------
+class Model88_VGG16d1(Model88_Flat) :
+    '''
+    Model88 has a common 88 features at the end
+    '''
+    def __init__(self, **kwargs):
+        super(Model88_VGG16d1, self).__init__(**kwargs)
+
+    def _buildup_core(self, lnTag, input_tensor):
+        weight_decay = 0.0005
+
+        #第一个 卷积层 的卷积核的数目是32 ，卷积核的大小是3*3，stride没写，默认应该是1*1
+        #对于stride=1*1,并且padding ='same',这种情况卷积后的图像shape与卷积前相同，本层后shape还是32*32
+        # x = layers.Conv1D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, input_tensor, layers.Conv1D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Activation('relu'))
+        
+        #进行一次归一化
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.3))
+        #layer2 32*32*64
+        # x = layers.Conv1D(64, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(64, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Activation('relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+
+        #下面两行代码是等价的，#keras Pool层有个奇怪的地方，stride,默认是(2*2),
+        #padding默认是valid，在写代码是这些参数还是最好都加上,这一步之后,输出的shape是16*16*64
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+
+        #layer3 16*16*64
+        # x = self._tagged_chain(lnTag, x, layers.Conv1D(128, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(128, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Activation('relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
+        
+        #layer4 16*16*128
+        # x = self._tagged_chain(lnTag, x, layers.Conv1D(128, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(128, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Activation('relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+        
+        #layer5 8*8*128
+        # x = self._tagged_chain(lnTag, x, layers.Conv1D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(256, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Activation('relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
+        
+        #layer6 8*8*256
+        # x = self._tagged_chain(lnTag, x, layers.Conv1D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(256, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Activation('relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
+        
+        #layer7 8*8*256
+        # x = self._tagged_chain(lnTag, x, layers.Conv1D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(256, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Activation('relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+
+        #layer8 4*4*256
+        # x = self._tagged_chain(lnTag, x, layers.Conv1D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Activation('relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
+
+        #layer9 4*4*512
+        # x = self._tagged_chain(lnTag, x, layers.Conv1D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Activation('relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
+        
+        #layer10 4*4*512
+        # x = self._tagged_chain(lnTag, x, layers.Conv1D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Activation('relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+        
+        #layer11 2*2*512
+        # x = self._tagged_chain(lnTag, x, layers.Conv1D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Activation('relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
+
+        #layer12 2*2*512
+        # x = self._tagged_chain(lnTag, x, layers.Conv1D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Activation('relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
+
+        #layer13 2*2*512
+        # x = self._tagged_chain(lnTag, x, layers.Conv1D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(512, 3, padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Activation('relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.5))
+
+        #layer14 1*1*512
+        x = self._tagged_chain(lnTag, x, layers.Flatten())
+        # x = self._tagged_chain(lnTag, x, layers.Dense(512, activation='relu', kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Dense(512,kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Activation('relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+
+        #layer15 512
+        # x = self._tagged_chain(lnTag, x, layers.Dense(512, activation='relu', kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Dense(512,kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Activation('relu'))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+
+        return x # return Model(input_tensor, x, name=self.coreId)
+
+# --------------------------------
+class Model88_ResNet34d1(Model88_Flat) :
+    '''
+    Model88 has a common 88 features at the end
+    '''
+    def __init__(self, **kwargs):
+        super(Model88_ResNet34d1, self).__init__(**kwargs)
+
+    def _buildup_core(self, lnTag, input_tensor):
+
+        weight_decay = 0.0005
+
+        #第一个 卷积层 的卷积核的数目是32 ，卷积核的大小是3*3，stride没写，默认应该是1*1
+        #对于stride=1*1,并且padding ='same',这种情况卷积后的图像shape与卷积前相同，本层后shape还是32*32
+        # x = layers.Conv1D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, input_tensor, layers.Conv1D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
+        #conv1
+        x = self._resBlk_basic(lnTag, x, nb_filter=64, kernel_size=3, padding='valid')
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling1D(2))
+
+        #conv2_x
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[64,64,256], with_conv_shortcut=True)
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[64,64,256])
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[64,64,256])
+
+        #conv3_x
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[128, 128, 512], with_conv_shortcut=True)
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[128, 128, 512])
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[128, 128, 512])
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[128, 128, 512])
+
+        #conv4_x
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[256, 256, 1024], with_conv_shortcut=True)
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[256, 256, 1024])
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[256, 256, 1024])
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[256, 256, 1024])
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[256, 256, 1024])
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[256, 256, 1024])
+
+        #conv5_x
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[512, 512, 2048], with_conv_shortcut=True)
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[512, 512, 2048])
+        x = self._resBlk_bottleneck(lnTag, x, nb_filters=[512, 512, 2048])
+
+        x = self._tagged_chain(lnTag, x, layers.GlobalAveragePooling1D())
+        x = self._tagged_chain(lnTag, x, layers.Flatten())
+
+        return x # return Model(input_tensor, x, name=self.coreId)
+
+    def _resBlk_basic(self, lnTag, x, nb_filter, kernel_size, padding='same', regularizer=None, name=None):
+        if name is not None:
+            bn_name = name + '_bn'
+            conv_name = name + '_conv'
+        else:
+            bn_name = None
+            conv_name = None
+
+        x = self._tagged_chain(lnTag, x, layers.Conv1D(nb_filter, kernel_size, padding=padding, activation='relu', name=conv_name, kernel_regularizer= regularizer))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization(name=bn_name))
+        return x
+
+    def _resBlk_identity(self, lnTag, inpt, nb_filter, kernel_size, with_conv_shortcut=False):
+        x = self._resBlk_basic(lnTag, inpt, nb_filter=nb_filter, kernel_size=kernel_size, padding='same')
+        x = self._resBlk_basic(lnTag, x, nb_filter=nb_filter, kernel_size=kernel_size, padding='same')
+        if with_conv_shortcut:
+            shortcut = self._resBlk_basic(lnTag, inpt, nb_filter=nb_filter, kernel_size=kernel_size)
+            x = layers.add([x, shortcut])
+            return x
+        else:
+            x = layers.add([x, inpt])
+            return x
+
+    def _resBlk_bottleneck(self, lnTag, inpt, nb_filters, with_conv_shortcut=False):
+        k1,k2,k3=nb_filters
+        x = self._resBlk_basic(lnTag, inpt, nb_filter=k1, kernel_size=1, padding='same')
+        x = self._resBlk_basic(lnTag, x, nb_filter=k2, kernel_size=3, padding='same')
+        x = self._resBlk_basic(lnTag, x, nb_filter=k3, kernel_size=1, padding='same')
+        if with_conv_shortcut:
+            shortcut = self._resBlk_basic(lnTag, inpt, nb_filter=k3, kernel_size=1)
+            x = layers.add([x, shortcut])
+            return x
+        else:
+            x = layers.add([x, inpt])
+            return x
+
+########################################################################
+class Model88_sliced(Model88) :
+    '''
+    2D models with channels expanded by channels=4
+    '''
+    def __init__(self, input_shape, input_name='state', output_class_num=3, output_name='action', **kwargs):
+        super(Model88_sliced, self).__init__(input_shape, input_name, output_class_num, output_name, **kwargs)
+        self.__channels_per_slice =4
+        self.__features_per_slice =518
+        self.__coreId = "NA"
+        self.__modelId = None
+        self.__dictSubModels = {} # self.__dictSubModels[modelName] = {'model.json': json, 'model': model}
+        self._dimMax = (20, 32)
+
+    @property
+    def modelId(self) :
+        if self.__modelId: return self.__modelId
+        return '%sxNTo%d%s.%s' %(self._fmtNamePrefix, self._output_class_num, self._output_name, self.coreId)
+    
+    @property
+    def coreId(self) : return self.__coreId
+
+    # def get_weights_core(self) : return self.__model_core.get_weights()
+
+    def __slice(x, idxSlice, channels_per_slice): 
+        dims = len(x.shape) -2
+        if 1 == dims:
+            slice = x[:, :, idxSlice*channels_per_slice : (idxSlice+1)*channels_per_slice]
+        elif 2 == dims :
+            slice = x[:, :, :, idxSlice*channels_per_slice : (idxSlice+1)*channels_per_slice]
+        #???? new_shape = (slice.shape[0], slice.shape[1], slice.shape[2], 1) # tuple(list(slice.shape[:3] +[1]))
+        # tensor0 = tf.zeros(new_shape)
+        # slice = tf.cat((slice, tensor0), axis=-1)
+
+        ch2append = channels_per_slice - slice.shape[-1] # [0]s to append to fit channel=4
+
+        if ch2append >0:
+            slice0s = np.zeros(tuple(list(slice.shape[1: 1+dims]) +[ch2append]), dtype=INPUT_FLOAT) # TODO fix this
+            tensor0s = tf.convert_to_tensor(slice0s)
+            # TODO: NOT IMPL to concate tensor with zeros, the below approaches failed:
+            raise ValueError('have not figure out how padding zero-chs here')
+            slice += tensor0s # WRONG also
+            # slice = tf.concat(-1, [slice, tensor0s])
+            # slice = np.concatenate((slice, slice0s), axis=2)
+        return slice
+
+    def __slice_flow(self, submod_name, model_json, custom_objects, input_tensor, core_model):
+        # common layers to self.__features_per_slice
+
+        lnTag = submod_name + '.'
+        tensor_flowClose = core_model(input_tensor)
+
+        # construct the submodel
+        m, json_m = None, None
+        if model_json :
+            m = model_from_json(model_json, custom_objects=custom_objects)
+            m._name = submod_name
+
+        if not m:
+            flowCloseIn = layers.Input(tuple(tensor_flowClose.shape[1:]), dtype=INPUT_FLOAT)
+            x =layers.Flatten(name='%sflatten' %lnTag)(flowCloseIn)
+            x=layers.Dense(self.__features_per_slice, name='%sF%d_1' % (lnTag, self.__features_per_slice))(x)
+            x =layers.Dropout(0.5, name='%sdropout' %lnTag)(x)
+            x=layers.Dense(self.__features_per_slice, name='%sF%d_2' % (lnTag, self.__features_per_slice))(x)
+            m = Model(inputs=flowCloseIn, outputs=x, name=submod_name)
+
+        self.__dictSubModels[m.name] = {'model_json': m.to_json(), 'model': m}
+        return m(tensor_flowClose)
+
+    def buildup(self):
+        return self.__buildup(None, None, None)
+
+    @property
+    def _fmtNamePrefix(self):
+        return '%s%sY%dF%d' %(self._input_name, 'x'.join([str(x) for x in self._input_shape]), self.__channels_per_slice, self.__features_per_slice)
+
+    def _slicedInput(self):
+        channels = self._input_shape[-1]
+        shape_beforeCh = self._input_shape[:-1]
+        dims = len(shape_beforeCh)
+        strShape = 'x'.join([ str(x) for x in shape_beforeCh])
+
+        if (self._dimMax[0] >0 and self._input_shape[0] > self._dimMax[0]) \
+            or (dims >= 2 and self._input_shape[1] > self._dimMax[1] )  : # dimX
+            raise ValueError('shape%s not allowed, must <=%s' % (self._input_shape, self._dimMax))
+
+        slice_shape = tuple(list(self._input_shape[:dims]) +[self.__channels_per_slice])
+        slice_count = int(channels / self.__channels_per_slice)
+        if 0 != channels % self.__channels_per_slice: slice_count +=1
+
+        mNamePrefix = '%sx%d' %(self._fmtNamePrefix, slice_count)
+        tensor_in = layers.Input(shape=self._input_shape, name='%s.input' % (mNamePrefix), dtype=INPUT_FLOAT)
+        x = tensor_in # NEVER put Dropout here instantly after Input: x =layers.Dropout(0.5, name='%s.indropout' % mNamePrefix)(tensor_in)
+
+        if 1 == dims and self._input_shape[0] < self._dimMax[0] : # 1D input
+            x = layers.ZeroPadding1D(padding=((0, self._dimMax[0] - self._input_shape[0])), name='%s.%dpad%s' % (mNamePrefix, dims, strShape))(x)
+        elif 2 == dims and (self._input_shape[0] < self._dimMax[0] or self._input_shape[1] < self._dimMax[1]): # 2D input
+            x = layers.ZeroPadding2D(padding=((0, self._dimMax[0] - self._input_shape[0]), (0, self._dimMax[1] - self._input_shape[1])), name='%s.%dpad%s' % (mNamePrefix, dims, strShape))(x)
+        slice_shape = tuple(list(x.shape[1:])[:dims] +[self.__channels_per_slice])
+
+        slices = [None] * slice_count
+        for i in range(slice_count) :
+            slices[i] = layers.Lambda(Model88_sliced.__slice, arguments={'idxSlice':i, 'channels_per_slice': self.__channels_per_slice},
+                                output_shape= slice_shape, name='%s.slice%d' %(mNamePrefix, i)
+                                )(x)
+
+        return tensor_in, slices
+
+    def __buildup(self, core_name, jsonSubs, custom_objects):
+
+        tensor_in, slices = self._slicedInput()
+
+        m, json_m = None, None
+        if not core_name or core_name not in jsonSubs:
+            m = self._buildup_core(slices[0])
+            json_m = m.to_json()
+        else:
+            m = model_from_json(jsonSubs[core_name], custom_objects=custom_objects)
+            json_m = jsonSubs[core_name]
+        
+        if not m :
+            raise ValueError('failed to create model_core')
+
+        self.__coreId = m.name
+        self.__dictSubModels[self.__coreId] = {'model_json': json_m, 'model': m}
+        # can be called at this moment: self.__model_core.save('/tmp/%s.h5' % self.__coreId)
+        # m.summary()
+
+        core_m =m
+        # tagCore = '%s%s' % (Model88.CORE_LAYER_PREFIX, self.__coreId)
+        # self.__tagCoreModel(self.__model_core, tagCore)
+
+        slice_count = len(slices)
+        sliceflows = [None] * slice_count
+        mNamePrefix = '%sx%d' %(self._fmtNamePrefix, slice_count)
+
+        for i in range(slice_count):
+            submod_name = '%sf%d' %(mNamePrefix, i)
+            model_json = jsonSubs[submod_name] if isinstance(jsonSubs, dict) and submod_name in jsonSubs else None
+
+            sliceflows[i] = self.__slice_flow(submod_name, model_json, custom_objects, slices[i], core_m)
+
+        # merge the multiple flow-of-slice into a controllable less than F518*2
+        merged_tensor = sliceflows[0] if 1 ==len(sliceflows) else layers.Concatenate(axis=1, name='%s.concat' %mNamePrefix)(sliceflows) # merge = merge(sliceflows, mode='concat')
+        
+        m, json_m = None, None
+        submod_name = '%sC88' % mNamePrefix
+        if 3 != self._output_class_num : submod_name +='o%d' % self._output_class_num
+        if self._output_name: submod_name += self._output_name
+
+        model_json = jsonSubs[submod_name] if isinstance(jsonSubs, dict) and submod_name in jsonSubs else None
+        if model_json and len(model_json) >0:
+            m = model_from_json(model_json, custom_objects=custom_objects)
+            m._name = submod_name
+
+        if not m:
+            closeIn = layers.Input(tuple(merged_tensor.shape[1:]), dtype=BACKEND_FLOAT)
+            x = closeIn
+
+            dsize = int(math.sqrt(slice_count))
+            if dsize*dsize < slice_count: dsize +=1
+            seq = list(range(dsize))[1:]
+            seq.reverse()
+
+            for i in seq:
+                x =layers.Dropout(0.5, name='%s.dropout%d' % (submod_name, i))(x)
+                x =layers.Dense(self.__features_per_slice *i, name='%s.F%dx%d' % (submod_name, self.__features_per_slice, i))(x)
+
+            x = self._feature88toOut(x)
+            m = Model(inputs=closeIn, outputs=x, name=submod_name)
+
+        self.__dictSubModels[m.name] = {'model_json': m.to_json(), 'model': m}
+
+        # for k, v in self.__dictSubModels.items():
+        #     v['model'].summary()
+        #     print(v.to_json())
+        #     # v.save('/tmp/%s.h5' % k)
+        
+        x = m(merged_tensor)
+        self.__modelId = '%sx%dTo%d' %(self._fmtNamePrefix, slice_count, self._output_class_num)
+        if self._output_name: self.__modelId += self._output_name
+        self.__modelId += '.%s' % self.__coreId
+        self._dnnModel = Model(inputs=tensor_in, outputs=x, name=self.__modelId)
+
+        # self._dnnModel.compile(optimizer=Adam(lr=self._startLR, decay=1e-6), **BaseModel.COMPILE_ARGS)
+        # self._dnnModel.summary()
+        return self.model
+
+    def __tagCoreModel(self, core_model, core_mId) :
+        # add the prefix tag
+        lnTag = core_mId
+        if not lnTag or len(lnTag) <=0: lnTag= Model88.CORE_LAYER_PREFIX
+        if Model88.CORE_LAYER_PREFIX != lnTag[:len(Model88.CORE_LAYER_PREFIX)]:
+            lnTag = '%s%s' % (Model88.CORE_LAYER_PREFIX, lnTag)
+        
+        if '.' != lnTag[-1]: lnTag +='.'
+
+        for layer in core_model.layers:
+            Model88._tagLayer(layer, lnTag)
+
+    # @abstractmethod
+    def _buildup_decoder(self, input_tensor) :
+        raise NotImplementedError
+
+    @abstractmethod
+    def _buildup_core(self, input_tensor):
+        '''
+        unlike the Model88_Flat._buildup_core() returns the output_tensor, the sliced 2D models returns a submodel as core from _buildup_core()
+        '''
+        input_tensor = layers.Input(tuple(input_tensor.shape[1:])) # create a brand-new input_tensor by getting rid of the leading dim-batch
+        
+        # a dummy core
+        x = layers.ZeroPadding2D(padding=(3, 3), name='conv1_pad')(input_tensor)
+        x = layers.Conv2D(64, (7, 7), strides=(2, 2), padding='valid', kernel_initializer='he_normal', name='conv1')(x)
+        x = layers.BatchNormalization(axis=3, name='bn_conv1')(x)
+
+        # return Model(inputs=get_source_inputs(input_tensor), outputs=x, name='basesliced')
+        return Model(input_tensor, outputs=x, name='basesliced')
+
+    def save(self, filepath, saveWeights=True) :
+        
+        if not self.model: return False
+
+        with h5py.File(filepath, 'w') as h5f:
+            # step 1. save json model in h5f['model_config']
+            # NEVER here: model_json = self.model.to_json()
+            g = h5f.create_group('model_config')
+            BaseModel.hdf5g_setAttribute(g, 'model_clz', self.__class__.__name__)
+            BaseModel.hdf5g_setAttribute(g, 'model_base', 'Model88_sliced')
+            BaseModel.hdf5g_setAttribute(g, 'model_name', self.model.name)
+            BaseModel.hdf5g_setAttribute(g, 'model_core', self.__coreId)
+            BaseModel.hdf5g_setAttribute(g, 'input_name', self._input_name)
+            BaseModel.hdf5g_setAttribute(g, 'output_name', self._output_name)
+
+            input_shape = [int(x) for x in list(self.model.input.shape[1:])]
+            BaseModel.hdf5g_setAttribute(g, 'input_shape_s', '(%s)' % ','.join(['%d'%x for x in input_shape]))
+            g.create_dataset('input_shape', data=np.asarray(input_shape))
+
+            output_shape = [int(x) for x in list(self.model.output.shape[1:])]
+            BaseModel.hdf5g_setAttribute(g, 'output_shape_s', '(%s)' % ','.join(['%d'%x for x in output_shape]))
+            g.create_dataset('output_shape', data=np.asarray(output_shape))
+
+            g.create_dataset('dims_max', data=np.asarray(self._dimMax))
+
+            BaseModel.hdf5g_setAttribute(g, 'json_suplementals', [k.encode('utf-8') for k in self.__dictSubModels.keys()])
+            for k, v in self.__dictSubModels.items() :
+                g['subjson_%s' % k] = v['model_json'].encode('utf-8')
+
+            if saveWeights:
+                g = h5f.create_group('model_weights')
+                g = g.create_group('sub_models')
+                for k, v in self.__dictSubModels.items() :
+                    if 'model' not in v or not v['model']:
+                        continue
+
+                    subwg = g.create_group(k)
+                    BaseModel.save_weights_to_hdf5_group(subwg, v['model'].layers)
+
+        return True
+
+    @staticmethod
+    def load(filepath, custom_objects=None, withWeights=True):
+        if h5py is None:
+            raise ImportError('load() requires h5py')
+
+        model = None
+        with h5py.File(filepath, 'r') as h5f:
+            # step 1. load json model defined in h5f['model_config']
+            if 'model_config' in h5f:
+                gconf = h5f['model_config']
+
+                model_name = None
+                try:
+                    model_name = BaseModel.hdf5g_getAttribute(gconf, 'model_name')
+                except:
+                    model_name = None
+
+                core_name = BaseModel.hdf5g_getAttribute(gconf, 'model_core')
+                if not core_name or len(core_name)<0:
+                    raise ValueError('model of %s has no model_core to init Model88_sliced' % filepath)
+
+                model_base = BaseModel.hdf5g_getAttribute(gconf, 'model_base', 'base')
+                model_clz  = BaseModel.hdf5g_getAttribute(gconf, 'model_clz', '')
+                if not model_base in ['Model88_sliced']:
+                    raise ValueError('model[%s] of %s is not suitable to load via Model88_sliced' % (model_clz, filepath))
+
+                input_name  = BaseModel.hdf5g_getAttribute(gconf,  'input_name',  'state')
+                output_name  = BaseModel.hdf5g_getAttribute(gconf, 'output_name', 'action')
+
+                input_shape = gconf['input_shape'][()]
+                input_shape = tuple(list(input_shape))
+
+                output_shape = gconf['output_shape'][()] if 'output_shape' in gconf else None
+                if output_shape is not None : output_shape = tuple(list(output_shape))
+
+                dims_max = gconf['dims_max'][()] if 'dims_max' in gconf else None
+                if dims_max is not None : dims_max = tuple(list(dims_max))
+
+                json_subnames = BaseModel.hdf5g_getAttribute(gconf, 'json_suplementals')
+                json_sub = {}
+
+                for n in json_subnames:
+                    json_sub[n] = gconf['subjson_%s' % n][()].decode('utf-8')
+
+                model = Model88_sliced(input_shape=input_shape, input_name=input_name, output_name=output_name, output_class_num=output_shape[0])
+                if dims_max: model._dimMax = dims_max
+
+                if model_name and AUTOENC_TAG in model_name:
+                     model.__buildup_autoenc(model_name, json_sub, custom_objects)
+                else:
+                    model.__buildup(core_name, json_sub, custom_objects)
+                # unnecessary: model.__coreId = core_name
+
+            if not model:
+                return model
+
+            # step 2. load weights in h5f['model_weights']
+            g_subweights = None
+            if withWeights and 'model_weights' in h5f:
+                g_subweights = h5f['model_weights']
+                g_subweights = g_subweights['sub_models'] if 'sub_models' in g_subweights else None
+
+            if g_subweights:
+                loadeds = model._load_weights_from_hdf5g(g_subweights)
+
+        return model
+
+    def load_weights(self, filepath, submodel_remap={}):
+        
+        lynames=[]
+        if not self.model: return lynames
+        with h5py.File(filepath, 'r') as h5f:
+            if 'model_weights' not in h5f: return lynames
+
+            g_subweights = h5f['model_weights']
+            if 'sub_models' not in g_subweights : return lynames
+            g_subweights = g_subweights['sub_models']
+
+            lynames = model._load_weights_from_hdf5g(g_subweights, submodel_remap=submodel_remap)
+        
+        return lynames
+    
+    def _load_weights_from_hdf5g(self, group, trainable=False, import_weight=1.0, submodel_remap={}):
+        ret = []
+        subs=list(group.keys())
+        for k, v in self.__dictSubModels.items() :
+            if 'model' not in v or not v['model']: continue
+            kn = k
+            if kn in submodel_remap.keys(): kn =submodel_remap[kn]
+            if kn not in group.keys(): continue
+            
+            m, subwg = v['model'], group[kn]
+            loadeds = BaseModel._load_weights_from_hdf5g_by_name(subwg, m.layers, import_weight, prefix_remap=[('%s.'%k, '%s.'%kn)])
+        
+            # step 3. by default, disable trainable
+            for layer in m.layers:
+                layer.trainable = trainable
+
+            ret += [ '%s/%s' %(k, x) for x in loadeds ]
+
+        ret.sort()
+        return ret
+
+    def enable_trainable(self, layerNamePattern, enable=True) :
+
+        ret = []
+        for k, v in self.__dictSubModels.items() :
+            if 'model' not in v or not v['model']: continue
+            patt = layerNamePattern
+            if fnmatch.fnmatch(k, patt) or fnmatch.fnmatch(k +'.', patt):
+                # layerNamePattern matched the sub-model name, the entire sub-model trainable
+                patt = '*'
+
+            names = BaseModel.enable_trainable_layers(v['model'].layers, patt, enable=enable)
+            ret += [ '%s/%s' %(k, x) for x in names ]
+        return ret
+
+    def buildup_autoenc(self):
+        return self.__buildup_autoenc(None, None, None)
+
+    def __buildup_autoenc(self, model_name, jsonSubs, custom_objects):
+        
+        tensor_in, slices = self._slicedInput()
+        shape_echo = tensor_in.shape[1:-1]
+
+        enc_name, dec_name = None, None
+        if model_name and AUTOENC_TAG in model_name:
+            loc = model_name.index(AUTOENC_TAG)
+            enc_name = model_name[:loc]
+            dec_name = model_name[loc+len(AUTOENC_TAG):]
+
+        class AutoEnc(Model) :
+            def __init__(self, *args, **kwargs) :
+                super(AutoEnc, self).__init__(*args, **kwargs)
+
+            def fit(self, *args, **kwargs):
+                # take x as y on the arguments
+                if len(args) >=2: args[1] =args[0]
+                if 'y' in kwargs :
+                    if 'x' in kwargs: kwargs['y'] = kwargs['x']
+                    elif len(args) >0: kwargs['y'] = args[0]
+
+                return super(AutoEnc, self).fit(*args, **kwargs)
+
+            def evaluate(self, *args, **kwargs):
+                # take x as y on the arguments
+                if len(args) >=2: args[1] =args[0]
+                if 'y' in kwargs :
+                    if 'x' in kwargs: kwargs['y'] = kwargs['x']
+                    elif len(args) >0: kwargs['y'] = args[0]
+
+                return super(AutoEnc, self).evaluate(*args, **kwargs)
+
+            def summary(self, *args, **kwargs):
+                return super(AutoEnc, self).summary(*args, **kwargs)
+
+            def save(self, *args, **kwargs):
+                return super(AutoEnc, self).save(*args, **kwargs)
+
+        encoder, decoder = None, None
+        
+        json_m = None
+        if not enc_name or enc_name not in jsonSubs:
+            encoder = self._buildup_core(slices[0])
+            json_m = encoder.to_json()
+        else:
+            encoder = model_from_json(jsonSubs[enc_name], custom_objects=custom_objects)
+            json_m = jsonSubs[enc_name]
+
+        if not encoder :
+            raise ValueError('failed to create model_core')
+
+        self.__dictSubModels[encoder.name] = {'model_json': json_m, 'model': encoder}
+        self.__coreId = encoder.name
+
+        encoded = encoder(slices[0])
+
+        if not dec_name or dec_name not in jsonSubs:
+            decoder = self._buildup_decoder(encoded)
+            json_m = decoder.to_json()
+        else:
+            decoder = model_from_json(jsonSubs[dec_name], custom_objects=custom_objects)
+            json_m = jsonSubs[dec_name]
+
+        self.__dictSubModels[decoder.name] = {'model_json': json_m, 'model': decoder}
+
+        decoded = decoder(encoded) # this is one slice here
+        if len(slices) >1:
+            decoded = layers.Concatenate(axis=-1)([decoded] + slices[1:])
+
+        if shape_echo != decoded.shape[1:-1] :
+            decoded = layers.Lambda(Model88_sliced._prune, arguments={'output_shape': shape_echo }, output_shape=shape_echo) (decoded)
+
+        self.__modelId = '%s%s%s.%s' % (encoder.name, AUTOENC_TAG, decoder.name, 'x'.join([str(x) for x in list(tensor_in.shape[1:])]))
+        self._dnnModel = AutoEnc(tensor_in, decoded, name=self.__modelId)
+
+        self._defaultCompileArgs = {**self._defaultCompileArgs, 'loss':'mse'}
+        self._defaultOptimizer = 'adam'
+
+        return self.model
+
+    def _prune(x, output_shape=None): # for decoder to make output shape back like input's
+        if not output_shape: output_shape = self._dimMax # TODO
+        dims = len(output_shape)
+        if 1 == dims:
+            slice = x[:, :output_shape[0], :]
+        elif 2 == dims :
+            slice = x[:, :output_shape[0], :output_shape[1] :]
+
+        return slice
+
+########################################################################
+class ModelS2d_ResNet50Pre(Model88_sliced) :
+    '''
+    2D models with channels expanded by channels=4
+    '''
+    def __init__(self, **kwargs):
+        super(ModelS2d_ResNet50Pre, self).__init__(**kwargs)
+        
+        # self._maxY = 32
+        self._dimMax = tuple([32] + list(self._dimMax[1:]))
+
+    # def ResNet50(input_tensor=None, input_shape=None, pooling=None, classes=1000, **kwargs):
+    def _buildup_core(self, input_tensor):
+        '''d
+        unlike the Model88_Flat._buildup_core() returns the output_tensor, the sliced 2D models returns a submodel as core from _buildup_core()
+        '''
+        input_shape = tuple([ int(x) for x in input_tensor.shape[1:]])
+        return ResNet50(weights=None, classes=1000, input_shape=input_shape) #, dtype=INPUT_FLOAT
+
+# --------------------------------
+class ModelS2d_ResNet50(Model88_sliced) :
+    '''
+    2D models with channels expanded by channels=4
+    additional autodecoder ref: https://github.com/Alvinhech/resnet-autoencoder/blob/master/autoencoder4.py
+    https://blog.csdn.net/qq_42995327/article/details/110219613
+    https://blog.csdn.net/nijiayan123/article/details/79416764?utm_medium=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.control&depth_1-utm_source=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.control
+    '''
+    def __init__(self, **kwargs):
+        super(ModelS2d_ResNet50, self).__init__(**kwargs)
+
+    # def ResNet50(input_tensor=None, input_shape=None, pooling=None, classes=1000, **kwargs):
+    def _buildup_core(self, input_tensor):
+        '''
+        unlike the Model88_Flat._buildup_core() returns the output_tensor, the sliced 2D models returns a submodel as core from _buildup_core()
+        '''
+        input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
+
+        bn_axis = 3
+        classes = 1000
+        pooling = 'max'
+
+        x = layers.ZeroPadding2D(padding=(3, 3), name='conv1_pad')(input_tensor)
+        x = layers.Conv2D(64, (7, 7), strides=(2, 2), padding='valid', kernel_initializer='he_normal', name='conv1')(x)
+        x = layers.BatchNormalization(axis=bn_axis, name='bn_conv1')(x)
+        x = layers.Activation('relu')(x)
+        x = layers.ZeroPadding2D(padding=(1, 1), name='pool1_pad')(x)
+        x = layers.MaxPooling2D((3, 3), strides=(2, 2))(x)
+
+        x = ModelS2d_ResNet50.conv_block(x, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1))
+        x = ModelS2d_ResNet50.identity_block(x, 3, [64, 64, 256], stage=2, block='b')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [64, 64, 256], stage=2, block='c')
+
+        x = ModelS2d_ResNet50.conv_block(x, 3, [128, 128, 512], stage=3, block='a')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [128, 128, 512], stage=3, block='b')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [128, 128, 512], stage=3, block='c')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [128, 128, 512], stage=3, block='d')
+
+        x = ModelS2d_ResNet50.conv_block(x, 3, [256, 256, 1024], stage=4, block='a')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='b')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='c')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='d')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='e')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [256, 256, 1024], stage=4, block='f')
+
+        x = ModelS2d_ResNet50.conv_block(x, 3, [512, 512, 2048], stage=5, block='a')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [512, 512, 2048], stage=5, block='b')
+        x = ModelS2d_ResNet50.identity_block(x, 3, [512, 512, 2048], stage=5, block='c')
+
+        x = layers.GlobalAveragePooling2D(name='avg_pool')(x)
+        x = layers.Dense(classes, activation='softmax', name='fc1000')(x)
+
+        # Ensure that the model takes into account
+        # any potential predecessors of `input_tensor`.
+        # Create model.
+        model = Model(input_tensor, x, name='resnet50') # model = Model(get_source_inputs(input_tensor), x, name='resnet50')
+
+        return model
+
+    def identity_block(input_tensor, kernel_size, filters, stage, block):
+        """The identity block is the block that has no conv layer at shortcut.
+        # Returns
+            Output tensor for the block.
+        """
+        filters1, filters2, filters3 = filters
+        bn_axis = 3
+
+        conv_name_base = 'res' + str(stage) + block + '_branch'
+        bn_name_base = 'bn' + str(stage) + block + '_branch'
+
+        x = layers.Conv2D(filters1, (1, 1), kernel_initializer='he_normal', name=conv_name_base + '2a')(input_tensor)
+        x = layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
+        x = layers.Activation('relu')(x)
+
+        x = layers.Conv2D(filters2, kernel_size, padding='same', kernel_initializer='he_normal', name=conv_name_base + '2b')(x)
+        x = layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
+        x = layers.Activation('relu')(x)
+
+        x = layers.Conv2D(filters3, (1, 1), kernel_initializer='he_normal', name=conv_name_base + '2c')(x)
+        x = layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
+
+        x = layers.add([x, input_tensor])
+        x = layers.Activation('relu')(x)
+        return x
+
+    def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2)):
+        """A block that has a conv layer at shortcut.
+        """
+        filters1, filters2, filters3 = filters
+        bn_axis = 3
+
+        conv_name_base = 'res' + str(stage) + block + '_branch'
+        bn_name_base = 'bn' + str(stage) + block + '_branch'
+
+        x = layers.Conv2D(filters1, (1, 1), strides=strides, kernel_initializer='he_normal', name=conv_name_base + '2a')(input_tensor)
+        x = layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
+        x = layers.Activation('relu')(x)
+
+        x = layers.Conv2D(filters2, kernel_size, padding='same', kernel_initializer='he_normal', name=conv_name_base + '2b')(x)
+        x = layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
+        x = layers.Activation('relu')(x)
+
+        x = layers.Conv2D(filters3, (1, 1), kernel_initializer='he_normal', name=conv_name_base + '2c')(x)
+        x = layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
+
+        shortcut = layers.Conv2D(filters3, (1, 1), strides=strides, kernel_initializer='he_normal', name=conv_name_base + '1')(input_tensor)
+        shortcut = layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '1')(shortcut)
+
+        x = layers.add([x, shortcut])
+        x = layers.Activation('relu')(x)
+        return x
+
+    def deconv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2)):
+        x = input_tensor
+        for i in range(len(filters)):
+            x = layers.Conv2DTranspose(filters[i], kernel_shape, activation='relu', padding='same', name='block%s_deconv%d' % (blkId, 1+i))(x)
+        
+        return x
+
+# --------------------------------
+class ModelS2d_VGG16r1(Model88_sliced) :
+    '''
+    2D models with channels expanded by channels=4
+    /usr/local/lib64/python3.6/site-packages/keras_applications/vgg16.py
+    additional autodecoder ref: https://github.com/Alvinhech/resnet-autoencoder/blob/master/autoencoder4.py
+    '''
+    def __init__(self, **kwargs):
+        super(ModelS2d_VGG16r1, self).__init__(**kwargs)
+        self._dimMax = (20, 32)
+        self._encoder, self._decoder = None, None
+
+    # def ResNet50(input_tensor=None, input_shape=None, pooling=None, classes=1000, **kwargs):
+    def _buildup_core(self, input_tensor):
+        weight_decay = 0.0005
+        lnTag = 'vgg16r1'
+
+        input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
+        x = input_tensor
+        dimMax = max(list(self._dimMax) + list(input_tensor.shape[1:2]))
+        if min(list(input_tensor.shape[1:2])) < dimMax:
+            x = self._tagged_chain(lnTag, x, layers.ZeroPadding2D(padding=( (0, dimMax-input_tensor.shape[1]), (0, dimMax-input_tensor.shape[2]) )))
+
+        #layer1 (20,32,64)
+        # 对于stride=1*1,并且padding ='same',这种情况卷积后的图像shape与卷积前相同，本层后shape还是32*32
+        x = self._tagged_chain(lnTag, x, layers.Conv2D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.3))
+
+        #layer2 (10,16,64)
+        x = self._tagged_chain(lnTag, x, layers.Conv2D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling2D(2))
+
+        #layer3 (10,16,128)
+        x = self._tagged_chain(lnTag, x, layers.Conv2D(128, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
+        
+        #layer4 (5,8,128)
+        x = self._tagged_chain(lnTag, x, layers.Conv2D(128, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling2D(2))
+        
+        #layer5 (5,8,256)
+        x = self._tagged_chain(lnTag, x, layers.Conv2D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
+        
+        #layer6 (5,8,256)
+        x = self._tagged_chain(lnTag, x, layers.Conv2D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
+        
+        #layer7 (2,4,256)
+        x = self._tagged_chain(lnTag, x, layers.Conv2D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling2D(2))
+
+        #layer8 (2,4,512)
+        x = self._tagged_chain(lnTag, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
+
+        #layer9 (2,4,512)
+        x = self._tagged_chain(lnTag, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
+        
+        #layer10 (1,2,512)
+        x = self._tagged_chain(lnTag, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling2D(2))
+        
+        #layer11 (1,2,512)
+        x = self._tagged_chain(lnTag, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
+
+        #layer12 (2,2,512)
+        x = self._tagged_chain(lnTag, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
+
+        #layer13 (1,1,512)
+        x = self._tagged_chain(lnTag, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.MaxPooling2D(2))
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.5))
+
+        #layer14 1*1*518
+        x = self._tagged_chain(lnTag, x, layers.Flatten())
+        x = self._tagged_chain(lnTag, x, layers.Dense(518, activation='relu', kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+
+        #layer15 518
+        x = self._tagged_chain(lnTag, x, layers.Dense(518, activation='relu', kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+
+        # Create model.
+        model = Model(input_tensor, x, name=lnTag) 
+        return model
+
+    def __prune(x, output_shape=None): # for decoder to make output shape back like input's
+        if not output_shape: output_shape = self._dimMax # TODO
+        dims = len(output_shape)
+        if 1 == dims:
+            slice = x[:, :output_shape[0], :]
+        elif 2 == dims :
+            slice = x[:, :output_shape[0], :output_shape[1] :]
+
+        return slice
+
+    def _buildup_decoder(self, input_tensor):
+        weight_decay = 0.0005
+        decname = 'devgg16r1'
+        input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
+        x = input_tensor
+
+        #layer14 518
+        x = self._tagged_chain(decname, x, layers.Dense(518,  activation='relu', kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+
+        #layer13 (2,2,512)
+        x = self._tagged_chain(decname, x, layers.Dense(512, activation='relu', kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+        x = self._tagged_chain(decname, x, layers.Reshape((1,1,512))) 
+        x = self._tagged_chain(decname, x, layers.UpSampling2D((2,2))) 
+
+        #layer12 (2,2,512)
+        x = self._tagged_chain(decname, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+
+        #layer11 (2,2,512)
+        x = self._tagged_chain(decname, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+
+        #layer10 (4,4,512)
+        x = self._tagged_chain(decname, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+        x = self._tagged_chain(decname, x, layers.UpSampling2D((2,2))) 
+
+        #layer9 4*4*512
+        x = self._tagged_chain(decname, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+
+        #layer8 4*4*256
+        x = self._tagged_chain(decname, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+
+        #layer7 8*8*256
+        x = self._tagged_chain(decname, x, layers.Conv2D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+        x = self._tagged_chain(decname, x, layers.UpSampling2D((2,2))) 
+
+        #layer6 8*8*256
+        x = self._tagged_chain(decname, x, layers.Conv2D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+
+        #layer5 8*8*128
+        x = self._tagged_chain(decname, x, layers.Conv2D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+
+        #layer4 16*16*128
+        x = self._tagged_chain(decname, x, layers.Conv2D(128, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+        x = self._tagged_chain(decname, x, layers.UpSampling2D((2,2))) 
+
+        #layer3 16*16*64
+        x = self._tagged_chain(decname, x, layers.Conv2D(128, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+
+        #layer2 16*16*64
+        x = self._tagged_chain(decname, x, layers.Conv2D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+        x = self._tagged_chain(decname, x, layers.UpSampling2D((2,2))) 
+
+        #layer1
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+        x = self._tagged_chain(decname, x, layers.Conv2D(4, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
+
+        # output_shape=(18,32)
+        x = self._tagged_chain(decname, x, layers.Lambda(Model88_sliced._prune, arguments={'output_shape': self._dimMax}, output_shape= self._dimMax))
+        return Model(input_tensor, x, name=decname) 
+
+    def _buildup_core000(self, input_tensor):
+        '''
+        unlike the Model88_Flat._buildup_core() returns the output_tensor, the sliced 2D models returns a submodel as core from _buildup_core()
+        '''
+        input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
+        x = input_tensor
+        xencoded, xdecoded = None, None
+
+        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (1, 1), [64, 64],        1) # Block 1
+        xencoded             = x
+        iencoded             = layers.Input(xencoded.shape[1:])
+        xdecoded             = ModelS2d_VGG16r1.deconv_block(iencoded, (3, 3), (2, 2), [64, 64],        1) # Block 1
+
+        # original vgg16 starts from (224,224,3) so that allow pooling at each block, we start from 32x20 here so less pooling here
+        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (1, 1), [128, 128],      2) # Block 2
+        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [256, 256, 256], 3) # Block 3
+        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [256, 256, 256], 4) # Block 4, reduced from origin (2, 2), [512, 512, 512]
+        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (1, 1), [128, 128, 128], 5) # Block 5, reduced from origin (2, 2), [512, 512, 512]
+        # if include_top:
+        #     # Classification block
+        #     x = layers.layers.Flatten(name='flatten')(x)
+        #     x = layers.layers.Dense(4096, activation='relu', name='fc1')(x)
+        #     x = layers.layers.Dense(4096, activation='relu', name='fc2')(x)
+        #     x = layers.layers.Dense(classes, activation='softmax', name='fc1000')(x)
+        # else:
+        #     if pooling == 'avg':
+        #         x = layers.layers.GlobalAveragePooling2D()(x)
+        #     elif pooling == 'max':
+        #         x = layers.GlobalMaxPooling2D()(x)
+        x = layers.GlobalAveragePooling2D()(x)
+
+        # create model
+        model = Model(input_tensor, x, name='vgg16r1')
+
+        if None not in [xencoded, xdecoded]:
+            self._encoder = Model(input_tensor, xencoded, name='enc_%s' % model.name)
+            if xdecoded.shape[-1] != input_tensor.shape[-1] :
+                xdecoded = layers.Conv2DTranspose(int(input_tensor.shape[-1]), (3,3), activation='relu', padding='same', name='deconvShape')(xdecoded)
+            self._decoder = Model(iencoded, xdecoded, name='dec_%s' % model.name)
+
+        return model
+
+    def conv_block(input_tensor, kernel_shape, pool_shape, lst_filters, blkId):
+        """The identity block is the block that has no conv layer at shortcut.
+        # Returns
+            Output tensor for the block.
+        """
+        x = input_tensor
+        for i in range(len(lst_filters)):
+            x = layers.Conv2D(lst_filters[i], kernel_shape, activation='relu', padding='same', name='block%s_conv%d' % (blkId, 1+i))(x)
+        
+        if max(pool_shape) >1:
+            x = layers.MaxPooling2D(pool_shape, strides=pool_shape, name='block%s_pool' % blkId)(x)
+        return x
+
+    def deconv_block(input_tensor, kernel_shape, pool_shape, lst_filters, blkId):
+        """The identity block is the block that has no conv layer at shortcut.
+        # Returns
+            Output tensor for the block.
+        """
+        x = input_tensor
+        x = layers.UpSampling2D(pool_shape, name='block%s_depool' % blkId)(x)
+        for i in range(len(lst_filters)):
+            x = layers.Conv2DTranspose(lst_filters[i], kernel_shape, activation='relu', padding='same', name='block%s_deconv%d' % (blkId, 1+i))(x)
+        
+        return x
+
+########################################################################
+class ModelS1d_Basic(Model88_sliced) :
+    '''
+    Model88 has a common 88 features at the end
+    '''
+    def __init__(self, **kwargs):
+        super(ModelS1d_Basic, self).__init__(**kwargs)
+        self._dimMax = tuple([518])
+
+    def _buildup_core(self, input_tensor):
+
+        corename = 'basic1d'
+        input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
+        x = input_tensor
+        
+        x = self._tagged_chain(corename, x, layers.Dense(4, activation='relu')) # (518,2)
+        x = self._tagged_chain(corename, x, layers.Flatten()) # (518*2)
+        x = self._tagged_chain(corename, x, layers.Dropout(0.3))
+        x = self._tagged_chain(corename, x, layers.Dense(518,  activation='relu')) # (64)
+        x = self._tagged_chain(corename, x, layers.Dropout(0.3))
+        x = self._tagged_chain(corename, x, layers.Dense(518,  activation='relu')) # (64)
+        x = self._tagged_chain(corename, x, layers.Dropout(0.3))
+
+        x = self._tagged_chain(corename, x, layers.Dense(518,  activation='relu')) # (64)
+
+        # Create model.
+        model = Model(input_tensor, x, name=corename) 
+        return model
+
+    def _buildup_decoder(self, input_tensor):
+        decname = 'debasic1d'
+        input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
+        x = input_tensor
+        x = self._tagged_chain(decname, x, layers.Dense(518,  activation='relu')) # (518)
+        x = self._tagged_chain(decname, x, layers.Dense(518,  activation='relu')) # (518)
+        x = self._tagged_chain(decname, x, layers.Dense(518,  activation='relu')) # (518)
+        x = self._tagged_chain(decname, x, layers.Dense(518*4,  activation='relu'))  # (518*4)
+        x = self._tagged_chain(decname, x, layers.Reshape((518, 4))) # (518,1)
+        x = self._tagged_chain(decname, x, layers.Dense(4, activation='relu')) # (518,4)
+
+        return Model(input_tensor, x, name=decname) 
+
+# --------------------------------
+class ModelS1d_Cnn1Dr2(Model88_sliced) :
+    '''
+    Model88 has a common 88 features at the end
+    '''
+    def __init__(self, **kwargs):
+        super(ModelS1d_Cnn1Dr2, self).__init__(**kwargs)
+        self._dimMax = tuple([518])
+
+    def _buildup_core(self, input_tensor):
+
+        corename = 'cnn1dr2'
+        input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
+        x = input_tensor
+        
+        x = self._tagged_chain(corename, x, layers.Conv1D(128, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.BatchNormalization())
+        x = self._tagged_chain(corename, x, layers.Conv1D(256, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(corename, x, layers.Conv1D(512, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.Conv1D(256, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.BatchNormalization())
+        x = self._tagged_chain(corename, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(corename, x, layers.Dropout(0.3))
+        x = self._tagged_chain(corename, x, layers.Conv1D(256, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.BatchNormalization())
+        x = self._tagged_chain(corename, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(corename, x, layers.Conv1D(128, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.BatchNormalization())
+        x = self._tagged_chain(corename, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(corename, x, layers.Conv1D(128, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.BatchNormalization())
+        x = self._tagged_chain(corename, x, layers.MaxPooling1D(2))
+        x = self._tagged_chain(corename, x, layers.Conv1D(100, 3, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.GlobalAveragePooling1D())
+
+        x = self._tagged_chain(corename, x, layers.Dense(518, activation='relu'))
+        x = self._tagged_chain(corename, x, layers.BatchNormalization())
+
+        # Create model.
+        model = Model(input_tensor, x, name=corename) 
+        return model
+
+    def _buildup_decoder(self, input_tensor):
+        decname = 'decnn1dr2'
+        input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
+        x = input_tensor
+        x = self._tagged_chain(decname, x, layers.Conv1DTranspose(100, 3, activation='relu'))
+        x = self._tagged_chain(decname, x, layers.UpSampling1D(2))
+        x = self._tagged_chain(decname, x, layers.Conv1DTranspose(128, 3, activation='relu'))
+        x = self._tagged_chain(decname, x, layers.UpSampling1D(2))
+        x = self._tagged_chain(decname, x, layers.Conv1DTranspose(128, 3, activation='relu'))
+        x = self._tagged_chain(decname, x, layers.UpSampling1D(2))
+        x = self._tagged_chain(decname, x, layers.Conv1DTranspose(256, 3, activation='relu'))
+        x = self._tagged_chain(decname, x, layers.UpSampling1D(2))
+        x = self._tagged_chain(decname, x, layers.Conv1DTranspose(256, 3, activation='relu'))
+        x = self._tagged_chain(decname, x, layers.Conv1DTranspose(512, 3, activation='relu'))
+        x = self._tagged_chain(decname, x, layers.UpSampling1D(2))
+        x = self._tagged_chain(decname, x, layers.Conv1DTranspose(256, 3, activation='relu'))
+        x = self._tagged_chain(decname, x, layers.Conv1DTranspose(128, 3, activation='relu'))
+
+        return Model(input_tensor, x, name=decname) 
+
+########################################################################
+if __name__ == '__main__':
+    
+    model, fn_template, fn_weightsFrom = None, None, None
+    # fn_template = '/tmp/test.h5'
+    # model = BaseModel.load(fn_template)
+    # fn_template = '/tmp/state18x32x4Y4F518x1To3action.resnet50r1.B32I32_init.h5' # '/tmp/sliced2d.h5'
+    # fn_template = '/tmp/foo1d_autoenc_defoo1d.B32I32.h5'
+    # fn_weightsFrom = '/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_trained-gpu1.20210208.h5'
+    # fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/basic1d_autoenc_debasic1d_trained-last.h5'
+    fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/vgg16r1_autoenc_devgg16r1_trained-last.h5'
+    
+    
+    if fn_template and len(fn_template) >0:
+        # model = BaseModel.load(fn_template)
+        model = Model88_sliced.load(fn_template)
+
+    if not model:
+        # model = ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
+        # model = ModelS2d_ResNet50(input_shape=(18, 32, 8), output_class_num=3, output_name='action') # forget ModelS2d_ResNet50r1
+        model = ModelS2d_VGG16r1(input_shape=(18, 32, 8), output_class_num=3, output_name='a3', output_as_attr=True)
+        
+        # model = ModelS2d_ResNet50(input_shape=(18, 32, 8), output_class_num=8, output_name='gr8attr', output_as_attr=True)
+
+        # model = ModelS1d_Basic(input_shape=(518, 8), output_class_num=8, output_name='gr8attr', output_as_attr=True)
+        # model = ModelS1d_Basic(input_shape=(518, 4), output_class_num=3, output_name='a3')
+        
+        model.buildup_autoenc() 
+        # model.buildup()
+
+    if model and fn_weightsFrom and len(fn_weightsFrom) >0:
+        trainables = model.enable_trainable("*")
+        trainables = list(set(trainables))
+        trainables.sort()
+        print('enabled trainable on %d layers: %s' % (len(trainables), '\n'.join(trainables)))
+
+        applied = model.load_weights(fn_weightsFrom, submodel_remap={'resnet50r1':'resnet50',})
+        print('applied weights of %s onto %d layers: %s' % (fn_weightsFrom, len(trainables), '\n'.join(applied)))
+
+    model.enable_trainable("state18x32x4Y4F518x1f0.*")
+    model.enable_trainable("state18x32x4Y4F518x1C88*")
+    model.compile()
+    model.summary()
+
+    # trainable_count = count_params(model.trainable_weights)
+    # tw = tf.trainable_weights()
+    # print('trainable %d vars: %s' % (len(tv), tw))
+    # tw = model.model.trainable_weights
+    # print('trainable %d weights: %s' % (count_params(tw), tw))
+
+    # cw = model.get_weights_core()
+    fn_save='/tmp/%s.B%sI%s.h5' % (model.modelId, BACKEND_FLOAT[5:], INPUT_FLOAT[5:])
+    model.save(fn_save)
+    print('saved model: %s' % fn_save)
+
+'''
+TO browse the hd5 file:
+
+with h5py.File('/tmp/M88F.Cnn1Dx4R2.h5', 'r') as h5f:
+    h5f.visit(lambda x: print(x))
+
+generated by original API: model.save('/tmp/%s.h5' % model.modelId):
+model_weights
+model_weights/F88.Dense1
+...
+model_weights/weights_suplementals/2D4S518F2X/F88.Dense2/pickled_weights
+'''

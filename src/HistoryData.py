@@ -20,13 +20,17 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 from abc import ABC, abstractmethod
 
-import sys, re
+import sys, re, random
 if sys.version_info <(3,):
     from Queue import Queue, Empty
 else:
     from queue import Queue, Empty
 import bz2
 import numpy as np
+
+SAMPLE_FLOAT = 'float16' # note: SAMPLE_FLOAT MUST compatible with but not equal to BaseModel.INPUT_FLOATS
+# float32(single-preccision) -3.4e+38 ~ 3.4e+38, float16(half~) 5.96e-8 ~ 6.55e+4, float64(double-preccision)
+CLASSIFY_INT = 'int8'
 
 EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
 H5DSET_DEFAULT_ARGS={ 'compression': 'lzf' } # note lzf is good at speed, but HDFExplorer doesn't support it. Change it to gzip if want to view
@@ -190,6 +194,17 @@ class TaggedCsvRecorder(Recorder):
         self.__hdlrFile.setLevel(logging.DEBUG)
         self.__hdlrFile.setFormatter(logging.Formatter('%(message)s')) # only the message itself with NO stamp and so on
         self.__fakedcsv.addHandler(self.__hdlrFile)
+
+    def close(self): # is supposed to be def __del__(self):  but donot know why it doesn't get called
+        # print("__del__")
+        if self.__hdlrFile:
+            self.__hdlrFile.flush()
+            self.__hdlrFile.close()
+        self.__hdlrFile = None
+
+        # if self.__fakedcsv:
+        #     self.__fakedcsv.close()
+        self.__fakedcsv =None
 
     def __rotating_namer(self, name):
         return name + ".bz2"
@@ -446,8 +461,22 @@ class Playback(Iterable):
         self._exchange = exchange if exchange else ''
         self._dbNamePrefix = Recorder.DEFAULT_DBPrefix
         
-        self._startDate = startDate if startDate else Playback.DUMMY_DATE_START
-        self._endDate   = endDate if endDate else Playback.DUMMY_DATE_END
+        self._startDate, self._endDate = Playback.DUMMY_DATE_START, Playback.DUMMY_DATE_END
+
+        self._setDateRange(startDate, endDate)
+
+        self._dictCategory = {} # eventType/category to { columeNames: [], coverter: func() }
+        self.setId('%s.%s.%s-%s' %(self._symbol, self._category, self._startDate, self._endDate) )
+
+    @property
+    def datetimeRange(self) : return self.__dtStart, self.__dtEnd
+
+    @property
+    def categories(self) : return self._dictCategory
+
+    def _setDateRange(self, startDate=None, endDate=None) :
+        if startDate: self._startDate = startDate
+        if endDate:   self._endDate   = endDate
         self.__dtStart, self.__dtEnd = None, None
         try :
             self.__dtStart = datetime.strptime(self._startDate, '%Y%m%dT%H%M%S')
@@ -461,14 +490,6 @@ class Playback(Iterable):
         except:
             pass
 
-        self._dictCategory = {} # eventType/category to { columeNames: [], coverter: func() }
-        self.setId('%s.%s.%s-%s' %(self._symbol, self._category, self._startDate, self._endDate) )
-
-    @property
-    def datetimeRange(self) : return self.__dtStart, self.__dtEnd
-
-    @property
-    def categories(self) : return self._dictCategory
 
     # -- impl of Iterable --------------------------------------------------------------
     def resetRead(self):
@@ -574,6 +595,101 @@ class PlaybackApp(BaseApplication):
 
 
 ########################################################################
+class CsvStream(Playback) :
+
+    #----------------------------------------------------------------------
+    def __init__(self, symbol, stream, fields, evtype =None, startDate =Playback.DUMMY_DATE_START, endDate=Playback.DUMMY_DATE_END, **kwargs) :
+
+        super(CsvStream, self).__init__(symbol, startDate, endDate, **kwargs)
+
+        self._evtype = evtype if evtype else EVENT_KLINE_1MIN
+        if EVENT_KLINE_PREFIX in evtype:
+            self._funcCsvToEvent = KLineData.hatch # DictToKLine(self._category, symbol)
+        elif EVENT_MONEYFLOW_PREFIX in evtype:
+            self._funcCsvToEvent = MoneyflowData.hatch
+        elif EVENT_TICK == evtype:
+            self._funcCsvToEvent = TickData.hatch
+
+        self.__fieldnames = fields.split(',') if isinstance(fields, str) else fields
+        self.__strmFileIn = csv.DictReader(stream, self.__fieldnames, lineterminator='\n')
+
+    # -- Impl of Playback --------------------------------------------------------------
+    def resetRead(self):
+        super(CsvStream, self).resetRead()
+        return not self.__strmFileIn is None
+
+    def readNext(self):
+        '''
+        @return True if busy at this step
+        '''
+        try :
+            ev = self.popPending(block = False, timeout = 0.1)
+            if ev: return ev
+        except Exception:
+            pass
+
+        row, ev = None, None
+        while not row:
+            if not self.__strmFileIn:
+                self._iterableEnd = True
+                return None
+
+            try :
+                row = next(self.__strmFileIn, None) # self.__strmFileIn.readline()
+            except Exception as ex:
+                row = None
+
+            if not row:
+                try :
+                    self.__strmFileIn.close()
+                except: pass
+                self.__strmFileIn = None
+                continue
+
+            if len(self.__fieldnames) >0 and self.__fieldnames[0] in row.keys() and row[self.__fieldnames[0]] == self.__fieldnames[0] : # skip the csv header line
+                row = None
+                continue
+
+        if not row or len(row) <=0 or not self._funcCsvToEvent :
+            return ev
+
+        try :
+            # print('line: %s' % (line))
+            row = {
+                'evType': self._evtype,
+                'exchange': self._exchange,
+                'symbol' : self._symbol,
+                **row }
+
+            ev = self._funcCsvToEvent(**row) # self._funcCsvToEvent.convert(row, self._exchange, self._symbol)
+            # if ev:
+            #     evdMH = self._testAndGenerateMarketHourEvent(ev)
+            #     if  self._merger1minTo5min :
+            #         self._merger1minTo5min.pushKLineEvent(ev)
+
+            #     if evdMH :
+            #         if self._dtEndOfDay and self._dtEndOfDay < evdMH.asof :
+            #             if  self._merger1minTo5min :
+            #                 self._merger1minTo5min.flush()
+            #             if  self._merger5minTo1Day :
+            #                 self._merger5minTo1Day.flush()
+            #             self._dtEndOfDay = None
+
+            #         if not self._dtEndOfDay :
+            #             self._dtEndOfDay = evdMH.asof.replace(hour=23,minute=59,second=59)
+
+            #     # because the generated is always as of the previous event, so always deliver those pendings in queue first
+            #     if self.pendingSize >0 :
+            #         evout = self.popPending()
+            #         self.enquePending(ev)
+            #         return evout
+
+        except Exception as ex:
+            self.logexception(ex)
+
+        return ev
+
+#----------------------------------------------------------------------
 class CsvPlayback(Playback):
     DIGITS=set('0123456789')
 
@@ -585,7 +701,7 @@ class CsvPlayback(Playback):
         self._fields = fields
 
         self.__csvfiles =[]
-        self.__csvToKL1m = KLineData.hatch # DictToKLine(self._category, symbol)
+        self._funcCsvToEvent = KLineData.hatch # DictToKLine(self._category, symbol)
 
         self._merger1minTo5min = None
         self._merger5minTo1Day = None
@@ -610,8 +726,48 @@ class CsvPlayback(Playback):
         # klinedata.datetime = klinedata.datetime.replace(hour=23, minute=59, second=59)
         ev.setData(klinedata)
         self.enquePending(ev)
+        if self._merger1DayTo1Week :
+            self._merger1DayTo1Week.pushKLine1d(klinedata)
+
+    def _cbMergedKLine1Week(self, klinedata):
+        if not klinedata: return
+        ev = Event(EVENT_KLINE_1WEEK)
+        # klinedata.datetime = klinedata.datetime.replace(hour=23, minute=59, second=59)
+        ev.setData(klinedata)
+        self.enquePending(ev)
 
     # -- Impl of Playback --------------------------------------------------------------
+    def openFileStream(self):
+        while not self.__reader:
+            if not self.__csvfiles or len(self.__csvfiles) <=0:
+                self._iterableEnd = True
+                return None
+
+            fn = self.__csvfiles[0]
+            del(self.__csvfiles[0])
+
+            self.info('openning input file %s' % (fn))
+            extname = fn.split('.')[-1]
+            streamIn = None
+            if extname == 'bz2':
+                streamIn = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
+            else:
+                streamIn = open(fn, 'rt')
+
+            if not streamIn:
+                self.warn('failed to open input file %s' % (fn))
+                break
+
+            dtStart, dtEnd = self.datetimeRange
+            self.__reader = CsvStream(self._symbol, streamIn, self._fieldnames, evtype =self._category, startDate =dtStart, endDate=dtEnd, program=self.program)
+
+            # self.__reader = csv.DictReader(streamIn, self._fieldnames, lineterminator='\n') if 'csv' in fn else streamIn
+            # if not self.__reader:
+            #     self.warn('failed to open input file %s' % (fn))
+            #     break
+        
+        return self.__reader
+
     def resetRead(self):
         super(CsvPlayback, self).resetRead()
 
@@ -619,10 +775,11 @@ class CsvPlayback(Playback):
         self.__reader =None
         self._merger1minTo5min = KlineToXminMerger(self._cbMergedKLine5min, xmin=5)
         self._merger5minTo1Day = KlineToXminMerger(self._cbMergedKLine1Day, xmin=60*24-10)
+        self._merger1DayTo1Week = Kline1dTo1Week(self._cbMergedKLine1Week)
         self._dtEndOfDay = None
 
         # filter the csv files
-        self.debug('search dir %s for csv files' % self._folder)
+        self.debug('searching dir %s for csv files' % self._folder)
         prev = ""
         files = listAllFiles(self._folder)
         files = [os.path.realpath(fn) for fn in files]
@@ -663,28 +820,6 @@ class CsvPlayback(Playback):
         self.info('associated file list: %s' % self.__csvfiles)
         return len(self.__csvfiles) >0
 
-    def openReader(self):
-        while not self.__reader:
-            if not self.__csvfiles or len(self.__csvfiles) <=0:
-                self._iterableEnd = True
-                return None
-
-            fn = self.__csvfiles[0]
-            del(self.__csvfiles[0])
-
-            self.info('openning input file %s' % (fn))
-            extname = fn.split('.')[-1]
-            if extname == 'bz2':
-                self._streamIn = bz2.open(fn, mode='rt') # bz2.BZ2File(fn, 'rb')
-            else:
-                self._streamIn = open(fn, 'rt')
-
-            self.__reader = csv.DictReader(self._streamIn, self._fieldnames, lineterminator='\n') if 'csv' in fn else self._streamIn
-            if not self.__reader:
-                self.warn('failed to open input file %s' % (fn))
-        
-        return self.__reader
-
     def readNext(self):
         '''
         @return True if busy at this step
@@ -695,56 +830,49 @@ class CsvPlayback(Playback):
         except Exception:
             pass
 
-        row = None
-        while not row:
-            self.openReader()
+        ev = None
+        while not ev:
+            self.openFileStream()
 
             if not self.__reader:
                 self._iterableEnd = True
                 return None
 
-            # if not self._fieldnames or len(self._fieldnames) <=0:
-            #     self._fieldnames = self.__reader.headers()
-
             try :
-                row = next(self.__reader, None)
+                ev = next(self.__reader, None)
             except Exception as ex:
-                row = None
+                ev = None
 
-            if not row:
+            if not ev:
                 # self.error(traceback.format_exc())
+                if self.__reader :
+                    try:
+                        self.__reader.close()
+                    except AttributeError: pass
                 self.__reader = None
-                self._streamIn.close()
 
-        ev = None
         try :
-            if row and self.__csvToKL1m:
-                # print('line: %s' % (line))
-                row = {'evType': EVENT_KLINE_1MIN,
-                        'exchange': self._exchange, 'symbol':self._symbol,
-                       **row }
-                ev = self.__csvToKL1m(**row) # self.__csvToKL1m.convert(row, self._exchange, self._symbol)
-                if ev:
-                    evdMH = self._testAndGenerateMarketHourEvent(ev)
-                    if  self._merger1minTo5min :
-                        self._merger1minTo5min.pushKLineEvent(ev)
+            if ev:
+                evdMH = self._testAndGenerateMarketHourEvent(ev)
+                if  self._merger1minTo5min :
+                    self._merger1minTo5min.pushKLineEvent(ev)
 
-                    if evdMH :
-                        if self._dtEndOfDay and self._dtEndOfDay < evdMH.asof :
-                            if  self._merger1minTo5min :
-                                self._merger1minTo5min.flush()
-                            if  self._merger5minTo1Day :
-                                self._merger5minTo1Day.flush()
-                            self._dtEndOfDay = None
+                if evdMH :
+                    if self._dtEndOfDay and self._dtEndOfDay < evdMH.asof :
+                        if  self._merger1minTo5min :
+                            self._merger1minTo5min.flush()
+                        if  self._merger5minTo1Day :
+                            self._merger5minTo1Day.flush()
+                        self._dtEndOfDay = None
 
-                        if not self._dtEndOfDay :
-                            self._dtEndOfDay = evdMH.asof.replace(hour=23,minute=59,second=59)
+                    if not self._dtEndOfDay :
+                        self._dtEndOfDay = evdMH.asof.replace(hour=23,minute=59,second=59)
 
-                    # because the generated is always as of the previous event, so always deliver those pendings in queue first
-                    if self.pendingSize >0 :
-                        evout = self.popPending()
-                        self.enquePending(ev)
-                        return evout
+                # because the generated is always as of the previous event, so always deliver those pendings in queue first
+                if self.pendingSize >0 :
+                    evout = self.popPending()
+                    self.enquePending(ev)
+                    return evout
 
         except Exception as ex:
             self.logexception(ex)
@@ -1073,6 +1201,11 @@ class PlaybackMux(Playback):
     
     @property
     def size(self): return len(self.__dictStrmPB)
+
+    @property
+    def subStreamIds(self): 
+        return [ k.id for k in self.__dictStrmPB.keys() ]
+
 
     # -- Impl of Playback --------------------------------------------------------------
     def resetRead(self):
@@ -1425,4 +1558,119 @@ class Zipper(BaseApplication):
     def _push(self, filename) :
         self._queue.put(filename)
 
+def classifyGainRates_level6(gain_rates, interestDays=[0,1,2,4]) : # [0,1,2,4] to measure day0,day1,day2,day4 within a week, interestDays=[0,1,2,-1]) :
+    '''
+    @param gain_rates: a 2d metrix: [[gr_day0, gr_day1, gr_day2 ... gr_dayN], ...]
+    @return np.array of gain-classes
+    '''
+    gainRates = np.array(gain_rates).astype(SAMPLE_FLOAT) #  'gain_rates' is a list here
+    days = gainRates.shape[1]
+    daysOfcol2 =2 # = days-1
+    gainRates = gainRates[:, interestDays] # = gainRates[0,1, daysOfcol2]] # we only interest day0, day1 and dayN
+    # dailize the gain rate, by skipping day0 and day1
+    for i in range(len(interestDays)):
+        if interestDays[i] < 0: interestDays[i] += days # covert last(-1) to real index
+        if interestDays[i] > 1:
+            gainRates[:, i] = gainRates[:, i] /daysOfcol2
+    
+    # # scaling the gain rate to fit in [0,1) : 0 maps -2%, 1 maps +8%
+    # SCALE, OFFSET =10, 0.02
+    # gainRates = (gainRates + OFFSET) *SCALE
+    # gainRates.clip(0.0, 1.0)``
 
+    LC = [-1000, -2.0, 0.5, 1.0, 3.0, 5.0, 100 ] # by %, -1000 means -INF, +1000= +INF
+    gainClasses = np.zeros(shape=(gainRates.shape[0], (len(LC) -1) *len(interestDays))).astype(CLASSIFY_INT) # 3classes for day0: <1%, 1~5%, >5%
+    for i in range(len(LC) -1):
+        for j in range(len(interestDays)):
+            d = interestDays[j]
+            C = np.where((gainRates[:, j] > LC[i]/100.0) & (gainRates[:, j] <= LC[i+1]/100.0))
+            gainClasses[C, j*(len(LC)-1) +i] =1
+
+    return gainClasses
+
+def classifyGainRates_screeningTplus1(gain_rates) : # just for screening after day-close
+    '''
+    @param gain_rates: a 2d metrix: [[gr_day0, gr_day1, gr_day2 ... gr_dayN], ...]
+    @return np.array of gain-classes
+    '''
+    gainRates = np.array(gain_rates).astype(SAMPLE_FLOAT) #  'gain_rates' is a list here
+    days = gainRates.shape[1]
+    gainRates = gainRates[:, [0, 1, 2]] # we only interest day0, day1 and day2
+
+    gainClasses = np.zeros(shape=(gainRates.shape[0], 8)).astype(CLASSIFY_INT) # reserved for 8 classes/attrs
+    
+    # attr-0~2: no profit cases that should eliminate or sell positions
+    # attr-0. day1 gr<=-0.05%
+    C = np.where(gainRates[:, 1] <= -0.005)
+    gainClasses[C, 0] =1
+    # attr-1. day2 <day1
+    C = np.where(gainRates[:, 2] < gainRates[:, 1])
+    gainClasses[C, 1] =1
+    # attr-2. day2 <=1%
+    C = np.where(gainRates[:, 2] <= 0.01)
+    gainClasses[C, 2] =1
+
+    # # class-3~6: maybe good to buy tomorrow
+    # # class-3: 1% < day2 <=3% 
+    # C = np.where((gainRates[:, 2] > 0.01) & (gainRates[:, 2] <=0.03))
+    # gainClasses[C, 3] =1
+    # # class-4. 3%< day2 <=5%
+    # C = np.where((gainRates[:, 2] > 0.03) & (gainRates[:, 2] <=0.05))
+    # gainClasses[C, 4] =1
+    # # class-5. 5%< day2 <=8%
+    # C = np.where((gainRates[:, 2] > 0.05) & (gainRates[:, 2] <=0.08))
+    # gainClasses[C, 5] =1
+    # # class-6. day2 >8%
+    # C = np.where(gainRates[:, 2] > 0.08)
+    # gainClasses[C, 6] =1
+    
+    # version2, simplized
+    C = np.where((gainRates[:, 1] > 0.01) & (gainRates[:, 1] <=0.03))
+    gainClasses[C, 3] =1
+    C = np.where((gainRates[:, 1] > 0.03))
+    gainClasses[C, 4] =1
+    C = np.where((gainRates[:, 2] > 0.02) & (gainRates[:, 2] <=0.05))
+    gainClasses[C, 5] =1
+    C = np.where(gainRates[:, 2] > 0.05)
+    gainClasses[C, 6] =1
+
+    # attr-7: optional about today for in-day-trade
+    C = np.where((gainRates[:, 0] >=0.01) & ((gainRates[:, 0] + gainRates[:, 1]) >0.03))
+    gainClasses[C, 7] =1
+
+    return gainClasses
+
+########################################################################
+def balanceSamples(frameDict, nameSample, nameClassifyBy, maxOverMin =-1.0):
+    '''
+        balance the samples, usually reduce some action=HOLD, which appears too many
+    '''
+    chunk_Classes = np.array(frameDict[nameClassifyBy])
+
+    AD = np.where(chunk_Classes >=0.99) # to match 1 because action is float read from RFrames
+    kI = [np.count_nonzero(AD[1] ==i) for i in range(chunk_Classes.shape[1])] # counts of each actions in frame
+    idxToDel = []
+    if maxOverMin >0.0:
+        kImax = int(min(kI) *(1 + maxOverMin))
+        for i in range(len(kI)):
+            cToReduce = kI[i] -kImax
+            if cToReduce <=0: continue
+            
+            idxItems = np.where(AD[1] ==i)[0].tolist()
+            random.shuffle(idxItems)
+            del idxItems[cToReduce:]
+            idxToDel += [int(x) for x in idxItems] 
+    else:
+        kImax = max(kI)
+        idxMax = kI.index(kImax)
+        cToReduce = kImax - int(1.6*(sum(kI) -kImax))
+        if cToReduce >0:
+            idxItems = np.where(AD[1] ==idxMax)[0].tolist()
+            random.shuffle(idxItems)
+            del idxItems[cToReduce:]
+            idxToDel = [int(i) for i in idxItems]
+
+    if len(idxToDel) >0:
+        frameDict[nameClassifyBy] = np.delete(frameDict[nameClassifyBy], idxToDel, axis=0)
+        frameDict[nameSample] = np.delete(frameDict[nameSample], idxToDel, axis=0)
+    return len(frameDict[nameClassifyBy])

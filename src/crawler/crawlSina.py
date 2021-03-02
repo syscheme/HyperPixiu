@@ -680,7 +680,7 @@ class SinaCrawler(MarketCrawler):
         return httperr, tickseq
 
     #------------------------------------------------    
-    def convertToMoneyFlow(symbol, text, byMinutes=False):
+    def convertToMoneyFlow(symbol, text, byMinutes=False, maxEvents=260):
         '''
         will call cortResp.send(csvline) when the result comes
         ({r0_in:"0.0000",r0_out:"0.0000",r0:"0.0000",r1_in:"3851639.0000",r1_out:"4794409.0000",r1:"9333936.0000",r2_in:"8667212.0000",r2_out:"10001938.0000",r2:"18924494.0000",r3_in:"7037186.0000",r3_out:"7239931.2400",r3:"15039741.2400",curr_capital:"9098",name:"朗科智能",trade:"24.4200",changeratio:"0.000819672",volume:"1783866.0000",turnover:"196.083",r0x_ratio:"0",netamount:"-2480241.2400"})
@@ -692,7 +692,7 @@ class SinaCrawler(MarketCrawler):
                 {opendate:"2020-03-20",ticktime:"14:58:00",trade:"3.5200",changeratio:"0.017341",inamount:"173952934.3200",outamount:"144059186.4000",netamount:"29893747.9200",ratioamount:"0.093927",r0_ratio:"0.0858422",r3_ratio:"0.011817"},
         DAILY: http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?daima=SH601988
               [{opendate:"2020-03-20",trade:"3.5000",changeratio:"0.0115607",turnover:"4.84651",netamount:"29893747.9200",ratioamount:"0.0839833",r0_net:"27320619.5800",r0_ratio:"0.07675441",r0x_ratio:"81.4345",cnt_r0x_ratio:"1",cate_ra:"0.103445",cate_na:"1648659621.3400"},
-              trade收盘价3.50,changeratio涨跌幅+1.156%,turnover换手率0.0485%,netamount净流入/万2989.37,ratioamount净流入率8.40%,r0_net主力净流入/万2732.06,r0_ratio主力净流入率7.68%,r0x_ratio主力罗盘81.43°,cate_ra行业净流入率10.34%
+              trade收盘价3.50,changeratio涨跌幅+1.156%,turnover换手率0.0485%,netamount净流入/万2989.37,ratioamount净流入率8.40%,r0_net主力净流入/万2732.06,r0_ratio主力净流入率7.68%,r0x_ratio主力罗盘81.43°,cnt_r0x_ratio同方向r0的连续天数,cate_ra行业净流入率10.34%
               {opendate:"2020-03-19",trade:"3.4600",changeratio:"-0.0114286",turnover:"5.71814",netamount:"-6206568.4600",ratioamount:"-0.0148799",r0_net:"-21194529.9100",r0_ratio:"-0.05081268",r0x_ratio:"-102.676",cnt_r0x_ratio:"-2",cate_ra:"-0.0122277",cate_na:"-253623190.4100"},
         '''
 
@@ -703,7 +703,7 @@ class SinaCrawler(MarketCrawler):
                 return mfseq
             text = text[pbeg:pend] + '}]'
 
-        if len(text)>80*1024: # maximal 80KB is enough to cover 1Yr
+        if maxEvents >0 and len(text)>80*1024: # maximal 80KB is enough to cover 1Yr
             # EOM = text[text.find('}'):]
             text = text[:80*1024]
             pend = text.rfind('},{')
@@ -722,10 +722,11 @@ class SinaCrawler(MarketCrawler):
             mfdata.ratioNet     = toFloatVal(mf['ratioamount'])
             mfdata.ratioR0      = toFloatVal(mf['r0_ratio'])
             mfdata.ratioR3cate  = toFloatVal(mf['r3_ratio']) if byMinutes else toFloatVal(mf['cate_ra'])
+            # TODO: turnover in MF1d is more worthy than cate_ra mfdata.ratioR3cate  = toFloatVal(mf['r3_ratio']) if byMinutes else toFloatVal(mf['turnover'])  
             mfdata.datetime     = datetime.strptime(mf['opendate'], '%Y-%m-%d').replace(hour=15, minute=0, second=0, microsecond=0)
             if byMinutes:
                 mfdata.datetime = datetime.strptime(mf['opendate'] + ' ' + mf['ticktime'], '%Y-%m-%d %H:%M:%S')
-            elif len(mfseq) >260 :
+            elif maxEvents >0 and len(mfseq) >maxEvents :
                 break
             mfdata.date = mfdata.datetime.strftime('%Y-%m-%d')
             mfdata.time = mfdata.datetime.strftime('%H:%M:%S')

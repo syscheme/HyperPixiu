@@ -1,0 +1,74 @@
+// configuration of a DQNTrainer
+{
+    "logger": {
+        "level": "info", //40
+        // "console": "False",
+    },
+
+    "train": {
+        // "startModel": "/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50.h5", // for 3 actions
+        // "startModel": "/mnt/e/AShareSample/state18x32x8Y4F518x2To3action.resnet50.h5", // for 3 actions
+        "startModel": "/mnt/e/AShareSample/state18x32x8Y4F518x2To8gr8attr.resnet50.h5", // for 3 actions
+        "baseModel": "sliced2d",
+        // "trainableLayers": ["state18x32x8Y4F518x2f*", "state18x32x8Y4F518x2C88*"], // trainable layers, '*' means all, i.e. ['F88.Dense*', 'VClz66from512.2of2']
+        "samples": [ // or "sampleFiles": [...],
+            // { 
+            //     // "path":"/mnt/e/AShareSample/RFrm2dImg32x18C4/ETF2013-2020",
+            //     "path":"/mnt/e/AShareSample/RFrm2dImg32x18C8",
+            //     "lastFrames": -1, // -1 means all frames in each RFrame h5 files
+            // },
+
+            {
+                "path":"/mnt/h/RFrm2dImg32x18C8/origin_h5",
+                // "path":"/mnt/h/RFrm2dImg32x18C8/RFrm2dImg32x18_batch01_C8bal20200223.h5b",
+                "lastFrames": -1, 
+            },
+
+            // { 
+            //     "path":"/mnt/e/AShareSample/RFrm2dImg32x18C4/topAct500.2013-2019",
+            //     "lastFrames": 20, // -1 means all frames in each RFrame h5 files
+            // },
+        ],
+        "preBalanced": "false", // "false",
+        "gamma": 0.01,
+
+        "CPU": {
+            "batchSize": 20,
+            "batchesPerTrain": 32,
+            "recycles": 1,
+            "initEpochs": 8,
+            "startLR": 0.02, // start learningRate
+            // "lossDiffStop": 5, // loss reduce 5% difference to quit current epoch
+            "lossStop": 0.3, // "lossStop": 0.1, --- loss value less than 0.1 to quit current epoch
+        },
+        
+        "GPU": {
+            "batchSize": 128,
+            "batchesPerTrain": 64, // 512x64 for GTX1050/2G, 512x128 for GTX1060/4G
+            "recycles": 2, // takes system memory instead of VRAM
+            "initEpochs": 12, // 8 when the model is not well trained, 4 when trained and try to cover larger dataset
+            "startLR": 0.01,
+
+            "models": [
+                { 
+                    "model":"GTX 1650",
+                    "batchSize": 50, // float32 can reach 100x64, float16 can reach 1000x64 for state18x32x4Y4F518x1To3action.resnet50.h5
+                    "batchesPerTrain": 64,
+                },
+
+                { 
+                    "model":"RTX 2080",
+                    "batchSize": 3200, // 3200 good for state18x32x4Y4F518x1To3action.resnet50.h5
+                    "batchesPerTrain": 64,
+                    "initEpochs": 6,
+                },
+
+                { 
+                    "model":"GTX 1080 Ti",
+                    "batchSize": 2000, // for state18x32x4Y4F518x2To3action.resnet50.h5, 2200+ failed
+                    "batchesPerTrain": 64,
+                },
+            ]
+        },
+    },
+}

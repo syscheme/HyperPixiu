@@ -1,20 +1,20 @@
 #!/bin/bash
-
-SECU_LIST=$(grep -o '^S[HZ][0-9]*' ~/deploy-data/hpdata/advisor_objs.txt |sort|uniq)
-TOPDIR_HP=~/wkspaces/HyperPixiu
-STAMP=$(date +%Y%m%dT%H%M%S)
-
 # sample of crontab
-# # the following take taskAdvisor to do zipping only at Sat morning, see ["Sat" == "$DOW"]
-# 6   5        * *  6         /sbin/reboot
 # @reboot ~/tasks/taskAdvisor.sh 2>&1 >> /tmp/taskAdvisor.log & 
-#
-# # the following are regular run
 # 50  6-15/2   * *  1-5   ~/tasks/taskAdvisor.sh 2>&1 > /tmp/taskAdvisor.log &
 # 0   16       * *  1-5   ps aux|grep 'advisor.py'| awk '{print $2;}' |xargs kill
+
+if [ -e ~/hpx_conf/hpx_settings.sh ]; then source ~/hpx_conf/hpx_settings.sh; fi
+
+if [ -z "${CONF_DIR}" ]; then CONF_DIR="$(realpath ~/hpx_conf)"; fi
+if [ -z "${TOPDIR_HP}" ]; then TOPDIR_HP="$(realpath ~/wkspaces/HyperPixiu)" ; fi
+
+CONF=$(realpath ${CONF_DIR}/Advisor.json)
+SECU_LIST="$(grep -o '^S[HZ][0-9]*' ${CONF_DIR}/advisor_objs.txt |sort|uniq)"
+STAMP=$(date +%Y%m%dT%H%M%S)
+
 cd ${TOPDIR_HP}
 OUTDIR=./out/advisor
-CONF=$(realpath ~/deploy-data/hpdata/Advisor.json)
 
 PID=$(ps aux|grep 'advisor.py'|grep ${CONF} | grep -v 'run.sh' |awk '{print $2;}' )
 if ! [ -z ${PID} ]; then

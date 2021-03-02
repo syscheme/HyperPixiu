@@ -15,27 +15,44 @@ MARKETDATE_EVENT_PREFIX = EVENT_NAME_PREFIX + 'md'
 EXPORT_FLOATS_DIMS = 4 # take the minimal dim=4
 PRICE_DISPLAY_ROUND_DECIMALS = 3 
 
-BASE_LOG10x2 = math.log(10) *2
+BASE_LOG8x2 = math.log(8) *2
+BASE_LOG_PRICEx2 = math.log(2) *2
+BASE_LOG5x2 = math.log(5) *2
 
 def chopMarketEVStr(eventType):
     return eventType[len(MARKETDATE_EVENT_PREFIX):]
 
-def floatNormalize(v):
-    if v <0: return 0.0
-    return v if v<1.0 else 1.0
+def floatNormalize01(v, enlargeMiddle =True): # to normalize float in range [0, 1]
+    if enlargeMiddle:
+        if v > 0.5005   : v += 0.05
+        elif v < 0.4995 : v -= 0.05
 
-def floatNormalize_LOG10(v, base=1.0, scale=1.0):
+    if v <0: return 0.0
+    return v if v < 1.0 else 1.0
+
+def floatNormalize_LOG8(v, base=1.0, scale=1.0):
     v = float(v/base)
-    if v < 0.0001 : return 0.0
-    v = math.log(v) / BASE_LOG10x2 *scale +0.5 # 0.1x lead to 0 and 10x lead to 1
-    return floatNormalize(v)
+    if v < 0.001 : return 0.0
+    v = math.log(v) / BASE_LOG8x2 *scale +0.5 # 0.1x lead to 0 and 10x lead to 1
+    return floatNormalize01(v)
+
+def floatNormalize_LOG_PRICE(v, base=1.0, scale=1.0):
+    v = float(v/base)
+    v = math.log(v) / BASE_LOG_PRICEx2 *scale +0.5 # 0.63x lead to 0 and 1.6x lead to 1
+    return floatNormalize01(v)
+
+def floatNormalize_LOG5(v, base=1.0, scale=1.0):
+    v = float(v/base)
+    if v < 0.001 : return 0.0
+    v = math.log(v) / BASE_LOG5x2 *scale +0.5 # 0.2x lead to 0 and 5x lead to 1
+    return floatNormalize01(v)
 
 def floatNormalize_PriceChange(newPrice, basePrice=1.0):
     v = float(newPrice/basePrice)
     (v -1) *5.0 + 0.5 # -20% leads to 0, and +20% leads to 1
 
 def floatNormalize_VolumeChange(newVolume, baseVolume=1.0):
-    return floatNormalize_LOG10(newVolume, baseVolume)
+    return floatNormalize_LOG8(newVolume, baseVolume)
 
 def floatNormalize_M1X5(var, base=1.0):
     return (float(var/base) -1) *5.0 + 0.5
@@ -56,6 +73,7 @@ EVENT_KLINE_30MIN   = EVENT_KLINE_PREFIX      + '30m'
 EVENT_KLINE_1HOUR   = EVENT_KLINE_PREFIX      + '1h'
 EVENT_KLINE_4HOUR   = EVENT_KLINE_PREFIX      + '4h'
 EVENT_KLINE_1DAY    = EVENT_KLINE_PREFIX      + '1d'
+EVENT_KLINE_1WEEK   = EVENT_KLINE_PREFIX      + '1w'
 
 EVENT_T2KLINE_1MIN  = MARKETDATE_EVENT_PREFIX + 'T2K1m'
 
@@ -65,6 +83,7 @@ EVENT_MONEYFLOW_PREFIX  = MARKETDATE_EVENT_PREFIX + 'MF'
 EVENT_MONEYFLOW_1MIN    = EVENT_MONEYFLOW_PREFIX + '1m'
 EVENT_MONEYFLOW_5MIN    = EVENT_MONEYFLOW_PREFIX + '5m'
 EVENT_MONEYFLOW_1DAY    = EVENT_MONEYFLOW_PREFIX + '1d'
+EVENT_MONEYFLOW_1WEEK   = EVENT_MONEYFLOW_PREFIX + '1w'
 
 ########################################################################
 class MarketData(EventData):
@@ -103,6 +122,7 @@ class MarketData(EventData):
                 
         return self.datetime
 
+    """
     @abstractmethod
     def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
@@ -116,6 +136,7 @@ class MarketData(EventData):
         @return float[] with dim = 6 for neural network computing
         '''
         raise NotImplementedError
+    """
 
     def dumps(self) :
         raise NotImplementedError
@@ -177,7 +198,7 @@ class TickData(MarketData):
         return lean
 
     @abstractmethod
-    def hatch(symbol, exchange=None, **kwargs) :
+    def hatch(symbol, evType =EVENT_TICK, exchange=None, **kwargs) :
         tk = TickData(exchange, symbol)
         # 成交数据
         tk.price, tk.volume = float(kwargs['price']), float(kwargs['volume'])
@@ -213,6 +234,7 @@ class TickData(MarketData):
         ev.setData(tk)
         return ev
 
+    """
     @abstractmethod
     def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
@@ -246,33 +268,7 @@ class TickData(MarketData):
             ret[6] = FUNC_floatNormalize(self.open, baseline_Price)
 
         return ret
-
-    @abstractmethod
-    def floatXC(self, baseline_Price=1.0, baseline_Volume =1.0, channels=6) :
-        '''
-        @return float[] for neural network computing
-        '''
-        if baseline_Price <=0: baseline_Price=1.0
-        if baseline_Volume <=0: baseline_Volume=1.0
-
-        #TODO： has the folllowing be normalized into [0.0, 1.0] ???
-        leanAsks = self.__calculateLean(X=[(x- self.price) \
-            for x in [self.a1P, self.a1P, self.a1P, self.a1P, self.a1P]],
-            Y=[self.a1V, self.a1V, self.a1V, self.a1V, self.a1V])
-
-        leanBids = self.__calculateLean(X=[(x- self.price) \
-            for x in [self.b1P, self.b1P, self.b1P, self.b1P, self.b1P] ],
-            Y=[self.b1V, self.b1V, self.b1V, self.b1V, self.b1V])
-
-        # the basic dims=6
-        ret = [
-            floatNormalize_LOG10(self.price, baseline_Price),
-            floatNormalize_LOG10(self.volume, baseline_Volume),
-            float(leanAsks), 
-            float(leanBids)]
-
-        channels = int(channels)
-        return ret[:channels] if len(ret) >= channels else ret +[0.0]* (channels -len(ret))
+    """
 
 ########################################################################
 class KLineData(MarketData):
@@ -347,6 +343,7 @@ class KLineData(MarketData):
         ev.setData(kl)
         return ev
 
+    """
     @abstractmethod
     def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
@@ -370,27 +367,7 @@ class KLineData(MarketData):
             ret[5] = FUNC_floatNormalize(self.openInterest, baseline_Price)
 
         return ret
-
-    @abstractmethod
-    def floatXC(self, baseline_Price=1.0, baseline_Volume =1.0, channels=6) :
-        '''
-        @return float[] with dim =6 for neural network computing
-        '''
-        if baseline_Price <=0: baseline_Price=1.0
-        if baseline_Volume <=0: baseline_Volume=1.0
-
-        # the 6-dims floats
-        ret = [
-            floatNormalize_LOG10(self.close, baseline_Price, 1.5),
-            floatNormalize(20*(self.high / self.close -1)),
-            floatNormalize(20*(self.close / self.low -1)),
-            floatNormalize_LOG10(self.volume, baseline_Volume, 1.5),
-            floatNormalize(20*(self.open / self.close -1) +0.5),
-            0.0
-        ]
-
-        channels = int(channels)
-        return ret[:channels] if len(ret) >= channels else ret +[0.0]* (channels -len(ret))
+    """
 
 ########################################################################
 class MoneyflowData(MarketData):
@@ -409,6 +386,7 @@ class MoneyflowData(MarketData):
         self.ratioNet    = EventData.EMPTY_FLOAT   # 净流入率
         self.ratioR0     = EventData.EMPTY_FLOAT   # 主力流入率
         self.ratioR3cate = EventData.EMPTY_FLOAT   # 散户流入率（分钟资金流时）或 行业净流入率（日资金流时）
+        #TODO self.ratioTurnover = EventData.EMPTY_FLOAT # 换手率，Sina只存在MF1d里
 
     @property
     def desc(self) :
@@ -440,32 +418,14 @@ class MoneyflowData(MarketData):
         ev.setData(md)
         return ev
 
-    def floatXC(self, baseline_Price=1.0, baseline_Volume =1.0, channels=6) :
-        '''
-        @return float[] for neural network computing
-        '''
-        if baseline_Price <=0: baseline_Price=1.0
-        if baseline_Volume <=0: baseline_Volume=1.0
-
-        # the floats, prioirty first
-        ret = [
-            floatNormalize_LOG10(baseline_Price*baseline_Volume, abs(self.netamount)), # priority-H1, TODO: indeed the ratio of turnover would be more worthy here. It supposed can be calculated from netamount, ratioNet and netMarketCap
-            floatNormalize(0.5 + self.ratioNet),                          # priority-H2
-            floatNormalize(0.5 + self.ratioR0),                          # priority-H3
-            floatNormalize(0.5 + self.ratioR3cate),                          # likely r3=ratioNet-ratioR0
-            floatNormalize_LOG10(self.price, baseline_Price), # optional because usually this has been presented via KLine/Ticks
-        ]
-        #TODO: other optional dims
-
-        channels = int(channels)
-        return ret[:channels] if len(ret) >= channels else ret +[0.0]* (channels -len(ret))
-
+    """
     @abstractmethod
     def float4C(self, baseline_Price=1.0, baseline_Volume =1.0) :
         '''
         @return float[] with dim =4 for neural network computing
         '''
         return self.floatXC(baseline_Price, baseline_Volume, 4)
+    """
 
 ########################################################################
 class TickToKLineMerger(object):
@@ -599,6 +559,66 @@ class KlineToXminMerger(object):
         return None
 
 ########################################################################
+class Kline1dTo1Week(object):
+    '''
+    K线合成器 KL1d to KL1w
+    '''
+
+    #----------------------------------------------------------------------
+    def __init__(self, onKLine1Week) :
+        '''Constructor'''
+        self._klineWk = None
+        self._klineIn = None        # 上一Input缓存对象
+        self._cbKL1Week = onKLine1Week  # 回调函数
+
+    #----------------------------------------------------------------------
+    def pushKLine1d(self, kline):
+        asofDay = kline.asof.replace(hour=23, minute=59, second=59)
+        if self._klineWk :
+            year, weekNo, wday = self._klineWk.datetime.isocalendar()
+            satday_end = (self._klineWk.datetime + timedelta(days = 6 - (wday +6) %7)).replace(hour=23,minute=59,second=59,microsecond=999999)
+            # satday_end = monday + timedelta(days = 7) - timedelta(microseconds=1) # 以sunday 0:00:00 作为K线的时间戳
+
+            if asofDay > satday_end :
+                self._klineWk.date = satday_end.strftime('%Y-%m-%d')
+                self._klineWk.time = satday_end.strftime('%H:%M:%S.%f')
+                return self._flush_week()
+
+        # 初始化新K线数据
+        if not self._klineWk:
+            # 创建新的K线对象
+            self._klineWk = KLineData(kline.exchange if '_k2x' in kline.exchange else kline.exchange + '_k2x', kline.symbol)
+            self._klineWk.open = kline.open
+            self._klineWk.high = kline.high
+            self._klineWk.low = kline.low
+            self._klineWk.datetime = asofDay
+            self._klineWk.date = self._klineWk.datetime.strftime('%Y-%m-%d')
+            self._klineWk.time = self._klineWk.datetime.strftime('%H:%M:%S')
+        else:                                   
+            # 累加更新老K线数据
+            self._klineWk.high = max(self._klineWk.high, kline.high)
+            self._klineWk.low = min(self._klineWk.low, kline.low)
+
+        # 通用部分
+        self._klineWk.close = kline.close        
+        self._klineWk.openInterest = kline.openInterest
+        self._klineWk.volume += int(kline.volume)                
+
+        # 清空老K线缓存对象
+        self._klineIn = kline
+        return None
+
+    def _flush_week(self):
+        klineOut = self._klineWk
+        if self._cbKL1Week :
+            self._cbKL1Week(klineOut)
+        
+        # 清空老K线缓存对象
+        self._klineWk = None
+        return klineOut
+
+
+########################################################################
 class DataToEvent(object):
 
     def __init__(self, sink):
@@ -718,23 +738,30 @@ class MarketState(MetaObj):
 
 
 ########################################################################
+NORMALIZED_FLOAT_UNAVAIL =0.0
+
 class Formatter(MetaObj):
     '''
     '''
-    def __init__(self):
+    def __init__(self, channels =6, valueUnavail =NORMALIZED_FLOAT_UNAVAIL):
         '''Constructor'''
         super(Formatter, self).__init__()
         self.__mstate = None
-        self._id = self.__class__.__name__
-        if 'Formatter_' == self._id[:10] :
-            self._id = self._id[10:]
+        self._channels = int(channels)
+        self._valueUnavail = valueUnavail
+
+        self.__id = self.__class__.__name__
+        if 'Formatter_' == self.__id[:10] :
+            self.__id = self.__id[10:]
+
+        # channels maybe adjusted in the child class, so leave the assembling at property id(), NO self.__id += 'C%d' % self._channels
     
     @property
     def mstate(self) : return self.__mstate
 
     @property
-    def id(self) : return self._id
-
+    def id(self) : return '%sC%d' % (self.__id, self._channels)
+    
     def attach(self, marketState):
         self.__mstate = marketState
 
@@ -756,5 +783,91 @@ class Formatter(MetaObj):
     @abstractmethod
     def doFormat(self, symbol=None) :
         raise NotImplementedError
+
+    def __md2floats_KLineEx(self, klineEx, baseline_Price, baseline_Volume) :
+        '''
+        @return float[] for neural network computing
+        '''
+        # the floats, prioirty first, recommented to be multiple of 4
+        return [
+            # 1st-4
+            floatNormalize_LOG8(klineEx.close, baseline_Price),
+            floatNormalize_LOG8(klineEx.volume, baseline_Volume),
+            floatNormalize_LOG8(klineEx.high, baseline_Price),
+            floatNormalize_LOG8(klineEx.low, baseline_Price),
+            # 2nd-4
+            floatNormalize01(0.5 + klineEx.ratioNet),                         # priority-H2
+            floatNormalize01(0.5 + klineEx.ratioR0),                          # priority-H3
+            floatNormalize01(0.5 + klineEx.ratioR3cate),                      # likely r3=ratioNet-ratioR0
+            floatNormalize_LOG8(klineEx.open, baseline_Price),
+        ]
+        #TODO: other optional dims
+
+    def __md2floats_KLineData(self, kline, baseline_Price, baseline_Volume) :
+        '''
+        @return float[] with dim =6 for neural network computing
+        '''
+        return [
+            floatNormalize_LOG8(self.close, baseline_Price, 1.5),
+            floatNormalize01(20*(self.high / self.close -1)),
+            floatNormalize01(20*(self.close / self.low -1)),
+            floatNormalize_LOG8(self.volume, baseline_Volume, 1.5),
+            floatNormalize01(20*(self.open / self.close -1) +0.5),
+            0.0
+        ]
+
+    def __md2floats_TcikData(self, tickData, baseline_Price, baseline_Volume) :
+        '''
+        @return float[] for neural network computing
+        '''
+        #TODO： has the folllowing be normalized into [0.0, 1.0] ???
+        leanAsks = self.__calculateLean(X=[(x- self.price) \
+            for x in [self.a1P, self.a1P, self.a1P, self.a1P, self.a1P]],
+            Y=[self.a1V, self.a1V, self.a1V, self.a1V, self.a1V])
+
+        leanBids = self.__calculateLean(X=[(x- self.price) \
+            for x in [self.b1P, self.b1P, self.b1P, self.b1P, self.b1P] ],
+            Y=[self.b1V, self.b1V, self.b1V, self.b1V, self.b1V])
+
+        return [
+            floatNormalize_LOG8(self.price, baseline_Price),
+            floatNormalize_LOG8(self.volume, baseline_Volume),
+            float(leanAsks), 
+            float(leanBids)
+            ]
+
+    def __md2floats_MoneyflowData(self, mfdata, baseline_Price, baseline_Volume) :
+        '''
+        @return float[] for neural network computing
+        '''
+        # the floats, prioirty first
+        return [
+            floatNormalize_LOG8(baseline_Price*baseline_Volume, abs(mfdata.netamount)), # priority-H1, TODO: indeed the ratio of turnover would be more worthy here. It supposed can be calculated from netamount, ratioNet and netMarketCap
+            floatNormalize01(0.5 + mfdata.ratioNet),                          # priority-H2
+            floatNormalize01(0.5 + mfdata.ratioR0),                          # priority-H3
+            floatNormalize01(0.5 + mfdata.ratioR3cate),                          # likely r3=ratioNet-ratioR0
+            floatNormalize_LOG8(mfdata.price, baseline_Price), # optional because usually this has been presented via KLine/Ticks
+        ]
+
+    def _complementChannels(self, data) :
+        if not data or not isinstance(data, list):
+            return [self._valueUnavail] * self._channels
+        
+        return data[ :self._channels] if len(data) >= self._channels else data +[ self._valueUnavail ]* (self._channels -len(data))
+    
+    def marketDataTofloatXC(self, marketData, baseline_Price=1.0, baseline_Volume =1.0, valueUnavail = NORMALIZED_FLOAT_UNAVAIL) :
+        data = None
+
+        if baseline_Price <=0: baseline_Price=1.0
+        if baseline_Volume <=0: baseline_Volume=1.0
+
+        if isinstance(marketData, KLineData): 
+            data = self.__md2floats_KLineData(marketData, baseline_Price, baseline_Volume)
+        elif isinstance(marketData, TickData): 
+            data = self.__md2floats_TcikData(marketData, baseline_Price, baseline_Volume)
+        elif isinstance(marketData, MoneyflowData): 
+            data = self.__md2floats_MoneyflowData(marketData, baseline_Price, baseline_Volume)
+
+        return self._complementChannels(data)
 
 

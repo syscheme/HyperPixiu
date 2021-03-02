@@ -15,7 +15,8 @@
 
     "remoteEvents": {
         "redis": {
-            "host" : "mq.syscheme.com", // "172.16.20.170", 
+            "url" : "redis://:hpxwkr@mq.syscheme.com:15379",
+            // "host" : "mq.syscheme.com", // "172.16.20.170", 
             "outgoing": [], // ["evmdKL1m"], // advisor minimally delivers ["evTAdv", "evmdTickAdv"], list here if you have more
             "incoming": [], // ""
         },

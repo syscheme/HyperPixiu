@@ -1,9 +1,13 @@
 #!/bin/bash
 
-MODEL="Cnn1Dx4R2.S1548I4A3"
+# MODEL="Cnn1Dx4R2.S1548I4A3"
+MODEL="state18x32x4Y4F518x1To3action.resnet50"
 # TRAINERS="111.44.254.183:48642:ResNet2Xd1.S1548I4A3 111.44.254.183:48642:${MODEL=}"
 
-TRAINERS="111.44.254.183:48642:ResNet21.S1548I4A3"
+TRAINERS="111.44.254.171:46304:${MODEL}"
+
+if [ -e ~/hpx_conf/hpx_settings.sh ]; then source ~/hpx_conf/hpx_settings.sh; fi
+if [ -z "${PUBLISH_DIR}" ]; then PUBLISH_DIR="/mnt/w/trainers" ; fi
 
 STAMP=$(date +%m%d%H%M%S)
 for i in ${TRAINERS} ; do
@@ -25,7 +29,7 @@ for i in ${TRAINERS} ; do
     fi
 
     echo "collecting from ${IP}:${PORT}"
-    DESTDIR="/Trainers/${IP}_${PORT}"
+    DESTDIR="${PUBLISH_DIR}/${IP}_${PORT}"
     mkdir -p ${DESTDIR}
     ls -lh ${DESTDIR} ;
 

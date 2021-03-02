@@ -11,7 +11,7 @@ from   crawler.crawlSina import *
 
 import sys, os, platform
 RFGROUP_PREFIX = 'ReplayFrame:'
-OUTFRM_SIZE = 8*1024
+
 import random
 
 if __name__ == '__main__':

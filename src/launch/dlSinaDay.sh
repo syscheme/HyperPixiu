@@ -1,11 +1,17 @@
 #!/bin/bash
+
+if [ -e ~/hpx_conf/hpx_settings.sh ]; then source ~/hpx_conf/hpx_settings.sh; fi
+
+if [ -z "${CONF_DIR}" ]; then CONF_DIR="$(realpath ~/hpx_conf)"; fi
+if [ -z "${TOPDIR_HP}" ]; then TOPDIR_HP="$(realpath ~/wkspaces/HyperPixiu)" ; fi
+if [ -z "${PUBLISH_DIR}" ]; then PUBLISH_DIR="$(realpath ~/wkspace/hpx_publish)" ; fi
+
 source "./sina_funcs.sh"
 
-SYMBOLLIST=$(bzcat ${SRC_DIR}/symbols.txt.bz2|grep -o '^[Ss].[0-9]*' | tr '[:lower:]' '[:upper:]')
+SYMBOLLIST=$(bzcat ${CONF_DIR}/symbols.txt.bz2|grep -o '^[Ss].[0-9]*' | tr '[:lower:]' '[:upper:]')
 SYMBOLLIST="SZ002881 SH600996 SZ002230"
 
 SINA_TODAY=$(date +%Y%m%d)
-ARCH_DIR="$(realpath ~/hpdata)"
 DATALEN=300
 
 echo "$(date) $0 starts"
@@ -51,7 +57,7 @@ case ${CMD} in
         downloadList downloadKL5m
 
         cd ~/wkspaces/HyperPixiu
-        ./run.sh src/crawler/crawlSina.py |bzip2 -9 - > ${ARCH_DIR}/act500_${SINA_TODAY}.txt.bz2
+        ./run.sh src/crawler/crawlSina.py |bzip2 -9 - > ${PUBLISH_DIR}/act500_${SINA_TODAY}.txt.bz2
 		;;
 
 esac

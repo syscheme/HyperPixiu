@@ -42,6 +42,8 @@ import math
 # except ImportError:
 #     pass
 
+SAMPLES_PER_H5FRAME = 1024*2
+# SAMPLES_PER_H5FRAME = 50 # TEST-CODE
 RFGROUP_PREFIX = 'ReplayFrame:'
 RECCATE_ESPSUMMARY = 'EspSum'
 COLUMNS_ESPSUMMARY ='episodeNo,endBalance,openDays,startDate,endDate,totalDays,tradeDay_1st,tradeDay_last,profitDays,lossDays,maxDrawdown,maxDdPercent,' \
@@ -209,7 +211,7 @@ class BackTestApp(MetaTrader):
         
         # step 3.2 subscribe the market events
         self.subscribeEvents([EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY])
-        self.subscribeEvents([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_1DAY])
+        self.subscribeEvents([EVENT_MONEYFLOW_1MIN, EVENT_MONEYFLOW_5MIN, EVENT_MONEYFLOW_1DAY])
 
         self.resetEpisode()
         _quitEpisode = False
@@ -260,9 +262,10 @@ class BackTestApp(MetaTrader):
             self.info(line)
 
         strReport += '\n'
-        with codecs.open('%s/%s_summary.txt' %(self._initTrader.outdir, self.episodeId), "w","utf-8") as rptfile:
+        fnReport = '%s/%s_summary.txt' %(self._initTrader.outdir, self.episodeId)
+        with codecs.open(fnReport, "w","utf-8") as rptfile:
             rptfile.write(strReport)
-            self.info('doAppStep() episode[%s/%s] summary report generated' %(self.episodeId, self._episodes))
+            self.info('doAppStep() episode[%s/%s] summary report generated as %s' %(self.episodeId, self._episodes, fnReport))
 
         # prepare for the next episode
         self._episodeNo +=1
@@ -324,6 +327,13 @@ class BackTestApp(MetaTrader):
     # 数据回放结果计算相关
 
     def OnEpisodeDone(self, reachedEnd=True):
+
+        if self._account:
+            self._account.onDayClose()
+
+        if self._recorder : # to flush the pending line in the recorder if there are any
+            for i in range(20):
+                self._recorder.doAppStep()
 
         additionAttrs = {
             'openDays' : len(self._account.dailyResultDict),
@@ -1809,7 +1819,8 @@ class OfflineSimulator(BackTestApp):
 
         # get some additional reward when survived for one more day
         self._dataEnd_date = asOf
-        self._dataEnd_closeprice, _ = self.wkTrader.marketState.latestPrice(symbol)
+        latestPrice, _ = self.wkTrader.marketState.latestPrice(symbol)
+        if latestPrice >0.0: self._dataEnd_closeprice = latestPrice
 
         if not self._dataBegin_date:
             self._dataBegin_date = self._dataEnd_date
@@ -1894,10 +1905,12 @@ class IdealTrader_Tplus1(OfflineSimulator):
         self.__dtTomrrow = None
         self.__mdEventsTomrrow = [] # list of the datetime of open, high, low, close price occured 'tomorrow'
 
-        self.__sampleFrmSize  = 1024*8
+        self.__sampleFrmSize  = SAMPLES_PER_H5FRAME
         self.__sampleFrm = [None]  * self.__sampleFrmSize
         self.__sampleIdx, self.__frameNo = 0, 0
-        self.__lastestDir, self.__lastmstate, self.__samplingYield  = None, None, 0
+        self.__lastestDir, self.__lastFloatsState, self.__lastFStateAsOf = OrderData.DIRECTION_NONE, {}, None
+        self.__flushAtMinuteEnd = False
+        self.__momentsToSample = ['10:00:00', '11:00:00', '13:30:00', '14:30:00', '15:00:00']
 
     def doAppInit(self): # return True if succ
         if not super(IdealTrader_Tplus1, self).doAppInit() :
@@ -1907,7 +1920,13 @@ class IdealTrader_Tplus1(OfflineSimulator):
             self._recorder.registerCategory(EVENT_ADVICE, params= {'columns' : AdviceData.COLUMNS})
 
         self._tradeSymbol = self.wkTrader.objectives[0] # idealTrader only cover a single symbol from the objectives
+        self.__fmtr = Formatter_1d518() # Formatter_2dImg32x18() # ('/mnt/e/bmp/%s.' % self._tradeSymbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
+        if isinstance(self._wkHistData, hist.CsvPlayback) and self.__fmtr._channels >4:
+            self.warn('doAppInit() enforced formatter[%s] channels=4 from %s as the histData is CsvPlayback' % (self.__fmtr.id, self.__fmtr._channels))
+            self.__fmtr._channels =4
+        
         self._episodes =1 # idealTrader only run one loop
+        self.info('doAppInit() formatter[%s] for histdata %s[%s] %d episodes' % (self.__fmtr.id, type(self._wkHistData), self._wkHistData.id, self._episodes))
         return True
     
     # to replace OfflineSimulator's OnEvent with some TradeAdvisor logic and execute the advice as order directly
@@ -1922,7 +1941,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         tokens = (d.vtSymbol.split('.'))
         symbol = tokens[0]
         self.wkTrader._dtData = d.asof
-        
+
         # see if need to perform the next order pre-determined
         dirToExec = OrderData.DIRECTION_NONE
         action = [0] * len(ADVICE_DIRECTIONS)
@@ -1956,29 +1975,61 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 evAdv.setData(nextAdvice)
                 super(IdealTrader_Tplus1, self).OnEvent(evAdv) # to perform the real handling
 
-        action[ADVICE_DIRECTIONS.index(dirToExec)] =1
-        fmtr = Formatter_F1548() # = Formatter_2dImg16x32('/mnt/e/bmp/%s.' % symbol, dem=5)  = Formatter_2dImgSnail16() = Formatter_F1548()
-        self._mstate = self._marketState.format(fmtr, self._tradeSymbol) # self._mstate = self._marketState.exportF1548(self._tradeSymbol)
-
-        if not self._mstate: return
-
         # if bFullState:
-        orderDir = self.__lastestDir
-        if self.__samplingYield <=0 or dirToExec != self.__lastestDir :
-            self.__samplingYield = int (1.0/ self._samplingRate -1)
+        prevDir = self.__lastestDir # backup for logging
+        
+        # determine whether need to sampling
+        bHitMoment = True if self.__lastFStateAsOf and self.__lastFStateAsOf.strftime('%H:%M:%S') in self.__momentsToSample else False
+        bSamplingNeeded = (bHitMoment or dirToExec != self.__lastestDir or self.__flushAtMinuteEnd)
 
-            if dirToExec != self.__lastestDir and self.__lastmstate: # the (state, dir) piror to dir-change sounds important to save
-                self.__pushStateAction(self.__lastmstate, self.__lastestDir)
+        SAMPLING_EVERY={
+            OrderData.DIRECTION_NONE : 12, 
+            OrderData.DIRECTION_LONG : 3, 
+            OrderData.DIRECTION_SHORT : 8, 
+        }
 
-            self.__pushStateAction(self._mstate, action)
-            self.__lastestDir, self.__lastmstate = dirToExec, None
-        else :
-            self.__lastmstate, self.__samplingYield = self._mstate, self.__samplingYield -1
+        if not bSamplingNeeded and self.__lastestDir in SAMPLING_EVERY and SAMPLING_EVERY[self.__lastestDir] >1:
+            if 0 == (d.asof.minute %SAMPLING_EVERY[self.__lastestDir]):
+                bSamplingNeeded = True
+                if self.__lastFStateAsOf and not self.__flushAtMinuteEnd:
+                    self.__flushAtMinuteEnd = True
 
-        if orderDir != dirToExec:
-            self.info('OnEvent(%s) changedir %s->%s upon mstate: %s' % (ev.desc, orderDir, dirToExec, self._marketState.descOf(self._tradeSymbol)))
+        if bSamplingNeeded:
+            if self.__lastFStateAsOf and self.__lastFStateAsOf > d.asof:
+                return
+
+            fstates = self._marketState.format(self.__fmtr, self._tradeSymbol) # floatsState = self._marketState.exportF1548(self._tradeSymbol)
+            if not fstates: return
+
+            bMinuteChanged = True if self.__lastFStateAsOf and self.__lastFStateAsOf.replace(second=59, microsecond=999999) < d.asof else False
+            
+            if bMinuteChanged and self.__flushAtMinuteEnd: # or bHitMoment):
+                try : 
+                    self._commitStateAction(self.__lastFloatsState, self.__lastestDir)
+                    self.__lastFStateAsOf = None
+                except Exception as ex:
+                    self.logexception(ex, '_commitStateAction')
+
+            if not self.__lastFStateAsOf:
+                self.__flushAtMinuteEnd = False
+
+            price, stateAsOf = self._marketState.latestPrice(self._tradeSymbol)
+            self.__lastFloatsState = {
+                'fstates' : fstates,
+                'fdate' : stateAsOf.year * 10000 + stateAsOf.month *100 + stateAsOf.day
+                            + (stateAsOf.hour * 60 + stateAsOf.minute) /80.0/25, # '/80.0/25' instead of the real world's '/60min /25hr' is just to make the result with limited decimals
+                'price' : price,
+            }
+
+            self.__lastFStateAsOf = d.asof.replace(microsecond=0)
+            if dirToExec != self.__lastestDir :
+                self.__flushAtMinuteEnd = True 
+            self.__lastestDir = dirToExec
+
+        if prevDir != dirToExec:
+            self.info('OnEvent(%s) changedir %s->%s upon mstate: %s' % (ev.desc, prevDir, dirToExec, self._marketState.descOf(self._tradeSymbol)))
         else:
-            self.debug('OnEvent(%s) continue %s upon mstate: %s' % (ev.desc, dirToExec, self._marketState.descOf(self._tradeSymbol)))
+            self.debug('OnEvent(%s) continue %s upon mstate: %s, sampling[%s]' % (ev.desc, dirToExec, self._marketState.descOf(self._tradeSymbol), bSamplingNeeded))
 
     def resetEpisode(self) :
         ret = super(IdealTrader_Tplus1, self).resetEpisode()
@@ -1988,7 +2039,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
     def OnEpisodeDone(self, reachedEnd=True):
         super(IdealTrader_Tplus1, self).OnEpisodeDone(reachedEnd)
-        if self.__sampleIdx >0 and not None in self.__sampleFrm :
+        if self.__sampleIdx >0: # and not None in self.__sampleFrm :
             self.__saveFrame(self.__sampleFrm[:self.__sampleIdx])
 
     # to replace BackTest's doAppStep
@@ -2054,9 +2105,10 @@ class IdealTrader_Tplus1(OfflineSimulator):
             self.info(line)
 
         strReport += '\n'
-        with codecs.open(os.path.join(self.wkTrader.outdir, 'summary_%s.txt' % self._tradeSymbol), "w","utf-8") as rptfile:
+        fnReport = os.path.join(self.wkTrader.outdir, 'summary_%s.txt' % self._tradeSymbol)
+        with codecs.open(fnReport, "w","utf-8") as rptfile:
             rptfile.write(strReport)
-            self.debug('doAppStep() episode[%s] summary report generated' %(self.episodeId))
+            self.debug('doAppStep() episode[%s] summary report generated as %s' %(self.episodeId, fnReport))
 
         # prepare for the next episode
         self._episodeNo +=1
@@ -2069,24 +2121,61 @@ class IdealTrader_Tplus1(OfflineSimulator):
         
         exit(0) # IdealTrader_Tplus1 is not supposed to run forever, just exit instead of return
 
-    def __pushStateAction(self, mstate, action):
+    def _commitStateAction(self, floatsState, dirAction):
 
-        if (self.__sampleIdx + self.__frameNo) <=0 and all(v == 0.0 for v in mstate): return # skip the leading all[0.0]
+        if not floatsState or not isinstance(floatsState, dict) or 'fstates' not in floatsState:
+            return 
+
+        fstates = floatsState['fstates']
+        if not fstates or (self.__sampleIdx + self.__frameNo) <=0 and all(v == 0.0 for v in fstates): return # skip the leading all[0.0]
+
+        action = [0] * len(ADVICE_DIRECTIONS)
+        action[ADVICE_DIRECTIONS.index(dirAction)] =1
+
+        dtState = self.__fmtr.readDateTime(fstates)
 
         self.__sampleIdx = self.__sampleIdx % self.__sampleFrmSize
         if 0 == self.__sampleIdx and not None in self.__sampleFrm :
             # frame full, output it into a HDF5 file
-            self.__saveFrame(self.__sampleFrm)
+            shiftsz = self.__saveFrame(self.__sampleFrm)
+            if shiftsz >0:
+                # shift the saved samples out and refill to meet size=self.__sampleFrmSize
+                del self.__sampleFrm[ :shiftsz]
+                
+            if shiftsz <self.__sampleFrmSize/2 and len(self.__sampleFrm) >= self.__sampleFrmSize/2 :
+                self.warn('sampleFrmSize[%d] is too small, inc by 100' % self.__sampleFrmSize)
+                self.__sampleFrmSize += 100
 
-        self.__sampleFrm[self.__sampleIdx] = (mstate, action)
+            self.__sampleIdx = len(self.__sampleFrm)
+            if self.__sampleIdx < self.__sampleFrmSize:
+                self.__sampleFrm += [None]  * (self.__sampleFrmSize - self.__sampleIdx)
+                
+        self.__sampleFrm[self.__sampleIdx] = (fstates, action, floatsState['fdate'], floatsState['price'])
+        self.info('committed state-to-%s as of %s to confirm known[%s] at offset %d' % (dirAction, dtState.strftime('%m-%dT%H:%M:%S'), self.__lastFStateAsOf, self.__sampleIdx))
         self.__sampleIdx +=1
 
     def __saveFrame(self, rangedFrame):
-        metrix     = np.array(rangedFrame)
-        col_state  = np.concatenate(metrix[:, 0]).reshape(len(rangedFrame), len(rangedFrame[0][0]))
-        col_action = np.concatenate(metrix[:, 1]).reshape(len(rangedFrame), len(rangedFrame[0][1]))
+        metrix  = np.array(rangedFrame)
+        lenF    = len(rangedFrame)
 
-        fn_frame = os.path.join(self.wkTrader.outdir, 'RFrm%s_%s.h5' % (NORMALIZE_ID, self._tradeSymbol) )
+        #col_state  = np.concatenate(metrix[:, 0]).reshape(len(rangedFrame), len(rangedFrame[0][0]))
+        stateshape, actionshape = np.array(metrix[0][0]).shape, len(rangedFrame[0][1])
+        col_state   = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype(hist.SAMPLE_FLOAT)
+        col_action  = np.concatenate(metrix[:, 1]).reshape(lenF, actionshape).astype(hist.CLASSIFY_INT)
+        col_fdate   = np.asarray(metrix[:, 2]).astype('float32') # instead of float16
+        col_price   = np.asarray(metrix[:, 3]).astype('float32') # instead of float16
+
+        metrix_gainRates = self.__calculateGainRates(col_fdate, col_price, eval_days =5)
+        lenF = len(metrix_gainRates)
+        self.info('calculated gainRates from %drows to %d, narrowing' % (len(rangedFrame), lenF))
+        if lenF <=0: return 0
+
+        col_state = np.delete(col_state, np.s_[lenF:], 0)
+        col_action = np.delete(col_action, np.s_[lenF:], 0)
+        col_fdate = np.delete(col_fdate, np.s_[lenF:], 0)
+        col_price = np.delete(col_price, np.s_[lenF:], 0)
+
+        fn_frame = os.path.join(self.wkTrader.outdir, 'RFrm%s_%s.h5' % (self.__fmtr.id, self._tradeSymbol) )
         
         h5args =copy.copy(hist.H5DSET_DEFAULT_ARGS)
         if self._h5compression and len(self._h5compression)>0:
@@ -2097,19 +2186,88 @@ class IdealTrader_Tplus1(OfflineSimulator):
             self.__frameNo += 1
 
             g = h5file.create_group(frameId)
+            g.attrs['formatId'] = self.__fmtr.id
             g.attrs['state'] = 'state'
             g.attrs['action'] = 'action'
             g.attrs[u'default'] = 'state'
             g.attrs['size'] = col_state.shape[0]
             g.attrs['signature'] = EXPORT_SIGNATURE
 
-            g.create_dataset(u'title',      data= '%s replay %s of %s by %s' % (self._generateReplayFrames, frameId, self._tradeSymbol, self.ident))
+            title = '%s replay-frame %s %s of %s by %s, shapes[state:%s, action:%s]' % (self._generateReplayFrames, self.__fmtr.id, frameId, self._tradeSymbol, self.ident, stateshape, actionshape )
+            g.attrs['title'] = title
+
             st = g.create_dataset('state',  data= col_state, **h5args)
+            st.attrs['shape'] = col_state.shape
             st.attrs['dim'] = col_state.shape[1]
             ac = g.create_dataset('action', data= col_action, **h5args)
+            ac.attrs['shape'] = col_action.shape
             ac.attrs['dim'] = col_action.shape[1]
+            gr = g.create_dataset('gain_rates', data= metrix_gainRates, **h5args)
+            gr.attrs['shape'] = metrix_gainRates.shape
+            fd = g.create_dataset('fdate', data= col_fdate, **h5args)
+            fd.attrs['fdate'] = col_fdate.shape
+            pr = g.create_dataset('price', data= col_price, **h5args)
+            pr.attrs['price'] = col_price.shape
             
-        self.info('saved %s len[%s] into file %s with sig[%s]' % (frameId, len(col_state), fn_frame, EXPORT_SIGNATURE))
+        self.info('saved %s %s %s samples till %.3f@%s into file %s with sig[%s]' % (self.__fmtr.id, frameId, len(col_state), col_price[-1], col_fdate[-1], fn_frame, EXPORT_SIGNATURE))
+        return lenF
+
+    def __calculateGainRates(self, col_fdate, col_price, eval_days =4) : # eval_days=4 calc day0~day4, about a week
+        size = min([len(col_fdate), len(col_price)])
+        df = pd.concat([pd.DataFrame(col_fdate[:size], columns=['fdate']), pd.DataFrame(col_price[:size], columns=['price'])], axis=1)
+        # df = pd.concat([df, pd.DataFrame([int(x) for x in col_fdate], columns=['idate'])], axis=1)
+
+        eval_days_len =1 +eval_days
+        for i in range(eval_days_len):
+            df['gainRate_%d' %i ]=np.nan
+
+        daycloses = []
+        for i in range(size) :
+            date = int(df['fdate'][i])
+            price = df['price'][i]
+            if len(daycloses) >0 and daycloses[-1][0] == date:
+                daycloses[-1][1] = price
+                continue
+
+            # found a new date
+            daycloses.append([date, price])
+            del daycloses[:-1 -eval_days_len]
+            if len(daycloses) <=1: continue
+            last_close = daycloses[-2]
+
+            # scan backward
+            daysBack =-1
+            for j in range(i-1, -1, -1):
+                dateBack = int(df['fdate'][j])
+                if dateBack < daycloses[0][0]:
+                    break
+
+                priceBack = float(df['price'][j])
+                if priceBack < 0.001: priceBack =1.0
+
+                for k in range(len(daycloses)-2 - daysBack, -1, -1):
+                    if daycloses[k][0] == dateBack:
+                        daysBack = len(daycloses) -2 -k
+                        break
+
+                if daysBack < 0 or daysBack > eval_days_len: continue
+                gr = last_close[1] / priceBack -1.0
+                # if j >1: gr /= j # dailize the gainrate
+                # gr = (gr + 0.02) *10 # scaling the gainrate to fit in [0,1) : 0 maps -2%, 1 maps +8%
+            
+                df['gainRate_%d' %daysBack ][j] = gr
+            
+            # can leave the gainrate original here and move the dailizing and scaling in the Trainning program
+            # print(df)
+            # df[df <0] = 0
+            # df[df >1] = 1
+
+        idxmax = df.notna()[::-1].idxmax()
+        # print(idxmax)
+        idx_associated = min(idxmax)
+
+        result = df.values[ :idx_associated, -1 -eval_days: ] if idx_associated >0 else np.array([])
+        return result.astype(hist.SAMPLE_FLOAT)
 
     def __scanEventsSequence(self, evseq) :
 
@@ -2201,6 +2359,10 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
             evd = ev.data
             T = evd.datetime
+            try :
+                aclz = type(self.account.account)
+                if not aclz.duringTradeHours(T) : continue
+            except: pass
 
             price = evd.price if EVENT_TICK == ev.type else evd.close
             # order = OrderData(self._account)
@@ -2319,289 +2481,3 @@ class IdealTrader_Tplus1(OfflineSimulator):
                     advice.dirLONG = 1
                     latestDir = advice.dirString()
                     self.__adviceSeq.append(copy.copy(advice))
-
-
-########################################################################
-class ShortSwingScanner(OfflineSimulator):
-    '''
-    ShortSwingScanner extends OfflineSimulator by scanning the MarketEvents occurs up to several days, determining
-    the short trend
-    '''
-    DAILIZED_GAIN_PCTS      = [-5.0, -3.0, -1.0, 1.0, 3.0, 5.0] # should be up to the stat data
-
-    def __init__(self, program, trader, histdata, f4schema=None, **kwargs):
-        '''Constructor
-        '''
-        super(ShortSwingScanner, self).__init__(program, trader, histdata, **kwargs)
-
-        self._daysLong      = self.getConfig('constraints/futureDays',  3) # long-term prospect, default 1week(5days)
-        self._daysShort     = self.getConfig('constraints/shortFuture', 2) # short-term prospect, default 2days
-        self._byEvent       = self.getConfig('constraints/byEvent',   EVENT_KLINE_5MIN)
-        self._h5compression = self.getConfig('h5compression', 'lzf').lower()
-        self._h5compression = self.getConfig('h5compression', 'lzf').lower()
-        self._h5filename    = self.getConfig('h5filename', None)
-
-        self._f4schema = f4schema if isinstance(f4schema,dict) else { # the default schema is based on KL only
-            'asof':1, 
-            EVENT_KLINE_5MIN     : 50,
-            EVENT_KLINE_1DAY     : 150,
-        }
-
-        if not self._byEvent or MARKETDATE_EVENT_PREFIX != self._byEvent[:len(MARKETDATE_EVENT_PREFIX)] :
-            self._byEvent = EVENT_KLINE_1DAY
-
-        self._warmupDays =0 # IdealTrader will not be constrainted by warmupDays
-        self.__cOpenDays =0
-        self.__stampByEvent = None
-
-        self.__dtToday = None
-        self.__momentsToSample = ['10:00:00', '11:00:00', '13:30:00', '14:30:00', '15:00:00']
-        self.__stateOfMoments = {}
-
-        self.__eventsOfDays = EvictableStack(evictSize=self._daysLong+1, nildata=[]) # list of days, each item contains events of days that up to self._daysLong
-        self.__psptReadAhead = PerspectiveState('Dummy') # Perspective('Dummy')
-        
-        self.__sampleFrmSize  = 1024*8
-        self.__sampleFrm = [None]  * self.__sampleFrmSize
-        self.__sampleIdx, self.__frameNo = 0, 0
-
-    @property
-    def stateOfMoments(self) : return self.__stateOfMoments
-
-    @property
-    def measureDays(self) : return self._daysLong
-
-    def setSampling(self, h5filename, momentsToSample=['10:00:00', '11:00:00', '13:30:00', '14:30:00', '15:00:00']):
-        if h5filename : self._h5filename = h5filename
-        self.__momentsToSample = momentsToSample
-
-    # overwrite parent's by adjust startDate to measureDays ealier
-    def setTimeRange(self, dtStart, dtEnd = None) :
-        super(ShortSwingScanner, self).setTimeRange(dtStart, dtEnd)
-        dtStart - timedelta(days = 2 + self._daysLong)
-        return self._btStartDate, self._btEndDate
-
-    def doAppInit(self): # return True if succ
-        if not super(ShortSwingScanner, self).doAppInit() :
-            return False
-
-        if self._recorder:
-            self._recorder.registerCategory(EVENT_ADVICE, params= {'columns' : AdviceData.COLUMNS})
-
-        self._tradeSymbol = self.wkTrader.objectives[0] # idealTrader only cover a single symbol from the objectives
-        self._episodes =1 # idealTrader only run one loop
-        return True
-    
-    # to replace OfflineSimulator's OnEvent with some TradeAdvisor logic and execute the advice as order directly
-    def OnEvent(self, ev):
-        '''processing an incoming MarketEvent'''
-        pass # do nothing here
-
-    def OnEpisodeDone(self, reachedEnd=True):
-        # NO neccessary to call super(ShortSwingScanner, self).OnEpisodeDone(reachedEnd) as we donot generate reports
-        if self.__sampleIdx >0 : # if self.__sampleIdx >0 and not None in self.__sampleFrm :
-            self.__saveFrame(self.__sampleFrm[:self.__sampleIdx])
-
-        self.program.stop()
-
-    # to replace BackTest's doAppStep
-    def doAppStep(self):
-
-        self._bGameOver = False # always False in IdealTrader
-        reachedEnd = False
-        if self._wkHistData :
-            try :
-                ev = next(self._wkHistData)
-                if not ev or MARKETDATE_EVENT_PREFIX != ev.type[:len(MARKETDATE_EVENT_PREFIX)] : return
-                if ev.data.datetime < self._btStartDate: return
-
-                symbol = ev.data.symbol
-                if ev.data.datetime <= self._btEndDate:
-                    if not self.__psptReadAhead.updateByEvent(ev) : # .push(ev)
-                        return 0
-
-                    if symbol != self._tradeSymbol :# if not symbol in self.wkTrader.objectives:
-                        return 0
-
-                    stamp    = self.__psptReadAhead.getAsOf(symbol, self._byEvent)
-                    price, _ = self.__psptReadAhead.latestPrice(symbol)
-                    ohlc     = self.__psptReadAhead.dailyOHLC_sofar(symbol)
-
-                    if not ohlc or self.__stampByEvent and self.__stampByEvent == stamp:
-                        return 0
-                    
-                    if 0 != stamp.minute %3 : return # every 15min with self._byEvent=KL5m to reduce samples
-
-                    self.__stampByEvent = stamp
-
-                    dayOfEvent = ev.data.datetime.replace(hour=23, minute=59, second=59, microsecond=999999)
-                    if not self.__dtToday or self.__dtToday < dayOfEvent: # a new day comes
-
-                        for i in range(0, self.__eventsOfDays.size): # 0 maps today's close price
-                            label = 'priceIn%02dd' % i
-                            eventsDaysAgo = self.__eventsOfDays[i]
-                            for e in range(len(eventsDaysAgo)):
-                                eventsDaysAgo[e][label] = ohlc.close
-                        
-                        if self.__eventsOfDays.size >= self.__eventsOfDays.evictSize:
-                            # evicting the oldest date into the __sampleFrm, which were supposed filled all days result
-                            eventsDaysAgo = self.__eventsOfDays[self.__eventsOfDays.size -1]
-                            self.__saveEventsOfDay(eventsDaysAgo)
-                            self.debug('doAppStep() committed %s into frames' % ','.join([i['ident'] for i in eventsDaysAgo]))
-
-                        self.__eventsOfDays.push([])
-
-                        if self.__dtToday:
-                            self.debug('doAppStep() %s day-%03d[%s] applied onto [%d,%d]days-ago by %s' % (symbol, self.__cOpenDays, self.__dtToday.strftime('%Y-%m-%d'), self._daysShort, self._daysLong, self._byEvent))
-
-                        self.__cOpenDays += 1
-                        self.__dtToday = dayOfEvent
-                        self.__stateOfMoments = {'date': self.__dtToday }
-
-                    # in a same day
-                    moment = ev.data.datetime.strftime('%H:%M:00')
-                    if len(self.__momentsToSample) >0 and not moment in self.__momentsToSample:
-                        return 1
-
-                    stateOfEvent = {
-                        'ident'   : '%s@%s' % (symbol, ev.data.datetime.strftime('%Y%m%dT%H%M%S')),
-                        'ohlc'   : [ohlc.open, ohlc.high, ohlc.low, price],
-                        'stateD4f': self.__psptReadAhead.exportImg6C_3Liner16x32R(symbol, self.outdir), # floatsD4(lstsWished = self._f4schema), 
-                        }
-
-                    self.__eventsOfDays[0].append(stateOfEvent)
-                    self.__stateOfMoments[moment] = stateOfEvent
-                    self.debug('doAppStep() sampled state of %s' % stateOfEvent['ident'])
-
-                    self.saveStateSnapshot(symbol, ev.data.datetime)
-
-                    return 1 # successfully performed a step by pushing an Event
-
-                reachedEnd = True
-
-            except StopIteration:
-                reachedEnd = True
-                self.info('hist-read: end of playback')
-            except Exception as ex:
-                self.logexception(ex)
-
-        # if self.__sampleIdx >0 :
-        #     self.__saveFrame(self.__sampleFrm[:self.__sampleIdx])
-
-        # this test should be done if reached here
-        self.info('doAppStep() episode[%s] finished: %d steps, KO[%s] end-of-history[%s]' % (self.episodeId, self._stepNoInEpisode, self._bGameOver, reachedEnd))
-        self.OnEpisodeDone(reachedEnd)
-        
-        # exit(0) # ShortSwingScanner is not supposed to run forever, just exit instead of return
-
-    def saveStateSnapshot(self, symbol, dtAsOf) :
-
-        stateId = '%s@%s' % (symbol, dtAsOf.strftime('%Y%m%dT%H%M%S'))
-        h5group = '%s@%s' % (symbol, dtAsOf.strftime('%Y%m%d'))
-        stateDumpstr =  self.__psptReadAhead.dumps(symbol)
-        snapshoth5fn = os.path.join(self.wkTrader.outdir, '%s_snapshots.h5' % symbol)
-        compressed = bz2.compress(stateDumpstr)
-
-        with h5py.File(snapshoth5fn, 'a') as h5file:
-
-            if h5group in h5file.keys() :
-                g = h5file[h5group]
-            else:
-                g = h5file.create_group(h5group) 
-                g.attrs['desc']         = 'pickled market state via bzip2 compression'
-
-            if stateId in g.keys(): del g[stateId]
-
-            npbytes = np.frombuffer(compressed, dtype=np.uint8)
-            sns = g.create_dataset(stateId, data=np.frombuffer(compressed, dtype=np.uint8))
-            sns.attrs['size'] = len(stateDumpstr)
-            sns.attrs['csize'] = len(compressed)
-            sns.attrs['generated'] = datetime.now().strftime('%Y%m%dT%H%M%S')
-            
-            self.debug('saved snapshot[%s] %dB->%dz into %s' % (stateId, sns.attrs['size'], sns.attrs['csize'], snapshoth5fn))
-
-    def __saveEventsOfDay(self, eventsOfDay):
-
-        for ev in eventsOfDay:
-            stateD4f = ev['stateD4f']
-            if not stateD4f or len(stateD4f) <=0:
-                continue
-
-            ohlc  = ev['ohlc']
-            price = ohlc[3]
-            if price <=0.01:
-                continue
-
-            dailizedGainRates = []
-            for i in range(0, self._daysLong+1):
-                label = 'priceIn%02dd' % i
-                dgr = (ev[label]-price) *100 / price
-                if i >0: dgr /= i
-                dailizedGainRates.append(dgr)
-
-            # sample code on how to classify the grainRates
-            gainRateL, gainRateS = dailizedGainRates[self._daysLong-1], dailizedGainRates[self._daysShort-1]
-            gainClassL, gainClassS= 0, 0
-            for redge in ShortSwingScanner.DAILIZED_GAIN_PCTS:
-                if gainRateL >= redge:
-                    gainClassL += 1
-                if gainRateS >= redge:
-                    gainClassS += 1
-            
-            gainClass = [0] * (1 + len(ShortSwingScanner.DAILIZED_GAIN_PCTS))*2
-            gainClass[gainClassL] =1
-            gainClass[len(ShortSwingScanner.DAILIZED_GAIN_PCTS) +1 + gainClassS] =1
-
-            self.__sampleIdx = self.__sampleIdx % self.__sampleFrmSize
-            if 0 == self.__sampleIdx and not None in self.__sampleFrm :
-                # frame full, output it into a HDF5 file
-                self.__saveFrame(self.__sampleFrm)
-
-            self.__sampleFrm[self.__sampleIdx] = (stateD4f, dailizedGainRates, ohlc)
-            self.__sampleIdx +=1
-
-    def __saveFrame(self, rangedFrame):
-        metrix  = np.array(rangedFrame)
-        lenF    = len(rangedFrame)
-
-        stateshape = np.array(metrix[0][0]).shape
-        col_state  = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype('float16')
-
-        col_gainRates  = np.concatenate(metrix[:, 1]).reshape(lenF, *np.array(metrix[0][1]).shape).astype('float16')
-        col_ohlc       = np.concatenate(metrix[:, 2]).reshape(lenF, *np.array(metrix[0][2]).shape).astype('float16')  # col_price = metrix[:, 2].astype('float16')
-
-        normalizedId = 'FclzD4X%dR%dBy%s' %(col_state.shape[1], self._daysLong, chopMarketEVStr(self._byEvent))
-
-        h5args =copy.copy(hist.H5DSET_DEFAULT_ARGS)
-        if self._h5compression and len(self._h5compression)>0:
-            h5args['compression'] = self._h5compression
-
-        if not self._h5filename or len(self._h5filename) <=0:
-            self._h5filename = os.path.join(self.wkTrader.outdir, '%s_%s.h5' % (normalizedId, self._tradeSymbol) )
-        with h5py.File(self._h5filename, 'a') as h5file:
-            frameId = '%s.frm%s' % (self._tradeSymbol, str(self.__frameNo).zfill(3))
-            self.__frameNo += 1
-
-            desc = '%s.%s: dailized gain-rates of %s in future %s days by %s' % (normalizedId, frameId, self._tradeSymbol, self._daysLong, self.ident)
-            if frameId in h5file.keys():
-                del h5file[frameId]
-
-            g = h5file.create_group(frameId)
-            g.attrs['desc']     = desc
-            g.attrs['state']     = 'market state'
-            g.attrs[u'default']     = 'state'
-            g.attrs['normalizedId'] = normalizedId
-            g.attrs['size']         = col_state.shape[0]
-            g.attrs['futureDays']   = self._daysLong
-            g.attrs['signature']    = self.ident
-
-            # g.create_dataset(u'title',      data= desc)
-            st = g.create_dataset('state',  data= col_state, **h5args)
-            st.attrs['f4schema'] = str(self._f4schema)
-            ac = g.create_dataset('gainRates', data= col_gainRates, **h5args)
-            ac.attrs['desc'] = 'grain-rate(%%) in up to %d days, 0-means close-of-today' % col_gainRates.shape[1]
-            pr = g.create_dataset('ohlc', data= col_ohlc, **h5args)
-            pr.attrs['desc'] = 'open-high-low-price so far in the day'
-            
-        self.info('saved %s with %s samples into file %s with sig[%s]' % (frameId, len(col_state), self._h5filename, self.ident))
-

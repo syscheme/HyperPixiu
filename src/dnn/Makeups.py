@@ -452,6 +452,11 @@ class Model88_sliced(Model88) :
     @property
     def coreId(self) : return self.__coreId
 
+    @property
+    def channels_per_slice(self) : return self.__channels_per_slice
+    @property
+    def features_per_slice(self) : return self.__features_per_slice
+
     # def get_weights_core(self) : return self.__model_core.get_weights()
 
     def __slice(x, idxSlice, channels_per_slice): 
@@ -460,20 +465,14 @@ class Model88_sliced(Model88) :
             slice = x[:, :, idxSlice*channels_per_slice : (idxSlice+1)*channels_per_slice]
         elif 2 == dims :
             slice = x[:, :, :, idxSlice*channels_per_slice : (idxSlice+1)*channels_per_slice]
-        #???? new_shape = (slice.shape[0], slice.shape[1], slice.shape[2], 1) # tuple(list(slice.shape[:3] +[1]))
-        # tensor0 = tf.zeros(new_shape)
-        # slice = tf.cat((slice, tensor0), axis=-1)
 
         ch2append = channels_per_slice - slice.shape[-1] # [0]s to append to fit channel=4
-
         if ch2append >0:
-            slice0s = np.zeros(tuple(list(slice.shape[1: 1+dims]) +[ch2append]), dtype=INPUT_FLOAT) # TODO fix this
-            tensor0s = tf.convert_to_tensor(slice0s)
-            # TODO: NOT IMPL to concate tensor with zeros, the below approaches failed:
-            raise ValueError('have not figure out how padding zero-chs here')
-            slice += tensor0s # WRONG also
-            # slice = tf.concat(-1, [slice, tensor0s])
-            # slice = np.concatenate((slice, slice0s), axis=2)
+            if 1 == dims:
+                slice = tf.pad(slice, ((0,0),(0,0),(0,ch2append)))
+            elif 2 == dims :
+                slice = tf.pad(slice, ((0,0),(0,0),(0,0),(0,ch2append)))
+
         return slice
 
     def __slice_flow(self, submod_name, model_json, custom_objects, input_tensor, core_model):
@@ -504,7 +503,7 @@ class Model88_sliced(Model88) :
 
     @property
     def _fmtNamePrefix(self):
-        return '%s%sY%dF%d' %(self._input_name, 'x'.join([str(x) for x in self._input_shape]), self.__channels_per_slice, self.__features_per_slice)
+        return '%s%sY%dF%d' %(self._input_name, 'x'.join([str(x) for x in self._input_shape]), self.channels_per_slice, self.__features_per_slice)
 
     def _slicedInput(self):
         channels = self._input_shape[-1]
@@ -516,9 +515,9 @@ class Model88_sliced(Model88) :
             or (dims >= 2 and self._input_shape[1] > self._dimMax[1] )  : # dimX
             raise ValueError('shape%s not allowed, must <=%s' % (self._input_shape, self._dimMax))
 
-        slice_shape = tuple(list(self._input_shape[:dims]) +[self.__channels_per_slice])
-        slice_count = int(channels / self.__channels_per_slice)
-        if 0 != channels % self.__channels_per_slice: slice_count +=1
+        slice_shape = tuple(list(self._input_shape[:dims]) +[ self.channels_per_slice ])
+        slice_count = int(channels / self.channels_per_slice)
+        if 0 != channels % self.channels_per_slice: slice_count +=1
 
         mNamePrefix = '%sx%d' %(self._fmtNamePrefix, slice_count)
         tensor_in = layers.Input(shape=self._input_shape, name='%s.input' % (mNamePrefix), dtype=INPUT_FLOAT)
@@ -528,11 +527,11 @@ class Model88_sliced(Model88) :
             x = layers.ZeroPadding1D(padding=((0, self._dimMax[0] - self._input_shape[0])), name='%s.%dpad%s' % (mNamePrefix, dims, strShape))(x)
         elif 2 == dims and (self._input_shape[0] < self._dimMax[0] or self._input_shape[1] < self._dimMax[1]): # 2D input
             x = layers.ZeroPadding2D(padding=((0, self._dimMax[0] - self._input_shape[0]), (0, self._dimMax[1] - self._input_shape[1])), name='%s.%dpad%s' % (mNamePrefix, dims, strShape))(x)
-        slice_shape = tuple(list(x.shape[1:])[:dims] +[self.__channels_per_slice])
+        slice_shape = tuple(list(x.shape[1:])[:dims] +[self.channels_per_slice])
 
         slices = [None] * slice_count
         for i in range(slice_count) :
-            slices[i] = layers.Lambda(Model88_sliced.__slice, arguments={'idxSlice':i, 'channels_per_slice': self.__channels_per_slice},
+            slices[i] = layers.Lambda(Model88_sliced.__slice, arguments={'idxSlice':i, 'channels_per_slice': self.channels_per_slice},
                                 output_shape= slice_shape, name='%s.slice%d' %(mNamePrefix, i)
                                 )(x)
 
@@ -813,7 +812,7 @@ class Model88_sliced(Model88) :
     def __buildup_autoenc(self, model_name, jsonSubs, custom_objects):
         
         tensor_in, slices = self._slicedInput()
-        shape_echo = tensor_in.shape[1:-1]
+        shape_echo = tensor_in.shape[1:]
 
         enc_name, dec_name = None, None
         if model_name and AUTOENC_TAG in model_name:
@@ -880,7 +879,7 @@ class Model88_sliced(Model88) :
         if len(slices) >1:
             decoded = layers.Concatenate(axis=-1)([decoded] + slices[1:])
 
-        if shape_echo != decoded.shape[1:-1] :
+        if shape_echo != decoded.shape[1:] :
             decoded = layers.Lambda(Model88_sliced._prune, arguments={'output_shape': shape_echo }, output_shape=shape_echo) (decoded)
 
         self.__modelId = '%s%s%s.%s' % (encoder.name, AUTOENC_TAG, decoder.name, 'x'.join([str(x) for x in list(tensor_in.shape[1:])]))
@@ -892,14 +891,14 @@ class Model88_sliced(Model88) :
         return self.model
 
     def _prune(x, output_shape=None): # for decoder to make output shape back like input's
-        if not output_shape: output_shape = self._dimMax # TODO
+        if not output_shape: output_shape = list(self._dimMax) + [self.channels_per_slice]
         dims = len(output_shape)
-        if 1 == dims:
-            slice = x[:, :output_shape[0], :]
-        elif 2 == dims :
-            slice = x[:, :output_shape[0], :output_shape[1] :]
+        if 2 == dims:
+            y = x[:, :output_shape[0], :output_shape[1]]
+        elif 3 == dims :
+            y = x[:, :output_shape[0], :output_shape[1], :output_shape[2] ]
 
-        return slice
+        return y
 
 ########################################################################
 class ModelS2d_ResNet50Pre(Model88_sliced) :
@@ -1062,58 +1061,58 @@ class ModelS2d_VGG16r1(Model88_sliced) :
         if min(list(input_tensor.shape[1:2])) < dimMax:
             x = self._tagged_chain(lnTag, x, layers.ZeroPadding2D(padding=( (0, dimMax-input_tensor.shape[1]), (0, dimMax-input_tensor.shape[2]) )))
 
-        #layer1 (20,32,64)
+        #layer1 (32,32,64)
         # 对于stride=1*1,并且padding ='same',这种情况卷积后的图像shape与卷积前相同，本层后shape还是32*32
         x = self._tagged_chain(lnTag, x, layers.Conv2D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
         x = self._tagged_chain(lnTag, x, layers.Dropout(0.3))
 
-        #layer2 (10,16,64)
+        #layer2 (16,16,64)
         x = self._tagged_chain(lnTag, x, layers.Conv2D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
         x = self._tagged_chain(lnTag, x, layers.MaxPooling2D(2))
 
-        #layer3 (10,16,128)
+        #layer3 (16,16,128)
         x = self._tagged_chain(lnTag, x, layers.Conv2D(128, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
         x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
         
-        #layer4 (5,8,128)
+        #layer4 (8,8,128)
         x = self._tagged_chain(lnTag, x, layers.Conv2D(128, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
         x = self._tagged_chain(lnTag, x, layers.MaxPooling2D(2))
         
-        #layer5 (5,8,256)
+        #layer5 (8,8,256)
         x = self._tagged_chain(lnTag, x, layers.Conv2D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
         x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
         
-        #layer6 (5,8,256)
+        #layer6 (8,8,256)
         x = self._tagged_chain(lnTag, x, layers.Conv2D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
         x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
         
-        #layer7 (2,4,256)
+        #layer7 (4,4,256)
         x = self._tagged_chain(lnTag, x, layers.Conv2D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
         x = self._tagged_chain(lnTag, x, layers.MaxPooling2D(2))
 
-        #layer8 (2,4,512)
+        #layer8 (4,4,512)
         x = self._tagged_chain(lnTag, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
         x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
 
-        #layer9 (2,4,512)
+        #layer9 (4,4,512)
         x = self._tagged_chain(lnTag, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
         x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
         
-        #layer10 (1,2,512)
+        #layer10 (2,2,512)
         x = self._tagged_chain(lnTag, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
         x = self._tagged_chain(lnTag, x, layers.MaxPooling2D(2))
         
-        #layer11 (1,2,512)
+        #layer11 (2,2,512)
         x = self._tagged_chain(lnTag, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
         x = self._tagged_chain(lnTag, x, layers.Dropout(0.4))
@@ -1129,13 +1128,13 @@ class ModelS2d_VGG16r1(Model88_sliced) :
         x = self._tagged_chain(lnTag, x, layers.MaxPooling2D(2))
         x = self._tagged_chain(lnTag, x, layers.Dropout(0.5))
 
-        #layer14 1*1*518
+        #layer14 (features_per_slice)
         x = self._tagged_chain(lnTag, x, layers.Flatten())
-        x = self._tagged_chain(lnTag, x, layers.Dense(518, activation='relu', kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(lnTag, x, layers.Dense(self.features_per_slice, activation='relu', kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
 
-        #layer15 518
-        x = self._tagged_chain(lnTag, x, layers.Dense(518, activation='relu', kernel_regularizer=regularizers.l2(weight_decay)))
+        #layer15 (features_per_slice)
+        x = self._tagged_chain(lnTag, x, layers.Dense(self.features_per_slice, activation='relu', kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
 
         # Create model.
@@ -1158,8 +1157,8 @@ class ModelS2d_VGG16r1(Model88_sliced) :
         input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
         x = input_tensor
 
-        #layer14 518
-        x = self._tagged_chain(decname, x, layers.Dense(518,  activation='relu', kernel_regularizer=regularizers.l2(weight_decay)))
+        #layer14 (self.features_per_slice)
+        x = self._tagged_chain(decname, x, layers.Dense(self.features_per_slice,  activation='relu', kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(decname, x, layers.BatchNormalization())
 
         #layer13 (2,2,512)
@@ -1169,104 +1168,62 @@ class ModelS2d_VGG16r1(Model88_sliced) :
         x = self._tagged_chain(decname, x, layers.UpSampling2D((2,2))) 
 
         #layer12 (2,2,512)
-        x = self._tagged_chain(decname, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.Conv2DTranspose(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(decname, x, layers.BatchNormalization())
 
         #layer11 (2,2,512)
-        x = self._tagged_chain(decname, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.Conv2DTranspose(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(decname, x, layers.BatchNormalization())
 
         #layer10 (4,4,512)
-        x = self._tagged_chain(decname, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.Conv2DTranspose(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(decname, x, layers.BatchNormalization())
         x = self._tagged_chain(decname, x, layers.UpSampling2D((2,2))) 
 
-        #layer9 4*4*512
-        x = self._tagged_chain(decname, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        #layer9 (4,4,512)
+        x = self._tagged_chain(decname, x, layers.Conv2DTranspose(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(decname, x, layers.BatchNormalization())
 
-        #layer8 4*4*256
-        x = self._tagged_chain(decname, x, layers.Conv2D(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        #layer8 (4,4,256)
+        x = self._tagged_chain(decname, x, layers.Conv2DTranspose(512, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(decname, x, layers.BatchNormalization())
 
-        #layer7 8*8*256
-        x = self._tagged_chain(decname, x, layers.Conv2D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
-        x = self._tagged_chain(decname, x, layers.BatchNormalization())
-        x = self._tagged_chain(decname, x, layers.UpSampling2D((2,2))) 
-
-        #layer6 8*8*256
-        x = self._tagged_chain(decname, x, layers.Conv2D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
-        x = self._tagged_chain(decname, x, layers.BatchNormalization())
-
-        #layer5 8*8*128
-        x = self._tagged_chain(decname, x, layers.Conv2D(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
-        x = self._tagged_chain(decname, x, layers.BatchNormalization())
-
-        #layer4 16*16*128
-        x = self._tagged_chain(decname, x, layers.Conv2D(128, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        #layer7 (8,8,256)
+        x = self._tagged_chain(decname, x, layers.Conv2DTranspose(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(decname, x, layers.BatchNormalization())
         x = self._tagged_chain(decname, x, layers.UpSampling2D((2,2))) 
 
-        #layer3 16*16*64
-        x = self._tagged_chain(decname, x, layers.Conv2D(128, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        #layer6 (8,8,256)
+        x = self._tagged_chain(decname, x, layers.Conv2DTranspose(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(decname, x, layers.BatchNormalization())
 
-        #layer2 16*16*64
-        x = self._tagged_chain(decname, x, layers.Conv2D(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
+        #layer5 (8,8,256)
+        x = self._tagged_chain(decname, x, layers.Conv2DTranspose(256, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+
+        #layer4 (16,16,128)
+        x = self._tagged_chain(decname, x, layers.Conv2DTranspose(128, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(decname, x, layers.BatchNormalization())
         x = self._tagged_chain(decname, x, layers.UpSampling2D((2,2))) 
 
-        #layer1
+        #layer3 (16,16,128)
+        x = self._tagged_chain(decname, x, layers.Conv2DTranspose(128, 3, activation='relu', padding='same',kernel_regularizer=regularizers.l2(weight_decay)))
         x = self._tagged_chain(decname, x, layers.BatchNormalization())
-        x = self._tagged_chain(decname, x, layers.Conv2D(4, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
 
-        # output_shape=(18,32)
-        x = self._tagged_chain(decname, x, layers.Lambda(Model88_sliced._prune, arguments={'output_shape': self._dimMax}, output_shape= self._dimMax))
+        #layer2 (32,32,64)
+        x = self._tagged_chain(decname, x, layers.Conv2DTranspose(64, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+        x = self._tagged_chain(decname, x, layers.UpSampling2D((2,2))) 
+
+        #layer1 (32,32,4)
+        x = self._tagged_chain(decname, x, layers.BatchNormalization())
+        x = self._tagged_chain(decname, x, layers.Conv2DTranspose(self.channels_per_slice, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
+
+        output_shape= list(self._dimMax) + [ self.channels_per_slice ]
+        x = self._tagged_chain(decname, x, layers.Lambda(Model88_sliced._prune, arguments={'output_shape': output_shape}, output_shape= output_shape))
         return Model(input_tensor, x, name=decname) 
 
-    def _buildup_core000(self, input_tensor):
-        '''
-        unlike the Model88_Flat._buildup_core() returns the output_tensor, the sliced 2D models returns a submodel as core from _buildup_core()
-        '''
-        input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
-        x = input_tensor
-        xencoded, xdecoded = None, None
-
-        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (1, 1), [64, 64],        1) # Block 1
-        xencoded             = x
-        iencoded             = layers.Input(xencoded.shape[1:])
-        xdecoded             = ModelS2d_VGG16r1.deconv_block(iencoded, (3, 3), (2, 2), [64, 64],        1) # Block 1
-
-        # original vgg16 starts from (224,224,3) so that allow pooling at each block, we start from 32x20 here so less pooling here
-        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (1, 1), [128, 128],      2) # Block 2
-        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [256, 256, 256], 3) # Block 3
-        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (2, 2), [256, 256, 256], 4) # Block 4, reduced from origin (2, 2), [512, 512, 512]
-        x = ModelS2d_VGG16r1.conv_block(x, (3, 3), (1, 1), [128, 128, 128], 5) # Block 5, reduced from origin (2, 2), [512, 512, 512]
-        # if include_top:
-        #     # Classification block
-        #     x = layers.layers.Flatten(name='flatten')(x)
-        #     x = layers.layers.Dense(4096, activation='relu', name='fc1')(x)
-        #     x = layers.layers.Dense(4096, activation='relu', name='fc2')(x)
-        #     x = layers.layers.Dense(classes, activation='softmax', name='fc1000')(x)
-        # else:
-        #     if pooling == 'avg':
-        #         x = layers.layers.GlobalAveragePooling2D()(x)
-        #     elif pooling == 'max':
-        #         x = layers.GlobalMaxPooling2D()(x)
-        x = layers.GlobalAveragePooling2D()(x)
-
-        # create model
-        model = Model(input_tensor, x, name='vgg16r1')
-
-        if None not in [xencoded, xdecoded]:
-            self._encoder = Model(input_tensor, xencoded, name='enc_%s' % model.name)
-            if xdecoded.shape[-1] != input_tensor.shape[-1] :
-                xdecoded = layers.Conv2DTranspose(int(input_tensor.shape[-1]), (3,3), activation='relu', padding='same', name='deconvShape')(xdecoded)
-            self._decoder = Model(iencoded, xdecoded, name='dec_%s' % model.name)
-
-        return model
-
-    def conv_block(input_tensor, kernel_shape, pool_shape, lst_filters, blkId):
+    def conv_block(input_tensor, kernel_shape, pool_shape, lst_filters, blkId) :
         """The identity block is the block that has no conv layer at shortcut.
         # Returns
             Output tensor for the block.
@@ -1279,7 +1236,7 @@ class ModelS2d_VGG16r1(Model88_sliced) :
             x = layers.MaxPooling2D(pool_shape, strides=pool_shape, name='block%s_pool' % blkId)(x)
         return x
 
-    def deconv_block(input_tensor, kernel_shape, pool_shape, lst_filters, blkId):
+    def deconv_block(input_tensor, kernel_shape, pool_shape, lst_filters, blkId) :
         """The identity block is the block that has no conv layer at shortcut.
         # Returns
             Output tensor for the block.
@@ -1306,7 +1263,7 @@ class ModelS1d_Basic(Model88_sliced) :
         input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
         x = input_tensor
         
-        x = self._tagged_chain(corename, x, layers.Dense(4, activation='relu')) # (518,2)
+        x = self._tagged_chain(corename, x, layers.Dense(self.channels_per_slice, activation='relu')) # (518,4)
         x = self._tagged_chain(corename, x, layers.Flatten()) # (518*2)
         x = self._tagged_chain(corename, x, layers.Dropout(0.3))
         x = self._tagged_chain(corename, x, layers.Dense(518,  activation='relu')) # (64)
@@ -1314,7 +1271,7 @@ class ModelS1d_Basic(Model88_sliced) :
         x = self._tagged_chain(corename, x, layers.Dense(518,  activation='relu')) # (64)
         x = self._tagged_chain(corename, x, layers.Dropout(0.3))
 
-        x = self._tagged_chain(corename, x, layers.Dense(518,  activation='relu')) # (64)
+        x = self._tagged_chain(corename, x, layers.Dense(self.features_per_slice,  activation='relu')) # (self.features_per_slice)
 
         # Create model.
         model = Model(input_tensor, x, name=corename) 
@@ -1324,12 +1281,12 @@ class ModelS1d_Basic(Model88_sliced) :
         decname = 'debasic1d'
         input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
         x = input_tensor
-        x = self._tagged_chain(decname, x, layers.Dense(518,  activation='relu')) # (518)
+        x = self._tagged_chain(decname, x, layers.Dense(self.features_per_slice,  activation='relu')) # (self.features_per_slice)
         x = self._tagged_chain(decname, x, layers.Dense(518,  activation='relu')) # (518)
         x = self._tagged_chain(decname, x, layers.Dense(518,  activation='relu')) # (518)
         x = self._tagged_chain(decname, x, layers.Dense(518*4,  activation='relu'))  # (518*4)
-        x = self._tagged_chain(decname, x, layers.Reshape((518, 4))) # (518,1)
-        x = self._tagged_chain(decname, x, layers.Dense(4, activation='relu')) # (518,4)
+        x = self._tagged_chain(decname, x, layers.Reshape((518, 4))) # (518,4)
+        x = self._tagged_chain(decname, x, layers.Dense(self.channels_per_slice, activation='relu')) # (518,4)
 
         return Model(input_tensor, x, name=decname) 
 
@@ -1406,7 +1363,7 @@ if __name__ == '__main__':
     # fn_template = '/tmp/foo1d_autoenc_defoo1d.B32I32.h5'
     # fn_weightsFrom = '/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_trained-gpu1.20210208.h5'
     # fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/basic1d_autoenc_debasic1d_trained-last.h5'
-    fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/vgg16r1_autoenc_devgg16r1_trained-last.h5'
+    # fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/vgg16r1_autoenc_devgg16r1_trained-last.h5'
     
     
     if fn_template and len(fn_template) >0:
@@ -1416,7 +1373,7 @@ if __name__ == '__main__':
     if not model:
         # model = ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
         # model = ModelS2d_ResNet50(input_shape=(18, 32, 8), output_class_num=3, output_name='action') # forget ModelS2d_ResNet50r1
-        model = ModelS2d_VGG16r1(input_shape=(18, 32, 8), output_class_num=3, output_name='a3', output_as_attr=True)
+        model = ModelS2d_VGG16r1(input_shape=(18, 32, 6), output_class_num=3, output_name='a3', output_as_attr=True)
         
         # model = ModelS2d_ResNet50(input_shape=(18, 32, 8), output_class_num=8, output_name='gr8attr', output_as_attr=True)
 

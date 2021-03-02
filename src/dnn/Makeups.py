@@ -813,6 +813,8 @@ class Model88_sliced(Model88) :
     def __buildup_autoenc(self, model_name, jsonSubs, custom_objects):
         
         tensor_in, slices = self._slicedInput()
+        shape_echo = tensor_in.shape[1:-1]
+
         enc_name, dec_name = None, None
         if model_name and AUTOENC_TAG in model_name:
             loc = model_name.index(AUTOENC_TAG)
@@ -878,7 +880,10 @@ class Model88_sliced(Model88) :
         if len(slices) >1:
             decoded = layers.Concatenate(axis=-1)([decoded] + slices[1:])
 
-        self.__modelId = '%s%s%s' % (encoder.name, AUTOENC_TAG, decoder.name)
+        if shape_echo != decoded.shape[1:-1] :
+            decoded = layers.Lambda(Model88_sliced._prune, arguments={'output_shape': shape_echo }, output_shape=shape_echo) (decoded)
+
+        self.__modelId = '%s%s%s.%s' % (encoder.name, AUTOENC_TAG, decoder.name, 'x'.join([str(x) for x in list(tensor_in.shape[1:])]))
         self._dnnModel = AutoEnc(tensor_in, decoded, name=self.__modelId)
 
         self._defaultCompileArgs = {**self._defaultCompileArgs, 'loss':'mse'}
@@ -886,6 +891,15 @@ class Model88_sliced(Model88) :
 
         return self.model
 
+    def _prune(x, output_shape=None): # for decoder to make output shape back like input's
+        if not output_shape: output_shape = self._dimMax # TODO
+        dims = len(output_shape)
+        if 1 == dims:
+            slice = x[:, :output_shape[0], :]
+        elif 2 == dims :
+            slice = x[:, :output_shape[0], :output_shape[1] :]
+
+        return slice
 
 ########################################################################
 class ModelS2d_ResNet50Pre(Model88_sliced) :
@@ -1034,7 +1048,7 @@ class ModelS2d_VGG16r1(Model88_sliced) :
     '''
     def __init__(self, **kwargs):
         super(ModelS2d_VGG16r1, self).__init__(**kwargs)
-        self._dimMax = (32, 32)
+        self._dimMax = (20, 32)
         self._encoder, self._decoder = None, None
 
     # def ResNet50(input_tensor=None, input_shape=None, pooling=None, classes=1000, **kwargs):
@@ -1044,6 +1058,9 @@ class ModelS2d_VGG16r1(Model88_sliced) :
 
         input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
         x = input_tensor
+        dimMax = max(list(self._dimMax) + list(input_tensor.shape[1:2]))
+        if min(list(input_tensor.shape[1:2])) < dimMax:
+            x = self._tagged_chain(lnTag, x, layers.ZeroPadding2D(padding=( (0, dimMax-input_tensor.shape[1]), (0, dimMax-input_tensor.shape[2]) )))
 
         #layer1 (20,32,64)
         # 对于stride=1*1,并且padding ='same',这种情况卷积后的图像shape与卷积前相同，本层后shape还是32*32
@@ -1203,8 +1220,8 @@ class ModelS2d_VGG16r1(Model88_sliced) :
         x = self._tagged_chain(decname, x, layers.BatchNormalization())
         x = self._tagged_chain(decname, x, layers.Conv2D(4, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
 
-        output_shape=(18,32)
-        x = self._tagged_chain(decname, x, layers.Lambda(ModelS2d_VGG16r1.__prune, arguments={'output_shape': output_shape}, output_shape= output_shape))
+        # output_shape=(18,32)
+        x = self._tagged_chain(decname, x, layers.Lambda(Model88_sliced._prune, arguments={'output_shape': self._dimMax}, output_shape= self._dimMax))
         return Model(input_tensor, x, name=decname) 
 
     def _buildup_core000(self, input_tensor):
@@ -1388,7 +1405,9 @@ if __name__ == '__main__':
     # fn_template = '/tmp/state18x32x4Y4F518x1To3action.resnet50r1.B32I32_init.h5' # '/tmp/sliced2d.h5'
     # fn_template = '/tmp/foo1d_autoenc_defoo1d.B32I32.h5'
     # fn_weightsFrom = '/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_trained-gpu1.20210208.h5'
-    fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/basic1d_autoenc_debasic1d_trained-last.h5'
+    # fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/basic1d_autoenc_debasic1d_trained-last.h5'
+    fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/vgg16r1_autoenc_devgg16r1_trained-last.h5'
+    
     
     if fn_template and len(fn_template) >0:
         # model = BaseModel.load(fn_template)
@@ -1397,7 +1416,7 @@ if __name__ == '__main__':
     if not model:
         # model = ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
         # model = ModelS2d_ResNet50(input_shape=(18, 32, 8), output_class_num=3, output_name='action') # forget ModelS2d_ResNet50r1
-        model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=3, output_name='a3', output_as_attr=True)
+        model = ModelS2d_VGG16r1(input_shape=(18, 32, 8), output_class_num=3, output_name='a3', output_as_attr=True)
         
         # model = ModelS2d_ResNet50(input_shape=(18, 32, 8), output_class_num=8, output_name='gr8attr', output_as_attr=True)
 

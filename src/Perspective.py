@@ -1228,8 +1228,8 @@ class Formatter_1d518(PerspectiveFormatter):
         imgRGB = [ [ [ Formatter_1d518.FLOAT_NaN for k in range(3) ] for x in range(X* scaleX + scaleX-1) ] for y in range(Y) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
         pixelEdge = [ 1.0 -Formatter_1d518.FLOAT_NaN ] *3
         for y in range(Y):
-            for x in range(scaleX -1) :
-                imgRGB[y][(1+x) *X] = pixelEdge
+            for x in range(1, scaleX) :
+                imgRGB[y][x *(X+1) -1] = pixelEdge
 
             for x in range(X) :
                 offset = y * X + x
@@ -1367,12 +1367,12 @@ class Formatter_base2dImg(PerspectiveFormatter):
         imgRGB = [ [ [BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX* scaleX + scaleX-1)] for y in range(lenY* scaleY  + scaleY-1) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
         pixelEdge = [ 1.0 -BMP_COLOR_BG_FLOAT ] *3
         
-        for y in range(scaleY -1) : # the edge lines
-            imgRGB[(1+y)*lenY] = [ pixelEdge ] * (lenX* scaleX + scaleX-1)
+        for y in range(1, scaleY) : # the edge lines
+            imgRGB[y*(lenY+1) -1] = [ pixelEdge ] * (lenX* scaleX + scaleX-1)
 
         for y in range(lenY):
-            for x in range(scaleX -1) : # the edge lines
-                imgRGB[y][(1+x) *lenX] = pixelEdge
+            for x in range(1, scaleX) : # the edge lines
+                imgRGB[y][x *(lenX+1) -1] = pixelEdge
 
             for x in range(lenX) :
                 v = img[y][x]
@@ -1380,8 +1380,9 @@ class Formatter_base2dImg(PerspectiveFormatter):
                     for j in range(scaleX):
                         coffset = 3* (i*scaleX +j)
                         pixel = v[coffset : coffset+3]
-                        if len(pixel) <3: pixel += [BMP_COLOR_BG_FLOAT] * (3-len(pixel))
-                        imgRGB[i *lenY +y +i][j*lenX +x +j] = pixel
+                        if len(pixel) <3: pixel += [ BMP_COLOR_BG_FLOAT ] * (3-len(pixel))
+                        posRGB = [i *(lenY+1) +y, j*(lenX+1) +x]
+                        imgRGB[posRGB[0]][posRGB[1]] = pixel
 
         return imgRGB
 

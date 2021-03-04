@@ -24,9 +24,6 @@ from crawler.producesSina import SinaMux, Sina_Tplus1, SinaSwingScanner
 import sys, os, platform, re
 import random
 
-RFGROUP_PREFIX  = 'ReplayFrame:'
-RFGROUP_PREFIX2 = 'RF'
-
 ########################################################################
 class SinaDayEnd(SinaSwingScanner):
 
@@ -75,7 +72,7 @@ def swingOnExtracedJsonFolder():
     todayYYMMDD = SINA_TODAY.strftime('%Y%m%d')
 
     evMdSource  = Program.fixupPath(evMdSource)
-    allFiles    = hist.listAllFiles(evMdSource)
+    allFiles    = listAllFiles(evMdSource)
 
     for SYMBOL in objectives:
         p.stop()
@@ -190,7 +187,7 @@ def swingOnH5tars():
     todayYYMMDD = SINA_TODAY.strftime('%Y%m%d')
 
     dirArchived = Program.fixupPath(dirArchived)
-    allFiles    = hist.listAllFiles(dirArchived)
+    allFiles    = listAllFiles(dirArchived)
 
     for SYMBOL in objectives:
         p.stop()

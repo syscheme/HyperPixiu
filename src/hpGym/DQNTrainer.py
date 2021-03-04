@@ -8,6 +8,7 @@ and can also distribute the training load outside of the online agent
 
 from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 import HistoryData as hist
+import ReplaySample as rs
 from MarketData import EXPORT_FLOATS_DIMS
 
 from tensorflow.keras.models import Model, Sequential
@@ -33,7 +34,6 @@ import numpy as np
 
 DUMMY_BIG_VAL = 999999
 NN_FLOAT = 'float32'
-RFGROUP_PREFIX = 'ReplayFrame:'
 
 # GPUs = backend.tensorflow_backend._get_available_gpus()
 def get_available_gpus():
@@ -81,8 +81,8 @@ def exportLayerWeights(theModel, h5fileName, layerNames=[]) :
             layerWeights = layer.get_weights()
             w0 = np.array(layerWeights[0], dtype=float)
             w1 = np.array(layerWeights[1], dtype=float)
-            wd0 = g.create_dataset('weights.0', data= w0, **hist.H5DSET_DEFAULT_ARGS)
-            wd1 = g.create_dataset('weights.1', data= w1, **hist.H5DSET_DEFAULT_ARGS)
+            wd0 = g.create_dataset('weights.0', data= w0, **rs.H5DSET_DEFAULT_ARGS)
+            wd1 = g.create_dataset('weights.1', data= w1, **rs.H5DSET_DEFAULT_ARGS)
             layerExec.append(lyname)
     return layerExec
 
@@ -780,8 +780,8 @@ class MarketDirClassifier(BaseApplication):
                         with h5py.File(h5fileName, 'r') as h5f:
                             framesInHd5 = []
                             for name in h5f.keys() :
-                                if RFGROUP_PREFIX == name[:len(RFGROUP_PREFIX)] :
-                                    framesInHd5.append(name[len(RFGROUP_PREFIX):])
+                                if rs.RFGROUP_PREFIX == name[:len(rs.RFGROUP_PREFIX)] :
+                                    framesInHd5.append(name[len(rs.RFGROUP_PREFIX):])
 
                             # I'd like to skip frame-0 as it most-likly includes many zero-samples
                             if not self._preBalanced and len(framesInHd5)>3:
@@ -796,7 +796,7 @@ class MarketDirClassifier(BaseApplication):
                                 self.error('file %s eliminated as too few ReplayFrames in it' % (h5fileName) )
                                 continue
 
-                            f1st = RFGROUP_PREFIX + framesInHd5[0]
+                            f1st = rs.RFGROUP_PREFIX + framesInHd5[0]
                             frm = h5f[f1st]
                             frameSize  = frm['state'].shape[0]
                             stateSize  = frm['state'].shape[1]
@@ -846,7 +846,7 @@ class MarketDirClassifier(BaseApplication):
             # reading the frame from the h5
             self.debug('readAhead() reading %s of %s' % (frameName, h5fileName))
             with h5py.File(h5fileName, 'r') as h5f:
-                frame = h5f[RFGROUP_PREFIX + frameName]
+                frame = h5f[rs.RFGROUP_PREFIX + frameName]
 
                 for col in COLS :
                     if col in frameDict.keys():

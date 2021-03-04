@@ -10,7 +10,6 @@ from   RemoteEvent import ZmqEE, RedisEE
 from   crawler.crawlSina import *
 
 import sys, os, platform
-RFGROUP_PREFIX = 'ReplayFrame:'
 
 import random
 

@@ -6,12 +6,11 @@ from __future__ import division
 
 # from gym import GymEnv
 from Account import Account, OrderData, Account_AShare
-from Application import MetaObj, BOOL_STRVAL_TRUE
+from Application import MetaObj, BOOL_STRVAL_TRUE, listAllFiles
 from Trader import MetaTrader, BaseTrader
 from Simulator import BackTestApp, RECCATE_ESPSUMMARY
 from Perspective import PerspectiveState, EXPORT_SIGNATURE, Formatter_F1548
 from MarketData import EVENT_TICK, EVENT_KLINE_PREFIX, EXPORT_FLOATS_DIMS, NORMALIZE_ID
-from HistoryData import listAllFiles
 
 import hpGym
 
@@ -25,8 +24,6 @@ mpl.use('Agg')
 from datetime import datetime, timedelta
 import copy
 import h5py, tarfile, numpy
-
-RFGROUP_PREFIX = 'ReplayFrame:'
 
 plt.style.use('dark_background')
 mpl.rcParams.update(
@@ -1181,7 +1178,7 @@ class IdealDayTrader(OfflineSimulator):
         }
 
         with h5py.File(fn_frame, 'a') as h5file:
-            g = h5file.create_group('%s%s' % (RFGROUP_PREFIX, frameId))
+            g = h5file.create_group('%s%s' % (rs.RFGROUP_PREFIX, frameId))
             g.attrs['state'] = 'state'
             g.attrs['action'] = 'action'
             g.attrs[u'default'] = 'state'

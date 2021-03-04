@@ -9,6 +9,7 @@ from Application import *
 from Account import *
 from Trader import *
 import HistoryData as hist
+import ReplaySample as rs
 from MarketData import TickData, KLineData, NORMALIZE_ID, EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY, MARKETDATE_EVENT_PREFIX
 
 from Perspective import *
@@ -44,7 +45,6 @@ import math
 
 SAMPLES_PER_H5FRAME = 1024*2
 # SAMPLES_PER_H5FRAME = 50 # TEST-CODE
-RFGROUP_PREFIX = 'ReplayFrame:'
 RECCATE_ESPSUMMARY = 'EspSum'
 COLUMNS_ESPSUMMARY ='episodeNo,endBalance,openDays,startDate,endDate,totalDays,tradeDay_1st,tradeDay_last,profitDays,lossDays,maxDrawdown,maxDdPercent,' \
     + 'totalNetPnl,dailyNetPnl,totalCommission,dailyCommission,totalSlippage,dailySlippage,totalTurnover,dailyTurnover,totalTradeCount,dailyTradeCount,totalReturn,annualizedReturn,dailyReturn,' \
@@ -2160,8 +2160,8 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         #col_state  = np.concatenate(metrix[:, 0]).reshape(len(rangedFrame), len(rangedFrame[0][0]))
         stateshape, actionshape = np.array(metrix[0][0]).shape, len(rangedFrame[0][1])
-        col_state   = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype(hist.SAMPLE_FLOAT)
-        col_action  = np.concatenate(metrix[:, 1]).reshape(lenF, actionshape).astype(hist.CLASSIFY_INT)
+        col_state   = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype(rs.SAMPLE_FLOAT)
+        col_action  = np.concatenate(metrix[:, 1]).reshape(lenF, actionshape).astype(rs.CLASSIFY_INT)
         col_fdate   = np.asarray(metrix[:, 2]).astype('float32') # instead of float16
         col_price   = np.asarray(metrix[:, 3]).astype('float32') # instead of float16
 
@@ -2267,7 +2267,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         idx_associated = min(idxmax)
 
         result = df.values[ :idx_associated, -1 -eval_days: ] if idx_associated >0 else np.array([])
-        return result.astype(hist.SAMPLE_FLOAT)
+        return result.astype(rs.SAMPLE_FLOAT)
 
     def __scanEventsSequence(self, evseq) :
 

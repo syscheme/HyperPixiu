@@ -6,7 +6,6 @@ from Application import *
 from TradeAdvisor import EVENT_ADVICE
 from crawler.producesSina import SinaMerger, SinaMux
 
-
 from datetime import datetime, timedelta
 import os
 
@@ -164,7 +163,7 @@ if __name__ == '__main__':
     allSymbols = allSymbols.split(',')
     if len(allSymbols) <=0:
         symbolListBy = srcPathPatternDict['srcPathPattern_KL5m']
-        fnAll = hist.listAllFiles(os.path.dirname(symbolListBy))
+        fnAll = listAllFiles(os.path.dirname(symbolListBy))
         symbolListBy = os.path.basename(symbolListBy)
         fnMatched = []
         for fn in fnAll:

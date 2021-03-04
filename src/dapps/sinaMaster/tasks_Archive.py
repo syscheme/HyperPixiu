@@ -11,7 +11,7 @@ import crawler.crawlSina as sina
 import crawler.producesSina as prod
 
 from MarketData import MARKETDATE_EVENT_PREFIX, EVENT_KLINE_1DAY
-import HistoryData as hist
+from Application import listAllFiles
 
 import h5tar, h5py, pickle, bz2
 from urllib.parse import quote, unquote
@@ -508,7 +508,7 @@ def __refreshBatch_DownloadToday(dirReqs, TODAY_YYMMDD):
 
     Tname_batchStart = os.path.basename(max(reqsPending)) if len(reqsPending) >0 else ''
 
-    allfiles = hist.listAllFiles(dirReqs, depthAllowed=1)
+    allfiles = listAllFiles(dirReqs, depthAllowed=1)
     taskfiles, potentialRetries = [], []
     for fn in allfiles:
         bn = os.path.basename(fn)

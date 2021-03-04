@@ -26,8 +26,6 @@ INPUT_FLOAT = 'float32'
 
 EXPORT_FLOATS_DIMS = 4
 DUMMY_BIG_VAL = 999999
-RFGROUP_PREFIX = 'ReplayFrame:'
-RFGROUP_PREFIX2 = 'RF'
 # ----------------------------
 
 from tensorflow.keras.models import Model, Sequential

@@ -8,16 +8,15 @@ and can also distribute the training load outside of the online agent
 from __future__ import division
 from abc import abstractmethod
 
-from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
-import HistoryData as hist
+from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE, listAllFiles
+import ReplaySample as rs
+
 from dnn.BaseModel import BaseModel, BACKEND_FLOAT, Model88_sliced, AUTOENC_TAG
 
 # ----------------------------
 # INDEPEND FROM HyperPX core classes: from MarketData import EXPORT_FLOATS_DIMS
 EXPORT_FLOATS_DIMS = 4
 DUMMY_BIG_VAL = 999999
-RFGROUP_PREFIX = 'ReplayFrame:'
-RFGROUP_PREFIX2 = 'RF'
 
 # ----------------------------
 
@@ -656,15 +655,14 @@ class Trainer_classify(BaseApplication):
         for i in range(cBth):
             batch = {}
             for col in COLS :
-                # batch[col] = np.array(frameDict[col][self._batchSize*i: self._batchSize*(i+1)]).astype(hist.SAMPLE_FLOAT)
-                batch[col] = np.array([frameDict[col][j] for j in shuffledIndx[self._batchSize*i: self._batchSize*(i+1)]]).astype(hist.SAMPLE_FLOAT)
+                batch[col] = np.array([frameDict[col][j] for j in shuffledIndx[self._batchSize*i: self._batchSize*(i+1)]]).astype(rs.SAMPLE_FLOAT)
             
             bths.append(batch)
 
         return bths
 
     def __balanceSamples(self, frameDict) :
-        return hist.balanceSamples(frameDict, self._colnameSamples, self._colnameClasses)
+        return rs.balanceSamples(frameDict, self._colnameSamples, self._colnameClasses)
 
     def __populateSampleFileList(self) :
         fileList = [ (x, -1) for x in self._sampleFiles]
@@ -678,7 +676,7 @@ class Trainer_classify(BaseApplication):
                     continue
                 
                 if os.path.isdir(dirPath):
-                    files = hist.listAllFiles(dirPath)
+                    files = listAllFiles(dirPath)
                     for name in files:
                         if self._preBalanced :
                             if '.h5b' != name[-4:] : continue
@@ -709,7 +707,7 @@ class Trainer_classify(BaseApplication):
                         with h5py.File(h5fileName, 'r') as h5f:
                             framesInHd5 = []
                             for name in h5f.keys() :
-                                if RFGROUP_PREFIX == name[:len(RFGROUP_PREFIX)] or RFGROUP_PREFIX2 == name[:len(RFGROUP_PREFIX2)] :
+                                if rs.RFGROUP_PREFIX == name[:len(rs.RFGROUP_PREFIX)] or rs.RFGROUP_PREFIX2 == name[:len(rs.RFGROUP_PREFIX2)] :
                                     framesInHd5.append(name)
 
                             if lastFrames >0:
@@ -780,7 +778,7 @@ class Trainer_classify(BaseApplication):
             # reading the frame from the h5
             self.debug('readAhead() reading %s of %s' % (frameName, h5fileName))
             with h5py.File(h5fileName, 'r', **H5_OPEN_ARGS) as h5f:
-                frame = h5f[frameName] # h5f[RFGROUP_PREFIX + frameName]
+                frame = h5f[frameName] # h5f[rs.RFGROUP_PREFIX + frameName]
 
                 for col in COLS :
                     if col in frameDict.keys():
@@ -1213,12 +1211,12 @@ class Trainer_GainRates(Trainer_classify) :
 
         self._funcConvertFrame = self.classifyTplus1GainRateOfFrame
         self._funcFilterFrame  = None
-        self._funcGRClassifier = grClassifier if grClassifier else hist.classifyGainRates_screeningTplus1
+        self._funcGRClassifier = grClassifier if grClassifier else rs.classifyGainRates_screeningTplus1
 
     def classifyTplus1GainRateOfFrame(self, frameDict):
 
         gainClasses = self._funcGRClassifier(frameDict[self._colnameClasses])
-        samples = np.array(frameDict[self._colnameSamples]).astype(hist.SAMPLE_FLOAT)
+        samples = np.array(frameDict[self._colnameSamples]).astype(rs.SAMPLE_FLOAT)
         bths = []
         cBth = gainClasses.shape[0] // self._batchSize
         for i in range(cBth):
@@ -1273,7 +1271,7 @@ if __name__ == '__main__':
     p.info('all objects registered piror to Trainer_classify: %s' % p.listByType())
     
     trainer = p.createApp(Trainer_classify, configNode ='train') # for 3 actions
-    # trainer = p.createApp(Trainer_GainRates, grClassifier=hist.classifyGainRates_level6, configNode ='train') # for 8 gain-rates
+    # trainer = p.createApp(Trainer_GainRates, grClassifier=rs.classifyGainRates_level6, configNode ='train') # for 8 gain-rates
     # trainer = p.createApp(Trainer_GainRates, grClassifier=None, configNode ='train') # for 8 gain-rates
 
     # model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=3, output_name='action')

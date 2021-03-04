@@ -69,6 +69,23 @@ class MetaObj(ABC):
         return result
 
 ########################################################################
+def listAllFiles(folder, depthAllowed=5, fileOnly=True):
+    ret =[]
+    if depthAllowed <=0:
+        return ret
+
+    for root, subdirs, files in os.walk(folder, topdown=False):
+        for name in files:
+            ret.append(os.path.join(root, name))
+        for name in subdirs:
+            dn = os.path.join(root, name)
+            if not fileOnly:
+                ret.append(dn +"/")
+            ret += listAllFiles(dn, depthAllowed -1)
+
+    return [str(i) for i in list(np.unique(ret))]
+
+########################################################################
 class MetaApp(MetaObj):
 
     @abstractmethod

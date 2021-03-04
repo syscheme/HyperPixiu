@@ -818,7 +818,7 @@ class Model88_sliced(Model88) :
         if model_name and AUTOENC_TAG in model_name:
             loc = model_name.index(AUTOENC_TAG)
             enc_name = model_name[:loc]
-            dec_name = model_name[loc+len(AUTOENC_TAG):]
+            dec_name = model_name[loc+len(AUTOENC_TAG):].split('.')[0]
 
         class AutoEnc(Model) :
             def __init__(self, *args, **kwargs) :
@@ -880,6 +880,7 @@ class Model88_sliced(Model88) :
             decoded = layers.Concatenate(axis=-1)([decoded] + slices[1:])
 
         if shape_echo != decoded.shape[1:] :
+            shape_echo = tuple(shape_echo)
             decoded = layers.Lambda(Model88_sliced._prune, arguments={'output_shape': shape_echo }, output_shape=shape_echo) (decoded)
 
         self.__modelId = '%s%s%s.%s' % (encoder.name, AUTOENC_TAG, decoder.name, 'x'.join([str(x) for x in list(tensor_in.shape[1:])]))
@@ -1219,7 +1220,7 @@ class ModelS2d_VGG16r1(Model88_sliced) :
         x = self._tagged_chain(decname, x, layers.BatchNormalization())
         x = self._tagged_chain(decname, x, layers.Conv2DTranspose(self.channels_per_slice, 3, activation='relu', padding='same', kernel_regularizer=regularizers.l2(weight_decay)))
 
-        output_shape= list(self._dimMax) + [ self.channels_per_slice ]
+        output_shape= tuple(list(self._dimMax) + [ self.channels_per_slice ])
         x = self._tagged_chain(decname, x, layers.Lambda(Model88_sliced._prune, arguments={'output_shape': output_shape}, output_shape= output_shape))
         return Model(input_tensor, x, name=decname) 
 
@@ -1363,7 +1364,7 @@ if __name__ == '__main__':
     # fn_template = '/tmp/foo1d_autoenc_defoo1d.B32I32.h5'
     # fn_weightsFrom = '/mnt/e/AShareSample/state18x32x4Y4F518x1To3action.resnet50_trained-gpu1.20210208.h5'
     # fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/basic1d_autoenc_debasic1d_trained-last.h5'
-    # fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/vgg16r1_autoenc_devgg16r1_trained-last.h5'
+    fn_weightsFrom = '/mnt/d/wkspaces/HyperPixiu/out/Trainer/vgg16r1_autoenc_devgg16r1_trained-last.h5'
     
     
     if fn_template and len(fn_template) >0:
@@ -1373,7 +1374,7 @@ if __name__ == '__main__':
     if not model:
         # model = ModelS2d_ResNet50Pre, ModelS2d_ResNet50, Model88_sliced2d(), Model88_ResNet34d1(), Model88_Cnn1Dx4R2() Model88_VGG16d1 Model88_Cnn1Dx4R3
         # model = ModelS2d_ResNet50(input_shape=(18, 32, 8), output_class_num=3, output_name='action') # forget ModelS2d_ResNet50r1
-        model = ModelS2d_VGG16r1(input_shape=(18, 32, 6), output_class_num=3, output_name='a3', output_as_attr=True)
+        model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=3, output_name='a3', output_as_attr=True)
         
         # model = ModelS2d_ResNet50(input_shape=(18, 32, 8), output_class_num=8, output_name='gr8attr', output_as_attr=True)
 

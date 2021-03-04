@@ -10,8 +10,7 @@ from abc import abstractmethod
 
 from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
 import HistoryData as hist
-from dnn.BaseModel import BaseModel, BACKEND_FLOAT
-from dnn.Makeups  import Model88_sliced, ModelS2d_VGG16r1, AUTOENC_TAG
+from dnn.BaseModel import BaseModel, BACKEND_FLOAT, Model88_sliced, AUTOENC_TAG
 
 # ----------------------------
 # INDEPEND FROM HyperPX core classes: from MarketData import EXPORT_FLOATS_DIMS

@@ -51,7 +51,7 @@
 
     "remoteEvents": {
         "redis": {
-            "host" : "tc.syscheme.com", // "172.16.20.170", 
+            "host" : "mq.syscheme.com", // "172.16.20.170", 
             "outgoing": [], 
             "incoming": ["evTAdv"], // ""
         },

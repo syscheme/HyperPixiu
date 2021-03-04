@@ -6,6 +6,7 @@ from Simulator import IdealTrader_Tplus1, SAMPLES_PER_H5FRAME # , ShortSwingScan
 from EventData import Event, EventData
 from MarketData import *
 from Perspective import PerspectiveState
+from Application import listAllFiles
 import HistoryData as hist
 from crawler.crawlSina import *
 import h5tar, h5py, pickle, bz2
@@ -198,7 +199,7 @@ class SinaMux(hist.PlaybackMux) :
 
     def __extractedFolder_advmd(self, folderName):
         subStrmsAdded =[]
-        allfiles = hist.listAllFiles(folderName, depthAllowed=1)
+        allfiles = listAllFiles(folderName, depthAllowed=1)
 
         memlist = []
         for fn in allfiles:
@@ -241,7 +242,7 @@ class SinaMux(hist.PlaybackMux) :
     def __extractedFolder_sinaJson(self, folderName, evtype):
         
         subStrmsAdded=[]
-        allfiles = hist.listAllFiles(folderName, depthAllowed=2)
+        allfiles = listAllFiles(folderName, depthAllowed=2)
 
         for fn in allfiles:
             '''
@@ -410,7 +411,7 @@ class SinaMux(hist.PlaybackMux) :
             fnSearch = fnSearch[:-1]
             dirOnly, parentDir = True, os.path.dirname(fnSearch)
 
-        fnAll = hist.listAllFiles(parentDir, fileOnly = not dirOnly)
+        fnAll = listAllFiles(parentDir, fileOnly = not dirOnly)
         fnSearch = os.path.basename(fnSearch)
         srcPaths = []
         for fn in fnAll:
@@ -516,7 +517,7 @@ def _makeupMux(simulator, dirOffline):
 
     # part.1 the weekly tcsv collection by advisors that covers KL5m, MF1m, and Ticks
     # in the filename format suchm as SZ000001_sinaWk20200629.tcsv
-    fnAll = hist.listAllFiles(dirOffline)
+    fnAll = listAllFiles(dirOffline)
     fnFilter_SinaWeek = '%s_sinaWk[0-9]*.tcsv' % symbol
     fnFilter_SinaJson = {
         EVENT_KLINE_5MIN: '%s_KL5m[0-9]*.json' % symbol,
@@ -746,7 +747,7 @@ def populateMuxFromWeekDir(prog, dirArchived, symbol, dtStart = None):
         wkStart = 'Sina%04dW%02d_' % (year, weekNo)
         yymmddStart = dtStart.strftime('%Y%m%d')
 
-    allfiles = hist.listAllFiles(dirArchived)
+    allfiles = listAllFiles(dirArchived)
     fnSinaDays, fnSinaWeeks = [], []
     for fn in allfiles:
         bn = os.path.basename(fn)
@@ -977,124 +978,6 @@ def determineLastDays(prog, nLastDays =7, todayYYMMDD= None):
     prog.debug('determineLastDays() last %d trade-days are %s according to %s' % (nLastDays, ','.join(lastYYMMDDs), symbol))
     return lastYYMMDDs
 
-"""
-########################################################################
-def balanceSamples(filepathRFrm, compress=True) :
-    '''
-    read a frame from H5 file
-    '''
-    dsargs={}
-    if compress :
-        dsargs['compression'] = 'lzf' # 'gzip' for HDFExplorer
-
-    print("balancing samples in %s to %sb" % (filepathRFrm, filepathRFrm))
-    with h5py.File(filepathRFrm+'b', 'w') as h5out:
-        frmId=0
-        frmState=None
-        frmAction=None
-        frmInName=''
-        subtotal = np.asarray([0]*3)
-
-        with h5py.File(filepathRFrm, 'r') as h5f:
-            framesInHd5 = []
-            for name in h5f.keys() :
-                if RFGROUP_PREFIX == name[:len(RFGROUP_PREFIX)] or RFGROUP_PREFIX2 == name[:len(RFGROUP_PREFIX2)] :
-                    framesInHd5.append(name)
-
-            framesInHd5.sort()
-            print("found frames in %s: %s" % (filepathRFrm, ','.join(framesInHd5)))
-
-            for frmInName in framesInHd5 :
-                print("reading frmIn[%s] from %s" % (frmInName, filepathRFrm))
-                frm = h5f[frmInName]
-                if frmState is None:
-                    frmState = np.array(list(frm['state']))
-                    frmAction = np.array(list(frm['action']))
-                    lenBefore =0
-                    lenAfter = len(frmState)
-                else :
-                    lenBefore = len(frmState)
-                    a = np.array(list(frm['state']))
-                    frmState = np.concatenate((frmState, a), axis=0)
-                    a = np.array(list(frm['action']))
-                    frmAction= np.concatenate((frmAction, a), axis=0)
-                    lenAfter = len(frmState)
-
-                npActions = frmAction[lenBefore:]
-                AD = np.where(npActions >=0.99) # to match 1 because action is float read from RFrames
-                kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
-                kImax = max(kI)
-                idxMax = kI.index(kImax)
-                cToReduce = kImax - int(1.2*(sum(kI) -kImax))
-                if cToReduce >0:
-                    print("frmIn[%s] actCounts[%s,%s,%s]->evicting %d samples of max-act[%d]" % (frmInName, kI[0],kI[1],kI[2], cToReduce, idxMax))
-                    idxItems = np.where(AD[1] ==idxMax)[0].tolist()
-                    random.shuffle(idxItems)
-                    del idxItems[cToReduce:]
-                    idxToDel = [lenBefore +i for i in idxItems]
-                    frmAction = np.delete(frmAction, idxToDel, axis=0)
-                    frmState = np.delete(frmState, idxToDel, axis=0)
-
-                # update the stat now
-                AD = np.where(frmAction >=0.99) # to match 1 because action is float read from RFrames
-                kI = [np.count_nonzero(AD[1] ==i) for i in range(3)] # counts of each actions in frame
-                print("frmIn[%s] processed, pending %s actCounts[%s,%s,%s]" % (frmInName, len(frmState), kI[0],kI[1],kI[2]))
-
-                if len(frmState) >= SAMPLES_PER_H5FRAME:
-                    col_state = frmState[:SAMPLES_PER_H5FRAME]
-                    col_action = frmAction[:SAMPLES_PER_H5FRAME]
-                    frmState  = frmState[SAMPLES_PER_H5FRAME:]
-                    frmAction = frmAction[SAMPLES_PER_H5FRAME:]
-
-                    AD = np.where(col_action >=0.99)
-                    kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
-                    subtotal += np.asarray(kIout)
-                    # AD = np.where(frmAction >=0.99)
-                    # kI = [np.count_nonzero(AD[1] ==i) for i in range(3)]
-
-                    frmName ='%s%s' % (RFGROUP_PREFIX, frmId)
-                    g = h5out.create_group(frmName)
-                    g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
-                    frmId +=1
-                    g.attrs['state'] = 'state'
-                    g.attrs['action'] = 'action'
-                    g.attrs[u'default'] = 'state'
-                    g.attrs['size'] = col_state.shape[0]
-                    g.attrs['signature'] = EXPORT_SIGNATURE
-
-                    st = g.create_dataset('state', data= col_state, **dsargs)
-                    st.attrs['dim'] = col_state.shape[1]
-                    ac = g.create_dataset('action', data= col_action, **dsargs)
-                    ac.attrs['dim'] = col_action.shape[1]
-                    print("outfrm[%s] actCounts[%s,%s,%s] saved, pending %s" % (frmName, kIout[0],kIout[1],kIout[2], len(frmState)))
-
-            # the last frame
-            if len(frmState) >= 0:
-                col_state = frmState
-                col_action = frmAction
-                AD = np.where(col_action >=0.99)
-                kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
-                subtotal += np.asarray(kIout)
-                
-                frmName ='%s%s' % (RFGROUP_PREFIX, frmId)
-                frmId +=1
-                g = h5out.create_group(frmName)
-                g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
-                g.attrs['state'] = 'state'
-                g.attrs['action'] = 'action'
-                g.attrs[u'default'] = 'state'
-                g.attrs['size'] = col_state.shape[0]
-                g.attrs['signature'] = EXPORT_SIGNATURE
-
-                st = g.create_dataset('state', data= col_state, **dsargs)
-                st.attrs['dim'] = col_state.shape[1]
-                ac = g.create_dataset('action', data= col_action, **dsargs)
-                ac.attrs['dim'] = col_action.shape[1]
-
-                print("lastfrm[%s] actCounts[%s,%s,%s] saved, size %s" % (frmName, kIout[0],kIout[1],kIout[2], len(col_action)))
-
-            print("balanced %s to %sb: %s->%d frameOut, actSubtotal%s" % (filepathRFrm, filepathRFrm, frmInName, frmId, list(subtotal)))
-"""
 
 # ----------------------------------------------------------------------
 def convertJsonTarToCsvH5t(jsonTarfn, csvh5, evtype):

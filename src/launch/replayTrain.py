@@ -7,14 +7,13 @@ and can also distribute the training load outside of the online agent
 '''
 
 from Application  import Program, BaseApplication, MetaObj, BOOL_STRVAL_TRUE
-from HistoryData  import H5DSET_DEFAULT_ARGS
+import ReplaySample as rs
+
 # ----------------------------
 # INDEPEND FROM HyperPX core classes: from MarketData import EXPORT_FLOATS_DIMS
 EXPORT_FLOATS_DIMS = 4
 DUMMY_BIG_VAL = 999999
 NN_FLOAT = 'float32'
-RFGROUP_PREFIX = 'ReplayFrame:'
-RFGROUP_PREFIX2 = 'RF'
 # ----------------------------
 
 from tensorflow.keras.models import Model, Sequential
@@ -86,8 +85,8 @@ def exportLayerWeights(theModel, h5fileName, layerNames=[]) :
             layerWeights = layer.get_weights()
             w0 = np.array(layerWeights[0], dtype=float)
             w1 = np.array(layerWeights[1], dtype=float)
-            wd0 = g.create_dataset('weights.0', data= w0, **H5DSET_DEFAULT_ARGS)
-            wd1 = g.create_dataset('weights.1', data= w1, **H5DSET_DEFAULT_ARGS)
+            wd0 = g.create_dataset('weights.0', data= w0, **rs.H5DSET_DEFAULT_ARGS)
+            wd1 = g.create_dataset('weights.1', data= w1, **rs.H5DSET_DEFAULT_ARGS)
             layerExec.append(lyname)
     return layerExec
 
@@ -800,7 +799,7 @@ class ReplayTrainer(BaseApplication):
                         with h5py.File(h5fileName, 'r') as h5f:
                             framesInHd5 = []
                             for name in h5f.keys() :
-                                if RFGROUP_PREFIX == name[:len(RFGROUP_PREFIX)] or RFGROUP_PREFIX2 == name[:len(RFGROUP_PREFIX2)] :
+                                if rs.RFGROUP_PREFIX == name[:len(rs.RFGROUP_PREFIX)] or rs.RFGROUP_PREFIX2 == name[:len(rs.RFGROUP_PREFIX2)] :
                                     framesInHd5.append(name)
 
                             # I'd like to skip frame-0 as it most-likly includes many zero-samples
@@ -867,7 +866,7 @@ class ReplayTrainer(BaseApplication):
             # reading the frame from the h5
             self.debug('readAhead() reading %s of %s' % (frameName, h5fileName))
             with h5py.File(h5fileName, 'r') as h5f:
-                frame = h5f[frameName] # h5f[RFGROUP_PREFIX + frameName]
+                frame = h5f[frameName] # h5f[rs.RFGROUP_PREFIX + frameName]
 
                 for col in COLS :
                     if col in frameDict.keys():

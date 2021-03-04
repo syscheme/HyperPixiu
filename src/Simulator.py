@@ -9,6 +9,7 @@ from Application import *
 from Account import *
 from Trader import *
 import HistoryData as hist
+import ReplaySample as rs
 from MarketData import TickData, KLineData, NORMALIZE_ID, EVENT_TICK, EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY, MARKETDATE_EVENT_PREFIX
 
 from Perspective import *
@@ -44,7 +45,6 @@ import math
 
 SAMPLES_PER_H5FRAME = 1024*2
 # SAMPLES_PER_H5FRAME = 50 # TEST-CODE
-RFGROUP_PREFIX = 'ReplayFrame:'
 RECCATE_ESPSUMMARY = 'EspSum'
 COLUMNS_ESPSUMMARY ='episodeNo,endBalance,openDays,startDate,endDate,totalDays,tradeDay_1st,tradeDay_last,profitDays,lossDays,maxDrawdown,maxDdPercent,' \
     + 'totalNetPnl,dailyNetPnl,totalCommission,dailyCommission,totalSlippage,dailySlippage,totalTurnover,dailyTurnover,totalTradeCount,dailyTradeCount,totalReturn,annualizedReturn,dailyReturn,' \
@@ -1920,7 +1920,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
             self._recorder.registerCategory(EVENT_ADVICE, params= {'columns' : AdviceData.COLUMNS})
 
         self._tradeSymbol = self.wkTrader.objectives[0] # idealTrader only cover a single symbol from the objectives
-        self.__fmtr = Formatter_1d518() # Formatter_2dImg32x18() # ('/mnt/e/bmp/%s.' % self._tradeSymbol, dem=5) #  = Formatter_2dImgSnail16() = Formatter_F1548()
+        self.__fmtr = Formatter_Snail32x32('/mnt/e/bmp/%s.' % self._tradeSymbol, dem=5) # Formatter_1d518 Formatter_2dImg32x18() # ('/mnt/e/bmp/%s.' % self._tradeSymbol, dem=5) #  = Formatter_Snail32x32() = Formatter_F1548()
         if isinstance(self._wkHistData, hist.CsvPlayback) and self.__fmtr._channels >4:
             self.warn('doAppInit() enforced formatter[%s] channels=4 from %s as the histData is CsvPlayback' % (self.__fmtr.id, self.__fmtr._channels))
             self.__fmtr._channels =4
@@ -2160,8 +2160,8 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         #col_state  = np.concatenate(metrix[:, 0]).reshape(len(rangedFrame), len(rangedFrame[0][0]))
         stateshape, actionshape = np.array(metrix[0][0]).shape, len(rangedFrame[0][1])
-        col_state   = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype(hist.SAMPLE_FLOAT)
-        col_action  = np.concatenate(metrix[:, 1]).reshape(lenF, actionshape).astype(hist.CLASSIFY_INT)
+        col_state   = np.concatenate(metrix[:, 0]).reshape(lenF, *stateshape).astype(rs.SAMPLE_FLOAT)
+        col_action  = np.concatenate(metrix[:, 1]).reshape(lenF, actionshape).astype(rs.CLASSIFY_INT)
         col_fdate   = np.asarray(metrix[:, 2]).astype('float32') # instead of float16
         col_price   = np.asarray(metrix[:, 3]).astype('float32') # instead of float16
 
@@ -2177,7 +2177,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
 
         fn_frame = os.path.join(self.wkTrader.outdir, 'RFrm%s_%s.h5' % (self.__fmtr.id, self._tradeSymbol) )
         
-        h5args =copy.copy(hist.H5DSET_DEFAULT_ARGS)
+        h5args =copy.copy(rs.H5DSET_DEFAULT_ARGS)
         if self._h5compression and len(self._h5compression)>0:
             h5args['compression'] = self._h5compression
         
@@ -2267,7 +2267,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
         idx_associated = min(idxmax)
 
         result = df.values[ :idx_associated, -1 -eval_days: ] if idx_associated >0 else np.array([])
-        return result.astype(hist.SAMPLE_FLOAT)
+        return result.astype(rs.SAMPLE_FLOAT)
 
     def __scanEventsSequence(self, evseq) :
 

@@ -6,7 +6,7 @@ from __future__ import division
 
 from EventData    import EventData, datetime2float, EVENT_NAME_PREFIX
 from MarketData   import *
-from Perspective  import PerspectiveState, Formatter_F1548, Formatter_2dImg32x18, Formatter_2dImgSnail16
+from Perspective  import PerspectiveState, Formatter_F1548, Formatter_2dImg32x18, Formatter_Snail32x32
 from Application  import BaseApplication, BOOL_STRVAL_TRUE
 from TradeAdvisor import *
 from Trader       import MetaTrader, BaseTrader
@@ -192,7 +192,7 @@ class DnnAdvisor(TradeAdvisor):
     FORMATTERS ={
         '2dImg32x18': Formatter_2dImg32x18,
         'F1548': Formatter_F1548,
-        '2dImgSnail16': Formatter_2dImgSnail16,
+        '2dImgSnail16': Formatter_Snail32x32,
     }
 
     def __init__(self, program, **kwargs) :
@@ -253,7 +253,7 @@ class DnnAdvisor(TradeAdvisor):
             self.debug('generateAdviceOnMarketEvent() rack of marketState on %s' % ev.desc)
             return None # skip advising pirior to plenty state data
 
-        floatstate = np.array([floatstate]).astype(hist.SAMPLE_FLOAT)
+        floatstate = np.array([floatstate]).astype(rs.SAMPLE_FLOAT)
         act_values = self._brain.predict(floatstate)
         # action = [0.0] * DnnAdvisor_S1548I4A3.ACTION_DIMS
         # idxAct = np.argmax(act_values[0])

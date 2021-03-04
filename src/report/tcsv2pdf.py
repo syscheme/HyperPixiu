@@ -5,6 +5,7 @@ BackTest reports
 the plotting of backtrader is a good project:
 https://www.backtrader.com/docu/plotting/plotting/
 https://github.com/mementum/backtrader/tree/master/backtrader/plot
+pyecharts: https://www.kesci.com/mw/project/5eb7958f366f4d002d783d4a
 
 '''
 from __future__ import division

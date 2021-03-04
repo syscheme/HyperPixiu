@@ -4,7 +4,7 @@
 '''
 from __future__ import division
 
-from Application import BaseApplication, Iterable
+from Application import BaseApplication, Iterable, listAllFiles
 from EventData import *
 from MarketData import *
 '''
@@ -28,28 +28,7 @@ else:
 import bz2
 import numpy as np
 
-SAMPLE_FLOAT = 'float16' # note: SAMPLE_FLOAT MUST compatible with but not equal to BaseModel.INPUT_FLOATS
-# float32(single-preccision) -3.4e+38 ~ 3.4e+38, float16(half~) 5.96e-8 ~ 6.55e+4, float64(double-preccision)
-CLASSIFY_INT = 'int8'
-
 EVENT_TOARCHIVE  = EVENT_NAME_PREFIX + 'toArch'
-H5DSET_DEFAULT_ARGS={ 'compression': 'lzf' } # note lzf is good at speed, but HDFExplorer doesn't support it. Change it to gzip if want to view
-
-def listAllFiles(folder, depthAllowed=5, fileOnly=True):
-    ret =[]
-    if depthAllowed <=0:
-        return ret
-
-    for root, subdirs, files in os.walk(folder, topdown=False):
-        for name in files:
-            ret.append(os.path.join(root, name))
-        for name in subdirs:
-            dn = os.path.join(root, name)
-            if not fileOnly:
-                ret.append(dn +"/")
-            ret += listAllFiles(dn, depthAllowed -1)
-
-    return [str(i) for i in list(np.unique(ret))]
 
 ########################################################################
 class Recorder(BaseApplication):
@@ -1558,119 +1537,3 @@ class Zipper(BaseApplication):
     def _push(self, filename) :
         self._queue.put(filename)
 
-def classifyGainRates_level6(gain_rates, interestDays=[0,1,2,4]) : # [0,1,2,4] to measure day0,day1,day2,day4 within a week, interestDays=[0,1,2,-1]) :
-    '''
-    @param gain_rates: a 2d metrix: [[gr_day0, gr_day1, gr_day2 ... gr_dayN], ...]
-    @return np.array of gain-classes
-    '''
-    gainRates = np.array(gain_rates).astype(SAMPLE_FLOAT) #  'gain_rates' is a list here
-    days = gainRates.shape[1]
-    daysOfcol2 =2 # = days-1
-    gainRates = gainRates[:, interestDays] # = gainRates[0,1, daysOfcol2]] # we only interest day0, day1 and dayN
-    # dailize the gain rate, by skipping day0 and day1
-    for i in range(len(interestDays)):
-        if interestDays[i] < 0: interestDays[i] += days # covert last(-1) to real index
-        if interestDays[i] > 1:
-            gainRates[:, i] = gainRates[:, i] /daysOfcol2
-    
-    # # scaling the gain rate to fit in [0,1) : 0 maps -2%, 1 maps +8%
-    # SCALE, OFFSET =10, 0.02
-    # gainRates = (gainRates + OFFSET) *SCALE
-    # gainRates.clip(0.0, 1.0)``
-
-    LC = [-1000, -2.0, 0.5, 1.0, 3.0, 5.0, 100 ] # by %, -1000 means -INF, +1000= +INF
-    gainClasses = np.zeros(shape=(gainRates.shape[0], (len(LC) -1) *len(interestDays))).astype(CLASSIFY_INT) # 3classes for day0: <1%, 1~5%, >5%
-    for i in range(len(LC) -1):
-        for j in range(len(interestDays)):
-            d = interestDays[j]
-            C = np.where((gainRates[:, j] > LC[i]/100.0) & (gainRates[:, j] <= LC[i+1]/100.0))
-            gainClasses[C, j*(len(LC)-1) +i] =1
-
-    return gainClasses
-
-def classifyGainRates_screeningTplus1(gain_rates) : # just for screening after day-close
-    '''
-    @param gain_rates: a 2d metrix: [[gr_day0, gr_day1, gr_day2 ... gr_dayN], ...]
-    @return np.array of gain-classes
-    '''
-    gainRates = np.array(gain_rates).astype(SAMPLE_FLOAT) #  'gain_rates' is a list here
-    days = gainRates.shape[1]
-    gainRates = gainRates[:, [0, 1, 2]] # we only interest day0, day1 and day2
-
-    gainClasses = np.zeros(shape=(gainRates.shape[0], 8)).astype(CLASSIFY_INT) # reserved for 8 classes/attrs
-    
-    # attr-0~2: no profit cases that should eliminate or sell positions
-    # attr-0. day1 gr<=-0.05%
-    C = np.where(gainRates[:, 1] <= -0.005)
-    gainClasses[C, 0] =1
-    # attr-1. day2 <day1
-    C = np.where(gainRates[:, 2] < gainRates[:, 1])
-    gainClasses[C, 1] =1
-    # attr-2. day2 <=1%
-    C = np.where(gainRates[:, 2] <= 0.01)
-    gainClasses[C, 2] =1
-
-    # # class-3~6: maybe good to buy tomorrow
-    # # class-3: 1% < day2 <=3% 
-    # C = np.where((gainRates[:, 2] > 0.01) & (gainRates[:, 2] <=0.03))
-    # gainClasses[C, 3] =1
-    # # class-4. 3%< day2 <=5%
-    # C = np.where((gainRates[:, 2] > 0.03) & (gainRates[:, 2] <=0.05))
-    # gainClasses[C, 4] =1
-    # # class-5. 5%< day2 <=8%
-    # C = np.where((gainRates[:, 2] > 0.05) & (gainRates[:, 2] <=0.08))
-    # gainClasses[C, 5] =1
-    # # class-6. day2 >8%
-    # C = np.where(gainRates[:, 2] > 0.08)
-    # gainClasses[C, 6] =1
-    
-    # version2, simplized
-    C = np.where((gainRates[:, 1] > 0.01) & (gainRates[:, 1] <=0.03))
-    gainClasses[C, 3] =1
-    C = np.where((gainRates[:, 1] > 0.03))
-    gainClasses[C, 4] =1
-    C = np.where((gainRates[:, 2] > 0.02) & (gainRates[:, 2] <=0.05))
-    gainClasses[C, 5] =1
-    C = np.where(gainRates[:, 2] > 0.05)
-    gainClasses[C, 6] =1
-
-    # attr-7: optional about today for in-day-trade
-    C = np.where((gainRates[:, 0] >=0.01) & ((gainRates[:, 0] + gainRates[:, 1]) >0.03))
-    gainClasses[C, 7] =1
-
-    return gainClasses
-
-########################################################################
-def balanceSamples(frameDict, nameSample, nameClassifyBy, maxOverMin =-1.0):
-    '''
-        balance the samples, usually reduce some action=HOLD, which appears too many
-    '''
-    chunk_Classes = np.array(frameDict[nameClassifyBy])
-
-    AD = np.where(chunk_Classes >=0.99) # to match 1 because action is float read from RFrames
-    kI = [np.count_nonzero(AD[1] ==i) for i in range(chunk_Classes.shape[1])] # counts of each actions in frame
-    idxToDel = []
-    if maxOverMin >0.0:
-        kImax = int(min(kI) *(1 + maxOverMin))
-        for i in range(len(kI)):
-            cToReduce = kI[i] -kImax
-            if cToReduce <=0: continue
-            
-            idxItems = np.where(AD[1] ==i)[0].tolist()
-            random.shuffle(idxItems)
-            del idxItems[cToReduce:]
-            idxToDel += [int(x) for x in idxItems] 
-    else:
-        kImax = max(kI)
-        idxMax = kI.index(kImax)
-        cToReduce = kImax - int(1.6*(sum(kI) -kImax))
-        if cToReduce >0:
-            idxItems = np.where(AD[1] ==idxMax)[0].tolist()
-            random.shuffle(idxItems)
-            del idxItems[cToReduce:]
-            idxToDel = [int(i) for i in idxItems]
-
-    if len(idxToDel) >0:
-        frameDict[nameClassifyBy] = np.delete(frameDict[nameClassifyBy], idxToDel, axis=0)
-        frameDict[nameSample] = np.delete(frameDict[nameSample], idxToDel, axis=0)
-    return len(frameDict[nameClassifyBy])

@@ -4,14 +4,13 @@ from Perspective import PerspectiveState
 from EventData   import datetime2float
 from Application import *
 from TradeAdvisor import EVENT_ADVICE
-from crawler.producesSina import SinaMerger, SinaMux
-
+import crawler.producesSina as prod
 
 from datetime import datetime, timedelta
 import os
 
 ########################################################################
-class SinaWeek(SinaMerger) :
+class SinaWeek(prod.SinaMerger) :
     '''
     to merge the market events collected in the recent week
     '''
@@ -31,12 +30,15 @@ class SinaWeek(SinaMerger) :
 
         if not self._dtStart:
             self._dtStart = datetime.now()
+
+        year, weekNo, YYYYMMDDs = prod.sinaWeekOf(self._dtStart)
+        fnOut = os.path.join(dirArchived, 'Sina%04dW%02d_%s-%s.h5t' % (year, weekNo, YYYYMMDDs[0][4:], YYYYMMDDs[4][4:]))
         
         self._dtStart = self._dtStart.replace(hour=0, minute=0, second=0, microsecond=0)
         self._dtStart -= timedelta(days=self._dtStart.weekday()) # adjust to Monday
         dtEnd   = self._dtStart + timedelta(days=7) - timedelta(microseconds=1)
 
-        playback = SinaMux(program, srcPathPattern_KL5m=srcPathPattern_KL5m, srcPathPattern_MF1m=srcPathPattern_MF1m, startDate =self._dtStart.strftime('%Y%m%dT000000'), endDate=dtEnd.strftime('%Y%m%dT235959'), srcPathPattern_RT=srcPathPattern_RT,srcPathPattern_KL1d=srcPathPattern_KL1d,srcPathPattern_MF1d=srcPathPattern_MF1d)
+        playback = prod.SinaMux(program, srcPathPattern_KL5m=srcPathPattern_KL5m, srcPathPattern_MF1m=srcPathPattern_MF1m, startDate =self._dtStart.strftime('%Y%m%dT000000'), endDate=dtEnd.strftime('%Y%m%dT235959'), srcPathPattern_RT=srcPathPattern_RT,srcPathPattern_KL1d=srcPathPattern_KL1d,srcPathPattern_MF1d=srcPathPattern_MF1d)
         super(SinaWeek, self).__init__(program, playback=playback, **kwargs)
         self.__dictRec =  {}
     
@@ -129,12 +131,12 @@ if __name__ == '__main__':
     allSymbols='SZ000001,SH601066,SZ000860,SZ399006,SZ399102,SZ399306' #'SH601377,SZ000636,SH510050,SH510500,SH510300' # sample
     # sys.argv += ['-x', 'SH601377,SZ000636']
     dayInWeek = datetime.now().strftime('%Y%m%d')
-    dayInWeek = '20200817'
-    srcFolder = '/tmp/SinaWeek.20200817' # '/mnt/e/AShareSample/SinaWeek.20200817'
+    dayInWeek = '20201117'
+    srcFolder = '/mnt/d/temp/SinaWeek' # '/tmp/SinaWeek.20200817' # '/mnt/e/AShareSample/SinaWeek.20200817'
 
     if '-x' in sys.argv :
         pos = sys.argv.index('-x')
-        allSymbols = sys.argv[pos+1]
+        allSymbols = sys.argv[pos +1]
         del sys.argv[pos:pos+2]
 
     if '-d' in sys.argv :
@@ -152,6 +154,11 @@ if __name__ == '__main__':
 
     thePROG = Program()
     thePROG._heartbeatInterval =-1
+
+    '''
+    dtInWeek = datetime.strptime(dayInWeek, '%Y%m%d').replace(hour=0, minute=0, second=0, microsecond=0)
+    fn, lst = prod.archiveWeek(srcFolder, allSymbols, dtInWeek, thePROG)
+    '''
 
     srcPathPatternDict={
         'srcPathPattern_KL5m' : '%s/SinaKL5m_*/' % srcFolder, # '%s/SinaKL5m_*.tar.bz2' %srcFolder,

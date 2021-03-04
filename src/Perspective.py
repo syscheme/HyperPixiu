@@ -1624,15 +1624,15 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
 
     '''
     import math
-    for i in range(16*16):
+    N = 4
+    for i in range(N*N):
         if i<=0:
-            ret=[(0,0)]
+            ret=[(int(N/2-1),int(N/2-1))]
             continue
 
         a = int(math.sqrt(i))
         b = i - a*a
         c = int(a/2)
-
         if a == c*2:
             x, y = -c, c
             if b >=a:
@@ -1645,10 +1645,11 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
                 y += a
                 x -= (b -a)
             else: y += b
-        ret.append((x+7, y+7))
-        print('%s=%d ^2 +%d@(%d, %d)' % (i, a, b, x, y))
 
-    print('COORDS_Snail16x16=%s' % ret)
+        ret.append((int(x+N/2-1), int(y+N/2-1)))
+        # print('%s=%d ^2 +%d@(%d, %d)' % (i, a, b, x, y))
+
+    print('COORDS_Snail%dx%d=%s' % (N, N, ret))
     '''
     COORDS16x16=[(7, 7), (8, 7), (8, 8), (7, 8), (6, 8), (6, 7), (6, 6), (7, 6), (8, 6), (9, 6), (9, 7), (9, 8), (9, 9), (8, 9), (7, 9), (6, 9),
                 (5, 9), (5, 8), (5, 7), (5, 6), (5, 5), (6, 5), (7, 5), (8, 5), (9, 5), (10, 5), (10, 6), (10, 7), (10, 8), (10, 9), (10, 10), (9, 10),
@@ -1666,6 +1667,13 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
                 (0, 2), (0, 1), (0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 0), (7, 0), (8, 0), (9, 0), (10, 0), (11, 0), (12, 0), (13, 0),
                 (14, 0), (15, 0), (15, 1), (15, 2), (15, 3), (15, 4), (15, 5), (15, 6), (15, 7), (15, 8), (15, 9), (15, 10), (15, 11), (15, 12), (15, 13), (15, 14),
                 (15, 15), (14, 15), (13, 15), (12, 15), (11, 15), (10, 15), (9, 15), (8, 15), (7, 15), (6, 15), (5, 15), (4, 15), (3, 15), (2, 15), (1, 15), (0, 15)]
+
+    COORDS_Snail8x8=[(3, 3), (4, 3), (4, 4), (3, 4), (2, 4), (2, 3), (2, 2), (3, 2), (4, 2), (5, 2), (5, 3), (5, 4), (5, 5), (4, 5), (3, 5), (2, 5),
+                (1, 5), (1, 4), (1, 3), (1, 2), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1), (6, 2), (6, 3), (6, 4), (6, 5), (6, 6), (5, 6), (4, 6),
+                (3, 6), (2, 6), (1, 6), (0, 6), (0, 5), (0, 4), (0, 3), (0, 2), (0, 1), (0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 0), (7, 0),
+                (7, 1), (7, 2), (7, 3), (7, 4), (7, 5), (7, 6), (7, 7), (6, 7), (5, 7), (4, 7), (3, 7), (2, 7), (1, 7), (0, 7)]
+    
+    COORDS_Snail4x4=[(1, 1), (2, 1), (2, 2), (1, 2), (0, 2), (0, 1), (0, 0), (1, 0), (2, 0), (3, 0), (3, 1), (3, 2), (3, 3), (2, 3), (1, 3), (0, 3)]
     
     def doFormat(self, symbol=None) :
         if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
@@ -1756,29 +1764,8 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
 
         return img3C
 
-    # @abstractmethod
-    # def engorged(self, symbol=None) :
-    #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data
-    #     '''
-    #     raise NotImplementedError
-
-
-    # __dummy = None
-    # def exportF1548(self, symbol=None) :
-    #     '''@return an array_like data as float4C, maybe [] or numpy.array
-    #     '''
-    #     if symbol and symbol in self._dictPerspective.keys():
-    #         return self._dictPerspective[symbol]._S1548I4
-
-    #     if not PerspectiveState.__dummy:
-    #         PerspectiveState.__dummy = Perspective(self.exchange, 'Dummy')
-
-    #     return [0.0] * PerspectiveState.__dummy.fullFloatSize
-
-    # def engorged(self, symbol=None) :
-    #     '''@return dict {fieldName, engorged percentage} to represent the engorged percentage of state data
-    #     '''
-    #     if symbol and symbol in self._dictPerspective.keys():
-    #         return self._dictPerspective[symbol].engorged
-        
-    #     return [0.0]
+    def readDateTime(self, imgResult) :
+        # dt0, dt1 = imgResult[Formatter_1d518.XOFFSETS['aof0']], imgResult[Formatter_1d518.XOFFSETS['aof1']]
+        # month, day, hour, minute = int(dt1[1]*12 +1.2), int(dt1[0]*31 +0.2), int(dt0[1]*24 +0.2), int(dt0[0]*60 +0.2)
+        dt = datetime(year=2030, month=1, day=1, hour=1, minute=1, second=0, microsecond=0) # TODO
+        return dt

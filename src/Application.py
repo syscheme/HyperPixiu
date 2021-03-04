@@ -83,7 +83,7 @@ def listAllFiles(folder, depthAllowed=5, fileOnly=True):
                 ret.append(dn +"/")
             ret += listAllFiles(dn, depthAllowed -1)
 
-    return [str(i) for i in list(np.unique(ret))]
+    return [str(i) for i in list(set(ret))]
 
 ########################################################################
 class MetaApp(MetaObj):

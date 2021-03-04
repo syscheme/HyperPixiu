@@ -21,7 +21,7 @@ DEFAULT_KLDEPTH_1min = 60 # 1-hr
 DEFAULT_KLDEPTH_5min = 240 # covers a week
 DEFAULT_KLDEPTH_1day = 260 # about a year
 
-FORMATTER_KL1d_MIN = 32 # 32-latest-days are minimallly required to generate 'format' for evaluating
+FORMATTER_KL1d_MIN = 2 # 32-latest-days are minimallly required to generate 'format' for evaluating
 
 EXPORT_SIGNATURE= '%dT%dM%dF%dD.%s:200109T17' % (DEFAULT_KLDEPTH_TICK, DEFAULT_KLDEPTH_1min, DEFAULT_KLDEPTH_5min, DEFAULT_KLDEPTH_1day, NORMALIZE_ID)
 
@@ -1225,7 +1225,7 @@ class Formatter_1d518(PerspectiveFormatter):
         if X <1: X=1
         while (X * Y) < len1d: Y+=1
 
-        imgRGB = [ [ [ Formatter_1d518.FLOAT_NaN for k in range(3) ] for x in range(X* scaleX + scaleX-1) ] for y in range(Y) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
+        imgRGB = [ [ [ Formatter_1d518.FLOAT_NaN for k in range(3) ] for x in range(X* scaleX + scaleX-1) ] for y in range(Y) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(imgResult)
         pixelEdge = [ 1.0 -Formatter_1d518.FLOAT_NaN ] *3
         for y in range(Y):
             for x in range(1, scaleX) :
@@ -1273,21 +1273,21 @@ class Formatter_base2dImg(PerspectiveFormatter):
         stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
         if len(stk) <=0: return None
 
-        img6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(32)] # DONOT take [ [[0.0]*6] *16] *16
+        imgResult = [ [ [BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(32)] # DONOT take [ [[0.0]*6] *16] *16
 
         # parition 0: data[0,:4] as the datetime asof the 1st KL1min, data[1:16,:4] fillin K1min up to an hour
         startRow =0
         dtAsOf = stk[0].asof
-        img6C[startRow][0] = Formatter_base2dImg.datetimeTo6C(dtAsOf)
-        img6C[startRow+1][0] = img6C[startRow][0]
-        img6C[startRow+2][0] = img6C[startRow][0]
-        img6C[startRow+3][0] = img6C[startRow][0]
+        imgResult[startRow][0] = Formatter_base2dImg.datetimeTo6C(dtAsOf)
+        imgResult[startRow+1][0] = imgResult[startRow][0]
+        imgResult[startRow+2][0] = imgResult[startRow][0]
+        imgResult[startRow+3][0] = imgResult[startRow][0]
 
         for x in range(1,16):
             for y in range(0,4):
                 i = (x-1) *4 + y
                 if i < len(stk) :
-                    img6C[startRow + y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
+                    imgResult[startRow + y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
 
         # parition 1: data[0:16,4:6] fillin 16x6 K5min up to a week
         startRow =5
@@ -1296,7 +1296,7 @@ class Formatter_base2dImg(PerspectiveFormatter):
             for y in range(0, 6):
                 i = x *6 + y
                 if i < len(stk) :
-                    img6C[startRow + y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
+                    imgResult[startRow + y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
         
         # parition 2: data[0:16,10:15] fillin 16x5 K1Day up to 16 week or 1/3yr
         startRow =12
@@ -1305,7 +1305,7 @@ class Formatter_base2dImg(PerspectiveFormatter):
             for y in range(0, 5):
                 i = x *5 + y
                 if i < len(stk) :
-                    img6C[startRow + y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
+                    imgResult[startRow + y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
 
         # parition 3x: TODO KL1w
         '''
@@ -1317,10 +1317,10 @@ class Formatter_base2dImg(PerspectiveFormatter):
             for y in range(0, 10):
                 i = x *5 + y + 16*5
                 if i < len(stk) :
-                    img6C[startRow + y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
+                    imgResult[startRow + y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
         '''
 
-        img3C = self.expand6Cto3C_Y(img6C)
+        img3C = self.expand6Cto3C_Y(imgResult)
         if self._bmpPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
             self.saveBMP(img3C, dtAsOf=dtAsOf)
 
@@ -1336,21 +1336,21 @@ class Formatter_base2dImg(PerspectiveFormatter):
             NORMALIZED_FLOAT_UNAVAIL
             ]
 
-    def expand6Cto3C_X(self, img6C) :
-        lenX, lenY = len(img6C[0]), len(img6C)
-        img3C = [ [ [BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX*2)] for y in range(lenY) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
+    def expand6Cto3C_X(self, imgResult) :
+        lenX, lenY = len(imgResult[0]), len(imgResult)
+        img3C = [ [ [BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX*2)] for y in range(lenY) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(imgResult)
         for y in range(lenY):
             for x in range(lenX) :
-                img3C[y][2*x], img3C[y][2*x +1] = img6C[y][x][:3], img6C[y][x][3:]
+                img3C[y][2*x], img3C[y][2*x +1] = imgResult[y][x][:3], imgResult[y][x][3:]
 
         return img3C
 
-    def expand6Cto3C_Y(self, img6C) :
-        lenX, lenY = len(img6C[0]), len(img6C)
-        img3C = [ [ [BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX)] for y in range(lenY*2) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
+    def expand6Cto3C_Y(self, imgResult) :
+        lenX, lenY = len(imgResult[0]), len(imgResult)
+        img3C = [ [ [BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX)] for y in range(lenY*2) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(imgResult)
         for y in range(lenY):
             for x in range(lenX) :
-                img3C[2*y][x], img3C[2*y+1][x] = img6C[y][x][:3], img6C[y][x][3:]
+                img3C[2*y][x], img3C[2*y+1][x] = imgResult[y][x][:3], imgResult[y][x][3:]
 
         return img3C
 
@@ -1364,7 +1364,7 @@ class Formatter_base2dImg(PerspectiveFormatter):
             scaleY =s
         else: scaleX =1
 
-        imgRGB = [ [ [BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX* scaleX + scaleX-1)] for y in range(lenY* scaleY  + scaleY-1) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(img6C)
+        imgRGB = [ [ [BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX* scaleX + scaleX-1)] for y in range(lenY* scaleY  + scaleY-1) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(imgResult)
         pixelEdge = [ 1.0 -BMP_COLOR_BG_FLOAT ] *3
         
         for y in range(1, scaleY) : # the edge lines
@@ -1523,134 +1523,42 @@ class Formatter_2dImg32x18(Formatter_base2dImg):
         dt = datetime(year=2030, month=month, day=day, hour=hour, minute=minute, second=0, microsecond=0)
         return dt
 
-    def doFormat0(self, symbol=None) :
-        X_LEN, Y_LEN = 32, 16
-        EXP_SECHEMA = OrderedDict({
-            'asof'               : 1,
-            EVENT_KLINE_1MIN     : 32,
-            EVENT_KLINE_5MIN     : 240,
-            EVENT_KLINE_1DAY     : 240,
-        })
-
-        seqdict = self.mstate.export(symbol, lstsWished=EXP_SECHEMA)  # = self.export6C(symbol, lstsWished=EXP_SECHEMA)
-        if not seqdict or len(seqdict) <=0 or not EVENT_KLINE_1MIN in seqdict.keys() or not EVENT_KLINE_1DAY in seqdict.keys():
-            return None
-
-        stk = seqdict[EVENT_KLINE_1DAY]
-        if len(stk) <=0: return None
-        baseline_Price, baseline_Volume= stk[0].close, stk[0].volume
-
-        dtAsOf, img3C = None, []
-
-        # parition 0: pixel[0,0] as the datetime, X_LEN* 2rows -1 KL1min to cover half an hour
-        rows =1
-        stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
-        if not dtAsOf and len(stk) >0:
-            dtAsOf = stk[0].asof
-            todayYYMMDD = dtAsOf.strftime('%Y%m%d')
-
-        rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
-        for i in range(0, min(len(stk), X_LEN*rows)): 
-             kl = stk[i]
-             if kl.asof.strftime('%Y%m%d') != todayYYMMDD: continue # represent only today's
-             x, y = int(i %X_LEN), int(i /X_LEN)
-             rows6C[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
-
-        img3C += self.expand6Cto3C_Y(rows6C)
-        
-        # parition 1: X_LEN *15rows KL5min to cover a week
-        stk, bV = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48
-        if not dtAsOf and len(stk) >0:
-            dtAsOf = stk[0].asof
-            todayYYMMDD = dtAsOf.strftime('%Y%m%d')
-
-        # break line takes current date-time
-        br1 = [ dtAsOf.hour/24.0, dtAsOf.minute/60.0, dtAsOf.weekday() / 7.0] if dtAsOf else [BMP_COLOR_BG_FLOAT] *3
-        img3C.append([br1] * X_LEN)
-
-        # parition 1.1.: X_LEN *3rows today's KL5min
-        rows =2
-        rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
-        for i in range(0, min(len(stk), X_LEN*rows)): 
-             kl = stk[i]
-             if kl.asof.strftime('%Y%m%d') != todayYYMMDD:
-                  # split today's out of the days before
-                 if i>0: del stk[:i]
-                 break
-             x, y = int(i %X_LEN), int(i /X_LEN)
-             rows6C[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
-        img3C += self.expand6Cto3C_Y(rows6C)
-
-        # parition 1.2.: X_LEN *12rows to cover 4 days before today
-        rows =6
-        rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
-        for i in range(0, min(len(stk), X_LEN*rows)): 
-             kl = stk[i]
-             x, y = int(i %X_LEN), int(i /X_LEN)
-             rows6C[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
-        img3C += self.expand6Cto3C_Y(rows6C)
-
-        # parition 3: X_LEN*15 KL1day to cover near a year
-        stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
-        if not dtAsOf and len(stk) >0:
-            dtAsOf = stk[0].asof
-            todayYYMMDD = dtAsOf.strftime('%Y%m%d')
-
-        if not dtAsOf : return None # KL1d is minimal required
-
-        # break line takes current date-time
-        br2 = [ dtAsOf.weekday() / 7.0, (dtAsOf.month-1) / 12.0, dtAsOf.day / 31.0] if dtAsOf else [BMP_COLOR_BG_FLOAT] *3
-        img3C.append([br2] * X_LEN)
-
-        rows =8
-        rows6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(self._channels)] for x in range(X_LEN)] for y in range(rows)] # DONOT take [ [[0.0]*6] *16] *16
-        for i in range(0, min(len(stk), X_LEN*rows)): 
-             x, y = int(i %X_LEN), int(i /X_LEN)
-             rows6C[y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
-        img3C += self.expand6Cto3C_Y(rows6C)
-
-        if self._bmpPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
-            imgPathName = '%s%s_%s.png' % (self._bmpPathPrefix if self._bmpPathPrefix else '', self.id, dtAsOf.strftime('%Y%m%dT%H%M'))
-            self.saveBMP(img3C, imgPathName)
-
-        return img3C
-
 ########################################################################
-class Formatter_2dImgSnail16(Formatter_base2dImg):
+class Formatter_Snail32x32(Formatter_base2dImg):
 
     def __init__(self, imgDir=None, dem=60):
         '''Constructor'''
-        super(Formatter_2dImgSnail16, self).__init__(imgDir, dem)
+        super(Formatter_Snail32x32, self).__init__(imgDir, dem)
+    
+    def CORDS_OF_SNAIL(edgelen) :
+        import math
+        edgelen = 4
+        for i in range(edgelen * edgelen):
+            if i<=0:
+                ret=[(int(edgelen/2-1),int(edgelen/2-1))]
+                continue
 
-    '''
-    import math
-    N = 4
-    for i in range(N*N):
-        if i<=0:
-            ret=[(int(N/2-1),int(N/2-1))]
-            continue
+            a = int(math.sqrt(i))
+            b = i - a*a
+            c = int(a/2)
+            if a == c*2:
+                x, y = -c, c
+                if b >=a:
+                    y -= a
+                    x += (b -a)
+                else: y -= b
+            else:
+                x, y = c+1, -c
+                if b >=a:
+                    y += a
+                    x -= (b -a)
+                else: y += b
 
-        a = int(math.sqrt(i))
-        b = i - a*a
-        c = int(a/2)
-        if a == c*2:
-            x, y = -c, c
-            if b >=a:
-                y -= a
-                x += (b -a)
-            else: y -= b
-        else:
-            x, y = c+1, -c
-            if b >=a:
-                y += a
-                x -= (b -a)
-            else: y += b
+            ret.append((int(x+ edgelen/2-1), int(y+ edgelen/2-1)))
+            # print('%s=%d ^2 +%d@(%d, %d)' % (i, a, b, x, y))
 
-        ret.append((int(x+N/2-1), int(y+N/2-1)))
-        # print('%s=%d ^2 +%d@(%d, %d)' % (i, a, b, x, y))
-
-    print('COORDS_Snail%dx%d=%s' % (N, N, ret))
-    '''
+        print('COORDS_Snail%dx%d=%s' % (edgelen, edgelen, ret))
+        
     COORDS16x16=[(7, 7), (8, 7), (8, 8), (7, 8), (6, 8), (6, 7), (6, 6), (7, 6), (8, 6), (9, 6), (9, 7), (9, 8), (9, 9), (8, 9), (7, 9), (6, 9),
                 (5, 9), (5, 8), (5, 7), (5, 6), (5, 5), (6, 5), (7, 5), (8, 5), (9, 5), (10, 5), (10, 6), (10, 7), (10, 8), (10, 9), (10, 10), (9, 10),
                 (8, 10), (7, 10), (6, 10), (5, 10), (4, 10), (4, 9), (4, 8), (4, 7), (4, 6), (4, 5), (4, 4), (5, 4), (6, 4), (7, 4), (8, 4), (9, 4),
@@ -1679,14 +1587,12 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
         if not self.mstate or not isinstance(self.mstate, PerspectiveState) :
             raise ValueError('%s could not attach marketState of %s' %(self.__class__.__name__, str(self.mstate)))
 
+        X_LEN, Y_LEN = 32, 32
         EXP_SECHEMA = OrderedDict({
             'asof'               : 1,
-            EVENT_KLINE_1MIN     : 16,
+            EVENT_KLINE_1MIN     : 60,
             EVENT_KLINE_5MIN     : 240,
-            EVENT_KLINE_1DAY     : 255,
-            # EVENT_MONEYFLOW_1MIN : 16,
-            # EVENT_MONEYFLOW_5MIN : 48*4, # 4days
-            # EVENT_MONEYFLOW_1DAY : 48, # 48days
+            EVENT_KLINE_1DAY     : 240,
         })
 
         seqdict = self.mstate.export(symbol, lstsWished=EXP_SECHEMA)  # = self.export6C(symbol, lstsWished=EXP_SECHEMA)
@@ -1694,75 +1600,74 @@ class Formatter_2dImgSnail16(Formatter_base2dImg):
             return None
 
         stk = seqdict[EVENT_KLINE_1DAY]
-        if len(stk) <=0: return None
+        if len(stk) <=FORMATTER_KL1d_MIN : return None
         baseline_Price, baseline_Volume= stk[0].close, stk[0].volume
 
-        # TODO: draw the imagex
-        # parition 0: the central 4x4 is KL1min up to 16min, the outter are 240KL5min up to a week
+        # draw the imagex
+
+        # make the dtAsOf as the background
         dtAsOf = None
-        partition =0
-        img6C = [ [ [BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(16)] # DONOT take [ [[0.0]*6] *16] *16
-        stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
-        if not dtAsOf and len(stk) >0 : dtAsOf = stk[0].asof
+        for evt in [EVENT_KLINE_1MIN, EVENT_KLINE_5MIN, EVENT_KLINE_1DAY]:
+            stk = seqdict[evt]
+            if len(stk) >0 : 
+                dtAsOf = stk[0].asof
+                if dtAsOf : break
 
-        datalen = min(len(stk), 16)
-        for i in range(datalen): 
-             x, y = Formatter_2dImgSnail16.COORDS16x16[i]
-             img6C[y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
-        
-        stk, bV = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48
-        if not dtAsOf and len(stk) >0 : dtAsOf = stk[0].asof
-
-        datalen = min(len(stk), len(Formatter_2dImgSnail16.COORDS16x16) -16)
-        for i in range(datalen): 
-             x, y = Formatter_2dImgSnail16.COORDS16x16[16 +i]
-             img6C[y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
-
-        # parition 1: the central 1x1 is current datetime, the outter are 255KL1d covers a year
         if not dtAsOf: return None
-        partition +=1
-        img6C += [ [ [BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(16)] # append a 16x16 partition
-        x, y = Formatter_2dImgSnail16.COORDS16x16[0]
-        img6C[partition*16 + y][x] = Formatter_base2dImg.datetimeTo6C(dtAsOf)
+        todayYYMMDD = dtAsOf.strftime('%Y%m%d')
+        cellDt = [ (dtAsOf.minute/80.0 + dtAsOf.hour)/25.0, dtAsOf.weekday() / 8.0, int(dtAsOf.strftime('%j'))/ 400.0, (dtAsOf.year %100) /100.0 ] * int ((self._channels +3)/4)
+        imgResult = [ [ copy(cellDt) for x in range(X_LEN)] for y in range(Y_LEN)] # DONOT take [ [[0.0]*6] *16] *16
 
+        # parition 1: the KLex5min at left-top 16x16
+        stk, bV = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48
+        lefttop = (0, 0)
+        #1.1 today's KL5m
+        for i in range(0, min(len(stk), 16*16)): 
+             kl = stk[i]
+             if kl.asof.strftime('%Y%m%d') != todayYYMMDD:
+                  # split today's out of the days before
+                 if i>0: del stk[:i]
+                 break
+             x, y = Formatter_Snail32x32.COORDS16x16[i]
+             x, y = x +lefttop[0], y + lefttop[1]
+             imgResult[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
+
+        #1.2 four-day's KL5m to cover a week
+        for i in range(0, min(len(stk), 16*16)): 
+             kl = stk[i]
+             if kl.asof.strftime('%Y%m%d') != todayYYMMDD:
+                  # split today's out of the days before
+                 if i>0: del stk[:i]
+                 break
+             x, y = Formatter_Snail32x32.COORDS16x16[48 + i]
+             x, y = x +lefttop[0], y + lefttop[1]
+             imgResult[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
+
+        # parition 2: the KLex1day at right-top 16x16
         stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
-        for i in range(min(len(stk), len(Formatter_2dImgSnail16.COORDS16x16) -1)): 
-             x, y = Formatter_2dImgSnail16.COORDS16x16[1+i]
-             img6C[partition*16 + y][x] = self.marketDataTofloatXC(stk[i], baseline_Price=baseline_Price, baseline_Volume= bV)
+        lefttop = (0, 16)
+        for i in range(0, min(len(stk), 16*16)): 
+             kl = stk[i]
+             x, y = Formatter_Snail32x32.COORDS16x16[i]
+             x, y = x +lefttop[0], y + lefttop[1]
+             imgResult[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
 
-        '''
-        # parition 2 MF: the central 4x4 MF1m, the outter: 48*4MF5m cover 4days, 48 MF1d cover 48days
-        partition +=1
-        img6C += [ [ [BMP_COLOR_BG_FLOAT for k in range(6)] for x in range(16)] for y in range(16)] # append a 16x16 partition
-        x, y = Formatter_2dImgSnail16.COORDS16x16[0]
-        img6C[partition*16 + y][x] = seq6C[0]
+        # parition 3: the KLex1min at left-bottom 8x8
+        stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
+        lefttop = (16, 0)
+        for i in range(0, min(len(stk), klPerRow *rows)): 
+             kl = stk[i]
+             if kl.asof.strftime('%Y%m%d') != todayYYMMDD: continue # represent only today's
+             x, y = Formatter_Snail32x32.COORDS16x16[i]
+             x, y = x +lefttop[0], y + lefttop[1]
+             imgResult[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
 
-        seq6C_offset =EXP_SECHEMA['asof'] + EXP_SECHEMA[EVENT_KLINE_1MIN] + EXP_SECHEMA[EVENT_KLINE_5MIN] + EXP_SECHEMA[EVENT_KLINE_1DAY] # pointer to where EVENT_MONEYFLOW_1MIN is
-        snail_loc = 0
-        for i in range(EXP_SECHEMA[EVENT_MONEYFLOW_1MIN]): 
-             x, y = Formatter_2dImgSnail16.COORDS16x16[snail_loc + i]
-             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
-             seq6C_offset +=1
-
-        snail_loc += EXP_SECHEMA[EVENT_MONEYFLOW_1MIN]
-        for i in range(EXP_SECHEMA[EVENT_MONEYFLOW_5MIN]): 
-             x, y = Formatter_2dImgSnail16.COORDS16x16[snail_loc + i]
-             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
-             seq6C_offset +=1
-
-        snail_loc += EXP_SECHEMA[EVENT_MONEYFLOW_5MIN]
-        for i in range(EXP_SECHEMA[EVENT_MONEYFLOW_1DAY]): 
-             x, y = Formatter_2dImgSnail16.COORDS16x16[snail_loc + i]
-             img6C[partition*16 + y][x] = seq6C[seq6C_offset]
-             seq6C_offset +=1
-        '''
-
-        img3C = self.expand6Cto3C_X(img6C)
         if self._bmpPathPrefix and dtAsOf and self._dem >0 and 0 == dtAsOf.minute % self._dem:
+            img3C = self.expandRGBLayers(imgResult)
             imgPathName = '%s%s_%s.png' % (self._bmpPathPrefix if self._bmpPathPrefix else '', self.id, dtAsOf.strftime('%Y%m%dT%H%M'))
             self.saveBMP(img3C, imgPathName)
 
-        return img3C
+        return imgResult
 
     def readDateTime(self, imgResult) :
         # dt0, dt1 = imgResult[Formatter_1d518.XOFFSETS['aof0']], imgResult[Formatter_1d518.XOFFSETS['aof1']]

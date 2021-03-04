@@ -1632,6 +1632,12 @@ class Formatter_Snail32x32(Formatter_base2dImg):
              x, y = x +lefttop[0], y + lefttop[1]
              imgResult[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
 
+        while i < 48:
+             x, y = Formatter_Snail32x32.COORDS16x16[i]
+             x, y = x +lefttop[0], y + lefttop[1]
+             imgResult[y][x] = [0.0] * len(cellDt)
+             i += 1
+
         #1.2 four-day's KL5m to cover a week
         for i in range(0, min(len(stk), 16*16 -48)): 
              kl = stk[i]

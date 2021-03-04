@@ -21,7 +21,7 @@ DEFAULT_KLDEPTH_1min = 60 # 1-hr
 DEFAULT_KLDEPTH_5min = 240 # covers a week
 DEFAULT_KLDEPTH_1day = 260 # about a year
 
-FORMATTER_KL1d_MIN = 2 # 32-latest-days are minimallly required to generate 'format' for evaluating
+FORMATTER_KL1d_MIN = 32 # 32-latest-days are minimallly required to generate 'format' for evaluating
 
 EXPORT_SIGNATURE= '%dT%dM%dF%dD.%s:200109T17' % (DEFAULT_KLDEPTH_TICK, DEFAULT_KLDEPTH_1min, DEFAULT_KLDEPTH_5min, DEFAULT_KLDEPTH_1day, NORMALIZE_ID)
 
@@ -1526,9 +1526,9 @@ class Formatter_2dImg32x18(Formatter_base2dImg):
 ########################################################################
 class Formatter_Snail32x32(Formatter_base2dImg):
 
-    def __init__(self, imgDir=None, dem=60):
+    def __init__(self, imgDir=None, dem=60, channels=8):
         '''Constructor'''
-        super(Formatter_Snail32x32, self).__init__(imgDir, dem)
+        super(Formatter_Snail32x32, self).__init__(imgDir, dem, channels=channels)
     
     def CORDS_OF_SNAIL(edgelen) :
         import math
@@ -1616,7 +1616,7 @@ class Formatter_Snail32x32(Formatter_base2dImg):
         if not dtAsOf: return None
         todayYYMMDD = dtAsOf.strftime('%Y%m%d')
         cellDt = [ (dtAsOf.minute/80.0 + dtAsOf.hour)/25.0, dtAsOf.weekday() / 8.0, int(dtAsOf.strftime('%j'))/ 400.0, (dtAsOf.year %100) /100.0 ] * int ((self._channels +3)/4)
-        imgResult = [ [ copy(cellDt) for x in range(X_LEN)] for y in range(Y_LEN)] # DONOT take [ [[0.0]*6] *16] *16
+        imgResult = [ [ copy.copy(cellDt) for x in range(X_LEN)] for y in range(Y_LEN)] # DONOT take [ [[0.0]*6] *16] *16
 
         # parition 1: the KLex5min at left-top 16x16
         stk, bV = seqdict[EVENT_KLINE_5MIN], baseline_Volume /48
@@ -1633,19 +1633,15 @@ class Formatter_Snail32x32(Formatter_base2dImg):
              imgResult[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
 
         #1.2 four-day's KL5m to cover a week
-        for i in range(0, min(len(stk), 16*16)): 
+        for i in range(0, min(len(stk), 16*16 -48)): 
              kl = stk[i]
-             if kl.asof.strftime('%Y%m%d') != todayYYMMDD:
-                  # split today's out of the days before
-                 if i>0: del stk[:i]
-                 break
              x, y = Formatter_Snail32x32.COORDS16x16[48 + i]
              x, y = x +lefttop[0], y + lefttop[1]
              imgResult[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
 
         # parition 2: the KLex1day at right-top 16x16
         stk, bV = seqdict[EVENT_KLINE_1DAY], baseline_Volume
-        lefttop = (0, 16)
+        lefttop = (16, 0)
         for i in range(0, min(len(stk), 16*16)): 
              kl = stk[i]
              x, y = Formatter_Snail32x32.COORDS16x16[i]
@@ -1654,11 +1650,11 @@ class Formatter_Snail32x32(Formatter_base2dImg):
 
         # parition 3: the KLex1min at left-bottom 8x8
         stk, bV = seqdict[EVENT_KLINE_1MIN], baseline_Volume /240
-        lefttop = (16, 0)
-        for i in range(0, min(len(stk), klPerRow *rows)): 
+        lefttop = (0, 16)
+        for i in range(0, min(len(stk), 8*8)): 
              kl = stk[i]
              if kl.asof.strftime('%Y%m%d') != todayYYMMDD: continue # represent only today's
-             x, y = Formatter_Snail32x32.COORDS16x16[i]
+             x, y = Formatter_Snail32x32.COORDS8x8[i]
              x, y = x +lefttop[0], y + lefttop[1]
              imgResult[y][x] = self.marketDataTofloatXC(kl, baseline_Price=baseline_Price, baseline_Volume= bV)
 

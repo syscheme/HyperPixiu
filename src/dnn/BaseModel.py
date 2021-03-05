@@ -802,7 +802,7 @@ class Model88_sliced(Model88) :
             if 'sub_models' not in g_subweights : return lynames
             g_subweights = g_subweights['sub_models']
 
-            lynames = model._load_weights_from_hdf5g(g_subweights, submodel_remap=submodel_remap)
+            lynames = self._load_weights_from_hdf5g(g_subweights, submodel_remap=submodel_remap)
         
         return lynames
     

@@ -1124,7 +1124,7 @@ class Formatter_1d518(PerspectiveFormatter):
         'asof':              1,
         EVENT_KLINE_1MIN :  60,
         EVENT_KLINE_5MIN :  240,
-        EVENT_KLINE_1DAY :  240,
+        EVENT_KLINE_1DAY :  200,
     })
 
     XOFFSETS = {

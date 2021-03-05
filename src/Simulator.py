@@ -2151,7 +2151,7 @@ class IdealTrader_Tplus1(OfflineSimulator):
                 self.__sampleFrm += [None]  * (self.__sampleFrmSize - self.__sampleIdx)
                 
         self.__sampleFrm[self.__sampleIdx] = (fstates, action, floatsState['fdate'], floatsState['price'])
-        self.info('committed state-to-%s as of %s to confirm known[%s] at offset %d' % (dirAction, dtState.strftime('%m-%dT%H:%M:%S'), self.__lastFStateAsOf, self.__sampleIdx))
+        self.debug('committed state-to-%s as of %s to confirm known[%s] at offset %d' % (dirAction, dtState.strftime('%m-%dT%H:%M:%S'), self.__lastFStateAsOf, self.__sampleIdx))
         self.__sampleIdx +=1
 
     def __saveFrame(self, rangedFrame):

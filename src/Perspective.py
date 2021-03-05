@@ -1141,6 +1141,7 @@ class Formatter_1d518(PerspectiveFormatter):
         self._bmpPathPrefix = bmpPathPrefix
         self._dem = dem
         if self._dem <=0: self._dem=60
+        self.__scaleX =0
 
     def doFormat(self, symbol=None) :
         seqdict = self.mstate.export(symbol, lstsWished=Formatter_1d518.EXP_SECHEMA)
@@ -1219,22 +1220,24 @@ class Formatter_1d518(PerspectiveFormatter):
 
     def expandRGBLayers(self, img1d) :
         channels, len1d = len(img1d[0]), len(img1d)
-        scaleX = int((channels+2)/3)
+        if self.__scaleX <=0:
+            self.__scaleX = int((channels+2)/3)
+
         X = int(math.sqrt(len1d))
         Y = X
         if X <1: X=1
         while (X * Y) < len1d: Y+=1
 
-        imgRGB = [ [ [ Formatter_1d518.FLOAT_NaN for k in range(3) ] for x in range(X* scaleX + scaleX-1) ] for y in range(Y) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(imgResult)
+        imgRGB = [ [ [ Formatter_1d518.FLOAT_NaN for k in range(3) ] for x in range(X* self.__scaleX + self.__scaleX-1) ] for y in range(Y) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(imgResult)
         pixelEdge = [ 1.0 -Formatter_1d518.FLOAT_NaN ] *3
         for y in range(Y):
-            for x in range(1, scaleX) :
+            for x in range(1, self.__scaleX) :
                 imgRGB[y][x *(X+1) -1] = pixelEdge
 
             for x in range(X) :
                 offset = y * X + x
                 if offset >= len1d: continue
-                for i in range(scaleX):
+                for i in range(self.__scaleX):
                     pixel = img1d[offset][i*3 : (i+1)*3]
                     if len(pixel) < 3: pixel += [ Formatter_1d518.FLOAT_NaN ] * (3-len(pixel))
                     imgRGB[y][i *X +x + i] = pixel
@@ -1253,6 +1256,7 @@ class Formatter_base2dImg(PerspectiveFormatter):
         self._bmpPathPrefix = bmpPathPrefix
         self._dem = dem
         if self._dem <=0: self._dem=60
+        self.__scaleBmp = [0, 0] # (Y,X)
 
     def doFormat(self, symbol=None) :
 
@@ -1356,29 +1360,31 @@ class Formatter_base2dImg(PerspectiveFormatter):
 
     def expandRGBLayers(self, img) :
         channels, lenX, lenY = len(img[0][0]), len(img[0]), len(img)
-        scaleY = int((channels+2)/3)
-        scaleX = int(math.sqrt(scaleY))
-        if scaleX >1:
-            s = int(scaleY/scaleX)
-            while (s * scaleX) < scaleY: s+=1
-            scaleY =s
-        else: scaleX =1
 
-        imgRGB = [ [ [BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX* scaleX + scaleX-1)] for y in range(lenY* scaleY  + scaleY-1) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(imgResult)
+        if min(self.__scaleBmp) <=0 :
+            self.__scaleBmp[0] = int((channels+2)/3)
+            self.__scaleBmp[1] = int(math.sqrt(self.__scaleBmp[0]))
+            if self.__scaleBmp[1] >1:
+                s = int(self.__scaleBmp[0]/self.__scaleBmp[1])
+                while (s * self.__scaleBmp[1]) < self.__scaleBmp[0]: s+=1
+                self.__scaleBmp[0] =s
+            else: self.__scaleBmp[1] =1
+
+        imgRGB = [ [ [BMP_COLOR_BG_FLOAT for k in range(3)] for x in range(lenX* self.__scaleBmp[1] + self.__scaleBmp[1]-1)] for y in range(lenY* self.__scaleBmp[0]  + self.__scaleBmp[0]-1) ] # DONOT take [ [[0.0]*6] *lenR*2] *len(imgResult)
         pixelEdge = [ 1.0 -BMP_COLOR_BG_FLOAT ] *3
         
-        for y in range(1, scaleY) : # the edge lines
-            imgRGB[y*(lenY+1) -1] = [ pixelEdge ] * (lenX* scaleX + scaleX-1)
+        for y in range(1, self.__scaleBmp[0]) : # the edge lines
+            imgRGB[y*(lenY+1) -1] = [ pixelEdge ] * (lenX* self.__scaleBmp[1] + self.__scaleBmp[1]-1)
 
         for y in range(lenY):
-            for x in range(1, scaleX) : # the edge lines
+            for x in range(1, self.__scaleBmp[1]) : # the edge lines
                 imgRGB[y][x *(lenX+1) -1] = pixelEdge
 
             for x in range(lenX) :
                 v = img[y][x]
-                for i in range(scaleY):
-                    for j in range(scaleX):
-                        coffset = 3* (i*scaleX +j)
+                for i in range(self.__scaleBmp[0]):
+                    for j in range(self.__scaleBmp[1]):
+                        coffset = 3* (i*self.__scaleBmp[1] +j)
                         pixel = v[coffset : coffset+3]
                         if len(pixel) <3: pixel += [ BMP_COLOR_BG_FLOAT ] * (3-len(pixel))
                         posRGB = [i *(lenY+1) +y, j*(lenX+1) +x]
@@ -1531,7 +1537,6 @@ class Formatter_Snail32x32(Formatter_base2dImg):
         super(Formatter_Snail32x32, self).__init__(imgDir, dem, channels=channels)
     
     def CORDS_OF_SNAIL(edgelen) :
-        import math
         edgelen = 4
         for i in range(edgelen * edgelen):
             if i<=0:

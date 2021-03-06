@@ -1,10 +1,11 @@
 from __future__ import division
 from abc import ABC, abstractmethod
 
+from Application import listAllFiles
 from datetime import datetime, timedelta
 
-import sys, re, random
-import bz2
+import sys, os, re, random
+import h5py, bz2
 import numpy as np
 
 SAMPLE_FLOAT = 'float16'
@@ -169,7 +170,7 @@ def concateH5Samples(filenameOut, filenameIns, compress=True, balancing=False, m
     
     listFnIn = list(set(listFnIn))
     listFnIn.sort()
-    print("concat h5 files w/ balancing[%s] into %s: %s" % (balancing, filenameOut, ','.join(listFnIn)))
+    print("concating h5 files w/ balancing[%s] into %s: %s" % (balancing, filenameOut, ','.join(listFnIn)))
 
     with h5py.File(filenameOut, 'w') as h5out:
         frmId, frmState, frmAction=0, None, None
@@ -179,7 +180,7 @@ def concateH5Samples(filenameOut, filenameIns, compress=True, balancing=False, m
             AD = np.where(col_action >=0.99)
             kIout = [np.count_nonzero(AD[1] ==i) for i in range(3)]
 
-            frmName ='%s%06d' % (rs.RFGROUP_PREFIX2, frmId)
+            frmName ='%s%06d' % (RFGROUP_PREFIX2, frmId)
             g = h5out.create_group(frmName)
             g.create_dataset(u'title', data= 'compressed replay frame[%s]' % (frmId))
             g.attrs['state'] = 'state'
@@ -199,7 +200,7 @@ def concateH5Samples(filenameOut, filenameIns, compress=True, balancing=False, m
                 framesInHd5 = []
                 frmId_Ins = []
                 for name in h5f.keys() :
-                    if rs.RFGROUP_PREFIX != name[:len(rs.RFGROUP_PREFIX)] and rs.RFGROUP_PREFIX2 != name[:len(rs.RFGROUP_PREFIX2)] :
+                    if RFGROUP_PREFIX != name[:len(RFGROUP_PREFIX)] and RFGROUP_PREFIX2 != name[:len(RFGROUP_PREFIX2)] :
                         continue
                     framesInHd5.append(name)
 
@@ -273,12 +274,7 @@ def concateH5Samples(filenameOut, filenameIns, compress=True, balancing=False, m
 ########################################################################
 if __name__ == '__main__':
 
-    # sys.argv += ['-z', '-b', '/mnt/e/h5_to_h5b/RFrmD4M1X5_SZ159949.h5']
-
-    # concateH5Samples('/mnt/e/tmp.h5', '/tmp/RFrm2dImg32x18C8_SH600019.h5', balancing=True, compress=True, skipFirsts=0) # , stateChannels=4)
-    # concateH5Samples('/mnt/e/tmp2.h5', '/mnt/d/wkspaces/HyperPixiu/out/SH60000/RFrm2dImg32x18C8_SH600006.h5', compress=True, skipFirsts=0) # , stateChannels=6)
-    # exit(0)
-    # sys.argv = [sys.argv[0]] + '-c -l 6 -o /mnt/h/RFrm2dImg32x18C8_0222trial/RFrm2dImg32x18C8_0222trial_C4.h5b -b -z /mnt/h/RFrm2dImg32x18C8_0222trial/RFrm2dImg32x18C8_SH600276.h5'.split(' ')
+    # sys.argv = [sys.argv[0]] + '-c -l 6 -o /mnt/e/temp/aaa.h5b -b -z /mnt/e/AShareSample/ETF.2013-2019/RFrmD4M1X5/RFrmD4M1X5_SH510050.h5'.split(' ')
     if '-c' in sys.argv :
         idx = sys.argv.index('-c')
         outfn, balancing, compress, skips, statechs = None, False, False, 0, -1

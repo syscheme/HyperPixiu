@@ -1147,6 +1147,7 @@ class Trainer_classify(BaseApplication):
                             # predict = self._brain.predict(x=chunk_Samples)
                             pass
                         else :
+                            predict = self._brain.predict(x=chunk_Samples)
                             AD = np.where(chunk_Classes ==1)[1]
                             kI = ['%.2f' % (np.count_nonzero(AD ==i)*100.0/len(AD)) for i in range(self._sampleClassSize)] # the actions percentage in sample
                             predact = np.zeros(len(predict) * self._sampleClassSize).reshape(len(predict), self._sampleClassSize)
@@ -1272,10 +1273,6 @@ if __name__ == '__main__':
     trainer = p.createApp(Trainer_classify, configNode ='train') # for 3 actions
     # trainer = p.createApp(Trainer_GainRates, grClassifier=rs.classifyGainRates_level6, configNode ='train') # for 8 gain-rates
     # trainer = p.createApp(Trainer_GainRates, grClassifier=None, configNode ='train') # for 8 gain-rates
-
-    # model = ModelS2d_VGG16r1(input_shape=(18, 32, 4), output_class_num=3, output_name='action')
-    # model.buildup()
-    # trainer = p.createApp(Trainer_AutoEncoder, configNode ='train', brain=model)
 
     p.start()
 

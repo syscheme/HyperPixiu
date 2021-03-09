@@ -394,11 +394,12 @@ class Model88(BaseModel) :
 
         if '.' != lnTag[-1]: lnTag+= '.'
 
-        x = self._tagged_chain(lnTag, flattern_inputs, layers.Dense(888, name='%sD888_1' %lnTag))
-        x = self._tagged_chain(lnTag, x, layers.Dropout(0.5, name='%sDropout1' %lnTag)) #  x= layers.Dropout(0.5))
-        x = self._tagged_chain(lnTag, x, layers.Dense(888, name='%sD888_2' %lnTag))
-        x = self._tagged_chain(lnTag, x, layers.Dropout(0.5, name='%sDropout2' %lnTag)) #  x= layers.Dropout(0.5))
-        x = self._tagged_chain(lnTag, x, layers.Dense(88, name='%sD88' %lnTag))
+        x = self._tagged_chain(lnTag, flattern_inputs, layers.Dense(88, name='%sD88_1' %lnTag))
+        x = self._tagged_chain(lnTag, x, layers.Dense(88, name='%sD88_2' %lnTag))
+        x = self._tagged_chain(lnTag, x, layers.BatchNormalization())
+        x = self._tagged_chain(lnTag, x, layers.Dropout(0.3, name='%sDropout1' %lnTag)) #  x= layers.Dropout(0.5))
+
+        x = self._tagged_chain(lnTag, x, layers.Dense(88, name='%sD88_3' %lnTag))
         x = self._tagged_chain(lnTag, x, layers.Dense(self._output_class_num, name='%so%d' % (lnTag, self._output_class_num), activation='relu' if self._output_as_attr else 'softmax')) # classifying must take softmax
         return x
 
@@ -473,7 +474,7 @@ class Model88_sliced(Model88) :
     def __init__(self, input_shape, input_name='state', output_class_num=3, output_name='action', **kwargs):
         super(Model88_sliced, self).__init__(input_shape, input_name, output_class_num, output_name, **kwargs)
         self.__channels_per_slice =4
-        self.__features_per_slice =518
+        self.__features_per_slice = 168 # 518
         self.__coreId = "NA"
         self.__modelId = None
         self.__dictSubModels = {} # self.__dictSubModels[modelName] = {'model.json': json, 'model': model}
@@ -524,10 +525,11 @@ class Model88_sliced(Model88) :
 
         if not m:
             flowCloseIn = layers.Input(tuple(tensor_flowClose.shape[1:]), dtype=INPUT_FLOAT)
-            x =layers.Flatten(name='%sflatten' %lnTag)(flowCloseIn)
-            x=layers.Dense(self.__features_per_slice, name='%sF%d_1' % (lnTag, self.__features_per_slice))(x)
-            x =layers.Dropout(0.5, name='%sdropout' %lnTag)(x)
-            x=layers.Dense(self.__features_per_slice, name='%sF%d_2' % (lnTag, self.__features_per_slice))(x)
+            x = layers.Flatten(name='%sflatten' %lnTag)(flowCloseIn)
+            x = layers.Dense(self.__features_per_slice, name='%sF%d_1' % (lnTag, self.__features_per_slice))(x)
+            x = layers.Dense(self.__features_per_slice, name='%sF%d_2' % (lnTag, self.__features_per_slice))(x)
+            x = layers.BatchNormalization()(x)
+            x = layers.Dropout(0.5, name='%sdropout' %lnTag)(x)
             m = Model(inputs=flowCloseIn, outputs=x, name=submod_name)
 
         self.__dictSubModels[m.name] = {'model_json': m.to_json(), 'model': m}

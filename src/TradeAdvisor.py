@@ -318,7 +318,7 @@ class AdviceData(EventData):
     @property
     def desc(self) :
         dirIdx = np.argmax([self.dirNONE,self.dirLONG,self.dirSHORT])
-        return 'tadv.%s@%s>%s@%s' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S'), self.strDir, round(self.price, PRICE_DISPLAY_ROUND_DECIMALS))
+        return 'tadv.%s@%s>%s/%.3f,%.3f,%.3f@%s' % (self.symbol, self.asof.strftime('%Y%m%dT%H%M%S'), self.strDir, self.dirNONE,self.dirLONG,self.dirSHORT, round(self.price, PRICE_DISPLAY_ROUND_DECIMALS))
 
     @abstractmethod
     def hatch(advisorId, symbol, exchange=None, **kwargs) :

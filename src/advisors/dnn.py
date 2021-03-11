@@ -7,7 +7,7 @@ from __future__ import division
 from EventData    import EventData, datetime2float, EVENT_NAME_PREFIX
 from MarketData   import *
 from Perspective  import PerspectiveState, Formatter_F1548, Formatter_2dImg32x18, Formatter_Snail32x32, Formatter_1d518
-from Application  import BaseApplication, BOOL_STRVAL_TRUE
+from Application  import BaseApplication, BOOL_STRVAL_TRUE, Program
 from TradeAdvisor import *
 from Trader       import MetaTrader, BaseTrader
 from Account      import OrderData
@@ -26,10 +26,6 @@ class DnnAdvisor(TradeAdvisor):
     '''
     DnnAdvisor impls TradeAdvisor by employing a pre-trained DNN model for state S1548I4A3
     '''
-    STATE_DIMS  = 1548
-    ITEM_FLOATS = EXPORT_FLOATS_DIMS
-    ACTION_DIMS = len(ADVICE_DIRECTIONS) # =3
-
     FORMATTERS ={
         '1d518': Formatter_1d518,
         '2dImg32x18': Formatter_2dImg32x18,
@@ -43,7 +39,8 @@ class DnnAdvisor(TradeAdvisor):
 
         self._processor = self.getConfig('processor', None)
         self._type      = self.getConfig('type', "dnn_sliced2d")
-        self._fnModel  = self.getConfig('modelPath', None)
+        self._fnModel   = self.getConfig('modelPath', None)
+        self._fnModel   = Program.fixupPath(self._fnModel)
 
         defaultFormatId  = list(DnnAdvisor.FORMATTERS.keys())[0]
         stateFormatId = self.getConfig('stateFormat', defaultFormatId)
@@ -91,15 +88,14 @@ class DnnAdvisor(TradeAdvisor):
 
         # floatstate = self._marketState.exportF1548(symbol)
         floatstate = self._marketState.format(self.__fmtr, symbol)
+        dtTmp = self.__fmtr.readDateTime(floatstate) # TESTCODE
         if not floatstate:
             self.debug('generateAdviceOnMarketEvent() rack of marketState on %s' % ev.desc)
             return None # skip advising pirior to plenty state data
 
         floatstate = np.array([floatstate]).astype(rs.SAMPLE_FLOAT)
         act_values = self._brain.predict(floatstate)
-        # action = [0.0] * DnnAdvisor_S1548I4A3.ACTION_DIMS
-        # idxAct = np.argmax(act_values[0])
-        # action[idxAct] = 1.0
+
         advice = AdviceData(self.ident, symbol, d.exchange)
         advice.dirNONE, advice.dirLONG, advice.dirSHORT = act_values[0][0], act_values[0][1], act_values[0][2]
         advice.price = d.close if EVENT_KLINE_PREFIX == ev.type[:len(EVENT_KLINE_PREFIX)] else d.price

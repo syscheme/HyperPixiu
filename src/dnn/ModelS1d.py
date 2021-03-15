@@ -65,7 +65,7 @@ class ModelS1d_Dense1(Model88_sliced) :
         x = input_tensor
         
         x = self._tagged_chain(mname, x, layers.Dense(self.channels_per_slice, activation='relu')) # (518, 4)
-        x = self._tagged_chain(mname, x, layers.Dense(16, activation='relu')) # (518, 4)
+        x = self._tagged_chain(mname, x, layers.Dense(16, activation='relu')) # (518, 16)
         x = self._tagged_chain(mname, x, layers.BatchNormalization())
         x = self._tagged_chain(mname, x, layers.Dense(8, activation='relu')) # (518, 16)
         x = self._tagged_chain(mname, x, layers.Flatten()) # (518*8)
@@ -102,6 +102,86 @@ class ModelS1d_Dense1(Model88_sliced) :
         x = self._tagged_chain(mname, x, layers.Dense(8, activation='relu')) # (518,4)
         x = self._tagged_chain(mname, x, layers.BatchNormalization())
         x = self._tagged_chain(mname, x, layers.Dense(16, activation='relu')) # (518, 4)
+        x = self._tagged_chain(mname, x, layers.Dense(self.channels_per_slice, activation='relu')) # (518,4)
+
+        return Model(input_tensor, x, name=mname) 
+
+# --------------------------------
+class ModelS1d_Dense2(Model88_sliced) :
+    '''
+    Model88 has a common 88 features at the end
+    '''
+    def __init__(self, **kwargs):
+        super(ModelS1d_Dense2, self).__init__(**kwargs)
+        self._dimMax = tuple([518])
+        self.__coreid_ = 'dense1d2'
+
+    def _buildup_core(self, input_tensor):
+
+        mname = self.__coreid_
+        input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
+        x = input_tensor
+        
+        x = self._tagged_chain(mname, x, layers.Dense(64, activation='relu')) # (518, 4)
+        x = self._tagged_chain(mname, x, layers.Dense(64, activation='relu')) # (518, 16)
+        x = self._tagged_chain(mname, x, layers.BatchNormalization())
+        x = self._tagged_chain(mname, x, layers.Dense(16, activation='relu')) # (518, 16)
+        x = self._tagged_chain(mname, x, layers.Flatten()) # (518*8)
+        x = self._tagged_chain(mname, x, layers.BatchNormalization())
+        x = self._tagged_chain(mname, x, layers.Dropout(0.5))
+
+        x = self._tagged_chain(mname, x, layers.Dense(1024,  activation='relu')) # (64)
+        x = self._tagged_chain(mname, x, layers.Dense(1024,  activation='relu')) # (64)
+        x = self._tagged_chain(mname, x, layers.BatchNormalization())
+        x = self._tagged_chain(mname, x, layers.Dropout(0.3))
+
+        x = self._tagged_chain(mname, x, layers.Dense(1024,  activation='relu')) # (64)
+        x = self._tagged_chain(mname, x, layers.Dense(1024,  activation='relu')) # (64)
+        x = self._tagged_chain(mname, x, layers.BatchNormalization())
+        x = self._tagged_chain(mname, x, layers.Dropout(0.3))
+
+        x = self._tagged_chain(mname, x, layers.Dense(512,  activation='relu')) # (64)
+        x = self._tagged_chain(mname, x, layers.Dense(512,  activation='relu')) # (64)
+        x = self._tagged_chain(mname, x, layers.BatchNormalization())
+        x = self._tagged_chain(mname, x, layers.Dropout(0.3))
+
+        x = self._tagged_chain(mname, x, layers.Dense(512,  activation='relu')) # (64)
+        x = self._tagged_chain(mname, x, layers.Dense(512,  activation='relu')) # (64)
+        x = self._tagged_chain(mname, x, layers.BatchNormalization())
+        x = self._tagged_chain(mname, x, layers.Dropout(0.3))
+
+        x = self._tagged_chain(mname, x, layers.Dense(self.features_per_slice,  activation='relu')) # (self.features_per_slice)
+
+        # Create model.
+        model = Model(input_tensor, x, name=mname) 
+        return model
+
+    def _buildup_decoder(self, input_tensor):
+        mname = 'de' + self.__coreid_
+        input_tensor = layers.Input(tuple(input_tensor.shape[1:]), dtype=INPUT_FLOAT) # create a brand-new input_tensor by getting rid of the leading dim-batch
+        x = input_tensor
+        x = self._tagged_chain(mname, x, layers.Dense(self.features_per_slice,  activation='relu')) # (self.features_per_slice)
+        x = self._tagged_chain(mname, x, layers.Dense(512,  activation='relu')) # (518)
+        x = self._tagged_chain(mname, x, layers.Dense(512,  activation='relu')) # (64)
+        x = self._tagged_chain(mname, x, layers.BatchNormalization())
+
+        x = self._tagged_chain(mname, x, layers.Dense(512,  activation='relu')) # (518)
+        x = self._tagged_chain(mname, x, layers.Dense(512,  activation='relu')) # (64)
+        x = self._tagged_chain(mname, x, layers.BatchNormalization())
+
+        x = self._tagged_chain(mname, x, layers.Dense(1024,  activation='relu')) # (518)
+        x = self._tagged_chain(mname, x, layers.Dense(1024,  activation='relu')) # (518)
+        x = self._tagged_chain(mname, x, layers.BatchNormalization())
+
+        x = self._tagged_chain(mname, x, layers.Dense(1024,  activation='relu')) # (518)
+        x = self._tagged_chain(mname, x, layers.Dense(1024,  activation='relu')) # (518)
+        x = self._tagged_chain(mname, x, layers.BatchNormalization())
+
+        x = self._tagged_chain(mname, x, layers.Reshape((518, 16))) # (518,2)
+        x = self._tagged_chain(mname, x, layers.Dense(16, activation='relu')) # (518,4)
+        x = self._tagged_chain(mname, x, layers.Dense(64, activation='relu')) # (518, 4)
+        x = self._tagged_chain(mname, x, layers.Dense(64, activation='relu')) # (518, 16)
+        x = self._tagged_chain(mname, x, layers.BatchNormalization())
         x = self._tagged_chain(mname, x, layers.Dense(self.channels_per_slice, activation='relu')) # (518,4)
 
         return Model(input_tensor, x, name=mname) 

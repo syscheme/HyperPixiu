@@ -322,7 +322,12 @@ class BaseTrader(MetaTrader):
         # TODO: validate the advice's datetime
         # TODO: perform the risk management of advice
 
-        dirToExec = ADVICE_DIRECTIONS[np.argmax([adv.dirNONE, adv.dirLONG, adv.dirSHORT])]
+        # dirToExec = ADVICE_DIRECTIONS[np.argmax([adv.dirNONE, adv.dirLONG, adv.dirSHORT])]
+        dLONG = adv.dirLONG - adv.dirSHORT
+        dirToExec = 0 # NONE
+        if dLONG >0.1 and adv.dirLONG > adv.dirNONE: dirToExec=1 # LONG
+        elif dLONG < -0.3 and adv.dirSHORT > adv.dirNONE: dirToExec = 2 # SHORT
+        dirToExec = ADVICE_DIRECTIONS[dirToExec]
 
         strExec =''
         self.debug('OnAdvice() processing advDir[%s] %s' % (dirToExec, adv.desc))

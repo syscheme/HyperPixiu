@@ -9,7 +9,6 @@ from tensorflow.keras import regularizers
 ########################################################################
 class ModelS1d_Basic(Model88_sliced) :
     '''
-    Model88 has a common 88 features at the end
     '''
     def __init__(self, **kwargs):
         super(ModelS1d_Basic, self).__init__(**kwargs)
@@ -51,7 +50,6 @@ class ModelS1d_Basic(Model88_sliced) :
 # --------------------------------
 class ModelS1d_Dense1(Model88_sliced) :
     '''
-    Model88 has a common 88 features at the end
     '''
     def __init__(self, **kwargs):
         super(ModelS1d_Dense1, self).__init__(**kwargs)
@@ -109,7 +107,6 @@ class ModelS1d_Dense1(Model88_sliced) :
 # --------------------------------
 class ModelS1d_Dense2(Model88_sliced) :
     '''
-    Model88 has a common 88 features at the end
     '''
     def __init__(self, **kwargs):
         super(ModelS1d_Dense2, self).__init__(**kwargs)
@@ -163,15 +160,15 @@ class ModelS1d_Dense2(Model88_sliced) :
         x = self._tagged_chain(mname, x, layers.Dense(self.features_per_slice,  activation='relu')) # (self.features_per_slice)
         x = self._tagged_chain(mname, x, layers.Dense(512,  activation='relu')) # (518)
         x = self._tagged_chain(mname, x, layers.Dense(512,  activation='relu')) # (64)
-        x = self._tagged_chain(mname, x, layers.BatchNormalization())
+        # x = self._tagged_chain(mname, x, layers.BatchNormalization())
 
         x = self._tagged_chain(mname, x, layers.Dense(512,  activation='relu')) # (518)
         x = self._tagged_chain(mname, x, layers.Dense(512,  activation='relu')) # (64)
-        x = self._tagged_chain(mname, x, layers.BatchNormalization())
+        # x = self._tagged_chain(mname, x, layers.BatchNormalization())
 
         x = self._tagged_chain(mname, x, layers.Dense(1024,  activation='relu')) # (518)
         x = self._tagged_chain(mname, x, layers.Dense(1024,  activation='relu')) # (518)
-        x = self._tagged_chain(mname, x, layers.BatchNormalization())
+        # x = self._tagged_chain(mname, x, layers.BatchNormalization())
 
         x = self._tagged_chain(mname, x, layers.Dense(1024,  activation='relu')) # (518)
         x = self._tagged_chain(mname, x, layers.Dense(1024,  activation='relu')) # (518)
@@ -181,7 +178,7 @@ class ModelS1d_Dense2(Model88_sliced) :
         x = self._tagged_chain(mname, x, layers.Dense(16, activation='relu')) # (518,4)
         x = self._tagged_chain(mname, x, layers.Dense(64, activation='relu')) # (518, 4)
         x = self._tagged_chain(mname, x, layers.Dense(64, activation='relu')) # (518, 16)
-        x = self._tagged_chain(mname, x, layers.BatchNormalization())
+        # x = self._tagged_chain(mname, x, layers.BatchNormalization())
         x = self._tagged_chain(mname, x, layers.Dense(self.channels_per_slice, activation='relu')) # (518,4)
 
         return Model(input_tensor, x, name=mname) 
@@ -189,7 +186,6 @@ class ModelS1d_Dense2(Model88_sliced) :
 # --------------------------------
 class ModelS1d_Cnn1Dr2(Model88_sliced) :
     '''
-    Model88 has a common 88 features at the end
     '''
     def __init__(self, **kwargs):
         super(ModelS1d_Cnn1Dr2, self).__init__(**kwargs)

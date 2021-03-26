@@ -250,7 +250,7 @@ class TradeAdvisor(BaseApplication):
         
         evAdv = Event(EVENT_ADVICE)
         evAdv.setData(newAdvice)
-        self.info('advice generated upon event[%s]: %s' % (ev.desc, evAdv.desc))
+        self.debug('advice generated upon event[%s]: %s' % (ev.desc, evAdv.desc))
         self.__dictAdvices[symbol] = newAdvice
 
         if 'NONE' != dir or not symbol in self.__dictFstampLastPost.keys() or self.__dictFstampLastPost[symbol] < fstamp -5*60: # reduce some NONEs to remote eventCh

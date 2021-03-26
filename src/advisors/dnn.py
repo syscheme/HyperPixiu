@@ -88,10 +88,11 @@ class DnnAdvisor(TradeAdvisor):
 
         # floatstate = self._marketState.exportF1548(symbol)
         floatstate = self._marketState.format(self.__fmtr, symbol)
-        dtTmp = self.__fmtr.readDateTime(floatstate) # TESTCODE
         if not floatstate:
             self.debug('generateAdviceOnMarketEvent() rack of marketState on %s' % ev.desc)
             return None # skip advising pirior to plenty state data
+
+        # dtTmp = self.__fmtr.readDateTime(floatstate) # TESTCODE
 
         floatstate = np.array([floatstate]).astype(rs.SAMPLE_FLOAT)
         act_values = self._brain.predict(floatstate)

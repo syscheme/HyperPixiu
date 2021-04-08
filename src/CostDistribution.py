@@ -16,6 +16,12 @@ class CostDistribution():
         self._decayByTurnover = decayByTurnover
         self._vTrim = -1
 
+    def __decayLatest(self, decayRates):
+        # decay the volume in the previous price-buckets
+        for i in self._priceBucketsRecent.keys():
+            for j in range(len(decayRates)):
+                self._priceBucketsRecent[i][j] = int(self._priceBucketsRecent[i][j] * (1 -decayRates[j]))
+
     def __calcByMA(self, dateT, pricebuckets, volT, volR0, decayRate):
         '''
         以当日的换手筹码在当日的最高价和最低价之间平均分布来计算
@@ -23,8 +29,7 @@ class CostDistribution():
         volPerBucket, vR0PerBucket = volT / len(pricebuckets), volR0 / len(pricebuckets)
 
         # decay the volume in the previous price-buckets
-        for i in self._priceBucketsRecent.keys():
-            self._priceBucketsRecent[i] = [ int(x*(1 -decayRate)) for x in self._priceBucketsRecent[i]]
+        self.__decayLatest([decayRate, decayRate*2])
 
         # append the recent price-buckets
         for i in pricebuckets:
@@ -32,7 +37,7 @@ class CostDistribution():
                 self._priceBucketsRecent[i] = [0, 0]
 
             for j in range(2):
-                self._priceBucketsRecent[i][j] += int(volPerBucket * decayRate)
+                self._priceBucketsRecent[i][j] += int(volPerBucket) # += int(volPerBucket * decayRate)
 
     def __calcByTriangle(self, dateT, pricebuckets, volT, volR0, avgT, decayRate):
         '''
@@ -59,19 +64,16 @@ class CostDistribution():
             tmpChip[i] = [s*volT, s*volR0]
 
         # decay the volume in the previous price-buckets
-        for i in self._priceBucketsRecent.keys():
-            # for j in range(2):
-            #     self._priceBucketsRecent[i][j] *= (1 -decayRate)
-            self._priceBucketsRecent[i] = [ int(x*(1 -decayRate)) for x in self._priceBucketsRecent[i]]
+        self.__decayLatest([decayRate, decayRate*2])
 
         for i in tmpChip.keys():
             if i not in self._priceBucketsRecent.keys() or len(self._priceBucketsRecent[i]) <=0:
                 self._priceBucketsRecent[i] = [0,0]
 
-            for j in range(2):
-                self._priceBucketsRecent[i][j] += int(tmpChip[i][j] *(decayRate))
+            for j in range(2) :
+                self._priceBucketsRecent[i][j] += int(tmpChip[i][j]) # +=int(tmpChip[i][j] *(decayRate))
 
-    def buildup(self, pdata, method='triangle'): #triangle
+    def buildup(self, pdata, method='triangle') : # triangle
         '''
         AC 衰减系数, 既当日被移动的成本的权重: 
             如果今天的换手率是t，衰减系数是d，那么我们计算昨日的被移动的筹码的总量是t*d,
@@ -138,41 +140,48 @@ class CostDistribution():
                     row = [asof, p] +vs
                     write.writerow(row)        
 
-    def calcWinRatios(self, priceBy):
-        winRatios = []
+    def calcRatioInCostRange(self, costHigh, costLow=None):
+        result = []
 
-        if isinstance(priceBy, list):
-            priceBy =  [ float(x) for x in priceBy]
-        else: priceBy = [float(priceBy)]
+        if isinstance(costHigh, list):
+            costHigh =  [ float(x) for x in costHigh]
+        else: costHigh = [float(costHigh)]
+
+        if not costLow:
+            costLow = [0.0]
+        elif isinstance(costLow, list):
+            costLow =  [ float(x) for x in costLow]
+        else : costLow = [float(costLow)]
 
         for dt, buckets in self._priceBucketsSofar.items():
             # 计算目前的比例
             vol_total = 0
-            vol_win = [ 0, 0]
+            vol_hit = [ 0, 0]
 
-            price = priceBy[len(winRatios)] if len(winRatios) <len(priceBy) else priceBy[-1]
+            costH = costHigh[len(result)] if len(result) <len(costHigh) else costHigh[-1]
+            costL = costLow[len(result)] if len(result) <len(costLow) else 0.0
             for k, v in buckets.items():
                 vol_total += v[0]
-                if k < price: 
-                    for i in range(len(vol_win)):
-                        vol_win[i] += v[i]
+                if k <= costH and k >=costL: 
+                    for i in range(len(vol_hit)):
+                        vol_hit[i] += v[i]
 
             if vol_total > 0:
-                win_ratio = [ x/vol_total if x>0 else 0 for x in vol_win ]
+                ratio_hit = [ round(x/vol_total, 5) if x>0 else 0 for x in vol_hit ]
             else:
-                win_ratio = [0] * len(vol_win)
+                ratio_hit = [0.0] * len(vol_hit)
 
-            winRatios.append(win_ratio)
+            result.append([dt] + ratio_hit)
 
         # import matplotlib.pyplot as plt
         # dates = list(self._priceBucketsSofar.keys())
-        # plt.plot(dates[len(dates) - 200:-1], winRatios[len(dates) - 200:-1])
+        # plt.plot(dates[len(dates) - 200:-1], result[len(dates) - 200:-1])
         # plt.show()
-        return winRatios
+        return result
 
     def costOfLowers(self, lowerPercent, idxDist=0):
         if lowerPercent > 1.0:
-            lowerPercent = lowerPercent / 100  # 转换成百分比
+            lowerPercent = lowerPercent / 100.0  # 转换成百分比
         
         if not idxDist or idxDist <0: idxDist=0
         result = []
@@ -201,10 +210,19 @@ class CostDistribution():
         return result
 
 if __name__ == "__main__":
-    pdata = pd.read_csv('/mnt/e/AShareSample/SZ002008/SZ002008_1d20210129.csv')
+    FOLDER='/mnt/e/AShareSample/SZ002008/'
+    pdata = pd.read_csv( FOLDER + 'SZ002008_1d20210129.csv')
     cd= CostDistribution()
     cd.buildup(pdata) #计算
-    cd.saveCsv('/mnt/e/AShareSample/SZ002008/SZ002008_1d20210129_dist.csv')
-    cd.calcWinRatios(pdata['close'].tolist()) #获利
-    # cd.calcWinRatios(pdata['close'].iat[-1]) #获利
+    # cd.saveCsv(FOLDER + 'SZ002008_1d20210129_dist.csv')
+    win_ratios = cd.calcRatioInCostRange(pdata['close'].tolist()) #获利
+    close2pct_ratios = cd.calcRatioInCostRange((pdata['close']*1.02).tolist(), (pdata['close']*0.98).tolist())
+    with open(FOLDER + 'close2pct.csv', 'w') as f:
+        # using csv.writer method from CSV package
+        write = csv.writer(f)
+        write.writerow(['asof', 'H0', 'H1'])
+        for row in close2pct_ratios:
+            write.writerow(row)
+
+    # cd.calcRatioInCostRange(pdata['close'].iat[-1]) #获利
     cd.costOfLowers(90) #成本分布

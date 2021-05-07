@@ -797,7 +797,7 @@ class SinaCrawler(MarketCrawler):
          {"symbol":"sh600241","code":"600241","name":"*ST\u65f6\u4e07","trade":"3.390","pricechange":"-0.010","changepercent":"-0.294","buy":"3.380","sell":"3.390","settlement":"3.400","open":"3.400","high":"3.400","low":"3.370","volume":1572918,"amount":5328448,"ticktime":"15:00:00","per":-3.606,"pb":1.025,"mktcap":99768.416985,"nmc":85281.237408,"turnoverratio":0.62525},
         ]
         '''
-        HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,trade,open,high,low,volume,amount,pb"
+        HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,trade,open,high,low,volume,amount,pb,ticktime,changepercent"
         HEADERS=HEADERSEQ.split(',')
         MAX_SYM_COUNT=6000
         ex_node = ex_node.lower()
@@ -1026,7 +1026,7 @@ def listSymbols(program, mdSina):
     global __totalAmt1W
     __totalAmt1W=0
     print('-'*10 + ' All %d symbols '%len(result) + '-'*10)
-    HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,close,volume"
+    HEADERSEQ="symbol,name,mktcap,nmc,turnoverratio,close,volume,ticktime,changepercent"
     print(HEADERSEQ)
     for i in result:
         __totalAmt1W += i['amount'] /10000.0
